@@ -23,6 +23,7 @@ class IntegralExpressionPipelineBenchmark {
     int warmups = Integer.getInteger("integral.expression.warmups", 2);
     int runs = Integer.getInteger("integral.expression.runs", 5);
     boolean previous = Boolean.getBoolean("sf.integral.previous");
+    boolean fallback = previous && Boolean.getBoolean("sf.integral.fallbackControl");
     boolean booleanInput = Boolean.getBoolean("sf.integral.booleanInput");
     int decimalPrecision = Integer.getInteger("sf.integral.decimalPrecision", 0);
     int decimalScale = Integer.getInteger("sf.integral.decimalScale", 0);
@@ -59,7 +60,7 @@ class IntegralExpressionPipelineBenchmark {
           String sql = "INSERT INTO output_rows SELECT " + expression + " FROM inputs";
           var scan = nativeRun ? NativePlanner.install(table) : null;
           String plan = table.explainSql(sql);
-          if (nativeRun) {
+          if (nativeRun && !fallback) {
             assertTrue(plan.contains("NativeCalc"), plan);
             assertTrue(plan.contains("RowDataToArrow"), plan);
             assertTrue(plan.contains("ArrowToRowData"), plan);
@@ -68,11 +69,19 @@ class IntegralExpressionPipelineBenchmark {
                 scan.functionExecutions().stream().allMatch(route -> route.contains("jvm=[]")),
                 scan.functionExecutions().toString());
             assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
+          } else if (nativeRun) {
+            assertFalse(plan.contains("NativeCalc"), plan);
+            assertEquals(0, scan.substitutions());
+            assertTrue(scan.fallbackReasons().stream()
+                .anyMatch(reason -> reason.contains("unsupported TRY_CAST DECIMAL")),
+                scan.fallbackReasons().toString());
           }
           long start = System.nanoTime();
           table.executeSql(sql).await();
           double elapsed = (System.nanoTime() - start) / 1e9;
-          if (nativeRun) RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+          if (nativeRun && !fallback)
+            RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+          if (nativeRun && fallback) assertTrue(metrics.nativeOperators().isEmpty());
           System.out.printf(Locale.ROOT,
               "[integral-expression-pipeline] engine=%s trial=%d warmup=%s rows=%d seconds=%.9f%n",
               nativeRun ? previous ? "previous" : "native" : "stock", trial, trial < warmups, count, elapsed);

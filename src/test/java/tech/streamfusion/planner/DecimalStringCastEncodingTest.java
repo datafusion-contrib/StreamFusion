@@ -49,15 +49,28 @@ class DecimalStringCastEncodingTest {
     for (boolean legacy : new boolean[] {false, true}) {
       for (var name : List.of(SqlTypeName.CHAR, SqlTypeName.VARCHAR)) {
         for (int length : new int[] {1, 3, 8, 20, 44, 80, Integer.MAX_VALUE}) {
-          var call = rex.makeCall(types.createSqlType(name, length),
-              FlinkSqlOperatorTable.CAST, List.of(input));
-          var encoded = BooleanStringCastEncodingTest.configured(call, legacy);
-          assertTrue(encoded.jvmFunctionCalls().isEmpty());
-          assertEquals(legacy || length == Integer.MAX_VALUE ? 11 : 6, encoded.kinds()[0]);
-          assertEquals(legacy || length == Integer.MAX_VALUE ? 6
-              : name == SqlTypeName.CHAR ? 129 : 126, encoded.payload()[0]);
+          for (var operator : List.of(FlinkSqlOperatorTable.CAST, FlinkSqlOperatorTable.TRY_CAST)) {
+            var call = rex.makeCall(types.createSqlType(name, length), operator, List.of(input));
+            var encoded = BooleanStringCastEncodingTest.configured(call, legacy);
+            assertTrue(encoded.jvmFunctionCalls().isEmpty());
+            assertEquals(legacy || length == Integer.MAX_VALUE ? 11 : 6, encoded.kinds()[0]);
+            assertEquals(legacy || length == Integer.MAX_VALUE ? 6
+                : name == SqlTypeName.CHAR ? 129 : 126, encoded.payload()[0]);
+          }
         }
       }
+    }
+  }
+
+  @Test
+  void boundedTryCastStillRequiresTheConfiguredLengthSemantics() {
+    var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
+    var rex = new RexBuilder(types);
+    var input = rex.makeInputRef(types.createSqlType(SqlTypeName.DECIMAL, 18, 3), 0);
+    for (var name : List.of(SqlTypeName.CHAR, SqlTypeName.VARCHAR)) {
+      var call = rex.makeCall(types.createSqlType(name, 8), FlinkSqlOperatorTable.TRY_CAST,
+          List.of(input));
+      assertNull(RexExpression.encodeProjections(List.of(call), List.of("v")));
     }
   }
 

@@ -21,14 +21,16 @@ import tech.streamfusion.planner.NativePlanner;
 
 class FlinkDecimalStringCastSqlHarnessTest {
   @ParameterizedTest
-  @CsvSource({"18,3", "19,0", "38,18", "38,38"})
-  void boundedRuntimeCastsConsumeNativeWorkWithoutEvaluators(int precision, int scale)
+  @CsvSource({"18,3,CAST", "19,0,CAST", "38,18,CAST", "38,38,CAST",
+      "18,3,TRY_CAST", "19,0,TRY_CAST", "38,18,TRY_CAST", "38,38,TRY_CAST"})
+  void boundedRuntimeCastsConsumeNativeWorkWithoutEvaluators(int precision, int scale, String operator)
       throws Exception {
     String sql = "SELECT id,CAST(d AS VARCHAR(1)),CAST(d AS VARCHAR(3)),"
         + "CAST(d AS VARCHAR(8)),CAST(d AS VARCHAR(20)),CAST(d AS VARCHAR(44)),"
         + "CAST(d AS CHAR(1)),CAST(d AS CHAR(3)),CAST(d AS CHAR(8)),"
         + "CAST(d AS CHAR(20)),CAST(d AS CHAR(44)),CAST(d AS CHAR(80)),"
         + "CAST(d AS CHAR(2147483647)) FROM src";
+    sql = sql.replace("CAST(", operator + "(");
     for (boolean legacy : new boolean[] {false, true}) {
       for (boolean nullable : new boolean[] {false, true}) {
         var decimal = nullable ? DECIMAL(precision, scale) : DECIMAL(precision, scale).notNull();
@@ -79,28 +81,42 @@ class FlinkDecimalStringCastSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void boundedCastConsumersLazyBranchesAndEmptyBatchesMatch(boolean legacy) throws Exception {
+  @CsvSource({"false,CAST", "true,CAST", "false,TRY_CAST", "true,TRY_CAST"})
+  void boundedCastConsumersLazyBranchesAndEmptyBatchesMatch(boolean legacy, String operator)
+      throws Exception {
     java.util.function.Supplier<TableEnvironment> factory = () -> environment(18, 3, legacy);
     BuiltinFunctionParity.assertParity(factory,
-        "SELECT id,CHAR_LENGTH(CAST(d AS CHAR(25))),CONCAT(CAST(d AS VARCHAR(3)),'!'),"
+        ("SELECT id,CHAR_LENGTH(CAST(d AS CHAR(25))),CONCAT(CAST(d AS VARCHAR(3)),'!'),"
             + "CAST(d AS CHAR(8)) LIKE '%0%',LTRIM(CAST(d AS VARCHAR(80)),''),"
-            + "CASE WHEN id>=0 THEN CAST(d AS CHAR(8)) ELSE CAST(d/(id-id) AS CHAR(8)) END FROM src");
+            + "CASE WHEN id>=0 THEN CAST(d AS CHAR(8)) ELSE CAST(d/(id-id) AS CHAR(8)) END FROM src")
+                .replace("CAST(d AS", operator + "(d AS"));
     BuiltinFunctionParity.assertParity(factory,
-        "SELECT CAST(d AS CHAR(8)),CAST(d/(id-id) AS CHAR(8)) FROM src WHERE id<0");
+        "SELECT CAST(d AS CHAR(8)),CAST(d/(id-id) AS CHAR(8)) FROM src WHERE id<0"
+            .replace("CAST(d AS", operator + "(d AS"));
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void boundedCastConsumersAcrossAggregationMatch(boolean legacy) throws Exception {
+  @CsvSource({"false,CAST", "true,CAST", "false,TRY_CAST", "true,TRY_CAST"})
+  void boundedCastConsumersAcrossAggregationMatch(boolean legacy, String operator) throws Exception {
     java.util.function.Supplier<TableEnvironment> factory = () -> environment(18, 3, legacy);
     NativeParity.assertChangelogParity(factory,
-        "SELECT CHAR_LENGTH(MAX(CAST(CAST(d AS CHAR(25)) AS STRING))),"
+        ("SELECT CHAR_LENGTH(MAX(CAST(CAST(d AS CHAR(25)) AS STRING))),"
             + "LTRIM(MAX(CAST(d AS VARCHAR(80))),''),"
-            + "COUNT(DISTINCT CAST(d AS VARCHAR(3))) FROM src");
+            + "COUNT(DISTINCT CAST(d AS VARCHAR(3))) FROM src")
+                .replace("CAST(d AS", operator + "(d AS"));
     NativeParity.assertChangelogParity(factory,
-        "SELECT c,CHAR_LENGTH(c),CONCAT(c,'!'),COUNT(*) FROM "
-            + "(SELECT CAST(CAST(d AS CHAR(8)) AS STRING) AS c FROM src) GROUP BY c");
+        ("SELECT c,CHAR_LENGTH(c),CONCAT(c,'!'),COUNT(*) FROM "
+            + "(SELECT CAST(CAST(d AS CHAR(8)) AS STRING) AS c FROM src) GROUP BY c")
+                .replace("CAST(d AS", operator + "(d AS"));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"false,CAST", "true,CAST", "false,TRY_CAST", "true,TRY_CAST"})
+  void exactLengthCastTrimConsumersMatch(boolean legacy, String operator) throws Exception {
+    BuiltinFunctionParity.assertParity(() -> environment(18, 3, legacy),
+        ("SELECT id,LTRIM(CAST(d AS CHAR(20)),''),RTRIM(CAST(d AS CHAR(20)),''),"
+            + "LTRIM(CAST(d AS VARCHAR(20)),''),RTRIM(CAST(d AS VARCHAR(20)),'') "
+            + "FROM src WHERE id=0").replace("CAST(d AS", operator + "(d AS"));
   }
 
   @ParameterizedTest
@@ -205,9 +221,10 @@ class FlinkDecimalStringCastSqlHarnessTest {
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
-  void boundedTryCastTargetsRetainTheirExistingFallback(boolean legacy) throws Exception {
+  void boundedTryCastComputedDecimalsRetainTheirExistingFallback(boolean legacy) throws Exception {
     NativeParity.assertFallback(() -> environment(18, 3, legacy),
-        "SELECT TRY_CAST(d AS CHAR(2)), TRY_CAST(d AS VARCHAR(2)) FROM src");
+        "SELECT TRY_CAST(d+CAST(1 AS DECIMAL(18,3)) AS CHAR(2)),"
+            + "TRY_CAST(d+CAST(1 AS DECIMAL(18,3)) AS VARCHAR(2)) FROM src");
   }
 
   private static TableEnvironment environment(int precision, int scale, boolean legacy) {

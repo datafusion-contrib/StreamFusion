@@ -3902,7 +3902,7 @@ final class RexExpression {
     if (source == SqlTypeName.DECIMAL
         && SqlTypeFamily.CHARACTER.contains(resultType)
         && (targetType == SqlTypeName.VARCHAR && resultType.getPrecision() == Integer.MAX_VALUE
-            || !tryCast && legacyCastBehaviour != null)
+            || legacyCastBehaviour != null)
         && (call.getOperands().get(0) instanceof RexInputRef
             || call.getOperands().get(0) instanceof RexLiteral)) {
       boolean bounded = Boolean.FALSE.equals(legacyCastBehaviour)

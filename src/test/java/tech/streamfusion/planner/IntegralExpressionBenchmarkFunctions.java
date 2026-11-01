@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import org.apache.calcite.rel.core.Project;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
@@ -60,6 +61,11 @@ public final class IntegralExpressionBenchmarkFunctions {
       @Override public ClassLoader getUserCodeClassLoader() { return getLoader(); }
     };
     stock.open(context);
+    boolean previous = Boolean.getBoolean("sf.integral.previous");
+    boolean fallbackControl = Boolean.getBoolean("sf.integral.fallbackControl");
+    if (fallbackControl && !previous)
+      throw new IllegalStateException("A fallback control requires the preceding encoder");
+    String fallbackReason = null;
     var encoded = configuredCast ? null
         : RexExpression.encodeProjections(project.getProjects(), List.of("v"));
     if (configuredCast) {
@@ -71,29 +77,73 @@ public final class IntegralExpressionBenchmarkFunctions {
       configure.invoke(encoded, table.getConfig());
       var emit = RexExpression.class.getDeclaredMethod("emit", org.apache.calcite.rex.RexNode.class);
       emit.setAccessible(true);
-      if (!(Boolean) emit.invoke(encoded, project.getProjects().get(0)))
-        throw new IllegalStateException("Expected an admitted configured expression");
+      if (!(Boolean) emit.invoke(encoded, project.getProjects().get(0))) {
+        if (!fallbackControl)
+          throw new IllegalStateException("Expected an admitted configured expression");
+        var reason = RexExpression.class.getDeclaredField("reason");
+        reason.setAccessible(true);
+        fallbackReason = (String) reason.get(encoded);
+        if (fallbackReason == null || !fallbackReason.startsWith("unsupported TRY_CAST DECIMAL"))
+          throw new IllegalStateException("Unexpected preceding fallback: " + fallbackReason);
+        encoded = null;
+      } else if (fallbackControl) {
+        throw new IllegalStateException("Expected the preceding encoder to reject this signature");
+      }
     }
-    if (encoded == null)
+    if (encoded == null && !fallbackControl)
       throw new IllegalStateException("Expected an admitted integer expression");
-    boolean previous = Boolean.getBoolean("sf.integral.previous");
-    if (previous == encoded.jvmFunctionCalls().isEmpty())
-      throw new IllegalStateException("Unexpected encoder route: " + encoded.jvmFunctionCalls());
-    if (!previous && encoded.nativeFunctionCalls().isEmpty())
-      throw new IllegalStateException("Expected the intended native function before constant folding");
-    binding = encoded.udfBinding();
-    long[] constants = binding.bind(encoded.longs(), context);
     var serializer = new RowDataSerializer(RowType.of(inputType));
     rows = new RowData[count];
     for (int i = 0; i < count; i++) {
       RowData row = GenericRowData.of(nullable && i % 7 == 0 ? null : value(type, i));
       rows[i] = binary ? serializer.toBinaryRow(row).copy() : row;
     }
+    if (fallbackControl) {
+      System.err.println("PREVIOUS_FALLBACK," + fallbackReason);
+      return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(
+          Map.of("fallback", true, "reason", fallbackReason));
+    }
+    if (previous == encoded.jvmFunctionCalls().isEmpty())
+      throw new IllegalStateException("Unexpected encoder route: " + encoded.jvmFunctionCalls());
+    if (!previous && encoded.nativeFunctionCalls().isEmpty())
+      throw new IllegalStateException("Expected the intended native function before constant folding");
+    binding = encoded.udfBinding();
+    long[] constants = binding.bind(encoded.longs(), context);
     return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of(
         "kinds", encoded.kinds(), "payload", encoded.payload(),
         "child_counts", encoded.childCounts(), "longs", constants,
         "doubles", encoded.doubles(), "strings", encoded.strings(),
         "boolean_output", booleanOutput, "string_output", stringOutput));
+  }
+
+  /** A rejected native signature runs in Java on RowData in the actual preceding implementation. */
+  public static void main(String[] args) throws Exception {
+    String element = args[0];
+    boolean nullable = Boolean.parseBoolean(args[1]);
+    boolean binary = Boolean.parseBoolean(args[2]);
+    int count = Integer.parseInt(args[3]);
+    int loops = Integer.parseInt(args[4]);
+    int warmups = Integer.parseInt(args[5]);
+    int runs = Integer.parseInt(args[6]);
+    try {
+      var route = new com.fasterxml.jackson.databind.ObjectMapper()
+          .readTree(register(element, nullable, binary, count));
+      if (!route.path("fallback").asBoolean())
+        throw new IllegalStateException("This control must verify stock fallback");
+      long expected = measure(1)[1] * loops;
+      for (int trial = 0; trial < warmups + runs; trial++) {
+        for (int turn = 0; turn < 2; turn++) {
+          int engine = (trial + turn) & 1;
+          long[] measured = measure(loops);
+          if (measured[1] != expected) throw new IllegalStateException("Fallback checksum differs");
+          System.out.printf(Locale.ROOT, "integral_expression,%s,%s,%s,%d,%d,%d,%s,%s,%d,%d%n",
+              element, nullable, binary, count, count * loops, trial, trial < warmups,
+              engine == 0 ? "flink" : "previous", measured[0], measured[1]);
+        }
+      }
+    } finally {
+      close();
+    }
   }
 
   private static ClassLoader getLoader() {

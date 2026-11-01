@@ -5844,3 +5844,81 @@ Reproduce prepared qualification with `integral_expression`, DECIMAL input and
 `sf.integral.decimalPrecision=38`, `sf.integral.decimalScale=18` and the same expression.
 These are benchmark-only controls; no production option is introduced. Remaining work
 is tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## Bounded DECIMAL TRY_CAST to character
+
+Direct DECIMAL inputs/literals reuse the exact native plain-text formatter. Modern
+VARCHAR truncates through LEFT; modern CHAR truncates or space-pads through RPAD.
+DECIMAL text is ASCII, so these existing kernels preserve released Flink character
+widths without a Unicode approximation. Legacy mode ignores target length; maximum-INT
+CHAR does not pad. Computed decimals and their metadata guards retain existing admission.
+TRY_CAST uses the same total formatting operation and does not catch operand failures.
+
+The [result record](results/decimal-bounded-try-cast-2026-11-01.json) and
+[raw trials](results/decimal-bounded-try-cast-2026-11-01.csv.gz) retain 96 configurations/9600 trials.
+Release/default-feature/mimalloc, Oracle JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. DECIMAL(18,2)/(38,18), signed extrema and
+large signed coefficients match across GenericRowData/BinaryRowData and nullable/NOT NULL
+schemas. Modern targets are VARCHAR(3)/CHAR(8)/CHAR(44); legacy targets VARCHAR(3)/CHAR(8).
+All output checksums match. Candidate descriptors must be empty; the independently
+compiled preceding encoder must reject bounded DECIMAL TRY_CAST. Its prepared
+control runs the released evaluator in Java on matching RowData; operation and
+equivalent consumption are timed in Java. Complete previous jobs require the real
+planner fallback reason, zero native substitutions and zero consumed native work.
+The candidate uses Rust-side timers and empty evaluator descriptors. Tiny 16-row CHAR(8)
+controls remain separate from 1,024-row bulk qualification.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 40 | 3.251-9.827x | 3.488-10.748x | 0 |
+| 1.18.1 | tiny control | 8 | 1.412-3.401x | 1.544-3.745x | 0 |
+| 2.2.1 | bulk | 40 | 3.104-10.154x | 3.422-10.276x | 0 |
+| 2.2.1 | tiny control | 8 | 1.428-3.434x | 1.746-3.500x | 0 |
+
+All 80 bulk cells beat stock. 0 of 16 tiny controls are slower.
+Independent stock-control drift spans 0.759-0.999x; all ranges remain in the record.
+
+Six complete million-row configurations use a rowwise source and blackhole at
+parallelism one, with two warmups/five measurements. Candidate native jobs retain source
+generation, planning/startup, production JNI and both perimeter transposes; the preceding
+stock fallback retains its actual path. Compact modern VARCHAR(3), wide modern CHAR(44)
+and wide legacy CHAR(8) require consumed NativeCalc, no fallback and no candidate evaluator.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-compact | 0.323108 (0.317246-0.325959) | 0.215176 (0.214526-0.218355) | 0.272784 (0.264374-0.280154) | 0.272559 (0.259251-0.276117) |
+| 1.18.1 / modern-wide | 0.554577 (0.544595-0.577801) | 0.249330 (0.245439-0.250792) | 0.521098 (0.515807-0.523225) | 0.520737 (0.517170-0.526215) |
+| 1.18.1 / legacy-wide | 0.288225 (0.274643-0.316488) | 0.218552 (0.208366-0.222127) | 0.240750 (0.233640-0.246038) | 0.249669 (0.236538-0.253221) |
+| 2.2.1 / modern-compact | 0.317752 (0.315881-0.329789) | 0.216294 (0.213674-0.223117) | 0.268792 (0.265014-0.273145) | 0.281972 (0.268092-0.286282) |
+| 2.2.1 / modern-wide | 0.555897 (0.533242-0.559481) | 0.252509 (0.245032-0.255392) | 0.520144 (0.518186-0.537838) | 0.520204 (0.515485-0.531938) |
+| 2.2.1 / legacy-wide | 0.285559 (0.268036-0.291094) | 0.218255 (0.212956-0.227082) | 0.244965 (0.238019-0.249634) | 0.237997 (0.235115-0.245426) |
+
+Native/stock elapsed ratios span 0.450-0.764;
+native/previous ratios span 0.479-0.917. Ratios above one are slower.
+Overlapping ranges and unfavorable whole-job results remain; prepared qualification
+does not establish universal end-to-end acceleration.
+
+All 184 focused encoding/runtime invocations (including existing unbounded/failure controls) pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row outputs verify declared types, NULLs, unique IDs
+and cardinality across batches with consumed native work and empty evaluator descriptors.
+Additional consumers, truncation/padding, lazy and empty-batch cases, selected operand
+failures and materialized aggregate results match stock. Flink 1.18 does not support
+MAX(CHAR); that boundary witness first widens the padded CHAR to STRING before MAX.
+Twelve existing integer/predicate fixture controls pass. The unchanged released
+CastRulesTest oracle retains its prior 535 stock cases per pair; the unchanged Rust
+DSO retains 1,019 core passes/two pre-existing ignores. Neither reused oracle substitutes
+for the new native execution witnesses. Source/DSO hashes and independently recompiled
+preceding encoder classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, DECIMAL input and
+`SF_INTEGRAL_EXPRESSION='TRY_CAST(v AS CHAR(8))'`. Complete jobs use
+`sf.integral.decimalPrecision=38`, `sf.integral.decimalScale=18` and the same expression.
+These are benchmark-only controls; no production option is introduced. Remaining work
+is tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+The preceding fallback control launches `IntegralExpressionBenchmarkFunctions` with
+`sf.integral.previous=true` and `sf.integral.fallbackControl=true`, using the same
+expression, legacy mode, row format and trial counts. Complete previous jobs use
+the same fallback control. These controls never replace the actual rejected encoding
+with a synthetic native or callback program.
