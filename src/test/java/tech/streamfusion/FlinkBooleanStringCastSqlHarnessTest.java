@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class FlinkBooleanStringCastSqlHarnessTest {
@@ -32,15 +31,16 @@ class FlinkBooleanStringCastSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void logicalBooleanCastsConsumeNativeWorkAcrossBatches(boolean legacy) throws Exception {
+  @MethodSource("castModes")
+  void logicalBooleanCastsConsumeNativeWorkAcrossBatches(String operator, boolean legacy) throws Exception {
     assertRuntimeBooleanCasts(
-        "SELECT id,CAST(NOT b AS STRING),CAST(b AND c AS CHAR(8)),"
+        ("SELECT id,CAST(NOT b AS STRING),CAST(b AND c AS CHAR(8)),"
             + "CAST(b OR c AS VARCHAR(3)),CAST(b IS TRUE AS STRING),"
             + "CAST(b IS NOT TRUE AS CHAR(8)),CAST(b IS FALSE AS VARCHAR(4)),"
             + "CAST(b IS NOT FALSE AS STRING),CAST(b IS NULL AS CHAR(8)),"
             + "CAST(b IS NOT NULL AS STRING),CAST((NOT b) OR (c IS TRUE) AS CHAR(8)),"
-            + "CAST(b AND c AND (b OR NOT c) AS STRING) FROM src", legacy);
+            + "CAST(b AND c AND (b OR NOT c) AS STRING) FROM src")
+                .replace("CAST(", operator + "("), legacy);
   }
 
   private static void assertRuntimeBooleanCasts(String sql, boolean legacy) throws Exception {

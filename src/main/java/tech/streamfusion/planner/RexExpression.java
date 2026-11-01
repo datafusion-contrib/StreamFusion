@@ -4523,13 +4523,8 @@ final class RexExpression {
 
   private static boolean nativeBooleanCharacterCast(RexCall call) {
     return call.getOperands().size() == 1
-        && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.BOOLEAN
         && SqlTypeFamily.CHARACTER.contains(call.getType())
-        && (call.getOperands().get(0) instanceof RexInputRef
-            || call.getOperands().get(0) instanceof RexLiteral
-            || call.getOperator()
-                    == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CAST
-                && nativeBooleanFormattingOperand(call.getOperands().get(0)));
+        && nativeBooleanFormattingOperand(call.getOperands().get(0));
   }
 
   private static boolean nativeBooleanFormattingOperand(RexNode node) {

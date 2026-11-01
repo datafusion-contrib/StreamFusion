@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 class BooleanLogicalCastEncodingTest {
   @Test
-  void failureFreeLogicalOperandsStayNativeOnlyForTheVerifiedCast() throws Exception {
+  void failureFreeLogicalOperandsStayNativeForBothCasts() throws Exception {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
     var bool = types.createTypeWithNullability(types.createSqlType(SqlTypeName.BOOLEAN), true);
@@ -37,13 +37,12 @@ class BooleanLogicalCastEncodingTest {
       for (RexNode operand : operands) {
         for (var name : List.of(SqlTypeName.CHAR, SqlTypeName.VARCHAR)) {
           var target = types.createSqlType(name, 8);
-          var cast = rex.makeCall(target, FlinkSqlOperatorTable.CAST, List.of(operand));
-          var encoded = BooleanStringCastEncodingTest.configured(cast, legacy);
-          assertEquals(244, encoded.payload()[0]);
-          assertTrue(encoded.jvmFunctionCalls().isEmpty(), cast.toString());
-          var attempt = rex.makeCall(target, FlinkSqlOperatorTable.TRY_CAST, List.of(operand));
-          assertFalse(BooleanStringCastEncodingTest.configured(attempt, legacy)
-              .jvmFunctionCalls().isEmpty());
+          for (var operator : List.of(FlinkSqlOperatorTable.CAST, FlinkSqlOperatorTable.TRY_CAST)) {
+            var cast = rex.makeCall(target, operator, List.of(operand));
+            var encoded = BooleanStringCastEncodingTest.configured(cast, legacy);
+            assertEquals(244, encoded.payload()[0]);
+            assertTrue(encoded.jvmFunctionCalls().isEmpty(), cast.toString());
+          }
         }
       }
     }
@@ -62,10 +61,12 @@ class BooleanLogicalCastEncodingTest {
       for (var operator : List.of(FlinkSqlOperatorTable.NOT, FlinkSqlOperatorTable.IS_NULL,
           FlinkSqlOperatorTable.IS_TRUE)) {
         var operand = rex.makeCall(operator, predicate);
-        var cast = rex.makeCall(types.createSqlType(SqlTypeName.VARCHAR, 8),
-            FlinkSqlOperatorTable.CAST, List.of(operand));
-        assertFalse(BooleanStringCastEncodingTest.configured(cast, legacy)
-            .jvmFunctionCalls().isEmpty());
+        for (var castOperator : List.of(FlinkSqlOperatorTable.CAST, FlinkSqlOperatorTable.TRY_CAST)) {
+          var cast = rex.makeCall(types.createSqlType(SqlTypeName.VARCHAR, 8),
+              castOperator, List.of(operand));
+          assertFalse(BooleanStringCastEncodingTest.configured(cast, legacy)
+              .jvmFunctionCalls().isEmpty());
+        }
       }
     }
   }

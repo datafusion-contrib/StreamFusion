@@ -1108,7 +1108,7 @@ These scalar rules are separate from grouping-key equality and sort ordering.
 ## Casts
 
 `CAST` and `TRY_CAST` from a direct BOOLEAN input or literal to STRING, bounded VARCHAR or CHAR use a
-native Arrow formatter. CAST also admits recursively verified BOOLEAN-only NOT, AND, OR,
+native Arrow formatter. Both also admit recursively verified BOOLEAN-only NOT, AND, OR,
 IS NULL, IS NOT NULL, IS TRUE, IS NOT TRUE, IS FALSE and IS NOT FALSE operands; their
 inputs must be BOOLEAN references/literals or the same failure-free logical operations.
 Modern mode emits uppercase `TRUE`/`FALSE`, truncates VARCHAR/CHAR
@@ -1117,16 +1117,17 @@ the target's length and padding. NULL remains NULL in both modes. BOOLEAN format
 produce a conversion error, so TRY_CAST reuses the CAST kernel. Other computed operands retain
 generated Flink evaluation or their existing short-circuit fallback, preserving failures,
 laziness and shared function calls.
-TRY_CAST over computed logical operands is not yet qualified. Wrapping a failing or
-stateful producer in a logical operator does not admit it through the proof above.
+Wrapping a failing or stateful producer in a logical operator does not admit it through
+the proof above.
 When the encoder has no cast-mode configuration, TRY_CAST also retains generated evaluation.
 The [bitmap word technique](../optimizations/boolean-word-blocks.md) avoids per-row string
 objects and copies common spellings eight values at a time. See the
 [CAST](../benchmarks/scalar-functions.md#boolean-cast-to-character) and
 [TRY_CAST measurements](../benchmarks/scalar-functions.md#boolean-try_cast-to-character),
 including small batches and unfavorable full jobs.
-Logical-operand CAST has its own
-[qualification](../benchmarks/scalar-functions.md#boolean-cast-over-logical-operands),
+Logical-operand CAST and TRY_CAST have separate
+[CAST](../benchmarks/scalar-functions.md#boolean-cast-over-logical-operands) and
+[TRY_CAST qualification](../benchmarks/scalar-functions.md#boolean-try_cast-over-logical-operands),
 separate from direct-input formatting and existing planner simplifications.
 
 Native, unconditionally, with no host involvement:
