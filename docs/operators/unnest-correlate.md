@@ -475,7 +475,9 @@ library, covering typed results, INNER/LEFT, nullable-source rejection, retained
 empty input, lifecycle/failures and changelog through two heap/RocksDB restores. All successful
 populated paths require consumed native table-function input. `PrimitiveTemporalTableFunctionBenchmark`
 keeps complete stock/previous/native jobs and both transposes under the accepted UDF performance
-exception; support does not claim acceleration.
+exception; support does not claim acceleration. The combined temporal/primitive/inference
+selection passes 252 checks on 2.2.1 and 251 on 1.18.1, plus the existing ARRAY_SORT N/A,
+with zero failures/errors.
 
 ### Boxed DATE epoch days and containers (2026-11-01)
 
