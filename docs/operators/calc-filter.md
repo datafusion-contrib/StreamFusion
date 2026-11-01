@@ -83,8 +83,23 @@ including SQL ROW constructors and comparisons, so physical metadata never becom
 field. Input-reference columns carried beside unrelated scalar work keep the existing native path;
 whole-Calc generation is required when an expression produces or consumes a ROW value. Recursive
 ROW/ARRAY values use the existing verified primitive bridge types; string-to-string MAP fields
-are supported. Nested fixed BINARY uses the transport described below. Custom type inference, specialization and internal Java
-conversion classes retain whole-query fallback. Only external `Row` signatures enter the new gate.
+are supported. Nested fixed BINARY uses the transport described below. Custom type inference
+is admitted when released inference selects default external Java conversions recursively
+for every argument and result. An override that delegates to Flink's default inference is
+also admitted. The existing logical-type, expression and consumer guards still apply.
+Specialization, non-default custom inference and internal Java conversion classes retain
+whole-query fallback. Only external `Row` signatures enter the new gate.
+
+The custom-inference increment changes planning admission, not runtime conversion or ownership.
+The released Calc generator retains resolved types, NULLs, named Row field mapping, nested
+RowKinds, Java STRING contents, callback order and immediate ownership of mutable results.
+Forty-five selected checks pass on each of released Flink 1.18.1 and 2.2.1 with JDK 17 and
+the release/mimalloc native library. They include 15 new explicit/delegating inference,
+shared-call, retention, failure and heap/RocksDB recovery controls and 30 existing nested
+scalar controls. Populated admitted cases require consumed native Calc input. Custom internal
+RowData and alternate List children remain explicit whole-query fallback controls.
+`InferredNestedScalarBenchmark` retains complete stock/previous/native jobs and both transposes;
+this coverage uses the accepted UDF performance exception without an acceleration claim.
 
 Flink's released converters own external callback inputs and normalize mutable results before the
 next invocation. This retains named-row field mapping, reusable ROW/array results, NULLs, Java
