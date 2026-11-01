@@ -149,8 +149,8 @@ class FlinkDateIntResultTableFunctionSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"boxed", "array", "row"})
-  void boxedAndNestedEpochDayResultsRetainFallback(String shape) {
+  @ValueSource(strings = {"array", "row"})
+  void nestedEpochDayResultsRetainFallback(String shape) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -166,6 +166,22 @@ class FlinkDateIntResultTableFunctionSqlHarnessTest {
               .anyMatch(reason -> reason.contains("verified external Java conversions")),
           runs::toString);
       assertTrue(metrics.nativeOperators().isEmpty());
+    }
+  }
+
+  @Test
+  void boxedNonNullEpochDayResultsRetainValues() {
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      var runs =
+          NativeFailureParity.run(
+              () -> {
+                var table = source("array", 32, metrics);
+                table.createTemporarySystemFunction("result_rows", new OtherDateRows("boxed"));
+                return table;
+              },
+              "SELECT s.x,s.p,t.v,t.epoch_day,t.pos FROM src s" + join(false, false));
+      assertValues(runs, metrics);
+      assertDays(runs.host().rows(), false);
     }
   }
 

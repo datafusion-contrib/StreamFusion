@@ -81,8 +81,8 @@ final class TableFunctionMatcher {
 
   private static boolean epochDayConversion(DataType type) {
     return type.getLogicalType().is(LogicalTypeRoot.DATE)
-        && !type.getLogicalType().isNullable()
-        && type.getConversionClass() == int.class;
+        && (type.getConversionClass() == Integer.class
+            || (!type.getLogicalType().isNullable() && type.getConversionClass() == int.class));
   }
 
   private static boolean verifiedOutputConversion(DataType type) {
@@ -225,7 +225,7 @@ final class TableFunctionMatcher {
         + " ARRAY/MAP/ROW input, output and argument types with verified external Java"
         + " conversions (default containers, scalar Lists, scalar ArrayList results,"
         + " non-null primitive arrays or direct non-null boolean/numeric primitive scalar"
-        + " arguments or results, or non-null DATE/int arguments or results) and input"
+        + " arguments or results, or DATE/Integer and non-null DATE/int arguments or results) and input"
         + " representation are verified";
   }
 
