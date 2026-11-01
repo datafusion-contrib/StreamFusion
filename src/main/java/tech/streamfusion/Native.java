@@ -24,6 +24,16 @@ public final class Native {
 
   public static native void restoreSessionCanonicalWatermark(long handle, long watermark);
 
+  public static native void bindSessionCanonicalDistinct(long handle, int aggregate);
+
+  public static native void exportSessionCanonicalDistinct(
+      long handle, int aggregate, BatchReceiver receiver);
+
+  public static native void importSessionCanonicalDistinct(
+      long handle, int aggregate, long arrayAddress, long schemaAddress);
+
+  public static native void finishSessionCanonicalDistinct(long handle);
+
   public static native void importTumblingAggregatorCanonical(
       long handle, int keyArity, long arrayAddress, long schemaAddress);
 

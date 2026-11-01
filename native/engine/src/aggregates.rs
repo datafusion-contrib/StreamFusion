@@ -1,5 +1,7 @@
 use crate::*;
 
+pub(crate) mod canonical_distinct;
+
 mod counted_distinct;
 mod floating_distinct;
 pub(crate) use counted_distinct::CountedDistinctAccumulator;

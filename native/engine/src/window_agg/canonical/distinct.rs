@@ -1,41 +1,7 @@
 use super::*;
 
-pub(super) fn is_distinct(aggregate: &WindowAggregate) -> bool {
-    match aggregate {
-        WindowAggregate::FloatingDistinctCount(..) | WindowAggregate::CountedDistinct(_) => true,
-        WindowAggregate::Builtin(function) => function.is_distinct(),
-        _ => false,
-    }
-}
-
-fn retained_values(
-    aggregate: &WindowAggregate,
-    accumulator: &mut Box<dyn Accumulator>,
-) -> Result<ArrayRef, DataFusionError> {
-    let state = accumulator.state()?;
-    let columns = state
-        .iter()
-        .map(ScalarValue::to_array)
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut retained = aggregate.create_accumulator();
-    retained.merge_batch(&columns)?;
-    *accumulator = retained;
-    match state.as_slice() {
-        [ScalarValue::List(values)] if values.len() == 1 && !values.is_null(0) => {
-            Ok(values.value(0))
-        }
-        _ => Err(invalid(
-            "DISTINCT factory does not expose a membership list",
-        )),
-    }
-}
-
-struct ViewRow {
-    end: i64,
-    key: OwnedRow,
-    value: ScalarValue,
-    count: i64,
-}
+pub(super) use crate::aggregates::canonical_distinct::is_distinct;
+use crate::aggregates::canonical_distinct::{retained_values, view_batch, ViewRow};
 
 impl TumblingAggregator {
     pub(super) fn bind_canonical_distinct(&mut self, index: usize) -> Result<(), DataFusionError> {
@@ -103,39 +69,6 @@ impl TumblingAggregator {
         Ok(())
     }
 
-    fn canonical_view_batch(
-        converter: Option<&RowConverter>,
-        key_types: &[DataType],
-        value_type: &DataType,
-        counted: bool,
-        rows: &[ViewRow],
-    ) -> Result<RecordBatch, DataFusionError> {
-        let mut fields = vec![Field::new("window_end", DataType::Int64, false)];
-        fields.extend(key_fields(key_types));
-        fields.push(Field::new("value", value_type.clone(), false));
-        let mut columns: Vec<ArrayRef> = vec![Arc::new(Int64Array::from_iter_values(
-            rows.iter().map(|row| row.end),
-        ))];
-        columns.extend(decode_keys(
-            converter,
-            &rows.iter().map(|row| row.key.clone()).collect::<Vec<_>>(),
-            key_types,
-        ));
-        columns.push(ScalarValue::iter_to_array(
-            rows.iter().map(|row| row.value.clone()),
-        )?);
-        if counted {
-            fields.push(Field::new("count", DataType::Int64, false));
-            columns.push(Arc::new(Int64Array::from_iter_values(
-                rows.iter().map(|row| row.count),
-            )));
-        }
-        Ok(RecordBatch::try_new(
-            Arc::new(Schema::new(fields)),
-            columns,
-        )?)
-    }
-
     pub(super) fn visit_canonical_distinct(
         &mut self,
         index: usize,
@@ -173,7 +106,7 @@ impl TumblingAggregator {
                             count,
                         });
                         if rows.len() == CHUNK_ROWS {
-                            accept(Self::canonical_view_batch(
+                            accept(view_batch(
                                 self.key_converter.as_ref(),
                                 &self.key_types,
                                 &value_type,
@@ -186,7 +119,7 @@ impl TumblingAggregator {
                 }
             }
             if !rows.is_empty() {
-                accept(Self::canonical_view_batch(
+                accept(view_batch(
                     self.key_converter.as_ref(),
                     &self.key_types,
                     &value_type,

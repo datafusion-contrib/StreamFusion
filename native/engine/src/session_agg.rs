@@ -69,6 +69,8 @@ pub(crate) struct SessionAggregator {
     pub(crate) late_drops: u64,
     pub(crate) memory: OperatorMemory,
     key_timestamp_precisions: Vec<i32>,
+    canonical_distinct: std::collections::HashSet<usize>,
+    canonical_distinct_counts: HashMap<(i64, OwnedRow, usize), i64>,
     /// Persistent-state mode: committed sessions live in the persistent store; the `sessions` map
     /// holds only the current bundle's touched keys (each hydrated wholesale on first touch —
     /// merging needs the key's neighboring sessions — written through at the bundle boundary, then
@@ -110,6 +112,8 @@ impl SessionAggregator {
             late_drops: 0,
             memory: OperatorMemory::unaccounted(),
             key_timestamp_precisions: Vec::new(),
+            canonical_distinct: std::collections::HashSet::new(),
+            canonical_distinct_counts: HashMap::default(),
             #[cfg(feature = "rocksdb-state")]
             store: None,
             #[cfg(feature = "rocksdb-state")]

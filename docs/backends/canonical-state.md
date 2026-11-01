@@ -150,7 +150,13 @@ native snapshot. Import validates schemas and rejects duplicate or still-overlap
 including conflicts with earlier import batches; subsequent input can bridge restored sessions.
 NULL keys remain distinct from ordinary keys. Receiver failures leave the live state available
 for retry, and restored memory is reserved against the operator budget and released on close.
-The primitive rejects membership data views until their separate stock contract is installed.
+Explicit COUNT DISTINCT slots export their scalar cardinality and memberships separately.
+Import checks the complete view before making the restored operator available; duplicate,
+orphaned or excessive memberships cannot be used as a valid restore. Counted views preserve
+frequencies independently of their scalar. Export restores draining aggregate factories before
+calling the receiver so callback failure leaves live state intact.
+Typed RocksDB session state still supports scalar accumulators; membership state retains the
+existing snapshot-backed native checkpoint path.
 Native controls cover both stores, keyless state, bridging, malformed namespaces, bounded export
 and memory-limit cleanup. This foundation alone does not qualify the whole SESSION family.
 

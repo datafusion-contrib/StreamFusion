@@ -3,6 +3,8 @@ use jni::objects::JObject;
 
 const CHUNK_ROWS: usize = 1024;
 
+mod distinct;
+
 fn invalid(message: &str) -> DataFusionError {
     DataFusionError::Execution(format!("canonical session: {message}"))
 }
@@ -60,8 +62,13 @@ fn state_batch(
 impl SessionAggregator {
     fn canonical_state_fields(&self) -> Result<Vec<Field>, DataFusionError> {
         let mut fields = Vec::new();
-        for aggregate in &self.aggregates {
-            for field in aggregate.state_fields() {
+        for (index, aggregate) in self.aggregates.iter().enumerate() {
+            let state_fields = if self.canonical_distinct.contains(&index) {
+                vec![Field::new("count", DataType::Int64, false)]
+            } else {
+                aggregate.state_fields()
+            };
+            for field in state_fields {
                 if matches!(
                     field.data_type(),
                     DataType::List(_) | DataType::LargeList(_)
@@ -82,6 +89,7 @@ impl SessionAggregator {
         &mut self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        self.validate_canonical_distinct_complete()?;
         let fields = self.canonical_state_fields()?;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
@@ -117,8 +125,12 @@ impl SessionAggregator {
         for (key, sessions) in &mut self.sessions {
             for (&start, session) in sessions {
                 let mut state = Vec::with_capacity(fields.len());
-                for accumulator in &mut session.accumulators {
-                    state.extend(accumulator.state()?);
+                for (index, accumulator) in session.accumulators.iter_mut().enumerate() {
+                    if self.canonical_distinct.contains(&index) {
+                        state.push(accumulator.evaluate()?);
+                    } else {
+                        state.extend(accumulator.state()?);
+                    }
                 }
                 rows.push(StateRow {
                     start,
@@ -266,13 +278,30 @@ impl SessionAggregator {
                 previous_end = Some(end);
             }
         }
+        let mut expected_counts = Vec::new();
         let mut restored = Vec::with_capacity(batch.num_rows());
         for row in 0..batch.num_rows() {
             let mut column = 2 + arity;
             let mut accumulators = Vec::with_capacity(self.aggregates.len());
-            for aggregate in &self.aggregates {
-                let width = aggregate.state_fields().len();
+            for (index, aggregate) in self.aggregates.iter().enumerate() {
                 let mut accumulator = aggregate.create_accumulator();
+                if self.canonical_distinct.contains(&index) {
+                    let count = column_i64(batch, &format!("acc{}", column - 2 - arity)).value(row);
+                    if count < 0 && !matches!(aggregate, WindowAggregate::CountedDistinct(_)) {
+                        return Err(invalid("negative DISTINCT cardinality"));
+                    }
+                    if let Some(counted) = (accumulator.as_mut() as &mut dyn std::any::Any)
+                        .downcast_mut::<crate::aggregates::CountedDistinctAccumulator>(
+                    ) {
+                        counted.set_cardinality(count);
+                    }
+                    expected_counts
+                        .push(((starts.value(row), encoded.row(row).owned(), index), count));
+                    accumulators.push(accumulator);
+                    column += 1;
+                    continue;
+                }
+                let width = aggregate.state_fields().len();
                 accumulator.merge_batch(
                     &(column..column + width)
                         .map(|index| batch.column(index).slice(row, 1))
@@ -314,20 +343,11 @@ impl SessionAggregator {
             store.write(&[], &entries, &batch.columns()[2 + arity..])?;
             return Ok(());
         }
+        self.canonical_distinct_counts.extend(expected_counts);
         for (key, start, session) in restored {
             self.sessions.entry(key).or_default().insert(start, session);
         }
-        if self.memory.tracking() {
-            let bytes = self
-                .sessions
-                .iter()
-                .map(|(key, sessions)| {
-                    owned_row_bytes(key) + sessions.values().map(session_bytes).sum::<usize>()
-                })
-                .sum();
-            self.memory.set(bytes);
-            self.memory.account()?;
-        }
+        self.account_canonical_state()?;
         Ok(())
     }
 }
