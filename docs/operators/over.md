@@ -1207,3 +1207,28 @@ than its retained lifetime membership. A failed finalization leaves execution bl
 the missing memberships can finish the same restore without changing its raw accumulators.
 Controlled native checks cover both stores and distinguish this invalid state from a valid
 smaller post-expiry scalar count.
+
+
+### Native bounded-frame input retention
+
+The native bridge can bind original-input retention before a bounded ROWS or event-time RANGE
+operator consumes rows. Retained frames then preserve every original column, including unused
+columns, NULLs, INSERT RowKind and Arrow schema metadata, alongside frame order and the sampled
+processing clock. A COUNT-only ROWS frame retains all `n + 1` current rows when bound, even though
+its ordinary execution path can discard one earlier. This is preparation for stock bounded-state
+projection; it does not enable bounded stock canonical restore in the portable planner.
+
+Memory frames own their input buffers, including nested dictionary values and validity. Typed
+RocksDB stores original rows beside its existing aggregate-argument frame table. Original rows
+evict and expire with their frame entries, and key-group clipping redistributes both tables.
+A nonempty older frame without original rows cannot acquire the binding: missing columns cannot
+be reconstructed from aggregate arguments. Ordinary native checkpoints retain captured rows;
+processing-time restore preserves the arrival-counter high-water mark.
+
+Direct frame export visits live retained rows in per-key order and appends frame time, sampled
+clock and position. Metadata column names avoid collisions with original columns. Export leaves
+live state intact, supports retry after receiver failure, and does not create a native snapshot
+as an intermediate. Native checkpoint encoding remains separate from this stock-export path.
+The complete stock bounded accumulator, buffer, counter and timer contract, legacy versions and
+upstream OVER UDF execution remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.

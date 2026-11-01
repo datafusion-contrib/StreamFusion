@@ -366,3 +366,29 @@ mutations, and checks complete emitted identities across snapshots. Released raw
 RocksDB recovery, mini-batch and shuffle tests qualify the final implementation. Flink 1.18
 receives an explicit compatibility gate: native substitution must not bypass its non-time
 OVER factory rejection. Performance evidence and remaining gates live on the OVER page.
+
+
+## Original bounded inputs for canonical interchange
+
+Flink's bounded OVER `inputState` retains complete input rows, while our ordinary frame buffers
+retain aggregate arguments. The latter cannot reconstruct unused original columns. For #569, an
+explicit canonical binding therefore retains owned original input rows alongside the existing
+frame representation. It leaves the aggregation algorithm intact and does not replace the operator
+with Arroyo's window execution plan. Captured ROWS frames retain all `n + 1` current rows, including
+COUNT-only frames whose unbound representation can discard one earlier. The sampled processing
+clock is distinct from the native arrival-sequence ordering key.
+
+Typed RocksDB keeps the payload in a parallel table at the same key group and frame position.
+Its table identifier overlaps the first unbounded DISTINCT table only because bounded and
+unbounded shapes never share a store. A persisted marker distinguishes captured frames from
+older frames without original rows. The input table follows exact eviction, per-key cleanup and
+rescale clipping. Memory and RocksDB native checkpoints preserve these rows; stock canonical
+export visits live retained inputs directly and never writes a native snapshot as an intermediate.
+The shared Arrow ownership helper follows the existing partial-window buffer pattern and owns
+dictionary children/validity as well as the gathered row buffers, so JNI release callbacks do not
+survive across calls.
+
+This is state-information preservation, not stock bounded-contract admission. Full stock
+accumulator/buffer/timer translation, planner binding and cross-engine qualification remain under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Performance work is deferred
+by the maintainer's functionality-first instruction.

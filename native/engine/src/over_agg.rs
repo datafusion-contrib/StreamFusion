@@ -3,6 +3,9 @@ use crate::*;
 mod canonical;
 mod cleanup;
 mod distinct_ttl;
+mod frame_inputs;
+pub(crate) use frame_inputs::FrameInput;
+use frame_inputs::FRAME_INPUT_COLUMN;
 mod pending;
 
 mod range_order;
@@ -822,6 +825,7 @@ pub(crate) struct BufferedRow {
 
 #[derive(Clone, Default)]
 struct BufferedExtra {
+    input: Option<FrameInput>,
     texts: Option<Box<[Option<Arc<str>>]>>,
     caches: Option<Box<[Option<Arc<[u16]>>]>>,
     string_views: Option<Box<[StringView]>>,
@@ -838,7 +842,11 @@ impl BufferedRow {
             self.extra.get_or_insert_with(Default::default).fold_state = Some(state);
         } else if let Some(extra) = &mut self.extra {
             extra.fold_state = None;
-            if extra.texts.is_none() && extra.string_views.is_none() && extra.caches.is_none() {
+            if extra.texts.is_none()
+                && extra.string_views.is_none()
+                && extra.caches.is_none()
+                && extra.input.is_none()
+            {
                 self.extra = None;
             }
         }
@@ -881,6 +889,9 @@ impl BufferedRow {
 
     fn text_bytes(&self) -> usize {
         self.views_bytes()
+            + self.input().map_or(0, |input| {
+                input.bytes() + std::mem::size_of::<BufferedExtra>()
+            })
             + self.cache_bytes()
             + self
                 .extra
@@ -923,6 +934,7 @@ impl BufferedRow {
                 && extra.caches.is_none()
                 && extra.string_views.is_none()
                 && extra.fold_state.is_none()
+                && extra.input.is_none()
         }) {
             self.extra = None;
         }
@@ -934,6 +946,16 @@ impl BufferedRow {
         } else if let Some(extra) = &mut self.extra {
             extra.string_views = None;
             self.prune_extra();
+        }
+    }
+
+    fn input(&self) -> Option<&FrameInput> {
+        self.extra.as_ref()?.input.as_ref()
+    }
+
+    fn set_input(&mut self, input: Option<FrameInput>) {
+        if let Some(input) = input {
+            self.extra.get_or_insert_with(Default::default).input = Some(input);
         }
     }
 
@@ -1023,6 +1045,7 @@ impl BufferedRow {
             values,
             extra: (texts.is_some() || fold.is_some()).then(|| {
                 Box::new(BufferedExtra {
+                    input: None,
                     texts,
                     caches: None,
                     string_views: None,
@@ -1043,6 +1066,7 @@ impl BufferedRow {
 /// and floating SUM0 retain their raw fold beside the last frame row so retractions preserve
 /// overflow and rounding history; other aggregates continue to recompute. See divergences/11 for the RANGE backend-order gap.
 pub(crate) struct BoundedOverAggregator {
+    capture_inputs: bool,
     kinds: Vec<i64>,
     /// One value type per aggregate (aggregates may read different value columns of different types).
     value_types: Vec<DataType>,
@@ -1087,6 +1111,7 @@ impl BoundedOverAggregator {
             .collect::<Vec<_>>();
         fold_types.extend(string_view_slots.iter().map(|_| DataType::Binary));
         BoundedOverAggregator {
+            capture_inputs: false,
             value_types,
             range_order: (!rows_frame
                 && (!arithmetic_slots.is_empty() || !string_view_slots.is_empty()))
@@ -1284,6 +1309,7 @@ impl BoundedOverAggregator {
                     .any(|column| matches!(column, OverValueColumn::Text(..)))
                     .then(|| {
                         Box::new(BufferedExtra {
+                            input: None,
                             texts: Some(
                                 value_columns
                                     .iter()
@@ -1306,6 +1332,12 @@ impl BoundedOverAggregator {
                         })
                     }),
             });
+            if self.capture_inputs {
+                buffer
+                    .last_mut()
+                    .unwrap()
+                    .set_input(FrameInput::from_projected(batch, row));
+            }
             buffer_index[row] = buffer.len() - 1;
             if track {
                 self.bytes += row_bytes + buffer.last().expect("appended frame row").text_bytes();
@@ -1577,7 +1609,7 @@ impl BoundedOverAggregator {
         let mut freed = 0usize;
         self.keys.retain(|key, buffer| {
             let dropped = if rows_frame {
-                let keep = if incremental {
+                let keep = if incremental || self.capture_inputs {
                     (offset as usize).saturating_add(1)
                 } else {
                     (offset as usize).max(1)
@@ -1629,8 +1661,12 @@ impl BoundedOverAggregator {
         let mut value_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
         let mut fold_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); self.fold_types.len()];
         let mut stamps: Vec<i64> = Vec::new();
+        let mut inputs: Vec<Option<Vec<u8>>> = Vec::new();
         for (key, buffer) in self.keys.iter() {
             for row in buffer {
+                if self.capture_inputs {
+                    inputs.push(row.input().map(FrameInput::encode));
+                }
                 keys.push(&key.0);
                 rts.push(ScalarValue::Int64(Some(row.rt)));
                 for a in 0..num_agg {
@@ -1669,6 +1705,12 @@ impl BoundedOverAggregator {
             ));
             columns.push(scalars_to_array(scalars, &self.fold_types[column]));
         }
+        if self.capture_inputs {
+            fields.push(Field::new(FRAME_INPUT_COLUMN, DataType::Binary, true));
+            columns.push(Arc::new(BinaryArray::from_iter(
+                inputs.iter().map(|value| value.as_deref()),
+            )));
+        }
         if let Some((name, _)) = retention {
             fields.push(Field::new(name, DataType::Int64, false));
             columns.push(Arc::new(Int64Array::from(stamps)));
@@ -1691,6 +1733,13 @@ impl BoundedOverAggregator {
         let num_agg = aggregator.kinds.len();
         for batch in read_ipc(bytes) {
             let retention = retention_stamps(&batch);
+            let inputs = batch.column_by_name(FRAME_INPUT_COLUMN).map(|column| {
+                column
+                    .as_any()
+                    .downcast_ref::<BinaryArray>()
+                    .expect("OVER original frame input")
+            });
+            aggregator.capture_inputs |= inputs.is_some();
             let fold_count = batch
                 .schema()
                 .fields()
@@ -1714,8 +1763,12 @@ impl BoundedOverAggregator {
                 mapping
             };
             // Trailing rt + one value column per agg (+ the optional retention stamp).
-            let arity =
-                batch.num_columns() - 1 - num_agg - fold_count - retention.is_some() as usize;
+            let arity = batch.num_columns()
+                - 1
+                - num_agg
+                - fold_count
+                - retention.is_some() as usize
+                - inputs.is_some() as usize;
             let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
             aggregator.key_types = key_types(&key_arrays);
             let keys_encoded =
@@ -1766,6 +1819,12 @@ impl BoundedOverAggregator {
                     &aggregator.kinds,
                     fold,
                 ));
+                if let Some(inputs) = inputs {
+                    assert!(inputs.is_valid(row), "missing original OVER frame input");
+                    buffer.last_mut().unwrap().set_input(Some(
+                        FrameInput::decode(inputs.value(row)).expect("restore OVER frame input"),
+                    ));
+                }
                 buffer.last_mut().unwrap().restore_string_views(
                     aggregator.arithmetic_width,
                     &aggregator
@@ -1776,6 +1835,15 @@ impl BoundedOverAggregator {
                 );
             }
         }
+        assert!(
+            !aggregator.capture_inputs
+                || aggregator
+                    .keys
+                    .values()
+                    .flatten()
+                    .all(|row| row.input().is_some()),
+            "mixed legacy and retained OVER frame inputs"
+        );
         if let Some(maps) = &mut aggregator.range_order {
             for (key, rows) in &aggregator.keys {
                 let mut times: Vec<i64> = rows.iter().map(|row| row.rt).collect();
@@ -2251,7 +2319,9 @@ impl OverInner {
             OverInner::Aggregates(inner) => {
                 inner.state_types().len() + inner.kinds.iter().filter(|&&kind| kind >= 100).count()
             }
-            OverInner::Bounded(inner) => 1 + inner.kinds.len() + inner.fold_types.len(),
+            OverInner::Bounded(inner) => {
+                1 + inner.kinds.len() + inner.fold_types.len() + inner.capture_inputs as usize
+            }
             OverInner::WindowFunctions(inner) => inner
                 .kinds
                 .iter()
@@ -2510,6 +2580,7 @@ pub(crate) struct OverWindowAggregator {
     key_timestamp_precisions: Vec<i32>,
     canonical_distinct: ahash::HashSet<usize>,
     canonical_distinct_loading: bool,
+    frame_clock: i64,
 }
 
 impl OverWindowAggregator {
@@ -2560,6 +2631,7 @@ impl OverWindowAggregator {
             key_timestamp_precisions: vec![-1; key_arity],
             canonical_distinct: ahash::HashSet::default(),
             canonical_distinct_loading: false,
+            frame_clock: i64::MIN,
         }
     }
 
@@ -2827,6 +2899,9 @@ impl OverWindowAggregator {
         self.key_converter = Some(key_row_converter_from_types(&key_types));
         self.inner.seed_key_codec(&key_types);
         if let OverInner::Bounded(inner) = &mut self.inner {
+            inner.capture_inputs |= store
+                .frame_inputs_enabled()
+                .expect("OVER frame input marker");
             let (fold_types, fold_mapping) = inner.legacy_fold_layout();
             let count = inner.kinds.len();
             let mut legacy_types = inner.value_types.clone();
@@ -3121,24 +3196,63 @@ impl OverWindowAggregator {
     }
 
     /// One restored bounded-frame batch (`[key0.., rt, value0.., stamp?]`, one row per buffered
-    /// row) into the frames table under fresh sequences in blob order, with one stamp row per key.
+    /// row) into the frames table. Proctime preserves its ordering counter; event-time peers
+    /// receive fresh tie sequences in blob order. Each key also retains its cleanup stamp.
     #[cfg(feature = "rocksdb-state")]
     fn import_frame_batch(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         let stamps = retention_stamps(batch);
+        let inputs = batch
+            .column_by_name(FRAME_INPUT_COLUMN)
+            .map(|column| {
+                column
+                    .as_any()
+                    .downcast_ref::<BinaryArray>()
+                    .ok_or_else(|| {
+                        DataFusionError::Execution("OVER frame inputs must be binary".into())
+                    })
+            })
+            .transpose()?;
+        let original = inputs
+            .map(|inputs| {
+                (0..batch.num_rows())
+                    .map(|row| {
+                        if inputs.is_null(row) {
+                            return Err(DataFusionError::Execution(
+                                "missing original OVER frame input".into(),
+                            ));
+                        }
+                        FrameInput::decode(inputs.value(row))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
         let value_count = match &self.inner {
             OverInner::Bounded(inner) => inner.kinds.len() + inner.fold_types.len(),
             _ => unreachable!("bounded frame import"),
         };
-        let arity = batch.num_columns() - 1 - value_count - stamps.is_some() as usize;
+        let arity = batch.num_columns()
+            - 1
+            - value_count
+            - stamps.is_some() as usize
+            - inputs.is_some() as usize;
         let key_columns: Vec<usize> = (0..arity).collect();
         let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
         let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
         let rt = column_i64(batch, "rt");
-        let seq_start = self
-            .store
-            .as_mut()
-            .expect("over rocksdb store")
-            .allocate_seqs(batch.num_rows());
+        let store = self.store.as_mut().expect("over rocksdb store");
+        let seq_start = if self.proctime {
+            if rt.iter().any(|time| time.is_none_or(|time| time < 0)) {
+                return Err(DataFusionError::Execution(
+                    "invalid proctime OVER arrival sequence".into(),
+                ));
+            }
+            if let Some(maximum) = rt.values().iter().max() {
+                store.adopt_next_seq(*maximum as u64 + 1);
+            }
+            0
+        } else {
+            store.allocate_seqs(batch.num_rows())
+        };
         let store = self.store.as_ref().expect("over rocksdb store");
         let mut writes: Vec<(Vec<u8>, i64, u64)> = Vec::with_capacity(batch.num_rows());
         let mut stamp_entries: Vec<(Vec<u8>, Option<i64>)> = Vec::new();
@@ -3154,7 +3268,11 @@ impl OverWindowAggregator {
             writes.push((
                 store.frame_prefix(key_group, key),
                 rt.value(row),
-                seq_start + row as u64,
+                if self.proctime {
+                    rt.value(row) as u64
+                } else {
+                    seq_start + row as u64
+                },
             ));
             if let Some(stamps) = stamps {
                 if stamped.insert(ByteKey::from(key)) {
@@ -3166,6 +3284,13 @@ impl OverWindowAggregator {
             .map(|column| batch.column(column).clone())
             .collect();
         let store = self.store.as_mut().expect("over rocksdb store");
+        if let Some(original) = &original {
+            store.enable_frame_inputs()?;
+            store.write_frame_inputs(&writes, original)?;
+            if let OverInner::Bounded(inner) = &mut self.inner {
+                inner.capture_inputs = true;
+            }
+        }
         store.write_frames(&writes, &value_columns)?;
         store.write_stamps(&stamp_entries)
     }
@@ -3201,6 +3326,8 @@ impl OverWindowAggregator {
         if matches!(self.inner, OverInner::Bounded(_)) {
             self.store_range_deletes
                 .push(store.frame_prefix(key_group, key));
+            self.store_range_deletes
+                .push(store.frame_input_prefix(key_group, key));
             self.store_tombstones.push(store.stamp_key(key_group, key));
         } else {
             self.store_tombstones.push(store.fold_key(key_group, key));
@@ -3856,6 +3983,7 @@ impl OverWindowAggregator {
                             (index + 1 == row_count && !inner.fold_types.is_empty())
                                 .then(|| row.values[inner.kinds.len()..].to_vec()),
                         );
+                        frame.set_input(row.input);
                         frame.restore_string_views(
                             inner.arithmetic_width,
                             &inner
@@ -3967,6 +4095,15 @@ impl OverWindowAggregator {
             value_columns.push(scalars_to_array(scalars, ty));
         }
         let store = self.store.as_mut().expect("over rocksdb store");
+        if inner.capture_inputs {
+            let original = write_rows
+                .iter()
+                .map(|&row| {
+                    FrameInput::from_projected(&projected, row).expect("bound OVER frame input")
+                })
+                .collect::<Vec<_>>();
+            store.write_frame_inputs(&writes, &original)?;
+        }
         store.write_frames(&writes, &value_columns)?;
         store.delete_frames(&deletes)?;
         Ok((aggregates, touched_out))
@@ -4094,6 +4231,7 @@ impl OverWindowAggregator {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         self.ensure_canonical_distinct_ready()?;
+        self.frame_clock = now_ms;
         #[cfg(feature = "rocksdb-state")]
         let batch = if self.store.is_some() {
             Self::normalize_interval_columns(&batch)
@@ -4222,7 +4360,7 @@ impl OverWindowAggregator {
     fn keyed_subbatch(&self, source: &RecordBatch, rt: ArrayRef) -> RecordBatch {
         let complete = source;
         let mut fields = vec![Field::new("rt", DataType::Int64, false)];
-        let mut columns: Vec<ArrayRef> = vec![rt];
+        let mut columns: Vec<ArrayRef> = vec![rt.clone()];
         for (a, &value_column) in self.value_columns.iter().enumerate() {
             fields.push(Field::new(
                 format!("value{a}"),
@@ -4239,6 +4377,7 @@ impl OverWindowAggregator {
             ));
             columns.push(complete.column(key).clone());
         }
+        self.project_frame_input(source, &mut fields, &mut columns, &rt);
         for (a, &value_column) in self.value_columns.iter().enumerate() {
             if let Some(cache) = string_cache_column(complete, value_column) {
                 fields.push(string_cache_field(a + 1, cache.data_type().clone()));
@@ -4512,6 +4651,7 @@ impl OverWindowAggregator {
                             (index + 1 == row_count && !inner.fold_types.is_empty())
                                 .then(|| row.values[inner.kinds.len()..].to_vec()),
                         );
+                        frame.set_input(row.input);
                         frame.restore_string_views(
                             inner.arithmetic_width,
                             &inner
@@ -4821,6 +4961,7 @@ impl OverWindowAggregator {
             key_timestamp_precisions: vec![-1; key_arity],
             canonical_distinct: ahash::HashSet::default(),
             canonical_distinct_loading: false,
+            frame_clock: i64::MIN,
         }
         .with_state_retention(min_retention_ms);
         let buffer = &bytes[12 + accumulators_len..];

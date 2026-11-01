@@ -2,6 +2,7 @@ use super::{
     checkpoint_files, copy_checkpoint_db, multi_get_pinned, open_shared_db, prefix_successor, re,
     FlinkWriteBatch, OpenedDb, PAIR_FIRST_TABLE, PAIR_SECOND_TABLE,
 };
+use crate::over_agg::FrameInput;
 use crate::*;
 use arrow::array::Int8Array;
 use arrow::row::{RowConverter, SortField};
@@ -10,6 +11,8 @@ use std::sync::Arc;
 
 #[cfg(test)]
 mod distinct_tests;
+#[cfg(test)]
+mod frame_inputs_tests;
 #[cfg(test)]
 mod pending_tests;
 
@@ -39,6 +42,8 @@ const PENDING_TABLE: u8 = PAIR_SECOND_TABLE;
 const FRAMES_TABLE: u8 = 2;
 const STAMPS_TABLE: u8 = 3;
 const DISTINCT_TABLE_BASE: u8 = 4;
+// Bounded frames and unbounded DISTINCT folds never share a store.
+const FRAME_INPUTS_TABLE: u8 = 4;
 const KEY_GROUP_LEN: usize = 4;
 const KEY_PREFIX_LEN: usize = 5;
 const PENDING_KEY_LEN: usize = 13;
@@ -52,6 +57,7 @@ const FRAME_FOLD_VERSION: &[u8] = b"SFOV\x01";
 /// checkpoint under reserved keys whose leading bytes can never be a subtask's key group.
 const WATERMARK_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-over-agg-watermark";
 const SEQ_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-over-agg-seq";
+const FRAME_INPUTS_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-over-frame-inputs";
 
 /// One persisted fold read back from the store: the partition key's arrow-row bytes (the
 /// aggregator's own key encoding), the retention stamp, and the running state scalars in
@@ -69,6 +75,7 @@ pub(crate) struct StoredFrameRow {
     pub(crate) rt: i64,
     pub(crate) seq: u64,
     pub(crate) values: Vec<ScalarValue>,
+    pub(crate) input: Option<FrameInput>,
 }
 
 /// Persistent backend for the OVER aggregate, every admitted shape. Rowtime: input rows append to
@@ -133,6 +140,9 @@ impl RocksOverAggStore {
         ];
         for slot in 0..distinct_element_types.len() {
             tables.push((Some(DISTINCT_TABLE_BASE + slot as u8), 0));
+        }
+        if !frame_value_types.is_empty() {
+            tables.push((Some(FRAME_INPUTS_TABLE), 0));
         }
         let opened = open_shared_db(&config, &tables)?;
         Self::attach(
@@ -213,6 +223,8 @@ impl RocksOverAggStore {
                             .next_seq
                             .max(u64::from_be_bytes(value[..8].try_into().unwrap()));
                     }
+                } else if key.as_ref() == FRAME_INPUTS_KEY {
+                    writes.put(key, value)?;
                 } else if key.len() >= KEY_GROUP_LEN {
                     let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
                     if store.key_groups.contains(&kg) {
@@ -460,6 +472,8 @@ impl RocksOverAggStore {
         let mut owners: Vec<usize> = Vec::new();
         let mut positions: Vec<(i64, u64)> = Vec::new();
         let mut values: Vec<Box<[u8]>> = Vec::new();
+        let mut inputs = Vec::new();
+        let capture_inputs = self.frame_inputs_enabled()?;
         for (owner, prefix) in prefixes.iter().enumerate() {
             for row in self
                 .db
@@ -475,14 +489,22 @@ impl RocksOverAggStore {
                 let seq = u64::from_be_bytes(suffix[8..].try_into().expect("frame seq"));
                 owners.push(owner);
                 positions.push((rt, seq));
+                inputs.push(self.read_frame_input(&db_key, capture_inputs)?);
                 values.push(value.into());
             }
         }
         let value_refs: Vec<&[u8]> = values.iter().map(|value| value.as_ref()).collect();
         let decoded = self.decode_frames(&value_refs)?;
         let mut out: Vec<Vec<StoredFrameRow>> = (0..prefixes.len()).map(|_| Vec::new()).collect();
-        for ((owner, (rt, seq)), values) in owners.into_iter().zip(positions).zip(decoded) {
-            out[owner].push(StoredFrameRow { rt, seq, values });
+        for (((owner, (rt, seq)), values), input) in
+            owners.into_iter().zip(positions).zip(decoded).zip(inputs)
+        {
+            out[owner].push(StoredFrameRow {
+                rt,
+                seq,
+                values,
+                input,
+            });
         }
         Ok(out)
     }
@@ -556,7 +578,9 @@ impl RocksOverAggStore {
     ) -> Result<(), DataFusionError> {
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (prefix, rt, seq) in entries {
-            writes.delete(Self::frame_db_key(prefix, *rt, *seq))?;
+            let key = Self::frame_db_key(prefix, *rt, *seq);
+            writes.delete(&key)?;
+            writes.delete(Self::frame_input_key(&key))?;
         }
         writes.finish()
     }
@@ -569,6 +593,8 @@ impl RocksOverAggStore {
         let mut keys: Vec<Box<[u8]>> = Vec::new();
         let mut positions: Vec<(i64, u64)> = Vec::new();
         let mut values: Vec<Box<[u8]>> = Vec::new();
+        let mut inputs = Vec::new();
+        let capture_inputs = self.frame_inputs_enabled()?;
         for row in self.db.iterator(IteratorMode::Start) {
             let (db_key, value) = row.map_err(re)?;
             if db_key.len() < KEY_PREFIX_LEN + FRAME_SUFFIX_LEN || db_key[4] != FRAMES_TABLE {
@@ -581,18 +607,123 @@ impl RocksOverAggStore {
                     as i64,
                 u64::from_be_bytes(suffix[8..].try_into().expect("frame seq")),
             ));
+            inputs.push(self.read_frame_input(&db_key, capture_inputs)?);
             values.push(value.into());
         }
         let value_refs: Vec<&[u8]> = values.iter().map(|value| value.as_ref()).collect();
         let decoded = self.decode_frames(&value_refs)?;
         let mut out: Vec<(Box<[u8]>, Vec<StoredFrameRow>)> = Vec::new();
-        for ((key, (rt, seq)), values) in keys.into_iter().zip(positions).zip(decoded) {
+        for (((key, (rt, seq)), values), input) in
+            keys.into_iter().zip(positions).zip(decoded).zip(inputs)
+        {
+            let row = StoredFrameRow {
+                rt,
+                seq,
+                values,
+                input,
+            };
             match out.last_mut() {
-                Some((last, rows)) if *last == key => rows.push(StoredFrameRow { rt, seq, values }),
-                _ => out.push((key, vec![StoredFrameRow { rt, seq, values }])),
+                Some((last, rows)) if *last == key => rows.push(row),
+                _ => out.push((key, vec![row])),
             }
         }
         Ok(out)
+    }
+
+    pub(crate) fn frame_inputs_enabled(&self) -> Result<bool, DataFusionError> {
+        match self.db.get(FRAME_INPUTS_KEY).map_err(re)?.as_deref() {
+            None => Ok(false),
+            Some([1]) => Ok(true),
+            _ => Err(DataFusionError::Execution(
+                "invalid OVER frame input marker".into(),
+            )),
+        }
+    }
+
+    pub(crate) fn enable_frame_inputs(&mut self) -> Result<(), DataFusionError> {
+        self.db.put(FRAME_INPUTS_KEY, [1]).map_err(re)
+    }
+
+    fn frame_input_key(frame_key: &[u8]) -> Vec<u8> {
+        let mut key = frame_key.to_vec();
+        key[4] = FRAME_INPUTS_TABLE;
+        key
+    }
+
+    pub(crate) fn frame_input_prefix(&self, key_group: i32, key: &[u8]) -> Vec<u8> {
+        Self::frame_input_key(&self.frame_prefix(key_group, key))
+    }
+
+    fn read_frame_input(
+        &self,
+        frame_key: &[u8],
+        enabled: bool,
+    ) -> Result<Option<FrameInput>, DataFusionError> {
+        if !enabled {
+            return Ok(None);
+        }
+        let bytes = self
+            .db
+            .get(Self::frame_input_key(frame_key))
+            .map_err(re)?
+            .ok_or_else(|| {
+                DataFusionError::Execution("missing original OVER frame input".into())
+            })?;
+        FrameInput::decode(&bytes).map(Some)
+    }
+
+    pub(crate) fn write_frame_inputs(
+        &mut self,
+        entries: &[(Vec<u8>, i64, u64)],
+        inputs: &[FrameInput],
+    ) -> Result<(), DataFusionError> {
+        if entries.len() != inputs.len() {
+            return Err(DataFusionError::Execution(
+                "OVER frame input length mismatch".into(),
+            ));
+        }
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        for ((prefix, rt, seq), input) in entries.iter().zip(inputs) {
+            writes.put(
+                Self::frame_input_key(&Self::frame_db_key(prefix, *rt, *seq)),
+                input.encode(),
+            )?;
+        }
+        writes.finish()
+    }
+
+    pub(crate) fn visit_frame_inputs(
+        &self,
+        mut accept: impl FnMut(FrameInput, i64, usize) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if !self.frame_inputs_enabled()? {
+            return Err(DataFusionError::Execution(
+                "OVER frame inputs are not enabled".into(),
+            ));
+        }
+        let mut previous = Vec::new();
+        let mut position = 0;
+        for row in self.db.iterator(IteratorMode::Start) {
+            let (key, _) = row.map_err(re)?;
+            if key.len() < KEY_PREFIX_LEN + FRAME_SUFFIX_LEN || key[4] != FRAMES_TABLE {
+                continue;
+            }
+            let prefix = &key[..key.len() - FRAME_SUFFIX_LEN];
+            if previous != prefix {
+                previous = prefix.to_vec();
+                position = 0;
+            }
+            let suffix = &key[key.len() - FRAME_SUFFIX_LEN..];
+            let rt = (u64::from_be_bytes(suffix[..8].try_into().unwrap()) ^ RT_SIGN_FLIP) as i64;
+            accept(
+                self.read_frame_input(&key, true)?
+                    .expect("enabled frame inputs"),
+                rt,
+                position,
+            )?;
+            position += 1;
+        }
+        Ok(())
     }
 
     /// The `[key_group][STAMPS][key]` row carrying a bounded-shape key's cleanup deadline.

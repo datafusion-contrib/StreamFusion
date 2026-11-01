@@ -270,3 +270,14 @@ invalid input and receiver failure, unchanged retained rows on rejection, and co
 tie order after a failed export. These primitives leave ordinary checkpoint formats unchanged;
 stock state-schema and planner qualification remain separate parts of
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+
+The bounded OVER native bridge optionally retains complete original frame inputs before processing.
+Memory owns the captured Arrow buffers; typed RocksDB stores a parallel, key-group-prefixed input
+table with the same frame positions and an explicit retention marker. Eviction and key cleanup
+remove both rows, and native checkpoint restore/rescaling retain the marker and owned payloads.
+Native key-group snapshots carry optional frame input payloads; older snapshots remain readable
+for ordinary execution but cannot invent missing original rows. Direct canonical frame export
+reads live inputs without producing a native snapshot first. This foundation does not yet admit
+stock bounded OVER canonical interchange: its complete stock state and timer projection remains
+part of [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

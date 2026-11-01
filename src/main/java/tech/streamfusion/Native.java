@@ -41,6 +41,11 @@ public final class Native {
 
   public static native void finishOverCanonicalDistinct(long handle);
 
+  /** Preserve original bounded OVER frame rows before consuming input. */
+  public static native void bindOverCanonicalFrameInputs(long handle);
+
+  public static native void exportOverCanonicalFrameInputs(long handle, BatchReceiver receiver);
+
   /** Rowtime unbounded OVER input buffers and processing-time cleanup deadlines. */
   public static native void exportOverPendingCanonical(long handle, BatchReceiver receiver);
 

@@ -55,6 +55,8 @@ mod memory;
 mod mini_batch;
 mod normalizer;
 mod over_agg;
+mod owned;
+pub(crate) use owned::own_array_data;
 mod rowtime;
 mod session_agg;
 mod sink_materializer;
