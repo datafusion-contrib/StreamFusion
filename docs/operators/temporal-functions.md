@@ -17,9 +17,9 @@ unsupported `MATCH_RECOGNIZE` operator.
 | `DATE_FORMAT`, `UNIX_TIMESTAMP(text[, format])`, `CONVERT_TZ` | Flink evaluation supports dynamic patterns and zones. The existing literal numeric-pattern DATE_FORMAT fast path for plain timestamps remains in Rust. |
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
-| `TIMESTAMPADD`, `TIMESTAMPDIFF` | Flink calendar and elapsed-time arithmetic, including its month-end and precision rules. |
+| `TIMESTAMPADD`, `TIMESTAMPDIFF` | Planner rewrites can use native interval arithmetic and comparisons. Verified runtime MONTH/DAY addition, MONTH difference and LTZ SECOND difference have no generated children; other rewrites retain their existing expression admission. Month-end and precision rules follow Flink. |
 | `FLOOR(timepoint TO unit)`, `CEIL`, `CEILING` | DATE/plain-TIMESTAMP MONTH/YEAR and plain TIMESTAMP DAY/HOUR/MINUTE/SECOND/MILLISECOND use Rust kernels. Other units/types retain Flink. Numeric FLOOR/CEIL admission is unchanged. |
-| Temporal `CAST`, date/time/timestamp/interval literals, interval arithmetic, temporal comparisons, `OVERLAPS` | Timestamp +/- day-time/year-month intervals, DATE +/- month intervals and verified day literals, and TIME +/- day-time intervals execute in Rust. Timestamp results preserve nanoseconds. Matching temporal GREATEST/LEAST operands use native null-propagating comparisons. Other casts, comparisons, OVERLAPS and interval computations retain generated subexpressions. |
+| Temporal `CAST`, date/time/timestamp/interval literals, interval arithmetic, temporal comparisons, `OVERLAPS` | Timestamp +/- day-time/year-month intervals, DATE +/- month intervals and verified day literals, and TIME +/- day-time intervals execute in Rust. Timestamp results preserve nanoseconds. Matching temporal GREATEST/LEAST operands use native null-propagating comparisons. OVERLAPS can rewrite to native comparisons, including the verified runtime plain-timestamp/day-time-interval form. Other casts, comparisons and interval computations retain their existing expression admission. |
 | `CURRENT_WATERMARK(time_attribute)` | Calc projections and predicates read the last watermark received by that operator; NULL before its first watermark. Join/UNNEST residuals without a Calc watermark context fall back. |
 | `SOURCE_WATERMARK()` | Source declaration, not a scalar calculation. Existing DataStream/source watermarks are forwarded into the native pipeline. Native connector scan admission is unchanged. |
 | `TUMBLE`, `HOP`, `CUMULATE`, `SESSION` | Native window implementations with released-Flink calendar conversion for regional LTZ zones and nonaligned fixed offsets; existing shape/changelog restrictions remain. See [window aggregate](window-aggregate.md) and [windowing TVF](window-aggregate.md#windowing-tvf-window-assignment). |
@@ -119,10 +119,21 @@ both row/Arrow transposes, are on the [scalar benchmark page](../benchmarks/scal
 ## Remaining native boundaries
 
 [Issue #504](https://github.com/datafusion-contrib/StreamFusion/issues/504) still tracks
-TIMESTAMPADD/TIMESTAMPDIFF rewrites with generated interval/scalar children, recurring-DST
-LTZ extraction and rounding, mixed temporal coercions and OVERLAPS. A native outer arithmetic
-kernel does not establish that a generated child also ran in Rust. Native execution tests
-inspect complete expression assignments, including rowtime-materialization children.
+LTZ rounding and recurring-DST LTZ extraction. Runtime FLOOR(LTZ TO DAY) and CEIL(LTZ TO MONTH)
+retain generated evaluation even in UTC, Asia/Shanghai and GMT+05:30. America/New_York extraction
+also retains it because the zone has recurring future DST transitions.
+
+The [expanded route audit](../benchmarks/results/calendar-residual-routes-2026-11-02.json)
+compares 128 independent queries, each with 5,003 runtime rows, across Flink 1.18.1/2.2.1,
+JDK 11/17 and those four zones. Direct runtime TIMESTAMPADD(MONTH/DAY),
+TIMESTAMPDIFF(MONTH), TIMESTAMPDIFF(SECOND over LTZ) and the inspected plain-timestamp
+OVERLAPS form are already native, with complete parity, consumed Calc work, no fallback
+and empty evaluators. The two TIMESTAMPDIFF arguments come from distinct runtime columns
+so the difference cannot fold to zero. These forms are not remaining blanket gaps.
+
+Other units, mixed temporal coercions, interval extraction and rowtime wrappers require their
+own expression-route checks. A native outer arithmetic kernel does not establish that a
+generated child also ran in Rust, and this audit does not qualify every possible rewrite.
 
 Matching logical timestamp extrema accept both compact millisecond arrays and full
 millisecond/nanosecond component arrays, including mixtures produced by collection expressions.

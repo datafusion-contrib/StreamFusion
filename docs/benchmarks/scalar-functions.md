@@ -6867,3 +6867,14 @@ paths. Final source hashes and focused results accompany the measurement record.
 admission-only restriction preserves matching-type CASE; measured mixed-signature lowering
 is unchanged. Further producers, compact mixed normalization and rounding remain in
 [#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## Mixed selection latest-main regression
+
+The six GREATEST, LEAST, IF and DATE HOUR/MINUTE/SECOND commits rebase onto canonical
+main `be842d2d` with six equal patches in `git range-diff`. Historical measurements keep
+their original source hashes, encoders, DSOs and pre-rebase baseline IDs; they are not
+relabeled as new timings. The [regression record](results/mixed-selection-main-regression-2026-11-02.json)
+maps those commits into the rebased history and records **768 fresh passing JVM invocations**
+(192 per released Flink 1.18.1/2.2.1 and JDK 11/17 pair), compiled for Java release 11.
+They cover complete mixed-selection/DATE result maps and native consumption, shared state,
+DECIMAL defaults, calendar/timestamp controls and current nested bridge admission/fallback.

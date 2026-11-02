@@ -1,0 +1,960 @@
+{
+  "validation": {
+    "22-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=1 succeeded=1 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "22-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=1 succeeded=1 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=1 succeeded=1 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=1 succeeded=1 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "source_sha256": "411743070f544a4f55f6f86002fb61a528e9f27ba42166cd92fc5aa324aa416c"
+  },
+  "rows_per_query": 5003,
+  "source": "CalendarResidualAuditTest",
+  "query_groups": [
+    {
+      "flink_line": "22",
+      "jdk": "11",
+      "cases": [
+        {
+          "zone": "UTC",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "UTC",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[EXTRACT], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        }
+      ]
+    },
+    {
+      "flink_line": "22",
+      "jdk": "17",
+      "cases": [
+        {
+          "zone": "UTC",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "UTC",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[EXTRACT], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        }
+      ]
+    },
+    {
+      "flink_line": "118",
+      "jdk": "11",
+      "cases": [
+        {
+          "zone": "UTC",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "UTC",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[EXTRACT], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        }
+      ]
+    },
+    {
+      "flink_line": "118",
+      "jdk": "17",
+      "cases": [
+        {
+          "zone": "UTC",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "UTC",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "UTC",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "Asia/Shanghai",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "GMT+05:30",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "plain-extraction",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[EXTRACT], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "ltz-extraction",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[EXTRACT], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "calendar-round-interval-extrema",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[FLOOR, CEIL, GREATEST, LEAST], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "timestampadd-runtime",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "timestampdiff-month",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "timestampdiff-ltz-second",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[CAST], jvm=[]]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "ltz-round",
+          "rows": 5003,
+          "retained_jvm": true,
+          "routes": "[NativeCalc functions: native=[], jvm=[FLOOR, CEIL], reason=host-exact or scalar-UDF implementation selected]"
+        },
+        {
+          "zone": "America/New_York",
+          "label": "overlaps",
+          "rows": 5003,
+          "retained_jvm": false,
+          "routes": "[NativeCalc functions: native=[], jvm=[]]"
+        }
+      ]
+    }
+  ],
+  "qualification_base": "b0eb507c6adde40b2e8ddc79f726daf843981ea7",
+  "source_sha256": {
+    "src/main/java/tech/streamfusion/planner/RexExpression.java": "7220c1980f822973eb914fedefd4a1f06849131ca7ddcedb5d5e983d03aa7282",
+    "native/engine/src/expr.rs": "d357a41f914f057d93c5badbf06814d8fc2d6db7fcccd20a9ce2e608e7fdca1d",
+    "native/engine/src/flink_functions/calendar.rs": "841b4bd6257a64143c7dadcdc0757762ac0a735f060b6cbd37decd9cf9bbf778"
+  },
+  "note": "Route/correctness evidence, not a performance measurement; unchanged query-relevant code is retained by the subsequent patch-equivalent rebase."
+}

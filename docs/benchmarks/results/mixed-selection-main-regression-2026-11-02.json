@@ -1,0 +1,65 @@
+{
+  "22-11": {
+    "exit": 0,
+    "result": [
+      "RESULT found=192 succeeded=192 aborted=0 skipped=0 failed=0"
+    ]
+  },
+  "22-17": {
+    "exit": 0,
+    "result": [
+      "RESULT found=192 succeeded=192 aborted=0 skipped=0 failed=0"
+    ]
+  },
+  "118-11": {
+    "exit": 0,
+    "result": [
+      "RESULT found=192 succeeded=192 aborted=0 skipped=0 failed=0"
+    ]
+  },
+  "118-17": {
+    "exit": 0,
+    "result": [
+      "RESULT found=192 succeeded=192 aborted=0 skipped=0 failed=0"
+    ]
+  },
+  "source_files_sha256": {
+    "src/main/java/tech/streamfusion/planner/RexExpression.java": "7220c1980f822973eb914fedefd4a1f06849131ca7ddcedb5d5e983d03aa7282",
+    "src/main/java/tech/streamfusion/planner/FlinkExpressionGenerator.java": "b977f6e1872cfd81f4807aa90d0551205888eaaa659fbdff149015d60d554692",
+    "src/main/java/tech/streamfusion/planner/JvmFunctionConversions.java": "a15474c083f74fb3fc13aabcd74d578643b8a8df2c564583f50c81b83b535603",
+    "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "563e6c62f31aee929658da2231a9a5e18c496ad1459e06829fff4db1a95264c7",
+    "src/test/java/tech/streamfusion/planner/MixedExactGreatestEncodingTest.java": "a930ec7ca8ddac50919e8613e9cc8b6148e635d848d79850f7acbd81cf10bdbc",
+    "src/test/java/tech/streamfusion/planner/MixedExactLeastEncodingTest.java": "7bfcfa55970a885e3e1008a6de840203bc50696a9cfcc9ddb0d520f8e6102ae2",
+    "src/test/java/tech/streamfusion/planner/MixedExactIfEncodingTest.java": "c369eebcef06447ea8dbfb5be89e44bc6a18ecce457de20841636557087c7372",
+    "src/test/java/tech/streamfusion/FlinkMixedExactGreatestSqlHarnessTest.java": "853830278054467d351328b5aa157aba358e9add27bf40a39dfb2989037158e4",
+    "src/test/java/tech/streamfusion/FlinkMixedExactLeastSqlHarnessTest.java": "7883516743d3d4162feffc8a4960d8cc525460a994a3834a43e2b265d4b1b418",
+    "src/test/java/tech/streamfusion/FlinkMixedExactIfSqlHarnessTest.java": "fd126f46b5c14faf2620e3a216ab981f5116124fc6c00b26bf9914c4137709c3",
+    "src/test/java/tech/streamfusion/FlinkDateClockExtractSqlHarnessTest.java": "3fc245854e61395d16c73b972a751428e22a023560dfc6941aa716bf614a8756",
+    "src/test/java/tech/streamfusion/FlinkNativeCalendarSqlHarnessTest.java": "0e61e45d643122eeabcb942738589749f6fae3f59ce8ebcd07c3e90a16ca7c75",
+    "src/test/java/tech/streamfusion/FlinkExtractSqlHarnessTest.java": "7614d16f6e7a80a90f6ba1871f49c37a1e1063e2850bed70fa1dd366614d9eb1",
+    "src/test/java/tech/streamfusion/FlinkTimestampExtractSqlHarnessTest.java": "a1d52c046cb20781ad54ef19c1d650701e3d6a7f338ce42d8cc5a116ddaa5731",
+    "src/test/java/tech/streamfusion/FlinkSharedStatefulScalarSqlHarnessTest.java": "3d37a7eb89815c2bef9042ded4698f2bf2d3f3436f8c78865aaff9cdcaefc8c6",
+    "src/test/java/tech/streamfusion/FlinkDecimalPrecisionProjectionSqlHarnessTest.java": "0e11dbd238dc0d9add9a4e713798ff0a9eb3732b4a242a3a8df5161899905994",
+    "src/test/java/tech/streamfusion/FlinkNestedBridgeTableFunctionSqlHarnessTest.java": "8ee6e316b342d98fe2698585d248a10e4268473028e05e8d81201a4850f051d2",
+    "src/test/java/tech/streamfusion/FlinkNestedBridgeGuardSqlHarnessTest.java": "355688cc66b5ae5486b26527cbd3dadb3b4e9233b9f85e5aa41bc30cd1f38e4f",
+    "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "156c1bec60abd6782c89c2a3defbdb32a52e9d5172d707f8fc9e5581451c7ab2",
+    "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "77fb8bcf7e20243c047fc35704cad3fa5792416ad6d91865322a6b61daa9f278"
+  },
+  "native_files_sha256": {
+    "native/engine/src/flink_functions/decimal.rs": "6b5f00c9fb321928a9a603519fc2cc2d10dda5fde507612dd314b953dd6efd90",
+    "native/engine/src/flink_functions/calendar.rs": "841b4bd6257a64143c7dadcdc0757762ac0a735f060b6cbd37decd9cf9bbf778",
+    "native/engine/src/expr.rs": "d357a41f914f057d93c5badbf06814d8fc2d6db7fcccd20a9ce2e608e7fdca1d"
+  },
+  "dso_sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98",
+  "canonical_base": "be842d2d",
+  "implementation_head": "94b760c5",
+  "range_diff": [
+    "1:  a7eaea10 = 1:  8ef0876f Keep verified mixed exact GREATEST comparisons inside Arrow",
+    "2:  289b69f0 = 2:  69fa1f38 Keep verified mixed exact LEAST comparisons inside Arrow",
+    "3:  d477f30c = 3:  01804398 Select verified noncompact DECIMAL IF branches in one Arrow pass",
+    "4:  9b8e3c99 = 4:  e8d731c0 Preserve released DATE hour extraction arithmetic",
+    "5:  5b88fa4c = 5:  f0c7f1f4 Preserve released DATE minute extraction arithmetic",
+    "6:  12cb8d94 = 6:  94b760c5 Preserve released DATE second extraction arithmetic"
+  ],
+  "note": "Six function patches remain identical after rebase. Historical performance results retain their measured pre-rebase encoders/DSOs/baselines; this record is a fresh correctness/route regression, not new performance timings."
+}
