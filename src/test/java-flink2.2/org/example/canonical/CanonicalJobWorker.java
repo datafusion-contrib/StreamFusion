@@ -228,76 +228,78 @@ public final class CanonicalJobWorker {
       if (Files.exists(root.resolve("views.sql"))) {
         table.executeSql(Files.readString(root.resolve("views.sql")));
       }
-      org.apache.flink.table.api.CompiledPlan plan;
-      if (Files.exists(planFile)) {
-        plan = table.loadPlan(PlanReference.fromFile(planFile.toFile()));
-      } else if (Files.exists(root.resolve("query-2.sql"))) {
-        var statements = table.createStatementSet();
-        statements.addInsertSql(Files.readString(root.resolve("query.sql")));
-        statements.addInsertSql(Files.readString(root.resolve("query-2.sql")));
-        plan = statements.compilePlan();
-      } else {
-        plan = table.compilePlanSql(Files.readString(root.resolve("query.sql")));
-      }
-      if (!Files.exists(planFile)) {
-        String json = plan.asJsonString();
-        if (json.contains("tech.streamfusion") || json.contains("stream-exec-native")) {
-          throw new AssertionError("compiled plan contains native-only nodes");
+      boolean ordinarySql = Files.exists(root.resolve("ordinary-sql"));
+      org.apache.flink.table.api.CompiledPlan plan = null;
+      String portablePlan = "";
+      String explain = "";
+      if (!ordinarySql) {
+        if (Files.exists(planFile)) {
+          plan = table.loadPlan(PlanReference.fromFile(planFile.toFile()));
+        } else if (Files.exists(root.resolve("query-2.sql"))) {
+          var statements = table.createStatementSet();
+          statements.addInsertSql(Files.readString(root.resolve("query.sql")));
+          statements.addInsertSql(Files.readString(root.resolve("query-2.sql")));
+          plan = statements.compilePlan();
+        } else {
+          plan = table.compilePlanSql(Files.readString(root.resolve("query.sql")));
         }
-        Files.writeString(planFile, json);
-      }
-      String portablePlan = plan.asJsonString();
-      if (sinkMaterializer) {
-        String selected = Files.readString(root.resolve("sink-materializer-strategy")).trim();
-        String expected = selected.startsWith("ADAPTIVE") ? "ADAPTIVE" : selected;
-        var nodes =
-            new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
-                .readTree(portablePlan)
-                .path("nodes");
-        boolean matched = false;
-        for (var node : nodes)
-          if (node.path("type").asText().startsWith("stream-exec-sink")) {
-            String actual = node.path("upsertMaterializeStrategy").asText("LEGACY");
-            if (!actual.equals(expected))
-              throw new AssertionError(
-                  "Fixture selected the wrong materializer strategy: " + portablePlan);
-            matched = true;
+        if (!Files.exists(planFile)) {
+          String json = plan.asJsonString();
+          if (json.contains("tech.streamfusion") || json.contains("stream-exec-native")) {
+            throw new AssertionError("compiled plan contains native-only nodes");
           }
-        if (!matched) throw new AssertionError("Fixture has no stock sink");
+          Files.writeString(planFile, json);
+        }
+        portablePlan = plan.asJsonString();
+        if (sinkMaterializer) {
+          String selected = Files.readString(root.resolve("sink-materializer-strategy")).trim();
+          String expected = selected.startsWith("ADAPTIVE") ? "ADAPTIVE" : selected;
+          var nodes =
+              new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
+                  .readTree(portablePlan)
+                  .path("nodes");
+          boolean matched = false;
+          for (var node : nodes)
+            if (node.path("type").asText().startsWith("stream-exec-sink")) {
+              String actual = node.path("upsertMaterializeStrategy").asText("LEGACY");
+              if (!actual.equals(expected))
+                throw new AssertionError(
+                    "Fixture selected the wrong materializer strategy: " + portablePlan);
+              matched = true;
+            }
+          if (!matched) throw new AssertionError("Fixture has no stock sink");
+        }
+        if (Files.exists(root.resolve("required-plan-node"))
+            && !portablePlan.contains(
+                Files.readString(root.resolve("required-plan-node")).trim())) {
+          throw new AssertionError("Fixture compiled a different stock operator: " + portablePlan);
+        }
+        if (Files.exists(root.resolve("require-rank-map-state"))) {
+          var graph =
+              new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
+                  .readTree(portablePlan);
+          boolean retainedMap = false;
+          for (var node : graph.path("nodes"))
+            if (node.path("type").asText().startsWith("stream-exec-rank_"))
+              retainedMap |= node.path("outputType").toString().contains("MAP");
+          if (!retainedMap)
+            throw new AssertionError("Fixture did not retain a MAP payload in rank state");
+        }
+        explain = plan.explain(ExplainDetail.JSON_EXECUTION_PLAN);
+        Files.writeString(root.resolve(stage + "-plan.txt"), explain);
       }
-      if (Files.exists(root.resolve("required-plan-node"))
-          && !portablePlan.contains(Files.readString(root.resolve("required-plan-node")).trim())) {
-        throw new AssertionError("Fixture compiled a different stock operator: " + portablePlan);
-      }
-      if (Files.exists(root.resolve("require-rank-map-state"))) {
-        var graph =
-            new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
-                .readTree(portablePlan);
-        boolean retainedMap = false;
-        for (var node : graph.path("nodes"))
-          if (node.path("type").asText().startsWith("stream-exec-rank_"))
-            retainedMap |= node.path("outputType").toString().contains("MAP");
-        if (!retainedMap)
-          throw new AssertionError("Fixture did not retain a MAP payload in rank state");
-      }
-      String explain = plan.explain(ExplainDetail.JSON_EXECUTION_PLAN);
-      Files.writeString(root.resolve(stage + "-plan.txt"), explain);
       String expectedOperator =
           Files.exists(root.resolve("native-operator"))
               ? Files.readString(root.resolve("native-operator")).trim()
               : "NativeColumnarGroupAggregate";
-      if (nativeRun
-          && java.util.Arrays.stream(expectedOperator.split(","))
-              .anyMatch(expected -> !explain.contains(expected))) {
-        throw new AssertionError("expected native operators: " + explain);
-      }
-      if (nativeRun && Files.exists(root.resolve("native-absent-operators"))) {
-        for (String absent :
-            Files.readString(root.resolve("native-absent-operators")).trim().split(","))
-          if (explain.contains(absent))
-            throw new AssertionError("Unexpected native admission: " + explain);
-      }
-      var job = plan.execute().getJobClient().orElseThrow();
+      if (!ordinarySql) verifyNativePlan(root, nativeRun, expectedOperator, explain);
+      else if (Files.exists(planFile))
+        throw new AssertionError("ordinary SQL fixture must not load a compiled plan");
+      var result =
+          ordinarySql
+              ? table.executeSql(Files.readString(root.resolve("query.sql")))
+              : plan.execute();
+      var job = result.getJobClient().orElseThrow();
       if (limit == Integer.MAX_VALUE) {
         job.getJobExecutionResult().get(90, TimeUnit.SECONDS);
       } else {
@@ -387,6 +389,18 @@ public final class CanonicalJobWorker {
           }
         }
       }
+      if (ordinarySql) {
+        var execution = cluster.getExecutionGraph(job.getJobID()).get(30, TimeUnit.SECONDS);
+        var actualPlan = new StringBuilder(String.valueOf(execution.getStreamGraphJson()));
+        for (var vertex : execution.getAllExecutionVertices())
+          actualPlan.append('\n').append(vertex.getTaskNameWithSubtaskIndex());
+        explain = actualPlan.toString();
+        Files.writeString(root.resolve(stage + "-plan.txt"), explain);
+        verifyNativePlan(root, nativeRun, expectedOperator, explain);
+        Files.writeString(
+            root.resolve(stage + "-ordinary-sql-verified"),
+            Files.readString(root.resolve("query.sql")));
+      }
       if (nativeRun
           && limit > restoredLimit
           && !Files.exists(witness)
@@ -433,7 +447,7 @@ public final class CanonicalJobWorker {
                   + " tasks, observed "
                   + activeTasks);
       }
-      if (!portablePlan.equals(plan.asJsonString())) {
+      if (!ordinarySql && !portablePlan.equals(plan.asJsonString())) {
         throw new AssertionError("runtime lowering mutated the portable compiled plan");
       }
       if (nativeRun
@@ -483,6 +497,21 @@ public final class CanonicalJobWorker {
       }
     } finally {
       Thread.currentThread().setContextClassLoader(original);
+    }
+  }
+
+  private static void verifyNativePlan(
+      Path root, boolean nativeRun, String expectedOperator, String explain) throws Exception {
+    if (nativeRun
+        && java.util.Arrays.stream(expectedOperator.split(","))
+            .anyMatch(expected -> !explain.contains(expected))) {
+      throw new AssertionError("expected native operators: " + explain);
+    }
+    if (nativeRun && Files.exists(root.resolve("native-absent-operators"))) {
+      for (String absent :
+          Files.readString(root.resolve("native-absent-operators")).trim().split(","))
+        if (explain.contains(absent))
+          throw new AssertionError("Unexpected native admission: " + explain);
     }
   }
 

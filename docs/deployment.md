@@ -318,7 +318,7 @@ compiler flag preserves only the connector's explicit class. A runtime probe exe
 connector and verifies its dependency resolves from the core JAR. Image CI runs the regression
 before packaging, and the unchanged artifact checker verifies ownership in the real bundle.
 
-## Portable compiled plans and canonical handoff
+## Portable plans, ordinary SQL and canonical handoff
 
 The unmerged [#569 work](https://github.com/datafusion-contrib/StreamFusion/issues/569) binds
 qualified Flink 2.2 window, interval and event-time temporal joins automatically when executing a
@@ -361,5 +361,17 @@ from the initial job on both engines. Default chained graphs can change their ge
 when parallelism changes, and
 stock also rejects that restore. Changing chaining only at restore cannot repair existing IDs.
 The [generated-ID matrix](backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans)
-covers 34 complete jobs plus explicit-UID controls. Ordinary SQL submission still needs its
-separate optimizer integration and does not inherit this qualification.
+covers 34 complete jobs plus explicit-UID controls. Ordinary SQL binding has its own qualification
+below; it does not inherit every compiled-plan scenario.
+
+
+Qualified temporal, interval and window joins can also use ordinary SQL submission without a
+compiled artifact. Keep the same SQL, schemas, planner options, connector/user code, released
+Flink version and maximum parallelism on both engines; stop with a canonical savepoint and restore
+through Flink's normal savepoint configuration. StreamFusion retains the original stock logical
+roles during planning and installs the conversion automatically. The initial ordinary temporal
+round trips cover default SQL UIDs and `ALWAYS` on both native stores. Wider ordinary job matrices,
+ambiguous graph rewrites, other native families/connectors and wide decimal/high-precision timestamp
+keys still need qualification. See the exact
+[ordinary SQL scope](backends/canonical-state.md#ordinary-sql-canonical-handoffs). Existing native
+processing/checkpoint paths remain available for jobs without a stock canonical binding.

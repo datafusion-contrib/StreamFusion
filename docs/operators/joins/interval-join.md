@@ -212,7 +212,7 @@ Processing-time complete jobs use a one-day matching range so process startup do
 expiry. The separate controlled-clock cases verify cleanup at exact deadlines, original/NULL
 payloads, idle/overdue callbacks and EOF. The combined clean job/control selection passes 457
 checks with no failures, errors or skips. These overlap the component and planner cohorts.
-Wider ordinary-SQL identity/type/version/failure and connector-protocol requirements remain open
+Wider type/version/failure and connector-protocol requirements remain open
 in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
 
 
@@ -220,6 +220,16 @@ Qualified compiled plans can disable explicit SQL UID generation. Four native-fi
 round trips pass across both clocks and native stores with generated IDs; explicit-UID job
 controls pass too. The runtime state contract uses the actual native primary ID and canonical
 metadata retains the original stock identities automatically. These generated-ID cases do not
-extend the qualified rescale/type/version/failure scope. Ordinary-SQL integration remains open
+extend the qualified rescale/type/version/failure scope. Ordinary SQL binding is described below
 under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); see
 [generated operator IDs](../../backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans).
+
+
+### Ordinary SQL submission
+
+Normal SQL submission now retains the original stock logical identity and binds this join's
+stock state contract without compiling or loading a plan. The initial ordinary SQL qualification
+and exact key-layout/admission limits are documented in
+[ordinary SQL canonical handoffs](../../backends/canonical-state.md#ordinary-sql-canonical-handoffs).
+This does not qualify the full ordinary variant/type/rescale/failure/connector matrix; the family
+remains partial under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

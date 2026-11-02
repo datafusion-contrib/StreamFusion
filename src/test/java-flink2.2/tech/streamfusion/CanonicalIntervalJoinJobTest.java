@@ -104,7 +104,7 @@ class CanonicalIntervalJoinJobTest {
         .verifyJoinSwitch(baseline, switched, nativeFirst, backend, mode, "IntervalJoin");
   }
 
-  private static void rescaleInput(Path root) throws Exception {
+  void rescaleInput(Path root) throws Exception {
     var left = new ArrayList<String>();
     var right = new ArrayList<String>();
     for (int round = 0; round < 6; round++)

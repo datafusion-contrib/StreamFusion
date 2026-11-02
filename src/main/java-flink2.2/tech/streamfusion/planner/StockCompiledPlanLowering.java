@@ -264,6 +264,150 @@ final class StockCompiledPlanLowering {
     }
   }
 
+  static boolean canBindOrdinary(SqlPlanOrigins.RuntimeGraph graph) {
+    Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    collectOrdinaryNodes(graph.getRootNodes(), nodes);
+    for (ExecNode<?> node : nodes) {
+      if (ordinaryHelper(node)) continue;
+      if (!graph.originals.containsKey(node)) return false;
+      if (node.getClass().getName().startsWith("tech.streamfusion.")
+          && !(node instanceof NativeTemporalJoinExecNode
+              || node instanceof NativeIntervalJoinExecNode
+              || node instanceof NativeWindowJoinExecNode
+              || node instanceof NativeCalcExecNode
+              || node instanceof NativeWatermarkAssignerExecNode
+              || node instanceof NativeWindowTableFunctionExecNode)) return false;
+    }
+    return true;
+  }
+
+  ExecNodeGraph bindOrdinary(SqlPlanOrigins.RuntimeGraph graph) {
+    Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    collectOrdinaryNodes(graph.getRootNodes(), nodes);
+    collectUids(graph.stock.getRootNodes());
+    Set<ExecNode<?>> assigned = Collections.newSetFromMap(new IdentityHashMap<>());
+    for (ExecNode<?> node : nodes) {
+      if (ordinaryHelper(node)) continue;
+      ExecNode<?> original = graph.originals.get(node);
+      if (resolvedStockMaximums.containsKey(stockTransformations.get(original.getId()).getId())
+          && !assigned.add(original)) return null;
+    }
+    Set<ExecNode<?>> originals = Collections.newSetFromMap(new IdentityHashMap<>());
+    collectOrdinaryNodes(graph.stock.getRootNodes(), originals);
+    for (ExecNode<?> original : originals)
+      if (resolvedStockMaximums.containsKey(stockTransformations.get(original.getId()).getId())
+          && !assigned.contains(original)) return null;
+    Map<ExecNode<?>, ExecNode<?>> replacements = new IdentityHashMap<>();
+    try {
+      var writer = CompiledPlanSerdeUtil.createJsonObjectWriter(planner.createSerdeContext());
+      for (ExecNode<?> node : nodes) {
+        if (ordinaryHelper(node)) continue;
+        ExecNode<?> stock = graph.originals.get(node);
+        if (node instanceof NativeTemporalJoinExecNode
+            || node instanceof NativeIntervalJoinExecNode
+            || node instanceof NativeWindowJoinExecNode) {
+          if (!nativeKeyedState) return null;
+          if (!ordinaryKeyLayout(stockTransformations.get(stock.getId()))) return null;
+          definitions.put(stock.getId(), reader.readTree(writer.writeValueAsString(stock)));
+          ExecNode<?> exit;
+          if (node instanceof NativeTemporalJoinExecNode
+              && stock
+                  instanceof
+                  org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecTemporalJoin)
+            exit = lowerTemporalJoin(stock);
+          else if (node instanceof NativeIntervalJoinExecNode
+              && stock
+                  instanceof
+                  org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecIntervalJoin)
+            exit = lowerIntervalJoin(stock);
+          else if (node instanceof NativeWindowJoinExecNode
+              && stock
+                  instanceof
+                  org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWindowJoin)
+            exit = lowerWindowJoin(stock);
+          else return null;
+          if (exit == stock) return null;
+          ExecNode<?> owner = exit.getInputEdges().get(0).getSource();
+          if (owner.getClass() != node.getClass())
+            throw new IllegalStateException(
+                "Ordinary SQL state binding changed its logical operator");
+          for (int side = 0; side < 2; side++) {
+            ExecNode<?> source = node.getInputEdges().get(side).getSource();
+            if (source instanceof NativeColumnarExchangeExecNode)
+              source = source.getInputEdges().get(0).getSource();
+            connect(source, owner.getInputEdges().get(side).getSource());
+          }
+          replacements.put(node, owner);
+        } else {
+          bindings.put(
+              node,
+              new StockBinding(
+                  stock.getId(),
+                  stockOwners.contains(stock.getId()) ? stockUids.get(stock.getId()) : null,
+                  null));
+        }
+      }
+      var rewritten = new IdentityHashMap<ExecNode<?>, ExecNode<?>>();
+      var roots = new ArrayList<ExecNode<?>>();
+      for (ExecNode<?> root : graph.getRootNodes())
+        roots.add(rewriteOrdinary(root, replacements, rewritten));
+      return new RuntimeGraph(graph.getFlinkVersion(), roots);
+    } catch (IOException failure) {
+      throw new TableException("Cannot capture ordinary SQL stock state contracts", failure);
+    }
+  }
+
+  private static boolean ordinaryHelper(ExecNode<?> node) {
+    return node instanceof RowDataToArrowExecNode
+        || node instanceof ArrowToRowDataExecNode
+        || node instanceof NativeColumnarExchangeExecNode
+        || node instanceof NativeShareExecNode;
+  }
+
+  private static boolean ordinaryKeyLayout(Transformation<?> original) {
+    if (!(original
+        instanceof org.apache.flink.streaming.api.transformations.TwoInputTransformation))
+      return false;
+    var keys =
+        ((org.apache.flink.streaming.api.transformations.TwoInputTransformation<?, ?, ?>) original)
+            .getStateKeyType();
+    if (!(keys instanceof org.apache.flink.table.runtime.typeutils.InternalTypeInfo)) return false;
+    for (LogicalType field :
+        ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>) keys).toRowFieldTypes())
+      if (field.is(LogicalTypeRoot.DECIMAL) && LogicalTypeChecks.getPrecision(field) > 18
+          || (field.is(LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE)
+                  || field.is(LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE))
+              && LogicalTypeChecks.getPrecision(field) > 3) return false;
+    return true;
+  }
+
+  private static void collectOrdinaryNodes(List<ExecNode<?>> roots, Set<ExecNode<?>> visited) {
+    for (ExecNode<?> node : roots) {
+      if (!visited.add(node)) continue;
+      for (ExecEdge edge : node.getInputEdges())
+        collectOrdinaryNodes(List.of(edge.getSource()), visited);
+    }
+  }
+
+  private static ExecNode<?> rewriteOrdinary(
+      ExecNode<?> node,
+      Map<ExecNode<?>, ExecNode<?>> replacements,
+      Map<ExecNode<?>, ExecNode<?>> rewritten) {
+    if (rewritten.containsKey(node)) return rewritten.get(node);
+    ExecNode<?> result = replacements.getOrDefault(node, node);
+    var edges = new ArrayList<ExecEdge>();
+    for (ExecEdge edge : result.getInputEdges())
+      edges.add(
+          new ExecEdge(
+              rewriteOrdinary(edge.getSource(), replacements, rewritten),
+              result,
+              edge.getShuffle(),
+              edge.getExchangeMode()));
+    result.setInputEdges(edges);
+    rewritten.put(node, result);
+    return result;
+  }
+
   private ExecNode<?> lower(ExecNode<?> node) throws IOException {
     if (lowered.containsKey(node)) return lowered.get(node);
     List<ExecEdge> edges = new ArrayList<>();
@@ -875,6 +1019,8 @@ final class StockCompiledPlanLowering {
     bindings.forEach(
         (node, binding) -> {
           Transformation<?> transformation = ((ExecNodeBase<?>) node).getTransformation();
+          if (node instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink)
+            transformation.setName(stockTransformations.get(binding.originalId).getName());
           if (binding.uid != null) transformation.setUid(binding.uid);
           if (binding.contract != null)
             nativeOperator(node).setStockStateContract(binding.contract);

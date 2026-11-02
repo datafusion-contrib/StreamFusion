@@ -596,7 +596,7 @@ the actual native temporal operator. Derived keys are scalar at the temporal sta
 Eighty-eight canonical execution-witness controls and 48 independent summary/audit controls pass.
 Explicit program contracts reject unknown fixtures and unrelated/zero-input native work. The
 stock test runtime excludes StreamFusion. Representative complete-job switches and rescaling
-are qualified below; wider failure/connector matrices and ordinary-SQL identity work remain open
+are qualified below; wider failure/connector matrices remain open
 in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
 
 ## Complete temporal job handoffs
@@ -655,7 +655,38 @@ a false
 fallback diagnostic for a join already elided by stock. The final source passes the complete
 373-check selection as well as all native programs; initial failed reports and stock-only
 negative evidence are retained. Cohorts overlap earlier qualification and are not added cumulatively.
-Ordinary-SQL optimizer binding, wider operator,
-connector, type/version and failure coverage remain open in
+Wider operator, connector, type/version and failure coverage remain open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Every family stays partial;
 benchmarking is deferred.
+
+
+## Ordinary SQL canonical handoffs
+
+The deployed Flink 2.2 planner now captures the original stock logical roles after physical
+optimization and carries those origins through native substitution. Normal `executeSql` submission
+can bind temporal, interval and window joins without compiling or loading a plan. The state schema,
+key serializer, resolved maximum parallelism and complete source/operator/sink identities come
+from the original stock graph. Native input operators and both perimeter transposes remain in the
+actual execution graph. Connector-created writer names retain their original logical sink role.
+No global execution-node counter is reset and no operator is matched by list position or count.
+
+Contracts use actual native primary IDs with `PLAN_ONLY`, `DISABLED` and `ALWAYS` SQL UID settings.
+A later query resets the previous contracts and projection. Post-optimization origin metadata is
+not registered with Calcite's optimizer, preserving subsequent queries in the same session.
+Unknown native families/connectors or ambiguous/missing logical owners keep their existing native
+execution and checkpoint route while their canonical adapter remains unqualified. Ordinary joins
+with DECIMAL precision above 18 or timestamp precision above 3 in the key retain that route too:
+NULL variable slots differ between their existing key layout and Flink's generated projection.
+This boundary preserves existing native checkpoint routing pending complete key-layout migration.
+
+The clean regression selection passes 331 checks, including 21 compiled/ordinary identity and
+key-layout controls, eight deployed ordinary native-family parity controls and existing stock
+state/metadata/SQL controls. Four isolated native-first INNER temporal round trips pass across
+both native stores: two with ordinary default SQL UIDs and two with `ALWAYS`. They submit SQL
+without a compiled artifact, retain two custom sources, a transactional sink and both transposes,
+verify positive native input and stock-only metadata, and compare external committed effects with
+stock and an independent temporal oracle. These initial jobs do not establish the complete ordinary
+SQL variant/rescale/failure matrix. All 15 unchanged released join restore programs still pass on
+each engine: 12 actual native imports with continued input, two verified stock window owners and
+one join elided by Flink. Every family remains partial under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.

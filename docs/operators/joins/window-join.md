@@ -101,7 +101,7 @@ sink effects match the stock baseline. Unaligned checkpoints currently retain th
 join because canonical exchange reassembly is not yet bound; two negative planner controls
 verify this boundary.
 
-Ordinary SQL identities, wider rescale/type/version matrices and residual predicates remain
+Wider rescale/type/version matrices and residual predicates remain
 unqualified. The isolated job fixtures use BIGINT keys/payloads; they do not establish every
 supported data type. Released Flink 2.2.1 rejects processing-time window joins, so its event-time
 contract cannot be bound to a native processing-time operator. Native processing-time execution
@@ -118,14 +118,24 @@ recorded. SEMI and ANTI keep the released stock operator: their contracts requir
 planner fallback, initialized stock lists/timer service, and successfully processed stock input.
 Native Calc work alone cannot satisfy either state route. The sources, frozen plans/savepoints
 and expected results come from the released test artifact. These controls qualify those fixtures;
-they do not qualify ordinary SQL submission identities or the remaining full #569 matrix.
+they do not qualify the remaining full #569 matrix. Ordinary SQL binding is described below.
 See the [savepoint lane](../../upstream-flink-suite.md#window-join-canonical-restore-qualification).
 
 
 Qualified compiled plans also work with explicit SQL UID generation disabled. Four native-first
 INNER TUMBLE job round trips pass across keyed/keyless variants and both native stores, alongside
 explicit-UID controls. State registration uses actual native primary IDs; canonical metadata
-continues to retain the original stock graph identities. Wider generated-ID variant/rescale and
-ordinary-SQL qualification remain open under
+continues to retain the original stock graph identities. Wider generated-ID variant/rescale
+qualification remains open under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). See
 [generated operator IDs](../../backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans).
+
+
+### Ordinary SQL submission
+
+Normal SQL submission now retains the original stock logical identity and binds this join's
+stock state contract without compiling or loading a plan. The initial ordinary SQL qualification
+and exact key-layout/admission limits are documented in
+[ordinary SQL canonical handoffs](../../backends/canonical-state.md#ordinary-sql-canonical-handoffs).
+This does not qualify the full ordinary variant/type/rescale/failure/connector matrix; the family
+remains partial under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

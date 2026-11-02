@@ -128,7 +128,7 @@ planner/boundary controls and 91 neighboring controls pass. Unsupported backend/
 and the legacy processing-time function keep their stock owner.
 
 Representative isolated complete-job switches and rescaling are qualified below. The broader
-schema/failure/version/connector matrix and ordinary-SQL identities remain pending under
+schema/failure/version/connector matrix remains pending under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
 
 ## Complete-job handoff matrix
@@ -162,6 +162,16 @@ recovery and 64-key rescaling retain the scope above. Generated-ID rescaling dis
 from the initial job on both engines, preserving stock IDs across changes in parallelism. Stock
 itself rejects the original chained generated-ID graph when its chain boundaries change. Six
 cross-family identity controls compare registered contract keys with the real runtime hashes; explicit-UID controls still pass. This
-removes the UID prerequisite from the qualified compiled-plan workflow. Ordinary SQL optimizer
-integration and the remaining #569 matrix stay open. See
+removes the UID prerequisite from the qualified compiled-plan workflow. The remaining #569
+matrix stays open. Ordinary SQL binding is described below. See
 [generated operator IDs](../../backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans).
+
+
+### Ordinary SQL submission
+
+Normal SQL submission now retains the original stock logical identity and binds this join's
+stock state contract without compiling or loading a plan. The initial ordinary SQL qualification
+and exact key-layout/admission limits are documented in
+[ordinary SQL canonical handoffs](../../backends/canonical-state.md#ordinary-sql-canonical-handoffs).
+This does not qualify the full ordinary variant/type/rescale/failure/connector matrix; the family
+remains partial under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
