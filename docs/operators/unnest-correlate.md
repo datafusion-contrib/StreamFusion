@@ -1202,3 +1202,49 @@ generated-collection fallback, including projections that also select the full R
 elements, nested List bridges and concrete List arguments, internal RowData/ArrayData/MapData,
 STRUCTURED/RAW/MULTISET bridges and specialization remain outside this extension. Default
 container conversions and the existing direct scalar-List coverage are unchanged.
+
+
+The [release cost record](../benchmarks/results/jvm-nested-row-map-bridges-2026-11-01.json)
+retains all 224 trials, including warmups, source/library fingerprints, commands and sampled
+host observations. The candidate is `e501372c`; actual preceding production is canonical
+`a4515d7b`, with only the two new test/benchmark fixtures copied into it. Both use the identical
+release/mimalloc library, JDK 17, one task, a 3 GiB heap, 262,144 input rows selecting 64 prebuilt
+payloads and 1,024-row transpose batches. Each case/revision/line has a fresh JVM, two warmup
+pairs and five measured pairs alternating engine order. Submission-to-completion timing follows
+symmetric EXPLAIN and includes the row source, runtime leaf-class checks, released recursive
+converters, callback mutation, owned writes, production JNI, both perimeter transposes and the
+blackhole sink. Previous production requires zero substitutions/work; candidate jobs require
+both transposes and consumed table-function input.
+
+Seconds are median (minimum–maximum). Previous native-enabled execution is full stock fallback.
+
+| Flink / nested bridge | Stock in candidate JVM | Previous native enabled | Candidate native enabled |
+| --- | ---: | ---: | ---: |
+| 2.2 / ROW / FLOAT primitive | 0.086 (0.075–0.096) | 0.085 (0.078–0.089) | 0.155 (0.146–0.158) |
+| 2.2 / ROW/MAP / JDBC DATE | 0.132 (0.131–0.135) | 0.131 (0.123–0.136) | 0.290 (0.286–0.299) |
+| 2.2 / MAP/ROW / JDBC TIMESTAMP | 0.168 (0.161–0.173) | 0.160 (0.158–0.168) | 0.302 (0.298–0.303) |
+| 2.2 / MAP key / LTZ Long | 0.149 (0.142–0.150) | 0.137 (0.135–0.144) | 0.216 (0.202–0.225) |
+| 1.18 / ROW / FLOAT primitive | 0.237 (0.219–0.262) | 0.232 (0.224–0.289) | 0.509 (0.461–0.522) |
+| 1.18 / ROW/MAP / JDBC DATE | 0.430 (0.407–0.464) | 0.422 (0.399–0.427) | 1.201 (1.146–1.243) |
+| 1.18 / MAP/ROW / JDBC TIMESTAMP | 0.162 (0.158–0.218) | 0.169 (0.164–0.171) | 0.310 (0.307–0.312) |
+| 1.18 / MAP key / LTZ Long | 0.144 (0.143–0.146) | 0.144 (0.142–0.145) | 0.222 (0.218–0.223) |
+
+Every native median is slower than both its candidate stock control and preceding fallback;
+the candidate/stock ratios range from about 1.46 to 2.79. Separate-JVM stock medians drift by
+up to 9.5%; the short complete jobs retain startup/JIT variability and do not establish sustained
+throughput. Some short series have no sampled Java process; long outer launch-to-observation
+intervals are also retained separately from per-job times. Host samples cannot establish the
+cause of those delays, exclude brief interference or reserve CPUs. These
+results enable correctness-verified UDF coverage under the accepted exception, without an
+acceleration claim or performance-only opt-in.
+
+Reproduce after preparing release classes with `SF_BENCHMARK=true mvn -pl streamfusion-runtime
+-Pbench -Dnative.build.skip=true -Dtest=NestedBridgeTableFunctionBenchmark -Dsf.testForks=1
+'-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false'
+'-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>' -Dboundary.rows=262144
+-Dboundary.warmups=2 -Dboundary.runs=5 surefire:test@default-test`; add `,flink-1.18` for 1.18.1.
+Select one case per fresh JVM through `boundary.nestedBridges` (for example
+`-Dboundary.nestedBridges=row_map:date-sql`). The fixture defaults enumerate the four cases above.
+For preceding production, copy only `FlinkNestedBridgeTableFunctionSqlHarnessTest` and
+`NestedBridgeTableFunctionBenchmark`, preserve its production sources and use
+`-Dboundary.expectNative=false`. Pin the same release library on both revisions.
