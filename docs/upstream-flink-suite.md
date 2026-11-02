@@ -1529,3 +1529,10 @@ without that submitted-graph evidence cannot pass. Unknown programs cannot reuse
 Seventy-seven Java witness controls and 48 summary-parser controls include missing/forged graph,
 wrong operator, hidden state/import and failed-submission rejections. Full-job/type/version and
 connector qualification remains tracked by #569; these upstream fixtures do not replace it.
+
+The interval integration additionally passes 84 isolated complete-job handoffs (457 combined
+checks), retaining custom sources, transactional sink effects, both transposes and stock worker
+classpaths without StreamFusion. This includes both clock modes, residual predicates, no-input
+re-export, real checkpoint recovery and 1 → 3 → 2 rescaling. These are StreamFusion integration
+fixtures, separate from the unchanged released upstream programs and their assertions. The
+remaining #569 matrix stays open; benchmarking is deferred.

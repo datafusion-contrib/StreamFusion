@@ -153,8 +153,8 @@ in Flink: its pinned contract proves a complete submitted graph without a join/C
 no state import or fallback, and actual native Calc work. Its upstream assertions still verify
 the null-padded output. This is graph elision, not native interval-join coverage.
 
-Ordinary SQL identities, the wider complete-job/residual/type/version/rescale/failure qualification
-and connector delivery protocols remain open. Nonpositive/overflow event-time cleanup remains an explicitly unqualified interchange edge;
+Ordinary SQL identities, wider type/version/failure coverage, additional rescale shapes and
+connector delivery protocols remain open. Nonpositive/overflow event-time cleanup remains an explicitly unqualified interchange edge;
 the released heap/Rocks distinction described above still applies. Benchmarking is deferred.
 
 ### Logical input and retained native frames
@@ -193,5 +193,24 @@ suite passes 1,164 tests with two existing ignores. These counts overlap earlier
 The stock compiled-plan loader automatically binds either clock mode to its matching native
 adapter, preserving the original UID, serializer and resolved maximum parallelism. The clean
 planner/regression suite passes 175 checks, including 29 interval plan controls. Expanded
-complete-job switching and the full interoperability matrix require separate qualification.
+complete-job switching is qualified below; the full interoperability matrix remains open.
 Canonical export remains a direct live-state transfer. Benchmarking is deferred.
+
+### Complete-job handoff matrix
+
+All 84 clean-process interval job cases pass against uninterrupted stock baselines. The matrix
+contains 32 continued-input switches and 32 residual-predicate switches across both clock modes,
+four join kinds, both native stores and both engine orders; eight FULL-join no-input re-exports;
+four INNER-join native checkpoint recoveries; and eight FULL-join 64-key rescale cases through
+1 → 3 → 2 tasks at maximum parallelism 128. The checkpoint cases trigger a real checkpoint,
+cancel, restore and then export a canonical savepoint. Native execution is verified on every
+claimed continued-input native leg. Each job retains two custom sources, a transactional sink
+and both transposes; stock processes exclude StreamFusion, portable metadata contains no
+StreamFusion serializer classes and committed sink effects match stock.
+
+Processing-time complete jobs use a one-day matching range so process startup does not determine
+expiry. The separate controlled-clock cases verify cleanup at exact deadlines, original/NULL
+payloads, idle/overdue callbacks and EOF. The combined clean job/control selection passes 457
+checks with no failures, errors or skips. These overlap the component and planner cohorts.
+Wider ordinary-SQL identity/type/version/failure and connector-protocol requirements remain open
+in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

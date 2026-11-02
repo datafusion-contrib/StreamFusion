@@ -481,8 +481,9 @@ nine scalar key layouts, no-input re-export, timer-only keys, overdue callbacks 
 input and native checkpoint continuation. The stock compiled-plan loader binds both clock modes
 to the original stock operator identity, key serializer and resolved maximum parallelism. Its
 clean planner/regression selection passes 175 checks, including 29 interval planner controls.
-The expanded complete-job switching matrix and remaining #569 requirements are separately
-qualified; component and upstream passes do not establish them. Benchmarking remains deferred.
+The expanded complete-job matrix is qualified below. Remaining #569 requirements retain their
+separate scope; component and upstream passes do not establish every supported job variant.
+Benchmarking remains deferred.
 
 ## Independent temporal cleanup partitions
 
@@ -499,3 +500,22 @@ tests with two existing ignores; targeted Java operator, SQL/backend and key-gro
 pass. This fixes native logical snapshots; it does not establish stock temporal-join canonical
 interchange, which remains open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.
+
+### Complete event-time and processing-time interval handoffs
+
+All 84 clean-process interval job cases pass against uninterrupted stock baselines. The matrix
+contains 32 continued-input switches and 32 residual-predicate switches across both clock modes,
+four join kinds, both native stores and both engine orders; eight FULL-join no-input re-exports;
+four INNER-join native checkpoint recoveries; and eight FULL-join 64-key rescale cases through
+1 → 3 → 2 tasks at maximum parallelism 128. The checkpoint cases trigger a real checkpoint,
+cancel, restore and then export a canonical savepoint. Native execution is verified on every
+claimed continued-input native leg. Each job retains two custom sources, a transactional sink
+and both transposes; stock processes exclude StreamFusion, portable metadata contains no
+StreamFusion serializer classes and committed sink effects match stock.
+
+Processing-time complete jobs use a one-day matching range so process startup does not determine
+expiry. The separate controlled-clock cases verify cleanup at exact deadlines, original/NULL
+payloads, idle/overdue callbacks and EOF. The combined clean job/control selection passes 457
+checks with no failures, errors or skips. These overlap the component and planner cohorts.
+Wider ordinary-SQL identity/type/version/failure and connector-protocol requirements remain open
+in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

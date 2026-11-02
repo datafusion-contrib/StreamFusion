@@ -10,7 +10,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 class CanonicalIntervalJoinJobTest {
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -21,54 +20,82 @@ class CanonicalIntervalJoinJobTest {
     for (String kind : List.of("INNER", "LEFT", "RIGHT", "FULL"))
       for (boolean nativeFirst : new boolean[] {false, true})
         for (String backend : List.of("hashmap", "rocksdb"))
-          cases.add(Arguments.of(kind, nativeFirst, backend));
+          for (boolean processingTime : new boolean[] {false, true})
+            cases.add(Arguments.of(kind, nativeFirst, backend, processingTime));
     return Boolean.getBoolean("streamfusion.test.intervalJoinJobSmoke")
         ? cases.stream().filter(test -> test.get()[0].equals("INNER") && (boolean) test.get()[1])
         : cases.stream();
   }
 
   static Stream<Arguments> handoffs() {
-    return Stream.of(
-        Arguments.of(true, "hashmap"),
-        Arguments.of(true, "rocksdb"),
-        Arguments.of(false, "hashmap"),
-        Arguments.of(false, "rocksdb"));
+    return Stream.of(false, true)
+        .flatMap(
+            processingTime ->
+                Stream.of(
+                    Arguments.of(true, "hashmap", processingTime),
+                    Arguments.of(true, "rocksdb", processingTime),
+                    Arguments.of(false, "hashmap", processingTime),
+                    Arguments.of(false, "rocksdb", processingTime)));
+  }
+
+  static Stream<Arguments> checkpoints() {
+    return Stream.of(false, true)
+        .flatMap(
+            processingTime ->
+                Stream.of("hashmap", "rocksdb")
+                    .map(backend -> Arguments.of(backend, processingTime)));
   }
 
   @ParameterizedTest
   @MethodSource("cases")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void cachedRowsContinueAcrossCleanEngineProcesses(
-      String kind, boolean nativeFirst, String backend) throws Exception {
-    check(kind, nativeFirst, backend, "continuation");
+      String kind, boolean nativeFirst, String backend, boolean processingTime) throws Exception {
+    check(kind, nativeFirst, backend, "continuation", processingTime, false);
   }
 
   @ParameterizedTest
   @MethodSource("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
-  void cachesReexportWithoutNewInput(boolean nativeFirst, String backend) throws Exception {
-    check("FULL", nativeFirst, backend, "no-input");
+  void cachesReexportWithoutNewInput(boolean nativeFirst, String backend, boolean processingTime)
+      throws Exception {
+    check("FULL", nativeFirst, backend, "no-input", processingTime, false);
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"hashmap", "rocksdb"})
+  @MethodSource("checkpoints")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
-  void nativeCheckpointsResumeBeforeCanonicalSwitch(String backend) throws Exception {
-    check("INNER", true, backend, "checkpoint");
+  void nativeCheckpointsResumeBeforeCanonicalSwitch(String backend, boolean processingTime)
+      throws Exception {
+    check("INNER", true, backend, "checkpoint", processingTime, false);
   }
 
   @ParameterizedTest
   @MethodSource("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
-  void actualJoinKeysRescaleThroughOneThreeAndTwoTasks(boolean nativeFirst, String backend)
-      throws Exception {
-    check("FULL", nativeFirst, backend, "rescale");
+  void actualJoinKeysRescaleThroughOneThreeAndTwoTasks(
+      boolean nativeFirst, String backend, boolean processingTime) throws Exception {
+    check("FULL", nativeFirst, backend, "rescale", processingTime, false);
   }
 
-  private void check(String kind, boolean nativeFirst, String backend, String mode)
+  @ParameterizedTest
+  @MethodSource("cases")
+  @Timeout(value = 8, unit = TimeUnit.MINUTES)
+  void residualPredicatesRetainTheirLogicalInputPositions(
+      String kind, boolean nativeFirst, String backend, boolean processingTime) throws Exception {
+    check(kind, nativeFirst, backend, "continuation", processingTime, true);
+  }
+
+  private void check(
+      String kind,
+      boolean nativeFirst,
+      String backend,
+      String mode,
+      boolean processingTime,
+      boolean residual)
       throws Exception {
-    var baseline = prepare("baseline", kind);
-    var switched = prepare("switched", kind);
+    var baseline = prepare("baseline", kind, processingTime, residual);
+    var switched = prepare("switched", kind, processingTime, residual);
     if (mode.equals("rescale")) {
       rescaleInput(baseline);
       rescaleInput(switched);
@@ -89,7 +116,8 @@ class CanonicalIntervalJoinJobTest {
     Files.write(root.resolve("right-input.csv"), right);
   }
 
-  private Path prepare(String name, String kind) throws Exception {
+  private Path prepare(String name, String kind, boolean processingTime, boolean residual)
+      throws Exception {
     var root = directory.resolve(name);
     Files.createDirectories(root);
     Files.write(
@@ -126,12 +154,23 @@ class CanonicalIntervalJoinJobTest {
     Files.writeString(
         root.resolve("input-columns.sql"),
         "k BIGINT,v BIGINT,rt AS TO_TIMESTAMP_LTZ(v,3),WATERMARK FOR rt AS rt - INTERVAL '1' DAY");
+    String clock = processingTime ? "pt" : "rt";
+    String range = processingTime ? "INTERVAL '1' DAY" : "INTERVAL '1' SECOND";
     Files.writeString(
         root.resolve("query.sql"),
         "INSERT INTO output_table SELECT l.k,l.v,r.v FROM input_table l "
             + kind
-            + " JOIN right_input_table r ON l.k=r.k AND l.rt BETWEEN r.rt - INTERVAL '1' SECOND"
-            + " AND r.rt + INTERVAL '1' SECOND");
+            + " JOIN right_input_table r ON l.k=r.k AND l."
+            + clock
+            + " BETWEEN r."
+            + clock
+            + " - "
+            + range
+            + " AND r."
+            + clock
+            + " + "
+            + range
+            + (residual ? " AND l.v<r.v" : ""));
     Files.writeString(root.resolve("required-plan-node"), "stream-exec-interval-join");
     Files.writeString(
         root.resolve("native-operator"), "NativeIntervalJoin,RowDataToArrow,ArrowToRowData");

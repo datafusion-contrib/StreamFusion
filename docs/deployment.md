@@ -336,6 +336,8 @@ remaining boundaries. Ordinary native checkpoints do not provide a cross-engine 
 
 The [interval workflow](operators/joins/interval-join.md#released-stock-processing-time-state-adapter)
 now binds both event-time and processing-time stock compiled plans to their matching native state
-adapter. Released restore fixtures pass with actual imported and continued native rows. The
-broader complete-job matrix, unrestricted SQL identities and remaining #569 requirements retain
-their separate qualification; keep the exact tested scope when choosing a handoff plan.
+adapter. Released restore fixtures pass with actual imported and continued native rows, and all
+84 clean-process interval handoffs pass, including residual predicates, no-input re-export, real
+checkpoint recovery and 1 → 3 → 2 rescaling. Unrestricted SQL identities, additional types/versions,
+failure scenarios and connector protocols retain their separate #569 qualification; keep the
+exact tested scope when choosing a handoff plan.
