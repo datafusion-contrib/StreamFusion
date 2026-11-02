@@ -203,6 +203,13 @@ public final class StreamFusionSuiteAgent {
                     ? builder.visit(
                         Advice.to(RecordCanonicalIntervalJoinImport.class).on(named("send")))
                     : builder)
+        .type(named("tech.streamfusion.state.StockTemporalJoinStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalTemporalJoinImport.class).on(named("send")))
+                    : builder)
         .type(named("tech.streamfusion.state.StockWindowJoinStateContract"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -241,6 +248,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator",
                 "tech.streamfusion.operator.NativeIntervalJoinOperator",
+                "tech.streamfusion.operator.NativeTemporalJoinOperator",
                 "tech.streamfusion.operator.NativeWindowJoinOperator",
                 "tech.streamfusion.operator.NativeColumnarTopNOperator",
                 "tech.streamfusion.operator.NativeColumnarWindowRankOperator",
@@ -532,6 +540,13 @@ public final class StreamFusionSuiteAgent {
     static void exit(
         @Advice.Argument(2) java.util.List<?> rows, @Advice.Argument(3) boolean timers) {
       if (!timers) NativeExecution.restored("NativeIntervalJoinOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalTemporalJoinImport {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(1) int side, @Advice.Argument(2) java.util.List<?> rows) {
+      if (side >= 0) NativeExecution.restored("NativeTemporalJoinOperator", rows.size());
     }
   }
 

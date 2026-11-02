@@ -1536,3 +1536,16 @@ classpaths without StreamFusion. This includes both clock modes, residual predic
 re-export, real checkpoint recovery and 1 → 3 → 2 rescaling. These are StreamFusion integration
 fixtures, separate from the unchanged released upstream programs and their assertions. The
 remaining #569 matrix stays open; benchmarking is deferred.
+
+
+### Temporal canonical restore witnesses
+
+All four unchanged released 2.2.1 `TemporalJoinRestoreTest` programs pass on stock and native.
+The explicit program contracts require actual native temporal input; unrelated Calc work,
+import-only/open-only paths, fallback and unknown programs cannot qualify them. Each native
+program imports four retained temporal rows and consumes four post-restore rows. Instrumentation
+counts row transfer independently of cursor/callback metadata. The row/map-key programs derive
+scalar keys before the temporal boundary; the legacy function fixture uses rowtime. Eighty-eight
+canonical witness controls and 48 summary controls pass. This is upstream compiled-plan restore
+coverage, not the full isolated engine-switch/connector/failure matrix of
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

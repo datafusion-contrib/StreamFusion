@@ -92,6 +92,55 @@ class CanonicalRestoreExecutionTest {
 
   private static final class NativeWindowJoinOperator {}
 
+  private static final String TEMPORAL =
+      "org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalJoinRestoreTest";
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "temporal-join-table-join",
+        "temporal-join-table-join-nested-key",
+        "temporal-join-table-join-key-from-map",
+        "temporal-join-temporal-function"
+      })
+  void temporalRestoreRequiresActualNativeTemporalInput(String program) {
+    var scope = NativeExecution.beginRestore(TEMPORAL, new Object(), program);
+    var join = new NativeTemporalJoinOperator();
+    NativeExecution.opened(join);
+    NativeExecution.restored("NativeTemporalJoinOperator", 3);
+    NativeExecution.completed(join, 2);
+    assertDoesNotThrow(() -> NativeExecution.finish(scope));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"none", "open", "importOnly", "calc", "interval", "fallback"})
+  void missingOrUnrelatedWorkCannotQualifyTemporalRestore(String mode) {
+    var scope = NativeExecution.beginRestore(TEMPORAL, new Object(), "temporal-join-table-join");
+    if (mode.equals("open") || mode.equals("importOnly")) {
+      NativeExecution.opened(new NativeTemporalJoinOperator());
+      if (mode.equals("importOnly")) NativeExecution.restored("NativeTemporalJoinOperator", 3);
+    } else if (mode.equals("calc")) {
+      var calc = new NativeCalcOperator();
+      NativeExecution.opened(calc);
+      NativeExecution.completed(calc, 2);
+    } else if (mode.equals("interval")) {
+      var join = new NativeIntervalJoinOperator();
+      NativeExecution.opened(join);
+      NativeExecution.completed(join, 2);
+    } else if (mode.equals("fallback")) NativeExecution.fallback("temporal unsupported");
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  @Test
+  void unknownTemporalProgramsCannotInheritAKnownWitness() {
+    assertThrows(
+        AssertionError.class,
+        () -> NativeExecution.beginRestore(TEMPORAL, new Object(), "temporal-join-unknown"));
+  }
+
+  private static final class NativeTemporalJoinOperator {}
+
   private static final String INTERVAL =
       "org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest";
 

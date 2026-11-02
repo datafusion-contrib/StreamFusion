@@ -64,7 +64,8 @@ Independent event callback ownership survives cleanup and recovery. Watermarks w
 do not prune build versions; this preserves released Flink behavior for late probes. Native
 checkpoints preserve signed per-key probe cursors, registered event values and orphan callbacks,
 including metadata-only key groups. Representative released 2.2.1 temporal canonical transfer is verified directly from live state;
-automatic plan binding and complete-job qualification remain unfinished.
+the stock compiled-plan loader now binds it automatically, while complete-job qualification
+remains unfinished.
 
 The OVER aggregate's rowtime deadline shapes retain the same lazy + sweep substitution. Flink's fired timer defers a rowtime key that still has buffered rows
 awaiting a watermark, re-registering from the fire time (`fire + max`); our deferral re-arm runs

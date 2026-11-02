@@ -277,6 +277,10 @@ final class StockCompiledPlanLowering {
     else if (node instanceof StreamExecCalc && NativeConfig.operatorEnabled("calc"))
       result = lowerCalc((StreamExecCalc) node);
     else if (node
+            instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecTemporalJoin
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("temporalJoin")) result = lowerTemporalJoin(node);
+    else if (node
             instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecIntervalJoin
         && nativeKeyedState
         && NativeConfig.operatorEnabled("intervalJoin")) result = lowerIntervalJoin(node);
@@ -393,6 +397,135 @@ final class StockCompiledPlanLowering {
     var exit =
         new ArrowToRowDataExecNode(config, InputProperty.DEFAULT, outputType, "ArrowToRowData");
     connect(nativeCalc, exit);
+    return exit;
+  }
+
+  private ExecNode<?> lowerTemporalJoin(ExecNode<?> stock) throws IOException {
+    if (planner.getExecEnv().getCheckpointConfig().isUnalignedCheckpointsEnabled()) {
+      recordFallback("temporal join: canonical exchange reassembly is not yet bound");
+      return stock;
+    }
+    if (stockUids.get(stock.getId()) == null) return stock;
+    var definition = definitions.get(stock.getId());
+    int leftTime = definition.path("leftTimeAttributeIndex").asInt(-1);
+    int rightTime = definition.path("rightTimeAttributeIndex").asInt(-1);
+    if (leftTime < 0 || rightTime < 0) return stock;
+    var joinSpec =
+        reader
+            .forType(org.apache.flink.table.planner.plan.nodes.exec.spec.JoinSpec.class)
+            .<org.apache.flink.table.planner.plan.nodes.exec.spec.JoinSpec>readValue(
+                definition.path("joinSpec"));
+    int kind = TemporalJoinMatcher.joinTypeCode(joinSpec.getJoinType());
+    int[] leftKeys = joinSpec.getLeftKeys(), rightKeys = joinSpec.getRightKeys();
+    if (kind < 0 || leftKeys.length == 0 || leftKeys.length != rightKeys.length) return stock;
+    for (boolean filter : joinSpec.getFilterNulls()) if (!filter) return stock;
+    var left = stock.getInputEdges().get(0).getSource();
+    var right = stock.getInputEdges().get(1).getSource();
+    var leftType = (RowType) left.getOutputType();
+    var rightType = (RowType) right.getOutputType();
+    var outputType = (RowType) stock.getOutputType();
+    if (leftTime >= leftType.getFieldCount()
+        || rightTime >= rightType.getFieldCount()
+        || !RowDataArrowConverter.supports(leftType)
+        || !RowDataArrowConverter.supports(rightType)
+        || !RowDataArrowConverter.supports(outputType)
+        || !ArrowRowTypeSupport.supportsFields(leftType, leftKeys)
+        || !ArrowRowTypeSupport.supportsFields(rightType, rightKeys)
+        || Stream.concat(leftType.getChildren().stream(), rightType.getChildren().stream())
+            .anyMatch(type -> type.is(LogicalTypeFamily.CONSTRUCTED))) return stock;
+    for (LogicalType time : List.of(leftType.getTypeAt(leftTime), rightType.getTypeAt(rightTime)))
+      if (!(time.is(LogicalTypeRoot.BIGINT)
+          || (time.is(LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE)
+                  || time.is(LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE))
+              && LogicalTypeChecks.getPrecision(time) <= 3)) return stock;
+    var config = new Configuration(planner.getTableConfig().getConfiguration());
+    ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
+    if (Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
+      return stock;
+    RexExpression predicate = null;
+    if (joinSpec.getNonEquiCondition().isPresent()) {
+      predicate =
+          RexExpression.encode(
+              org.apache.calcite.rex.RexUtil.expandSearch(
+                  new RexBuilder(planner.getTypeFactory()),
+                  null,
+                  joinSpec.getNonEquiCondition().get()));
+      if (predicate == null || predicate.requiresCollectionRepresentation()) return stock;
+    }
+    var originalTransform = stockTransformations.get(stock.getId());
+    if (!(originalTransform
+        instanceof org.apache.flink.streaming.api.transformations.TwoInputTransformation))
+      return stock;
+    var original =
+        (org.apache.flink.streaming.api.transformations.TwoInputTransformation<?, ?, ?>)
+            originalTransform;
+    if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)) return stock;
+    var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
+    if (!(operator
+        instanceof
+        org.apache.flink.table.runtime.operators.join.temporal.TemporalRowTimeJoinOperator))
+      return stock;
+    int maximum =
+        resolvedStockMaximums.getOrDefault(original.getId(), original.getMaxParallelism());
+    if (maximum < 1)
+      maximum =
+          FlinkKeyGroupUtils.maxParallelism(
+              planner.getExecEnv(), original.getParallelism() > 0 ? original.getParallelism() : 1);
+    @SuppressWarnings("unchecked")
+    TypeSerializer<RowData> keys =
+        (TypeSerializer<RowData>)
+            original
+                .getStateKeyType()
+                .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
+    var keyType =
+        RowType.of(
+            Arrays.stream(leftKeys).mapToObj(leftType::getTypeAt).toArray(LogicalType[]::new));
+    var contract =
+        new tech.streamfusion.state.StockTemporalJoinStateContract(
+            keys,
+            keyType,
+            leftType,
+            rightType,
+            leftKeys,
+            rightKeys,
+            leftTime,
+            rightTime,
+            config
+                .get(org.apache.flink.table.api.config.ExecutionConfigOptions.IDLE_STATE_RETENTION)
+                .toMillis());
+    var leftExchange =
+        (NativeColumnarExchangeExecNode) canonicalJoinInput(left, config, leftType, leftKeys, true);
+    var rightExchange =
+        (NativeColumnarExchangeExecNode)
+            canonicalJoinInput(right, config, rightType, rightKeys, true);
+    leftExchange.withStateMaxParallelism(maximum);
+    rightExchange.withStateMaxParallelism(maximum);
+    var join =
+        new NativeTemporalJoinExecNode(
+                config,
+                InputProperty.DEFAULT,
+                InputProperty.DEFAULT,
+                outputType,
+                "NativeTemporalJoin",
+                leftKeys,
+                rightKeys,
+                leftTime,
+                rightTime,
+                kind,
+                leftType,
+                rightType,
+                predicate,
+                FlinkKeyGroupUtils.stockKeyDescriptor(leftType, leftKeys))
+            .withStateMaxParallelism(maximum);
+    join.setInputEdges(
+        List.of(
+            ExecEdge.builder().source(leftExchange).target(join).build(),
+            ExecEdge.builder().source(rightExchange).target(join).build()));
+    bindings.put(join, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
+    columnar.add(join);
+    var exit =
+        new ArrowToRowDataExecNode(config, InputProperty.DEFAULT, outputType, "ArrowToRowData");
+    connect(join, exit);
     return exit;
   }
 

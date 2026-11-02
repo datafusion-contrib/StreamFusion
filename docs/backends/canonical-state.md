@@ -568,7 +568,33 @@ those checks do not qualify the temporal canonical adapter on 1.18. Finish retai
 cleanup clocks without trying to schedule on an already stopped processing-time service.
 
 This qualifies representative operator conversion using BIGINT keys/payloads and compact time
-fixtures. Automatic temporal plan binding, unchanged upstream temporal restore programs, isolated
-complete-job switches, wider schemas, rescaling and the full failure/version/connector matrix
+fixtures. Automatic temporal compiled-plan binding and released upstream restore programs are
+qualified below. Isolated complete-job switches, wider schemas, rescaling and the full
+failure/version/connector matrix
 remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Every one of the 15 operator families still has partial coverage. Benchmarking remains deferred.
+
+
+## Automatic compiled temporal binding
+
+The released 2.2.1 stock compiled-plan loader now binds event-time temporal joins automatically.
+It retains portable stock JSON, the original operator identity and key serializer, time indices,
+join kind, residual predicate and retention configuration. Both columnar exchanges and the native
+state owner use the original job's resolved maximum parallelism. Both inputs preserve row kinds.
+The rowtime temporal-function form uses the same verified stock operator/state layout and is
+bound too. Unaligned exchanges, changelog backends and asynchronous state retain stock owners.
+
+Twenty-three planner controls cover both join kinds, TIMESTAMP/TIMESTAMP_LTZ(3), residuals,
+retention (including root configuration), portable reloads, disabled/repeated explains and
+unsupported modes. Two independent boundary controls override the environment's maximum on
+both exchanges and the state owner. Ninety-one neighboring planner/key/SQL controls pass too.
+
+All four unchanged released `TemporalJoinRestoreTest` programs pass on both stock and native:
+plain temporal table joins, keys derived from nested rows, keys derived from maps and a rowtime
+temporal function. Each native program imports four retained rows and consumes four new rows in
+the actual native temporal operator. Derived keys are scalar at the temporal state boundary.
+Eighty-eight canonical execution-witness controls and 48 independent summary/audit controls pass.
+Explicit program contracts reject unknown fixtures and unrelated/zero-input native work. The
+stock test runtime excludes StreamFusion. These passes qualify this compiled-plan path; isolated
+complete-job engine-switch/rescale/failure matrices and ordinary-SQL identity work remain open
+in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

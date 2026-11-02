@@ -47,11 +47,12 @@ the scheme exactly:
 
 See [Configuration](../../configuration.md) for the TTL flag surface.
 
-## Released processing-time restriction
+## Processing-time boundary
 
-A **processing-time** temporal table join (`FOR SYSTEM_TIME AS OF probe.proctime` against a
-versioned table) and the legacy proctime temporal *function* join are both parity, not a gap — Flink
-itself rejects them (FLINK-19830). For the proctime *dimension-table* shape that Flink does support,
+Stock Flink rejects a processing-time versioned-table `FOR SYSTEM_TIME AS OF` join
+(FLINK-19830). Its legacy processing-time temporal-function form is supported by stock and
+retains that stock state owner here. Native temporal conversion currently covers event time,
+including the rowtime temporal-function form. For a processing-time dimension-table lookup,
 see [Lookup join](lookup-join.md).
 
 ## Falls back to Flink when
@@ -62,7 +63,8 @@ see [Lookup join](lookup-join.md).
 - the equi-key type is outside the supported set;
 - a residual non-equi predicate beyond the `FOR SYSTEM_TIME` condition isn't expressible by the
   native expression engine;
-- the join is processing-time against a versioned table (parity, not a real gap — see above).
+- the join is processing-time against a versioned table (stock rejects it), or uses the legacy
+  processing-time temporal-function operator (retained stock owner — see above).
 
 ## Independent native cleanup state
 
@@ -73,8 +75,9 @@ switch directions, 64 keys, empty/mixed row sides and three-way redistribution.
 
 These controls cover native recovery. The separate canonical adapter described below preserves
 probe indices/cursors, versioned row kinds, registered timer values and queued callbacks that can
-outlive TTL cleanup. Automatic temporal plan binding remains open in
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+outlive TTL cleanup. The compiled-plan path binds that contract automatically; full job
+qualification remains open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking is deferred.
 
 ## Released cursor and callback contract controls
 
@@ -116,7 +119,14 @@ and planner classes blocked; Arrow allocation checks remain strict. The independ
 passes 1,184 native tests (two existing ignores) and 185 Java controls. Shared 1.18 runtime checks
 also pass, but do not qualify canonical temporal transfer on that version.
 
-These fixtures use BIGINT keys/payloads and compact time fields. Automatic temporal plan binding,
-unchanged upstream temporal restore fixtures, isolated complete-job switches and the broader
-schema/rescale/failure/version matrix remain pending under
+The operator fixtures use BIGINT keys/payloads and compact time fields. The compiled-plan loader
+also passes all four unchanged released 2.2.1 temporal restore programs, including scalar string
+keys derived from rows/maps and the rowtime temporal function. Each imports four saved rows and
+processes four new rows in the native temporal operator. Portable stock JSON, original operator
+identity/serializer and resolved maximum parallelism are retained automatically. Twenty-five
+planner/boundary controls and 91 neighboring controls pass. Unsupported backend/exchange modes
+and the legacy processing-time function keep their stock owner.
+
+Isolated complete-job switches and the broader schema/rescale/failure/version matrix remain
+pending under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
