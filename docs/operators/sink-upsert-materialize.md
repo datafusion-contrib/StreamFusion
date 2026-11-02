@@ -76,6 +76,9 @@ for the VALUE, MAP and ADAPTIVE materializer strategies; the native path also di
 those strategies.
 The strategy option is `table.exec.sink.upsert-materialize-strategy.type`. ADAPTIVE high/low
 threshold validation retains Flink 2.2's backend defaults (400/300 for heap, 50/40 otherwise).
+Native sink translation shares these strategy and backend-dependent matching rules, including after
+ordinary native checkpoint recovery. The released comparison controls cover scalar and nested
+matching values on both stores; sharing strategy construction keeps sink integrations consistent.
 
 Insert-only sinks do not need this stage, matching Flink's runtime decision even when
 `table.exec.sink.upsert-materialize=FORCE` marks the physical sink.
