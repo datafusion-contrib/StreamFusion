@@ -6678,7 +6678,7 @@ Both paths use the same production DSO and expanded two-column fixture. A fresh 
 benchmark executable links the current production Rust. Separate old/new fixture smokes
 confirm that adding the second input leaves existing one-column corpora unchanged.
 
-Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
+Release/default-feature, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
 measurements and 131,072 rows per trial compare stock generated Java over prepared
 GenericRowData/BinaryRowData with production Calc over equal Arrow batches. Native timing
 stays inside Rust; initial JNI/C Data entry/export and perimeter transposes are excluded.
@@ -6742,7 +6742,7 @@ released Flink's nullable-conversion failures. No production Rust, JNI, ownershi
 The [result record](results/mixed-exact-least-2026-11-02.json) and
 [raw trials](results/mixed-exact-least-2026-11-02.csv.gz) retain 112 configurations/11,200 trials.
 The actual preceding encoder is independently recompiled from `a7eaea10`, the separate GREATEST
-commit on canonical main `b0eb507c`. Both paths use the same release/default-feature/mimalloc DSO,
+commit on canonical main `b0eb507c`. Both paths use the same release/default-feature DSO,
 fresh benchmark executable and two-column fixture. JDK 17.0.12, Apple M4 Pro, one thread,
 16 warmups/nine measurements and 131,072 rows per trial match the GREATEST methodology.
 Prepared GenericRowData/BinaryRowData and Arrow contain equal values/types/NULLs. Rust timing
@@ -6813,7 +6813,7 @@ bytes to 56/20,418 after fusion. Its fused median was still 7.84 ns/row against 
 
 The final noncompact matrix retains 72 configurations/7,200 trials against independently
 recompiled actual preceding commit `289b69f0`, on canonical main `b0eb507c`. The candidate
-uses the new release/default-feature/mimalloc DSO; previous controls use their independently
+uses the new release/default-feature DSO; previous controls use their independently
 preserved preceding DSO/executable and the same expanded logical corpus. Apple M4 Pro,
 JDK 17.0.12, one thread, 16 warmups/nine measurements, 131,072 rows/trial and matching prepared
 GenericRowData/BinaryRowData/Arrow inputs follow the preceding extrema method. Timing stays
@@ -6891,7 +6891,7 @@ and configuration are unchanged.
 The [result record](results/utc-ltz-floor-2026-11-02.json) and
 [4,000 raw trials](results/utc-ltz-floor-2026-11-02.csv.gz) retain stock controls, an independently
 recompiled actual preceding encoder at `11e13486`, source/DSO hashes and unfavorable results.
-Both paths use the same unchanged release/default-feature/mimalloc DSO and the same expanded
+Both paths use the same unchanged release/default-feature DSO and the same expanded
 timestamp fixture/executable; this is not relabeled as the preceding historical executable.
 On Apple M4 Pro, JDK 17.0.12, one thread, 16 warmups/nine measurements and 131,072 rows/trial,
 TIMESTAMP_LTZ(3)/(9), NULL/NOT NULL and GenericRowData/BinaryRowData/Arrow controls consume
@@ -6951,7 +6951,7 @@ No production Rust, DSO, JNI, ownership or option changes are needed.
 The [result record](results/utc-ltz-ceil-2026-11-02.json) and
 [4,000 raw trials](results/utc-ltz-ceil-2026-11-02.csv.gz) compare stock with independently
 recompiled actual preceding encoder `bc9156b3` and candidate. They use the same timestamp
-fixture, production DSO and release/default-feature/mimalloc executable as FLOOR, with
+fixture, production DSO and release/default-feature executable as FLOOR, with
 `YEAR(CEIL(v TO MONTH|YEAR))>0 OR CAST(NULL AS BOOLEAN)`. The prepared-input Rust-side
 timer, types, signed extrema, NULLs, GenericRowData/BinaryRowData controls, batch sizes,
 16 warmups/nine measurements and 131,072 rows/trial are unchanged. Every checksum agrees;
@@ -7068,3 +7068,59 @@ and invalid TO_TIMESTAMP_LTZ methods pass in **16 stock-oracle invocations**, se
 from native-route witnesses. All 28 fixture smokes pass, including old/new original-corpus
 checksum controls. Broader conversions remain in
 [#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
+
+## Function allocator provenance and matched IF controls
+
+The [artifact audit](results/function-allocator-provenance-2026-11-02.json) corrects blanket
+mimalloc labels on this change's mixed-selection and UTC-rounding records. Prepared Rust
+executables and JNI core DSOs are separate link products. CountingAllocator declares System,
+but only inspecting the final linked artifact establishes whether allocator symbols were rebound.
+The retained extrema executable imports System malloc while its shared `ef29d700` JNI DSO
+uses mimalloc. The retained `4a10d804` UTC-rounding core DSO uses System. Original IF candidate
+and calendar executable artifacts are not retained for independent symbol reinspection; their
+hashes/raw measurements remain, without inventing an allocator attribution. These historical
+numbers are not a mimalloc-specific prepared-function qualification.
+
+A fresh [matched IF record](results/mixed-exact-if-allocator-matched-2026-11-02.json) and
+[7,200 raw trials](results/mixed-exact-if-allocator-matched-2026-11-02.csv.gz) use the same
+current release/System executable and core DSO on both sides. The independently compiled actual
+pre-feature encoder `289b69f0` keeps its generated evaluator; candidate uses the typed selector.
+This isolates the encoder/selection change on the same current primitive evaluator/transport;
+it is not a replay of the complete historical DSO. Input values/checksums, DECIMAL signatures,
+branch orders, nullabilities, GenericRowData/BinaryRowData, nullable BOOLEAN consumer, timing
+boundary, warmup/repetition and complete-job perimeter match the original IF qualification.
+Every checksum agrees and candidate native expressions require empty evaluators. Reused fixture
+and released-oracle controls are identified as reused, not newly executed IF oracles.
+
+| Flink | Workload | Cells | Stock/native median range | Prior encoder/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 1.243-6.803x | 7.068-10.927x | 0 |
+| 1.18.1 | tiny control | 12 | 0.064-0.293x | 6.613-8.869x | 12 |
+| 2.2.1 | bulk | 24 | 1.067-4.861x | 6.423-10.811x | 0 |
+| 2.2.1 | tiny control | 12 | 0.066-0.289x | 6.625-8.397x | 12 |
+
+All 48 bulk medians beat stock and the prior-encoder control. All 24 tiny controls still
+lose to stock. Complete million-row source/blackhole jobs retain startup, JNI and both
+transposes, two warmups/five measurements and independent stock controls. Seconds are
+median (min-max).
+
+| Flink / inputs | Candidate stock | Native | Prior-control stock | Prior encoder |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / fractional-int | 0.211896 (0.205774-0.214337) | 0.226388 (0.214241-0.227146) | 0.201043 (0.194222-0.210099) | 0.270145 (0.267369-0.273343) |
+| 1.18.1 / compact-bigint | 0.199994 (0.194616-0.210764) | 0.224322 (0.211926-0.235112) | 0.200780 (0.199217-0.201742) | 0.266821 (0.257370-0.278869) |
+| 1.18.1 / wide-bigint | 0.208675 (0.202621-0.213879) | 0.225573 (0.219125-0.241540) | 0.214507 (0.204583-0.217570) | 0.291849 (0.284361-0.306561) |
+| 1.18.1 / fractional-bigint | 0.215004 (0.209909-0.229445) | 0.228181 (0.221224-0.245202) | 0.208205 (0.202990-0.223996) | 0.282070 (0.271877-0.284726) |
+| 2.2.1 / fractional-int | 0.206288 (0.203484-0.206633) | 0.225171 (0.223702-0.236765) | 0.202783 (0.201772-0.209552) | 0.287532 (0.285755-0.299882) |
+| 2.2.1 / compact-bigint | 0.204214 (0.197145-0.210660) | 0.226605 (0.215100-0.238641) | 0.197689 (0.193144-0.209770) | 0.256399 (0.251695-0.270723) |
+| 2.2.1 / wide-bigint | 0.209169 (0.201884-0.212275) | 0.226093 (0.221882-0.236119) | 0.200475 (0.194004-0.205439) | 0.278284 (0.276462-0.285379) |
+| 2.2.1 / fractional-bigint | 0.201508 (0.196561-0.211933) | 0.222281 (0.220729-0.230879) | 0.207573 (0.204575-0.210746) | 0.279755 (0.270325-0.294065) |
+
+Native/stock elapsed ratios span **1.061-1.122** and native/prior-encoder **0.773-0.884**.
+Every measured complete job remains slower than stock. These matched controls replace an
+assumption of matched historical allocator settings; original trials/hashes remain available.
+
+Canonical main advances to `76b1e46f` through CI-status-only PR #586. All ten implementation/
+record patches rebase equally in `git range-diff`; `git diff 14f4c6dc HEAD -- src native`
+is empty at the rebased implementation head recorded in the audit. No runtime source changes
+or new performance timings are inferred from that CI-only rebase. Historical base IDs remain
+attached to the measurements they actually produced.

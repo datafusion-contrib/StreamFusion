@@ -3840,5 +3840,10 @@
       ]
     }
   },
-  "oracle_scope": "Unchanged released ScalarFunctionsTest.testTemporalFloor stock controls; runtime LTZ SQL witnesses establish the new intended native route."
+  "oracle_scope": "Unchanged released ScalarFunctionsTest.testTemporalFloor stock controls; runtime LTZ SQL witnesses establish the new intended native route.",
+  "allocator_attribution": {
+    "scope": "Retained 4a10d804 core DSO uses System; no mimalloc-specific qualification claimed for the historical prepared executable.",
+    "evidence_record": "function-allocator-provenance-2026-11-02.json",
+    "original_trial_values_and_runtime_hashes_unchanged": true
+  }
 }

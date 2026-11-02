@@ -7209,5 +7209,10 @@
       "checksum": "-2048",
       "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
     }
-  ]
+  ],
+  "allocator_attribution": {
+    "scope": "Prepared executable uses System; shared ef29d700 core DSO uses mimalloc.",
+    "evidence_record": "function-allocator-provenance-2026-11-02.json",
+    "original_trial_values_and_runtime_hashes_unchanged": true
+  }
 }

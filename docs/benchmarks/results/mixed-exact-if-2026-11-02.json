@@ -9197,5 +9197,10 @@
       "fused_count": 56,
       "fused_requested_bytes": 20418
     }
+  },
+  "allocator_attribution": {
+    "scope": "Historical candidate allocator not independently reverified; prior DSO uses mimalloc and its prepared executable uses System. Use the separate allocator-matched control for the isolated encoder comparison.",
+    "evidence_record": "function-allocator-provenance-2026-11-02.json",
+    "original_trial_values_and_runtime_hashes_unchanged": true
   }
 }

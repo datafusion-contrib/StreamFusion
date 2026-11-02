@@ -3884,5 +3884,10 @@
       "native/engine/src/expr.rs": "d357a41f914f057d93c5badbf06814d8fc2d6db7fcccd20a9ce2e608e7fdca1d"
     },
     "dso_sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98"
+  },
+  "allocator_attribution": {
+    "scope": "Retained 4a10d804 core DSO uses System; no mimalloc-specific qualification claimed for the historical prepared executable.",
+    "evidence_record": "function-allocator-provenance-2026-11-02.json",
+    "original_trial_values_and_runtime_hashes_unchanged": true
   }
 }
