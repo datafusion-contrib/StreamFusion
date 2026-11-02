@@ -307,3 +307,11 @@ immediate FULL join emits both unmatched rows, while mini-batch suppression omit
 Both stock behavior controls pass; they provide no native interoperability credit. The discrepant
 job evidence is retained, and stock-baseline assertions have not been relaxed. Complete mini-batch
 qualification remains open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+When both inputs reuse the same first-N subplan, ordinary canonical binding retains one
+upstream counter owner and the join's own independent state owner. Two different rank limits
+retain two counters. Batch sharing is rebuilt around those owners. All 32 compiled/ordinary cross-engine job scenarios pass across both stores/orders, including
+no-input re-export and rescaling at 1→3→2/maxP128. Both families prove new native input after
+the barrier, including downstream rows initially pending in a partial transpose. Wider qualification remains in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

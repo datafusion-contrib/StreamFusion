@@ -1,5 +1,6 @@
 package tech.streamfusion.planner;
 
+import java.util.Arrays;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -29,6 +30,14 @@ public class NativeFirstNExecNode extends ExecNodeBase<ArrowBatch>
       throw new IllegalArgumentException("State maximum parallelism must be positive");
     stateMaxParallelism = maximum;
     return this;
+  }
+
+  boolean sameStateDefinition(NativeFirstNExecNode other) {
+    return limit == other.limit
+        && outputRank == other.outputRank
+        && Arrays.equals(partitions, other.partitions)
+        && Arrays.equals(precisions, other.precisions)
+        && getPersistedConfig().toMap().equals(other.getPersistedConfig().toMap());
   }
 
   public NativeFirstNExecNode(

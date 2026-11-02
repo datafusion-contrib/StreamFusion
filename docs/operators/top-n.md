@@ -453,3 +453,11 @@ new rows and is now rejected before any are inserted. The earlier 60-job cohort 
 this stricter initialization check; the final combined 129-check cohort is under qualification.
 Shared Flink 1.18 processing/checkpoint controls pass 17 cases without claiming stock canonical
 interchange on that line.
+
+
+A reused first-N result can feed both inputs of a join while retaining one stock counter owner.
+Ordinary lowering checks the captured origin, rank settings, key layout and configuration
+before consolidating clones, then rebuilds batch sharing. Different first-N limits retain
+separate state owners. All 32 cross-engine job scenarios pass across both submission forms/stores/orders, including
+no-input re-export, rescaling and different-limit controls; the combined cohort passes 124 checks. Older native graph upgrades and other shared stateful rank
+variants remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

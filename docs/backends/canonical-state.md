@@ -873,3 +873,22 @@ new rows and is now rejected before any are inserted. The final combined cohort 
 with this stricter initialization check.
 Shared Flink 1.18 processing/checkpoint controls pass 17 cases without claiming stock canonical
 interchange on that line.
+
+
+## Shared first-N state owners
+
+A reused first-N subplan feeding both sides of a join retains one counter owner, matching the
+stock graph. Ordinary lowering consolidates clones only when they refer to the same captured
+stock operator and agree on rank limit, rank projection, partition/key layout, persisted
+configuration, descriptions and input/output roles. Different limits retain distinct owners.
+Canonical binding then captures the released state contract once and rebuilds Arrow sharing
+before execution; savepoint export does not combine independently evolving counters.
+
+Planner controls cover compiled and ordinary shared/distinct counter roles. All 32 complete-job scenarios pass across both submission forms/stores/orders: 16 continuation
+cases with shared or distinct limits, eight no-input re-exports and eight rescalings at 1→3→2/maxP128.
+They preserve custom source/transactional sink state, both transposes, clean stock metadata/classpaths
+and independent retained-first-N Cartesian-product results. Both native families prove new input
+after the barrier; a partial transpose may retain downstream join input until that barrier.
+The combined planner/job cohort passes all 124 checks. These
+new-job controls do not qualify upgrades from older native graphs with multiple real owners.
+Other duplicated stateful roles remain part of [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

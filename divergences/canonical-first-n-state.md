@@ -28,3 +28,12 @@ than inferring state from SQL text. Ordinary wide root-key layouts retain their 
 route until a complete key-layout migration is qualified. Other rank contracts, broader types,
 backends, versions, full-job TTL expiry and connector/failure/delivery guarantees remain required
 by [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+
+Flink's `SubplanReuser` groups equivalent subplans by digest and retains the first owner.
+The native ordinary rewrite can clone that original first-N role. Consolidate only clones
+with the same captured stock origin and equivalent full first-N definitions before execution,
+then rebuild the existing owned Arrow sharing. This preserves the stock one-owner state
+contract without merging counters at a barrier. Distinct original roles, including different
+limits, remain separate. This extends the existing stateless shared-role normalization only
+to first-N; other stateful roles need their own equivalence and restore qualification.

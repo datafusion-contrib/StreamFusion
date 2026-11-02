@@ -431,24 +431,26 @@ public final class CanonicalJobWorker {
               "native state backend did not execute: " + EvidenceReporter.observedStorage);
       }
       if (nativeRun && Files.exists(root.resolve("rescale"))) {
-        String family =
+        String families =
             Files.exists(root.resolve("native-rescale-family"))
                 ? Files.readString(root.resolve("native-rescale-family")).trim()
                 : "GroupAgg";
-        long activeTasks =
-            EvidenceReporter.inputsByOperator.entrySet().stream()
-                .filter(entry -> entry.getKey().contains(family))
-                .flatMap(entry -> entry.getValue().stream())
-                .filter(counter -> counter.getCount() > 0)
-                .count();
-        if (activeTasks != parallelism)
-          throw new AssertionError(
-              "Expected "
-                  + parallelism
-                  + " active native "
-                  + family
-                  + " tasks, observed "
-                  + activeTasks);
+        for (String family : families.split(",")) {
+          long activeTasks =
+              EvidenceReporter.inputsByOperator.entrySet().stream()
+                  .filter(entry -> entry.getKey().contains(family))
+                  .flatMap(entry -> entry.getValue().stream())
+                  .filter(counter -> counter.getCount() > 0)
+                  .count();
+          if (activeTasks != parallelism)
+            throw new AssertionError(
+                "Expected "
+                    + parallelism
+                    + " active native "
+                    + family
+                    + " tasks, observed "
+                    + activeTasks);
+        }
       }
       if (!ordinarySql && !portablePlan.equals(plan.asJsonString())) {
         throw new AssertionError("runtime lowering mutated the portable compiled plan");

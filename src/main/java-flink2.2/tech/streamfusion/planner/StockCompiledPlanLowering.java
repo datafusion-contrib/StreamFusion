@@ -410,13 +410,16 @@ final class StockCompiledPlanLowering {
     Map<ExecNode<?>, ExecNode<?>> owners = new IdentityHashMap<>();
     Map<ExecNode<?>, ExecNode<?>> copies = new IdentityHashMap<>();
     for (ExecNode<?> node : nodes) {
-      if (!(node instanceof NativeCalcExecNode
+      if (!(node instanceof NativeFirstNExecNode
+          || node instanceof NativeCalcExecNode
           || node instanceof NativeFilterExecNode
           || node instanceof NativeWatermarkAssignerExecNode)) continue;
       ExecNode<?> original = graph.originals.get(node);
       ExecNode<?> owner = owners.putIfAbsent(original, node);
       if (owner == null) continue;
       if (node.getClass() != owner.getClass()
+          || node instanceof NativeFirstNExecNode
+              && !((NativeFirstNExecNode) node).sameStateDefinition((NativeFirstNExecNode) owner)
           || !node.getDescription().equals(owner.getDescription())
           || !node.getOutputType().equals(owner.getOutputType())
           || !node.getInputEdges()
@@ -434,7 +437,9 @@ final class StockCompiledPlanLowering {
   private static ExecNode<?> ordinaryInputRole(
       SqlPlanOrigins.RuntimeGraph graph, ExecNode<?> node) {
     ExecNode<?> source = node.getInputEdges().get(0).getSource();
-    while (source instanceof RowDataToArrowExecNode || source instanceof NativeShareExecNode)
+    while (source instanceof RowDataToArrowExecNode
+        || source instanceof NativeShareExecNode
+        || source instanceof NativeColumnarExchangeExecNode)
       source = source.getInputEdges().get(0).getSource();
     return graph.originals.get(source);
   }
