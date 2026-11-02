@@ -1588,3 +1588,11 @@ qualified fixture imports two counters and processes four new rows. Together wit
 existing join restore classes, the selection passes 31 original programs on each engine. These
 reports overlap previous cohorts and are not cumulative coverage counts. This proves that
 first-N fixture, not the other rank algorithms or all schema/backend/version variants.
+
+
+The normalizer qualification retains all five released `ChangelogNormalizeRestoreTest` programs
+and their original fixtures/assertions. Three native paths each import two canonical rows and
+consume new input; validation-only visits are excluded from import counts. The two pushed-filter
+paths retain the stock normalizer and exact fallback reason. Together with first-N and joins,
+all 36 selected programs pass per engine under their existing strict route contracts. This lane
+does not qualify unrelated aggregate/dedup/rank adapters or replace complete-job connector tests.

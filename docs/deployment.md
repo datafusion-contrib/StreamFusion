@@ -397,3 +397,14 @@ mapping is required. Keep connector/UDF dependencies on both engines and retain 
 identities/maxima for native checkpoint upgrades. See the remaining
 [first-N limits](backends/canonical-state.md#stock-compatible-first-n-counters);
 this does not qualify other rank algorithms or the complete connector/version matrix.
+
+
+For the qualified Flink 2.2.1 unfiltered normalizer/join graphs, ordinary SQL submission or the
+same portable stock compiled plan captures canonical state bindings automatically. Stop with a
+canonical savepoint and submit on the other engine using the normal restore option. Stock workers
+require only the usual Flink, connector and user code dependencies; StreamFusion workers install
+StreamFusion as usual. Both native stores and switch orders, repeated no-input returns and
+1→3→2 rescaling at unchanged maxP128 are tested. Sources/sink stay at one task in that rescale
+fixture. This does not qualify changing old native graph identities/maxima, arbitrary upstream
+native consumers or the full connector/delivery matrix; consult
+[canonical coverage](backends/canonical-state.md#automatic-normalizer-binding-and-continued-jobs).

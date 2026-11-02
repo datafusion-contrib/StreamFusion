@@ -40,8 +40,23 @@ into a fresh native target. Batches remain bounded, including raw expired persis
 
 All 16 direct Java controls pass across both native stores, including retained payloads, null keys,
 whole-view rejection, bounded transfer, receiver retry and original TTL age/expiry. Fourteen existing
-processing/checkpoint controls also pass. This adapter is not yet installed automatically by
-normal job submission. Compiled/ordinary binding, released normalizer fixtures, complete-job
-mini-batch/TTL/failure and connector matrices remain open in
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Existing processing and
+processing/checkpoint controls also pass. Ordinary SQL and stock compiled plans now bind this
+contract automatically when all other native state owners in the graph have qualified bindings.
+The original stock artifact remains portable; operator IDs, serializers, loaded retention and
+maximum parallelism are captured from the actual stock plan. Wider mini-batch/TTL/failure and
+connector matrices remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Existing processing and
 native checkpoint representations remain unchanged. Benchmarking is deferred.
+
+
+All 52 isolated normalizer/join scenarios pass across both submission forms/stores/orders,
+including native checkpoint recovery, no-input returns, empty state, partial mini-batch barriers
+and rescaling at 1→3→2/maxP128. Changed join values and key-only tombstones exercise the retained
+full row. Custom sources, transactional sink effects, both transposes and clean stock classpaths
+remain in the tests. The rescale harness's initial family-list error is retained; its correction
+passes eight rescalings and 126 controls after 44 other jobs passed. These overlapping runs are
+not cumulative counts. Long-retention jobs are separate from direct expiry controls.
+
+All five unchanged released normalizer restore programs pass per engine: three actual native
+imports/input paths and two filtered stock paths. Wider keys/backends, old native graph upgrades,
+shared stateful roles and unqualified consumers remain partial under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

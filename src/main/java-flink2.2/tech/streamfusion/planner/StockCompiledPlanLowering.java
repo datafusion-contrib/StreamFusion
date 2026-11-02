@@ -273,7 +273,8 @@ final class StockCompiledPlanLowering {
       if (ordinaryHelper(node)) continue;
       if (!graph.originals.containsKey(node)) return false;
       if (node.getClass().getName().startsWith("tech.streamfusion.")
-          && !(node instanceof NativeFirstNExecNode
+          && !(node instanceof NativeChangelogNormalizeExecNode
+              || node instanceof NativeFirstNExecNode
               || node instanceof NativeColumnarUpdatingJoinExecNode
               || node instanceof NativeTemporalJoinExecNode
               || node instanceof NativeIntervalJoinExecNode
@@ -312,7 +313,8 @@ final class StockCompiledPlanLowering {
       for (ExecNode<?> node : nodes) {
         if (ordinaryHelper(node) || replacements.containsKey(node)) continue;
         ExecNode<?> stock = graph.originals.get(node);
-        if (node instanceof NativeFirstNExecNode
+        if (node instanceof NativeChangelogNormalizeExecNode
+            || node instanceof NativeFirstNExecNode
             || node instanceof NativeColumnarUpdatingJoinExecNode
             || node instanceof NativeTemporalJoinExecNode
             || node instanceof NativeIntervalJoinExecNode
@@ -321,7 +323,12 @@ final class StockCompiledPlanLowering {
           if (!ordinaryKeyLayout(stockTransformations.get(stock.getId()))) return null;
           definitions.put(stock.getId(), reader.readTree(writer.writeValueAsString(stock)));
           ExecNode<?> exit;
-          if (node instanceof NativeFirstNExecNode
+          if (node instanceof NativeChangelogNormalizeExecNode
+              && stock
+                  instanceof
+                  org.apache.flink.table.planner.plan.nodes.exec.stream
+                      .StreamExecChangelogNormalize) exit = lowerNormalize(stock);
+          else if (node instanceof NativeFirstNExecNode
               && stock
                   instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecRank)
             exit = lowerFirstN(stock);
@@ -538,11 +545,122 @@ final class StockCompiledPlanLowering {
         && NativeConfig.operatorEnabled("updatingJoin"))
       result =
           lowerJoin((org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecJoin) node);
+    else if (node
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecChangelogNormalize
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("changelogNormalize")) result = lowerNormalize(node);
     else if (node instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecRank
         && nativeKeyedState
         && NativeConfig.operatorEnabled("topN")) result = lowerFirstN(node);
     lowered.put(node, result);
     return result;
+  }
+
+  private ExecNode<?> lowerNormalize(ExecNode<?> stock) throws IOException {
+    var definition = definitions.get(stock.getId());
+    if (!definition.path("filterCondition").isMissingNode()
+        && !definition.path("filterCondition").isNull()) {
+      recordFallback("changelog normalize: a pushed filter condition is not supported");
+      return stock;
+    }
+    var transformation = stockTransformations.get(stock.getId());
+    if (!(transformation instanceof OneInputTransformation)) return stock;
+    var original = (OneInputTransformation<?, ?>) transformation;
+    if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)) return stock;
+    var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
+    Object function;
+    boolean miniBatch;
+    if (operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator) {
+      function =
+          ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
+              .getUserFunction();
+      if (!(function
+          instanceof
+          org.apache.flink.table.runtime.operators.deduplicate
+              .ProcTimeDeduplicateKeepLastRowFunction)) return stock;
+      miniBatch = false;
+    } else if (operator
+        instanceof org.apache.flink.table.runtime.operators.bundle.KeyedMapBundleOperator) {
+      function = normalizerField(operator, "function");
+      if (!(function
+          instanceof
+          org.apache.flink.table.runtime.operators.deduplicate
+              .ProcTimeMiniBatchDeduplicateKeepLastRowFunction)) return stock;
+      miniBatch = true;
+    } else return stock;
+    if (!(Boolean) normalizerField(function, "generateInsert")
+        || (Boolean) normalizerField(function, miniBatch ? "inputInsertOnly" : "inputIsInsertOnly")
+        || normalizerField(function, "genFilterCondition") != null) return stock;
+    long retention =
+        (Long) normalizerField(function, miniBatch ? "minRetentionTime" : "stateRetentionTime");
+    ExecNode<?> input = stock.getInputEdges().get(0).getSource();
+    RowType inputType = (RowType) input.getOutputType();
+    int[] keys = reader.forType(int[].class).readValue(definition.path("uniqueKeys"));
+    if (!RowDataArrowConverter.supports(inputType)
+        || !ArrowRowTypeSupport.supportsFields(inputType, keys)
+        || Arrays.stream(keys).anyMatch(key -> containsRow(inputType.getTypeAt(key)))) return stock;
+    Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
+    ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
+    if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
+        || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
+      return stock;
+    config.setString("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
+    config.setString("table.exec.state.ttl", retention + " ms");
+    @SuppressWarnings("unchecked")
+    TypeSerializer<RowData> serializer =
+        (TypeSerializer<RowData>)
+            original
+                .getStateKeyType()
+                .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
+    RowType keyType =
+        RowType.of(Arrays.stream(keys).mapToObj(inputType::getTypeAt).toArray(LogicalType[]::new));
+    var contract =
+        new tech.streamfusion.state.StockChangelogNormalizeStateContract(
+            serializer, keyType, inputType, retention > 0);
+    int maximum = stockMaximum(original);
+    var exchange =
+        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
+    exchange.withStateMaxParallelism(maximum);
+    var normalize =
+        new NativeChangelogNormalizeExecNode(
+                config,
+                InputProperty.DEFAULT,
+                (RowType) stock.getOutputType(),
+                "NativeChangelogNormalize",
+                keys,
+                (Boolean) normalizerField(function, "generateUpdateBefore"),
+                FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys))
+            .withStateMaxParallelism(maximum);
+    connect(exchange, normalize);
+    bindings.put(
+        normalize, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
+    columnar.add(normalize);
+    var exit =
+        new ArrowToRowDataExecNode(
+            config, InputProperty.DEFAULT, (RowType) stock.getOutputType(), "ArrowToRowData");
+    connect(normalize, exit);
+    return exit;
+  }
+
+  private static boolean containsRow(LogicalType type) {
+    return type.is(LogicalTypeRoot.ROW)
+        || type.getChildren().stream().anyMatch(StockCompiledPlanLowering::containsRow);
+  }
+
+  private static Object normalizerField(Object object, String name) throws IOException {
+    for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass()) {
+      try {
+        var field = type.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(object);
+      } catch (NoSuchFieldException absent) {
+        continue;
+      } catch (IllegalAccessException failure) {
+        throw new IOException("Cannot capture released normalizer field " + name, failure);
+      }
+    }
+    throw new IOException("Missing released normalizer field " + name);
   }
 
   private ExecNode<?> lowerFirstN(ExecNode<?> stock) throws IOException {

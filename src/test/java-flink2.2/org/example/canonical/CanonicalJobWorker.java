@@ -182,7 +182,13 @@ public final class CanonicalJobWorker {
                 Files.readString(
                         root.resolve(twoPhase ? "two-phase-mini-batch" : "one-phase-mini-batch"))
                     .trim());
-        table.getConfig().set("table.exec.mini-batch.allow-latency", "10 s");
+        table
+            .getConfig()
+            .set(
+                "table.exec.mini-batch.allow-latency",
+                Files.exists(root.resolve("mini-batch-latency"))
+                    ? Files.readString(root.resolve("mini-batch-latency")).trim()
+                    : "10 s");
       }
       table.getConfig().set("streamfusion.transpose.batchRows", Integer.toString(batchRows));
       table.getConfig().set("table.plan.compile.catalog-objects", "SCHEMA");
@@ -452,6 +458,21 @@ public final class CanonicalJobWorker {
                     + activeTasks);
         }
       }
+      if (nativeRun
+          && limit < Integer.MAX_VALUE
+          && limit > restoredLimit
+          && Files.exists(root.resolve("require-checkpoint-flush-families"))) {
+        for (String family :
+            Files.readString(root.resolve("require-checkpoint-flush-families")).trim().split(",")) {
+          if (EvidenceReporter.checkpointFlushesByOperator.entrySet().stream()
+              .filter(entry -> entry.getKey().contains(family))
+              .flatMap(entry -> entry.getValue().stream())
+              .noneMatch(counter -> counter.getCount() > 0))
+            throw new AssertionError(
+                "No pending native " + family + " mini-batch reached the savepoint barrier");
+        }
+        Files.createFile(root.resolve(stage + "-checkpoint-flush-verified"));
+      }
       if (!ordinarySql && !portablePlan.equals(plan.asJsonString())) {
         throw new AssertionError("runtime lowering mutated the portable compiled plan");
       }
@@ -567,7 +588,8 @@ public final class CanonicalJobWorker {
             + "','ready'='"
             + sql(ready)
             + "','insert-only'='"
-            + Files.exists(root.resolve("insert-only"))
+            + (Files.exists(root.resolve("insert-only"))
+                || Files.exists(root.resolve(name + "-insert-only")))
             + "','upsert'='"
             + Files.exists(root.resolve("upsert-source"))
             + "'"
@@ -604,6 +626,9 @@ public final class CanonicalJobWorker {
     static final java.util.Map<String, java.util.List<org.apache.flink.metrics.Counter>>
         inputsByOperator = new java.util.concurrent.ConcurrentHashMap<>();
 
+    static final java.util.Map<String, java.util.List<org.apache.flink.metrics.Counter>>
+        checkpointFlushesByOperator = new java.util.concurrent.ConcurrentHashMap<>();
+
     @Override
     public void open(org.apache.flink.metrics.MetricConfig config) {}
 
@@ -619,6 +644,13 @@ public final class CanonicalJobWorker {
         observedStorage.add(
             String.valueOf(((org.apache.flink.metrics.Gauge<?>) metric).getValue()));
       }
+      if (name.equals("miniBatchCheckpointFlushes")
+          && metric instanceof org.apache.flink.metrics.Counter)
+        checkpointFlushesByOperator
+            .computeIfAbsent(
+                group.getAllVariables().getOrDefault("<operator_name>", ""),
+                ignored -> new java.util.concurrent.CopyOnWriteArrayList<>())
+            .add((org.apache.flink.metrics.Counter) metric);
       if (name.equals("numRecordsIn")
           && metric instanceof org.apache.flink.metrics.Counter
           && group.getAllVariables().getOrDefault("<operator_name>", "").startsWith("Native")) {

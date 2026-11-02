@@ -32,6 +32,11 @@ public final class NativePlannerTestEnvironment {
   }
 
   public static TableEnvironment create(Configuration configuration) throws IOException {
+    return create(configuration, new Class<?>[0]);
+  }
+
+  public static TableEnvironment create(Configuration configuration, Class<?>... factories)
+      throws IOException {
     return withPlannerClassLoader(
         loader ->
             TableEnvironment.create(
@@ -39,10 +44,12 @@ public final class NativePlannerTestEnvironment {
                     .inStreamingMode()
                     .withConfiguration(configuration)
                     .withClassLoader(loader)
-                    .build()));
+                    .build()),
+        java.util.Arrays.stream(factories).map(Class::getName).toArray(String[]::new));
   }
 
-  private static <T> T withPlannerClassLoader(Function<ClassLoader, T> create) throws IOException {
+  private static <T> T withPlannerClassLoader(Function<ClassLoader, T> create, String... factories)
+      throws IOException {
     String service = "META-INF/services/org.apache.flink.table.factories.Factory";
     ClassLoader parent = NativePlannerTestEnvironment.class.getClassLoader();
     var providers = new LinkedHashSet<String>();
@@ -57,6 +64,7 @@ public final class NativePlannerTestEnvironment {
             .forEach(providers::add);
       }
     }
+    providers.addAll(java.util.Arrays.asList(factories));
     providers.add("tech.streamfusion.planner.StreamFusionPlannerFactory");
     var file = Files.createTempFile("streamfusion-planner-service", ".txt");
     file.toFile().deleteOnExit();

@@ -920,11 +920,47 @@ red-to-green import reproductions and continuation, TTL, mini-batch-drain and ra
 All 30 Java checks pass: 16 direct controls across both native stores and 14 existing processing/
 checkpoint controls. They cover repeated stock/native handoffs, full tombstone payloads, null keys,
 late row-kind/key mismatches, nonempty targets, 2,049-row transfers, receiver retry and exact raw
-write ages with expiry at the original boundary. This primitive does not yet
-install a state contract during ordinary or compiled job submission; automatic normalizer
-binding, complete jobs, released restore fixtures and wider schema/backend/version/failure
+write ages with expiry at the original boundary. Both normal submission forms now bind the released normalizer contract when the complete
+graph's native state owners have qualified bindings. Wider schema/backend/version/failure
 matrices remain required by [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.
 
 Shared Flink 1.18 first-N/normalizer processing and checkpoint controls pass 31 checks;
 this does not qualify canonical interchange on that line.
+
+
+## Automatic normalizer binding and continued jobs
+
+Ordinary SQL and stock compiled plans capture the actual released synchronous or mini-batch
+normalizer function, its full-row/key serializers, update-before mode, TTL and resolved maximum
+parallelism. The portable stock JSON remains unchanged. Generated identities work without manual
+mappings. Capturing the loaded function preserves saved retention even if the submitting session
+sets another default. Other real stock owners retain their state and identities.
+
+All 52 normalizer/join job scenarios are qualified across both submission forms, native stores
+and switch orders: 24 immediate/mini-batch/long-retention continuations, eight no-input returns,
+four native checkpoint recoveries, eight empty-state handoffs and eight rescalings at fixed
+maxP128, 1→3→2 tasks. Rescaling keeps sources/sink at one task and disables chaining from the
+initial graph. A custom upsert source changes a join value independently of its primary key;
+key-only deletes therefore require the saved full row to retract old join matches. An insert-only
+source, transactional sink, both transposes, clean stock metadata/classpaths and external effects
+are checked against stock and an independent last-row/join oracle.
+
+Mini-batch cases suppress clock markers and require actual pending native normalization work to
+flush at the savepoint barrier. A downstream partial transpose can retain join input until that
+barrier; both families must prove new input afterward. Initial qualification passed 44 non-rescale
+jobs; eight rescale witness checks mistakenly read a comma-separated family list as one name.
+After applying the existing per-family check, all eight rescalings and 126 accompanying controls
+pass (134 checks). The failing reports and source hashes are retained; overlapping cohorts are
+not summed. Long-retention jobs do not establish downtime expiry; direct clocked controls do.
+
+All 36 selected released first-N/join/normalizer programs pass per engine with original fixtures
+and assertions. Three normalizer programs import two rows each and process five/five/six native
+rows. Two pushed-filter programs retain their stock normalizer and receive no native-state credit.
+The other 31 programs retain their prior strict route contracts. Shared 1.18 processing/checkpoint
+controls pass 31 checks without a canonical-interchange claim on that line.
+
+ROW-bearing keys, ordinary wide root-key layouts, async/changelog backends, unaligned exchange
+state, other shared stateful roles and unqualified native consumers remain separate work. Older
+native graph/maxP upgrades are not established by these new-job tests. All families remain partial
+under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking is deferred.

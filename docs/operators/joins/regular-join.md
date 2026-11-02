@@ -315,3 +315,11 @@ retain two counters. Batch sharing is rebuilt around those owners. All 32 compil
 no-input re-export and rescaling at 1→3→2/maxP128. Both families prove new native input after
 the barrier, including downstream rows initially pending in a partial transpose. Wider qualification remains in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+Canonical normalizer/join handoffs now preserve upsert input whose join value differs from its
+primary key. The upstream full-row state supplies the old join value for updates and key-only
+tombstones; both state owners bind to their stock identities. The 52 compiled/ordinary process
+scenarios cover both stores/orders, mini-batch barriers, no-input returns, native checkpoints,
+empty state and fixed-max rescaling. Other unqualified upstream native families remain part of
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

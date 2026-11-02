@@ -17,6 +17,11 @@ validation precedes mutation; raw hydration detects persisted duplicates across 
 Receiver failure leaves rows available for retry. Mini-batch staging must be drained by the
 existing operator barrier hook before projection; conversion itself does not emit pending rows.
 
-The direct adapter is groundwork for automatic compiled/ordinary normalizer binding and
-complete-job/released-fixture qualification in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
-Other dedup algorithms keep separate state contracts. Benchmarking is deferred.
+Automatic compiled/ordinary binding captures the selected released synchronous or mini-batch
+function before execution, including its actual retention and update mode. It binds the stock
+identity/maxP and leaves stock JSON portable. All 52 normalizer/join job scenarios are qualified,
+including pending barrier flushes and fixed-max rescaling; three unchanged released native
+normalizer fixtures prove real import plus continued input, and two filtered fixtures remain
+stock. Wider shared-state, schema/backend/version and connector/failure guarantees remain open
+in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Other dedup algorithms
+keep separate state contracts. Benchmarking is deferred.

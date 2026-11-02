@@ -210,6 +210,13 @@ public final class StreamFusionSuiteAgent {
                     ? builder.visit(
                         Advice.to(RecordCanonicalTemporalJoinImport.class).on(named("send")))
                     : builder)
+        .type(named("tech.streamfusion.state.StockChangelogNormalizeStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalNormalizerImport.class).on(named("importBatch")))
+                    : builder)
         .type(named("tech.streamfusion.state.StockFirstNStateContract"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -532,6 +539,15 @@ public final class StreamFusionSuiteAgent {
     static void exit(@Advice.Enter NativeExecution.Scope scope, @Advice.Thrown Throwable failure) {
       if (scope == null) return;
       RequireNativeExecution.exit(scope, failure);
+    }
+  }
+
+  public static final class RecordCanonicalNormalizerImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(2) java.util.List<?> rows, @Advice.Argument(3) boolean validateOnly) {
+      if (!validateOnly)
+        NativeExecution.restored("NativeColumnarChangelogNormalizeOperator", rows.size());
     }
   }
 
