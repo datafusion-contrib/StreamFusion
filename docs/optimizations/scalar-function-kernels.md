@@ -1307,3 +1307,12 @@ All eight tiny controls remain slower than stock, and complete million-row jobs 
 native/stock elapsed ratios 1.021-1.150 with both transposes. Full provenance, variability,
 failed/intermediate trials and measured limits are on the
 [scalar benchmark page](../benchmarks/scalar-functions.md#bigint-epoch-millisecond-conversion).
+
+Direct BIGINT epoch-second conversion uses the same packed parent validity but materializes
+scaled milliseconds. Its fixed original-second bounds are specialized by unit before scaling;
+moving the scaled buffer avoids an extra immutable-buffer reference clone. The
+[seconds qualification](../benchmarks/scalar-functions.md#bigint-epoch-second-conversion)
+retains the first implementation, final stock/prior-encoder/native trials and retained
+millisecond controls. All 32 final bulk cells beat stock by 1.342-4.511x, while tiny controls
+and all measured complete seconds jobs still lose to stock. One final millisecond NULL probe
+also remains 6.7% slower than retained native; no universal unchanged-path speedup is claimed.

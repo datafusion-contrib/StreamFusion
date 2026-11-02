@@ -30,13 +30,14 @@ class IntegralExpressionPipelineBenchmark {
     int decimalScale = Integer.getInteger("sf.integral.decimalScale", 0);
     int timestampPrecision = Integer.getInteger("sf.integral.timestampPrecision", -1);
     boolean epochMillisInput = Boolean.getBoolean("sf.integral.epochMillisInput");
+    boolean epochSecondsInput = Boolean.getBoolean("sf.integral.epochSecondsInput");
     boolean notNull = Boolean.getBoolean("sf.integral.primaryNotNull");
     String secondary = System.getProperty("sf.integral.secondaryType", "");
     assertTrue(secondary.isEmpty() || secondary.equals("INT") || secondary.equals("BIGINT"));
     var primary = timestampPrecision >= 0 ? DataTypes.TIMESTAMP_LTZ(timestampPrecision)
         : decimalPrecision > 0 ? DataTypes.DECIMAL(decimalPrecision, decimalScale)
         : booleanInput ? DataTypes.BOOLEAN()
-        : bigintInput || epochMillisInput ? DataTypes.BIGINT() : DataTypes.INT();
+        : bigintInput || epochMillisInput || epochSecondsInput ? DataTypes.BIGINT() : DataTypes.INT();
     var inputType = notNull ? primary.notNull() : primary;
     var second = secondary.equals("BIGINT") ? DataTypes.BIGINT() : DataTypes.INT();
     var sourceType = secondary.isEmpty() ? DataTypes.ROW(DataTypes.FIELD("v", inputType))
@@ -50,14 +51,16 @@ class IntegralExpressionPipelineBenchmark {
         try (var metrics = new RecoveryExecutionMetrics()) {
           var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
           var table = StreamTableEnvironment.create(env);
-          if (timestampPrecision >= 0 || epochMillisInput) table.getConfig().setLocalTimeZone(
+          if (timestampPrecision >= 0 || epochMillisInput || epochSecondsInput) table.getConfig().setLocalTimeZone(
               java.time.ZoneId.of(System.getProperty("sf.integral.zone", "UTC")));
           table.getConfig().set("table.exec.legacy-cast-behaviour",
               Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
           BigInteger maximum = BigInteger.TEN.pow(decimalPrecision).subtract(BigInteger.ONE);
           var source = env.fromSequence(0, count - 1).map(i -> {
             Object value;
-            if (epochMillisInput) {
+            if (epochSecondsInput) {
+              value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.epochSeconds(i);
+            } else if (epochMillisInput) {
               value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.epochMillis(i);
             } else if (timestampPrecision >= 0) {
               value = java.time.Instant.ofEpochMilli(

@@ -7003,7 +7003,8 @@ kernel in ordinary Calc. Released bounds are inclusive -62167219200000..25340230
 NULL and out-of-range values stay NULL. The timestamp shares the immutable input value
 buffer, uses zero nanoseconds, and places combined input/range validity on its parent.
 A packed range mask plus wordwise validity intersection replaces per-row Option handling.
-Computed ordinary-Calc inputs, seconds and other numeric signatures retain existing routes.
+At this qualification, computed ordinary-Calc inputs, seconds and other numeric signatures
+retain existing routes; the later seconds qualification extends the direct BIGINT subset.
 
 The initial unchanged kernel's nullable Flink 1.18 IS NULL pilot loses: stock 3.160 versus
 native 4.490 ns/row. CPU samples identify conversion, Vec growth/realloc and Vec<bool>
@@ -7059,7 +7060,8 @@ short complete jobs do not establish whole-job acceleration.
 All **148 focused JVM invocations** pass across released Flink 1.18.1/2.2.1 and JDK 11/17,
 compiled for Java release 11. Complete 5,003-row maps verify values, types, NULLs, unique
 IDs/cardinality, both nullabilities, four zones, calendar consumers, typed conditional selection,
-all-filtered batches and explicit generated controls for seconds/computed inputs. Admitted
+all-filtered batches and the then-generated seconds/computed controls. Direct BIGINT seconds
+are admitted by the separate qualification below. Admitted
 paths require consumed NativeCalc work and empty evaluators. Existing UNNEST temporal
 bounds, zones and failure contracts remain covered. All **888 Rust core tests** pass without
 default features, zero ignored, including sliced buffer ownership, parent/child NULL contracts,
@@ -7124,3 +7126,95 @@ record patches rebase equally in `git range-diff`; `git diff 14f4c6dc HEAD -- sr
 is empty at the rebased implementation head recorded in the audit. No runtime source changes
 or new performance timings are inferred from that CI-only rebase. Historical base IDs remain
 attached to the measurements they actually produced.
+
+## BIGINT epoch second conversion
+
+Direct/literal `TO_TIMESTAMP_LTZ(n,0)` with BIGINT input reuses the epoch conversion structure.
+Both released Flink jars check original seconds against inclusive
+`[-62167219200,253402300799]` before multiplying by 1000. Invalid values stay NULL even if
+their scaled long would wrap into a valid timestamp. The new millisecond buffer and zero
+nanoseconds use the existing component schema; input/range validity stays on the parent.
+Numeric conversion is zone independent. Computed ordinary-Calc/UNNEST inputs and other numeric,
+string, format or precision signatures keep their existing routes. There is no new switch.
+
+The [record](results/epoch-seconds-2026-11-02.json) and
+[4,000 raw trials](results/epoch-seconds-2026-11-02.csv.gz) compare the independently compiled
+actual preceding encoder `5d78fd4a` with candidate on one current release/default-feature/System
+runtime, allocator, transport and expanded seconds fixture. Both final linked artifacts import
+System malloc and have no mimalloc allocator symbols. This isolates the encoder/kernel route
+change; it is not a replay of a complete historical DSO. The preceding encoder still binds
+its generated evaluator, while candidate requires empty evaluators. All checksums agree.
+
+On Apple M4 Pro, Oracle JDK 17.0.12, one thread, 16 warmups/nine measurements and 131,072
+rows/trial, equal GenericRowData/BinaryRowData/Arrow contain exact seconds bounds and adjacent
+invalid values, signed extrema and multiplication-overflow controls, cutover/modern/pre-epoch
+values and NULL/NOT NULL. Production work/output consumption are timed inside Rust with
+intrinsic callback costs retained in the preceding control. Initial JNI/C Data entry/export
+and perimeter transposes are excluded only from this prepared-function timer. Independently
+planned nullable BOOLEAN consumers are YEAR/MONTH/SECOND comparisons and IS NULL.
+
+| Flink | Workload | Cells | Stock/native median range | Prior encoder/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 16 | 1.342-3.448x | 5.967-39.244x | 0 |
+| 1.18.1 | tiny control | 4 | 0.078-0.106x | 9.399-21.834x | 4 |
+| 2.2.1 | bulk | 16 | 1.350-4.511x | 5.777-37.158x | 0 |
+| 2.2.1 | tiny control | 4 | 0.099-0.110x | 9.369-22.675x | 4 |
+
+All 32 bulk medians beat stock and the preceding encoder; all eight 16-row controls lose
+to stock. Complete million-row source/blackhole jobs retain startup, JNI, production conversions
+and both transposes, with two warmups/five measurements and independent stock controls.
+Seconds are median (min-max).
+
+| Flink / consumer | Candidate stock | Native | Prior-control stock | Prior encoder |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / year | 0.178340 (0.170356-0.219641) | 0.184620 (0.178544-0.200105) | 0.162921 (0.161419-0.182398) | 0.213423 (0.206437-0.226048) |
+| 1.18.1 / month | 0.172563 (0.166091-0.180995) | 0.188816 (0.184118-0.202078) | 0.185944 (0.168941-0.196921) | 0.220979 (0.212758-0.236827) |
+| 1.18.1 / second | 0.169010 (0.163062-0.184871) | 0.185623 (0.175359-0.191390) | 0.162442 (0.157704-0.167774) | 0.216820 (0.208115-0.234500) |
+| 1.18.1 / null | 0.178418 (0.169744-0.192398) | 0.203734 (0.197714-0.234369) | 0.176524 (0.171268-0.184801) | 0.230295 (0.224920-0.239758) |
+| 2.2.1 / year | 0.178993 (0.168456-0.192806) | 0.191535 (0.186340-0.223990) | 0.173104 (0.168654-0.181658) | 0.216082 (0.213046-0.241996) |
+| 2.2.1 / month | 0.181048 (0.166665-0.188743) | 0.183546 (0.177635-0.202007) | 0.171645 (0.162908-0.181974) | 0.223246 (0.208871-0.239910) |
+| 2.2.1 / second | 0.159443 (0.155857-0.194190) | 0.184733 (0.170795-0.189403) | 0.162390 (0.159129-0.170958) | 0.210622 (0.208602-0.224377) |
+| 2.2.1 / null | 0.194371 (0.178394-0.201297) | 0.201201 (0.196232-0.232690) | 0.191489 (0.185210-0.207430) | 0.229590 (0.226761-0.258798) |
+
+Native/stock elapsed ratios span **1.014-1.159**; all eight measured complete jobs remain
+slower than stock. Native/prior-encoder ratios span **0.822-0.886**. These prepared bulk
+function wins do not establish complete-job acceleration.
+
+All **212 focused JVM invocations** pass on released Flink 1.18.1/2.2.1 x JDK 11/17 with
+Java release 11. Complete 5,003-row maps compare values, resolved types, NULLs, IDs/cardinality,
+exact seconds/millisecond bounds, signed extrema, four zones, calendar consumers, typed
+conditional selection, all-filtered batches and explicit generated controls for computed/
+other-numeric inputs. The intended NativeCalc must consume runtime work and admitted functions
+have no JVM evaluator. Existing millisecond and UNNEST coverage stays covered. All **890 Rust
+core tests** pass without default features and zero ignored, including parent/child validity,
+sliced/scalar/empty inputs and pre-scaling range checks. Sixteen freshly executed unchanged
+released TemporalTypesTest stock-oracle invocations and 28 fixture smokes pass separately;
+original-corpus controls compare the retained preceding executable with the expanded fixture.
+Broad temporal parsing/formatting and other conversions stay in
+[#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
+
+### Retained millisecond controls
+
+A first seconds implementation passed its bulk gate but added redundant buffer-reference
+clones and selected range bounds at runtime. A retained Flink 1.18 millisecond IS NULL pilot
+then took 1.274 versus preceding-native 1.151 ns/row, with nonoverlapping measured ranges.
+The final implementation moves the scaled buffer directly and specializes fixed bounds by
+unit. Both complete seconds qualifications, the first
+[4,000 trials](results/epoch-seconds-initial-2026-11-02.csv.gz) and all 800 first/final
+retained-millisecond raw trials remain in the result record. These diagnostics compare the
+retained actual previous native executable/DSO with candidate; their meaning differs from
+the preceding-encoder-only seconds control above.
+
+Final millisecond medians (min-max) in ns/row:
+
+| Flink / consumer | Retained preceding native | Candidate native | Candidate / retained median |
+| --- | ---: | ---: | ---: |
+| 1.18.1 / year | 7.597 (7.446-7.771) | 7.710 (7.575-9.072) | 1.015 |
+| 1.18.1 / null | 1.251 (1.197-1.298) | 1.221 (1.194-1.271) | 0.976 |
+| 2.2.1 / year | 7.704 (7.678-7.897) | 7.678 (7.516-7.769) | 0.997 |
+| 2.2.1 / null | 1.161 (1.119-1.183) | 1.238 (1.208-1.483) | 1.067 |
+
+The original 1.18 NULL regression is not stable in the final control, but the final 2.2 NULL
+pilot is still 6.7% slower than retained native, also with nonoverlapping ranges. The other
+controls overlap. These isolated short probes do not establish a universal unchanged-path
+speedup or absence of regressions; remaining small-operation overhead stays visible.

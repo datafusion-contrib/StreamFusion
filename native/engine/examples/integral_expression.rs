@@ -84,6 +84,7 @@ fn main() {
     let runs: usize = args.get(7).map_or(9, |s| s.parse().unwrap());
     let previous = std::env::var("SF_INTEGRAL_PREVIOUS").is_ok();
     let epoch_millis = std::env::var("SF_INTEGRAL_CORPUS").as_deref() == Ok("epoch-millis");
+    let epoch_seconds = std::env::var("SF_INTEGRAL_CORPUS").as_deref() == Ok("epoch-seconds");
     let expression = std::env::var("SF_INTEGRAL_EXPRESSION")
         .unwrap_or_else(|_| "ABS(v+CAST(1 AS $TYPE))".into());
     let previous_option = format!("-Dsf.integral.previous={previous}");
@@ -154,7 +155,36 @@ fn main() {
                 }
             }
             "BIGINT" => {
-                if epoch_millis {
+                if epoch_seconds {
+                    let epochs = [
+                        i64::MIN,
+                        i64::MAX,
+                        i64::MIN / 1000 - 1,
+                        i64::MAX / 1000 + 1,
+                        -62_167_219_201,
+                        -62_167_219_200,
+                        -62_167_219_199,
+                        253_402_300_798,
+                        253_402_300_799,
+                        253_402_300_800,
+                        -62_135_596_800,
+                        -12_219_292_800,
+                        -86_401,
+                        -1,
+                        0,
+                        1,
+                        951_827_696,
+                        1_706_659_200,
+                        1_710_037_800,
+                    ];
+                    let index = i % epochs.len();
+                    epochs[index]
+                        + if index < 10 {
+                            0
+                        } else {
+                            (i / epochs.len()) as i64 * 7919
+                        }
+                } else if epoch_millis {
                     let epochs = [
                         i64::MIN,
                         i64::MAX,

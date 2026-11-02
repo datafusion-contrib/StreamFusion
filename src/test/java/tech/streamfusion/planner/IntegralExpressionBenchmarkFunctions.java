@@ -39,6 +39,11 @@ public final class IntegralExpressionBenchmarkFunctions {
       -62167219200001L, -62167219200000L, -62167219199999L,
       253402300799999L, 253402300800000L, -62135596800000L, -12219292800000L,
       -86400001, -1, 0, 1, 951827696123L, 1706659200000L, 1710037800000L};
+  private static final long[] EPOCH_SECONDS = {Long.MIN_VALUE, Long.MAX_VALUE,
+      Long.MIN_VALUE / 1000 - 1, Long.MAX_VALUE / 1000 + 1,
+      -62167219201L, -62167219200L, -62167219199L, 253402300798L,
+      253402300799L, 253402300800L, -62135596800L, -12219292800L,
+      -86401, -1, 0, 1, 951827696, 1706659200, 1710037800};
 
   private IntegralExpressionBenchmarkFunctions() {}
 
@@ -47,7 +52,7 @@ public final class IntegralExpressionBenchmarkFunctions {
     Thread.currentThread().setContextClassLoader(IntegralExpressionBenchmarkFunctions.class.getClassLoader());
     type = element;
     var table = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
-    boolean timestampInput = type.startsWith("TIMESTAMP_LTZ(") || epochMillisInput();
+    boolean timestampInput = type.startsWith("TIMESTAMP_LTZ(") || epochMillisInput() || epochSecondsInput();
     if (timestampInput) table.getConfig().setLocalTimeZone(
         java.time.ZoneId.of(System.getProperty("sf.integral.zone", "UTC")));
     table.getConfig().set("table.exec.legacy-cast-behaviour",
@@ -177,7 +182,8 @@ public final class IntegralExpressionBenchmarkFunctions {
       case "TINYINT": return row % 17 == 0 ? Byte.MIN_VALUE : (byte) v;
       case "SMALLINT": return row % 17 == 0 ? Short.MIN_VALUE : (short) v;
       case "INT": return row % 17 == 0 ? Integer.MIN_VALUE : (int) ((row % 2 == 0 ? -1L : 1L) * v);
-      case "BIGINT": return epochMillisInput() ? epochMillis(row) : row % 17 == 0 ? Long.MIN_VALUE
+      case "BIGINT": return epochSecondsInput() ? epochSeconds(row)
+          : epochMillisInput() ? epochMillis(row) : row % 17 == 0 ? Long.MIN_VALUE
           : (row % 2 == 0 ? -1L : 1L) * (9007199254740993L + v);
       case "TIMESTAMP_LTZ(3)": return org.apache.flink.table.data.TimestampData.fromEpochMillis(
           temporalMillis(row));
@@ -215,6 +221,16 @@ public final class IntegralExpressionBenchmarkFunctions {
   public static long epochMillis(long row) {
     int index = (int) (row % EPOCH_MILLIS.length);
     return EPOCH_MILLIS[index] + (index < 7 ? 0 : row / EPOCH_MILLIS.length * 7919);
+  }
+
+  private static boolean epochSecondsInput() {
+    return Boolean.getBoolean("sf.integral.epochSecondsInput")
+        || "epoch-seconds".equals(System.getenv("SF_INTEGRAL_CORPUS"));
+  }
+
+  public static long epochSeconds(long row) {
+    int index = (int) (row % EPOCH_SECONDS.length);
+    return EPOCH_SECONDS[index] + (index < 10 ? 0 : row / EPOCH_SECONDS.length * 7919);
   }
 
   public static long[] measure(int loops) throws Exception {
