@@ -166,13 +166,15 @@ In signatures containing containers, direct non-null BOOLEAN, TINYINT, SMALLINT,
 FLOAT and DOUBLE arguments may also use their corresponding
 Java primitive classes. Direct non-null DATE arguments, external Row result fields and atomic
 DATE results can also use Java `int` epoch days. Direct DATE arguments and results also support
-boxed `Integer` epoch days with nullable or non-null metadata. Nested DATE bridges retain
-fallback in container signatures. Released type inference still validates argument nullability; this
+boxed `Integer` epoch days with nullable or non-null metadata. Nested DATE bridges inside
+external ROW/MAP structures use the scalar bridge rules below; alternate conversions below
+ARRAY boundaries retain fallback. Released type inference still validates argument nullability; this
 does not coerce a nullable source argument to a non-null primitive. Direct fields of an
 external Row result may also use those seven non-null primitive scalar classes alongside
 container result fields. Atomic results using those classes are supported too; Flink wraps
-them in a single inferred result field. Alternate bridges nested inside a result field
-retain fallback.
+them in a single inferred result field. Nested external ROW/MAP result fields may use these
+primitive and temporal scalar bridges.
+Alternate ARRAY/List bridges nested inside those structures retain fallback.
 Direct temporal argument/result fields also support the released JDBC date/time classes and
 boxed TIME/LTZ conversions listed in [alternate temporal bridges](#alternate-direct-temporal-bridges-2026-11-01).
 For these conversions on Flink 1.18, LEFT queries selecting a declared non-null field from
@@ -182,9 +184,11 @@ Released converters own these Java values, and the existing
 typed-array adapter supplies primitive conversion after nullable Arrow copies. FLOAT/DOUBLE
 retain signed zero and NaN payloads through chained function inputs and results.
 
-Released type inference determines the conversions. Alternate bridges nested inside a
-ROW/MAP argument or nested result column, Lists with
-ARRAY/MAP/ROW elements, internal
+Released type inference determines the conversions. External `Row` and `Map` arguments and
+result columns may recursively contain the verified non-null primitive and temporal scalar
+bridges. Each ROW/MAP layer retains its default external container class. Default conversions
+below other containers keep their existing admission; alternate ARRAY-element conversions,
+nested primitive arrays, nested List bridges, Lists with ARRAY/MAP/ROW elements, internal
 `ArrayData`/`MapData`/`RowData`, MULTISET/STRUCTURED/RAW, specialized functions, Python/async
 functions and legacy SQL wrappers retain fallback. The ordinary `streamfusion.operator.tableFunction.enabled`
 switch can disable this operator.
@@ -229,8 +233,9 @@ table-function checks. It covers all seven primitive scalar result types with bo
 primitive ARRAY, List, MAP and ROW signatures, using both external Row fields and atomic
 collectors. Types, raw floating bits, mutable/retained values, literal NULL emissions, empty
 input, failures, changelog kinds and two forced restores with memory/native RocksDB state
-match the corresponding released Flink execution. Nested alternate result bridges retain
-explicit fallback. The unchanged upstream ROW contracts keep their native-work requirement.
+match the corresponding released Flink execution. Nested scalar bridges through ROW/MAP
+are covered below; alternate ARRAY/List and internal bridges retain fallback. The unchanged
+upstream ROW contracts keep their native-work requirement.
 
 Flink's generated scalar projection turns a NULL emitted under non-null primitive metadata
 into false or a typed -1. A fused projection must execute that evaluation before owned Arrow
@@ -403,8 +408,8 @@ custom ArrayList subclass across 19 scalar element families, INNER/LEFT mutable 
 atomic collectors, NULL/empty input, retained arguments across batches, chained exact
 floating bits, custom `toArray(T[])` failure and short-circuiting. Six heap/native-RocksDB
 changelog scenarios each force two restores and require consumed table-function input.
-Existing concrete-argument, nested-bridge, internal-container and container-element fallback
-controls remain in the selection.
+Existing concrete-argument, unverified ARRAY/List bridge, internal-container and
+container-element fallback controls remain in the selection.
 
 The [complete-job record](../benchmarks/results/jvm-concrete-list-results-2026-11-01.json)
 retains paired stock/previous/native samples, warmups, ranges, commands and source/library
@@ -457,16 +462,18 @@ Container signatures admit these additional direct scalar argument and result co
 The boxed interval increment adds 18 selected JUnit invocations on each supported Flink
 line, with zero failures/errors/skips. Positive/negative months and millisecond durations,
 NULLs, non-null metadata, Row/atomic results, LEFT padding, lifecycle/failures and repeated
-heap/RocksDB recovery use the same released-converter matrix. Alternate bridges nested inside
-containers remain guarded. Direct primitive intervals use the separate verified boundary below.
+heap/RocksDB recovery use the same released-converter matrix. Alternate bridges below ARRAY
+boundaries and internal containers remain guarded; nested ROW/MAP scalar bridges use the rules
+above. Direct primitive intervals use the separate verified boundary below.
 
 The same bridges work as external Row result fields and atomic results with nullable or
 non-null metadata. The existing released converters retain truncation, overflow, timestamp
 precision and zone behavior: an integer/long LTZ round trip is not a promise to preserve
 nanoseconds. JDBC values are copied into Arrow output before a callback can mutate them.
 This adds admission through the existing generated correlate, not custom temporal conversion,
-JNI or native-memory code. Nested alternate bridges and internal Java classes remain outside
-the whitelist. Direct primitive TIME/LTZ bridges use the separate verified boundary below.
+JNI or native-memory code. Alternate ARRAY/List bridges nested inside containers and internal
+Java classes remain outside the whitelist. Direct primitive TIME/LTZ bridges use the separate
+verified boundary below.
 
 `FlinkAlternateTemporalTableFunctionSqlHarnessTest` compares released values/types,
 nullable/non-null arguments, Row/atomic results, INNER/LEFT application, mutable JDBC
@@ -513,7 +520,8 @@ Container signatures admit direct non-null TIME and TIMESTAMP_LTZ arguments and 
 result fields bridged to Java `int`/`long`, YEAR/MONTH intervals bridged to `int`, and DAY/TIME
 intervals bridged to `long`. Units match the boxed forms above. Nullable sources retain released
 primitive-argument validation; the matcher does not coerce their NULLs into a default primitive.
-Nested bridges and primitive ARRAY elements retain their previous guards.
+Bridges nested through external ROW/MAP containers are covered below. Alternate ARRAY
+elements and nested List bridges retain their guards.
 
 Atomic TIME/int and primitive interval results also execute. Released Flink's atomic
 TIME/long and LTZ/int/long collectors fail generated Java compilation with an Object-to-primitive
@@ -538,7 +546,8 @@ Direct DATE arguments, external Row result fields and atomic results may use Jav
 The released identity converter owns the conversion; the existing synchronous correlate
 and eager Arrow writes retain their lifecycle and ownership contracts. No runtime,
 JNI or native-memory implementation changes. Primitive `int` still requires non-null
-metadata. DATE bridges nested inside ARRAY/ROW/MAP remain outside this increment.
+metadata. Nested DATE bridges through external ROW/MAP containers are covered below;
+alternate DATE bridges inside ARRAY retain fallback.
 
 `FlinkBoxedDateTableFunctionSqlHarnessTest` compares released values, resolved types,
 NULL dates and containers, emitted NULLs, INNER/LEFT padding, reused result Rows,
@@ -567,8 +576,9 @@ Direct non-null DATE results bridged to Java `int` now execute alongside contain
 and result columns, both as external Row fields and as atomic DATE results. The released
 identity converter and existing eager result projection preserve Flink's conversion behavior;
 this adds no runtime, JNI or native-memory implementation. The primitive ARRAY element gate
-does not change. The later boxed DATE increment below admits direct DATE/Integer bridges;
-alternate DATE bridges inside ROW or ARRAY remain explicit fallback controls.
+does not change. The boxed DATE increment above admits direct DATE/Integer bridges;
+alternate DATE bridges inside ARRAY remain explicit fallback controls. External ROW/MAP
+bridges are covered by the nested conversion section below.
 
 Twenty-four result checks cover all five existing container shapes, epoch days spanning SQL
 years 0001–9999, INNER/LEFT application, mutable result Rows, retained arguments across closed
@@ -648,8 +658,9 @@ INNER/LEFT fanout, nullable containers and children, DATE literals, rejected nul
 mutable results, retained arguments across closed batches, lifecycle and failure order are
 checked independently against released Flink. Updating input survives two forced restores
 with both memory and native RocksDB backends. At this increment, negative controls preserved
-fallback for boxed DATE/Integer arguments; those direct bridges are admitted by the later
-boxed DATE increment below. DATE/int bridges nested inside ROW or ARRAY arguments retain fallback. Direct
+fallback for boxed DATE/Integer arguments; those direct bridges are admitted by the
+boxed DATE increment above. DATE/int bridges nested inside ARRAY arguments retain fallback;
+external ROW/MAP bridges are covered below. Direct
 primitive DATE result fields and atomic results are covered by the DATE result checks on this page.
 The primitive-array element whitelist is unchanged.
 
@@ -712,7 +723,8 @@ binding, nullable-input planning failures, empty-input evaluation, exception cau
 fanout, retained containers across closed batches, all changelog kinds and two forced restores
 with memory/native RocksDB state retain parity. Existing boxed arguments keep their route.
 Direct non-null DATE-as-int arguments in container signatures are now covered by the
-DATE argument and result checks on this page; other DATE bridges retain fallback. Primitive result
+DATE argument and result checks on this page, including boxed/JDBC and nested ROW/MAP
+bridges within their stated whitelists. Primitive result
 metadata is now covered by the result-conversion checks on this page.
 The 172 existing List/primitive-array/nested/typed checks remain in the regression set on each
 supported Flink line. Existing unchanged upstream ROW contracts keep their native-work
@@ -762,8 +774,9 @@ table-function regressions. They cover scalar List elements (including both inte
 all seven primitive array types, invocation of concrete Java signatures, atomic-array result collectors,
 retained arguments, mutable fanout, NULL/empty values, exact floating bits through chained calls,
 error causes, all RowKinds and two forced restores on memory and native RocksDB state.
-Unverified source filters, nested alternate bridges, internal containers and Lists of containers
-keep explicit fallback checks. Existing unchanged upstream ROW contracts still require consumed
+Unverified source filters, alternate bridges below ARRAY boundaries, nested List bridges,
+internal containers and Lists of containers keep explicit fallback checks. Existing unchanged
+upstream ROW contracts still require consumed
 native table-function input on both lines.
 
 [The complete-job artifact](../benchmarks/results/jvm-table-function-conversions-2026-10-23.json)
@@ -922,8 +935,10 @@ complete-job gains and remaining stock-Flink deficit. Larger values, temporal co
 and owned exit copies retain their existing paths; no collector or ownership contract changes.
 
 This does not complete [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237): JVM
-two-phase/OVER aggregate functions, additional scalar conversion classes and specialized/async/legacy
-table-function contracts remain open. Performance evidence includes release jobs with row sources, both transposes, row
+two-phase/OVER aggregate functions, additional scalar conversion classes and specialized/legacy
+table-function contracts remain open. All async feature work, lookup-join-related extensions,
+Python functions and MATCH_RECOGNIZE are outside the current ticket scope. Performance evidence
+includes release jobs with row sources, both transposes, row
 sinks, stock Flink and the actual preceding revision; profiles include Java and symbolized Rust
 CPU stacks plus sampled Java allocations. Profiled durations are excluded from speed claims.
 
@@ -1160,3 +1175,30 @@ The nested table-function harness also verifies generated UNNEST, CARDINALITY an
 COUNT consumers over ARRAY/ROW and MAP/ARRAY results. The preserving transpose layout
 keeps these existing scalar consumers native with consumed table-function work and
 matching declared types; unverified retained complex-state consumers remain guarded.
+
+### Scalar bridges nested through ROW and MAP
+
+External ROW and MAP arguments and result columns admit the verified scalar primitive and
+temporal bridges described above, including MAP keys and values and mixed ROW/MAP layers.
+Container conversion classes must be exactly `org.apache.flink.types.Row` and
+`java.util.Map`. Each child must use a verified default conversion, an admitted scalar bridge,
+or another verified ROW/MAP layer. Released Flink's recursive converters and correlate generator
+perform the conversions; the existing eager Arrow writes retain output ownership. This changes
+planner admission only.
+
+The new qualification set has 411 checks on each supported Flink line. Its 375-case conversion
+matrix covers 25 leaf bridges, five shapes (ROW, MAP value, ROW/MAP, MAP/ROW and MAP key), and
+argument, result and combined positions. INNER/LEFT cases compare released values, resolved
+types, raw floating bits and nested RowKinds with nullable parents/children, empty maps,
+epoch-unit key collisions and the JDBC Gregorian cutover. Additional checks cover retained
+arguments, mutation after collection, chained calls, lifecycle and callback failures, all outer
+changelog kinds and repeated restore with heap and native RocksDB state. Admitted populated
+paths require consumed native table-function input; guards require explicit fallback and zero
+native work.
+
+NULLs emitted under non-null child metadata retain released ROW conversion behavior. The
+NULL-metadata controls admit full-ROW output; their scalar extraction and casts retain the
+generated-collection fallback, including projections that also select the full ROW. Alternate ARRAY
+elements, nested List bridges and concrete List arguments, internal RowData/ArrayData/MapData,
+STRUCTURED/RAW/MULTISET bridges and specialization remain outside this extension. Default
+container conversions and the existing direct scalar-List coverage are unchanged.
