@@ -29,6 +29,10 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
   private final RowType inputType;
   private final RowType outputType;
   private final GroupAggFunction function;
+  private final org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction
+      miniBatchFunction;
+  private final org.apache.flink.table.runtime.operators.bundle.trigger.BundleTrigger<RowData>
+      miniBatchTrigger;
   private final RowDataKeySelector keySelector;
   private final int batchRows;
   private final int cacheEntries;
@@ -36,6 +40,7 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
   private final int keyColumn;
   private final long stateRetentionTime;
   private transient JvmAccumulatorCache accumulatorCache;
+  private transient JvmMiniBatchGroup miniBatch;
   private transient KeyedProcessFunction<RowData, RowData, RowData>.Context context;
   private transient Collector<RowData> collector;
   private transient VectorSchemaRoot result;
@@ -55,9 +60,63 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
       LogicalTypeRoot keyType,
       int keyColumn,
       long stateRetentionTime) {
+    this(
+        inputType,
+        outputType,
+        function,
+        keySelector,
+        batchRows,
+        cacheEntries,
+        keyType,
+        keyColumn,
+        stateRetentionTime,
+        null,
+        null);
+  }
+
+  public NativeColumnarJvmGroupOperator(
+      RowType inputType,
+      RowType outputType,
+      org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction function,
+      org.apache.flink.table.runtime.operators.bundle.trigger.BundleTrigger<RowData> trigger,
+      RowDataKeySelector keySelector,
+      int batchRows,
+      LogicalTypeRoot keyType,
+      int keyColumn,
+      long stateRetentionTime) {
+    this(
+        inputType,
+        outputType,
+        null,
+        keySelector,
+        batchRows,
+        0,
+        keyType,
+        keyColumn,
+        stateRetentionTime,
+        function,
+        trigger);
+  }
+
+  private NativeColumnarJvmGroupOperator(
+      RowType inputType,
+      RowType outputType,
+      GroupAggFunction function,
+      RowDataKeySelector keySelector,
+      int batchRows,
+      int cacheEntries,
+      LogicalTypeRoot keyType,
+      int keyColumn,
+      long stateRetentionTime,
+      org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction
+          miniBatchFunction,
+      org.apache.flink.table.runtime.operators.bundle.trigger.BundleTrigger<RowData>
+          miniBatchTrigger) {
     this.inputType = inputType;
     this.outputType = outputType;
     this.function = function;
+    this.miniBatchFunction = miniBatchFunction;
+    this.miniBatchTrigger = miniBatchTrigger;
     this.keySelector = keySelector;
     this.batchRows = batchRows;
     this.cacheEntries = cacheEntries;
@@ -104,6 +163,35 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
           @Override
           public void close() {}
         };
+    if (miniBatchFunction != null) {
+      miniBatch =
+          new JvmMiniBatchGroup(
+              miniBatchFunction,
+              miniBatchTrigger,
+              new org.apache.flink.table.runtime.typeutils.RowDataSerializer(
+                  keySelector.getProducedType().toRowType()),
+              collector,
+              getMetricGroup().counter("jvmMiniBatchRows"),
+              getMetricGroup().counter("jvmMiniBatchBundles"));
+      miniBatch.open(
+          new org.apache.flink.table.runtime.context.ExecutionContext() {
+            @Override
+            public RowData currentKey() {
+              return (RowData) getCurrentKey();
+            }
+
+            @Override
+            public void setCurrentKey(RowData key) {
+              NativeColumnarJvmGroupOperator.this.setCurrentKey(key);
+            }
+
+            @Override
+            public org.apache.flink.api.common.functions.RuntimeContext getRuntimeContext() {
+              return NativeColumnarJvmGroupOperator.this.getRuntimeContext();
+            }
+          });
+      return;
+    }
     context =
         function.new Context() {
           @Override
@@ -171,7 +259,8 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
             accumulatorCache == null
                 ? keySelector.getKey(keyRow)
                 : accumulatorCache.keyFor(keyRow, keyColumn, keySelector));
-        function.processElement(row, context, collector);
+        if (miniBatch == null) function.processElement(row, context, collector);
+        else miniBatch.add((RowData) getCurrentKey(), row);
       }
       flush();
     } catch (Exception failure) {
@@ -185,6 +274,7 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
   @Override
   public void endInput() throws Exception {
     if (coalescer != null) coalescer.flush();
+    if (miniBatch != null) miniBatch.finishBundle();
     flush();
     if (accumulatorCache != null) accumulatorCache.flush();
   }
@@ -264,7 +354,8 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
       if (coalescer != null) coalescer.close();
     } finally {
       try {
-        function.close();
+        if (miniBatch != null) miniBatch.close();
+        else if (function != null) function.close();
       } finally {
         discard();
         super.close();

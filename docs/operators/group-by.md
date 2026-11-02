@@ -914,8 +914,8 @@ retain the ranges and startup/JIT limits without an acceleration claim.
 ARRAY/MAP/ROW fields at the operator boundary retain fallback; managed accumulator fields and
 DataViews still use Flink's own declared serializers and converters. It retains Flink's generated function,
 accumulate/retract logic, managed accumulator/DataView state and lifecycle inside an
-Arrow-batch input/output operator. It preserves each emitted changelog row; input coalescing
-does not reduce user function invocations or intermediate results. The operator disable switch
+Arrow-batch input/output operator. Ordinary execution preserves each emitted changelog row;
+input coalescing does not reduce user function invocations or intermediate results. The operator disable switch
 `streamfusion.operator.jvmGroupAggregate.enabled=false` retains whole-island fallback.
 
 The opt-in harness passes 44 checks on each released Flink line with JDK 17, at both
@@ -956,13 +956,58 @@ coalescing so each row reads and updates expiring state on Flink's clock. Expira
 emit a delete; later input observes the same empty-state behavior as stock Flink, including
 ignored expired retractions and unsuppressed no-op updates.
 
-For non-compact DECIMAL grouping keys, the Java grouped operator projects keys through the
+For non-compact DECIMAL grouping keys in ordinary execution, the Java grouped operator projects keys through the
 released RowData serializer, matching the native exchange's existing BinaryRow layout.
 Flink's generated key projection reserves extra bytes for a NULL non-compact decimal, whereas
 its serializer omits them. Mixing those layouts gives different hashes and can route NULL
 keys into the wrong subtask. The selected keys own their bytes and always have INSERT kind,
 independent of the input changelog kind; other key types retain the generated selector.
 This does not establish stock/native savepoint-layout migration.
+
+### Single-phase JVM mini-batching
+
+With `table.exec.mini-batch.enabled=true` and the single-phase plan, verified scalar JVM
+aggregate input/output fields use the released `MiniBatchGroupAggFunction`, generated
+handlers and count trigger. The operator owns buffered keys and copies input rows before
+their Arrow batch closes. Count thresholds, watermarks, pre-checkpoint barriers and bounded
+completion finish the same logical bundles as Flink; physical Arrow batch boundaries do not.
+The `jvmMiniBatchRows` and `jvmMiniBatchBundles` counters establish actual bundle work.
+The ordinary accumulator cache and input coalescer are bypassed.
+
+Bundle membership depends on task assignment. This route uses Flink's generated BinaryRow
+key layout in both the columnar exchange and managed-state selector, including the reserved
+variable slots for NULL wide decimals and non-compact timestamps. Ordinary/native state
+continues using its existing serializer layout. This does not establish state migration
+between ordinary and mini-batch plans.
+
+Released Flink copies rows in `addInput` and evaluates each key's list during `finishBundle`.
+Its managed state, DataViews, retractions, NULLs, DISTINCT/FILTER and TTL rules remain in
+that implementation. Lifecycle follows the released bundle operator: it opens the function,
+but its closing helper only closes rich functions, so it does not invoke the aggregate
+handler's close hook. Open/evaluation failures retain their original cause and owned Arrow
+buffers are released on failure.
+
+ARRAY/MAP/ROW operator fields, two-phase JVM merge/reset and async state retain fallback.
+The UDF performance exception applies; mini-batch execution is coverage without a speedup
+claim. Collection aggregate mini-batching remains outside this scalar admission.
+The [release complete-job comparisons](../benchmarks/jvm-aggregates.md#single-phase-jvm-mini-batches-2026-11-01)
+retain stock and preceding-fallback controls, including the slower three-task STRING cases.
+
+The initial focused release selection passes 184 checks on Flink 2.2.1 and 181 with three
+release-specific exclusions on 1.18.1 (STATE_TTL hints). It covers 17 scalar argument/result
+families with append/retract input, count thresholds 1/3/17/1000, parallelism 1/3, nullable
+wide/colliding keys, shared DISTINCT/FILTER, managed ListViews, lifecycle failures and
+positive bundle counters. Operator controls compare raw updates at explicit checkpoint
+barriers, controlled TTL clocks and watermarks, with and without restore, and mutate
+borrowed input after handover. Heap/native-RocksDB jobs also pass two successive restores
+and checkpoint/canonical-savepoint rescaling through parallelisms 1 → 3 → 2 with verified
+source offsets, key-group ownership, stable operator identities and released memory.
+Three additional phase-selection controls cover an overloaded aggregate without a merge
+method. Released Flink keeps its physical plan single-phase for ordinary execution and for
+both ONE_PHASE and TWO_PHASE mini-batch requests; these cases require consumed JVM group
+input and matching raw changes/types. Actual local/global JVM merge/reset remains pending.
+
+### Ordinary state and validation
 
 The typed and modifier regressions compare complete values, declared types and per-key raw
 changelogs on both supported lines. Precision-38 decimals, nanosecond/wide-date timestamps,

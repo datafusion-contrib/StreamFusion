@@ -450,3 +450,49 @@ retain the independent prior controls and positive native/fallback assertions. R
 -Dboundary.rows=262144 -Dboundary.warmups=2 -Dboundary.runs=5
 -Dstreamfusion.exchange.zeroCopyLocal=false test`. Previous production copies only the test
 fixtures and sets `-Dboundary.expectNative=false`.
+
+## Single-phase JVM mini-batches (2026-11-01)
+
+The scalar JVM group now retains released Flink's single-phase map-bundle function, count
+trigger and managed state inside Arrow boundaries. Low-cardinality integer groups improve
+in these short local jobs; the three-task STRING case remains slower than paired stock on
+both lines. This is UDF coverage under the accepted performance exception, without a general
+acceleration claim.
+
+These release/mimalloc, Temurin 17 jobs use nullable BIGINT values, heap state, a 3 GiB heap,
+1,024-row mini-batches, one-hour latency and ONE_PHASE. INT keys use one task; STRING keys
+use three tasks and a 16-character prefix. Symmetric EXPLAIN preflight precedes timing from
+submission through completion. Both row/Arrow conversions, production JNI, managed state,
+UDF conversions and the blackhole sink remain inside. Each engine has two warmups and five
+measured trials in alternating order; revisions run serially with no overlapping local
+build/test/benchmark. The previous production revision is PR #578's `2a613b07`, with only the
+candidate benchmark fixture copied in and the preceding native library retained. It requires
+whole-query host fallback; every candidate job requires consumed JVM group input, all input
+rows in `jvmMiniBatchRows`, and positive `jvmMiniBatchBundles`.
+
+All medians are seconds. Separate JVMs show stock drift, especially the 1.18 STRING control,
+so before/after differences do not isolate an operator-only effect. Startup remains part of
+these short jobs.
+
+| Flink | Key / rows / cardinality | Candidate stock | Previous stock | Previous fallback | Candidate |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | INT / 262,144 / 64 | 0.123509 | 0.115897 | 0.111883 | 0.111227 |
+| 2.2.1 | INT / 1,048,576 / 64 | 0.300714 | 0.285661 | 0.276371 | 0.226552 |
+| 2.2.1 | STRING / 262,144 / 65,536 | 0.162909 | 0.159053 | 0.163815 | 0.179887 |
+| 1.18.1 | INT / 262,144 / 64 | 0.152258 | 0.152880 | 0.155772 | 0.141107 |
+| 1.18.1 | INT / 1,048,576 / 64 | 0.444934 | 0.420427 | 0.423209 | 0.359163 |
+| 1.18.1 | STRING / 262,144 / 65,536 | 0.268163 | 0.413125 | 0.445980 | 0.315859 |
+
+[All trials, warmups, ranges, native work, commands and source/library fingerprints](results/jvm-mini-batches-2026-11-01.json)
+retain unfavorable results. For example, 2.2 STRING candidate trials range from 0.162021 to
+0.244198 s against stock's 0.155811–0.179261 s; its preceding fallback spans
+0.158821–0.180676 s.
+
+Reproduce the three configurations with `SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime
+-Dtest=JvmAggregateBenchmark -Djvmagg.cases=udaf -Djvmagg.miniBatchRows=1024
+-Djvmagg.expectNative=true -Djvmagg.warmup=2 -Djvmagg.runs=5
+-Dsf.testForks=1 '-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false'
+test`, setting `jvmagg.rows`, `jvmagg.keys`, `jvmagg.keyType` and `jvmagg.parallelism` from the
+table. Use `-Pbench,flink-1.18` for 1.18.1. For the preceding revision, copy only the matching
+benchmark source, rebuild Java against its unchanged production sources, use its release
+native library and set `-Djvmagg.expectNative=false`.

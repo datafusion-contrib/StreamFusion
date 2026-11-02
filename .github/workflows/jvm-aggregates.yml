@@ -95,7 +95,7 @@ jobs:
         run: |
           for capacity in 65536 3; do
             mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime \
-              -Dnative.build.skip=true '-Dtest=FlinkJvmAggregateSqlHarnessTest,StatefulSqlRescaleTest,JvmStringKeyProbeTest,StringExitOwnershipTest,TransposeOperatorsTest' \
+              -Dnative.build.skip=true '-Dtest=FlinkJvmAggregateSqlHarnessTest,FlinkJvmMiniBatchSqlHarnessTest,NativeJvmMiniBatchCheckpointTest,SplitByKeyGroupOperatorTest,StatefulSqlRescaleTest,JvmStringKeyProbeTest,StringExitOwnershipTest,TransposeOperatorsTest' \
               -Dsf.testForks=1 \
               '-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false' \
               "-Dsf.extraJvmArgs=-Dstreamfusion.experimental.jvmGroupAggregates=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=$capacity -Dstreamfusion.experimental.borrowedStringExit=true" \

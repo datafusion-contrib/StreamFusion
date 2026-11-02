@@ -25,8 +25,8 @@ invalidate cached references so subsequent mutations pass through the backend's 
 protocol. Flink retains persistence, restoration and DataView ownership. Positive TTL uses the
 released grouped function's state configuration, including per-operator hint precedence.
 Accumulator caching and input coalescing are disabled for expiring state. DISTINCT/FILTER
-continue through Flink's generated handlers and managed DataViews. Async state and mini-batch
-plans retain fallback.
+continue through Flink's generated handlers and managed DataViews. Async state and multi-phase
+JVM plans retain fallback.
 
 Wide DECIMAL grouping keys use Flink's RowData serializer for key projection, matching the
 native exchange's existing BinaryRow hash contract. The generated Flink projection uses a
@@ -34,6 +34,19 @@ different NULL-decimal reservation; mixing it with the native layout can send a 
 wrong subtask. The serializer-backed selector returns owned INSERT-kind keys and leaves source
 changelog kinds unchanged. Same-line checkpoints/savepoints and rescaling are verified;
 stock/native or cross-version state migration is not claimed.
+
+Single-phase scalar JVM mini-batching instead retains released Flink's map-bundle runtime:
+owned key copies, `addInput` row copies, count triggers and `finishBundle` evaluation on
+watermark, checkpoint and completion boundaries. Arroyo's aggregate planner and window
+worker were consulted before design; its vector UDAF contract cannot replace Flink's
+incremental JVM handlers, managed DataViews and per-key bundle ordering. Comet's Arrow
+reader ownership remains the boundary: buffered state cannot retain borrowed batch views.
+The columnar exchange uses the generated key projection's NULL decimal/timestamp slot
+layout for this route, since a different key hash changes task-local count-bundle membership.
+Existing serializer/native key encoding remains unchanged. Flink owns the managed snapshots;
+no cross-plan or cross-version state migration is introduced. Released bundle lifecycle,
+including its rich-function-only close helper, is retained rather than substituting the
+ordinary grouped function's different close behavior.
 
 This is correctness-verified UDF coverage under the accepted performance exception, without
 a speedup requirement. Failed cache designs and dispersed timing trials remain

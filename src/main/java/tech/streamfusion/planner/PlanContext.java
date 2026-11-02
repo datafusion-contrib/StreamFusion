@@ -77,9 +77,9 @@ final class PlanContext {
   }
 
   /**
-   * Replaces a keyed host exchange with a native columnar one (splitting the batch by the key), so the
-   * shuffle is always part of the columnar island. When the exchange's producer is rowwise
-   * the transition pass inserts a single transpose below the native exchange (the island perimeter);
+   * Replaces a keyed host exchange with a native columnar one (splitting the batch by the key), so
+   * the shuffle is always part of the columnar island. When the exchange's producer is rowwise the
+   * transition pass inserts a single transpose below the native exchange (the island perimeter);
    * when it is columnar no transpose is needed. A non-exchange input is returned unchanged.
    */
   RelNode columnarInput(RelNode input, int[] keyColumns) {
@@ -88,6 +88,11 @@ final class PlanContext {
 
   /** Some SINGLETON consumers keep their state in a fixed one-key-group namespace. */
   RelNode columnarInput(RelNode input, int[] keyColumns, boolean singleKeyGroup) {
+    return columnarInput(input, keyColumns, singleKeyGroup, false);
+  }
+
+  RelNode columnarInput(
+      RelNode input, int[] keyColumns, boolean singleKeyGroup, boolean projectedKeys) {
     if (input instanceof StreamPhysicalExchange) {
       return new StreamPhysicalNativeColumnarExchange(
           input.getCluster(),
@@ -95,7 +100,8 @@ final class PlanContext {
           input.getInputs().get(0),
           input.getRowType(),
           keyColumns,
-          singleKeyGroup);
+          singleKeyGroup,
+          projectedKeys);
     }
     return input;
   }

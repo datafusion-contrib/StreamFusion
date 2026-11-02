@@ -170,11 +170,13 @@ final class JvmGroupAggregateMatcher {
   static boolean matchesContext(StreamPhysicalGroupAggregate node) {
     var config = ShortcutUtils.unwrapTableConfig(node);
     if (config.get(
+        org.apache.flink.configuration.ConfigOptions.key("table.exec.async-state.enabled")
+            .booleanType()
+            .defaultValue(false))) return false;
+    if (config.get(
             org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED)
-        || config.get(
-            org.apache.flink.configuration.ConfigOptions.key("table.exec.async-state.enabled")
-                .booleanType()
-                .defaultValue(false))) return false;
+        && (!JvmFunctionTypes.scalarRow(node.getInput().getRowType())
+            || !JvmFunctionTypes.scalarRow(node.getRowType()))) return false;
     for (int i = 0; i < node.aggCalls().size(); i++) {
       var call = node.aggCalls().apply(i);
       if (!JvmFunctionTypes.scalar(call.getType()) && !verifiedCollectionAggregate(node, call))
@@ -212,9 +214,9 @@ final class JvmGroupAggregateMatcher {
 
   static String unsupportedReason(StreamPhysicalGroupAggregate node) {
     return "GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG"
-        + " with verified collection elements, non-character scalar coresults and"
-        + " synchronous execution without mini-batching, specialization, approximate or"
-        + " ordered calls";
+               + " with verified collection elements, non-character scalar coresults and"
+               + " synchronous scalar single-phase mini-batching or ordinary execution without"
+               + " specialization, approximate or ordered calls";
   }
 
   static RelNode substitute(StreamPhysicalGroupAggregate node, PlanContext context) {
@@ -222,7 +224,14 @@ final class JvmGroupAggregateMatcher {
     return new StreamPhysicalNativeJvmGroup(
         node.getCluster(),
         node.getTraitSet(),
-        context.columnarInput(node.getInput(), keys),
+        context.columnarInput(
+            node.getInput(),
+            keys,
+            false,
+            ShortcutUtils.unwrapTableConfig(node)
+                .get(
+                    org.apache.flink.table.api.config.ExecutionConfigOptions
+                        .TABLE_EXEC_MINIBATCH_ENABLED)),
         node.getRowType(),
         keys,
         node.aggCalls(),

@@ -12,12 +12,12 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
 
 /**
  * A columnar keyed exchange: it stands in for a {@link
- * org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExchange} whose downstream
- * is a native columnar operator, carrying Arrow batches across the shuffle instead of transposing to
- * rows. It splits each batch by Flink's BinaryRow key hash into one sub-batch per destination and
- * routes them, co-locating every row of a key on one channel. Its representative key-group tag
- * agrees with that channel's raw keyed-state range. Schema- and watermark-transparent ({@link
- * ColumnarInput} and {@link ColumnarOutput}); the watermark flows through the partition
+ * org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExchange} whose
+ * downstream is a native columnar operator, carrying Arrow batches across the shuffle instead of
+ * transposing to rows. It splits each batch by Flink's BinaryRow key hash into one sub-batch per
+ * destination and routes them, co-locating every row of a key on one channel. Its representative
+ * key-group tag agrees with that channel's raw keyed-state range. Schema- and watermark-transparent
+ * ({@link ColumnarInput} and {@link ColumnarOutput}); the watermark flows through the partition
  * transformation as usual.
  */
 public class StreamPhysicalNativeColumnarExchange extends StreamPhysicalNativeSingleRel
@@ -25,6 +25,7 @@ public class StreamPhysicalNativeColumnarExchange extends StreamPhysicalNativeSi
 
   private final int[] keyColumns;
   private final boolean singleKeyGroup;
+  private final boolean projectedKeys;
 
   public StreamPhysicalNativeColumnarExchange(
       RelOptCluster cluster,
@@ -33,9 +34,21 @@ public class StreamPhysicalNativeColumnarExchange extends StreamPhysicalNativeSi
       RelDataType outputRowType,
       int[] keyColumns,
       boolean singleKeyGroup) {
+    this(cluster, traitSet, input, outputRowType, keyColumns, singleKeyGroup, false);
+  }
+
+  public StreamPhysicalNativeColumnarExchange(
+      RelOptCluster cluster,
+      RelTraitSet traitSet,
+      RelNode input,
+      RelDataType outputRowType,
+      int[] keyColumns,
+      boolean singleKeyGroup,
+      boolean projectedKeys) {
     super(cluster, traitSet, input, outputRowType);
     this.keyColumns = keyColumns;
     this.singleKeyGroup = singleKeyGroup;
+    this.projectedKeys = projectedKeys;
   }
 
   @Override
@@ -46,7 +59,13 @@ public class StreamPhysicalNativeColumnarExchange extends StreamPhysicalNativeSi
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     return new StreamPhysicalNativeColumnarExchange(
-        getCluster(), traitSet, inputs.get(0), outputRowType, keyColumns, singleKeyGroup);
+        getCluster(),
+        traitSet,
+        inputs.get(0),
+        outputRowType,
+        keyColumns,
+        singleKeyGroup,
+        projectedKeys);
   }
 
   @Override
@@ -58,6 +77,7 @@ public class StreamPhysicalNativeColumnarExchange extends StreamPhysicalNativeSi
         getRelDetailedDescription(),
         keyColumns,
         FlinkKeyGroupUtils.timestampPrecisions(outputRowType, keyColumns),
-        singleKeyGroup);
+        singleKeyGroup,
+        projectedKeys);
   }
 }
