@@ -89,11 +89,21 @@ execution environment's setting, preserving the saved key-group layout. Isolated
 controls cover a singleton and keyed layouts with maxima 17 and 256 while the environment requests
 257. The setter itself does not provide automatic stock-plan binding.
 
-This is component qualification with an explicitly bound stock state contract. Automatic window-join
-binding in compiled plans and ordinary SQL, broader full jobs with transposes/custom connectors,
-rescaling, other payload/key types and residual predicates remain
-unqualified for this adapter. Keyless harnesses use one task; they do not establish the resolved
-maximum parallelism of a stock compiled plan. Released Flink 2.2.1 rejects processing-time window
+The component archive binds stock state explicitly. Its private stock compiled-plan integration
+also passes 48 planner controls and 46 isolated complete-job cases: 36 continued-input switches,
+four no-input re-exports, two ordinary native-checkpoint recoveries and four 64-key rescaling
+cases. These retain two custom sources, a transactional sink and both transposes; stock workers
+exclude StreamFusion. INNER TUMBLE/HOP/CUMULATE cover keyed/keyless paths, while LEFT/RIGHT/FULL
+use keyed TUMBLE. Both stores and engine orders are exercised. FULL TUMBLE keys redistribute
+through 1 → 3 → 2 tasks at maximum parallelism 128; source and sink parallelism stay at one.
+Committed sink effects match the stock baseline. A fixture wait was corrected to require fresh
+native input only when the source limit advances: 40 cases passed initially and the six affected
+no-input/checkpoint cases passed on rerun.
+
+The private planner and common job fixtures still await consolidation into the committed
+production workflow. Ordinary SQL identities, wider rescale/type/version matrices and residual
+predicates remain unqualified. The isolated job fixtures use BIGINT keys/payloads; they do not
+establish every supported data type. Released Flink 2.2.1 rejects processing-time window
 joins, so its event-time contract cannot be bound to a native processing-time operator. Native
 processing-time execution and native checkpoint recovery remain available independently.
 
