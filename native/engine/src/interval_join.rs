@@ -8,6 +8,7 @@ use streamfusion_bridge::timestamp::TimestampColumn;
 
 mod index;
 mod probe;
+mod canonical;
 use index::BufferedIndex;
 const INDEX_BUFFER_THRESHOLD: usize = 1024;
 use probe::IntervalProbePlan;
@@ -135,6 +136,11 @@ impl IntervalJoiner {
         mut self,
         key_timestamp_precisions: Vec<i32>,
     ) -> Self {
+        self.set_key_timestamp_precisions(key_timestamp_precisions);
+        self
+    }
+
+    fn set_key_timestamp_precisions(&mut self, key_timestamp_precisions: Vec<i32>) {
         self.key_timestamp_precisions = key_timestamp_precisions;
         if let Some((left_rows, right_rows, left_keys, right_keys)) = self.legacy_timer_rows.take()
         {
@@ -172,7 +178,6 @@ impl IntervalJoiner {
         }
         self.rebuild_index(true);
         self.rebuild_index(false);
-        self
     }
 
     #[cfg(feature = "rocksdb-state")]

@@ -9,6 +9,8 @@ use rocksdb::Cache;
 use rocksdb::{Direction, IteratorMode, Options, DB};
 use std::sync::Arc;
 
+mod canonical;
+
 /// `[key_group i32 BE][table u8][seq u64 BE]` — the fixed layout of every buffered row's key. The
 /// key group leads so rescale clipping stays layout-agnostic and a probe can seek exactly the key
 /// groups an incoming batch can match; the sequence trails so a scan yields each key group's rows

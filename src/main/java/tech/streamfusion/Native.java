@@ -1207,6 +1207,20 @@ public final class Native {
   /** Serializes the sorter's buffered rows for a checkpoint. */
   public static native byte[] snapshotTemporalSorter(long handle);
 
+  public static native void bindIntervalJoinCanonicalKeys(long handle, int[] descriptor);
+
+  public static native void exportIntervalJoinCanonicalRows(
+      long handle, boolean left, BatchReceiver receiver);
+
+  public static native void importIntervalJoinCanonicalRows(
+      long handle, boolean left, long array, long schema);
+
+  public static native void exportIntervalJoinCanonicalTimers(
+      long handle, boolean left, BatchReceiver receiver);
+
+  public static native void importIntervalJoinCanonicalTimers(
+      long handle, boolean left, long array, long schema);
+
   public static native void exportWindowJoinCanonicalRows(
       long handle, boolean left, BatchReceiver receiver);
 

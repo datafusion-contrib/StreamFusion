@@ -92,3 +92,24 @@ Fixed selective probes against 16,384 retained keys improved 2.84–9.20× in th
 The complete row-fed SQL workload demonstrated no full-job gain or stable regression: native
 and stock medians moved similarly between runs. Both conversion boundaries, startup and task
 budget accounting remain in that comparison; the kernel result does not predict SQL throughput.
+
+## Direct canonical state transfer
+
+The unmerged [#569 implementation](https://github.com/datafusion-contrib/StreamFusion/issues/569)
+has a direct native transfer layer for event-time interval caches. It visits live rows in bounded
+Arrow batches, preserves outer-join match flags and per-key/timestamp list order, and transfers
+cleanup timers independently, including keys whose last cached row was already removed. Import
+retains owned buffers or writes individual persistent records without probing, joining or emitting
+input. No native snapshot is serialized before export. The key binding carries the actual stock
+projection layout and timestamp precision. INNER match bits have no effect on future output; the
+native memory representation normalizes those unused bits.
+
+Four native controls cover both stores and transfer directions, continued joins and cleanup,
+chunking, ownership, ordinary native recovery, malformed input and memory-denial cleanup. The
+clean component passes 1,158 native tests with two existing ignores and 29 Java checks, including
+18 direct JNI handoff/failure controls and 11 ordinary interval operator/watermark controls.
+
+This is the native bridge, not yet a stock interval-savepoint adapter or automatic planner
+binding. Released stock cache/list serializers, timer-state and queue validation, processing-time
+payload preservation, clean stock continuations and the full version/rescale/type matrix remain
+open. Interval joins are not yet counted as stock canonical coverage. Benchmarking is deferred.
