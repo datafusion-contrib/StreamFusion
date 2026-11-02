@@ -1207,6 +1207,17 @@ public final class Native {
   /** Serializes the sorter's buffered rows for a checkpoint. */
   public static native byte[] snapshotTemporalSorter(long handle);
 
+  /** Live materializer transport: 0 = group headers, 1 = candidates, 2 = matching indexes. */
+  public static native void exportSinkMaterializerCanonical(
+      long handle, int section, BatchReceiver receiver);
+
+  public static native void bindSinkMaterializerCanonical(long handle, long array, long schema);
+
+  public static native void importSinkMaterializerCanonical(
+      long handle, int section, long array, long schema);
+
+  public static native void finishSinkMaterializerCanonicalGroup(long handle);
+
   public static native void exportTemporalSortCanonicalRows(long handle, BatchReceiver receiver);
 
   public static native long[] temporalSortCanonicalCutoff(long handle);

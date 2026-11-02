@@ -95,8 +95,11 @@ key under a 16 KiB operator budget and recovers them from native database files.
 
 ## Canonical interchange qualification
 
-Stock-compatible canonical import/export for native materialization remains unfinished in
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Native portable snapshots are not stock Flink canonical savepoints.
+A prototype state adapter for released Flink 2.2.1 now imports and exports the stock LEGACY,
+VALUE, MAP and ADAPTIVE descriptors when the operator is bound to a stock state contract.
+Normal planner binding, complete-job qualification and the remaining variant matrix are unfinished
+in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Native-format portable
+snapshots remain separate from stock-compatible canonical savepoints.
 
 Released 2.2.1 stock protocol controls cover LEGACY, VALUE, MAP and both ADAPTIVE representations
 across heap/RocksDB canonical handoffs, including a second handoff without input. They compare
@@ -104,16 +107,39 @@ actual serialized keys/values and descriptor serializers, then check continued c
 LEGACY uses `values` with a list serializer and optional whole-list TTL age. VALUE uses `list`
 with row/timestamp tuples. MAP uses `rowToSqnState`, `sqnToNodeState` and `highestSqnState` for
 matching indexes, linked candidates and the sequence cursor/size. ADAPTIVE registers both layouts.
-V2 retains sampled timestamps even with TTL disabled; import, ordinary native recovery and later
-canonical re-export must preserve them. Native state now retains these timestamps for new candidates
-and preserves recorded times through recovery and unchanged re-export. An adapter must still translate the stock descriptors, timestamps,
-linked nodes and matching indexes directly; row serialization alone cannot supply that adapter.
-Historical native candidates with unknown timestamps need an explicit interchange policy rather
-than invented metadata.
+The adapter reads live memory candidates or persistent records directly into bounded Arrow
+transport chunks and Flink's stock serializers; it does not first create or decode a native snapshot.
+Separate streams carry group metadata, complete original rows and matching keys. Restore installs
+one group at a time without replaying input or rebuilding linked order. Actual binary keys, the
+sequence cursor/size, independent index entries, links, sampled timestamps and original LEGACY
+TTL ages survive handoff. The Arrow transport is internal, not the canonical file format.
+
+Managed values and serializer snapshots use released Flink classes, including its sequenced-multiset
+serializers and generated matching-key equaliser/hash functions. Their factories are generated at
+planning time, so task restore does not require planner implementation classes. No StreamFusion serializer or
+private replacement for a stock state object is written. A serializer-reader test blocks loading
+StreamFusion and planner implementation classes. Independent stock-worker classpath and full connector/delivery qualification
+remain separate complete-job requirements.
+
+LEGACY's internal candidate row kinds are normalized to INSERT: the stock operator explicitly
+ignores those stored flags during matching and derives emitted row kinds from the operation.
+Continued stream INSERT/UPDATE/DELETE behavior is checked against the released operator. V2's
+sampled timestamps are preserved even with TTL disabled. Historical native V2 candidates whose
+timestamps were never recorded fail canonical export explicitly; the adapter does not assign the
+restore clock. Such native snapshots remain usable for ordinary native recovery, and LEGACY has
+no stock per-candidate timestamp field.
+
+Operator controls cover both stock and native stores, repeated no-input handoffs, native ingress
+and resumed processing, empty savepoints, nested ARRAY matching keys with released Java import
+buffers, LEGACY TTL expiry across ordinary native checkpoints, unknown state and mismatched keys.
+The native visitor preserves live state on receiver failure and exports large persistent groups
+in chunks. Broader logical types, key layouts/rescaling, planner identities and complete source-to-sink
+switches are still qualification work; these controls do not establish the normal submission workflow.
 
 The controls retain a released MAP/linked-ADAPTIVE failure boundary: replacing an older input-key
 candidate moves the cursor; appending can overwrite a live sequence, and a later removal throws
 from the stock `REMOVAL_ALL` invariant. They assert the same failure before and after handoffs,
 alongside successful continuation sequences. Canonical conversion must preserve the stock cursor
-and indexes rather than rebuild an apparently equivalent ordered list. These are stock protocol
-controls, not native interoperability coverage. Benchmarking remains deferred for #569.
+and indexes rather than rebuild an apparently equivalent ordered list. The original stock protocol
+controls establish this failure boundary; no successful continuation is claimed for that failing
+released sequence. Benchmarking remains deferred for #569.

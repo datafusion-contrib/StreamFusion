@@ -1,4 +1,5 @@
 use super::*;
+mod canonical;
 use rocksdb::{Direction, IteratorMode};
 
 const DESCRIPTOR: &[u8] = b"\xff\xff\xff\xffsink-materializer-v1";

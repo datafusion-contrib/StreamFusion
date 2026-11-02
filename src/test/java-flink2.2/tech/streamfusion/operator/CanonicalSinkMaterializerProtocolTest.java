@@ -39,9 +39,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /** Pins released stock state, including metadata that a native adapter must preserve. */
 class CanonicalSinkMaterializerProtocolTest {
-  private static final RowType TYPE =
-      RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
-  private static final RowType KEY = RowType.of(new BigIntType());
+  static final RowType TYPE = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
+  static final RowType KEY = RowType.of(new BigIntType());
   private static final Set<String> LINKED =
       Set.of("rowToSqnState", "sqnToNodeState", "highestSqnState");
 
@@ -148,12 +147,20 @@ class CanonicalSinkMaterializerProtocolTest {
     return result;
   }
 
-  private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
+  static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
       String strategy, boolean inputKey, boolean rocks, boolean ttl) throws Exception {
+    return harness(strategy, inputKey, rocks, ttl, TYPE);
+  }
+
+  static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
+      String strategy, boolean inputKey, boolean rocks, boolean ttl, RowType input)
+      throws Exception {
+    var matchType = RowType.of(input.getTypeAt(1));
     var loader = CanonicalSinkMaterializerProtocolTest.class.getClassLoader();
     var config = new Configuration();
-    var rowEq = new EqualiserCodeGenerator(TYPE, loader).generateRecordEqualiser("SinkStateRowEq");
-    var keyEq = new EqualiserCodeGenerator(KEY, loader).generateRecordEqualiser("SinkStateKeyEq");
+    var rowEq = new EqualiserCodeGenerator(input, loader).generateRecordEqualiser("SinkStateRowEq");
+    var keyEq =
+        new EqualiserCodeGenerator(matchType, loader).generateRecordEqualiser("SinkStateKeyEq");
     OneInputStreamOperator<RowData, RowData> operator;
     if (strategy.equals("LEGACY")) {
       operator =
@@ -161,7 +168,7 @@ class CanonicalSinkMaterializerProtocolTest {
               ttl
                   ? StateTtlConfig.newBuilder(Duration.ofMillis(1000)).build()
                   : StateTtlConfig.DISABLED,
-              new RowDataSerializer(TYPE),
+              new RowDataSerializer(input),
               rowEq,
               keyEq,
               inputKey ? new int[] {1} : null);
@@ -180,16 +187,16 @@ class CanonicalSinkMaterializerProtocolTest {
                       StateTtlConfig.DISABLED);
       operator =
           SinkUpsertMaterializerV2.create(
-              TYPE,
+              input,
               rowEq,
               keyEq,
               HashCodeGenerator.generateRowHash(
                   new CodeGeneratorContext(config, loader),
-                  TYPE,
+                  input,
                   "SinkStateRowHash",
                   new int[] {0, 1, 2}),
               HashCodeGenerator.generateRowHash(
-                  new CodeGeneratorContext(config, loader), KEY, "SinkStateKeyHash", new int[] {0}),
+                  new CodeGeneratorContext(config, loader), matchType, "SinkStateKeyHash", new int[] {0}),
               inputKey ? new int[] {1} : null,
               settings);
     }
@@ -202,11 +209,11 @@ class CanonicalSinkMaterializerProtocolTest {
             1,
             0);
     if (rocks) harness.setStateBackend(new EmbeddedRocksDBStateBackend());
-    harness.setup(new RowDataSerializer(TYPE));
+    harness.setup(new RowDataSerializer(input));
     return harness;
   }
 
-  private static void prefix(
+  static void prefix(
       KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> h, boolean replaceOlder)
       throws Exception {
     push(h, RowKind.INSERT, 1, 10, 100, Long.MIN_VALUE);
@@ -216,7 +223,7 @@ class CanonicalSinkMaterializerProtocolTest {
     push(h, RowKind.INSERT, 2, 40, null, -1);
   }
 
-  private static void suffix(
+  static void suffix(
       KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> h,
       String strategy,
       boolean inputKey,
@@ -269,8 +276,7 @@ class CanonicalSinkMaterializerProtocolTest {
         new StreamRecord<>(new RowDataSerializer(TYPE).toBinaryRow(row).copy(), timestamp));
   }
 
-  private static List<String> output(
-      KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> h) {
+  static List<String> output(KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> h) {
     var result = new ArrayList<String>();
     for (var r : h.extractOutputValues()) result.add(format(r));
     h.getOutput().clear();
@@ -288,7 +294,7 @@ class CanonicalSinkMaterializerProtocolTest {
   }
 
   @SuppressWarnings("unchecked")
-  private static List<String> candidates(
+  static List<String> candidates(
       KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> h, String strategy)
       throws Exception {
     var result = new ArrayList<String>();
@@ -395,7 +401,7 @@ class CanonicalSinkMaterializerProtocolTest {
     }
   }
 
-  private static OperatorSubtaskState snapshot(
+  static OperatorSubtaskState snapshot(
       KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> h) throws Exception {
     return h.snapshotWithLocalState(1, 100, SavepointType.savepoint(SavepointFormatType.CANONICAL))
         .getJobManagerOwnedState();

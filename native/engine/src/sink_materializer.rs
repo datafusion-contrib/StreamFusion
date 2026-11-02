@@ -1,4 +1,5 @@
 use crate::*;
+mod canonical;
 mod equal;
 mod hash;
 mod serialized;
@@ -285,6 +286,7 @@ pub(crate) struct SinkMaterializer {
     match_precisions: Vec<i32>,
     last_sweep: i64,
     codec: Option<RowsCodec>,
+    canonical_import: Option<canonical::ImportGroup>,
     groups: MemoryStateStore<Candidates>,
     #[cfg(feature = "rocksdb-state")]
     rocks: Option<state::rocks::RocksCandidates>,
@@ -307,6 +309,7 @@ impl SinkMaterializer {
             match_precisions: vec![],
             last_sweep: 0,
             codec: None,
+            canonical_import: None,
             groups: MemoryStateStore::default(),
             #[cfg(feature = "rocksdb-state")]
             rocks: None,
@@ -369,6 +372,9 @@ impl SinkMaterializer {
         batch: &RecordBatch,
         now: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        if self.canonical_import.is_some() {
+            return Err(canonical::invalid("group transfer unfinished"));
+        }
         if batch.num_rows() == 0 {
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
@@ -760,6 +766,7 @@ impl SinkMaterializer {
     }
 
     pub(crate) fn snapshot(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
+        assert!(self.canonical_import.is_none(), "group transfer unfinished");
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.rocks {
             return self

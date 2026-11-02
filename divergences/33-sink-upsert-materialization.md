@@ -22,6 +22,15 @@ non-legacy strategies, which the native path preserves.
 Heap candidate state remains in the shared native memory budget. The native RocksDB backend
 keeps ordered values, linked nodes and serialized matching indexes in record-level tables, reusing
 the shared pool, Flink write options and checkpoint files. Point mutations hydrate only their
-neighbours; portable snapshots retain the version-2 logical layout. Earlier snapshot-store
+neighbours; portable snapshots retain the ordered logical layout (version 3 also retains sampled timestamps). Earlier snapshot-store
 checkpoints migrate on restore. The disk tables preserve Flink's key matching and sequence semantics. Paimon's merge-on-flush keyed upsert buffer is
 not reused: it collapses records for storage and cannot emit the required per-arrival changelog.
+
+
+Canonical interchange uses the released materializer descriptors and serializer classes rather
+than persisting this native layout. A direct live visitor transfers original rows, independent
+matching indexes, sequence metadata and timestamps without an intermediate native snapshot or
+input replay. The stock objects are constructed through released serializer APIs, including their
+public composite factories; no forked Flink types or StreamFusion serializer classes enter the
+canonical metadata. The integration and remaining qualification are tracked in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

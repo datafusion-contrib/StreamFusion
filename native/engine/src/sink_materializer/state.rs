@@ -1,6 +1,34 @@
 use super::*;
+mod canonical;
 #[cfg(feature = "rocksdb-state")]
 pub(super) mod rocks;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct CanonicalHeader {
+    pub linked: bool,
+    pub high: Option<i64>,
+    pub size: i64,
+    pub written: i64,
+    pub rows: usize,
+    pub indexes: usize,
+}
+
+#[derive(Clone)]
+pub(super) struct CanonicalRow {
+    pub payload: Arc<[u8]>,
+    pub position: i64,
+    pub previous: Option<i64>,
+    pub next: Option<i64>,
+    pub next_for: Option<i64>,
+    pub timestamp: Option<i64>,
+}
+
+#[derive(Clone)]
+pub(super) struct CanonicalIndex {
+    pub identity: Identity,
+    pub first: i64,
+    pub last: i64,
+}
 
 #[derive(Clone, Copy)]
 pub(super) enum Strategy {
