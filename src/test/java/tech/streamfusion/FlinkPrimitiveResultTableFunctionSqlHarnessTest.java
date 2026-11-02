@@ -302,7 +302,7 @@ class FlinkPrimitiveResultTableFunctionSqlHarnessTest {
   }
 
   @Test
-  void nestedPrimitiveResultBridgesRetainFallback() {
+  void nestedPrimitiveResultBridgesRetainReleasedValuesAndTypes() {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -314,11 +314,9 @@ class FlinkPrimitiveResultTableFunctionSqlHarnessTest {
                 return table;
               },
               "SELECT s.x,s.p,t.v,t.m FROM src s" + join("nested_rows", "v,m", false));
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertTrue(
-          runs.nativeRun().fallbackReasons().stream()
-              .anyMatch(reason -> reason.contains("verified external Java conversions")),
-          runs::toString);
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
   }
 

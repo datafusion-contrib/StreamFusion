@@ -233,7 +233,7 @@ class FlinkDateIntArgumentTableFunctionSqlHarnessTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"array", "row"})
-  void dateIntegerBridgesInsideContainersRetainFallback(String shape) {
+  void dateIntegerBridgesInsideContainersKeepVerifiedRoutes(String shape) {
     DataType scalar = DataTypes.DATE().notNull();
     DataType sourceType =
         shape.equals("array")
@@ -259,8 +259,15 @@ class FlinkDateIntArgumentTableFunctionSqlHarnessTest {
                 return table;
               },
               "SELECT s.x,s.p,t.v FROM src s,LATERAL TABLE(nested_days(s.x,s.p)) AS t(v)");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertUnverifiedConversion(runs);
+      if (shape.equals("row")) {
+        runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+        assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
+      } else {
+        runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+        assertUnverifiedConversion(runs);
+        assertTrue(metrics.nativeOperators().isEmpty());
+      }
     }
   }
 

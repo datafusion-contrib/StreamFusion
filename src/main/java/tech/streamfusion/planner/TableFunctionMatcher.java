@@ -2,6 +2,7 @@ package tech.streamfusion.planner;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rex.RexCall;
@@ -126,13 +127,27 @@ final class TableFunctionMatcher {
   }
 
   private static boolean verifiedConversion(DataType type) {
-    if (defaultConversions(type)) return true;
+    if (defaultConversions(type) || nestedBridges(type)) return true;
     if (!type.getLogicalType().is(LogicalTypeRoot.ARRAY)) return false;
     var element = type.getChildren().get(0);
     if (type.getConversionClass() == List.class) return defaultScalarConversion(element);
     return type.getConversionClass().isArray()
         && type.getConversionClass().getComponentType().isPrimitive()
         && primitiveConversion(element);
+  }
+
+  private static boolean nestedBridges(DataType type) {
+    if (!(type.getLogicalType().is(LogicalTypeRoot.ROW)
+            && type.getConversionClass() == Row.class)
+        && !(type.getLogicalType().is(LogicalTypeRoot.MAP)
+            && type.getConversionClass() == Map.class)) return false;
+    return type.getChildren().stream()
+        .allMatch(
+            child ->
+                defaultConversions(child)
+                    || primitiveConversion(child)
+                    || temporalConversion(child)
+                    || nestedBridges(child));
   }
 
   private static boolean defaultScalarConversion(DataType type) {

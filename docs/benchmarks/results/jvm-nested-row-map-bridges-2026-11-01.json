@@ -1,0 +1,2688 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-01",
+  "purpose": "Complete-job cost of correctness-verified scalar bridges inside ROW/MAP table functions under the accepted UDF performance exception; no acceleration claim. UTC timestamps can fall on the following date.",
+  "candidate_revision": "e501372c425d7444adce299497dfaf309f66df00",
+  "previous_revision": "a4515d7b77a9cecf42b3286f33a088beb0034bd1",
+  "native_sha256": "f1098d58d12acd9421bec50a6cfc9e49aa29eabaf3113773e656380e9dda6a2b",
+  "source_sha256": {
+    "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "563e6c62f31aee929658da2231a9a5e18c496ad1459e06829fff4db1a95264c7",
+    "src/test/java/tech/streamfusion/FlinkNestedBridgeTableFunctionSqlHarnessTest.java": "8ee6e316b342d98fe2698585d248a10e4268473028e05e8d81201a4850f051d2",
+    "src/test/java/tech/streamfusion/NestedBridgeTableFunctionBenchmark.java": "6b3e14d2bca981bab30e4c1f379a801979fe61fe042e39c88acd8f1bba10bb76"
+  },
+  "native_source_tree": "cf034cfd984cb14c935f57fd130a92b57089bcc5",
+  "environment": {
+    "os": "Darwin",
+    "architecture": "arm64",
+    "logical_cpus": 10,
+    "memory_bytes": 17179869184,
+    "jdk": "Temurin 17.0.17",
+    "heap": "3 GiB"
+  },
+  "method": {
+    "jdk": "Temurin 17.0.17",
+    "heap": "3 GiB",
+    "parallelism": 1,
+    "transpose_batch_rows": 1024,
+    "native_profile": "release/mimalloc",
+    "warmup_pairs": 2,
+    "measured_pairs": 5,
+    "rows": 262144,
+    "input": "64 prebuilt logical payload patterns repeated, including NULL parents/leaves, empty maps, raw floating bits, JDBC dates/timestamps and epoch-unit key collisions. Identical fixture sources on both revisions. Source serialization, callbacks with runtime leaf-class checks, released recursive converters, immediate output mutation, owned writes and output consumption remain in the complete job.",
+    "timing": "Submission through completion after symmetric EXPLAIN. Every case/revision/line has its own fresh JVM; stock/enabled jobs alternate within each pair. Prepared inputs and planning precede timing; job startup/JIT, row source and blackhole sink remain timed.",
+    "native_evidence": "Candidate requires NativeTableFunction, RowDataToArrow and ArrowToRowData in the plan, no fallback reasons and positive table-function input. Previous production requires zero substitutions and no native work; it is genuine stock fallback.",
+    "previous_fixture_only_copies": [
+      "src/test/java/tech/streamfusion/FlinkNestedBridgeTableFunctionSqlHarnessTest.java",
+      "src/test/java/tech/streamfusion/NestedBridgeTableFunctionBenchmark.java"
+    ],
+    "preparation": "On each checkout and Flink line: mvn -B -ntp -pl streamfusion-runtime -Pbench[,flink-1.18] -Dnative.build.skip=true -Dnative.resource.directory=<qualified-release-native> -Dmaven.javadoc.skip=true -DskipTests clean test-compile. Set JAVA_HOME to JDK 17 and SF_BENCHMARK=true for measurements.",
+    "serialization": "No correctness/build workload from this goal overlaps measured jobs; native and Java build preparation finishes before each line starts timing."
+  },
+  "correctness": {
+    "new_checks_per_line": 411,
+    "broader_checks_per_line": 1098,
+    "flink_2_2": "1096 passed initially; two stale ROW fallback expectations corrected, four targeted ROW/ARRAY controls then passed. No table-function implementation changed after that regression run; the measured revision also incorporates canonical Java-only DECIMAL fixes in #583.",
+    "flink_1_18": "1098 passed, zero failures/errors/skips.",
+    "recovery": "All outer changelog kinds, two forced restores per scenario, heap and native RocksDB, positive consumed target input and released native memory."
+  },
+  "limitations": [
+    "Short complete jobs retain startup and JIT variability; this is not an isolated steady-state operation benchmark.",
+    "Separate JVM stock controls may drift. All warmups and measured samples, including unfavorable results, are retained.",
+    "Host CPUs are not reserved. Host observations are sampled every ten seconds and cannot rule out brief interference.",
+    "UDF callbacks and owned conversions can cost more than stock Flink. Positive native work is coverage evidence, not acceleration evidence.",
+    "Some short series finished between host snapshots, leaving no sampled Java process. Other series have long launch-to-observation intervals despite short reported job times. All outer timestamps are retained; they do not identify the cause or placement of scheduling delays."
+  ],
+  "series": [
+    {
+      "variant": "candidate",
+      "flink_line": "1.18",
+      "case": "NESTED_BRIDGE_row:primitive-FLOAT",
+      "rows": 262144,
+      "stock_seconds": [
+        0.262489917,
+        0.259581917,
+        0.232669291,
+        0.236655541,
+        0.219128666
+      ],
+      "enabled_seconds": [
+        0.52212325,
+        0.516533709,
+        0.494087834,
+        0.509234875,
+        0.461138291
+      ],
+      "stock_summary_seconds": {
+        "median": 0.236655541,
+        "minimum": 0.219128666,
+        "maximum": 0.262489917
+      },
+      "enabled_summary_seconds": {
+        "median": 0.509234875,
+        "minimum": 0.461138291,
+        "maximum": 0.52212325
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 1.107797
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 1.061146
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.635273
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.30684
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.26249
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.522123
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.516534
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.259582
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.232669
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.494088
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.509235
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.236656
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.219129
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.461138
+        }
+      ],
+      "start_utc": "2026-11-02T03:55:58Z",
+      "end_utc": "2026-11-02T03:56:20Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=row:primitive-FLOAT",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 3,
+        "java_pids_observed": [
+          48858,
+          48876
+        ],
+        "maximum_java_rss_kib": 967280,
+        "maximum_observed_process_cpu_pct": 295.8,
+        "snapshot_times_utc": [
+          "2026-11-02T03:55:58Z",
+          "2026-11-02T03:56:08Z",
+          "2026-11-02T03:56:18Z"
+        ],
+        "runtime_java_observation_available": true
+      },
+      "launch_to_observed_completion_seconds": 22.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "previous",
+      "flink_line": "1.18",
+      "case": "NESTED_BRIDGE_row:primitive-FLOAT",
+      "rows": 262144,
+      "stock_seconds": [
+        0.25328525,
+        0.25914625,
+        0.259432125,
+        0.213619459,
+        0.276983667
+      ],
+      "enabled_seconds": [
+        0.276448125,
+        0.289416625,
+        0.232193208,
+        0.225945792,
+        0.223605833
+      ],
+      "stock_summary_seconds": {
+        "median": 0.25914625,
+        "minimum": 0.213619459,
+        "maximum": 0.276983667
+      },
+      "enabled_summary_seconds": {
+        "median": 0.232193208,
+        "minimum": 0.223605833,
+        "maximum": 0.289416625
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.98999
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.336494
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.319449
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.264271
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.253285
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.276448
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.289417
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.259146
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.259432
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.232193
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.225946
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.213619
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.276984
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.223606
+        }
+      ],
+      "start_utc": "2026-11-02T03:56:20Z",
+      "end_utc": "2026-11-02T03:56:40Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=row:primitive-FLOAT",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 2,
+        "java_pids_observed": [
+          48917,
+          48947
+        ],
+        "maximum_java_rss_kib": 463232,
+        "maximum_observed_process_cpu_pct": 236.5,
+        "snapshot_times_utc": [
+          "2026-11-02T03:56:20Z",
+          "2026-11-02T03:56:30Z"
+        ],
+        "runtime_java_observation_available": true
+      },
+      "launch_to_observed_completion_seconds": 20.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "candidate",
+      "flink_line": "1.18",
+      "case": "NESTED_BRIDGE_row_map:date-sql",
+      "rows": 262144,
+      "stock_seconds": [
+        0.463758833,
+        0.406667875,
+        0.447033458,
+        0.430045791,
+        0.424962334
+      ],
+      "enabled_seconds": [
+        1.159786083,
+        1.145536958,
+        1.243058667,
+        1.225586875,
+        1.201369917
+      ],
+      "stock_summary_seconds": {
+        "median": 0.430045791,
+        "minimum": 0.406667875,
+        "maximum": 0.463758833
+      },
+      "enabled_summary_seconds": {
+        "median": 1.201369917,
+        "minimum": 1.145536958,
+        "maximum": 1.243058667
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 1.437813
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 2.172273
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 1.334941
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.513079
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.463759
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 1.159786
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 1.145537
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.406668
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.447033
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 1.243059
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 1.225587
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.430046
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.424962
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 1.20137
+        }
+      ],
+      "start_utc": "2026-11-02T03:56:40Z",
+      "end_utc": "2026-11-02T03:57:09Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=row_map:date-sql",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 3,
+        "java_pids_observed": [
+          48952,
+          48970
+        ],
+        "maximum_java_rss_kib": 1042432,
+        "maximum_observed_process_cpu_pct": 293.5,
+        "snapshot_times_utc": [
+          "2026-11-02T03:56:40Z",
+          "2026-11-02T03:56:50Z",
+          "2026-11-02T03:57:00Z"
+        ],
+        "runtime_java_observation_available": true
+      },
+      "launch_to_observed_completion_seconds": 29.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "previous",
+      "flink_line": "1.18",
+      "case": "NESTED_BRIDGE_row_map:date-sql",
+      "rows": 262144,
+      "stock_seconds": [
+        0.526207083,
+        0.409297916,
+        0.454936583,
+        0.408724875,
+        0.398543167
+      ],
+      "enabled_seconds": [
+        0.426966833,
+        0.418703458,
+        0.422396375,
+        0.422961041,
+        0.399272833
+      ],
+      "stock_summary_seconds": {
+        "median": 0.409297916,
+        "minimum": 0.398543167,
+        "maximum": 0.526207083
+      },
+      "enabled_summary_seconds": {
+        "median": 0.422396375,
+        "minimum": 0.399272833,
+        "maximum": 0.426966833
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 1.469179
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.677993
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.587412
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.511752
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.526207
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.426967
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.418703
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.409298
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.454937
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.422396
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.422961
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.408725
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.398543
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.399273
+        }
+      ],
+      "start_utc": "2026-11-02T03:57:09Z",
+      "end_utc": "2026-11-02T03:57:31Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=row_map:date-sql",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 3,
+        "java_pids_observed": [
+          48974,
+          48992
+        ],
+        "maximum_java_rss_kib": 977696,
+        "maximum_observed_process_cpu_pct": 273.0,
+        "snapshot_times_utc": [
+          "2026-11-02T03:57:09Z",
+          "2026-11-02T03:57:19Z",
+          "2026-11-02T03:57:29Z"
+        ],
+        "runtime_java_observation_available": true
+      },
+      "launch_to_observed_completion_seconds": 22.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "candidate",
+      "flink_line": "1.18",
+      "case": "NESTED_BRIDGE_map_row:timestamp-sql",
+      "rows": 262144,
+      "stock_seconds": [
+        0.218270833,
+        0.166796334,
+        0.158113625,
+        0.160062541,
+        0.161770625
+      ],
+      "enabled_seconds": [
+        0.308707,
+        0.311765167,
+        0.310202875,
+        0.309660291,
+        0.30735075
+      ],
+      "stock_summary_seconds": {
+        "median": 0.161770625,
+        "minimum": 0.158113625,
+        "maximum": 0.218270833
+      },
+      "enabled_summary_seconds": {
+        "median": 0.309660291,
+        "minimum": 0.30735075,
+        "maximum": 0.311765167
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 1.251727
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 1.251045
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.333982
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.161309
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.218271
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.308707
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.311765
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.166796
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.158114
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.310203
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.30966
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.160063
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.161771
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.307351
+        }
+      ],
+      "start_utc": "2026-11-02T03:57:31Z",
+      "end_utc": "2026-11-02T04:13:39Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=map_row:timestamp-sql",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 2,
+        "java_pids_observed": [
+          48997,
+          49015
+        ],
+        "maximum_java_rss_kib": 482736,
+        "maximum_observed_process_cpu_pct": 217.1,
+        "snapshot_times_utc": [
+          "2026-11-02T03:57:31Z",
+          "2026-11-02T04:13:31Z"
+        ],
+        "runtime_java_observation_available": true
+      },
+      "launch_to_observed_completion_seconds": 968.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "previous",
+      "flink_line": "1.18",
+      "case": "NESTED_BRIDGE_map_row:timestamp-sql",
+      "rows": 262144,
+      "stock_seconds": [
+        0.156744875,
+        0.162688333,
+        0.16432325,
+        0.167196875,
+        0.169331625
+      ],
+      "enabled_seconds": [
+        0.163719041,
+        0.169793584,
+        0.168886,
+        0.170549916,
+        0.165348959
+      ],
+      "stock_summary_seconds": {
+        "median": 0.16432325,
+        "minimum": 0.156744875,
+        "maximum": 0.169331625
+      },
+      "enabled_summary_seconds": {
+        "median": 0.168886,
+        "minimum": 0.163719041,
+        "maximum": 0.170549916
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.463555
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.18139
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.165762
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.175926
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.156745
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.163719
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.169794
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.162688
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.164323
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.168886
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.17055
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.167197
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.169332
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.165349
+        }
+      ],
+      "start_utc": "2026-11-02T04:13:39Z",
+      "end_utc": "2026-11-02T04:13:46Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=map_row:timestamp-sql",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 1,
+        "java_pids_observed": [],
+        "maximum_java_rss_kib": 0,
+        "maximum_observed_process_cpu_pct": 62.9,
+        "snapshot_times_utc": [
+          "2026-11-02T04:13:39Z"
+        ],
+        "runtime_java_observation_available": false
+      },
+      "launch_to_observed_completion_seconds": 7.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "candidate",
+      "flink_line": "1.18",
+      "case": "NESTED_BRIDGE_map_key:ltz-long",
+      "rows": 262144,
+      "stock_seconds": [
+        0.144122167,
+        0.143154541,
+        0.14274825,
+        0.14552325,
+        0.143506
+      ],
+      "enabled_seconds": [
+        0.223386292,
+        0.223095291,
+        0.221881084,
+        0.217982459,
+        0.219867417
+      ],
+      "stock_summary_seconds": {
+        "median": 0.143506,
+        "minimum": 0.14274825,
+        "maximum": 0.14552325
+      },
+      "enabled_summary_seconds": {
+        "median": 0.221881084,
+        "minimum": 0.217982459,
+        "maximum": 0.223386292
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.376617
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.384692
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.247366
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.148124
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.144122
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.223386
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.223095
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.143155
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.142748
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.221881
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.217982
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.145523
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.143506
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.219867
+        }
+      ],
+      "start_utc": "2026-11-02T04:13:46Z",
+      "end_utc": "2026-11-02T04:13:53Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=map_key:ltz-long",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 1,
+        "java_pids_observed": [],
+        "maximum_java_rss_kib": 0,
+        "maximum_observed_process_cpu_pct": 65.2,
+        "snapshot_times_utc": [
+          "2026-11-02T04:13:46Z"
+        ],
+        "runtime_java_observation_available": false
+      },
+      "launch_to_observed_completion_seconds": 7.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "previous",
+      "flink_line": "1.18",
+      "case": "NESTED_BRIDGE_map_key:ltz-long",
+      "rows": 262144,
+      "stock_seconds": [
+        0.137688791,
+        0.151762375,
+        0.144854209,
+        0.13330125,
+        0.1471525
+      ],
+      "enabled_seconds": [
+        0.142110042,
+        0.143934,
+        0.143567542,
+        0.144830334,
+        0.144433917
+      ],
+      "stock_summary_seconds": {
+        "median": 0.144854209,
+        "minimum": 0.13330125,
+        "maximum": 0.151762375
+      },
+      "enabled_summary_seconds": {
+        "median": 0.143934,
+        "minimum": 0.142110042,
+        "maximum": 0.144830334
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.377275
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.130878
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.143511
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.138597
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.137689
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.14211
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.143934
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.151762
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.144854
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.143568
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.14483
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.133301
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.147153
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.144434
+        }
+      ],
+      "start_utc": "2026-11-02T04:13:53Z",
+      "end_utc": "2026-11-02T04:13:59Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=map_key:ltz-long",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 1,
+        "java_pids_observed": [],
+        "maximum_java_rss_kib": 0,
+        "maximum_observed_process_cpu_pct": 15.5,
+        "snapshot_times_utc": [
+          "2026-11-02T04:13:53Z"
+        ],
+        "runtime_java_observation_available": false
+      },
+      "launch_to_observed_completion_seconds": 6.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "candidate",
+      "flink_line": "2.2",
+      "case": "NESTED_BRIDGE_row:primitive-FLOAT",
+      "rows": 262144,
+      "stock_seconds": [
+        0.095834209,
+        0.088481125,
+        0.085106917,
+        0.075487,
+        0.0857315
+      ],
+      "enabled_seconds": [
+        0.155038084,
+        0.157734208,
+        0.146209208,
+        0.154441084,
+        0.157102666
+      ],
+      "stock_summary_seconds": {
+        "median": 0.0857315,
+        "minimum": 0.075487,
+        "maximum": 0.095834209
+      },
+      "enabled_summary_seconds": {
+        "median": 0.155038084,
+        "minimum": 0.146209208,
+        "maximum": 0.157734208
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.315586
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.283757
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.158266
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.085287
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.095834
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.155038
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.157734
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.088481
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.085107
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.146209
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.154441
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.075487
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.085732
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.157103
+        }
+      ],
+      "start_utc": "2026-11-02T04:25:40Z",
+      "end_utc": "2026-11-02T04:25:46Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=row:primitive-FLOAT",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 1,
+        "java_pids_observed": [],
+        "maximum_java_rss_kib": 0,
+        "maximum_observed_process_cpu_pct": 65.1,
+        "snapshot_times_utc": [
+          "2026-11-02T04:25:40Z"
+        ],
+        "runtime_java_observation_available": false
+      },
+      "launch_to_observed_completion_seconds": 6.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "previous",
+      "flink_line": "2.2",
+      "case": "NESTED_BRIDGE_row:primitive-FLOAT",
+      "rows": 262144,
+      "stock_seconds": [
+        0.080928,
+        0.094233125,
+        0.086458084,
+        0.084803333,
+        0.0809245
+      ],
+      "enabled_seconds": [
+        0.088158125,
+        0.08495925,
+        0.077813,
+        0.088932458,
+        0.082434125
+      ],
+      "stock_summary_seconds": {
+        "median": 0.084803333,
+        "minimum": 0.0809245,
+        "maximum": 0.094233125
+      },
+      "enabled_summary_seconds": {
+        "median": 0.08495925,
+        "minimum": 0.077813,
+        "maximum": 0.088932458
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.314098
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.082721
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.08624
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.078121
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.080928
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.088158
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.084959
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.094233
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.086458
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.077813
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.088932
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.084803
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.080925
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.082434
+        }
+      ],
+      "start_utc": "2026-11-02T04:25:46Z",
+      "end_utc": "2026-11-02T04:25:51Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=row:primitive-FLOAT",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 1,
+        "java_pids_observed": [],
+        "maximum_java_rss_kib": 0,
+        "maximum_observed_process_cpu_pct": 13.8,
+        "snapshot_times_utc": [
+          "2026-11-02T04:25:46Z"
+        ],
+        "runtime_java_observation_available": false
+      },
+      "launch_to_observed_completion_seconds": 5.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "candidate",
+      "flink_line": "2.2",
+      "case": "NESTED_BRIDGE_row_map:date-sql",
+      "rows": 262144,
+      "stock_seconds": [
+        0.132056292,
+        0.130541583,
+        0.130613292,
+        0.133752417,
+        0.134946834
+      ],
+      "enabled_seconds": [
+        0.29905975,
+        0.294632542,
+        0.285962708,
+        0.287075125,
+        0.290126708
+      ],
+      "stock_summary_seconds": {
+        "median": 0.132056292,
+        "minimum": 0.130541583,
+        "maximum": 0.134946834
+      },
+      "enabled_summary_seconds": {
+        "median": 0.290126708,
+        "minimum": 0.285962708,
+        "maximum": 0.29905975
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.417311
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.49973
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.311951
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.142813
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.132056
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.29906
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.294633
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.130542
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.130613
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.285963
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.287075
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.133752
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.134947
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.290127
+        }
+      ],
+      "start_utc": "2026-11-02T04:25:51Z",
+      "end_utc": "2026-11-02T04:25:58Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=row_map:date-sql",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 1,
+        "java_pids_observed": [],
+        "maximum_java_rss_kib": 0,
+        "maximum_observed_process_cpu_pct": 6.3,
+        "snapshot_times_utc": [
+          "2026-11-02T04:25:51Z"
+        ],
+        "runtime_java_observation_available": false
+      },
+      "launch_to_observed_completion_seconds": 7.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "previous",
+      "flink_line": "2.2",
+      "case": "NESTED_BRIDGE_row_map:date-sql",
+      "rows": 262144,
+      "stock_seconds": [
+        0.1338765,
+        0.12940275,
+        0.13455925,
+        0.130321666,
+        0.123200958
+      ],
+      "enabled_seconds": [
+        0.135846166,
+        0.130895792,
+        0.122984041,
+        0.136454667,
+        0.127925792
+      ],
+      "stock_summary_seconds": {
+        "median": 0.130321666,
+        "minimum": 0.123200958,
+        "maximum": 0.13455925
+      },
+      "enabled_summary_seconds": {
+        "median": 0.130895792,
+        "minimum": 0.122984041,
+        "maximum": 0.136454667
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.422005
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.128691
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.140885
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.136916
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.133877
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.135846
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.130896
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.129403
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.134559
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.122984
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.136455
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.130322
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.123201
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.127926
+        }
+      ],
+      "start_utc": "2026-11-02T04:25:58Z",
+      "end_utc": "2026-11-02T04:26:04Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=row_map:date-sql",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 1,
+        "java_pids_observed": [],
+        "maximum_java_rss_kib": 0,
+        "maximum_observed_process_cpu_pct": 6.5,
+        "snapshot_times_utc": [
+          "2026-11-02T04:25:58Z"
+        ],
+        "runtime_java_observation_available": false
+      },
+      "launch_to_observed_completion_seconds": 6.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "candidate",
+      "flink_line": "2.2",
+      "case": "NESTED_BRIDGE_map_row:timestamp-sql",
+      "rows": 262144,
+      "stock_seconds": [
+        0.169556625,
+        0.167533417,
+        0.167468167,
+        0.172506459,
+        0.161368209
+      ],
+      "enabled_seconds": [
+        0.297885625,
+        0.298680625,
+        0.301815542,
+        0.301979667,
+        0.30296625
+      ],
+      "stock_summary_seconds": {
+        "median": 0.167533417,
+        "minimum": 0.161368209,
+        "maximum": 0.172506459
+      },
+      "enabled_summary_seconds": {
+        "median": 0.301815542,
+        "minimum": 0.297885625,
+        "maximum": 0.30296625
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.479658
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.5146
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.323504
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.179371
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.169557
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.297886
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.298681
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.167533
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.167468
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.301816
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.30198
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.172506
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.161368
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.302966
+        }
+      ],
+      "start_utc": "2026-11-02T04:26:04Z",
+      "end_utc": "2026-11-02T04:26:12Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=map_row:timestamp-sql",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 1,
+        "java_pids_observed": [],
+        "maximum_java_rss_kib": 0,
+        "maximum_observed_process_cpu_pct": 4.9,
+        "snapshot_times_utc": [
+          "2026-11-02T04:26:04Z"
+        ],
+        "runtime_java_observation_available": false
+      },
+      "launch_to_observed_completion_seconds": 8.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "previous",
+      "flink_line": "2.2",
+      "case": "NESTED_BRIDGE_map_row:timestamp-sql",
+      "rows": 262144,
+      "stock_seconds": [
+        0.174024084,
+        0.164850084,
+        0.167459334,
+        0.171530833,
+        0.167198458
+      ],
+      "enabled_seconds": [
+        0.160055,
+        0.164114292,
+        0.16775375,
+        0.157988083,
+        0.160461041
+      ],
+      "stock_summary_seconds": {
+        "median": 0.167459334,
+        "minimum": 0.164850084,
+        "maximum": 0.174024084
+      },
+      "enabled_summary_seconds": {
+        "median": 0.160461041,
+        "minimum": 0.157988083,
+        "maximum": 0.16775375
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.477929
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.232003
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.160197
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.173436
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.174024
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.160055
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.164114
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.16485
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.167459
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.167754
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.157988
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.171531
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.167198
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.160461
+        }
+      ],
+      "start_utc": "2026-11-02T04:26:12Z",
+      "end_utc": "2026-11-02T04:26:18Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=map_row:timestamp-sql",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 1,
+        "java_pids_observed": [],
+        "maximum_java_rss_kib": 0,
+        "maximum_observed_process_cpu_pct": 5.3,
+        "snapshot_times_utc": [
+          "2026-11-02T04:26:12Z"
+        ],
+        "runtime_java_observation_available": false
+      },
+      "launch_to_observed_completion_seconds": 6.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "candidate",
+      "flink_line": "2.2",
+      "case": "NESTED_BRIDGE_map_key:ltz-long",
+      "rows": 262144,
+      "stock_seconds": [
+        0.150298375,
+        0.148533291,
+        0.150007917,
+        0.142018,
+        0.14249225
+      ],
+      "enabled_seconds": [
+        0.225073708,
+        0.216184416,
+        0.220007917,
+        0.2085845,
+        0.202388458
+      ],
+      "stock_summary_seconds": {
+        "median": 0.148533291,
+        "minimum": 0.142018,
+        "maximum": 0.150298375
+      },
+      "enabled_summary_seconds": {
+        "median": 0.216184416,
+        "minimum": 0.202388458,
+        "maximum": 0.225073708
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.397789
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.384146
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.235381
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.14569
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.150298
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.225074
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.216184
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.148533
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.150008
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.220008
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.208585
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.142018
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.142492
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.202388
+        }
+      ],
+      "start_utc": "2026-11-02T04:26:18Z",
+      "end_utc": "2026-11-02T04:42:51Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=map_key:ltz-long",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 1,
+        "java_pids_observed": [],
+        "maximum_java_rss_kib": 0,
+        "maximum_observed_process_cpu_pct": 7.2,
+        "snapshot_times_utc": [
+          "2026-11-02T04:26:18Z"
+        ],
+        "runtime_java_observation_available": false
+      },
+      "launch_to_observed_completion_seconds": 993.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    },
+    {
+      "variant": "previous",
+      "flink_line": "2.2",
+      "case": "NESTED_BRIDGE_map_key:ltz-long",
+      "rows": 262144,
+      "stock_seconds": [
+        0.153554,
+        0.139523292,
+        0.142908417,
+        0.135034625,
+        0.149258167
+      ],
+      "enabled_seconds": [
+        0.139482208,
+        0.135395542,
+        0.144362333,
+        0.135820459,
+        0.136958875
+      ],
+      "stock_summary_seconds": {
+        "median": 0.142908417,
+        "minimum": 0.135034625,
+        "maximum": 0.153554
+      },
+      "enabled_summary_seconds": {
+        "median": 0.136958875,
+        "minimum": 0.135395542,
+        "maximum": 0.144362333
+      },
+      "trials_in_execution_order": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.390236
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.143236
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.146057
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds_printed": 0.139522
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.153554
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.139482
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.135396
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.139523
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.142908
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.144362
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.13582
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.135035
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.149258
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds_printed": 0.136959
+        }
+      ],
+      "start_utc": "2026-11-02T04:42:51Z",
+      "end_utc": "2026-11-02T04:42:57Z",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=NestedBridgeTableFunctionBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>",
+        "-Dboundary.nestedBridges=map_key:ltz-long",
+        "-Dboundary.rows=262144",
+        "-Dboundary.warmups=2",
+        "-Dboundary.runs=5",
+        "-Dboundary.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "sampled_host": {
+        "samples": 1,
+        "java_pids_observed": [],
+        "maximum_java_rss_kib": 0,
+        "maximum_observed_process_cpu_pct": 7.1,
+        "snapshot_times_utc": [
+          "2026-11-02T04:42:51Z"
+        ],
+        "runtime_java_observation_available": false
+      },
+      "launch_to_observed_completion_seconds": 6.0,
+      "observation_note": "End timestamp is when the driver observed process completion. This interval can include scheduling gaps outside timed jobs; it is not the per-job processing duration."
+    }
+  ]
+}
