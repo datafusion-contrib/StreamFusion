@@ -22,8 +22,9 @@ class UtcLtzCalendarFloorAdmissionTest {
     admitted.setAccessible(true);
     for (String expression : List.of("FLOOR(ts TO DAY)", "FLOOR(ts TO HOUR)",
         "FLOOR(ts TO MINUTE)", "FLOOR(ts TO SECOND)", "FLOOR(ts TO MILLISECOND)",
-        "CEIL(ts TO MONTH)", "CEIL(ts TO YEAR)",
-        "FLOOR(TO_TIMESTAMP_LTZ(n,3) TO MONTH)")) {
+        "CEIL(ts TO DAY)", "CEIL(ts TO HOUR)", "CEIL(ts TO MINUTE)",
+        "CEIL(ts TO SECOND)", "CEIL(ts TO MILLISECOND)",
+        "FLOOR(TO_TIMESTAMP_LTZ(n,3) TO MONTH)", "CEIL(TO_TIMESTAMP_LTZ(n,3) TO MONTH)")) {
       var table = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
       table.getConfig().setLocalTimeZone(java.time.ZoneOffset.UTC);
       table.executeSql("CREATE TABLE src(ts TIMESTAMP_LTZ(9),n BIGINT) WITH ('connector'='datagen')");

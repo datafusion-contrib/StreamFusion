@@ -4411,7 +4411,6 @@ final class RexExpression {
       return false;
     SqlTypeName input = call.getOperands().get(0).getType().getSqlTypeName();
     boolean utcLtz = input == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
-        && call.getKind() == SqlKind.FLOOR
         && (call.getOperands().get(0) instanceof RexInputRef
             || call.getOperands().get(0) instanceof RexLiteral)
         && sessionZoneId != null

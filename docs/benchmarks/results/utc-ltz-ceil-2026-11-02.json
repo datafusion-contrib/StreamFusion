@@ -1,0 +1,3888 @@
+{
+  "qualification": {
+    "base": "bc9156b3c125efe2b495a6d34e29dba73f76c719",
+    "validation": {
+      "22-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=17 succeeded=17 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "22-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=17 succeeded=17 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=17 succeeded=17 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=17 succeeded=17 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "source_files_sha256": {
+        "src/main/java/tech/streamfusion/planner/RexExpression.java": "a8a7bcee6f499d6c9c420415b6580350c6c0b5c69ab7ef3fdf4df163414e1d0c",
+        "src/main/java/tech/streamfusion/planner/FlinkExpressionGenerator.java": "b977f6e1872cfd81f4807aa90d0551205888eaaa659fbdff149015d60d554692",
+        "src/main/java/tech/streamfusion/planner/JvmFunctionConversions.java": "a15474c083f74fb3fc13aabcd74d578643b8a8df2c564583f50c81b83b535603",
+        "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "563e6c62f31aee929658da2231a9a5e18c496ad1459e06829fff4db1a95264c7",
+        "src/test/java/tech/streamfusion/FlinkUtcLtzCalendarCeilSqlHarnessTest.java": "4b5f3a226c1865b39d6a528267df1bbe3d6feedf53549f3c2bfacd53bbdd18f5",
+        "src/test/java/tech/streamfusion/planner/UtcLtzCalendarFloorAdmissionTest.java": "143b4cecf3237b1d2e7c9cd129016b9b0dfcd4910a536883331e7b68df1192aa",
+        "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "10e4b924f53de95800eab3e4c353526ededa9d1b420736f71049e1ead9748c57",
+        "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "df7c9aeb7c728ac30cfabedd7b37b66579bc8ea16f33a548947c9aae8d6b27cc"
+      },
+      "native_files_sha256": {
+        "native/engine/src/flink_functions/decimal.rs": "6b5f00c9fb321928a9a603519fc2cc2d10dda5fde507612dd314b953dd6efd90",
+        "native/engine/src/flink_functions/calendar.rs": "841b4bd6257a64143c7dadcdc0757762ac0a735f060b6cbd37decd9cf9bbf778",
+        "native/engine/src/expr.rs": "d357a41f914f057d93c5badbf06814d8fc2d6db7fcccd20a9ce2e608e7fdca1d"
+      },
+      "dso_sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98"
+    },
+    "fixture_sources": {
+      "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "10e4b924f53de95800eab3e4c353526ededa9d1b420736f71049e1ead9748c57",
+      "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "df7c9aeb7c728ac30cfabedd7b37b66579bc8ea16f33a548947c9aae8d6b27cc",
+      "native/engine/examples/integral_expression.rs": "bd79874b8bfed45b53f57df6fe595caa5190f48bf3910b878e6be5ac65265e08"
+    },
+    "unchanged_production_dso_sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98",
+    "rust_core_reused": "886 passed without default features, production Rust/DSO unchanged",
+    "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+  },
+  "matrix": {
+    "base": "bc9156b3c125efe2b495a6d34e29dba73f76c719",
+    "function": "CEIL",
+    "jdk": "Oracle JDK 17.0.12",
+    "warmups": 16,
+    "runs": 9,
+    "processed_rows_per_trial": 131072,
+    "previous_dso_sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98",
+    "previous_executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+    "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+    "dso_sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98",
+    "cases": [
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 36.305747985839844,
+              "median_ns_per_row": 38.952186584472656,
+              "max_ns_per_row": 61.017669677734375
+            },
+            "native": {
+              "min_ns_per_row": 23.82341766357422,
+              "median_ns_per_row": 24.89916229248047,
+              "max_ns_per_row": 25.539085388183594
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.91156005859375,
+              "median_ns_per_row": 37.80238342285156,
+              "max_ns_per_row": 38.22454071044922
+            },
+            "previous": {
+              "min_ns_per_row": 64.17051696777344,
+              "median_ns_per_row": 73.00567626953125,
+              "max_ns_per_row": 84.1553955078125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 30.677162170410156,
+              "median_ns_per_row": 32.26438903808594,
+              "max_ns_per_row": 42.82505798339844
+            },
+            "native": {
+              "min_ns_per_row": 24.577781677246094,
+              "median_ns_per_row": 25.054298400878906,
+              "max_ns_per_row": 26.1246337890625
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 30.350372314453125,
+              "median_ns_per_row": 31.04559326171875,
+              "max_ns_per_row": 32.352447509765625
+            },
+            "previous": {
+              "min_ns_per_row": 59.71527099609375,
+              "median_ns_per_row": 65.98377227783203,
+              "max_ns_per_row": 73.96507263183594
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 37.870094299316406,
+              "median_ns_per_row": 40.831878662109375,
+              "max_ns_per_row": 61.57652282714844
+            },
+            "native": {
+              "min_ns_per_row": 24.519920349121094,
+              "median_ns_per_row": 24.785675048828125,
+              "max_ns_per_row": 25.426223754882812
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 38.07036590576172,
+              "median_ns_per_row": 38.799285888671875,
+              "max_ns_per_row": 38.99224090576172
+            },
+            "previous": {
+              "min_ns_per_row": 61.47575378417969,
+              "median_ns_per_row": 62.6373291015625,
+              "max_ns_per_row": 74.8770980834961
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 31.163528442382812,
+              "median_ns_per_row": 31.950950622558594,
+              "max_ns_per_row": 52.54808807373047
+            },
+            "native": {
+              "min_ns_per_row": 24.213157653808594,
+              "median_ns_per_row": 24.773910522460938,
+              "max_ns_per_row": 26.27594757080078
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 31.529739379882812,
+              "median_ns_per_row": 32.780006408691406,
+              "max_ns_per_row": 33.98609161376953
+            },
+            "previous": {
+              "min_ns_per_row": 57.50274658203125,
+              "median_ns_per_row": 58.951377868652344,
+              "max_ns_per_row": 70.07312774658203
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 32.33019256591797,
+              "median_ns_per_row": 32.985687255859375,
+              "max_ns_per_row": 52.80717468261719
+            },
+            "native": {
+              "min_ns_per_row": 23.782730102539062,
+              "median_ns_per_row": 23.885726928710938,
+              "max_ns_per_row": 24.905517578125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 31.660079956054688,
+              "median_ns_per_row": 33.17070007324219,
+              "max_ns_per_row": 33.804893493652344
+            },
+            "previous": {
+              "min_ns_per_row": 57.610511779785156,
+              "median_ns_per_row": 61.321258544921875,
+              "max_ns_per_row": 69.2437515258789
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 27.591705322265625,
+              "median_ns_per_row": 28.613731384277344,
+              "max_ns_per_row": 50.853729248046875
+            },
+            "native": {
+              "min_ns_per_row": 24.02019500732422,
+              "median_ns_per_row": 24.290084838867188,
+              "max_ns_per_row": 24.43250274658203
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 28.530441284179688,
+              "median_ns_per_row": 28.985977172851562,
+              "max_ns_per_row": 30.000045776367188
+            },
+            "previous": {
+              "min_ns_per_row": 55.89580535888672,
+              "median_ns_per_row": 60.54401397705078,
+              "max_ns_per_row": 64.66356658935547
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 37.96131896972656,
+              "median_ns_per_row": 39.45032501220703,
+              "max_ns_per_row": 51.796913146972656
+            },
+            "native": {
+              "min_ns_per_row": 23.826919555664062,
+              "median_ns_per_row": 24.22809600830078,
+              "max_ns_per_row": 24.72241973876953
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.20997619628906,
+              "median_ns_per_row": 36.82263946533203,
+              "max_ns_per_row": 39.26721954345703
+            },
+            "previous": {
+              "min_ns_per_row": 60.45977020263672,
+              "median_ns_per_row": 66.44248962402344,
+              "max_ns_per_row": 75.67691802978516
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 31.998321533203125,
+              "median_ns_per_row": 34.446075439453125,
+              "max_ns_per_row": 48.86467742919922
+            },
+            "native": {
+              "min_ns_per_row": 23.992218017578125,
+              "median_ns_per_row": 24.520240783691406,
+              "max_ns_per_row": 25.612518310546875
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 29.723480224609375,
+              "median_ns_per_row": 31.210586547851562,
+              "max_ns_per_row": 41.96294403076172
+            },
+            "previous": {
+              "min_ns_per_row": 59.94447326660156,
+              "median_ns_per_row": 64.67311096191406,
+              "max_ns_per_row": 75.11679077148438
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 37.27531433105469,
+              "median_ns_per_row": 38.67053985595703,
+              "max_ns_per_row": 58.7294921875
+            },
+            "native": {
+              "min_ns_per_row": 24.01256561279297,
+              "median_ns_per_row": 24.906158447265625,
+              "max_ns_per_row": 26.009239196777344
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.19884490966797,
+              "median_ns_per_row": 35.70270538330078,
+              "max_ns_per_row": 49.89433288574219
+            },
+            "previous": {
+              "min_ns_per_row": 61.522483825683594,
+              "median_ns_per_row": 69.52921295166016,
+              "max_ns_per_row": 75.6250991821289
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 30.665084838867188,
+              "median_ns_per_row": 31.09136962890625,
+              "max_ns_per_row": 51.68342590332031
+            },
+            "native": {
+              "min_ns_per_row": 23.8831787109375,
+              "median_ns_per_row": 24.236358642578125,
+              "max_ns_per_row": 24.805068969726562
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 30.122756958007812,
+              "median_ns_per_row": 30.76616668701172,
+              "max_ns_per_row": 44.16211700439453
+            },
+            "previous": {
+              "min_ns_per_row": 60.700096130371094,
+              "median_ns_per_row": 65.39598846435547,
+              "max_ns_per_row": 69.73743438720703
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 39.35432434082031,
+              "median_ns_per_row": 40.682472229003906,
+              "max_ns_per_row": 59.73052978515625
+            },
+            "native": {
+              "min_ns_per_row": 23.890174865722656,
+              "median_ns_per_row": 24.440444946289062,
+              "max_ns_per_row": 24.82732391357422
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 39.330162048339844,
+              "median_ns_per_row": 39.89537811279297,
+              "max_ns_per_row": 51.76385498046875
+            },
+            "previous": {
+              "min_ns_per_row": 66.82682037353516,
+              "median_ns_per_row": 70.07217407226562,
+              "max_ns_per_row": 79.6941146850586
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 33.014930725097656,
+              "median_ns_per_row": 33.94508361816406,
+              "max_ns_per_row": 44.87196350097656
+            },
+            "native": {
+              "min_ns_per_row": 24.256393432617188,
+              "median_ns_per_row": 24.75897979736328,
+              "max_ns_per_row": 25.124549865722656
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.182373046875,
+              "median_ns_per_row": 32.51043701171875,
+              "max_ns_per_row": 43.57306671142578
+            },
+            "previous": {
+              "min_ns_per_row": 60.30146026611328,
+              "median_ns_per_row": 62.22978973388672,
+              "max_ns_per_row": 65.31587982177734
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 30.73723602294922,
+              "median_ns_per_row": 32.0418701171875,
+              "max_ns_per_row": 53.95635223388672
+            },
+            "native": {
+              "min_ns_per_row": 23.830413818359375,
+              "median_ns_per_row": 23.889854431152344,
+              "max_ns_per_row": 24.347305297851562
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.263755798339844,
+              "median_ns_per_row": 33.04862976074219,
+              "max_ns_per_row": 33.80902862548828
+            },
+            "previous": {
+              "min_ns_per_row": 67.92831420898438,
+              "median_ns_per_row": 77.90628814697266,
+              "max_ns_per_row": 90.42803192138672
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 27.523361206054688,
+              "median_ns_per_row": 28.76154327392578,
+              "max_ns_per_row": 49.15873718261719
+            },
+            "native": {
+              "min_ns_per_row": 23.7410888671875,
+              "median_ns_per_row": 24.854339599609375,
+              "max_ns_per_row": 25.595977783203125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 27.29511260986328,
+              "median_ns_per_row": 28.691604614257812,
+              "max_ns_per_row": 29.22376251220703
+            },
+            "previous": {
+              "min_ns_per_row": 60.93183898925781,
+              "median_ns_per_row": 65.24848937988281,
+              "max_ns_per_row": 77.69171905517578
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 39.330482482910156,
+              "median_ns_per_row": 40.14396667480469,
+              "max_ns_per_row": 56.08050537109375
+            },
+            "native": {
+              "min_ns_per_row": 23.88922119140625,
+              "median_ns_per_row": 24.519920349121094,
+              "max_ns_per_row": 30.41680908203125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 37.639930725097656,
+              "median_ns_per_row": 41.28773498535156,
+              "max_ns_per_row": 42.8787841796875
+            },
+            "previous": {
+              "min_ns_per_row": 64.11106872558594,
+              "median_ns_per_row": 69.2742691040039,
+              "max_ns_per_row": 78.40283966064453
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 30.606590270996094,
+              "median_ns_per_row": 33.91233825683594,
+              "max_ns_per_row": 51.561676025390625
+            },
+            "native": {
+              "min_ns_per_row": 23.805938720703125,
+              "median_ns_per_row": 24.828590393066406,
+              "max_ns_per_row": 26.03594207763672
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 31.057357788085938,
+              "median_ns_per_row": 33.28514099121094,
+              "max_ns_per_row": 41.602447509765625
+            },
+            "previous": {
+              "min_ns_per_row": 60.018218994140625,
+              "median_ns_per_row": 63.03373718261719,
+              "max_ns_per_row": 71.40890502929688
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "tiny",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 29.862083435058594,
+              "median_ns_per_row": 30.166305541992188,
+              "max_ns_per_row": 50.22716522216797
+            },
+            "native": {
+              "min_ns_per_row": 141.49030303955078,
+              "median_ns_per_row": 145.60222625732422,
+              "max_ns_per_row": 148.00453186035156
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4593,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 29.80168914794922,
+              "median_ns_per_row": 30.057594299316406,
+              "max_ns_per_row": 30.725799560546875
+            },
+            "previous": {
+              "min_ns_per_row": 1267.3880233764648,
+              "median_ns_per_row": 1285.7017517089844,
+              "max_ns_per_row": 1332.0980072021484
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "tiny",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 35.790443420410156,
+              "median_ns_per_row": 36.13026428222656,
+              "max_ns_per_row": 53.48396301269531
+            },
+            "native": {
+              "min_ns_per_row": 145.86385345458984,
+              "median_ns_per_row": 146.74027252197266,
+              "max_ns_per_row": 148.56942749023438
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4593,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.18104553222656,
+              "median_ns_per_row": 35.982452392578125,
+              "max_ns_per_row": 36.45960235595703
+            },
+            "previous": {
+              "min_ns_per_row": 1227.705322265625,
+              "median_ns_per_row": 1246.5880737304688,
+              "max_ns_per_row": 1280.5188522338867
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "tiny",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 29.129348754882812,
+              "median_ns_per_row": 29.527664184570312,
+              "max_ns_per_row": 48.92412567138672
+            },
+            "native": {
+              "min_ns_per_row": 145.37271118164062,
+              "median_ns_per_row": 147.0047607421875,
+              "max_ns_per_row": 148.0557098388672
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4593,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 29.153823852539062,
+              "median_ns_per_row": 29.748916625976562,
+              "max_ns_per_row": 31.8009033203125
+            },
+            "previous": {
+              "min_ns_per_row": 1246.4396133422852,
+              "median_ns_per_row": 1288.191795349121,
+              "max_ns_per_row": 1388.35302734375
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "tiny",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 36.03330993652344,
+              "median_ns_per_row": 36.78290557861328,
+              "max_ns_per_row": 53.14509582519531
+            },
+            "native": {
+              "min_ns_per_row": 140.4717788696289,
+              "median_ns_per_row": 142.73802185058594,
+              "max_ns_per_row": 149.70557403564453
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4593,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.860382080078125,
+              "median_ns_per_row": 36.50824737548828,
+              "max_ns_per_row": 38.08848571777344
+            },
+            "previous": {
+              "min_ns_per_row": 1218.5150756835938,
+              "median_ns_per_row": 1243.122413635254,
+              "max_ns_per_row": 1313.4377822875977
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 35.92395782470703,
+              "median_ns_per_row": 36.80451202392578,
+              "max_ns_per_row": 39.07426452636719
+            },
+            "native": {
+              "min_ns_per_row": 24.184226989746094,
+              "median_ns_per_row": 24.76024627685547,
+              "max_ns_per_row": 26.673004150390625
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 36.35374450683594,
+              "median_ns_per_row": 37.30137634277344,
+              "max_ns_per_row": 37.724815368652344
+            },
+            "previous": {
+              "min_ns_per_row": 58.73902893066406,
+              "median_ns_per_row": 63.11448669433594,
+              "max_ns_per_row": 78.37835693359375
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 30.446372985839844,
+              "median_ns_per_row": 30.81639862060547,
+              "max_ns_per_row": 48.653602600097656
+            },
+            "native": {
+              "min_ns_per_row": 23.720741271972656,
+              "median_ns_per_row": 23.895584106445312,
+              "max_ns_per_row": 24.295806884765625
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 30.687332153320312,
+              "median_ns_per_row": 31.638145446777344,
+              "max_ns_per_row": 32.596588134765625
+            },
+            "previous": {
+              "min_ns_per_row": 56.623138427734375,
+              "median_ns_per_row": 60.662269592285156,
+              "max_ns_per_row": 72.9049072265625
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 37.448883056640625,
+              "median_ns_per_row": 38.10755920410156,
+              "max_ns_per_row": 39.81971740722656
+            },
+            "native": {
+              "min_ns_per_row": 24.11492156982422,
+              "median_ns_per_row": 24.878501892089844,
+              "max_ns_per_row": 26.319183349609375
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 38.303375244140625,
+              "median_ns_per_row": 39.62071990966797,
+              "max_ns_per_row": 48.80523681640625
+            },
+            "previous": {
+              "min_ns_per_row": 66.79439544677734,
+              "median_ns_per_row": 68.09234619140625,
+              "max_ns_per_row": 76.27359771728516
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 32.27392578125,
+              "median_ns_per_row": 32.71038818359375,
+              "max_ns_per_row": 33.89422607421875
+            },
+            "native": {
+              "min_ns_per_row": 23.89080810546875,
+              "median_ns_per_row": 24.33331298828125,
+              "max_ns_per_row": 24.665199279785156
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 30.618667602539062,
+              "median_ns_per_row": 31.9808349609375,
+              "max_ns_per_row": 41.635833740234375
+            },
+            "previous": {
+              "min_ns_per_row": 60.694053649902344,
+              "median_ns_per_row": 64.46234893798828,
+              "max_ns_per_row": 71.68260955810547
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 32.34831237792969,
+              "median_ns_per_row": 32.94563293457031,
+              "max_ns_per_row": 49.953460693359375
+            },
+            "native": {
+              "min_ns_per_row": 23.969329833984375,
+              "median_ns_per_row": 24.8397216796875,
+              "max_ns_per_row": 25.554336547851562
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.33306121826172,
+              "median_ns_per_row": 32.67256164550781,
+              "max_ns_per_row": 32.984100341796875
+            },
+            "previous": {
+              "min_ns_per_row": 63.095726013183594,
+              "median_ns_per_row": 64.75067138671875,
+              "max_ns_per_row": 76.04185485839844
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 27.761459350585938,
+              "median_ns_per_row": 28.28057861328125,
+              "max_ns_per_row": 44.75688934326172
+            },
+            "native": {
+              "min_ns_per_row": 23.848846435546875,
+              "median_ns_per_row": 24.030685424804688,
+              "max_ns_per_row": 24.592086791992188
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 27.59075164794922,
+              "median_ns_per_row": 28.657913208007812,
+              "max_ns_per_row": 29.62493896484375
+            },
+            "previous": {
+              "min_ns_per_row": 56.354522705078125,
+              "median_ns_per_row": 61.367034912109375,
+              "max_ns_per_row": 73.60967254638672
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 38.22644805908203,
+              "median_ns_per_row": 39.47798156738281,
+              "max_ns_per_row": 51.203407287597656
+            },
+            "native": {
+              "min_ns_per_row": 23.75920867919922,
+              "median_ns_per_row": 23.952484130859375,
+              "max_ns_per_row": 24.537086486816406
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.79076385498047,
+              "median_ns_per_row": 39.067909240722656,
+              "max_ns_per_row": 48.454925537109375
+            },
+            "previous": {
+              "min_ns_per_row": 65.38040924072266,
+              "median_ns_per_row": 67.19938659667969,
+              "max_ns_per_row": 77.82363891601562
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 29.935203552246094,
+              "median_ns_per_row": 33.50480651855469,
+              "max_ns_per_row": 41.095420837402344
+            },
+            "native": {
+              "min_ns_per_row": 23.67273712158203,
+              "median_ns_per_row": 24.32537078857422,
+              "max_ns_per_row": 25.5889892578125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 33.04894256591797,
+              "median_ns_per_row": 40.02094268798828,
+              "max_ns_per_row": 48.53185272216797
+            },
+            "previous": {
+              "min_ns_per_row": 66.1309585571289,
+              "median_ns_per_row": 108.04335021972656,
+              "max_ns_per_row": 247.17330932617188
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 34.270286560058594,
+              "median_ns_per_row": 34.891448974609375,
+              "max_ns_per_row": 35.897254943847656
+            },
+            "native": {
+              "min_ns_per_row": 23.951210021972656,
+              "median_ns_per_row": 24.585723876953125,
+              "max_ns_per_row": 25.272369384765625
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.900115966796875,
+              "median_ns_per_row": 37.76422882080078,
+              "max_ns_per_row": 52.78491973876953
+            },
+            "previous": {
+              "min_ns_per_row": 58.81309509277344,
+              "median_ns_per_row": 64.95380401611328,
+              "max_ns_per_row": 72.5530014038086
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 30.67334747314453,
+              "median_ns_per_row": 30.902542114257812,
+              "max_ns_per_row": 31.469345092773438
+            },
+            "native": {
+              "min_ns_per_row": 24.066925048828125,
+              "median_ns_per_row": 24.54662322998047,
+              "max_ns_per_row": 24.9786376953125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 30.105270385742188,
+              "median_ns_per_row": 30.672073364257812,
+              "max_ns_per_row": 31.06403350830078
+            },
+            "previous": {
+              "min_ns_per_row": 62.955223083496094,
+              "median_ns_per_row": 65.82418823242188,
+              "max_ns_per_row": 85.12846374511719
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 37.63166809082031,
+              "median_ns_per_row": 37.97499084472656,
+              "max_ns_per_row": 38.49633026123047
+            },
+            "native": {
+              "min_ns_per_row": 23.79131317138672,
+              "median_ns_per_row": 23.879684448242188,
+              "max_ns_per_row": 24.35779571533203
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 40.049232482910156,
+              "median_ns_per_row": 40.812171936035156,
+              "max_ns_per_row": 56.00006866455078
+            },
+            "previous": {
+              "min_ns_per_row": 63.29759216308594,
+              "median_ns_per_row": 66.51782989501953,
+              "max_ns_per_row": 75.84285736083984
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 32.49518585205078,
+              "median_ns_per_row": 33.484458923339844,
+              "max_ns_per_row": 34.28617858886719
+            },
+            "native": {
+              "min_ns_per_row": 23.691497802734375,
+              "median_ns_per_row": 24.501800537109375,
+              "max_ns_per_row": 26.604652404785156
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.864891052246094,
+              "median_ns_per_row": 34.18572998046875,
+              "max_ns_per_row": 45.088768005371094
+            },
+            "previous": {
+              "min_ns_per_row": 63.13800811767578,
+              "median_ns_per_row": 69.42335510253906,
+              "max_ns_per_row": 80.82771301269531
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 32.02216339111328,
+              "median_ns_per_row": 33.196449279785156,
+              "max_ns_per_row": 52.108131408691406
+            },
+            "native": {
+              "min_ns_per_row": 23.76111602783203,
+              "median_ns_per_row": 24.646759033203125,
+              "max_ns_per_row": 26.123046875
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.77873992919922,
+              "median_ns_per_row": 33.67932891845703,
+              "max_ns_per_row": 36.61060333251953
+            },
+            "previous": {
+              "min_ns_per_row": 64.24554443359375,
+              "median_ns_per_row": 70.6049575805664,
+              "max_ns_per_row": 80.80545806884766
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 27.600921630859375,
+              "median_ns_per_row": 28.482757568359375,
+              "max_ns_per_row": 46.22967529296875
+            },
+            "native": {
+              "min_ns_per_row": 24.033859252929688,
+              "median_ns_per_row": 24.13909149169922,
+              "max_ns_per_row": 24.89948272705078
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 27.257919311523438,
+              "median_ns_per_row": 28.513275146484375,
+              "max_ns_per_row": 28.961181640625
+            },
+            "previous": {
+              "min_ns_per_row": 59.891380310058594,
+              "median_ns_per_row": 66.24412536621094,
+              "max_ns_per_row": 76.98440551757812
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 37.37354278564453,
+              "median_ns_per_row": 40.15986633300781,
+              "max_ns_per_row": 48.39515686035156
+            },
+            "native": {
+              "min_ns_per_row": 23.777008056640625,
+              "median_ns_per_row": 24.02051544189453,
+              "max_ns_per_row": 25.68340301513672
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 38.005516052246094,
+              "median_ns_per_row": 39.35400390625,
+              "max_ns_per_row": 50.441741943359375
+            },
+            "previous": {
+              "min_ns_per_row": 64.1638412475586,
+              "median_ns_per_row": 67.79861450195312,
+              "max_ns_per_row": 84.99781036376953
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(CEIL(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 32.00404357910156,
+              "median_ns_per_row": 32.85821533203125,
+              "max_ns_per_row": 42.78278350830078
+            },
+            "native": {
+              "min_ns_per_row": 23.636184692382812,
+              "median_ns_per_row": 24.745628356933594,
+              "max_ns_per_row": 25.366783142089844
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 31.113624572753906,
+              "median_ns_per_row": 33.120155334472656,
+              "max_ns_per_row": 47.38775634765625
+            },
+            "previous": {
+              "min_ns_per_row": 60.782752990722656,
+              "median_ns_per_row": 64.4378662109375,
+              "max_ns_per_row": 76.06856536865234
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "tiny",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 29.215492248535156,
+              "median_ns_per_row": 30.544281005859375,
+              "max_ns_per_row": 44.161155700683594
+            },
+            "native": {
+              "min_ns_per_row": 149.112060546875,
+              "median_ns_per_row": 150.54352569580078,
+              "max_ns_per_row": 158.91075134277344
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4593,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 29.065452575683594,
+              "median_ns_per_row": 30.556045532226562,
+              "max_ns_per_row": 31.734786987304688
+            },
+            "previous": {
+              "min_ns_per_row": 1230.2703857421875,
+              "median_ns_per_row": 1277.6012420654297,
+              "max_ns_per_row": 1302.9769287109375
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "tiny",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 34.766197204589844,
+              "median_ns_per_row": 35.65343475341797,
+              "max_ns_per_row": 44.938087463378906
+            },
+            "native": {
+              "min_ns_per_row": 142.11368560791016,
+              "median_ns_per_row": 143.06768035888672,
+              "max_ns_per_row": 146.67193603515625
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4593,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 33.15003204345703,
+              "median_ns_per_row": 35.349212646484375,
+              "max_ns_per_row": 36.078453063964844
+            },
+            "previous": {
+              "min_ns_per_row": 1200.4407272338867,
+              "median_ns_per_row": 1255.1151962280273,
+              "max_ns_per_row": 1278.622314453125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "tiny",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 28.681434631347656,
+              "median_ns_per_row": 29.503822326660156,
+              "max_ns_per_row": 43.488502502441406
+            },
+            "native": {
+              "min_ns_per_row": 142.6855697631836,
+              "median_ns_per_row": 144.66062927246094,
+              "max_ns_per_row": 153.24115753173828
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4593,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 29.956817626953125,
+              "median_ns_per_row": 30.501052856445312,
+              "max_ns_per_row": 32.4996337890625
+            },
+            "previous": {
+              "min_ns_per_row": 1236.6167678833008,
+              "median_ns_per_row": 1259.5389709472656,
+              "max_ns_per_row": 1631.1689987182617
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "tiny",
+        "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 35.90869903564453,
+              "median_ns_per_row": 37.107154846191406,
+              "max_ns_per_row": 47.42145538330078
+            },
+            "native": {
+              "min_ns_per_row": 147.29690551757812,
+              "median_ns_per_row": 150.74698638916016,
+              "max_ns_per_row": 155.28742218017578
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4593,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.829864501953125,
+              "median_ns_per_row": 36.458648681640625,
+              "max_ns_per_row": 37.62849426269531
+            },
+            "previous": {
+              "min_ns_per_row": 1208.8066711425781,
+              "median_ns_per_row": 1266.680076599121,
+              "max_ns_per_row": 1298.0181350708008
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "pipelines": {
+    "118-millis-month": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.466136833
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.378688125
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.24165125
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.178811666
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.186132292
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.213980208
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.208164416
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.185866042
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.186202375
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.214928709
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.2069455
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.178269167
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.186336625
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.207216875
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.44508125
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.423668292
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.274390125
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.182706209
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.182699083
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.254242209
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.243391709
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.182491
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.193421875
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.241390875
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.26201175
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.216982917
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.181871625
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.242581125
+        }
+      ]
+    },
+    "118-millis-year": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.484704792
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.372512334
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.245567875
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.184094917
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.191203125
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.226519
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.20971075
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.186539416
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188171084
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.21959275
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.220785208
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.175289167
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.197888042
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.209213625
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.477102
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.456395208
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.284575541
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.182124584
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.17869475
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.27157775
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.250715333
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.185199291
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.184140542
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.24235725
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.231815084
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.186365167
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188247167
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.254015917
+        }
+      ]
+    },
+    "118-nanos-month": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.477983042
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.35605825
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.270284042
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.1934765
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.197608042
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.228389541
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.217790916
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.190383125
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.201163875
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.205938167
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.206991667
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.182234083
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.182789792
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.209849833
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.48569725
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.472968125
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.29892225
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.201100625
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.176636084
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.276685042
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.269665917
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.205446209
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.180240875
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.247967458
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.244624584
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.184543125
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.1777345
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.249954583
+        }
+      ]
+    },
+    "118-nanos-year": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.464514708
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.394324291
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.271194833
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.185756208
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.196046208
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.223411167
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.218631167
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.1990585
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.196250167
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.217152584
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.208887333
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.178772583
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.178829583
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.212237958
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.45879025
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.455254667
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.308804625
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.211031375
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.187562375
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.276567083
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.291934291
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.196369375
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.196121791
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.268520375
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.25630425
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.199844875
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.194645667
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.251645083
+        }
+      ]
+    },
+    "22-millis-month": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.548380458
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.391491375
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.280966125
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.193473667
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.179278083
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.229295917
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.200661916
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.195560958
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.177707375
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.208414
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.209987791
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.180831709
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.18363975
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.208944667
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.486005208
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.43081825
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.276697167
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.18824425
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.1840585
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.245932542
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.248336959
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.189233625
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.194765042
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.261213791
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.238273583
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.187116334
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188054458
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.241228542
+        }
+      ]
+    },
+    "22-millis-year": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.514604417
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.358436417
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.232309667
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.182729458
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.183824667
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.233546958
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.223048875
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.184349417
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.181638542
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.216671834
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.215482791
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.185133291
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.19337675
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.213815166
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.480173125
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.431286958
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.2726085
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.196439625
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.198701875
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.258828708
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.248476708
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.181013625
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.187517417
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.234889333
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.249890833
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.1953115
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.184456833
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.239941125
+        }
+      ]
+    },
+    "22-nanos-month": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.518264292
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.366075541
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.239119125
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.184799958
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.189415458
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.229299625
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.226670583
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.187440541
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.191057209
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.214680041
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.215282209
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.177472542
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188165792
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.212135458
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.498986792
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.426256333
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.286698042
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.205396958
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.2042535
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.254048
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.25041725
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.189285834
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.203415125
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.244517625
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.239370208
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.183814792
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.196053541
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.24060575
+        }
+      ]
+    },
+    "22-nanos-year": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.491381333
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.373829417
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.235409167
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.196144541
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.203244417
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.236328167
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.218773125
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.183150291
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.186052958
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.227389083
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.213458959
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.181308459
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.180889125
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.214190208
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.500090167
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.510565167
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.319964375
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.207773625
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.183282125
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.2567945
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.265099666
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.190844208
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.192151292
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.237760709
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.240628209
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.189498917
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.181698667
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.240180917
+        }
+      ]
+    }
+  },
+  "fixture_smokes": [
+    {
+      "line": "22",
+      "label": "INT-original",
+      "type": "INT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "22",
+      "label": "INT-expanded",
+      "type": "INT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "22",
+      "label": "BIGINT-original",
+      "type": "BIGINT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "22",
+      "label": "BIGINT-expanded",
+      "type": "BIGINT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "22",
+      "label": "DECIMAL(18,2)-original",
+      "type": "DECIMAL(18,2)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "22",
+      "label": "DECIMAL(18,2)-expanded",
+      "type": "DECIMAL(18,2)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "22",
+      "label": "DECIMAL(19,19)-original",
+      "type": "DECIMAL(19,19)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-2048",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "22",
+      "label": "DECIMAL(19,19)-expanded",
+      "type": "DECIMAL(19,19)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-2048",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "22",
+      "label": "DECIMAL(38,18)-original",
+      "type": "DECIMAL(38,18)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "22",
+      "label": "DECIMAL(38,18)-expanded",
+      "type": "DECIMAL(38,18)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "22",
+      "label": "TIMESTAMP_LTZ(3)-False",
+      "type": "TIMESTAMP_LTZ(3)",
+      "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 33.034324645996094,
+        "min_ns_per_row": 31.346954345703125,
+        "max_ns_per_row": 54.44972229003906
+      },
+      "native": {
+        "median_ns_per_row": 25.32323455810547,
+        "min_ns_per_row": 24.675048828125,
+        "max_ns_per_row": 25.797523498535156
+      }
+    },
+    {
+      "line": "22",
+      "label": "TIMESTAMP_LTZ(3)-True",
+      "type": "TIMESTAMP_LTZ(3)",
+      "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": {
+        "median_ns_per_row": 71.51380920410156,
+        "min_ns_per_row": 66.667236328125,
+        "max_ns_per_row": 83.00113677978516
+      },
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 33.054351806640625,
+        "min_ns_per_row": 31.481109619140625,
+        "max_ns_per_row": 34.10847473144531
+      }
+    },
+    {
+      "line": "22",
+      "label": "TIMESTAMP_LTZ(9)-False",
+      "type": "TIMESTAMP_LTZ(9)",
+      "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 32.83500671386719,
+        "min_ns_per_row": 31.82347869873047,
+        "max_ns_per_row": 55.605567932128906
+      },
+      "native": {
+        "median_ns_per_row": 25.025047302246094,
+        "min_ns_per_row": 23.45880126953125,
+        "max_ns_per_row": 25.839805603027344
+      }
+    },
+    {
+      "line": "22",
+      "label": "TIMESTAMP_LTZ(9)-True",
+      "type": "TIMESTAMP_LTZ(9)",
+      "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": {
+        "median_ns_per_row": 74.2975845336914,
+        "min_ns_per_row": 67.53699493408203,
+        "max_ns_per_row": 92.54901123046875
+      },
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 33.45934295654297,
+        "min_ns_per_row": 31.59650421142578,
+        "max_ns_per_row": 34.21751403808594
+      }
+    },
+    {
+      "line": "118",
+      "label": "INT-original",
+      "type": "INT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "118",
+      "label": "INT-expanded",
+      "type": "INT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "118",
+      "label": "BIGINT-original",
+      "type": "BIGINT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "118",
+      "label": "BIGINT-expanded",
+      "type": "BIGINT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "118",
+      "label": "DECIMAL(18,2)-original",
+      "type": "DECIMAL(18,2)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "118",
+      "label": "DECIMAL(18,2)-expanded",
+      "type": "DECIMAL(18,2)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "118",
+      "label": "DECIMAL(19,19)-original",
+      "type": "DECIMAL(19,19)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-2048",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "118",
+      "label": "DECIMAL(19,19)-expanded",
+      "type": "DECIMAL(19,19)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-2048",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "118",
+      "label": "DECIMAL(38,18)-original",
+      "type": "DECIMAL(38,18)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "118",
+      "label": "DECIMAL(38,18)-expanded",
+      "type": "DECIMAL(38,18)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "118",
+      "label": "TIMESTAMP_LTZ(3)-False",
+      "type": "TIMESTAMP_LTZ(3)",
+      "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 32.219566345214844,
+        "min_ns_per_row": 31.932518005371094,
+        "max_ns_per_row": 46.970054626464844
+      },
+      "native": {
+        "median_ns_per_row": 23.954071044921875,
+        "min_ns_per_row": 23.791000366210938,
+        "max_ns_per_row": 24.37877655029297
+      }
+    },
+    {
+      "line": "118",
+      "label": "TIMESTAMP_LTZ(3)-True",
+      "type": "TIMESTAMP_LTZ(3)",
+      "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": {
+        "median_ns_per_row": 69.67449188232422,
+        "min_ns_per_row": 62.81153106689453,
+        "max_ns_per_row": 77.06991577148438
+      },
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 33.37574005126953,
+        "min_ns_per_row": 32.61216735839844,
+        "max_ns_per_row": 42.92583465576172
+      }
+    },
+    {
+      "line": "118",
+      "label": "TIMESTAMP_LTZ(9)-False",
+      "type": "TIMESTAMP_LTZ(9)",
+      "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 32.90271759033203,
+        "min_ns_per_row": 32.527923583984375,
+        "max_ns_per_row": 51.19037628173828
+      },
+      "native": {
+        "median_ns_per_row": 24.758018493652344,
+        "min_ns_per_row": 23.927047729492188,
+        "max_ns_per_row": 26.40692138671875
+      }
+    },
+    {
+      "line": "118",
+      "label": "TIMESTAMP_LTZ(9)-True",
+      "type": "TIMESTAMP_LTZ(9)",
+      "expression": "YEAR(CEIL(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": {
+        "median_ns_per_row": 80.61917877197266,
+        "min_ns_per_row": 76.07173919677734,
+        "max_ns_per_row": 100.65046691894531
+      },
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 35.600982666015625,
+        "min_ns_per_row": 33.081687927246094,
+        "max_ns_per_row": 38.72331237792969
+      }
+    }
+  ],
+  "released_stock_oracle": {
+    "22-11": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    },
+    "22-17": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    },
+    "118-11": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    },
+    "118-17": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    }
+  },
+  "oracle_scope": "Unchanged released ScalarFunctionsTest.testTemporalFloor stock controls; runtime LTZ SQL witnesses establish the new intended native route.",
+  "final_combined_rounding_regression": {
+    "22-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=38 succeeded=38 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "22-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=38 succeeded=38 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=38 succeeded=38 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=38 succeeded=38 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "source_files_sha256": {
+      "src/main/java/tech/streamfusion/planner/RexExpression.java": "a8a7bcee6f499d6c9c420415b6580350c6c0b5c69ab7ef3fdf4df163414e1d0c",
+      "src/main/java/tech/streamfusion/planner/FlinkExpressionGenerator.java": "b977f6e1872cfd81f4807aa90d0551205888eaaa659fbdff149015d60d554692",
+      "src/main/java/tech/streamfusion/planner/JvmFunctionConversions.java": "a15474c083f74fb3fc13aabcd74d578643b8a8df2c564583f50c81b83b535603",
+      "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "563e6c62f31aee929658da2231a9a5e18c496ad1459e06829fff4db1a95264c7",
+      "src/test/java/tech/streamfusion/FlinkUtcLtzCalendarFloorSqlHarnessTest.java": "71a09192dce00f9311eb0784aa03567035a2c01fce0517ba3098d66425d9fd1f",
+      "src/test/java/tech/streamfusion/FlinkNativeCalendarSqlHarnessTest.java": "0e61e45d643122eeabcb942738589749f6fae3f59ce8ebcd07c3e90a16ca7c75",
+      "src/test/java/tech/streamfusion/FlinkUtcLtzCalendarCeilSqlHarnessTest.java": "4b5f3a226c1865b39d6a528267df1bbe3d6feedf53549f3c2bfacd53bbdd18f5",
+      "src/test/java/tech/streamfusion/planner/UtcLtzCalendarFloorAdmissionTest.java": "143b4cecf3237b1d2e7c9cd129016b9b0dfcd4910a536883331e7b68df1192aa",
+      "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "10e4b924f53de95800eab3e4c353526ededa9d1b420736f71049e1ead9748c57",
+      "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "df7c9aeb7c728ac30cfabedd7b37b66579bc8ea16f33a548947c9aae8d6b27cc"
+    },
+    "native_files_sha256": {
+      "native/engine/src/flink_functions/decimal.rs": "6b5f00c9fb321928a9a603519fc2cc2d10dda5fde507612dd314b953dd6efd90",
+      "native/engine/src/flink_functions/calendar.rs": "841b4bd6257a64143c7dadcdc0757762ac0a735f060b6cbd37decd9cf9bbf778",
+      "native/engine/src/expr.rs": "d357a41f914f057d93c5badbf06814d8fc2d6db7fcccd20a9ce2e608e7fdca1d"
+    },
+    "dso_sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98"
+  }
+}

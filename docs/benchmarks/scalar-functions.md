@@ -6881,11 +6881,12 @@ DECIMAL defaults, calendar/timestamp controls and current nested bridge admissio
 
 ## UTC LTZ calendar FLOOR
 
-Direct/literal TIMESTAMP_LTZ FLOOR to MONTH/YEAR in fixed zero-offset session zones reuses
-the existing calendar kernel. Released Flink uses the same Julian-date arithmetic there,
-including signed division, int overflow and the Gregorian cutover. Regional zones, nonzero
-offsets, computed inputs, other units and CEIL retain their existing routes. Production Rust,
-JNI, ownership and configuration are unchanged.
+The FLOOR qualification snapshot admits direct/literal TIMESTAMP_LTZ to MONTH/YEAR in
+fixed zero-offset session zones using the existing calendar kernel. Released Flink uses
+the same Julian-date arithmetic there, including signed division, int overflow and the
+Gregorian cutover. Regional zones, nonzero offsets, computed inputs and other units retain
+their existing routes. CEIL is qualified separately below. Production Rust, JNI, ownership
+and configuration are unchanged.
 
 The [result record](results/utc-ltz-floor-2026-11-02.json) and
 [4,000 raw trials](results/utc-ltz-floor-2026-11-02.csv.gz) retain stock controls, an independently
@@ -6930,10 +6931,67 @@ establish whole-job acceleration, and tiny batches remain an unfavorable workloa
 All 68 focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17,
 compiled for Java release 11. Complete 5,003-row runtime maps compare values, declared
 precision, NULLs, unique IDs/cardinality and full-range inputs across eight session zones;
-only normalized fixed-zero zones require empty evaluators. Negative admission controls
-cover other units, CEIL and computed inputs. The unchanged released
+only normalized fixed-zero zones require empty evaluators. Negative admission controls at
+this snapshot cover other units, CEIL and computed inputs. The unchanged released
 `ScalarFunctionsTest.testTemporalFloor` stock oracle passes on all four pairs, separately
 from native-route witnesses. All 28 fixture smokes pass, including unchanged original-corpus
 checksums. The unchanged production DSO reuses the recorded 886 Rust core passes; the
 expanded release benchmark executable is rebuilt. Further LTZ scope remains in
+[#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
+
+## UTC LTZ calendar CEIL
+
+CEIL/CEILING to MONTH/YEAR admits the same direct/literal LTZ and fixed-zero session-zone
+subset, independently of FLOOR qualification. Released Flink drops submillisecond fractions
+before its calendar calculation; the existing kernel reproduces this behavior at exact month
+boundaries and for negative/full-range milliseconds. Fixed-unit LTZ CEIL is different and
+remains outside this admission, together with nonzero/regional zones and computed inputs.
+No production Rust, DSO, JNI, ownership or option changes are needed.
+
+The [result record](results/utc-ltz-ceil-2026-11-02.json) and
+[4,000 raw trials](results/utc-ltz-ceil-2026-11-02.csv.gz) compare stock with independently
+recompiled actual preceding encoder `bc9156b3` and candidate. They use the same timestamp
+fixture, production DSO and release/default-feature/mimalloc executable as FLOOR, with
+`YEAR(CEIL(v TO MONTH|YEAR))>0 OR CAST(NULL AS BOOLEAN)`. The prepared-input Rust-side
+timer, types, signed extrema, NULLs, GenericRowData/BinaryRowData controls, batch sizes,
+16 warmups/nine measurements and 131,072 rows/trial are unchanged. Every checksum agrees;
+candidate native expressions have empty JVM evaluators. All unfavorable controls and
+source/runtime hashes remain public.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 16 | 1.177-1.672x | 2.539-4.442x | 0 |
+| 1.18.1 | tiny control | 4 | 0.203-0.249x | 8.403-8.773x | 4 |
+| 2.2.1 | bulk | 16 | 1.157-1.665x | 2.380-3.261x | 0 |
+| 2.2.1 | tiny control | 4 | 0.201-0.258x | 8.495-8.830x | 4 |
+
+All 32 bulk medians beat stock and previous; all eight tiny controls lose to stock. The
+eight million-row source/blackhole configurations retain startup, JNI and both transposes,
+two warmups/five measurements and independent stock controls. Seconds are median (min-max).
+
+| Flink / inputs | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / millis-month | 0.186132 (0.178269-0.186337) | 0.208164 (0.206946-0.214929) | 0.182699 (0.181872-0.216983) | 0.243392 (0.241391-0.262012) |
+| 1.18.1 / millis-year | 0.188171 (0.175289-0.197888) | 0.219593 (0.209214-0.226519) | 0.185199 (0.178695-0.188247) | 0.250715 (0.231815-0.271578) |
+| 1.18.1 / nanos-month | 0.190383 (0.182234-0.201164) | 0.209850 (0.205938-0.228390) | 0.180241 (0.176636-0.205446) | 0.249955 (0.244625-0.276685) |
+| 1.18.1 / nanos-year | 0.196046 (0.178773-0.199058) | 0.217153 (0.208887-0.223411) | 0.196122 (0.187562-0.199845) | 0.268520 (0.251645-0.291934) |
+| 2.2.1 / millis-month | 0.180832 (0.177707-0.195561) | 0.208945 (0.200662-0.229296) | 0.188054 (0.184059-0.194765) | 0.245933 (0.238274-0.261214) |
+| 2.2.1 / millis-year | 0.184349 (0.181639-0.193377) | 0.216672 (0.213815-0.233547) | 0.187517 (0.181014-0.198702) | 0.248477 (0.234889-0.258829) |
+| 2.2.1 / nanos-month | 0.188166 (0.177473-0.191057) | 0.215282 (0.212135-0.229300) | 0.196054 (0.183815-0.204254) | 0.244518 (0.239370-0.254048) |
+| 2.2.1 / nanos-year | 0.183150 (0.180889-0.203244) | 0.218773 (0.213459-0.236328) | 0.189499 (0.181699-0.192151) | 0.240628 (0.237761-0.265100) |
+
+Native/stock elapsed ratios span **1.102-1.195**; every measured complete job still loses
+to stock. Native/previous ratios span **0.809-0.909**. These results qualify bulk function
+work and quantify the remaining complete-job cost, without asserting whole-job acceleration.
+
+All 68 new focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17,
+compiled for Java release 11. Full 5,003-row maps cover eight zones, NULLs, declared precision,
+millisecond extrema and nanoseconds, with consumed intended native work and empty evaluators
+only in qualified zones. Other units and computed round operands remain negative admission
+controls. The unchanged released temporal FLOOR/CEIL stock oracle is reused from FLOOR's
+four passing release/JDK controls; these are not claimed as a second new oracle run.
+All 28 fixture smokes pass. The production DSO and its recorded 886 Rust core passes are
+unchanged. A further **152 passing JVM invocations** (38 per release/JDK pair) exercise
+the final FLOOR/CEIL implementation together with existing calendar/interval controls;
+that source/result record accompanies the CEIL artifact. Broader calendar work remains in
 [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
