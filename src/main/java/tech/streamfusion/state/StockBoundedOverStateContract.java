@@ -53,7 +53,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   private static final String LAST = "lastTriggeringTsState";
   private static final String COUNT = "processedCountState", SMALLEST = "smallestTSState";
   private final String cleanupState;
-  private final boolean processingRows, cleanupEnabled;
+  private final boolean processingRows, eventRows, cleanupEnabled;
   private final long precedingRows;
   private static final String EVENTS = "_timer_state/event_user-timers";
   private static final String PROCESSING = "_timer_state/processing_user-timers";
@@ -91,10 +91,14 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       byte[] constantBytes,
       long precedingRows,
       boolean processingRows,
+      boolean eventRows,
       boolean cleanupEnabled) {
-    if (processingRows && precedingRows <= 0)
-      throw new IllegalArgumentException("Processing ROWS width must be positive");
+    if ((processingRows || eventRows) && precedingRows <= 0)
+      throw new IllegalArgumentException("Bounded ROWS width must be positive");
+    if (eventRows && (processingRows || cleanupEnabled))
+      throw new IllegalArgumentException("Event ROWS processing cleanup is not qualified");
     this.processingRows = processingRows;
+    this.eventRows = eventRows;
     this.precedingRows = precedingRows;
     this.cleanupEnabled = cleanupEnabled;
     cleanupState = processingRows ? "ProcTimeBoundedRowsOverCleanupTime" : "cleanupTsState";
@@ -199,10 +203,9 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     descriptors.put(ACC, StateDescriptor.Type.VALUE);
     descriptors.put(INPUT, StateDescriptor.Type.MAP);
     if (cleanupEnabled) descriptors.put(cleanupState, StateDescriptor.Type.VALUE);
-    if (processingRows) {
-      descriptors.put(COUNT, StateDescriptor.Type.VALUE);
-      descriptors.put(SMALLEST, StateDescriptor.Type.VALUE);
-    } else descriptors.put(LAST, StateDescriptor.Type.VALUE);
+    if (processingRows || eventRows) descriptors.put(COUNT, StateDescriptor.Type.VALUE);
+    if (processingRows) descriptors.put(SMALLEST, StateDescriptor.Type.VALUE);
+    else descriptors.put(LAST, StateDescriptor.Type.VALUE);
     return descriptors;
   }
 
@@ -414,6 +417,10 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
             accumulator.setField(accumulatorFields[p], get(saved, nativeAccumulatorType, p));
           if (hiddenCount >= 0) accumulator.setField(hiddenCount, (long) root.getRowCount());
           accumulators(backend).update(new RowDataSerializer(accumulatorType).copy(accumulator));
+          if (eventRows) {
+            scalar(backend, COUNT).update(Math.min(precedingRows, root.getRowCount()));
+            scalar(backend, LAST).update(time(reader.read(root.getRowCount() - 1)));
+          }
         });
     if (processingRows) {
       visit(
@@ -446,8 +453,14 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
         handle,
         root -> {
           var reader = ArrowConversion.createArrowReader(root, inputType);
-          for (int i = 0; i < root.getRowCount(); i++) put(backend, reader.read(i));
+          for (int i = 0; i < root.getRowCount(); i++) {
+            var row = reader.read(i);
+            put(backend, row);
+            if (eventRows)
+              events.add(new TimerHeapInternalTimer<>(time(row), key(row), VoidNamespace.INSTANCE));
+          }
         });
+    if (eventRows) return;
     visit(
         Native::exportOverCanonicalRange,
         handle,
@@ -539,8 +552,8 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     for (var partition : partitions.values()) {
       backend.setCurrentKey(partition.key);
       partition.cleanup = cleanupEnabled ? scalar(backend, cleanupState).value() : null;
+      if (processingRows || eventRows) partition.count = scalar(backend, COUNT).value();
       if (processingRows) {
-        partition.count = scalar(backend, COUNT).value();
         partition.smallest = scalar(backend, SMALLEST).value();
       } else partition.last = scalar(backend, LAST).value();
       var acc = accumulators(backend).value();
@@ -590,6 +603,34 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
                 || partition.accumulator.getLong(hiddenCount) != retained))
           throw new IllegalArgumentException(
               "Processing ROWS hidden input count disagrees with retained rows");
+        continue;
+      }
+      if (eventRows) {
+        var processed = new TreeMap<Long, List<RowData>>();
+        var pending = new TreeSet<Long>();
+        for (var entry : partition.rows.entrySet()) {
+          if (entry.getKey() <= 0)
+            throw new IllegalArgumentException("Event ROWS input must follow the initial cutoff");
+          if (partition.last != null && entry.getKey() <= partition.last)
+            processed.put(entry.getKey(), entry.getValue());
+          else pending.add(entry.getKey());
+        }
+        long retained = processed.values().stream().mapToLong(List::size).sum();
+        if (processed.isEmpty()
+            ? partition.accumulator != null || partition.count != null || partition.last != null
+            : partition.accumulator == null
+                || partition.count == null
+                || partition.count != Math.min(retained, precedingRows)
+                || !processed.lastKey().equals(partition.last))
+          throw new IllegalArgumentException("Event ROWS counter/cutoff/frame ownership changed");
+        if (!partition.timers.equals(pending))
+          throw new IllegalArgumentException("Event ROWS timer ownership changed");
+        if (partition.accumulator != null
+            && hiddenCount >= 0
+            && (partition.accumulator.isNullAt(hiddenCount)
+                || partition.accumulator.getLong(hiddenCount) != retained))
+          throw new IllegalArgumentException(
+              "Event ROWS hidden input count disagrees with retained rows");
         continue;
       }
       if (partition.cleanup != null && !partition.timers.contains(partition.cleanup))
@@ -665,8 +706,8 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
                   base + 4 + p, get(partition.accumulator, accumulatorType, accumulatorFields[p]));
             int p = base + 4 + accumulatorFields.length;
             row.setField(p, partition.cleanup);
-            row.setField(p + 1, partition.last);
-            if (!processingRows) {
+            if (!eventRows) row.setField(p + 1, partition.last);
+            if (!processingRows && !eventRows) {
               row.setField(
                   p + 2,
                   new GenericArrayData(
@@ -694,7 +735,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
               List.of(metadata),
               false);
         }
-      } else {
+      } else if (!eventRows) {
         var row = new GenericRowData(protocolType.getFieldCount());
         int k = keyType.getFieldCount();
         for (int p = 0; p < k; p++) row.setField(p, get(partition.key, keyType, p));

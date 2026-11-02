@@ -1400,6 +1400,37 @@ malformed state. Complete-job controls use unchanged stock compiled plans and is
 processes without StreamFusion dependencies, exercise both transposes, switch in both directions,
 re-export before new input and recover an ordinary native checkpoint before returning to stock.
 This is arithmetic RANGE coverage. Processing-time arithmetic ROWS now has its own stock
-counter/bucket/cleanup contract; event-time ROWS, additional bounded views, complete automatic
-planner consolidation and the remaining #569 matrix are still required.
+counter/bucket/cleanup contract; event-time arithmetic ROWS without processing cleanup now has
+its own counter/cutoff contract. Event-time ROWS cleanup, additional bounded views, complete
+automatic planner consolidation and the remaining #569 matrix are still required.
 Benchmarking remains deferred.
+
+
+### Released arithmetic event-time ROWS canonical contract
+
+The bounded event-time ROWS adapter transfers released Flink 2.2.1 `accState`, full timestamp
+buckets in `inputState`, `processedCountState`, `lastTriggeringTsState` and Void event timers.
+It supports SUM, SUM0, COUNT and AVG without DISTINCT or selection views and with processing-time
+cleanup disabled. Raw accumulator fields transfer directly; retained rows are never replayed to
+reconstruct a sum or average. Pending peers preserve arrival order within each timestamp bucket.
+
+In this mode, the processed counter equals the smaller of the retained input count and frame
+width, and the last-trigger timestamp equals the newest retained processed timestamp. Import
+checks these invariants, the independent hidden input count and exact pending-timer ownership
+before installing native state. A MAX timestamp bucket can exceed the nominal frame width;
+all of its rows and the raw fold remain present. Canonical export derives only this validated
+counter/cutoff bookkeeping from retained frames, not accumulator arithmetic. Pending-only keys
+have input buckets and event timers without fabricated accumulators, counters or cutoffs.
+
+The stock-operator matrix checks nullable/empty keys, both engines' heap/RocksDB stores, width
+one and wider frames, pending-only and mixed states, MAX peers, untouched re-export, resumed
+output and exported state after callbacks. It also rejects missing or inconsistent counters,
+cutoffs, accumulators, input rows and timers, and unowned descriptors. These controls use actual
+released stock operators and serializers.
+
+The draft portable planner binds this arithmetic mode while retaining the stock submission plan
+and operator identity. Processing-time cleanup for event-time ROWS, bounded views, full rescaling
+and version matrices, and the remaining issue acceptance criteria are still required in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Until its cleanup protocol is
+qualified, that draft planner retains the stock event-time ROWS operator when retention exceeds
+one millisecond. Benchmarking remains deferred.

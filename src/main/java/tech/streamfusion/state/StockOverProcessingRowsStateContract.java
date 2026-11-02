@@ -36,6 +36,7 @@ public final class StockOverProcessingRowsStateContract extends StockBoundedOver
         constantBytes,
         precedingRows,
         true,
+        false,
         cleanupEnabled);
   }
 }

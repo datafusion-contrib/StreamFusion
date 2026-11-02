@@ -330,7 +330,7 @@ class CanonicalBoundedRangeInteropTest {
     final RowType input, output, accumulator, keyType;
     final int[] keys, kinds, values, codes, widths;
     final int hiddenCount, timeColumn;
-    final boolean processingRows;
+    final boolean processingRows, eventRows;
     final int offset;
     final long ttl;
     final RowDataKeySelector selector;
@@ -342,6 +342,18 @@ class CanonicalBoundedRangeInteropTest {
 
     Plan(String type, boolean keyless, boolean processingRows, int offset, long ttl)
         throws Exception {
+      this(type, keyless, processingRows, false, offset, ttl);
+    }
+
+    Plan(
+        String type,
+        boolean keyless,
+        boolean processingRows,
+        boolean eventRows,
+        int offset,
+        long ttl)
+        throws Exception {
+      this.eventRows = eventRows;
       this.processingRows = processingRows;
       this.offset = offset;
       this.ttl = ttl;
@@ -371,10 +383,14 @@ class CanonicalBoundedRangeInteropTest {
                   "INSERT INTO range_output SELECT k,v,rt,SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER"
                       + " w FROM range_input WINDOW w AS ("
                       + (keyless ? "" : "PARTITION BY k ")
-                      + (processingRows
-                          ? "ORDER BY pt ROWS BETWEEN " + offset + " PRECEDING AND CURRENT ROW)"
+                      + (processingRows || eventRows
+                          ? "ORDER BY "
+                              + (processingRows ? "pt" : "rt")
+                              + " ROWS BETWEEN "
+                              + offset
+                              + " PRECEDING AND CURRENT ROW)"
                           : "ORDER BY rt RANGE BETWEEN INTERVAL '0.032' SECOND PRECEDING AND"
-                                + " CURRENT ROW)"))
+                              + " CURRENT ROW)"))
               .asJsonString();
       planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
       var node = node();
@@ -395,7 +411,10 @@ class CanonicalBoundedRangeInteropTest {
           processingRows
               ? org.apache.flink.table.runtime.operators.over.ProcTimeRowsBoundedPrecedingFunction
                   .class
-              : RowTimeRangeBoundedPrecedingFunction.class;
+              : eventRows
+                  ? org.apache.flink.table.runtime.operators.over
+                      .RowTimeRowsBoundedPrecedingFunction.class
+                  : RowTimeRangeBoundedPrecedingFunction.class;
       assertInstanceOf(functionType, operator.getUserFunction());
       var field = functionType.getDeclaredField("accTypes");
       field.setAccessible(true);
@@ -496,6 +515,20 @@ class CanonicalBoundedRangeInteropTest {
     }
 
     StockStateContract contract() {
+      if (eventRows)
+        return new StockOverEventRowsStateContract(
+            selector.getProducedType().toSerializer(),
+            keyType,
+            input,
+            accumulator,
+            keys,
+            timeColumn,
+            kinds,
+            widths,
+            hiddenCount,
+            constants.type(),
+            constants.encodedValues(),
+            offset + 1L);
       if (processingRows)
         return new StockOverProcessingRowsStateContract(
             selector.getProducedType().toSerializer(),
@@ -571,7 +604,7 @@ class CanonicalBoundedRangeInteropTest {
               keys,
               codes,
               kinds,
-              processingRows ? 1 : 2,
+              processingRows || eventRows ? 1 : 2,
               offset,
               processingRows,
               keys.length == 0

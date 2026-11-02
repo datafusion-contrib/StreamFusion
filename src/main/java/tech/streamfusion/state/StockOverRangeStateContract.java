@@ -34,6 +34,7 @@ public final class StockOverRangeStateContract extends StockBoundedOverStateCont
         constantBytes,
         0,
         false,
+        false,
         true);
   }
 }
