@@ -36,6 +36,7 @@ pub(crate) struct StoredLeftRow {
     pub(crate) seq: u64,
     pub(crate) time: i64,
     pub(crate) kind: i8,
+    pub(crate) index: Option<i64>,
     pub(crate) row: Box<[u8]>,
 }
 
@@ -59,8 +60,13 @@ pub(crate) struct RocksTemporalJoinStore {
     key_types: Vec<DataType>,
     key_converter: RowConverter,
     converters: (RowConverter, RowConverter),
+    row_arities: [usize; 2],
     deadlines: HashMap<ByteKey, i64>,
     next_seq: u64,
+    metadata: HashMap<ByteKey, crate::temporal_join::stock_meta::StockTemporalMeta>,
+    metadata_delta: isize,
+    current_cleaning: bool,
+    source_cleaning: Option<bool>,
     generation: i64,
     write_batch_size: usize,
 }
@@ -96,6 +102,7 @@ impl RocksTemporalJoinStore {
                 (Some(LEFT_TABLE), 0),
                 (Some(RIGHT_TABLE), 0),
                 (Some(DEADLINE_TABLE), 0),
+                (Some(3), 0),
             ],
         )?;
         Self::attach(opened, &config, left_schema, right_schema, key_types)
@@ -131,9 +138,16 @@ impl RocksTemporalJoinStore {
         }
         let mut store = Self::create(config, left_schema, right_schema, left_keys)?;
         let mut writes = FlinkWriteBatch::new(&store.db, store.write_batch_size);
+        let mut headers = Vec::new();
         for (source, _) in sources {
             let source_db =
                 DB::open_for_read_only(&Options::default(), source, false).map_err(re)?;
+            headers.push(
+                source_db
+                    .get(stock_state::META_FORMAT_KEY)
+                    .map_err(re)?
+                    .map(|bytes| bytes.to_vec()),
+            );
             for row in source_db.iterator(IteratorMode::Start) {
                 let (key, value) = row.map_err(re)?;
                 if key.as_ref() == SEQ_KEY {
@@ -151,6 +165,7 @@ impl RocksTemporalJoinStore {
             }
         }
         writes.finish()?;
+        store.restore_merged_metadata(&headers)?;
         store.hydrate_deadlines()?;
         Ok(store)
     }
@@ -173,21 +188,28 @@ impl RocksTemporalJoinStore {
                 .map(|field| field.data_type().clone())
                 .collect()
         };
-        Ok(Self {
+        let mut store = Self {
             db: opened.db,
             _cache: opened.cache,
             max_parallelism: config.max_parallelism,
             key_converter: converter(&key_types)?,
             key_types,
+            row_arities: [left_schema.fields().len(), right_schema.fields().len()],
             converters: (
                 converter(&row_types(&left_schema))?,
                 converter(&row_types(&right_schema))?,
             ),
             deadlines: HashMap::default(),
             next_seq: 0,
+            metadata: HashMap::default(),
+            metadata_delta: 0,
+            current_cleaning: false,
+            source_cleaning: None,
             generation: 0,
             write_batch_size: opened.write_batch_size,
-        })
+        };
+        store.load_or_upgrade_metadata()?;
+        Ok(store)
     }
 
     fn hydrate_deadlines(&mut self) -> Result<(), DataFusionError> {
@@ -239,31 +261,21 @@ impl RocksTemporalJoinStore {
     pub(crate) fn push_left(
         &mut self,
         batch: &RecordBatch,
-        entry_keys: &[ByteKey],
+        keys: &[ByteKey],
         times: &Int64Array,
         kinds: Option<&Int8Array>,
     ) -> Result<(), DataFusionError> {
-        let arity = data_arity(batch);
-        let rows = self
-            .converters
-            .0
-            .convert_columns(&batch.columns()[..arity])
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
-        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
-        for (index, row) in rows.iter().enumerate() {
-            let seq = self.next_seq;
-            self.next_seq += 1;
-            let row = row.data();
-            let mut value = Vec::with_capacity(LEFT_VALUE_PREFIX_LEN + row.len());
-            value.extend_from_slice(&times.value(index).to_le_bytes());
-            value.push(kinds.map_or(0, |k| k.value(index)) as u8);
-            value.extend_from_slice(row);
-            writes.put(
-                Self::db_key(&entry_keys[index], LEFT_TABLE, &seq.to_be_bytes()),
-                value,
-            )?;
-        }
-        writes.finish()
+        self.write_left(batch, keys, times, kinds, None)
+    }
+    pub(crate) fn import_left(
+        &mut self,
+        batch: &RecordBatch,
+        keys: &[ByteKey],
+        times: &Int64Array,
+        kinds: Option<&Int8Array>,
+        sequences: &Int64Array,
+    ) -> Result<(), DataFusionError> {
+        self.write_left(batch, keys, times, kinds, Some(sequences))
     }
 
     /// Upserts build-side versions: one put per (key, version), which IS Flink's
@@ -271,32 +283,20 @@ impl RocksTemporalJoinStore {
     pub(crate) fn push_right(
         &mut self,
         batch: &RecordBatch,
-        entry_keys: &[ByteKey],
+        keys: &[ByteKey],
         times: &Int64Array,
         kinds: Option<&Int8Array>,
     ) -> Result<(), DataFusionError> {
-        let arity = data_arity(batch);
-        let rows = self
-            .converters
-            .1
-            .convert_columns(&batch.columns()[..arity])
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
-        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
-        for (index, row) in rows.iter().enumerate() {
-            let row = row.data();
-            let mut value = Vec::with_capacity(RIGHT_VALUE_PREFIX_LEN + row.len());
-            value.push(kinds.map_or(0, |k| k.value(index)) as u8);
-            value.extend_from_slice(row);
-            writes.put(
-                Self::db_key(
-                    &entry_keys[index],
-                    RIGHT_TABLE,
-                    &Self::flip_ts(times.value(index)),
-                ),
-                value,
-            )?;
-        }
-        writes.finish()
+        self.write_right(batch, keys, times, kinds, true)
+    }
+    pub(crate) fn import_right(
+        &mut self,
+        batch: &RecordBatch,
+        keys: &[ByteKey],
+        times: &Int64Array,
+        kinds: Option<&Int8Array>,
+    ) -> Result<(), DataFusionError> {
+        self.write_right(batch, keys, times, kinds, false)
     }
 
     /// Every key's buffered probe rows, per-key in arrival order, keys in store order.
@@ -314,7 +314,11 @@ impl RocksTemporalJoinStore {
                 .push(StoredLeftRow {
                     seq: u64::from_be_bytes(key[key.len() - 8..].try_into().expect("sequence")),
                     time: i64::from_le_bytes(value[..8].try_into().expect("time")),
-                    kind: value[8] as i8,
+                    kind: (value[8] & 0x7f) as i8,
+                    index: (value[8] & 0x80 != 0).then(|| {
+                        (u64::from_be_bytes(key[key.len() - 8..].try_into().unwrap())
+                            ^ TS_SIGN_FLIP) as i64
+                    }),
                     row: value[LEFT_VALUE_PREFIX_LEN..].into(),
                 });
         }
@@ -388,7 +392,8 @@ impl RocksTemporalJoinStore {
         if self.deadlines.remove(key).is_some() {
             writes.delete(Self::table_prefix(key, DEADLINE_TABLE))?;
         }
-        writes.finish()
+        writes.finish()?;
+        self.cleanup_metadata(key)
     }
 
     pub(crate) fn deadline(&self, key: &ByteKey) -> Option<i64> {
@@ -495,6 +500,10 @@ impl RocksTemporalJoinStore {
     ) -> Result<RocksCheckpointManifest, DataFusionError> {
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         writes.put(SEQ_KEY, self.next_seq.to_be_bytes())?;
+        writes.put(
+            stock_state::META_FORMAT_KEY,
+            [1, u8::from(self.current_cleaning)],
+        )?;
         writes.finish()?;
         if snapshot_dir.is_empty() {
             return Ok(RocksCheckpointManifest::absent());
@@ -900,3 +909,5 @@ mod tests {
         assert_eq!(pads.num_rows(), expected);
     }
 }
+
+mod stock_state;

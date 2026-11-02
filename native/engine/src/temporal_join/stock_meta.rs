@@ -2,21 +2,21 @@ use std::collections::BTreeSet;
 
 /// Per-key stock cursors and physical callbacks, independent of either cached row side.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct StockTemporalMeta {
-    pub(super) next_index: Option<i64>,
-    pub(super) registered: Option<i64>,
-    pub(super) callbacks: BTreeSet<i64>,
+pub(crate) struct StockTemporalMeta {
+    pub(crate) next_index: Option<i64>,
+    pub(crate) registered: Option<i64>,
+    pub(crate) callbacks: BTreeSet<i64>,
 }
 
 impl StockTemporalMeta {
-    pub(super) fn probe(&mut self, timestamp: i64) -> i64 {
+    pub(crate) fn probe(&mut self, timestamp: i64) -> i64 {
         let index = self.next_index.unwrap_or(0);
         self.next_index = Some(index.wrapping_add(1));
         self.build(timestamp);
         index
     }
 
-    pub(super) fn build(&mut self, timestamp: i64) {
+    pub(crate) fn build(&mut self, timestamp: i64) {
         if self
             .registered
             .is_none_or(|registered| timestamp < registered)
@@ -28,13 +28,13 @@ impl StockTemporalMeta {
         }
     }
 
-    pub(super) fn cleanup(&mut self) {
+    pub(crate) fn cleanup(&mut self) {
         self.next_index = None;
         self.registered = None;
         // Released cleanupState clears the value state, but does not delete event callbacks.
     }
 
-    pub(super) fn take_due(&mut self, watermark: i64) -> bool {
+    pub(crate) fn take_due(&mut self, watermark: i64) -> bool {
         if !self
             .callbacks
             .first()
@@ -48,7 +48,7 @@ impl StockTemporalMeta {
     }
 
     /// Returns whether the stock callback refreshes processing cleanup instead of clearing it.
-    pub(super) fn after_event(
+    pub(crate) fn after_event(
         &mut self,
         last_unprocessed: i64,
         right_live: bool,
@@ -66,7 +66,7 @@ impl StockTemporalMeta {
     }
 
     /// Internal native-checkpoint value; canonical export reads the fields directly.
-    pub(super) fn encode(&self) -> Vec<u8> {
+    pub(crate) fn encode(&self) -> Vec<u8> {
         let mut bytes = vec![
             1,
             u8::from(self.next_index.is_some()) | (u8::from(self.registered.is_some()) << 1),
@@ -74,14 +74,18 @@ impl StockTemporalMeta {
         for value in [self.next_index, self.registered].into_iter().flatten() {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
-        bytes.extend_from_slice(&(self.callbacks.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(self.callbacks.len())
+                .expect("temporal callback count exceeds checkpoint format")
+                .to_be_bytes(),
+        );
         for value in &self.callbacks {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
         bytes
     }
 
-    pub(super) fn decode(bytes: &[u8]) -> Result<Self, String> {
+    pub(crate) fn decode(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < 6 || bytes[0] != 1 || bytes[1] & !3 != 0 {
             return Err("invalid temporal metadata version or flags".into());
         }

@@ -7505,7 +7505,7 @@ fn temporal_join_retention_watermark_fire_re_registers_the_deadline() {
 
 // Flink's enablement quirk, replicated exactly: `stateCleaningEnabled = minRetentionTime > 1` —
 // strictly greater than ONE millisecond, not zero. A 1ms retention never cleans, and its
-// checkpoints stay in the two-section pre-retention format.
+// checkpoints still carry cursor/callback metadata, with an empty cleanup section.
 #[test]
 fn temporal_join_retention_of_one_millisecond_disables_cleaning() {
     let mut joiner = temporal_joiner(JoinKind::Inner).with_state_retention(1);
@@ -7522,7 +7522,10 @@ fn temporal_join_retention_of_one_millisecond_disables_cleaning() {
         values(&joiner.advance(i64::MAX, i64::MAX).unwrap(), 4),
         vec![10]
     );
-    assert_eq!(read_framed_sections(&joiner.snapshot()).len(), 2);
+    let sections = read_framed_sections(&joiner.snapshot());
+    assert_eq!(sections.len(), 4);
+    assert!(sections[2].is_empty());
+    assert_eq!(&sections[3][..2], &[1, 0]);
 }
 
 // Keys never touched again are reclaimed by the silent once-per-min-retention sweep — the lazy
@@ -7557,8 +7560,7 @@ fn temporal_join_retention_sweep_reclaims_untouched_keys_silently() {
     assert_eq!(deadline_keys, vec![2]);
 }
 
-// The snapshot carries each key's ABSOLUTE deadline (a third framed section, written only while
-// cleaning is on); a restore keeps it as-is rather than re-stamping from the restore clock.
+// The snapshot carries each key's ABSOLUTE deadline in the third framed section; a restore keeps it as-is rather than re-stamping from the restore clock.
 #[test]
 fn temporal_join_retention_deadline_rides_the_snapshot_absolutely() {
     let mut writer = temporal_joiner(JoinKind::LeftOuter).with_state_retention(2000);
@@ -7569,7 +7571,7 @@ fn temporal_join_retention_deadline_rides_the_snapshot_absolutely() {
         )
         .unwrap();
     let snapshot = writer.snapshot();
-    assert_eq!(read_framed_sections(&snapshot).len(), 3);
+    assert_eq!(read_framed_sections(&snapshot).len(), 4);
 
     let restore = || {
         TemporalJoiner::restore(
@@ -7655,7 +7657,7 @@ fn temporal_join_pre_retention_snapshot_stamps_a_full_deadline_at_restore() {
         )
         .unwrap();
     let snapshot = writer.snapshot();
-    assert_eq!(read_framed_sections(&snapshot).len(), 2); // retention off: pre-TTL format
+    assert_eq!(read_framed_sections(&snapshot).len(), 4); // source retention remains disabled
 
     let restore = || {
         TemporalJoiner::restore(

@@ -9,7 +9,7 @@ changelog.
 ## How it works
 
 The build side is held as **per-key versioned state**: every `+I`/`+U`/`-D` change on the build
-changelog is kept indexed by rowtime rather than overwriting in place. On each watermark, every
+changelog is kept indexed by rowtime rather than overwriting in place. On a watermark that fires a registered callback for its key, each due
 buffered probe row joins the build version that was valid **at its own rowtime** — a faithful port of
 Flink's `TemporalRowTimeJoinOperator`, deterministic and value-compared against the host. A residual
 non-equi predicate beyond the `FOR SYSTEM_TIME` condition itself (e.g. `... AND o.amount < r.rate`)
@@ -83,6 +83,21 @@ when later watermarks arrive without a queued callback, so a later probe can sti
 Live Rocks queue head/size checks and complete freshly restored canonical queue views avoid
 mistaking the Rocks iterator's seek hint for missing state.
 
-The internal native metadata helper matches this trace and rejects corrupt codec values. Its
-runtime/recovery integration and direct stock temporal savepoint transfer remain unfinished;
-these controls do not count as native temporal conversion coverage. Benchmarking remains deferred.
+Both native stores now retain the cursor and physical callback set during execution and native
+recovery. Build versions are pruned only for keys whose event callbacks fire; unrelated watermarks
+preserve versions needed by late probes. Probe rows use signed per-key indices, including Java-long
+wraparound and ordering. Cleanup can leave callbacks without any cached rows or cleanup deadline.
+Those metadata-only key groups survive backend switches and redistribution.
+
+Native memory snapshots use four sections: indexed probes, build versions, optional cleanup
+clocks, and versioned cursor/callback metadata. Persistent checkpoints retain equivalent typed
+tables. Source retention metadata distinguishes deliberately absent deadlines from migration
+out of disabled retention. Frozen snapshots from the previous implementation verify both legacy
+raw layouts and both persistent restore paths without fabricating old bytes with the new writer.
+The shared released trace runs through native recovery after every transition, including backend
+switches and aligned/redistributed persistent checkpoints. Orphan callback memory remains accounted
+until the callback fires.
+
+Stock temporal savepoint transfer, host cleanup-timer scheduling and automatic plan binding remain
+unfinished. Native recovery correctness does not count as qualified stock conversion coverage.
+Benchmarking remains deferred.

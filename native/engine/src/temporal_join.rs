@@ -2,8 +2,8 @@ use crate::*;
 
 /// The raw-snapshot column carrying each key's cleanup DEADLINE (not a last-write timestamp, so
 /// not `TTL_TS_COLUMN`): the absolute wall-clock millis at which Flink's registered cleanup timer
-/// would fire and clear the key. Present only while retention cleaning is on, as a third framed
-/// section — a retention-off checkpoint stays byte-identical to the pre-TTL format.
+/// would fire and clear the key. The third framed section is empty when cleaning is disabled;
+/// the fourth preserves per-key cursors and callbacks independently of either row side.
 pub(crate) const CLEANUP_AT_COLUMN: &str = "__cleanup_at__";
 
 /// One buffered probe-side (left) row of a temporal join: its data values, its event time, and its
@@ -44,7 +44,8 @@ pub(crate) struct TemporalJoiner {
     left_schema: SchemaRef,
     right_schema: SchemaRef,
     predicate: Option<JoinPredicate>,
-    left_state: HashMap<GroupKey, Vec<LeftEntry>>,
+    left_state: HashMap<GroupKey, BTreeMap<i64, LeftEntry>>,
+    metadata: HashMap<GroupKey, stock_meta::StockTemporalMeta>,
     right_state: HashMap<GroupKey, BTreeMap<i64, (JoinRow, i8)>>,
     /// Idle-state min retention millis (`table.exec.state.ttl`). Flink's temporal join does not use
     /// per-value `StateTtlConfig`: it keeps ONE per-key processing-time cleanup deadline and, when
@@ -102,6 +103,7 @@ impl TemporalJoiner {
             right_schema,
             predicate,
             left_state: HashMap::default(),
+            metadata: HashMap::default(),
             right_state: HashMap::default(),
             min_retention_ms: 0,
             max_retention_ms: 0,
@@ -157,10 +159,11 @@ impl TemporalJoiner {
     /// Flink's `cleanupState`: drops the key's ENTIRE state — both sides and the deadline —
     /// silently, returning the bytes reclaimed (0 when not tracking).
     fn clear_key(&mut self, key: &GroupKey, track: bool) -> usize {
-        let mut freed = 0usize;
+        let mut freed = self.cleanup_metadata(key, track);
         if let Some(entries) = self.left_state.remove(key) {
             if track {
-                freed += group_key_bytes(key) + entries.iter().map(left_entry_bytes).sum::<usize>();
+                freed +=
+                    group_key_bytes(key) + entries.values().map(left_entry_bytes).sum::<usize>();
             }
         }
         if let Some(versions) = self.right_state.remove(key) {
@@ -211,7 +214,8 @@ impl TemporalJoiner {
     }
 
     #[cfg(feature = "rocksdb-state")]
-    pub(crate) fn with_store(mut self, store: crate::state::RocksTemporalJoinStore) -> Self {
+    pub(crate) fn with_store(mut self, mut store: crate::state::RocksTemporalJoinStore) -> Self {
+        store.set_cleaning_mode(self.cleaning_enabled());
         self.store = Some(store);
         self
     }
@@ -222,7 +226,9 @@ impl TemporalJoiner {
         mut self,
         budget_bytes: i64,
     ) -> Result<Self, DataFusionError> {
-        self.memory.attach("temporal-join", budget_bytes, 0)?;
+        let bytes = self.store.as_ref().unwrap().metadata_bytes();
+        self.memory.attach("temporal-join", budget_bytes, bytes)?;
+        self.store_mut().take_metadata_delta();
         Ok(self)
     }
 
@@ -236,7 +242,7 @@ impl TemporalJoiner {
     /// is stamped a full max retention from the restore instead of expiring on first touch.
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn adopt_store_retention(&mut self, now_ms: i64) -> Result<(), DataFusionError> {
-        if self.cleaning_enabled() {
+        if self.cleaning_enabled() && self.store.as_ref().unwrap().source_cleaning() != Some(true) {
             let stamp = now_ms.saturating_add(self.max_retention_ms);
             self.store_mut().adopt_retention(stamp)?;
         }
@@ -250,7 +256,7 @@ impl TemporalJoiner {
             .left_state
             .iter()
             .map(|(key, entries)| {
-                group_key_bytes(key) + entries.iter().map(left_entry_bytes).sum::<usize>()
+                group_key_bytes(key) + entries.values().map(left_entry_bytes).sum::<usize>()
             })
             .sum();
         let right: usize = self
@@ -265,8 +271,11 @@ impl TemporalJoiner {
             })
             .sum();
         let deadlines: usize = self.cleanup_state.keys().map(group_key_bytes).sum();
-        self.memory
-            .attach("temporal-join", budget_bytes, left + right + deadlines)?;
+        self.memory.attach(
+            "temporal-join",
+            budget_bytes,
+            left + right + deadlines + self.metadata_bytes(),
+        )?;
         Ok(self)
     }
 
@@ -332,7 +341,12 @@ impl TemporalJoiner {
             if track {
                 delta += left_entry_bytes(&entry) as isize;
             }
-            self.left_state.entry(key).or_default().push(entry);
+            let index = self.touch_metadata(&key, times.value(row), true, &mut delta, track);
+            if let Some(old) = self.left_state.entry(key).or_default().insert(index, entry) {
+                if track {
+                    delta -= left_entry_bytes(&old) as isize;
+                }
+            }
         }
         self.memory.record(delta);
         self.memory.account()
@@ -379,6 +393,7 @@ impl TemporalJoiner {
             if track {
                 delta += right_version_bytes(&jrow) as isize;
             }
+            self.touch_metadata(&key, times.value(row), false, &mut delta, track);
             let replaced = self
                 .right_state
                 .entry(key)
@@ -408,100 +423,89 @@ impl TemporalJoiner {
         }
         let cleaning = self.cleaning_enabled();
         if cleaning {
-            self.maybe_sweep(now_ms);
+            self.expire_processing_time(now_ms)?;
         }
         let has_pred = self.predicate.is_some();
-
-        // Resolve each triggered left row to the build version valid at its time (an accumulate
-        // version with the largest rightTime <= leftTime), collecting candidate pairs for one batched
-        // predicate evaluation. Triggered rows are removed; later rows stay buffered.
         let mut decisions: Vec<(JoinRow, i8, Option<JoinRow>)> = Vec::new();
         let mut pred_pairs: Vec<JoinRow> = Vec::new();
         let mut pred_idx: Vec<usize> = Vec::new();
         let track = self.memory.tracking();
         let mut freed = 0usize;
-        let mut grew = 0isize;
-        let keys: Vec<GroupKey> = self.left_state.keys().cloned().collect();
+        let mut delta = 0isize;
+        let keys = self.due_callbacks(watermark, &mut delta, track);
         for key in &keys {
-            // A passed cleanup deadline means Flink's timer fired (at wall time T, before this
-            // watermark arrived at wall time now >= T): the key's state is gone, nothing emits.
             if cleaning {
                 if let Some(reclaimed) = self.expire_if_due(key, now_ms, track) {
                     freed += reclaimed;
-                    continue;
                 }
             }
-            let entries = self.left_state.remove(key).expect("left key present");
+            let entries = self.left_state.remove(key).unwrap_or_default();
+            let had_left = !entries.is_empty();
             let versions = self.right_state.get(key);
-            let total = entries.len();
-            let mut remaining: Vec<LeftEntry> = Vec::new();
-            for e in entries {
-                if e.time > watermark {
-                    remaining.push(e);
+            let mut remaining = BTreeMap::new();
+            for (index, entry) in entries {
+                if entry.time > watermark {
+                    remaining.insert(index, entry);
                     continue;
                 }
                 if track {
-                    freed += left_entry_bytes(&e);
+                    freed += left_entry_bytes(&entry);
                 }
                 let valid = versions
-                    .and_then(|m| m.range(..=e.time).next_back())
-                    .and_then(|(_, (row, kind))| {
-                        // Only an accumulate version (+I/+U) is a row; a -D/-U marks "no row here".
-                        (*kind == 0 || *kind == 2).then(|| row.clone())
-                    });
-                let idx = decisions.len();
+                    .and_then(|versions| versions.range(..=entry.time).next_back())
+                    .and_then(|(_, (row, kind))| (*kind == 0 || *kind == 2).then(|| row.clone()));
+                let index = decisions.len();
                 if has_pred {
                     if let Some(row) = &valid {
-                        pred_pairs.push(e.row.iter().chain(row).cloned().collect());
-                        pred_idx.push(idx);
+                        pred_pairs.push(entry.row.iter().chain(row).cloned().collect());
+                        pred_idx.push(index);
                     }
                 }
-                decisions.push((e.row, e.kind, valid));
+                decisions.push((entry.row, entry.kind, valid));
             }
-            let fired = remaining.len() < total;
-            let remaining_empty = remaining.is_empty();
-            if remaining_empty {
-                if track {
+            let last = remaining
+                .values()
+                .map(|entry: &LeftEntry| entry.time)
+                .min()
+                .unwrap_or(i64::MAX);
+            if remaining.is_empty() {
+                if track && had_left {
                     freed += group_key_bytes(key);
                 }
             } else {
                 self.left_state.insert(key.clone(), remaining);
             }
-            // Flink's `onEventTime` after emitting: state remaining on either side re-registers
-            // the key's cleanup deadline; a key left empty on both sides drops it (Flink's
-            // `cleanupLastTimer`). Version pruning below keeps at least the latest version, so
-            // checking the right side before pruning matches Flink's after-prune check.
-            if cleaning && fired {
-                let right_live = self.right_state.get(key).is_some_and(|m| !m.is_empty());
-                if !remaining_empty || right_live {
-                    self.register_cleanup(key, now_ms, &mut grew, track);
+            if let Some(versions) = self.right_state.get_mut(key) {
+                if let Some((&keep, _)) = versions.range(..=watermark).next_back() {
+                    let stale = versions
+                        .range(..keep)
+                        .map(|(&time, _)| time)
+                        .collect::<Vec<_>>();
+                    for time in stale {
+                        if let Some((old, _)) = versions.remove(&time) {
+                            if track {
+                                freed += right_version_bytes(&old);
+                            }
+                        }
+                    }
+                }
+            }
+            let right = self
+                .right_state
+                .get(key)
+                .is_some_and(|versions| !versions.is_empty());
+            let retained = self.after_callback(key, last, right, cleaning, &mut delta, track);
+            if cleaning {
+                if retained {
+                    self.register_cleanup(key, now_ms, &mut delta, track);
                 } else if self.cleanup_state.remove(key).is_some() && track {
                     freed += group_key_bytes(key);
                 }
             }
         }
-
-        // Drop versions older than the latest one still valid at the watermark; keep that one and all
-        // newer (Flink always keeps at least the latest version).
-        for versions in self.right_state.values_mut() {
-            if let Some((&keep_from, _)) = versions.range(..=watermark).next_back() {
-                let stale: Vec<i64> = versions.range(..keep_from).map(|(&t, _)| t).collect();
-                for t in stale {
-                    if let Some((old, _)) = versions.remove(&t) {
-                        if track {
-                            freed += right_version_bytes(&old);
-                        }
-                    }
-                }
-            }
-        }
-        if grew > 0 {
-            self.memory.record(grew);
-            self.memory.account()?;
-        }
+        self.memory.record(delta);
         self.memory.forget(freed);
-        self.memory.account_shrink();
-
+        self.memory.account()?;
         Ok(self.finish_advance(decisions, pred_pairs, pred_idx))
     }
 
@@ -576,14 +580,16 @@ impl TemporalJoiner {
         let mut rows: Vec<&JoinRow> = Vec::new();
         let mut times: Vec<i64> = Vec::new();
         let mut kinds: Vec<i8> = Vec::new();
+        let mut sequences = Vec::new();
         for entries in self.left_state.values() {
-            for e in entries {
+            for (&sequence, e) in entries {
+                sequences.push(sequence);
                 rows.push(&e.row);
                 times.push(e.time);
                 kinds.push(e.kind);
             }
         }
-        Self::write_side(&self.left_schema, &rows, &times, &kinds)
+        Self::write_side(&self.left_schema, &rows, &times, &kinds, Some(&sequences))
     }
 
     fn serialize_right(&self) -> Vec<u8> {
@@ -597,10 +603,16 @@ impl TemporalJoiner {
                 kinds.push(*kind);
             }
         }
-        Self::write_side(&self.right_schema, &rows, &times, &kinds)
+        Self::write_side(&self.right_schema, &rows, &times, &kinds, None)
     }
 
-    fn write_side(schema: &SchemaRef, rows: &[&JoinRow], times: &[i64], kinds: &[i8]) -> Vec<u8> {
+    fn write_side(
+        schema: &SchemaRef,
+        rows: &[&JoinRow],
+        times: &[i64],
+        kinds: &[i8],
+        sequences: Option<&[i64]>,
+    ) -> Vec<u8> {
         if rows.is_empty() {
             return Vec::new();
         }
@@ -617,6 +629,10 @@ impl TemporalJoiner {
         columns.push(Arc::new(Int64Array::from(times.to_vec())));
         fields.push(Field::new("__kind__", DataType::Int8, false));
         columns.push(Arc::new(Int8Array::from(kinds.to_vec())));
+        if let Some(sequences) = sequences {
+            fields.push(Field::new("__sequence__", DataType::Int64, false));
+            columns.push(Arc::new(Int64Array::from(sequences.to_vec())));
+        }
         write_ipc(
             &RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("temporal side"),
         )
@@ -645,13 +661,16 @@ impl TemporalJoiner {
     }
 
     pub(crate) fn snapshot(&self) -> Vec<u8> {
-        let mut sections = vec![self.serialize_left(), self.serialize_right()];
-        // The deadline section rides only while cleaning is on, keeping retention-off
-        // checkpoints byte-identical to the pre-TTL format.
-        if self.cleaning_enabled() {
-            sections.push(self.serialize_cleanup());
-        }
-        Self::snapshot_parts(sections)
+        Self::snapshot_parts(vec![
+            self.serialize_left(),
+            self.serialize_right(),
+            if self.cleaning_enabled() {
+                self.serialize_cleanup()
+            } else {
+                Vec::new()
+            },
+            self.serialize_metadata(),
+        ])
     }
 
     fn snapshot_parts(sections: Vec<Vec<u8>>) -> Vec<u8> {
@@ -694,10 +713,18 @@ impl TemporalJoiner {
         let cleanup = sections.get(2).map(|bytes| {
             Self::side_raw_partitions(bytes, &cleanup_keys, max_parallelism, timestamp_precisions)
         });
+        stock_state::metadata_header(&sections[3]);
+        let metadata = Self::side_raw_partitions(
+            &sections[3][2..],
+            &cleanup_keys,
+            max_parallelism,
+            timestamp_precisions,
+        );
         let mut groups: Vec<i32> = left
             .keys()
             .chain(right.keys())
             .chain(cleanup.iter().flat_map(|partitions| partitions.keys()))
+            .chain(metadata.keys())
             .copied()
             .collect();
         groups.sort_unstable();
@@ -721,6 +748,17 @@ impl TemporalJoiner {
                         .unwrap_or_default(),
                 );
             }
+            if parts.len() == 2 {
+                parts.push(Vec::new());
+            }
+            let mut metadata_bytes = sections[3][..2].to_vec();
+            metadata_bytes.extend(
+                metadata
+                    .get(&key_group)
+                    .map(Self::merge_snapshot_batches)
+                    .unwrap_or_default(),
+            );
+            parts.push(metadata_bytes);
             snapshots.insert(key_group, Self::snapshot_parts(parts));
         }
         snapshots
@@ -796,12 +834,29 @@ impl TemporalJoiner {
             return joiner;
         }
         let sections = read_framed_sections(bytes);
+        let stock_metadata = sections.len() >= 4;
+        let source_cleaning = if stock_metadata {
+            stock_state::metadata_header(&sections[3])
+        } else {
+            sections.len() >= 3
+        };
         for batch in read_ipc_if_present(&sections[0]) {
-            let arity = batch.num_columns() - 2;
-            let times = column_i64(&batch, "__time__");
+            let arity = joiner.left_schema.fields().len();
+            let sequences = stock_metadata.then(|| {
+                batch
+                    .column(arity + 2)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .expect("temporal sequences")
+            });
+            let times = batch
+                .column(arity)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("temporal time")
+                .clone();
             let kinds = batch
-                .column_by_name("__kind__")
-                .expect("__kind__")
+                .column(arity + 1)
                 .as_any()
                 .downcast_ref::<Int8Array>()
                 .expect("__kind__ i8");
@@ -815,19 +870,35 @@ impl TemporalJoiner {
                             .expect("temporal left scalar")
                     })
                     .collect();
-                joiner.left_state.entry(key).or_default().push(LeftEntry {
-                    row: jrow,
-                    time: times.value(row),
-                    kind: kinds.value(row),
-                });
+                let index = if let Some(sequences) = sequences {
+                    sequences.value(row)
+                } else {
+                    joiner
+                        .metadata
+                        .entry(key.clone())
+                        .or_default()
+                        .probe(times.value(row))
+                };
+                joiner.left_state.entry(key).or_default().insert(
+                    index,
+                    LeftEntry {
+                        row: jrow,
+                        time: times.value(row),
+                        kind: kinds.value(row),
+                    },
+                );
             }
         }
         for batch in read_ipc_if_present(&sections[1]) {
             let arity = batch.num_columns() - 2;
-            let times = column_i64(&batch, "__time__");
+            let times = batch
+                .column(arity)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("temporal time")
+                .clone();
             let kinds = batch
-                .column_by_name("__kind__")
-                .expect("__kind__")
+                .column(arity + 1)
                 .as_any()
                 .downcast_ref::<Int8Array>()
                 .expect("__kind__ i8");
@@ -841,6 +912,13 @@ impl TemporalJoiner {
                             .expect("temporal right scalar")
                     })
                     .collect();
+                if !stock_metadata {
+                    joiner
+                        .metadata
+                        .entry(key.clone())
+                        .or_default()
+                        .build(times.value(row));
+                }
                 joiner
                     .right_state
                     .entry(key)
@@ -861,9 +939,12 @@ impl TemporalJoiner {
                 }
             }
         }
+        if stock_metadata {
+            joiner.restore_metadata(&sections[3]);
+        }
         // Enable-retention migration: a key restored without a deadline (a pre-retention writer)
         // is stamped a full max retention from the restore instead of expiring on first touch.
-        if joiner.cleaning_enabled() {
+        if joiner.cleaning_enabled() && !source_cleaning {
             let stamp = restored_at_ms.saturating_add(joiner.max_retention_ms);
             let TemporalJoiner {
                 left_state,
@@ -897,6 +978,10 @@ impl TemporalJoiner {
         let mut left_batches = Vec::new();
         let mut right_batches = Vec::new();
         let mut cleanup_batches = Vec::new();
+        let mut metadata_batches = Vec::new();
+        let mut stock_metadata = false;
+        let mut legacy = false;
+        let mut metadata_header = None;
         for bytes in snapshots {
             let sections = read_framed_sections(bytes);
             if sections.len() >= 2 {
@@ -904,6 +989,17 @@ impl TemporalJoiner {
                 right_batches.extend(read_ipc_if_present(&sections[1]));
                 if let Some(cleanup) = sections.get(2) {
                     cleanup_batches.extend(read_ipc_if_present(cleanup));
+                }
+                if let Some(metadata) = sections.get(3) {
+                    stock_metadata = true;
+                    stock_state::metadata_header(metadata);
+                    if let Some(header) = metadata_header {
+                        assert_eq!(header, metadata[1], "temporal retention modes differ");
+                    }
+                    metadata_header = Some(metadata[1]);
+                    metadata_batches.extend(read_ipc_if_present(&metadata[2..]));
+                } else {
+                    legacy = true;
                 }
             }
         }
@@ -915,6 +1011,18 @@ impl TemporalJoiner {
         let mut parts = vec![merge(&left_batches), merge(&right_batches)];
         if !cleanup_batches.is_empty() {
             parts.push(merge(&cleanup_batches));
+        }
+        assert!(
+            !(stock_metadata && legacy),
+            "restore mixes temporal metadata versions"
+        );
+        if stock_metadata {
+            if parts.len() == 2 {
+                parts.push(Vec::new());
+            }
+            let mut bytes = vec![1, metadata_header.unwrap()];
+            bytes.extend(merge(&metadata_batches));
+            parts.push(bytes);
         }
         TemporalJoiner::restore(
             left_keys,
@@ -969,10 +1077,13 @@ impl TemporalJoiner {
         let kinds = row_kind_column(batch);
         let store = self.store.as_mut().expect("temporal-join rocksdb store");
         if left {
-            store.push_left(batch, &entry_keys, &times, kinds)
+            store.push_left(batch, &entry_keys, &times, kinds)?;
         } else {
-            store.push_right(batch, &entry_keys, &times, kinds)
+            store.push_right(batch, &entry_keys, &times, kinds)?;
         }
+        let delta = store.take_metadata_delta();
+        self.memory.record(delta);
+        self.memory.account()
     }
 
     /// The lazy expiry check plus re-arm at a batch of key touches. Every row of a batch shares
@@ -1042,73 +1153,62 @@ impl TemporalJoiner {
     ) -> Result<RecordBatch, DataFusionError> {
         let cleaning = self.cleaning_enabled();
         if cleaning {
-            self.store_sweep(now_ms)?;
+            self.expire_processing_time(now_ms)?;
         }
+        let due = self.store_mut().take_due_callbacks(watermark)?;
         let left = self.store_mut().scan_left()?;
         let right = self.store_mut().scan_right()?;
         let has_pred = self.predicate.is_some();
         let mut fired_rows: Vec<(&[u8], i8)> = Vec::new();
         let mut fired_versions: Vec<Option<&[u8]>> = Vec::new();
-        for (key, entries) in &left {
-            if cleaning
-                && self
-                    .store_mut()
-                    .deadline(key)
-                    .is_some_and(|deadline| now_ms >= deadline)
-            {
-                self.store_mut().clear_key(key)?;
-                continue;
-            }
+        for key in &due {
+            let entries = left.get(key);
             let versions = right.get(key);
-            let mut fired_seqs: Vec<u64> = Vec::new();
-            let mut remaining = 0usize;
-            for entry in entries {
+            let mut fired = Vec::new();
+            let mut last = i64::MAX;
+            for entry in entries.into_iter().flatten() {
                 if entry.time > watermark {
-                    remaining += 1;
+                    last = last.min(entry.time);
                     continue;
                 }
-                fired_seqs.push(entry.seq);
+                fired.push(entry.seq);
                 let valid = versions.and_then(|versions| {
                     let at = versions.partition_point(|version| version.ts <= entry.time);
                     versions[..at].last().and_then(|version| {
-                        // Only an accumulate version (+I/+U) is a row; a -D/-U marks "no row here".
                         (version.kind == 0 || version.kind == 2).then_some(version.row.as_ref())
                     })
                 });
                 fired_rows.push((entry.row.as_ref(), entry.kind));
                 fired_versions.push(valid);
             }
-            if fired_seqs.is_empty() {
-                continue;
+            if !fired.is_empty() {
+                self.store_mut().remove_left(key, &fired)?;
             }
-            self.store_mut().remove_left(key, &fired_seqs)?;
-            // Flink's `onEventTime` after emitting: state remaining on either side re-registers
-            // the key's cleanup deadline; a key left empty on both sides drops it. Version pruning
-            // below keeps at least the latest version, so checking the right side before pruning
-            // matches Flink's after-prune check.
+            if let Some(versions) = versions {
+                let at = versions.partition_point(|version| version.ts <= watermark);
+                if at > 1 {
+                    let stale = versions[..at - 1]
+                        .iter()
+                        .map(|version| version.ts)
+                        .collect::<Vec<_>>();
+                    self.store_mut().remove_right(key, &stale)?;
+                }
+            }
+            let right_live = versions.is_some_and(|versions| !versions.is_empty());
+            let retained = self
+                .store_mut()
+                .after_callback(key, last, right_live, cleaning)?;
             if cleaning {
-                let right_live = versions.is_some_and(|versions| !versions.is_empty());
-                if remaining > 0 || right_live {
+                if retained {
                     self.store_register_cleanup(key, now_ms)?;
                 } else {
                     self.store_mut().remove_deadline(key)?;
                 }
             }
         }
-
-        // Drop versions older than the latest one still valid at the watermark, on every key —
-        // the memory path prunes its whole map per advance. Resolution above already read the
-        // unpruned scan, as the memory path resolves before pruning.
-        for (key, versions) in &right {
-            let keep_from = versions.partition_point(|version| version.ts <= watermark);
-            if keep_from > 1 {
-                let stale: Vec<i64> = versions[..keep_from - 1]
-                    .iter()
-                    .map(|version| version.ts)
-                    .collect();
-                self.store_mut().remove_right(key, &stale)?;
-            }
-        }
+        let delta = self.store_mut().take_metadata_delta();
+        self.memory.record(delta);
+        self.memory.account()?;
 
         let mut decisions: Vec<(JoinRow, i8, Option<JoinRow>)> =
             Vec::with_capacity(fired_rows.len());
@@ -1157,20 +1257,38 @@ impl TemporalJoiner {
         Ok(self.finish_advance(decisions, pred_pairs, pred_idx))
     }
 
-    /// Decodes restored blob key groups once at open and writes them through the typed store, so
-    /// a canonical or raw restore continues on the direct persistent path. Probe rows append in
-    /// blob order (fresh sequences reproduce arrival order per key), build versions key by their
-    /// version timestamp, and deadlines land in the deadline table; `adopt_store_retention` then
-    /// applies the enable-retention migration exactly as the memory restore does.
+    /// Imports native key-group snapshots into the typed persistent store. New snapshots preserve
+    /// exact signed probe indices and independent cursor/callback metadata; legacy rows acquire
+    /// fresh per-key indices in their original order. Retention migration runs after import.
     pub(crate) fn import_partitions(
         &mut self,
         snapshots: &[Vec<u8>],
     ) -> Result<(), DataFusionError> {
+        let headers = snapshots
+            .iter()
+            .filter(|bytes| !bytes.is_empty())
+            .map(|bytes| {
+                let sections = read_framed_sections(bytes);
+                sections
+                    .get(3)
+                    .map(|bytes| stock_state::metadata_header(bytes))
+            })
+            .collect::<HashSet<_>>();
+        if headers.len() > 1 {
+            return Err(DataFusionError::Execution(
+                "restore mixes temporal metadata versions or retention modes".into(),
+            ));
+        }
         for bytes in snapshots {
             if bytes.is_empty() {
                 continue;
             }
             let sections = read_framed_sections(bytes);
+            let stock_metadata = sections.len() >= 4;
+            if stock_metadata {
+                let cleaning = stock_state::metadata_header(&sections[3]);
+                self.store_mut().set_source_cleaning(cleaning)?;
+            }
             for (left, section) in [(true, &sections[0]), (false, &sections[1])] {
                 let key_columns = if left {
                     self.left_keys.clone()
@@ -1178,11 +1296,19 @@ impl TemporalJoiner {
                     self.right_keys.clone()
                 };
                 for batch in read_ipc_if_present(section) {
-                    let arity = batch.num_columns() - 2;
-                    let times = column_i64(&batch, "__time__");
+                    let arity = if left {
+                        self.left_schema.fields().len()
+                    } else {
+                        self.right_schema.fields().len()
+                    };
+                    let times = batch
+                        .column(arity)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .expect("temporal time")
+                        .clone();
                     let kinds = batch
-                        .column_by_name("__kind__")
-                        .expect("__kind__")
+                        .column(arity + 1)
                         .as_any()
                         .downcast_ref::<Int8Array>()
                         .expect("__kind__ i8")
@@ -1191,11 +1317,28 @@ impl TemporalJoiner {
                     let store = self.store.as_mut().expect("temporal-join rocksdb store");
                     let entry_keys =
                         store.entry_keys(&data, &key_columns, &self.key_timestamp_precisions);
-                    if left {
+                    if stock_metadata {
+                        if left {
+                            let indices = batch
+                                .column(arity + 2)
+                                .as_any()
+                                .downcast_ref::<Int64Array>()
+                                .expect("temporal indices");
+                            store.import_left(&data, &entry_keys, &times, Some(&kinds), indices)?;
+                        } else {
+                            store.import_right(&data, &entry_keys, &times, Some(&kinds))?;
+                        }
+                    } else if left {
                         store.push_left(&data, &entry_keys, &times, Some(&kinds))?;
                     } else {
                         store.push_right(&data, &entry_keys, &times, Some(&kinds))?;
                     }
+                }
+            }
+            if stock_metadata {
+                let precisions = self.key_timestamp_precisions.clone();
+                for batch in read_ipc_if_present(&sections[3][2..]) {
+                    self.store_mut().import_metadata(&batch, &precisions)?;
                 }
             }
             if let Some(section) = sections.get(2) {
@@ -1211,17 +1354,19 @@ impl TemporalJoiner {
                 }
             }
         }
-        Ok(())
+        let delta = self.store_mut().take_metadata_delta();
+        self.memory.record(delta);
+        self.memory.account()
     }
 
-    /// The complete persistent state in the blob snapshot's per-key-group framed-section encoding
-    /// (probe rows, build versions, and — while cleaning is on — the deadline section), for
-    /// backend-independent canonical savepoints.
+    /// Backend-independent native recovery encoding: probe rows with signed indices, build
+    /// versions, optional cleanup deadlines, and independent cursor/callback metadata. Stock
+    /// canonical export must visit live state directly rather than convert these snapshots.
     pub(crate) fn canonical_partitions(&self) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
         let store = self.store.as_ref().expect("temporal-join rocksdb store");
         let left = store.scan_left()?;
         let right = store.scan_right()?;
-        type Side<'a> = BTreeMap<i32, (Vec<&'a [u8]>, Vec<i64>, Vec<i8>)>;
+        type Side<'a> = BTreeMap<i32, (Vec<&'a [u8]>, Vec<i64>, Vec<i8>, Vec<i64>)>;
         let mut left_by_group: Side = BTreeMap::new();
         for (key, entries) in &left {
             let slot = left_by_group
@@ -1231,6 +1376,8 @@ impl TemporalJoiner {
                 slot.0.push(&entry.row);
                 slot.1.push(entry.time);
                 slot.2.push(entry.kind);
+                slot.3
+                    .push(entry.index.expect("temporal signed probe index"));
             }
         }
         let mut right_by_group: Side = BTreeMap::new();
@@ -1254,10 +1401,19 @@ impl TemporalJoiner {
                     .push((key, deadline));
             }
         }
+        let mut metadata_by_group: BTreeMap<i32, Vec<(&ByteKey, &stock_meta::StockTemporalMeta)>> =
+            BTreeMap::new();
+        for (key, value) in store.all_metadata() {
+            metadata_by_group
+                .entry(crate::state::RocksTemporalJoinStore::key_group(key))
+                .or_default()
+                .push((key, value));
+        }
         let mut groups: Vec<i32> = left_by_group
             .keys()
             .chain(right_by_group.keys())
             .chain(cleanup_by_group.keys())
+            .chain(metadata_by_group.keys())
             .copied()
             .collect();
         groups.sort_unstable();
@@ -1265,7 +1421,7 @@ impl TemporalJoiner {
         let mut snapshots = BTreeMap::new();
         for group in groups {
             let side = |left_side: bool, sections: &Side| -> Result<Vec<u8>, DataFusionError> {
-                let Some((rows, times, kinds)) = sections.get(&group) else {
+                let Some((rows, times, kinds, indices)) = sections.get(&group) else {
                     return Ok(Vec::new());
                 };
                 let schema = if left_side {
@@ -1281,6 +1437,10 @@ impl TemporalJoiner {
                 columns.push(Arc::new(Int64Array::from(times.clone())));
                 fields.push(Field::new("__kind__", DataType::Int8, false));
                 columns.push(Arc::new(Int8Array::from(kinds.clone())));
+                if left_side {
+                    fields.push(Field::new("__sequence__", DataType::Int64, false));
+                    columns.push(Arc::new(Int64Array::from(indices.clone())));
+                }
                 Ok(write_ipc(
                     &RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
                         .expect("temporal side"),
@@ -1311,6 +1471,33 @@ impl TemporalJoiner {
                 };
                 parts.push(cleanup);
             }
+            if parts.len() == 2 {
+                parts.push(Vec::new());
+            }
+            let mut metadata = vec![1, u8::from(cleaning)];
+            if let Some(entries) = metadata_by_group.get(&group) {
+                let keys = entries.iter().map(|(key, _)| *key).collect::<Vec<_>>();
+                let key_types = self
+                    .left_keys
+                    .iter()
+                    .map(|column| self.left_schema.field(*column).data_type().clone())
+                    .collect::<Vec<_>>();
+                let mut fields = key_fields(&key_types);
+                let mut columns = store.decode_key_columns(&keys);
+                let bytes = entries
+                    .iter()
+                    .map(|(_, value)| value.encode())
+                    .collect::<Vec<_>>();
+                fields.push(Field::new("__stock_meta__", DataType::Binary, false));
+                columns.push(Arc::new(BinaryArray::from_iter_values(
+                    bytes.iter().map(Vec::as_slice),
+                )));
+                metadata.extend(write_ipc(
+                    &RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                        .expect("temporal metadata"),
+                ));
+            }
+            parts.push(metadata);
             snapshots.insert(group, Self::snapshot_parts(parts));
         }
         Ok(snapshots)
@@ -1549,4 +1736,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTemporalJoinerPartit
 #[cfg(test)]
 mod tests;
 
-mod stock_meta;
+pub(crate) mod stock_meta;
+
+mod stock_state;

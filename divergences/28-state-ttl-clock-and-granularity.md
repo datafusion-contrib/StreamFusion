@@ -47,22 +47,17 @@ Arroyo's per-timestamp window-execution retention. Benchmarking is deferred unde
 
 Flink retention-bounds the temporal join not with per-value TTL but with one per-key
 processing-time cleanup timer (deadline `now + 1.5×retention`, moved under a hysteresis rule,
-clearing the key's whole state when it fires). The native operator keeps the same deadline in a
-per-key map and enforces it lazily — at each key touch, plus a once-per-retention silent sweep —
-instead of registering a timer. Firing emits nothing and only affects what later probes see, so
-the substitution is observably identical within the per-call clock sampling above. One narrowing:
-Flink also re-arms the deadline when a key's event-time timer fires; we replicate that for keys
-firing buffered probe rows, but a build-only key's single fire-time re-arm — observable only when
-the watermark trails the wall clock by more than half the retention — is not replicated, so such
-a key expires at the deadline its last push registered (never sooner than one full max retention
-after its last write).
+clearing the key's whole state when it fires). Both native stores retain that deadline and enforce
+it at key touches, watermark calls and periodic ingestion sweeps. A native forced-expiry operation
+also clears idle keys without advancing event time. Host timer scheduling remains pending under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); until then, an untouched idle
+key can retain physical state beyond its deadline until one of those native calls.
 
-On the persistent RocksDB backend the same lazy + sweep scheme narrows once more: the memory
-path visits every buffered key at each watermark advance and can clear an expired key whose rows
-all sit above the watermark, while the backend only sees the keys the watermark actually fires
-(visiting the rest would mean a full state read per advance). Such a key's state lingers until
-its next fire or the once-per-retention sweep — silent either way, since a fired deadline emits
-nothing and the expiry decision at the eventual fire uses the same deadline.
+Both stores now refresh cleanup on actual event callbacks, including build-only callbacks.
+Independent event callback ownership survives cleanup and recovery. Watermarks without callbacks
+do not prune build versions; this preserves released Flink behavior for late probes. Native
+checkpoints preserve signed per-key probe cursors, registered event values and orphan callbacks,
+including metadata-only key groups. Stock canonical temporal transfer remains unfinished.
 
 The OVER aggregate's rowtime deadline shapes retain the same lazy + sweep substitution. Flink's fired timer defers a rowtime key that still has buffered rows
 awaiting a watermark, re-registering from the fire time (`fire + max`); our deferral re-arm runs
