@@ -3,12 +3,9 @@ package tech.streamfusion.planner;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.ServiceConfigurationError;
-import java.util.ServiceLoader;
 import java.util.Set;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelVisitor;
@@ -86,7 +83,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     return keyedStateUnsupportedReason;
   }
 
-  private static final List<NativePlannerExtension> EXTENSIONS = loadExtensions();
+  private static final NativePlannerExtensions EXTENSIONS =
+      NativePlannerExtensions.load(PhysicalPlanScan.class.getClassLoader());
   private static final List<Substitution<?>> REGISTRY = buildRegistry();
 
   private final List<Substitution<?>> registry;
@@ -277,7 +275,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   }
 
   private static void collectSourceKeys(RelNode node, Map<String, Integer> counts) {
-    for (NativePlannerExtension extension : EXTENSIONS) {
+    for (NativePlannerExtension extension : EXTENSIONS.extensions()) {
       String key = extension.sourceSharingKey(node);
       if (key != null) {
         counts.merge(extension.getClass().getName() + '|' + key, 1, Integer::sum);
@@ -708,7 +706,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             .reason(GlobalWindowAggregateMatcher::unsupportedReason));
 
     FlinkPlannerCompat.addSubstitutions(entries);
-    EXTENSIONS.forEach(extension -> extension.addSubstitutions(entries));
+    entries.addAll(EXTENSIONS.substitutions());
     return List.copyOf(entries);
   }
 
@@ -1016,26 +1014,6 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   private void rollbackFunctionExecutions(int previousSize, int previousJvmCount) {
     functionExecutions.subList(previousSize, functionExecutions.size()).clear();
     jvmFunctionOperators = previousJvmCount;
-  }
-
-  // ------------------------------------------------------------------------- extension discovery
-
-  private static List<NativePlannerExtension> loadExtensions() {
-    List<NativePlannerExtension> extensions = new ArrayList<>();
-    Iterator<NativePlannerExtension> providers =
-        ServiceLoader.load(NativePlannerExtension.class, PhysicalPlanScan.class.getClassLoader())
-            .iterator();
-    while (true) {
-      try {
-        if (!providers.hasNext()) {
-          break;
-        }
-        extensions.add(providers.next());
-      } catch (ServiceConfigurationError | LinkageError failure) {
-        LOG.warn("Ignoring a broken StreamFusion planner extension", failure);
-      }
-    }
-    return List.copyOf(extensions);
   }
 
   private void record(RelNode node) {
