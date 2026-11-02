@@ -703,6 +703,11 @@ one join elided by Flink. Every family remains partial under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.
 
 
+The complete-job runner observes terminal job completion while waiting for source readiness.
+Existing readiness and case deadlines remain in force. Stock/native state, execution and external
+sink-effect assertions do not depend on a separate job-status RPC latency threshold.
+
+
 ## Direct regular-join state adapter
 
 An explicitly bound Flink 2.2.1 regular-join adapter transfers both live native input sides into

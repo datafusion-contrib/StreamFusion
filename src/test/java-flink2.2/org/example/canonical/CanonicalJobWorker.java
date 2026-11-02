@@ -300,6 +300,7 @@ public final class CanonicalJobWorker {
               ? table.executeSql(Files.readString(root.resolve("query.sql")))
               : plan.execute();
       var job = result.getJobClient().orElseThrow();
+      var completion = job.getJobExecutionResult();
       if (limit == Integer.MAX_VALUE) {
         job.getJobExecutionResult().get(90, TimeUnit.SECONDS);
       } else {
@@ -331,8 +332,8 @@ public final class CanonicalJobWorker {
                     });
             throw new AssertionError("source did not reach the handoff boundary");
           }
-          if (job.getJobStatus().get(5, TimeUnit.SECONDS).isGloballyTerminalState()) {
-            job.getJobExecutionResult().get(5, TimeUnit.SECONDS);
+          if (completion.isDone()) {
+            completion.get(5, TimeUnit.SECONDS);
             throw new AssertionError("job ended before the handoff boundary");
           }
           var key = watcher.poll(1, TimeUnit.SECONDS);
