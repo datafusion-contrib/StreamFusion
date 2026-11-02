@@ -1349,8 +1349,7 @@ requests for local/global planning. They require consumed JVM group input on bot
 lines and heap/RocksDB backends. Flink 1.18 changelog-state and Flink 2.2 asynchronous-state
 variants retain explicit full fallback. Route scopes preserve each release's exact display
 names and contract variants. A data-validation test requires one matching contract and route
-declaration for every fixture configuration; actual multi-phase JVM merge and collection-result
-mini-batch exclusions are unchanged.
+declaration for every fixture configuration. Collection-result mini-batch exclusions are unchanged.
 The 1.18 state-contract inventory includes this fixture too, so its separate run with changelog
 state disabled must prove native group input rather than validating only the default exclusion.
 
@@ -1390,3 +1389,15 @@ empty/constructor-rejection/control-only cases do not invent file-work witnesses
 The upstream test profile pins JUnit 5.14.4 to match Iceberg's release and execute its
 `FieldSource` cases. [Provenance](https://github.com/datafusion-contrib/StreamFusion/blob/main/dev/flink-suite/iceberg/rewrite-tests.json)
 and the adjacent compressed port diff record the fixture and entry-point adaptations.
+
+
+Scalar JVM local/global aggregation additionally contracts the unchanged SQL
+`AggregateITCase.testVarArgsNoGroupBy` and `testVarArgsWithGroupBy` fixtures. Ordinary and single-phase mini-batch variants
+require consumed JVM grouped input. Actual local/global variants require positive input
+consumption by **both** `NativeColumnarJvmLocalGroupOperator` and
+`NativeColumnarJvmGlobalGroupOperator`. Their inherited Arrow-boundary implementation is
+instrumented at the shared operator, while observations retain the concrete phase class.
+Route scopes cover each released heap/RocksDB parameter and preserve the existing async
+and Flink 1.18 changelog-state fallback variants. These fixtures supplement the typed,
+controlled-clock bundle and checkpoint/savepoint-rescaling checks; unrelated native work
+cannot satisfy either phase contract.

@@ -25,8 +25,7 @@ invalidate cached references so subsequent mutations pass through the backend's 
 protocol. Flink retains persistence, restoration and DataView ownership. Positive TTL uses the
 released grouped function's state configuration, including per-operator hint precedence.
 Accumulator caching and input coalescing are disabled for expiring state. DISTINCT/FILTER
-continue through Flink's generated handlers and managed DataViews. Async state and multi-phase
-JVM plans retain fallback.
+continue through Flink's generated handlers and managed DataViews. Async state retains fallback; scalar local/global mini-batches use the released merge handlers described below.
 
 Wide DECIMAL grouping keys use Flink's RowData serializer for key projection, matching the
 native exchange's existing BinaryRow hash contract. The generated Flink projection uses a
@@ -51,7 +50,7 @@ ordinary grouped function's different close behavior.
 This is correctness-verified UDF coverage under the accepted performance exception, without
 a speedup requirement. Failed cache designs and dispersed timing trials remain
 diagnostic evidence; see [GROUP BY](../docs/operators/group-by.md#jvm-aggregate-investigation).
-Merge/reset, OVER and additional function/type contracts remain pending.
+OVER and additional function/type contracts remain pending.
 
 The exact released legacy Table API aggregate wrapper is admitted alongside the bridging wrapper.
 It reaches the same generated handler, managed POJO/DataView state and grouped runtime; only
@@ -88,3 +87,18 @@ metadata before replacing the input, then retains the released row sink and conv
 The unchanged upstream COLLECT fixture qualifies both backend routes with consumed JVM
 group rows and explicit exclusions. This changes the exit admission/metadata boundary,
 not the grouped operator, state layout or Arrow/JNI ownership protocol.
+
+Two-phase scalar JVM aggregation keeps Arroyo's local-partial/shuffle/global-merge structure,
+but retains Flink's incremental JVM ABI rather than Arroyo's vector-taking UDAF adapter.
+References consulted before this extension include Arroyo's `udfs.rs` and updating-aggregate
+planner, Comet's `comet_udf_bridge.rs` and `ColumnarBatchArrowReader.scala`, and Flink's
+`StreamExecLocalGroupAggregate`, `StreamExecGlobalGroupAggregate` and released map-bundle
+functions. The local function accumulates/retracts into owned bundle accumulators; global
+handlers first combine partials and then merge into Flink managed state and DataViews.
+Internal complex partial fields use Flink's declared serializers inside Arrow binary columns;
+scalar partial fields remain typed Arrow columns. This preserves arbitrary declared accumulator
+serializers without introducing a Rust JVM-object format or transposes inside the island.
+Public inputs/results stay within the verified scalar boundary. Original local/global aggregate-info lists are retained before child substitution, preserving
+monotonicity-based retraction elision and partial layouts. Logical count-bundle triggers,
+barrier/watermark drains, generated BinaryRow key layout, TTL and released lifecycle remain
+Flink-owned. Persistent state and supported migration boundaries are unchanged.

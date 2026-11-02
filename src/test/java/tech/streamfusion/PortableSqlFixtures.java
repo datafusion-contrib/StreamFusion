@@ -31,7 +31,11 @@ final class PortableSqlFixtures {
       new java.util.concurrent.atomic.AtomicInteger();
 
   static TableEnvironment environment(RuntimeExecutionMode mode, Map<String, String> settings) {
-    var env = StreamExecutionEnvironment.getExecutionEnvironment();
+    return environment(mode, settings, StreamExecutionEnvironment.getExecutionEnvironment());
+  }
+
+  static TableEnvironment environment(
+      RuntimeExecutionMode mode, Map<String, String> settings, StreamExecutionEnvironment env) {
     env.setRuntimeMode(mode);
     env.setParallelism(1);
     var table =

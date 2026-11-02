@@ -126,7 +126,7 @@ final class JvmGroupAggregateMatcher {
     return found[0];
   }
 
-  private static AggregateFunction<?, ?> userFunction(SqlAggFunction function) {
+  static AggregateFunction<?, ?> userFunction(SqlAggFunction function) {
     Object definition =
         function instanceof BridgingSqlAggFunction
             ? ((BridgingSqlAggFunction) function).getDefinition()

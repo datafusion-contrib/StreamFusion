@@ -27,18 +27,18 @@ import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import tech.streamfusion.arrow.ArrowConversion;
 
 class NativeJvmMiniBatchCheckpointTest {
   private static final RowType TYPE = RowType.of(new IntType(), new BigIntType());
 
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void ownedPendingRowsFlushAtBarriersWatermarksAndFinishWithReleasedTtl(boolean restore)
-      throws Exception {
-    var host = host();
-    var nativeHarness = nativeHarness();
+  @CsvSource({"false,false", "true,false", "false,true", "true,true"})
+  void ownedPendingRowsFlushAtBarriersWatermarksAndFinishWithReleasedTtl(
+      boolean restore, boolean twoPhase) throws Exception {
+    var host = host(twoPhase);
+    var nativeHarness = nativeHarness(twoPhase);
     try (var allocator = new RootAllocator()) {
       host.open();
       nativeHarness.open();
@@ -48,12 +48,18 @@ class NativeJvmMiniBatchCheckpointTest {
       for (int i = 0; i < clocks.length; i++) {
         host.setStateTtlProcessingTime(clocks[i]);
         nativeHarness.setStateTtlProcessingTime(clocks[i]);
-        var row = GenericRowData.of(i % 3 == 0 ? null : i % 2 + 1, (long) i + 1);
-        if (i == 7) row.setRowKind(RowKind.DELETE);
+        var row =
+            twoPhase
+                ? GenericRowData.of(
+                    i % 3 == 0 ? null : i % 2 + 1, i == 7 ? -8L : (long) i + 1, i == 7 ? -1L : 1L)
+                : GenericRowData.of(i % 3 == 0 ? null : i % 2 + 1, (long) i + 1);
+        if (i == 7 && !twoPhase) row.setRowKind(RowKind.DELETE);
         host.processElement(new StreamRecord<>(row));
         nativeHarness.processElement(
             new StreamRecord<>(
-                new ArrowBatch(RowDataArrowConverter.write(List.of(row), TYPE, allocator, true))));
+                new ArrowBatch(
+                    RowDataArrowConverter.write(
+                        List.of(row), inputType(twoPhase), allocator, true))));
         row.setField(1, 999999L);
         drain(host, nativeHarness, expected, actual);
         assertEquals(expected, actual, "after input " + i);
@@ -67,8 +73,8 @@ class NativeJvmMiniBatchCheckpointTest {
           if (restore) {
             host.close();
             nativeHarness.close();
-            host = host();
-            nativeHarness = nativeHarness();
+            host = host(twoPhase);
+            nativeHarness = nativeHarness(twoPhase);
             host.initializeState(hostState);
             nativeHarness.initializeState(nativeState);
             host.open();
@@ -130,16 +136,16 @@ class NativeJvmMiniBatchCheckpointTest {
         + row.getLong(1);
   }
 
-  private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> host()
-      throws Exception {
+  private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> host(
+      boolean twoPhase) throws Exception {
     var selector =
         KeySelectorUtil.getRowDataSelector(
             Thread.currentThread().getContextClassLoader(),
             new int[] {0},
-            InternalTypeInfo.of(TYPE));
+            InternalTypeInfo.of(inputType(twoPhase)));
     var h =
         new KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData>(
-            new KeyedMapBundleOperator<>(function(), new CountBundleTrigger<>(3)),
+            new KeyedMapBundleOperator<>(function(twoPhase), new CountBundleTrigger<>(3)),
             selector,
             selector.getProducedType());
     h.setup(new RowDataSerializer(TYPE));
@@ -147,31 +153,40 @@ class NativeJvmMiniBatchCheckpointTest {
   }
 
   private static KeyedOneInputStreamOperatorTestHarness<RowData, ArrowBatch, ArrowBatch>
-      nativeHarness() throws Exception {
+      nativeHarness(boolean twoPhase) throws Exception {
     var selector =
         KeySelectorUtil.getRowDataSelector(
             Thread.currentThread().getContextClassLoader(),
             new int[] {0},
-            InternalTypeInfo.of(TYPE));
+            InternalTypeInfo.of(inputType(twoPhase)));
     var operator =
         new NativeColumnarJvmGroupOperator(
+            inputType(twoPhase),
             TYPE,
-            TYPE,
-            function(),
+            function(twoPhase),
             new CountBundleTrigger<>(3),
             selector,
             7,
             LogicalTypeRoot.INTEGER,
             0,
             1000);
+    if (twoPhase) operator.withPartialTransport(true, inputType(true), null);
     var h =
         new KeyedOneInputStreamOperatorTestHarness<RowData, ArrowBatch, ArrowBatch>(
-            operator, new ArrowBatchRowKeySelector(TYPE, selector), selector.getProducedType());
+            operator,
+            new ArrowBatchRowKeySelector(inputType(twoPhase), selector),
+            selector.getProducedType());
     h.setup(new ArrowBatchSerializer());
     return h;
   }
 
-  private static MiniBatchGroupAggFunction function() {
+  private static RowType inputType(boolean twoPhase) {
+    return twoPhase ? RowType.of(new IntType(), new BigIntType(), new BigIntType()) : TYPE;
+  }
+
+  private static org.apache.flink.table.runtime.operators.bundle.MapBundleFunction<
+          RowData, ?, RowData, RowData>
+      function(boolean twoPhase) {
     var handler =
         new GeneratedAggsHandleFunction("MiniSum", "", new Object[0]) {
           @Override
@@ -186,6 +201,16 @@ class NativeJvmMiniBatchCheckpointTest {
             return (a, b) -> a.getLong(0) == b.getLong(0);
           }
         };
+    if (twoPhase) {
+      return new org.apache.flink.table.runtime.operators.aggregate.MiniBatchGlobalGroupAggFunction(
+          mergeHandler(1),
+          mergeHandler(0),
+          equaliser,
+          new LogicalType[] {new BigIntType(), new BigIntType()},
+          1,
+          true,
+          1000);
+    }
     return new MiniBatchGroupAggFunction(
         handler,
         equaliser,
@@ -194,5 +219,23 @@ class NativeJvmMiniBatchCheckpointTest {
         1,
         true,
         1000);
+  }
+
+  private static GeneratedAggsHandleFunction mergeHandler(int offset) {
+    return new GeneratedAggsHandleFunction("MergeSum" + offset, "", new Object[0]) {
+      @Override
+      public AggsHandleFunction newInstance(ClassLoader loader) {
+        return new NativeJvmAggregateTtlTest.SumHandler() {
+          @Override
+          public void merge(RowData other) {
+            var state = getAccumulators();
+            setAccumulators(
+                GenericRowData.of(
+                    state.getLong(0) + other.getLong(offset),
+                    state.getLong(1) + other.getLong(offset + 1)));
+          }
+        };
+      }
+    };
   }
 }

@@ -333,7 +333,7 @@ class FlinkJvmMiniBatchSqlHarnessTest {
     return environment(size, parallelism, metrics, "INT");
   }
 
-  private static TableEnvironment environment(
+  static TableEnvironment environment(
       int size, int parallelism, RecoveryExecutionMetrics metrics, String keyType) {
     var env = metrics.environment(new Configuration(), parallelism, 0);
     env.getConfig().enableObjectReuse();

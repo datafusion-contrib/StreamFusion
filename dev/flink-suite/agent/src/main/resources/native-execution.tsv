@@ -98,3 +98,11 @@ org.apache.flink.table.planner.runtime.stream.sql.UnnestITCase#testUnnestObjectA
 # OverloadedMax has no merge method; synchronous configurations retain one physical phase.
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator	enableAsyncState=false	NativeColumnarJvmGroupOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator	enableAsyncState=true	!GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG with verified collection elements, non-character scalar coresults and synchronous scalar single-phase mini-batching or ordinary execution without specialization, approximate or ordered calls
+
+# Merge-capable scalar JVM aggregates require consumed work in both local/global phases.
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy	aggMode=OFF&enableAsyncState=false	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy	aggMode=ON&enableAsyncState=false	NativeColumnarJvmLocalGroupOperator+NativeColumnarJvmGlobalGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy	enableAsyncState=true	!GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG with verified collection elements, non-character scalar coresults and synchronous scalar single-phase mini-batching or ordinary execution without specialization, approximate or ordered calls
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy	aggMode=OFF&enableAsyncState=false	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy	aggMode=ON&enableAsyncState=false	NativeColumnarJvmLocalGroupOperator+NativeColumnarJvmGlobalGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy	enableAsyncState=true	!GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG with verified collection elements, non-character scalar coresults and synchronous scalar single-phase mini-batching or ordinary execution without specialization, approximate or ordered calls

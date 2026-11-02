@@ -23,13 +23,14 @@ import tech.streamfusion.compat.FlinkStreamOperator;
 import tech.streamfusion.compat.JvmAggregateCompat;
 
 /** JVM accumulators use released Flink managed state behind Arrow batch boundaries. */
-public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<ArrowBatch>
+public class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch>,
         org.apache.flink.streaming.api.operators.BoundedOneInput {
   private final RowType inputType;
   private final RowType outputType;
   private final GroupAggFunction function;
-  private final org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction
+  private final org.apache.flink.table.runtime.operators.bundle.MapBundleFunction<
+          RowData, ?, RowData, RowData>
       miniBatchFunction;
   private final org.apache.flink.table.runtime.operators.bundle.trigger.BundleTrigger<RowData>
       miniBatchTrigger;
@@ -40,7 +41,10 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
   private final int keyColumn;
   private final long stateRetentionTime;
   private transient JvmAccumulatorCache accumulatorCache;
-  private transient JvmMiniBatchGroup miniBatch;
+  private transient JvmMiniBatchGroup<?> miniBatch;
+  private boolean keyed = true;
+  private JvmAggregatePartialCodec inputCodec;
+  private JvmAggregatePartialCodec outputCodec;
   private transient KeyedProcessFunction<RowData, RowData, RowData>.Context context;
   private transient Collector<RowData> collector;
   private transient VectorSchemaRoot result;
@@ -77,7 +81,9 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
   public NativeColumnarJvmGroupOperator(
       RowType inputType,
       RowType outputType,
-      org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction function,
+      org.apache.flink.table.runtime.operators.bundle.MapBundleFunction<
+              RowData, ?, RowData, RowData>
+          function,
       org.apache.flink.table.runtime.operators.bundle.trigger.BundleTrigger<RowData> trigger,
       RowDataKeySelector keySelector,
       int batchRows,
@@ -108,7 +114,8 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
       LogicalTypeRoot keyType,
       int keyColumn,
       long stateRetentionTime,
-      org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction
+      org.apache.flink.table.runtime.operators.bundle.MapBundleFunction<
+              RowData, ?, RowData, RowData>
           miniBatchFunction,
       org.apache.flink.table.runtime.operators.bundle.trigger.BundleTrigger<RowData>
           miniBatchTrigger) {
@@ -123,6 +130,13 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
     this.keyType = keyType;
     this.keyColumn = keyColumn;
     this.stateRetentionTime = stateRetentionTime;
+  }
+
+  protected final void withPartialTransport(
+      boolean keyed, RowType decodedInput, RowType encodedOutput) {
+    this.keyed = keyed;
+    this.inputCodec = decodedInput == null ? null : new JvmAggregatePartialCodec(decodedInput);
+    this.outputCodec = encodedOutput == null ? null : new JvmAggregatePartialCodec(encodedOutput);
   }
 
   @Override
@@ -165,7 +179,7 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
         };
     if (miniBatchFunction != null) {
       miniBatch =
-          new JvmMiniBatchGroup(
+          new JvmMiniBatchGroup<>(
               miniBatchFunction,
               miniBatchTrigger,
               new org.apache.flink.table.runtime.typeutils.RowDataSerializer(
@@ -255,12 +269,13 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
         var keyRow = keyReader == reader ? row : keyReader.read(index);
         row.setRowKind(
             inputKinds == null ? RowKind.INSERT : RowKind.fromByteValue(inputKinds.get(index)));
-        setCurrentKey(
+        RowData key =
             accumulatorCache == null
                 ? keySelector.getKey(keyRow)
-                : accumulatorCache.keyFor(keyRow, keyColumn, keySelector));
+                : accumulatorCache.keyFor(keyRow, keyColumn, keySelector);
+        if (keyed) setCurrentKey(key);
         if (miniBatch == null) function.processElement(row, context, collector);
-        else miniBatch.add((RowData) getCurrentKey(), row);
+        else miniBatch.add(key, inputCodec == null ? row : inputCodec.decode(row));
       }
       flush();
     } catch (Exception failure) {
@@ -309,6 +324,14 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
   }
 
   private void append(RowData row) {
+    if (outputCodec != null) {
+      try {
+        row = outputCodec.encode(row);
+      } catch (java.io.IOException failure) {
+        throw new org.apache.flink.util.FlinkRuntimeException(
+            "Serializing JVM aggregate partial", failure);
+      }
+    }
     if (result == null) {
       result = VectorSchemaRoot.create(outputSchema, NativeAllocator.SHARED);
       writer = ArrowConversion.createRowDataArrowWriter(result, outputType);
