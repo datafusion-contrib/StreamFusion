@@ -2208,7 +2208,10 @@ final class RexExpression {
     }
     int certifiedBuiltin = certifiedBuiltin(call);
     if (certifiedBuiltin != 0) return emitCertifiedBuiltin(call, certifiedBuiltin);
-    if (unnestOperand && isEpochMillisTimestamp(call)) {
+    if (isEpochMillisTimestamp(call)
+        && (unnestOperand
+            || call.getOperands().get(0) instanceof RexInputRef
+            || call.getOperands().get(0) instanceof RexLiteral)) {
       add(KIND_CALL, 173, 1);
       return emit(call.getOperands().get(0));
     }

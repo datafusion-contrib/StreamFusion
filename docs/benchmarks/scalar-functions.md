@@ -6995,3 +6995,76 @@ unchanged. A further **152 passing JVM invocations** (38 per release/JDK pair) e
 the final FLOOR/CEIL implementation together with existing calendar/interval controls;
 that source/result record accompanies the CEIL artifact. Broader calendar work remains in
 [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
+
+## BIGINT epoch millisecond conversion
+
+Direct/literal `TO_TIMESTAMP_LTZ(n,3)` with BIGINT input reuses the existing epoch-millisecond
+kernel in ordinary Calc. Released bounds are inclusive -62167219200000..253402300799999;
+NULL and out-of-range values stay NULL. The timestamp shares the immutable input value
+buffer, uses zero nanoseconds, and places combined input/range validity on its parent.
+A packed range mask plus wordwise validity intersection replaces per-row Option handling.
+Computed ordinary-Calc inputs, seconds and other numeric signatures retain existing routes.
+
+The initial unchanged kernel's nullable Flink 1.18 IS NULL pilot loses: stock 3.160 versus
+native 4.490 ns/row. CPU samples identify conversion, Vec growth/realloc and Vec<bool>
+validity copying. Sharing the millisecond buffer reduces a 1,024-row probe from 55 allocation
+requests/28,575 requested bytes to 29/6,047, but one isolated pilot still measures 0.990x
+stock/native. The final packed-mask pass uses 31 requests/6,231 bytes and measures 1.269
+ns/row in that final pilot. These are request counts, not peak memory or bytes copied.
+The BOOLEAN output itself owns a new bitmap; timestamp buffer sharing is independently
+asserted for sliced inputs after input owners are dropped.
+
+The [result record](results/epoch-millis-2026-11-02.json) preserves the failed initial pilot,
+first-pass matrix/jobs, allocation/profile observations and final qualification;
+[4,000 final raw trials](results/epoch-millis-2026-11-02.csv.gz) retain all unfavorable controls.
+The release/default-feature prepared executable and both core DSOs use **System**, verified
+against retained Mach-O allocator symbols; these are not mimalloc-specific measurements.
+The actual preceding encoder/runtime at `871f269e` is preserved separately, with its own
+DSO/executable hashes; both sides use the same expanded logical BIGINT corpus. Inputs include
+signed extrema, both exact conversion boundaries and adjacent invalid values, cutover and
+modern dates, NULL/NOT NULL and GenericRowData/BinaryRowData/Arrow. Apple M4 Pro, JDK 17.0.12,
+one thread, 16 warmups/nine measurements and 131,072 rows/trial follow the prepared Rust-side
+method: production operation and output consumption are timed inside Rust; initial JNI/import/
+export and perimeter transposes are excluded. Intrinsic callback costs remain included in
+previous controls. Candidate expressions require empty evaluators and every checksum agrees.
+Consumers are YEAR/MONTH/SECOND comparisons and IS NULL, each planned independently.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 16 | 1.343-3.910x | 5.438-42.181x | 0 |
+| 1.18.1 | tiny control | 4 | 0.078-0.117x | 9.571-23.935x | 4 |
+| 2.2.1 | bulk | 16 | 1.405-5.014x | 5.860-40.166x | 0 |
+| 2.2.1 | tiny control | 4 | 0.111-0.124x | 9.757-24.940x | 4 |
+
+All 32 bulk medians beat stock and previous. All eight 16-row controls remain slower than
+stock. Eight complete million-row source/blackhole configurations retain startup, JNI and
+both transposes, with two warmups/five measurements and independent stock controls. Seconds
+are median (min-max).
+
+| Flink / consumer | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / year | 0.172933 (0.160338-0.174794) | 0.185525 (0.180171-0.207699) | 0.173175 (0.163452-0.180049) | 0.208390 (0.206822-0.222593) |
+| 1.18.1 / month | 0.162458 (0.157122-0.182099) | 0.186845 (0.182849-0.190759) | 0.166398 (0.163162-0.172407) | 0.212426 (0.204017-0.217323) |
+| 1.18.1 / second | 0.161529 (0.157477-0.173762) | 0.176890 (0.173200-0.186999) | 0.166245 (0.163281-0.172074) | 0.224440 (0.221124-0.231372) |
+| 1.18.1 / null | 0.185503 (0.176530-0.189883) | 0.195437 (0.187705-0.200961) | 0.180688 (0.175215-0.185593) | 0.227803 (0.224631-0.240018) |
+| 2.2.1 / year | 0.178724 (0.165996-0.183075) | 0.182469 (0.181150-0.194421) | 0.165492 (0.157553-0.174396) | 0.221700 (0.213897-0.251977) |
+| 2.2.1 / month | 0.171128 (0.163341-0.172744) | 0.177046 (0.174130-0.185138) | 0.171559 (0.166280-0.172917) | 0.216314 (0.211774-0.223302) |
+| 2.2.1 / second | 0.161398 (0.159844-0.170333) | 0.181007 (0.176693-0.183741) | 0.166190 (0.159351-0.171686) | 0.208888 (0.204120-0.223793) |
+| 2.2.1 / null | 0.192193 (0.185861-0.195798) | 0.199313 (0.196734-0.209371) | 0.186166 (0.180513-0.191239) | 0.231576 (0.230858-0.242957) |
+
+Native/stock elapsed ratios span **1.021-1.150**: every measured complete job still loses
+to stock. Native/previous ratios span **0.788-0.890**. Bulk function work improves; these
+short complete jobs do not establish whole-job acceleration.
+
+All **148 focused JVM invocations** pass across released Flink 1.18.1/2.2.1 and JDK 11/17,
+compiled for Java release 11. Complete 5,003-row maps verify values, types, NULLs, unique
+IDs/cardinality, both nullabilities, four zones, calendar consumers, typed conditional selection,
+all-filtered batches and explicit generated controls for seconds/computed inputs. Admitted
+paths require consumed NativeCalc work and empty evaluators. Existing UNNEST temporal
+bounds, zones and failure contracts remain covered. All **888 Rust core tests** pass without
+default features, zero ignored, including sliced buffer ownership, parent/child NULL contracts,
+scalars and empty arrays. The unchanged released `TemporalTypesTest` Shanghai, UTC, boundary
+and invalid TO_TIMESTAMP_LTZ methods pass in **16 stock-oracle invocations**, separately
+from native-route witnesses. All 28 fixture smokes pass, including old/new original-corpus
+checksum controls. Broader conversions remain in
+[#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).

@@ -1285,3 +1285,25 @@ Its GenericRowData stock/native range is 0.571–1.223x. The complete job takes 
 time than the callback but 11.6% more than stock. The
 [suffix benchmark record](../benchmarks/scalar-functions.md#binary-endswith) retains every
 trial and the slower controls; neither comparison is a universal complete-job speedup.
+
+## Share epoch millisecond buffers and pack validity
+
+Verified BIGINT epoch-millisecond conversion retains the input's immutable Arrow value buffer
+as the timestamp's non-null millisecond component. Only zero nanoseconds and the parent's
+combined input/range validity are materialized. Packed range bits and wordwise NULL
+intersection avoid per-row Option handling and repeated value-vector growth/copies. Slices
+retain their aligned value ranges; the output owns its buffer reference after inputs are dropped.
+This follows Comet's immutable Arrow-buffer ownership pattern while retaining Flink's own
+inclusive conversion bounds and NULL semantics, rather than Spark's timestamp conversion rules.
+JNI and the existing two-component timestamp contract do not change.
+
+A 1,024-row IS NULL probe reduces 55 allocation requests/28,575 requested bytes to 31/6,231.
+The initial nullable Flink 1.18 pilot takes 4.490 native versus 3.160 stock ns/row; after
+buffer sharing and packed validity the final native pilot takes 1.269 ns/row. Allocation
+counts alone were insufficient: an intermediate 29-request version retained per-row NULL
+checks and one isolated pilot still lost to stock. Final release/System qualification has
+all 32 bulk medians faster than stock (1.343-5.014x) and actual previous (5.438-42.181x).
+All eight tiny controls remain slower than stock, and complete million-row jobs retain
+native/stock elapsed ratios 1.021-1.150 with both transposes. Full provenance, variability,
+failed/intermediate trials and measured limits are on the
+[scalar benchmark page](../benchmarks/scalar-functions.md#bigint-epoch-millisecond-conversion).

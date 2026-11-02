@@ -13,7 +13,7 @@ unsupported `MATCH_RECOGNIZE` operator.
 | `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. DATE/plain-TIMESTAMP calendar fields and HOUR/MINUTE/SECOND over DATE, plain TIMESTAMP and TIME execute in Rust, preserving Java signed arithmetic. Direct LTZ extraction uses the planning JDK's serialized fixed/finite offset history; recurring-DST zones retain Flink. Interval fields and unverified wrappers remain generated. |
 | `TO_DATE(text)`, `TO_DATE(text, format)` | The one-argument parser stays in Rust; formatted parsing uses Flink. Dynamic formats, NULL behavior and invalid-input failures follow Flink. |
 | `TO_TIMESTAMP(text[, format])` | Flink parsing, including dynamic formats and full-range timestamp results. |
-| `TO_TIMESTAMP_LTZ` | Flink's numeric and string overloads, including format and explicit-zone arguments. Flink validates numeric precision (0 or 3). |
+| `TO_TIMESTAMP_LTZ` | Direct/literal BIGINT epoch milliseconds with literal precision 3 execute in Rust. Ordinary Calc computed inputs, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
 | `DATE_FORMAT`, `UNIX_TIMESTAMP(text[, format])`, `CONVERT_TZ` | Flink evaluation supports dynamic patterns and zones. The existing literal numeric-pattern DATE_FORMAT fast path for plain timestamps remains in Rust. |
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
@@ -44,6 +44,28 @@ The [correctness record](../benchmarks/results/date-clock-extraction-2026-11-02.
 retains twelve failing before-fix assertions and twelve passing final SQL invocations across
 Flink 1.18.1/2.2.1 and JDK 11/17, plus the unchanged released extraction oracle and 886
 passing Rust core tests. This repairs existing native results; it is not an acceleration claim.
+
+## Native BIGINT epoch milliseconds
+
+`TO_TIMESTAMP_LTZ(n,3)` for a direct BIGINT column or literal reuses the existing epoch
+millisecond kernel in ordinary Calc expressions. The conversion does not depend on the
+session zone. Both supported released Flink lines return NULL outside the inclusive physical
+millisecond range `[-62167219200000,253402300799999]`; the kernel preserves these exact
+bounds, NULL inputs and declared TIMESTAMP_LTZ(3) output. It does not reinterpret them as
+an assumed year-1-to-year-9999 proleptic range or wrap an invalid long into a valid timestamp.
+
+The two-component Arrow timestamp shares the input's immutable millisecond buffer, creates
+zero nanoseconds and keeps combined input/range validity on the parent. Non-null component
+children remain consistent with the existing schema, including sliced inputs and empty
+batches. No input bytes are modified and the output owns its retained Arrow buffer reference.
+This removes temporary value vectors and their copies without changing JNI or timestamp
+transport. Computed ordinary-Calc operands, seconds, other numeric types and runtime/other
+precisions keep their existing routes. No production switch is added.
+
+The [qualification](../benchmarks/scalar-functions.md#bigint-epoch-millisecond-conversion)
+retains stock/actual-previous/native measurements, the initial slower pilot, profiling and
+allocation evidence, and complete jobs with both transposes. Broader conversion work stays
+in [#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
 
 ## Native UTC LTZ calendar rounding
 

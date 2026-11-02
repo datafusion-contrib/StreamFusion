@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
-use arrow::array::{Array, ArrayRef, Date32Array, Int64Array, Time32MillisecondArray};
+use arrow::array::{
+    Array, ArrayRef, Date32Array, Int32Array, Int64Array, StructArray, Time32MillisecondArray,
+};
+use arrow::buffer::{BooleanBuffer, NullBuffer};
 use arrow::datatypes::{DataType, Date32Type, Time32MillisecondType, TimeUnit};
 use datafusion::common::{cast::as_primitive_array, exec_err, Result, ScalarValue};
 use datafusion::logical_expr::{
     ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
 };
-use streamfusion_bridge::timestamp::{timestamp_array, timestamp_type, TimestampValue};
+use streamfusion_bridge::timestamp::timestamp_type;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub(super) enum Operation {
@@ -89,11 +92,23 @@ impl ScalarUDFImpl for UnnestTemporal {
         let output: ArrayRef = match self.operation {
             Operation::EpochMillis => {
                 let millis = as_primitive_array::<arrow::datatypes::Int64Type>(&input)?;
-                Arc::new(timestamp_array(millis.iter().map(|value| {
-                    value
-                        .filter(|value| (-62_167_219_200_000..=253_402_300_799_999).contains(value))
-                        .map(TimestampValue::from_millis)
-                })))
+                let range = NullBuffer::new(BooleanBuffer::collect_bool(millis.len(), |row| {
+                    (-62_167_219_200_000..=253_402_300_799_999).contains(&millis.value(row))
+                }));
+                let nulls = NullBuffer::union(millis.nulls(), Some(&range))
+                    .filter(|nulls| nulls.null_count() != 0);
+                let DataType::Struct(fields) = timestamp_type() else {
+                    unreachable!()
+                };
+                // The parent owns row validity; its non-null component shares immutable values.
+                Arc::new(StructArray::new(
+                    fields,
+                    vec![
+                        Arc::new(Int64Array::new(millis.values().clone(), None)),
+                        Arc::new(Int32Array::from(vec![0; millis.len()])),
+                    ],
+                    nulls,
+                ))
             }
             Operation::UtcDate => {
                 let millis: Int64Array = super::map_timestamp_millis(&input, |value| value)?;
@@ -180,7 +195,7 @@ mod tests {
     use arrow::array::{Array, Date32Array, Time32MillisecondArray};
     use arrow::datatypes::Field;
     use datafusion::config::ConfigOptions;
-    use streamfusion_bridge::timestamp::TimestampColumn;
+    use streamfusion_bridge::timestamp::{timestamp_array, TimestampColumn, TimestampValue};
 
     fn evaluate(operation: Operation, args: Vec<ColumnarValue>, rows: usize) -> ArrayRef {
         let function = function(operation);
@@ -236,6 +251,71 @@ mod tests {
                 );
             }
         }
+        output.to_data().validate_full().unwrap();
+    }
+
+    #[test]
+    fn epoch_millis_share_sliced_values_and_keep_nulls_on_the_parent() {
+        let input =
+            Int64Array::from(vec![Some(7), None, Some(-1), Some(i64::MAX), Some(1)]).slice(1, 4);
+        let pointer = input.values().as_ptr();
+        let output = evaluate(
+            Operation::EpochMillis,
+            vec![ColumnarValue::Array(Arc::new(input))],
+            4,
+        );
+        let components = output.as_any().downcast_ref::<StructArray>().unwrap();
+        let millis = components
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        assert_eq!(pointer, millis.values().as_ptr());
+        assert_eq!(millis.null_count(), 0);
+        assert_eq!(components.column(1).null_count(), 0);
+        let timestamp = TimestampColumn::try_new(output.as_ref()).unwrap();
+        assert!(timestamp.is_null(0));
+        assert_eq!(timestamp.value(1).unwrap(), TimestampValue::from_millis(-1));
+        assert!(timestamp.is_null(2));
+        assert_eq!(timestamp.value(3).unwrap(), TimestampValue::from_millis(1));
+        output.to_data().validate_full().unwrap();
+    }
+
+    #[test]
+    fn epoch_millis_keep_scalar_and_empty_results() {
+        for value in [
+            None,
+            Some(-62_167_219_200_001),
+            Some(-62_167_219_200_000),
+            Some(-1),
+            Some(253_402_300_799_999),
+            Some(253_402_300_800_000),
+        ] {
+            let output = evaluate(
+                Operation::EpochMillis,
+                vec![ColumnarValue::Scalar(ScalarValue::Int64(value))],
+                1,
+            );
+            let timestamp = TimestampColumn::try_new(output.as_ref()).unwrap();
+            let expected =
+                value.filter(|value| (-62_167_219_200_000..=253_402_300_799_999).contains(value));
+            assert_eq!(timestamp.is_null(0), expected.is_none());
+            if let Some(value) = expected {
+                assert_eq!(
+                    timestamp.value(0).unwrap(),
+                    TimestampValue::from_millis(value)
+                );
+            }
+            output.to_data().validate_full().unwrap();
+        }
+        let output = evaluate(
+            Operation::EpochMillis,
+            vec![ColumnarValue::Array(Arc::new(Int64Array::from(
+                Vec::<i64>::new(),
+            )))],
+            0,
+        );
+        assert_eq!(output.len(), 0);
         output.to_data().validate_full().unwrap();
     }
 
