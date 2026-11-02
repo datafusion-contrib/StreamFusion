@@ -569,9 +569,9 @@ cleanup clocks without trying to schedule on an already stopped processing-time 
 
 This qualifies representative operator conversion using BIGINT keys/payloads and compact time
 fixtures. Automatic temporal compiled-plan binding and released upstream restore programs are
-qualified below. Isolated complete-job switches, wider schemas, rescaling and the full
-failure/version/connector matrix
-remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+qualified below, followed by representative complete-job switches and rescaling. Wider schemas,
+additional rescale shapes and the full failure/version/connector matrix remain open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Every one of the 15 operator families still has partial coverage. Benchmarking remains deferred.
 
 
@@ -595,6 +595,29 @@ temporal function. Each native program imports four retained rows and consumes f
 the actual native temporal operator. Derived keys are scalar at the temporal state boundary.
 Eighty-eight canonical execution-witness controls and 48 independent summary/audit controls pass.
 Explicit program contracts reject unknown fixtures and unrelated/zero-input native work. The
-stock test runtime excludes StreamFusion. These passes qualify this compiled-plan path; isolated
-complete-job engine-switch/rescale/failure matrices and ordinary-SQL identity work remain open
+stock test runtime excludes StreamFusion. Representative complete-job switches and rescaling
+are qualified below; wider failure/connector matrices and ordinary-SQL identity work remain open
 in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+## Complete temporal job handoffs
+
+Twenty-six isolated complete-job scenarios pass on released Flink 2.2.1: 16 continued-input
+round trips across INNER/LEFT, both native stores, both engine orders and residual predicates;
+four LEFT no-input re-export round trips; two INNER native checkpoint/cancel/restore handoffs;
+and four LEFT rescale round trips. Rescale distributes 64 actual temporal keys through 1 → 3 → 2
+tasks at maximum parallelism 128 while the two custom sources and transactional sink remain at
+one task. Every advancing native leg requires actual temporal input; each claimed rescale task
+must process input. The portable stock plan stays unchanged and stock processes exclude
+StreamFusion. All canonical metadata artifacts, including no-input returns, are checked for
+StreamFusion class names. External committed rows match both an uninterrupted stock run and an
+independent version-history lookup oracle.
+
+These cases retain BIGINT payloads, TIMESTAMP_LTZ(3), both transposes, duplicate/NULL probe keys,
+version history, residual rejection and unmatched LEFT output. Watermarks keep probes pending
+until final drain so every handoff must preserve their state. They do not qualify intermediate
+temporal-output commit failures, full-job TTL expiry, sink-writer rescaling, wider schemas or
+cross-version handoffs. The clean combined selection passes 240 checks with zero failures,
+errors or skips: these 26 jobs, four interval job controls and 210 temporal/stock/planner controls.
+Component and upstream cohorts overlap this selection and are not added cumulatively. Every
+operator family remains partial under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

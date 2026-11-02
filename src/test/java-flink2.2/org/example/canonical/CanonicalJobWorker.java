@@ -509,10 +509,10 @@ public final class CanonicalJobWorker {
       String parallelism)
       throws IOException {
     if (Files.exists(root.resolve("rescale-materializer"))) parallelism = "";
+    Path columnsFile = root.resolve(name + "-columns.sql");
+    if (!Files.exists(columnsFile)) columnsFile = root.resolve("input-columns.sql");
     String columns =
-        Files.exists(root.resolve("input-columns.sql"))
-            ? Files.readString(root.resolve("input-columns.sql"))
-            : "k BIGINT, v BIGINT";
+        Files.exists(columnsFile) ? Files.readString(columnsFile) : "k BIGINT, v BIGINT";
     table.executeSql(
         "CREATE TABLE "
             + name

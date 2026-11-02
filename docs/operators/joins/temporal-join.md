@@ -127,6 +127,29 @@ identity/serializer and resolved maximum parallelism are retained automatically.
 planner/boundary controls and 91 neighboring controls pass. Unsupported backend/exchange modes
 and the legacy processing-time function keep their stock owner.
 
-Isolated complete-job switches and the broader schema/rescale/failure/version matrix remain
-pending under
+Representative isolated complete-job switches and rescaling are qualified below. The broader
+schema/failure/version/connector matrix and ordinary-SQL identities remain pending under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+## Complete-job handoff matrix
+
+Twenty-six isolated complete-job scenarios pass on released Flink 2.2.1: 16 continued-input
+round trips across INNER/LEFT, both native stores, both engine orders and residual predicates;
+four LEFT no-input re-export round trips; two INNER native checkpoint/cancel/restore handoffs;
+and four LEFT rescale round trips. Rescale distributes 64 actual temporal keys through 1 → 3 → 2
+tasks at maximum parallelism 128 while the two custom sources and transactional sink remain at
+one task. Every advancing native leg requires actual temporal input; each claimed rescale task
+must process input. The portable stock plan stays unchanged and stock processes exclude
+StreamFusion. All canonical metadata artifacts, including no-input returns, are checked for
+StreamFusion class names. External committed rows match both an uninterrupted stock run and an
+independent version-history lookup oracle.
+
+These cases retain BIGINT payloads, TIMESTAMP_LTZ(3), both transposes, duplicate/NULL probe keys,
+version history, residual rejection and unmatched LEFT output. Watermarks keep probes pending
+until final drain so every handoff must preserve their state. They do not qualify intermediate
+temporal-output commit failures, full-job TTL expiry, sink-writer rescaling, wider schemas or
+cross-version handoffs. The clean combined selection passes 240 checks with zero failures,
+errors or skips: these 26 jobs, four interval job controls and 210 temporal/stock/planner controls.
+Component and upstream cohorts overlap this selection and are not added cumulatively. Every
+operator family remains partial under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

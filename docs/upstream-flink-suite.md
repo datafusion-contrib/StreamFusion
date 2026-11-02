@@ -1549,3 +1549,13 @@ scalar keys before the temporal boundary; the legacy function fixture uses rowti
 canonical witness controls and 48 summary controls pass. This is upstream compiled-plan restore
 coverage, not the full isolated engine-switch/connector/failure matrix of
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+The separate temporal integration matrix passes 26 isolated complete-job scenarios and 240
+combined checks: both engine orders and native stores, INNER/LEFT, residual predicates, no-input
+re-export, native checkpoint recovery and 64-key rescaling through 1 → 3 → 2 tasks. It retains
+two custom sources, a transactional sink, both transposes and stock classpath exclusion. Pending
+probes/version history survive every cut; final committed output also matches an independent
+version-history oracle. These StreamFusion-owned fixtures preserve all probes until final drain
+and do not qualify intermediate temporal-output commit failures. They complement the unchanged
+released upstream programs; they do not replace their assertions or complete the broader #569
+connector/failure/version/ordinary-SQL matrix. Benchmarking remains deferred.

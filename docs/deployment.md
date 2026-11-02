@@ -321,7 +321,8 @@ before packaging, and the unchanged artifact checker verifies ownership in the r
 ## Portable compiled plans and canonical handoff
 
 The unmerged [#569 work](https://github.com/datafusion-contrib/StreamFusion/issues/569) binds
-qualified Flink 2.2 event-time window and interval joins automatically when executing a stock compiled SQL plan.
+qualified Flink 2.2 window, interval and event-time temporal joins automatically when executing a
+stock compiled SQL plan.
 Retain the same stock JSON artifact, normal connector dependencies and user code on both engines.
 Use Flink's canonical savepoint format to stop the current execution, then restore that savepoint
 with the same artifact on the other engine. With StreamFusion installed and enabled, loading the
@@ -341,3 +342,12 @@ adapter. Released restore fixtures pass with actual imported and continued nativ
 checkpoint recovery and 1 → 3 → 2 rescaling. Unrestricted SQL identities, additional types/versions,
 failure scenarios and connector protocols retain their separate #569 qualification; keep the
 exact tested scope when choosing a handoff plan.
+
+The [temporal workflow](operators/joins/temporal-join.md#canonical-interchange-partial) also binds
+stock compiled plans automatically. Twenty-six complete-job round trips qualify INNER/LEFT
+continuation, residual predicates, immediate re-export, native checkpoint recovery and 64-key
+rescaling through 1 → 3 → 2 tasks at maximum parallelism 128, on both native stores and with both
+engine orders. The custom sources and transactional sink stay at one task. Probes remain pending
+until final drain; intermediate temporal-output commit failures, full-job TTL expiry and wider
+schema/version/connector guarantees remain unqualified. Keep the same released Flink version,
+portable plan and normal user dependencies on both engines; stock needs no StreamFusion JARs.
