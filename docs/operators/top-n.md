@@ -461,3 +461,10 @@ before consolidating clones, then rebuilds batch sharing. Different first-N limi
 separate state owners. All 32 cross-engine job scenarios pass across both submission forms/stores/orders, including
 no-input re-export, rescaling and different-limit controls; the combined cohort passes 124 checks. Older native graph upgrades and other shared stateful rank
 variants remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+First-N configuration equivalence is inspected in the Flink 2.2 lowering layer; the shared
+node compares only its rank/key definition and remains compilable on Flink 1.18. The API
+placement correction passes 100 current 2.2 controls (including eight ordinary process jobs)
+and 31 shared 1.18 processing/checkpoint controls. These cohorts overlap earlier runs and
+do not establish Flink 1.18 canonical interchange.

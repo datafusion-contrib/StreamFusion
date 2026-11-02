@@ -419,7 +419,7 @@ final class StockCompiledPlanLowering {
       if (owner == null) continue;
       if (node.getClass() != owner.getClass()
           || node instanceof NativeFirstNExecNode
-              && !((NativeFirstNExecNode) node).sameStateDefinition((NativeFirstNExecNode) owner)
+              && !sameFirstNDefinition((NativeFirstNExecNode) node, (NativeFirstNExecNode) owner)
           || !node.getDescription().equals(owner.getDescription())
           || !node.getOutputType().equals(owner.getOutputType())
           || !node.getInputEdges()
@@ -432,6 +432,12 @@ final class StockCompiledPlanLowering {
       copies.put(node, owner);
     }
     return copies;
+  }
+
+  private static boolean sameFirstNDefinition(
+      NativeFirstNExecNode node, NativeFirstNExecNode owner) {
+    return node.sameStateDefinition(owner)
+        && node.getPersistedConfig().toMap().equals(owner.getPersistedConfig().toMap());
   }
 
   private static ExecNode<?> ordinaryInputRole(

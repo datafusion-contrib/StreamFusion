@@ -36,8 +36,7 @@ public class NativeFirstNExecNode extends ExecNodeBase<ArrowBatch>
     return limit == other.limit
         && outputRank == other.outputRank
         && Arrays.equals(partitions, other.partitions)
-        && Arrays.equals(precisions, other.precisions)
-        && getPersistedConfig().toMap().equals(other.getPersistedConfig().toMap());
+        && Arrays.equals(precisions, other.precisions);
   }
 
   public NativeFirstNExecNode(

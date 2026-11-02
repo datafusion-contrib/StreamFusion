@@ -892,3 +892,10 @@ after the barrier; a partial transpose may retain downstream join input until th
 The combined planner/job cohort passes all 124 checks. These
 new-job controls do not qualify upgrades from older native graphs with multiple real owners.
 Other duplicated stateful roles remain part of [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+First-N configuration equivalence is inspected in the Flink 2.2 lowering layer; the shared
+node compares only its rank/key definition and remains compilable on Flink 1.18. The API
+placement correction passes 100 current 2.2 controls (including eight ordinary process jobs)
+and 31 shared 1.18 processing/checkpoint controls. These cohorts overlap earlier runs and
+do not establish Flink 1.18 canonical interchange.
