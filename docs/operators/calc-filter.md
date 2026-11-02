@@ -1373,6 +1373,17 @@ cast, with the rest of the expression tree still evaluated natively around it:
 - **FLOAT/DOUBLE ↔ string**, **string → DECIMAL**, and **DECIMAL → bounded VARCHAR/CHAR
   or from a computed DECIMAL operand**. Direct DECIMAL inputs/literals to unbounded STRING
   use the native formatter described above for both CAST and TRY_CAST.
+  For CAST of an unverified NOT NULL computed DECIMAL, the complete enclosing projection or
+  condition stays in one generated evaluator. This retains Flink's separate value and NULL flag
+  until the original consumer observes them. For example, overflowing `DECIMAL(38,18)` multiplication
+  followed by a final `CAST(d*d AS STRING)` writes an empty string, while the same cast in a
+  WHERE comparison still carries a NULL flag. A nullable source or TRY_CAST returns SQL NULL.
+  Modern bounded CHAR/VARCHAR casts also retain the empty default on overflow, without padding
+  it. A nested CONCAT can instead produce an actual NULL and still reaches the sink's ERROR/DROP
+  constraint enforcer. These are generated Flink behaviors, not a global NULL-to-empty rewrite.
+  This correctness path uses the existing columnar JVM bridge; unrelated projections and verified
+  unary expressions keep their existing execution routes. It does not add JVM-free arithmetic formatting coverage
+  or make a performance claim. See [the overflow reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/577).
 - **Narrowing a `VARCHAR`** (truncation).
 - **String to `CHAR(n)`** (space-padding).
 - **`→ DECIMAL` from a `float`/`double`.**
@@ -1385,6 +1396,35 @@ upcall makes the result byte-identical to Flink by construction instead of by re
 the cost of one JNI round-trip per cast column rather than per row family. (The Kafka text sinks
 already carry a probed native port of the legacy `Double.toString` spelling; moving the
 float-to-string `CAST` onto that port instead of the upcall is a separate, tracked follow-up.)
+
+NOT NULL BOOLEAN, integer, approximate numeric and character projections containing
+NOT NULL DECIMAL arithmetic also keep their complete generated expression and original
+projection write rule. Arithmetic overflow can set a runtime NULL flag even when the
+resolved input is NOT NULL. Released Flink can then write a separate result term, such as
+`false` for a comparison, `-1` for a DECIMAL-to-INT/BIGINT cast, or an empty string for
+a comparison cast to STRING. A split Arrow evaluation instead exposes NULL and incorrectly
+fails or drops the row at the sink constraint enforcer. This includes enclosing
+comparison/NOT/logical/CASE and cast consumers, under modern and legacy cast modes.
+Nullable projections and WHERE conditions keep their NULL flags, and selected
+division-by-zero still fails. Direct overflowing DECIMAL outputs still reach ERROR/DROP
+enforcement; defaults are not substituted globally. Only affected projections use this
+correctness path. No option or acceleration claim is introduced. See
+[the projection-default reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/581).
+
+The same projection rule covers explicit numeric-to-DECIMAL CASTs that can overflow,
+including BIGINT and DECIMAL precision reduction. Reducing scale can also round into an
+extra integer digit: `CAST(9.99 AS DECIMAL(1,0))` overflows even though both types have
+one integer digit. The affected enclosing basic-type projection stays generated through
+its final write; `NOT(CAST(x AS DECIMAL(1,0))>0)` can therefore write `false` on overflow,
+just as the comparison itself does. Exact numeric casts with enough integer digits and
+rounding headroom retain their previous native route. Nullable results, WHERE consumers,
+TRY_CAST and direct DECIMAL sink enforcement retain their separate NULL contracts.
+Over exact numeric casts, retained NULL and truth tests consume the NULL flag themselves
+and keep their native route; a truth test rewritten by Flink into an ordinary comparison
+still uses that comparison's generated projection contract.
+Unrelated projections remain separate. This repairs
+[explicit CAST projection defaults](https://github.com/datafusion-contrib/StreamFusion/issues/582)
+through the existing evaluator and makes no new acceleration claim.
 
 Host cast executors compile under Flink's cast-rule library loader, restoring the calling
 thread's context loader afterward. Flink's shared Janino expression cache does not include a
