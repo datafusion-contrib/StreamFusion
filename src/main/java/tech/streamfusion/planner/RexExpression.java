@@ -1428,6 +1428,15 @@ final class RexExpression {
    * node.
    */
   private boolean emit(RexNode node) {
+    if (node instanceof RexCall
+        && (node == projectionRoot || projectionRoot == null && kinds.size() == conditionRoot)
+        && (requiresDecimalCastFusion(node)
+            || node == projectionRoot && requiresDecimalProjectionDefaults(node))) {
+      if (requiresDecimalCastFusion(node) && legacyCastBehaviour == null) {
+        return reject("Computed DECIMAL CAST requires the configured cast behavior");
+      }
+      return emitHostExpression((RexCall) node, true);
+    }
     if (node instanceof RexInputRef) {
       add(KIND_INPUT_REF, ((RexInputRef) node).getIndex(), 0);
       return true;
@@ -4875,12 +4884,95 @@ final class RexExpression {
     return emitHostExpression(call, false);
   }
 
+  private static boolean requiresDecimalCastFusion(RexNode node) {
+    if (node instanceof RexFieldAccess) {
+      return requiresDecimalCastFusion(((RexFieldAccess) node).getReferenceExpr());
+    }
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    if (call.getKind() == SqlKind.CAST
+        && call.getOperands().size() == 1
+        && SqlTypeFamily.CHARACTER.contains(call.getType())) {
+      RexNode operand = call.getOperands().get(0);
+      if (operand.getType().getSqlTypeName() == SqlTypeName.DECIMAL
+          && !operand.getType().isNullable()
+          && !nativeDecimalUnaryOperand(operand,
+              org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS)
+          && !nativeDecimalUnaryOperand(operand,
+              org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS)) {
+        return true;
+      }
+    }
+    return call.getOperands().stream().anyMatch(RexExpression::requiresDecimalCastFusion);
+  }
+
+  private static boolean requiresDecimalProjectionDefaults(RexNode node) {
+    return !node.getType().isNullable()
+        && (node.getType().getSqlTypeName() == SqlTypeName.BOOLEAN
+            || SqlTypeFamily.INTEGER.contains(node.getType())
+            || SqlTypeFamily.APPROXIMATE_NUMERIC.contains(node.getType())
+            || SqlTypeFamily.CHARACTER.contains(node.getType()))
+        && (containsNonNullableDecimalArithmetic(node)
+            || containsNonNullableOverflowingDecimalCast(node));
+  }
+
+  private static boolean containsNonNullableDecimalArithmetic(RexNode node) {
+    if (node instanceof RexFieldAccess) {
+      return containsNonNullableDecimalArithmetic(((RexFieldAccess) node).getReferenceExpr());
+    }
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    return isDecimalArithmetic(call) && !call.getType().isNullable()
+        || call.getOperands().stream().anyMatch(RexExpression::containsNonNullableDecimalArithmetic);
+  }
+
+  private static boolean containsNonNullableOverflowingDecimalCast(RexNode node) {
+    if (node instanceof RexFieldAccess) {
+      return containsNonNullableOverflowingDecimalCast(((RexFieldAccess) node).getReferenceExpr());
+    }
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    switch (call.getKind()) {
+      case IS_NULL:
+      case IS_NOT_NULL:
+      case IS_TRUE:
+      case IS_NOT_TRUE:
+      case IS_FALSE:
+      case IS_NOT_FALSE:
+        // These consumers resolve the NULL flag rather than leaving a default result term.
+        return false;
+      default:
+        return !call.getType().isNullable() && decimalCastCanOverflow(call)
+            || call.getOperands().stream()
+                .anyMatch(RexExpression::containsNonNullableOverflowingDecimalCast);
+    }
+  }
+
+  private static boolean decimalCastCanOverflow(RexCall call) {
+    if (call.getKind() != SqlKind.CAST
+        || call.getType().getSqlTypeName() != SqlTypeName.DECIMAL
+        || call.getOperands().size() != 1) return false;
+    RelDataType input = call.getOperands().get(0).getType();
+    if (SqlTypeFamily.APPROXIMATE_NUMERIC.contains(input)) return true;
+    boolean decimal = input.getSqlTypeName() == SqlTypeName.DECIMAL;
+    if (!decimal && !SqlTypeFamily.INTEGER.contains(input)) return false;
+    int inputScale = decimal ? input.getScale() : 0;
+    int inputDigits = input.getPrecision() - inputScale;
+    int outputDigits = call.getType().getPrecision() - call.getType().getScale();
+    // Reducing scale can round into another integer digit even when the integer widths match.
+    return outputDigits < inputDigits
+        || outputDigits == inputDigits && call.getType().getScale() < inputScale;
+  }
+
   private boolean emitHostExpression(RexCall call, boolean fuseConsumers) {
     return emitHostExpression(call, fuseConsumers, true);
   }
 
   private boolean emitHostExpression(RexCall call, boolean fuseConsumers, boolean tryFusion) {
-    NativeStringFusion fusion = tryFusion ? NativeStringFusion.match(call) : null;
+    boolean decimalProjectionDefaults = requiresDecimalCastFusion(call)
+        || call == projectionRoot && requiresDecimalProjectionDefaults(call);
+    NativeStringFusion fusion =
+        tryFusion && !decimalProjectionDefaults ? NativeStringFusion.match(call) : null;
     if (fusion != null) {
       return emitCertifiedBuiltin(call, fusion.operation, fusion);
     }
@@ -4931,16 +5023,16 @@ final class RexExpression {
     Method eval;
     try {
       var argumentTypes = types.toArray(org.apache.flink.table.types.logical.LogicalType[]::new);
-      function =
-          expression instanceof RexCall && isExactDoubleTruncate(((RexCall) expression))
-              ? FlinkExpressionGenerator.doubleTruncate(
-                  ((RexCall) expression), argumentTypes, temporalConfig, expressionClassLoader)
-              : FlinkExpressionGenerator.generate(
-                  expression,
-                  argumentTypes,
-                  temporalConfig,
-                  expressionClassLoader,
-                  binaryStringResult);
+      if (expression instanceof RexCall && isExactDoubleTruncate(((RexCall) expression))) {
+        function = FlinkExpressionGenerator.doubleTruncate(
+            ((RexCall) expression), argumentTypes, temporalConfig, expressionClassLoader);
+      } else if (decimalProjectionDefaults && call == projectionRoot) {
+        function = FlinkExpressionGenerator.generateProjection(
+            expression, argumentTypes, temporalConfig, expressionClassLoader, binaryStringResult);
+      } else {
+        function = FlinkExpressionGenerator.generate(
+            expression, argumentTypes, temporalConfig, expressionClassLoader, binaryStringResult);
+      }
       eval = FlinkExpressionFunction.class.getMethod("eval", Object[].class);
     } catch (Exception e) {
       return reject("host expression cannot be generated: " + e.getMessage());
