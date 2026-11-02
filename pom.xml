@@ -659,6 +659,10 @@
 
     <profiles>
         <profile>
+            <id>canonical-savepoints</id>
+            <modules><module>dev/canonical-savepoints</module></modules>
+        </profile>
+        <profile>
             <id>doris</id>
             <modules><module>streamfusion-doris</module></modules>
         </profile>

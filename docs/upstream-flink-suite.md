@@ -1467,3 +1467,28 @@ This is qualification of the private integration snapshot, not a claim that the 
 production archive already contains the complete automatic planner workflow. Reverse-direction
 jobs, ordinary SQL identities, and the rest of #569 remain separate requirements. Benchmarking
 of canonical handoff is deferred while functionality is completed.
+
+## Released canonical savepoint runner
+
+Run the opt-in Flink 2.2.1 canonical lane with JDK 17:
+
+```sh
+bin/canonical-savepoints.sh sql
+bin/canonical-savepoints.sh runtime
+```
+
+The runner packages and tests the execution agent, then runs each selected released test artifact
+on stock and native classpaths. Stock excludes the StreamFusion runtime; a JUnit guard verifies
+that exclusion and initializes the JNI library on the native leg. Restore fixtures are unpacked
+into a disposable working directory, without modifying Flink tests or their original assertions.
+The module rejects other Flink release lines.
+
+`CANONICAL_UPSTREAM_TESTS` selects an explicit comma-separated set of released classes/methods.
+The SQL inventory includes operator restore programs; the runtime inventory includes canonical
+formats, backend switching, timers and savepoint lifecycle. Required execution contracts and
+missing-test checks make partial or stock-only runs fail the native qualification. Broad SQL
+family completion remains work in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569);
+the presence of a runner or a passing stock lifecycle test does not prove native state interchange.
+The selected window-join restore lane passes eight stock and eight native invocations against
+the compiled-plan integration, including its six actual native state owners and two verified
+stock SEMI/ANTI fallbacks. Benchmarking remains deferred.
