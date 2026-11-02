@@ -542,5 +542,49 @@ class ElidedTemporalSortSummaryTest(unittest.TestCase):
                     with self.assertRaises(ValueError): summarize.execution_contracts(file)
 
 
+class ElidedIntervalJoinSummaryTest(unittest.TestCase):
+    TEST = "org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest#testRestore"
+    VARIANT = "program=interval_join_negative_interval"
+    CONTRACT = "@elided:IntervalJoin"
+    evidence = ElidedTemporalSortSummaryTest.evidence
+    check = ElidedTemporalSortSummaryTest.check
+
+    def test_impossible_interval_requires_calc_and_a_complete_graph(self):
+        evidence = self.evidence()
+        evidence["native_opened"] = ["NativeCalcOperator"]
+        result, observations = self.check(evidence, native="NativeCalcOperator=5")
+        self.assertEqual((0, 0, []), result)
+        self.assertEqual("interval_elided", observations[0]["observed_route"])
+        self.assertTrue(self.check(evidence)[0][2])
+        self.assertTrue(self.check(native="NativeCalcOperator=5", extra=False)[0][2])
+        self.assertTrue(self.check({}, native="NativeCalcOperator=5")[0][2])
+
+    def test_join_state_and_unrelated_work_cannot_be_hidden(self):
+        import copy
+        for operator in ("NativeIntervalJoinOperator", "KeyedCoProcessOperator", "RowTimeIntervalJoin"):
+            evidence = copy.deepcopy(self.evidence())
+            evidence["submitted_graphs"]["job"]["nodes"][0]["operator"] = operator
+            self.assertTrue(self.check(evidence, native="NativeCalcOperator=5")[0][2])
+        for fields in ({"native": "NativeIntervalJoinOperator=5"},
+                       {"native": "NativeCalcOperator=5", "imported": "NativeIntervalJoinOperator=3"},
+                       {"native": "NativeCalcOperator=5", "reasons": "interval unsupported"},
+                       {"native": "NativeCalcOperator=5", "stock": "StockWindowJoin=3"}):
+            self.assertTrue(self.check(self.evidence(), **fields)[0][2])
+
+    def test_other_programs_cannot_use_negative_interval_proof(self):
+        for variant in ("program=interval_join_event_time", "program=interval_join_proc_time", "program=unknown"):
+            self.assertTrue(self.check(self.evidence(), native="NativeCalcOperator=5", variant=variant)[0][2])
+
+    def test_registry_only_accepts_the_pinned_program(self):
+        for variant in (self.VARIANT, "*", "program=interval_join_event_time"):
+            with tempfile.TemporaryDirectory() as temporary:
+                file = Path(temporary) / "contracts.tsv"
+                file.write_text(f"{self.TEST}\t{variant}\t{self.CONTRACT}\n")
+                if variant == self.VARIANT:
+                    self.assertEqual(self.CONTRACT, summarize.execution_contracts(file)[self.TEST][variant])
+                else:
+                    with self.assertRaises(ValueError): summarize.execution_contracts(file)
+
+
 if __name__ == "__main__":
     unittest.main()

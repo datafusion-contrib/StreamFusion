@@ -18,7 +18,7 @@ class CanonicalIntervalJoinPlanTest {
   static Stream<Arguments> cases() {
     var cases = new ArrayList<Arguments>();
     for (String kind : List.of("INNER", "LEFT", "RIGHT", "FULL"))
-      for (String clock : List.of("TIMESTAMP(3)", "TIMESTAMP_LTZ(3)"))
+      for (String clock : List.of("TIMESTAMP(3)", "TIMESTAMP_LTZ(3)", "PROCTIME"))
         for (boolean residual : new boolean[] {false, true})
           cases.add(Arguments.of(kind, clock, residual));
     return cases.stream();
@@ -26,10 +26,13 @@ class CanonicalIntervalJoinPlanTest {
 
   @ParameterizedTest
   @MethodSource("cases")
-  void portableEventTimePlanBindsItsOriginalStockState(String kind, String clock, boolean residual)
+  void portablePlanBindsItsOriginalStockState(String kind, String clock, boolean residual)
       throws Exception {
     var table = environment(true, clock);
-    var plan = table.compilePlanSql(query(kind, "rt", false) + (residual ? " AND l.v>r.v" : ""));
+    var plan =
+        table.compilePlanSql(
+            query(kind, clock.equals("PROCTIME") ? "pt" : "rt", false)
+                + (residual ? " AND l.v>r.v" : ""));
     String portable = plan.asJsonString();
     assertTrue(portable.contains("stream-exec-interval-join"), portable);
     assertFalse(portable.contains("tech.streamfusion"), portable);
@@ -43,7 +46,7 @@ class CanonicalIntervalJoinPlanTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"unaligned", "cleanup", "proctime", "negative", "changelog"})
+  @ValueSource(strings = {"unaligned", "cleanup", "negative", "changelog"})
   void unqualifiedStateModesRetainTheirStockOwner(String mode) throws Exception {
     var table = environment(true, "TIMESTAMP(3)");
     if (mode.equals("unaligned")) {
@@ -52,9 +55,7 @@ class CanonicalIntervalJoinPlanTest {
     } else if (mode.equals("cleanup"))
       table.getConfig().set("table.exec.interval-join.min-cleanup-interval", "1 s");
     else if (mode.equals("changelog")) table.getConfig().set("state.changelog.enabled", "true");
-    var plan =
-        table.compilePlanSql(
-            query("INNER", mode.equals("proctime") ? "pt" : "rt", mode.equals("negative")));
+    var plan = table.compilePlanSql(query("INNER", "rt", mode.equals("negative")));
     assertFalse(plan.explain().contains("NativeIntervalJoin"), plan.explain());
     assertFalse(plan.asJsonString().contains("tech.streamfusion"));
   }
@@ -77,7 +78,7 @@ class CanonicalIntervalJoinPlanTest {
     table.getConfig().set("streamfusion.native.enabled", "true");
     assertTrue(plan.explain().contains("NativeIntervalJoin"));
     assertFalse(
-        table.compilePlanSql(query("INNER", "pt", false)).explain().contains("NativeIntervalJoin"));
+        table.compilePlanSql(query("INNER", "rt", true)).explain().contains("NativeIntervalJoin"));
     assertEquals(
         "",
         table
@@ -112,7 +113,7 @@ class CanonicalIntervalJoinPlanTest {
           "CREATE TABLE "
               + name
               + "(k BIGINT,v BIGINT,rt "
-              + clock
+              + (clock.equals("PROCTIME") ? "TIMESTAMP(3)" : clock)
               + ",pt AS PROCTIME(),WATERMARK FOR rt AS rt) WITH ('connector'='datagen')");
     table.executeSql(
         "CREATE TABLE output_table(k BIGINT,l BIGINT,r BIGINT) WITH ('connector'='blackhole')");

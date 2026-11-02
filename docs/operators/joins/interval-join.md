@@ -145,13 +145,16 @@ retain two custom sources, a transactional sink and both transposes, require act
 exclude StreamFusion from stock workers, and match committed sink effects to a stock baseline.
 The combined clean workflow passes 198 controls, including four shared-runner window-join checks.
 
-The unchanged released event-time interval restore program also passes on each engine, with ten
-pending rows imported and five new rows processed by the native state owner. The broader interval
-upstream selection in the event-time-only qualification remains red: the processing-time workflow
-and the submitted-graph proof for Flink's stateless negative interval were not yet installed. Both gaps remain visible; unrelated Calc work does not satisfy a join gate.
+The unchanged released event-time and processing-time interval programs each import ten pending
+rows and consume five new native rows on restore. The three interval and eight window programs
+all pass on both engines. Eight programs execute native state owners; two window SEMI/ANTI paths
+retain verified stock owners. The remaining impossible-interval LEFT join is already stateless
+in Flink: its pinned contract proves a complete submitted graph without a join/CoProcess owner,
+no state import or fallback, and actual native Calc work. Its upstream assertions still verify
+the null-padded output. This is graph elision, not native interval-join coverage.
 
-Ordinary SQL identities, full-job residual predicates, automatic processing-time job qualification
-and the wider type/version/rescale/failure matrix remain open. Nonpositive/overflow event-time cleanup remains an explicitly unqualified interchange edge;
+Ordinary SQL identities, the wider complete-job/residual/type/version/rescale/failure qualification
+and connector delivery protocols remain open. Nonpositive/overflow event-time cleanup remains an explicitly unqualified interchange edge;
 the released heap/Rocks distinction described above still applies. Benchmarking is deferred.
 
 ### Logical input and retained native frames
@@ -187,5 +190,8 @@ covering both stores/orders, four join kinds, nine scalar key layouts, original/
 no-input re-export, timer-only keys, overdue callbacks, EOF and native checkpoint continuation.
 The combined clean component/regression selection passes 843 Java controls, while the clean native
 suite passes 1,164 tests with two existing ignores. These counts overlap earlier cohorts.
-Automatic processing-time job conversion and the full interoperability matrix require separate
-qualification. Canonical export remains a direct live-state transfer. Benchmarking is deferred.
+The stock compiled-plan loader automatically binds either clock mode to its matching native
+adapter, preserving the original UID, serializer and resolved maximum parallelism. The clean
+planner/regression suite passes 175 checks, including 29 interval plan controls. Expanded
+complete-job switching and the full interoperability matrix require separate qualification.
+Canonical export remains a direct live-state transfer. Benchmarking is deferred.

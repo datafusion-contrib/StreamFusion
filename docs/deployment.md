@@ -334,7 +334,8 @@ the Flink version and maximum parallelism within the qualified matrix. See the
 [canonical state contract](backends/canonical-state.md#automatic-stock-compiled-plan-binding) for
 remaining boundaries. Ordinary native checkpoints do not provide a cross-engine handoff artifact.
 
-The [event-time interval workflow](operators/joins/interval-join.md#released-stock-event-time-state-adapter)
-also has isolated clean-process qualification. Processing-time interval state, unrestricted SQL
-submission and the wider #569 matrix remain pending; retain the exact qualified scope when
-choosing a handoff plan.
+The [interval workflow](operators/joins/interval-join.md#released-stock-processing-time-state-adapter)
+now binds both event-time and processing-time stock compiled plans to their matching native state
+adapter. Released restore fixtures pass with actual imported and continued native rows. The
+broader complete-job matrix, unrestricted SQL identities and remaining #569 requirements retain
+their separate qualification; keep the exact tested scope when choosing a handoff plan.

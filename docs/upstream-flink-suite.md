@@ -1510,14 +1510,22 @@ cross-engine job continuations remain separate qualifications.
 ### Interval restore state-owner proof
 
 The execution agent tracks successful native interval input and direct canonical row import,
-excluding timer-transfer batches from row counts. Sixty-five canonical witness controls pass,
+excluding timer-transfer batches from row counts. Seventy-seven canonical witness controls pass,
 including rejection of opened-only, import-only, Calc-only or window-only work for an interval
 restore contract.
 
-The clean compiled-plan integration passes the unchanged released event-time interval program on
-both engines, with ten native imported rows and five newly consumed rows. Its companion window
-selection still passes all eight programs on each engine. The combined selection has eleven
-stock passes and nine of eleven native passes. Processing-time interval state is not bound; the
-negative-interval fixture has no join after Flink simplification and still needs a submitted-graph
-elision contract. Both fail the strict native-family gate. The broader interval lane remains red;
-these failures are not classified as passing fallbacks or silently excluded.
+The clean compiled-plan integration passes all three unchanged released interval programs and
+all eight window programs on each engine: eleven stock and eleven native-side passes. Each of
+the event-time and processing-time interval programs imports ten pending rows and consumes five
+new native rows. The window selection includes six actual native state owners and two verified
+stock SEMI/ANTI paths.
+
+The pinned impossible-interval LEFT join is already stateless in Flink. Its exact
+`@elided:IntervalJoin` contract requires a successfully submitted complete acyclic graph with no
+join or CoProcess state owner, no native state import, no stateful native operator or fallback,
+and actual native Calc work. Original upstream assertions still check the null-padded rows. The
+audit reports `interval_elided`, separately from native operator and fallback credit. Calc work
+without that submitted-graph evidence cannot pass. Unknown programs cannot reuse the contract.
+Seventy-seven Java witness controls and 48 summary-parser controls include missing/forged graph,
+wrong operator, hidden state/import and failed-submission rejections. Full-job/type/version and
+connector qualification remains tracked by #569; these upstream fixtures do not replace it.

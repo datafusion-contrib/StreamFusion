@@ -125,6 +125,97 @@ class CanonicalRestoreExecutionTest {
     assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
   }
 
+  @Test
+  void impossibleIntervalRequiresSubmittedJoinFreeGraphAndActualCalcWork() throws Exception {
+    var scope =
+        NativeExecution.beginRestore(INTERVAL, new Object(), "interval-join-negative-interval");
+    NativeExecution.submitted(
+        NativeExecution.submitting(new Object[] {passthroughGraph()}), new SubmittedClient(), null);
+    var calc = new NativeCalcOperator();
+    NativeExecution.opened(calc);
+    NativeExecution.completed(calc, 3);
+    assertDoesNotThrow(() -> NativeExecution.finish(scope));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "empty",
+        "noCalc",
+        "noGraph",
+        "failedSubmission",
+        "nativeJoin",
+        "import",
+        "fallback"
+      })
+  void impossibleIntervalRejectsMissingProofAndStatefulWork(String mode) throws Exception {
+    var scope =
+        NativeExecution.beginRestore(INTERVAL, new Object(), "interval-join-negative-interval");
+    if (!mode.equals("empty") && !mode.equals("noGraph"))
+      NativeExecution.submitted(
+          NativeExecution.submitting(new Object[] {passthroughGraph()}),
+          new SubmittedClient(),
+          mode.equals("failedSubmission") ? new IllegalStateException() : null);
+    if (!mode.equals("empty") && !mode.equals("noCalc")) {
+      var calc = new NativeCalcOperator();
+      NativeExecution.opened(calc);
+      NativeExecution.completed(calc, 3);
+    }
+    if (mode.equals("nativeJoin")) NativeExecution.opened(new NativeIntervalJoinOperator());
+    if (mode.equals("import")) NativeExecution.restored("NativeIntervalJoinOperator", 3);
+    if (mode.equals("fallback")) NativeExecution.fallback("interval unsupported");
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "org.apache.flink.streaming.api.operators.co.KeyedCoProcessOperator",
+        "tech.streamfusion.operator.NativeIntervalJoinOperator",
+        "org.apache.flink.table.runtime.operators.join.interval.RowTimeIntervalJoin"
+      })
+  void impossibleIntervalGraphCannotHideAJoinOwner(String operator) {
+    var graph =
+        java.util.Map.<String, Object>of(
+            "nodes",
+            java.util.List.of(
+                java.util.Map.of(
+                    "id",
+                    1,
+                    "operator",
+                    "SourceOperator",
+                    "inputs",
+                    java.util.List.of(),
+                    "outputs",
+                    java.util.List.of(2)),
+                java.util.Map.of(
+                    "id",
+                    2,
+                    "operator",
+                    operator,
+                    "inputs",
+                    java.util.List.of(1),
+                    "outputs",
+                    java.util.List.of(3)),
+                java.util.Map.of(
+                    "id",
+                    3,
+                    "operator",
+                    "StreamSink",
+                    "inputs",
+                    java.util.List.of(2),
+                    "outputs",
+                    java.util.List.of())));
+    assertFalse(ElidedIntervalJoin.valid(graph));
+  }
+
+  @Test
+  void unknownIntervalProgramsCannotClaimElision() {
+    assertThrows(
+        AssertionError.class,
+        () -> NativeExecution.beginRestore(INTERVAL, new Object(), "interval-join-unknown"));
+  }
+
   private static final class NativeIntervalJoinOperator {}
 
   private static final String SORT = ElidedTemporalSort.TEST.replace("#testRestore", "");

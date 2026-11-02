@@ -408,10 +408,6 @@ final class StockCompiledPlanLowering {
             .<org.apache.flink.table.planner.plan.nodes.exec.spec.IntervalJoinSpec>readValue(
                 definitions.get(stock.getId()).path("intervalJoinSpec"));
     var bounds = spec.getWindowBounds();
-    if (!bounds.isEventTime()) {
-      recordFallback("interval join: stock processing-time cache payloads are not yet bound");
-      return stock;
-    }
     if (bounds.getLeftUpperBound() - bounds.getLeftLowerBound() < 0) {
       recordFallback("interval join: negative bounds retain stock stateless filters");
       return stock;
@@ -462,11 +458,16 @@ final class StockCompiledPlanLowering {
             originalTransform;
     if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)) return stock;
     var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
-    if (!(operator instanceof org.apache.flink.streaming.api.operators.co.KeyedCoProcessOperator)
-        || !(((org.apache.flink.streaming.api.operators.co.KeyedCoProcessOperator<?, ?, ?, ?>)
-                    operator)
-                .getUserFunction()
-            instanceof org.apache.flink.table.runtime.operators.join.interval.RowTimeIntervalJoin))
+    if (!(operator instanceof org.apache.flink.streaming.api.operators.co.KeyedCoProcessOperator))
+      return stock;
+    var function =
+        ((org.apache.flink.streaming.api.operators.co.KeyedCoProcessOperator<?, ?, ?, ?>) operator)
+            .getUserFunction();
+    if (bounds.isEventTime()
+        ? !(function
+            instanceof org.apache.flink.table.runtime.operators.join.interval.RowTimeIntervalJoin)
+        : !(function
+            instanceof org.apache.flink.table.runtime.operators.join.interval.ProcTimeIntervalJoin))
       return stock;
     int maximum =
         resolvedStockMaximums.getOrDefault(original.getId(), original.getMaxParallelism());
@@ -492,7 +493,8 @@ final class StockCompiledPlanLowering {
             leftKeys,
             rightKeys,
             bounds.getLeftTimeIdx(),
-            bounds.getRightTimeIdx());
+            bounds.getRightTimeIdx(),
+            !bounds.isEventTime());
     var leftExchange =
         (NativeColumnarExchangeExecNode)
             canonicalJoinInput(left, config, leftType, leftKeys, false);
@@ -518,7 +520,7 @@ final class StockCompiledPlanLowering {
                 leftType,
                 rightType,
                 predicate,
-                false,
+                !bounds.isEventTime(),
                 FlinkKeyGroupUtils.stockKeyDescriptor(leftType, leftKeys))
             .withStateMaxParallelism(maximum);
     join.setInputEdges(

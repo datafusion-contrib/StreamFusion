@@ -422,8 +422,8 @@ rows then enter retained state directly with owned buffers. Stock metadata conta
 Flink serializer classes. Native canonical export takes no intermediate native snapshot.
 
 The explicit component binding passes 240 positive and 45 rejection/guard controls, plus typed
-key native-checkpoint continuation. Processing-time payloads and wider
-full-job/version/rescale/failure coverage remain open in
+key native-checkpoint continuation. The processing-time adapter is described below; wider
+full-job/version/rescale/failure coverage remains open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). See the
 [interval contract](../operators/joins/interval-join.md#released-stock-event-time-state-adapter)
 for the exact qualified types and remaining nonpositive/overflow-time boundaries. Benchmarking
@@ -436,7 +436,7 @@ identity/match flags or independent cleanup timers. Direct canonical export stil
 state. The clean normalization component passes 1,161 native tests (two existing ignores) and
 618 Java controls; these overlap the adapter qualification above.
 
-### Automatic event-time interval binding
+### Automatic interval binding
 
 The stock compiled-plan workflow now installs the interval state contract and canonical identity
 projection during normal initialization. It resolves the original stock maximum parallelism and
@@ -446,11 +446,12 @@ including repeated switches, no-input export, native-checkpoint recovery and 64-
 through 1 → 3 → 2 tasks. Custom sources, transactional sink effects and both transposes remain in
 the jobs, while stock workers exclude StreamFusion. The clean workflow passes 198 controls.
 
-The released event-time interval fixture imports ten pending rows and processes five new native
-rows successfully. Processing-time interchange and the submitted-graph proof for Flink's
-stateless negative-interval fixture remain open; the full interval upstream lane is not green.
-Ordinary SQL identities and the remaining full #569 matrix also remain open. Benchmarking stays
-deferred.
+The unchanged released event-time and processing-time interval fixtures each import ten pending
+rows and process five new native rows. The three interval and eight window programs all pass on
+both engines. Native execution includes eight native state-owner programs, two verified stock
+window SEMI/ANTI paths and one impossible-interval graph with no join state owner. The latter is
+not native-join credit. Ordinary SQL identities and the remaining full #569 matrix remain open.
+Benchmarking stays deferred.
 
 ### Processing-time interval payloads and callbacks
 
@@ -477,6 +478,8 @@ their existing stamping and finish paths.
 Controlled-clock coverage comprises 208 positive processing-time cases and 17 rejection/guard
 cases: all four join kinds, both stock/native stores, both switch orders, NULL/original payloads,
 nine scalar key layouts, no-input re-export, timer-only keys, overdue callbacks on open, end of
-input and native checkpoint continuation. These are component controls; automatic processing-time
-job switching and the full #569 matrix require separate qualification. Benchmarking remains
-deferred.
+input and native checkpoint continuation. The stock compiled-plan loader binds both clock modes
+to the original stock operator identity, key serializer and resolved maximum parallelism. Its
+clean planner/regression selection passes 175 checks, including 29 interval planner controls.
+The expanded complete-job switching matrix and remaining #569 requirements are separately
+qualified; component and upstream passes do not establish them. Benchmarking remains deferred.

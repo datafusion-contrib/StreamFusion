@@ -61,7 +61,8 @@ public final class NativeExecution {
             || !(fields[2].matches("\\w+(?:[+|]\\w+)*")
                 || fields[2].matches("!.+")
                 || fields[2].matches("@restore:\\w+")
-                || fields[2].equals(ElidedTemporalSort.CONTRACT))
+                || fields[2].equals(ElidedTemporalSort.CONTRACT)
+                || fields[2].equals(ElidedIntervalJoin.CONTRACT))
             || fields[2].startsWith("!@") && !fields[2].matches("!@\\w+:.+")) {
           throw new IllegalStateException("Invalid native execution contract: " + line);
         }
@@ -70,6 +71,11 @@ public final class NativeExecution {
                 || !fields[1].equals(ElidedTemporalSort.VARIANT)))
           throw new IllegalStateException(
               "Elided sort proof is restricted to the unchanged PROCTIME fixture");
+        if (fields[2].equals(ElidedIntervalJoin.CONTRACT)
+            && (!fields[0].equals(ElidedIntervalJoin.TEST)
+                || !fields[1].equals(ElidedIntervalJoin.VARIANT)))
+          throw new IllegalStateException(
+              "Elided interval proof is restricted to the unchanged negative-interval fixture");
         if (fields[2].contains("&&")
             && (!fields[2].startsWith("!@")
                 || !fields[2].split("&&", -1)[1].matches("\\w+(?:[+|]\\w+)*")
@@ -327,8 +333,7 @@ public final class NativeExecution {
 
   public static synchronized Object submitting(Object[] arguments)
       throws ReflectiveOperationException {
-    if (active == null
-        || !CONTRACTS.get(active.test).get(active.variant).equals(ElidedTemporalSort.CONTRACT))
+    if (active == null || !CONTRACTS.get(active.test).get(active.variant).startsWith("@elided:"))
       return null;
     for (Object argument : arguments)
       if (argument != null
@@ -389,12 +394,12 @@ public final class NativeExecution {
               + Base64.getEncoder()
                   .encodeToString(
                       String.join("\n", scope.fallbacks).getBytes(StandardCharsets.UTF_8))
-              + (CONTRACTS.get(scope.test).get(scope.variant).equals(ElidedTemporalSort.CONTRACT)
+              + (CONTRACTS.get(scope.test).get(scope.variant).startsWith("@elided:")
                   ? "\t" + restoredCounts + "\t" + stockCounts
                   : scope.stockRows.isEmpty()
                       ? (restored.isEmpty() ? "" : "\t" + restoredCounts)
                       : "\t" + restoredCounts + "\t" + stockCounts)
-              + (CONTRACTS.get(scope.test).get(scope.variant).equals(ElidedTemporalSort.CONTRACT)
+              + (CONTRACTS.get(scope.test).get(scope.variant).startsWith("@elided:")
                   ? "\t"
                       + Base64.getEncoder()
                           .encodeToString(
@@ -412,12 +417,20 @@ public final class NativeExecution {
     }
     String contract = CONTRACTS.get(scope.test).get(scope.variant);
     boolean satisfied;
-    if (contract.equals(ElidedTemporalSort.CONTRACT)) {
+    if (contract.startsWith("@elided:")) {
+      boolean interval = contract.equals(ElidedIntervalJoin.CONTRACT);
       satisfied =
-          scope.test.equals(ElidedTemporalSort.TEST)
-              && scope.variant.equals(ElidedTemporalSort.VARIANT)
+          scope.test.equals(interval ? ElidedIntervalJoin.TEST : ElidedTemporalSort.TEST)
+              && scope.variant.equals(
+                  interval ? ElidedIntervalJoin.VARIANT : ElidedTemporalSort.VARIANT)
               && !scope.submittedGraphs.isEmpty()
-              && scope.submittedGraphs.values().stream().allMatch(ElidedTemporalSort::valid)
+              && scope.submittedGraphs.values().stream()
+                  .allMatch(
+                      graph ->
+                          interval
+                              ? ElidedIntervalJoin.valid(graph)
+                              : ElidedTemporalSort.valid(graph))
+              && (!interval || scope.rows.getOrDefault("NativeCalcOperator", 0L) > 0)
               && scope.stockRows.isEmpty()
               && scope.importedRows.isEmpty()
               && scope.fallbacks.isEmpty()
@@ -473,7 +486,12 @@ public final class NativeExecution {
                 ? "fallback: " + contract.substring(1)
                 : contract.startsWith("@restore:")
                     ? "canonical import: " + restoredCounts
-                    : counts));
+                    : contract.startsWith("@elided:")
+                        ? "submitted graph without "
+                            + contract.substring(8)
+                            + "; native input: "
+                            + counts
+                        : counts));
   }
 
   public static final class Scope {
