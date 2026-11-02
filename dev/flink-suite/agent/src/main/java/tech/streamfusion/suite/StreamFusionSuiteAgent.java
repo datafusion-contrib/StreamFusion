@@ -118,7 +118,8 @@ public final class StreamFusionSuiteAgent {
         .type(
             namedOneOf(
                 "org.apache.flink.table.runtime.operators.window.tvf.operator.UnalignedWindowTableFunctionOperator",
-                "org.apache.flink.table.runtime.operators.window.tvf.common.WindowAggOperator"))
+                "org.apache.flink.table.runtime.operators.window.tvf.common.WindowAggOperator",
+                "org.apache.flink.table.runtime.operators.sort.RowTimeSortOperator"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder
@@ -224,6 +225,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator",
                 "tech.streamfusion.operator.NativeColumnarTopNOperator",
                 "tech.streamfusion.operator.NativeColumnarWindowRankOperator",
+                "tech.streamfusion.operator.NativeColumnarTemporalSortOperator",
                 "tech.streamfusion.operator.NativeColumnarFirstNOperator",
                 "tech.streamfusion.operator.NativeWindowOperatorCore",
                 "tech.streamfusion.operator.NativeRowWindowOperatorCore",
@@ -301,9 +303,11 @@ public final class StreamFusionSuiteAgent {
         .type(named(NATIVE_STATEFUL_OPERATOR))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
-                builder.visit(
-                    Advice.to(ReportNativeMemoryState.class)
-                        .on(named("initializeState").and(takesArguments(1)))))
+                builder
+                    .visit(
+                        Advice.to(ReportNativeMemoryState.class)
+                            .on(named("initializeState").and(takesArguments(1))))
+                    .visit(Advice.to(BindNativeExecution.class).on(named("open"))))
         .type(named(NATIVE_PARQUET_WRITER_FACTORY))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -443,15 +447,20 @@ public final class StreamFusionSuiteAgent {
 
   public static final class RecordSubmittedJob {
     @Advice.OnMethodEnter
-    static Object enter(@Advice.AllArguments Object[] arguments) {
-      return SqlInventory.submitting(arguments);
+    static Object[] enter(@Advice.AllArguments Object[] arguments) throws Exception {
+      return new Object[] {
+        SqlInventory.submitting(arguments), NativeExecution.submitting(arguments)
+      };
     }
 
     @Advice.OnMethodExit(onThrowable = Throwable.class)
     static void exit(
-        @Advice.Enter Object scope, @Advice.Return Object client, @Advice.Thrown Throwable failure)
+        @Advice.Enter Object[] scope,
+        @Advice.Return Object client,
+        @Advice.Thrown Throwable failure)
         throws Exception {
-      SqlInventory.submitted(scope, client, failure);
+      SqlInventory.submitted(scope[0], client, failure);
+      NativeExecution.submitted(scope[1], client, failure);
     }
   }
 

@@ -1410,6 +1410,23 @@ optional fifth field for imported rows in opened native operators. The verifier 
 `native_canonical_import_rows` separately and classifies that scoped proof as `native_restore`.
 These counts establish restored native work, not throughput or future-input continuation.
 
+The released temporal-sort restore fixtures distinguish a secondary-key rowtime sort from a
+single processing-time order. The unchanged rowtime fixture orders by both rowtime and a DOUBLE
+key, so it retains the stock sort under the existing secondary-key gap. Its mixed-route contract
+requires nonempty native Calc input, the explicit secondary-order fallback reason and nonempty
+input in a real stock rowtime sort whose managed state and secondary comparator initialized.
+A Calc alone, opening alone, native-sort input/imports or a successful restore cannot satisfy it.
+This is a stock-state compatibility control, not proof of native temporal-sort state transfer;
+the single-key native sort handoffs retain their separate positive execution requirements. Flink
+elides the processing-time sort into a forward edge. Its exact fixture contract is
+`@elided:TemporalSort`, restricted to `program=temporal_sort_proctime`: at least one job must have
+been submitted successfully, every recorded source-to-sink graph must be complete and contain
+no stock or native sort, and no native sort/state import or fallback may occur. The original
+upstream output and restore assertions remain unchanged. Unknown programs cannot use this
+contract. This route is reported as `ordering_elided` and receives neither native execution nor
+fallback credit. A seventh TSV column carries submitted graphs and raw open/import observations;
+the audit independently validates that evidence and rejects missing graphs or hidden sort work.
+
 Run the contract self-tests with:
 
 ```sh

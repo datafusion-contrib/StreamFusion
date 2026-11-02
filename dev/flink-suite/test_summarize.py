@@ -361,6 +361,18 @@ class CanonicalRestoreSummaryTest(unittest.TestCase):
         self.assertNotIn("StockSessionTableFunction", observations[0]["native_input_rows"])
         self.assertEqual("mixed", observations[0]["observed_route"])
 
+    def test_secondary_temporal_sort_requires_real_stock_owner_and_native_calc(self):
+        absent = "NativeColumnarTemporalSortOperator"
+        reason = "temporal sort: secondary order keys require the stock sorter"
+        contract = "!@" + absent + ":" + reason + "&&NativeCalcOperator+StockTemporalSort"
+        for fields in ({}, {"counts": "NativeCalcOperator=2"}, {"stock": "StockTemporalSort=2"},
+                       {"counts": "NativeCalcOperator=2", "stock": "StockTemporalSort=2"},
+                       {"counts": "NativeCalcOperator=2," + absent + "=1", "stock": "StockTemporalSort=2", "reasons": reason}):
+            self.assertTrue(self.check(contract, **fields)[0][2])
+        result, observations = self.check(contract, counts="NativeCalcOperator=2", stock="StockTemporalSort=2", reasons=reason)
+        self.assertEqual((0, 1, []), result)
+        self.assertEqual("mixed", observations[0]["observed_route"])
+
     def test_stock_work_cannot_be_counterfeited_as_native_rows(self):
         result, _ = self.check("NativeColumnarGroupAggregateOperator+StockSessionTableFunction",
             counts="NativeColumnarGroupAggregateOperator=3,StockSessionTableFunction=2")
@@ -423,6 +435,97 @@ class CanonicalRestoreSummaryTest(unittest.TestCase):
         result, observations = self.check(self.FAMILY, counts=self.FAMILY + "=2", imported=self.FAMILY + "=3")
         self.assertEqual((1, 0, []), result)
         self.assertEqual("native", observations[0]["observed_route"])
+
+class ElidedTemporalSortSummaryTest(unittest.TestCase):
+    TEST = "org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalSortRestoreTest#testRestore"
+    VARIANT = "program=temporal_sort_proctime"
+    CONTRACT = "@elided:TemporalSort"
+
+    def evidence(self):
+        return {"submitted_graphs": {"job": {"nodes": [
+            {"id": 1, "operator": "SourceOperator", "inputs": [], "outputs": [2]},
+            {"id": 2, "operator": "StreamSink", "inputs": [1], "outputs": []}]}},
+            "native_opened": [], "native_imports": {}}
+
+    def check(self, evidence=None, *, native="", imported="", stock="", reasons="", extra=True,
+              test=None, variant=None, contract=None):
+        test = test or self.TEST
+        variant = variant or self.VARIANT
+        contract = contract or self.CONTRACT
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            reason = base64.b64encode(reasons.encode()).decode()
+            fields = [test, variant, native, reason, imported, stock]
+            if extra:
+                import json
+                fields.append(base64.b64encode(json.dumps(evidence).encode()).decode())
+            (root / "case.tsv").write_text("\t".join(fields) + "\n")
+            observations = []
+            result = summarize.check_execution(root, Counter({test: 1}),
+                {test: {variant: contract}}, observations)
+            return result, observations
+
+    def test_submitted_sort_free_graph_is_separate_from_native_and_fallback_credit(self):
+        for native in ("", "NativeCalcOperator=3"):
+            evidence = self.evidence()
+            if native:
+                evidence["native_opened"] = ["NativeCalcOperator"]
+            result, observations = self.check(evidence, native=native)
+            self.assertEqual((0, 0, []), result)
+            self.assertEqual("ordering_elided", observations[0]["observed_route"])
+            self.assertTrue(observations[0]["contract_satisfied"])
+
+    def test_empty_or_malformed_graphs_cannot_prove_elision(self):
+        import copy
+        invalid = [None, {}, {"submitted_graphs": {}}, self.evidence() | {"extra": 1}]
+        for mode in ("no_jobs", "single_node", "unknown_edge", "duplicate_node", "duplicate_edge", "unconnected_cycle",
+                     "stock_sort", "native_sort", "missing_factory", "native_open", "native_import"):
+            evidence = copy.deepcopy(self.evidence())
+            graph = evidence["submitted_graphs"]["job"]
+            if mode == "no_jobs": evidence["submitted_graphs"] = {}
+            elif mode == "single_node": graph["nodes"] = graph["nodes"][:1]
+            elif mode == "unknown_edge": graph["nodes"][0]["outputs"] = [999]
+            elif mode == "duplicate_node": graph["nodes"].append(graph["nodes"][0])
+            elif mode == "duplicate_edge": graph["nodes"][0]["outputs"] = [2, 2]
+            elif mode == "unconnected_cycle":
+                graph["nodes"].extend([
+                    {"id": 3, "operator": "Map", "inputs": [4], "outputs": [4]},
+                    {"id": 4, "operator": "Map", "inputs": [3], "outputs": [3]}])
+            elif mode == "stock_sort": graph["nodes"][0]["operator"] = "RowTimeSortOperator"
+            elif mode == "native_sort": graph["nodes"][0]["operator"] = "NativeColumnarTemporalSortOperator"
+            elif mode == "missing_factory": graph["nodes"][0]["operator"] = ""
+            elif mode == "native_open": evidence["native_opened"] = ["NativeColumnarTemporalSortOperator"]
+            elif mode == "native_import": evidence["native_imports"] = {"NativeColumnarTemporalSortOperator": 3}
+            invalid.append(evidence)
+        for evidence in invalid:
+            with self.subTest(evidence=evidence):
+                self.assertTrue(self.check(evidence)[0][2])
+        self.assertTrue(self.check(extra=False)[0][2])
+
+    def test_stateful_work_and_fallbacks_cannot_be_hidden_as_elision(self):
+        for fields in ({"native": "NativeColumnarTemporalSortOperator=3"},
+                       {"imported": "NativeColumnarTemporalSortOperator=3"},
+                       {"stock": "StockSessionTableFunction=3"}, {"reasons": "sort unsupported"}):
+            with self.subTest(fields=fields):
+                self.assertTrue(self.check(self.evidence(), **fields)[0][2])
+
+    def test_elision_does_not_apply_to_rowtime_unknown_programs_or_other_classes(self):
+        for fields in ({"variant": "program=temporal_sort_rowtime"}, {"variant": "program=unknown"},
+                       {"test": "org.example.Other#testRestore"}):
+            self.assertTrue(self.check(self.evidence(), **fields)[0][2])
+        self.assertTrue(self.check(self.evidence(), contract="NativeColumnarTemporalSortOperator")[0][2])
+
+    def test_registry_restricts_elision_to_the_original_stateless_program(self):
+        for test, variant, valid in ((self.TEST, self.VARIANT, True),
+                                     (self.TEST, "program=temporal_sort_rowtime", False),
+                                     (self.TEST, "*", False), ("org.example.Other#testRestore", self.VARIANT, False)):
+            with tempfile.TemporaryDirectory() as temporary:
+                file = Path(temporary) / "contracts.tsv"
+                file.write_text(f"{test}\t{variant}\t{self.CONTRACT}\n")
+                if valid:
+                    self.assertEqual(self.CONTRACT, summarize.execution_contracts(file)[test][variant])
+                else:
+                    with self.assertRaises(ValueError): summarize.execution_contracts(file)
 
 
 if __name__ == "__main__":

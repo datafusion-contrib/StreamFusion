@@ -60,10 +60,16 @@ public final class NativeExecution {
             || !fields[1].matches("\\*|\\w+=\\w+(?:&\\w+=\\w+)*")
             || !(fields[2].matches("\\w+(?:[+|]\\w+)*")
                 || fields[2].matches("!.+")
-                || fields[2].matches("@restore:\\w+"))
+                || fields[2].matches("@restore:\\w+")
+                || fields[2].equals(ElidedTemporalSort.CONTRACT))
             || fields[2].startsWith("!@") && !fields[2].matches("!@\\w+:.+")) {
           throw new IllegalStateException("Invalid native execution contract: " + line);
         }
+        if (fields[2].equals(ElidedTemporalSort.CONTRACT)
+            && (!fields[0].equals(ElidedTemporalSort.TEST)
+                || !fields[1].equals(ElidedTemporalSort.VARIANT)))
+          throw new IllegalStateException(
+              "Elided sort proof is restricted to the unchanged PROCTIME fixture");
         if (fields[2].contains("&&")
             && (!fields[2].startsWith("!@")
                 || !fields[2].split("&&", -1)[1].matches("\\w+(?:[+|]\\w+)*")
@@ -207,7 +213,14 @@ public final class NativeExecution {
   public static synchronized void stockOpened(Object operator) {
     if (active == null || !Boolean.getBoolean("streamfusion.flink-suite.canonical")) return;
     String kind;
-    if (operator.getClass().getSimpleName().equals("UnalignedWindowTableFunctionOperator")) {
+    if (operator.getClass().getSimpleName().equals("RowTimeSortOperator")) {
+      if (!CONTRACTS.get(active.test).get(active.variant).contains("StockTemporalSort")) return;
+      if (field(operator, "dataState") == null
+          || field(operator, "lastTriggeringTsState") == null
+          || field(operator, "comparator") == null)
+        throw new AssertionError("Stock temporal sort state/comparator was not initialized");
+      kind = "StockTemporalSort";
+    } else if (operator.getClass().getSimpleName().equals("UnalignedWindowTableFunctionOperator")) {
       if (!field(operator, "windowAssigner")
           .getClass()
           .getSimpleName()
@@ -300,6 +313,32 @@ public final class NativeExecution {
     return (int) batch.getClass().getMethod("rowCount").invoke(batch);
   }
 
+  private record SubmittedGraph(Scope scope, Map<String, Object> graph) {}
+
+  public static synchronized Object submitting(Object[] arguments)
+      throws ReflectiveOperationException {
+    if (active == null
+        || !CONTRACTS.get(active.test).get(active.variant).equals(ElidedTemporalSort.CONTRACT))
+      return null;
+    for (Object argument : arguments)
+      if (argument != null
+          && argument
+              .getClass()
+              .getName()
+              .equals("org.apache.flink.streaming.api.graph.StreamGraph"))
+        return new SubmittedGraph(active, ElidedTemporalSort.graph(argument));
+    return null;
+  }
+
+  public static synchronized void submitted(Object token, Object client, Throwable failure)
+      throws ReflectiveOperationException {
+    if (!(token instanceof SubmittedGraph graph)
+        || graph.scope != active
+        || failure != null
+        || client == null) return;
+    active.submittedGraphs.put(ElidedTemporalSort.call(client, "getJobID").toString(), graph.graph);
+  }
+
   public static synchronized void finish(Scope scope) {
     if (scope != active) {
       throw new AssertionError("Native execution scope mismatch");
@@ -340,9 +379,22 @@ public final class NativeExecution {
               + Base64.getEncoder()
                   .encodeToString(
                       String.join("\n", scope.fallbacks).getBytes(StandardCharsets.UTF_8))
-              + (scope.stockRows.isEmpty()
-                  ? (restored.isEmpty() ? "" : "\t" + restoredCounts)
-                  : "\t" + restoredCounts + "\t" + stockCounts)
+              + (CONTRACTS.get(scope.test).get(scope.variant).equals(ElidedTemporalSort.CONTRACT)
+                  ? "\t" + restoredCounts + "\t" + stockCounts
+                  : scope.stockRows.isEmpty()
+                      ? (restored.isEmpty() ? "" : "\t" + restoredCounts)
+                      : "\t" + restoredCounts + "\t" + stockCounts)
+              + (CONTRACTS.get(scope.test).get(scope.variant).equals(ElidedTemporalSort.CONTRACT)
+                  ? "\t"
+                      + Base64.getEncoder()
+                          .encodeToString(
+                              SqlInventory.json(
+                                      Map.of(
+                                          "submitted_graphs", scope.submittedGraphs,
+                                          "native_opened", scope.opened,
+                                          "native_imports", scope.importedRows))
+                                  .getBytes(StandardCharsets.UTF_8))
+                  : "")
               + "\n");
       SqlInventory.contract(recordId, scope.test, scope.variant);
     } catch (IOException e) {
@@ -350,7 +402,18 @@ public final class NativeExecution {
     }
     String contract = CONTRACTS.get(scope.test).get(scope.variant);
     boolean satisfied;
-    if (contract.startsWith("@restore:")) {
+    if (contract.equals(ElidedTemporalSort.CONTRACT)) {
+      satisfied =
+          scope.test.equals(ElidedTemporalSort.TEST)
+              && scope.variant.equals(ElidedTemporalSort.VARIANT)
+              && !scope.submittedGraphs.isEmpty()
+              && scope.submittedGraphs.values().stream().allMatch(ElidedTemporalSort::valid)
+              && scope.stockRows.isEmpty()
+              && scope.importedRows.isEmpty()
+              && scope.fallbacks.isEmpty()
+              && scope.opened.stream().allMatch(name -> name.equals("NativeCalcOperator"))
+              && scope.rows.keySet().stream().allMatch(name -> name.equals("NativeCalcOperator"));
+    } else if (contract.startsWith("@restore:")) {
       satisfied =
           scope.rows.isEmpty()
               && scope.stockRows.isEmpty()
@@ -409,6 +472,7 @@ public final class NativeExecution {
     private final Map<String, Long> rows = new TreeMap<>();
     private final Map<String, Long> importedRows = new TreeMap<>();
     private final Map<String, Long> stockRows = new TreeMap<>();
+    private final Map<String, Map<String, Object>> submittedGraphs = new LinkedHashMap<>();
     private final Set<String> opened = new LinkedHashSet<>();
     private final Set<String> fallbacks = new LinkedHashSet<>();
 

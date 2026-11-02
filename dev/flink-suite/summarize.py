@@ -32,10 +32,15 @@ def execution_contracts(
             len(fields) != 3
             or not re.fullmatch(r"[\w.$]+#[\w$]+", fields[0])
             or not re.fullmatch(r"\*|\w+=\w+(?:&\w+=\w+)*", fields[1])
-            or not re.fullmatch(r"\w+(?:[+|]\w+)*|!.+|@restore:\w+", fields[2])
+            or not re.fullmatch(r"\w+(?:[+|]\w+)*|!.+|@restore:\w+|@elided:TemporalSort", fields[2])
             or fields[2].startswith("!@") and not re.fullmatch(r"!@\w+:.+", fields[2])
         ):
             raise ValueError(f"Invalid native execution contract: {line}")
+        if fields[2] == "@elided:TemporalSort" and (
+            fields[0] != "org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalSortRestoreTest#testRestore"
+            or fields[1] != "program=temporal_sort_proctime"
+        ):
+            raise ValueError("Elided sort proof is restricted to the unchanged PROCTIME fixture")
         if "&&" in fields[2]:
             clauses = fields[2].split("&&")
             if not fields[2].startswith("!@") or len(clauses) != 2 or not re.fullmatch(r"\w+(?:[+|]\w+)*", clauses[1]):
@@ -47,6 +52,47 @@ def execution_contracts(
     if not contracts:
         raise ValueError("No native execution contracts")
     return contracts
+
+
+def valid_elided_sort_graph(graph):
+    if not isinstance(graph, dict) or set(graph) != {"nodes"}:
+        return False
+    nodes = graph["nodes"]
+    if not isinstance(nodes, list) or len(nodes) < 2:
+        return False
+    indexed = {}
+    for node in nodes:
+        if not isinstance(node, dict) or set(node) != {"id", "operator", "inputs", "outputs"}:
+            return False
+        if (type(node["id"]) is not int or node["id"] in indexed
+            or not isinstance(node["operator"], str) or not node["operator"].strip()
+            or "SortOperator" in node["operator"]):
+            return False
+        if any(not isinstance(node[field], list) or any(type(value) is not int for value in node[field])
+               for field in ("inputs", "outputs")):
+            return False
+        indexed[node["id"]] = node
+    for ident, node in indexed.items():
+        if any(source not in indexed or ident not in indexed[source]["outputs"] for source in node["inputs"]):
+            return False
+        if any(target not in indexed or ident not in indexed[target]["inputs"] for target in node["outputs"]):
+            return False
+    outgoing = Counter((ident, target) for ident, node in indexed.items() for target in node["outputs"])
+    incoming = Counter((source, ident) for ident, node in indexed.items() for source in node["inputs"])
+    if incoming != outgoing:
+        return False
+    degrees = {ident: len(node["inputs"]) for ident, node in indexed.items()}
+    ready = [ident for ident, degree in degrees.items() if degree == 0]
+    visited = 0
+    while ready:
+        ident = ready.pop()
+        visited += 1
+        for target in indexed[ident]["outputs"]:
+            degrees[target] -= 1
+            if degrees[target] == 0:
+                ready.append(target)
+    return (visited == len(indexed) and any(not node["inputs"] for node in nodes)
+            and any(not node["outputs"] for node in nodes) and any(node["outputs"] for node in nodes))
 
 
 def check_execution(
@@ -63,7 +109,7 @@ def check_execution(
         try:
             fields = path.read_text().rstrip("\n").split("\t")
             if (
-                len(fields) not in (4, 5, 6)
+                len(fields) not in (4, 5, 6, 7)
                 or fields[0] not in contracts
                 or fields[1] not in contracts[fields[0]]
             ):
@@ -82,10 +128,10 @@ def check_execution(
                 return counts
             counts = parse_counts(raw_counts)
             restored = parse_counts(fields[4]) if len(fields) >= 5 else {}
-            stock = parse_counts(fields[5]) if len(fields) == 6 else {}
+            stock = parse_counts(fields[5]) if len(fields) >= 6 else {}
             if any(name.startswith("Stock") for name in counts):
                 raise ValueError("stock state-owner work cannot be reported as native input")
-            if any(name not in ("StockSessionTableFunction", "StockSessionWindowAggregate") for name in stock):
+            if any(name not in ("StockSessionTableFunction", "StockSessionWindowAggregate", "StockTemporalSort") for name in stock):
                 raise ValueError("unknown stock state-owner witness")
             def work_satisfied(expression):
                 return any(all((stock if operator.startswith("Stock") else counts).get(operator, 0) > 0
@@ -93,7 +139,29 @@ def check_execution(
             observed[test] += 1
             contract = contracts[test][variant]
             matched = False
-            if contract.startswith("@restore:"):
+            graph_evidence = None
+            if len(fields) == 7:
+                if contract != "@elided:TemporalSort":
+                    raise ValueError("unexpected submitted graph evidence")
+                graph_evidence = json.loads(base64.b64decode(fields[6], validate=True).decode())
+            if contract == "@elided:TemporalSort":
+                valid = (test == "org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalSortRestoreTest#testRestore"
+                    and variant == "program=temporal_sort_proctime"
+                    and not stock and not restored and not reasons
+                    and set(counts) <= {"NativeCalcOperator"}
+                    and isinstance(graph_evidence, dict)
+                    and set(graph_evidence) == {"submitted_graphs", "native_opened", "native_imports"}
+                    and isinstance(graph_evidence["submitted_graphs"], dict)
+                    and bool(graph_evidence["submitted_graphs"])
+                    and all(isinstance(job, str) and bool(job) and valid_elided_sort_graph(graph)
+                            for job, graph in graph_evidence["submitted_graphs"].items())
+                    and isinstance(graph_evidence["native_opened"], list)
+                    and all(name == "NativeCalcOperator" for name in graph_evidence["native_opened"])
+                    and graph_evidence["native_imports"] == {})
+                matched = bool(valid)
+                if not matched:
+                    problems.append(f"{test} [{variant}]: missing complete submitted graph without sort/state work")
+            elif contract.startswith("@restore:"):
                 operator = contract.removeprefix("@restore:")
                 if not counts and not stock and not reasons and restored.get(operator, 0) > 0:
                     proved += 1
@@ -128,6 +196,7 @@ def check_execution(
             if observations is not None:
                 native_work = any(count > 0 for count in counts.values())
                 route = (
+                    "ordering_elided" if contract == "@elided:TemporalSort" and matched else
                     "mixed" if native_work and (reasons or stock) else
                     "native" if native_work else
                     "native_restore" if contract.startswith("@restore:") and matched else
@@ -142,6 +211,7 @@ def check_execution(
                     "stock_state_owner_rows": stock,
                     "fallback_reasons": reasons,
                     "observed_route": route,
+                    "submitted_graph_evidence": graph_evidence,
                     "expected_contract": contract,
                     "contract_satisfied": matched,
                 })
@@ -388,7 +458,8 @@ def main() -> int:
     print(f"- Expected upstream failures: {len(expected)}")
     print(f"- Skipped: {skipped}")
     print(
-        f"- Execution contracts: {sum(executed.values())} invocations, {proved} native, {fallback} expected fallback"
+        f"- Execution contracts: {sum(executed.values())} invocations, {proved} native, {fallback} expected fallback, "
+        f"{sum(record['contract_satisfied'] and record['observed_route'] == 'ordering_elided' for record in audit['execution_evidence'])} ordering elided"
     )
 
     if malformed:

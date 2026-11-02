@@ -63,6 +63,12 @@ and mixed state, an empty cutoff-only state, negative/extreme timestamps, empty 
 nested rows, arrays, maps, binary values, non-finite doubles, malformed state and unchanged re-export.
 Complete-job controls preserve both transposes, custom source and transactional sink state, stock
 workers without StreamFusion dependencies, unchanged-state re-export and ordinary native-checkpoint
-recovery. Unchanged upstream restore-suite, remaining version/rescale matrix qualification and
-portable-planner consolidation are still tracked in
+recovery. The remaining version/rescale matrix qualification and portable-planner consolidation
+are still tracked in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred under the functionality-first requirement.
+
+The unchanged released `TemporalSortRestoreTest` rowtime program includes a secondary DOUBLE
+order key. It therefore remains a stock-state compatibility control: the execution witness checks
+the real stock state's initialization, secondary comparator and nonempty input alongside native
+Calc work and an explicit fallback reason. It does not count as native sort state coverage.
+The processing-time program has no sort operator; its submitted graph is checked separately.

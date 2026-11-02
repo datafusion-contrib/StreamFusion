@@ -24,6 +24,180 @@ class CanonicalRestoreExecutionTest {
   private static final String FILTER_REASON =
       "changelog normalize: a pushed filter condition is not supported";
 
+  private static final String SORT = ElidedTemporalSort.TEST.replace("#testRestore", "");
+
+  private static final String SORT_REASON =
+      "temporal sort: secondary order keys require the stock sorter";
+
+  @Test
+  void secondaryOrderingKeepsTheRealStockStateAndComparatorAlongsideNativeCalc() {
+    var scope = NativeExecution.beginRestore(SORT, new Object(), "temporal-sort-rowtime");
+    var calc = new NativeCalcOperator();
+    NativeExecution.opened(calc);
+    NativeExecution.completed(calc, 3);
+    var sort = new RowTimeSortOperator(true);
+    NativeExecution.stockOpened(sort);
+    NativeExecution.stockCompleted(sort);
+    NativeExecution.fallback(SORT_REASON);
+    assertDoesNotThrow(() -> NativeExecution.finish(scope));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "empty",
+        "calc",
+        "nativeSort",
+        "openStock",
+        "stockOnly",
+        "noFallback",
+        "wrongFallback",
+        "nativeImport"
+      })
+  void unrelatedWorkAndMissingStockStateCannotProveTheSecondaryOrder(String mode) {
+    var scope = NativeExecution.beginRestore(SORT, new Object(), "temporal-sort-rowtime");
+    if (!mode.equals("empty") && !mode.equals("stockOnly")) {
+      var calc = new NativeCalcOperator();
+      NativeExecution.opened(calc);
+      NativeExecution.completed(calc, 3);
+    }
+    if (!mode.equals("empty") && !mode.equals("calc")) {
+      var sort = new RowTimeSortOperator(true);
+      NativeExecution.stockOpened(sort);
+      if (!mode.equals("openStock")) NativeExecution.stockCompleted(sort);
+    }
+    if (mode.equals("nativeSort") || mode.equals("nativeImport")) {
+      var sort = new NativeColumnarTemporalSortOperator();
+      NativeExecution.opened(sort);
+      if (mode.equals("nativeSort")) NativeExecution.completed(sort, 3);
+      else NativeExecution.restored("NativeColumnarTemporalSortOperator", 3);
+    }
+    if (!mode.equals("noFallback"))
+      NativeExecution.fallback(mode.equals("wrongFallback") ? "other sort fallback" : SORT_REASON);
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  @Test
+  void stockSortMustHaveManagedStateAndARealSecondaryComparator() {
+    var scope = NativeExecution.beginRestore(SORT, new Object(), "temporal-sort-rowtime");
+    assertThrows(
+        AssertionError.class, () -> NativeExecution.stockOpened(new RowTimeSortOperator(false)));
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  private static final class RowTimeSortOperator {
+    final Object dataState = new Object();
+    final Object lastTriggeringTsState = new Object();
+    final Object comparator;
+
+    RowTimeSortOperator(boolean comparator) {
+      this.comparator = comparator ? new Object() : null;
+    }
+  }
+
+  @Test
+  void unknownTemporalSortProgramsCannotUseTheElidedOrderingContract() {
+    assertThrows(
+        AssertionError.class,
+        () -> NativeExecution.beginRestore(SORT, new Object(), "temporal-sort-unknown"));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void proctimeOrderingRequiresARealSubmittedGraphWithoutASort(boolean calc) throws Exception {
+    var scope = NativeExecution.beginRestore(SORT, new Object(), "temporal-sort-proctime");
+    var graph = passthroughGraph();
+    NativeExecution.submitted(
+        NativeExecution.submitting(new Object[] {graph}), new SubmittedClient(), null);
+    if (calc) {
+      var operator = new NativeCalcOperator();
+      NativeExecution.opened(operator);
+      NativeExecution.completed(operator, 3);
+    }
+    assertDoesNotThrow(() -> NativeExecution.finish(scope));
+    try (var files = java.nio.file.Files.list(reports)) {
+      var fields =
+          java.nio.file.Files.readString(files.findFirst().orElseThrow())
+              .stripTrailing()
+              .split("\t", -1);
+      assertEquals(7, fields.length);
+      String evidence =
+          new String(
+              java.util.Base64.getDecoder().decode(fields[6]),
+              java.nio.charset.StandardCharsets.UTF_8);
+      assertTrue(evidence.contains("submitted_graphs"), evidence);
+      assertTrue(evidence.contains("StreamSink"), evidence);
+    }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "empty",
+        "failedSubmission",
+        "nullClient",
+        "stockSort",
+        "nativeSort",
+        "import",
+        "fallback"
+      })
+  void proctimeElisionRejectsMissingJobsAndAnySortState(String mode) throws Exception {
+    var scope = NativeExecution.beginRestore(SORT, new Object(), "temporal-sort-proctime");
+    if (!mode.equals("empty")) {
+      var graph = passthroughGraph();
+      if (mode.equals("stockSort")) graph = stockSortGraph();
+      NativeExecution.submitted(
+          NativeExecution.submitting(new Object[] {graph}),
+          mode.equals("nullClient") ? null : new SubmittedClient(),
+          mode.equals("failedSubmission") ? new IllegalStateException("submission failed") : null);
+    }
+    if (mode.equals("nativeSort")) NativeExecution.opened(new NativeColumnarTemporalSortOperator());
+    if (mode.equals("import")) NativeExecution.restored("NativeColumnarTemporalSortOperator", 3);
+    if (mode.equals("fallback")) NativeExecution.fallback("unexpected sort fallback");
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  private static org.apache.flink.streaming.api.graph.StreamGraph passthroughGraph() {
+    var env =
+        org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
+            .getExecutionEnvironment();
+    env.setParallelism(1);
+    env.getConfig().disableClosureCleaner();
+    env.fromElements(1, 2)
+        .map(value -> value + 1)
+        .returns(org.apache.flink.api.common.typeinfo.Types.INT)
+        .addSink(new org.apache.flink.streaming.api.functions.sink.DiscardingSink<>());
+    return env.getStreamGraph();
+  }
+
+  private static org.apache.flink.streaming.api.graph.StreamGraph stockSortGraph() {
+    var env =
+        org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
+            .getExecutionEnvironment();
+    env.setParallelism(1);
+    var type =
+        org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(
+            org.apache.flink.table.types.logical.RowType.of(
+                new org.apache.flink.table.types.logical.BigIntType()));
+    env.<org.apache.flink.table.data.RowData>fromCollection(
+            java.util.List.of(org.apache.flink.table.data.GenericRowData.of(1L)), type)
+        .keyBy(org.apache.flink.table.runtime.keyselector.EmptyRowDataKeySelector.INSTANCE)
+        .transform(
+            "stock-sort",
+            type,
+            new org.apache.flink.table.runtime.operators.sort.RowTimeSortOperator(type, 0, null))
+        .addSink(new org.apache.flink.streaming.api.functions.sink.DiscardingSink<>());
+    return env.getStreamGraph();
+  }
+
+  public static final class SubmittedClient {
+    public String getJobID() {
+      return "submitted-graph-job";
+    }
+  }
+
+  private static final class NativeColumnarTemporalSortOperator {}
+
   @Test
   void windowDeduplicationRequiresItsNativeSelectionOperator() {
     var scope =

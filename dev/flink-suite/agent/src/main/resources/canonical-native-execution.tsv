@@ -56,3 +56,5 @@ org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreT
 org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreTest#testRestore	program=changelog_normalize_upsert	NativeColumnarChangelogNormalizeOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreTest#testRestore	program=changelog_normalize_upsert_filter	!@NativeColumnarChangelogNormalizeOperator:changelog normalize: a pushed filter condition is not supported
 org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreTest#testRestore	program=changelog_normalize_upsert_filter_watermark	!@NativeColumnarChangelogNormalizeOperator:changelog normalize: a pushed filter condition is not supported
+org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalSortRestoreTest#testRestore	program=temporal_sort_rowtime	!@NativeColumnarTemporalSortOperator:temporal sort: secondary order keys require the stock sorter&&NativeCalcOperator+StockTemporalSort
+org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalSortRestoreTest#testRestore	program=temporal_sort_proctime	@elided:TemporalSort
