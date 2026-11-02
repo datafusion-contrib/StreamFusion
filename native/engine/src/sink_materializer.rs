@@ -7,6 +7,8 @@ use state::{Action, Candidates, Strategy};
 
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, feature = "rocksdb-state"))]
+mod timestamp_tests;
 
 #[derive(Clone)]
 enum Identity {
@@ -36,9 +38,15 @@ struct Candidate {
     serialized: Option<Arc<[u8]>>,
     payload: Arc<[u8]>,
     identity: Identity,
+    timestamp: Option<i64>,
 }
 
 impl Candidate {
+    fn with_timestamp(mut self, timestamp: Option<i64>) -> Self {
+        self.timestamp = timestamp;
+        self
+    }
+
     fn bytes(&self) -> usize {
         self.payload.len() + self.identity.bytes() + self.serialized.as_ref().map_or(0, |s| s.len())
     }
@@ -179,6 +187,7 @@ impl RowsCodec {
             payload,
             identity,
             serialized,
+            timestamp: None,
         }
     }
 
@@ -468,7 +477,9 @@ impl SinkMaterializer {
                 // Owned key arrays must not retain unrelated rows of an incoming Arrow batch.
                 let owned_identity = codec.byte_equality.then_some(identity);
                 values.add(
-                    codec.candidate(payload, owned_identity, serialized),
+                    codec
+                        .candidate(payload, owned_identity, serialized)
+                        .with_timestamp(Some(now)),
                     !self.upsert_columns.is_empty(),
                     self.strategy,
                     codec,
@@ -583,11 +594,13 @@ impl SinkMaterializer {
         for row in 0..batch.num_rows() {
             let kind = kinds.map_or(0, |k| k.value(row));
             let payload: Arc<[u8]> = Arc::from(payloads.row(row).data());
-            let candidate = codec.candidate(
-                payload.clone(),
-                Some(codec.identity(batch, row, identities.as_ref())),
-                binary.as_mut().map(|b| Arc::from(b.encode(row))),
-            );
+            let candidate = codec
+                .candidate(
+                    payload.clone(),
+                    Some(codec.identity(batch, row, identities.as_ref())),
+                    binary.as_mut().map(|b| Arc::from(b.encode(row))),
+                )
+                .with_timestamp(Some(now));
             let addition = kind == 0 || kind == 2;
             let (fresh, action) = store.apply(
                 keys.encode(row),
@@ -691,7 +704,9 @@ impl SinkMaterializer {
                 let binary = serialized.as_mut().map(|e| Arc::from(e.encode(row)));
                 store.apply(
                     key,
-                    codec.candidate(Arc::from(payloads.row(row).data()), Some(identity), binary),
+                    codec
+                        .candidate(Arc::from(payloads.row(row).data()), Some(identity), binary)
+                        .with_timestamp(Some(now)),
                     true,
                     true,
                     self.strategy,
@@ -722,7 +737,9 @@ impl SinkMaterializer {
             let identity = codec.identity(&selected, row, identities.as_ref());
             let binary = serialized.as_mut().map(|e| Arc::from(e.encode(row)));
             values.add(
-                codec.candidate(Arc::from(payloads.row(row).data()), Some(identity), binary),
+                codec
+                    .candidate(Arc::from(payloads.row(row).data()), Some(identity), binary)
+                    .with_timestamp(Some(now)),
                 true,
                 self.strategy,
                 codec,
@@ -791,7 +808,7 @@ impl SinkMaterializer {
                         ),
                         (
                             "streamfusion.sink-materializer.version".to_string(),
-                            "2".to_string(),
+                            "3".to_string(),
                         ),
                         (
                             "streamfusion.sink-materializer.ttl-ms".to_string(),
@@ -859,13 +876,14 @@ impl SinkMaterializer {
     pub(crate) fn restore(&mut self, snapshots: &[Vec<u8>], now: i64) {
         for bytes in snapshots {
             for batch in read_ipc_if_present(bytes) {
-                assert_eq!(
-                    batch
-                        .schema_ref()
-                        .metadata()
-                        .get("streamfusion.sink-materializer.version")
-                        .map(String::as_str),
-                    Some("2")
+                let version = batch
+                    .schema_ref()
+                    .metadata()
+                    .get("streamfusion.sink-materializer.version")
+                    .map(String::as_str);
+                assert!(
+                    matches!(version, Some("2" | "3")),
+                    "unknown materializer snapshot version"
                 );
                 let had_ttl = batch
                     .schema_ref()
@@ -907,6 +925,7 @@ impl SinkMaterializer {
                         (row + 1..row + 1 + count).map(|i| rows.value(i).to_vec()),
                         written_at,
                         codec,
+                        version == Some("3"),
                     );
                     values.reconfigure(self.strategy, codec);
                     self.groups.insert(ByteKey::from(keys.value(row)), values);

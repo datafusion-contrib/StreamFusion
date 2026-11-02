@@ -52,12 +52,20 @@ neighbours. ADAPTIVE changes these on-disk layouts at the same thresholds as Fli
 set is bounded to the current batch and affected records, including for one key with many candidates;
 RocksDB cache and write buffers use the shared slot pool. Native checkpoints retain the database
 files without decoding all candidates. Portable snapshots retain payloads, matching identities,
-linked topology and key-index entries. Restore
-retains ordering and permits key-group redistribution on rescale. Snapshot version 2 is specific
+linked topology, key-index entries and sampled per-candidate timestamps. Restore
+retains ordering and permits key-group redistribution on rescale. Snapshot version 3 is specific
 to this native operator; it does not import a stock Flink materializer's savepoint state. Portable
 exports materialize one key's candidates at a time and return serialized key-group buffers. Existing
 version-2 native payloads remain readable, including automatic import of the former RocksDB
-snapshot-store checkpoints into the record-level tables.
+snapshot-store checkpoints into the record-level tables. New native input samples the batch
+processing clock for each retained candidate. Replacing a candidate replaces its sample; successful
+removals and unmatched retracts do not refresh the surviving candidates. Native snapshots, direct
+RocksDB records and adaptive layout changes retain these samples independently of whole-list TTL.
+Historical version-2 payloads and disk records did not record candidate timestamps. Recovery keeps
+that history explicitly unknown instead of assigning the restore clock. Frozen bytes written by the
+preceding writer qualify both historical readers; new timestamps coexist with unknown historical
+ones. JNI clock/recovery controls run on released Flink 1.18.1 and 2.2.1. This native metadata
+retention is groundwork for canonical interchange, not a stock adapter.
 
 Legacy materialization applies `table.exec.state.ttl` to the whole candidate list, refreshed on
 successful additions and removals. Expiry is silent. Enabling TTL when restoring a TTL-disabled
@@ -88,8 +96,7 @@ key under a 16 KiB operator budget and recovers them from native database files.
 ## Canonical interchange qualification
 
 Stock-compatible canonical import/export for native materialization remains unfinished in
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Native version-2 portable
-snapshots are not stock Flink canonical savepoints.
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Native portable snapshots are not stock Flink canonical savepoints.
 
 Released 2.2.1 stock protocol controls cover LEGACY, VALUE, MAP and both ADAPTIVE representations
 across heap/RocksDB canonical handoffs, including a second handoff without input. They compare
@@ -98,8 +105,11 @@ LEGACY uses `values` with a list serializer and optional whole-list TTL age. VAL
 with row/timestamp tuples. MAP uses `rowToSqnState`, `sqnToNodeState` and `highestSqnState` for
 matching indexes, linked candidates and the sequence cursor/size. ADAPTIVE registers both layouts.
 V2 retains sampled timestamps even with TTL disabled; import, ordinary native recovery and later
-canonical re-export must preserve them. Current native payloads do not retain those per-candidate
-timestamps, so row serialization alone cannot supply a complete adapter.
+canonical re-export must preserve them. Native state now retains these timestamps for new candidates
+and preserves recorded times through recovery and unchanged re-export. An adapter must still translate the stock descriptors, timestamps,
+linked nodes and matching indexes directly; row serialization alone cannot supply that adapter.
+Historical native candidates with unknown timestamps need an explicit interchange policy rather
+than invented metadata.
 
 The controls retain a released MAP/linked-ADAPTIVE failure boundary: replacing an older input-key
 candidate moves the cursor; appending can overwrite a live sequence, and a later removal throws
