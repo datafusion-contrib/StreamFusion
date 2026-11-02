@@ -364,6 +364,17 @@ public final class Native {
 
   public static native void fireTemporalJoinCleanup(long handle, long timestamp);
 
+  public static native void bindTemporalJoinCanonicalKeys(long handle, int[] precisions);
+
+  public static native void exportTemporalJoinCanonicalRows(long handle, boolean left, BatchReceiver receiver);
+
+  public static native void importTemporalJoinCanonicalRows(long handle, boolean left, long array, long schema);
+
+  public static native void exportTemporalJoinCanonicalMetadata(long handle, BatchReceiver receiver);
+
+  public static native void importTemporalJoinCanonicalMetadata(long handle, long array, long schema);
+
+
 
   public static native long updatingJoinerStateBytes(long handle);
 

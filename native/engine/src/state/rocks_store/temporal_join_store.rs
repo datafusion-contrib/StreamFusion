@@ -911,3 +911,5 @@ mod tests {
 }
 
 mod stock_state;
+
+mod canonical;

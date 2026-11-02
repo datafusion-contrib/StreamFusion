@@ -74,6 +74,23 @@ class NativeTemporalCleanupTimerTest {
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
+  void finishWithPendingBuildCallbacksDoesNotRegisterAnotherProcessingTimer(boolean disk)
+      throws Exception {
+    var operator = operator();
+    try (var allocator = new RootAllocator();
+        var harness = harness(operator, disk)) {
+      harness.open();
+      harness.setProcessingTime(500);
+      harness.processElement2(new StreamRecord<>(batch(allocator, 1)));
+      harness.setProcessingTime(600);
+      deadline(operator, 650L);
+      // Harness close stops its timer service before finish. The final event callback refreshes
+      // the native clock to 750, which must not schedule another callback on that stopped service.
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
   void cleanupDeadlinePreservesJavaLongOverflow(boolean disk) throws Exception {
     var operator = operator();
     try (var allocator = new RootAllocator();

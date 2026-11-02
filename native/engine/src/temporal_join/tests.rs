@@ -280,7 +280,7 @@ fn persistent_callback_ownership_retains_versions_for_late_probes() {
     check_deferred_versions(true);
 }
 
-fn check_stock_trace(source_disk: bool, target_disk: bool, sst: bool, aligned: bool) {
+fn check_stock_trace(source_disk: bool, target_disk: bool, sst: bool, aligned: bool, direct: bool) {
     let mut directories = Vec::new();
     fn create(
         directories: &mut Vec<tempfile::TempDir>,
@@ -420,6 +420,26 @@ fn check_stock_trace(source_disk: bool, target_disk: bool, sst: bool, aligned: b
         };
         assert_eq!(state.callbacks, callbacks, "{line}");
         assert_eq!(deadline, number(row[9]), "{line}");
+        if direct {
+            let directory = tempfile::tempdir().unwrap();
+            let mut recovered =
+                operator(target_disk.then_some(directory.path())).with_state_retention(retention);
+            for left in [true, false] {
+                joiner
+                    .visit_canonical_rows(left, |batch| {
+                        recovered.import_canonical_rows(left, &batch)
+                    })
+                    .unwrap();
+            }
+            joiner
+                .visit_canonical_metadata(|batch| recovered.import_canonical_metadata(&batch))
+                .unwrap();
+            assert_eq!(inspect(&recovered), (state, deadline), "{line}");
+            joiner = recovered;
+            directories.push(directory);
+            continue;
+        }
+
         #[cfg(feature = "rocksdb-state")]
         if sst {
             let snapshot = tempfile::tempdir().unwrap();
@@ -499,14 +519,14 @@ fn check_stock_trace(source_disk: bool, target_disk: bool, sst: bool, aligned: b
 
 #[test]
 fn memory_stock_metadata_and_rows_follow_released_trace_through_each_native_checkpoint() {
-    check_stock_trace(false, false, false, false);
+    check_stock_trace(false, false, false, false, false);
 }
 
 #[cfg(feature = "rocksdb-state")]
 #[test]
 fn persistent_stock_trace_survives_each_raw_checkpoint() {
     for (source, target) in [(false, true), (true, false), (true, true)] {
-        check_stock_trace(source, target, false, false);
+        check_stock_trace(source, target, false, false, false);
     }
 }
 
@@ -514,7 +534,7 @@ fn persistent_stock_trace_survives_each_raw_checkpoint() {
 #[test]
 fn persistent_stock_trace_survives_each_sst_checkpoint() {
     for aligned in [false, true] {
-        check_stock_trace(true, true, true, aligned);
+        check_stock_trace(true, true, true, aligned, false);
     }
 }
 
@@ -909,5 +929,143 @@ fn processing_cleanup_deadlines_use_released_java_long_arithmetic() {
             };
             assert_eq!(joiner.next_cleanup(), Some(expected));
         }
+    }
+}
+
+#[test]
+fn released_trace_continues_after_each_direct_live_state_transfer() {
+    for source in [false, true] {
+        #[cfg(not(feature = "rocksdb-state"))]
+        if source {
+            continue;
+        }
+        for target in [false, true] {
+            #[cfg(not(feature = "rocksdb-state"))]
+            if target {
+                continue;
+            }
+            check_stock_trace(source, target, false, false, true);
+        }
+    }
+}
+
+#[test]
+fn direct_visitors_are_bounded_read_only_and_retryable_after_receiver_failures() {
+    for persistent in [false, true] {
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let mut source = operator(persistent.then_some(directory.path())).with_state_retention(0);
+        source.push_left(&batch((0..1500).collect()), 0).unwrap();
+        let capture = |source: &TemporalJoiner, metadata: bool| {
+            let mut result = Vec::new();
+            if metadata {
+                source
+                    .visit_canonical_metadata(|batch| {
+                        assert!(batch.num_rows() <= 1024);
+                        result.push(batch);
+                        Ok(())
+                    })
+                    .unwrap();
+            } else {
+                source
+                    .visit_canonical_rows(true, |batch| {
+                        assert!(batch.num_rows() <= 1024);
+                        result.push(batch);
+                        Ok(())
+                    })
+                    .unwrap();
+            }
+            assert_eq!(
+                result.iter().map(RecordBatch::num_rows).sum::<usize>(),
+                1500
+            );
+            assert_eq!(result.len(), 2);
+            result
+        };
+        for metadata in [false, true] {
+            let before = capture(&source, metadata);
+            let failed = if metadata {
+                source.visit_canonical_metadata(|_| {
+                    Err(DataFusionError::Execution("receiver failed".into()))
+                })
+            } else {
+                source.visit_canonical_rows(true, |_| {
+                    Err(DataFusionError::Execution("receiver failed".into()))
+                })
+            };
+            assert!(failed.unwrap_err().to_string().contains("receiver failed"));
+            assert_eq!(capture(&source, metadata), before);
+        }
+        assert_eq!(source.advance(100, 0).unwrap().num_rows(), 1500);
+    }
+}
+
+#[test]
+fn direct_import_rejects_duplicates_bad_callbacks_and_import_after_execution() {
+    for persistent in [false, true] {
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        let source_directory = tempfile::tempdir().unwrap();
+        let mut source = operator(persistent.then_some(source_directory.path()));
+        source.push_left(&batch(vec![1]), 0).unwrap();
+        let mut rows = Vec::new();
+        let mut metadata = Vec::new();
+        source
+            .visit_canonical_rows(true, |batch| {
+                rows.push(batch);
+                Ok(())
+            })
+            .unwrap();
+        source
+            .visit_canonical_metadata(|batch| {
+                metadata.push(batch);
+                Ok(())
+            })
+            .unwrap();
+        let target_directory = tempfile::tempdir().unwrap();
+        let mut target = operator(persistent.then_some(target_directory.path()));
+        let bad = RecordBatch::try_new(metadata[0].schema(), {
+            let mut columns = metadata[0].columns().to_vec();
+            columns[4] = Arc::new(ListArray::from_iter_primitive::<
+                arrow::array::types::Int64Type,
+                _,
+                _,
+            >([Some([Some(100), Some(100)])]));
+            columns
+        })
+        .unwrap();
+        assert!(target
+            .import_canonical_metadata(&bad)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate or unordered"));
+        target.import_canonical_rows(true, &rows[0]).unwrap();
+        assert!(target
+            .import_canonical_rows(true, &rows[0])
+            .unwrap_err()
+            .to_string()
+            .contains("already imported"));
+        target.import_canonical_metadata(&metadata[0]).unwrap();
+        assert!(target
+            .import_canonical_metadata(&metadata[0])
+            .unwrap_err()
+            .to_string()
+            .contains("already imported"));
+        assert_eq!(target.advance(100, 0).unwrap().num_rows(), 1);
+        assert!(target
+            .import_canonical_rows(true, &rows[0])
+            .unwrap_err()
+            .to_string()
+            .contains("has not started execution"));
+        assert!(target
+            .import_canonical_metadata(&metadata[0])
+            .unwrap_err()
+            .to_string()
+            .contains("has not started execution"));
     }
 }

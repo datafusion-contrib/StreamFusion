@@ -307,7 +307,6 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
   @Override
   public void finish() throws Exception {
     advance(Long.MAX_VALUE); // end of input: resolve probes with a queued event callback
-    armProcessingCleanup();
     super.finish();
   }
 

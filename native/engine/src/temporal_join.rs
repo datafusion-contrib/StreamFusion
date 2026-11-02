@@ -63,6 +63,7 @@ pub(crate) struct TemporalJoiner {
     /// per min-retention period.
     last_sweep_ms: i64,
     external_cleanup_timers: bool,
+    canonical_import_open: bool,
     pub(crate) memory: OperatorMemory,
     /// Persistent-state mode: the probe rows, the versioned build side, and the cleanup deadlines
     /// live in the persistent store; the in-memory maps stay empty, and a watermark firing walks
@@ -111,6 +112,7 @@ impl TemporalJoiner {
             cleanup_state: HashMap::default(),
             last_sweep_ms: 0,
             external_cleanup_timers: false,
+            canonical_import_open: true,
             memory: OperatorMemory::unaccounted(),
             #[cfg(feature = "rocksdb-state")]
             store: None,
@@ -312,6 +314,7 @@ impl TemporalJoiner {
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<(), DataFusionError> {
+        self.canonical_import_open = false;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             return self.push_store(batch, true, now_ms);
@@ -370,6 +373,7 @@ impl TemporalJoiner {
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<(), DataFusionError> {
+        self.canonical_import_open = false;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             return self.push_store(batch, false, now_ms);
@@ -430,6 +434,7 @@ impl TemporalJoiner {
         watermark: i64,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        self.canonical_import_open = false;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             return self.advance_store(watermark, now_ms);
@@ -1750,6 +1755,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTemporalJoinerPartit
 #[cfg(test)]
 mod tests;
 
+mod canonical;
 mod cleanup;
 pub(crate) mod stock_meta;
 

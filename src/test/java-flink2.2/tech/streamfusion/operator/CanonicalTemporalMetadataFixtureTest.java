@@ -156,12 +156,17 @@ class CanonicalTemporalMetadataFixtureTest {
     }
   }
 
-  private static RowData data(long value, long time) {
+  static RowData data(long value, long time) {
     return new RowDataSerializer(INPUT).toBinaryRow(GenericRowData.of(1L, value, time)).copy();
   }
 
-  private static KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData> harness(
+  static KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData> harness(
       boolean disk, long retention) throws Exception {
+    return harness(disk, retention, true);
+  }
+
+  static KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData> harness(
+      boolean disk, long retention, boolean leftOuter) throws Exception {
     String code =
         "public class CanonicalTemporalCondition extends"
             + " org.apache.flink.api.common.functions.AbstractRichFunction implements"
@@ -182,7 +187,7 @@ class CanonicalTemporalMetadataFixtureTest {
             2,
             retention,
             retention * 3 / 2,
-            true);
+            leftOuter);
     var harness =
         new KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData>(
             operator, selector, selector, selector.getProducedType(), 128, 1, 0);
@@ -220,7 +225,7 @@ class CanonicalTemporalMetadataFixtureTest {
     return value.equals("-") ? null : Long.valueOf(value);
   }
 
-  private static void check(
+  static void check(
       KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData> harness,
       String[] row,
       long retention,

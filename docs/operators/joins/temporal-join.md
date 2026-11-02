@@ -71,10 +71,9 @@ build versions. Both memory and persistent logical exporters include those group
 rescaling retain the original deadline and silent expiry. Regressions cover both backend
 switch directions, 64 keys, empty/mixed row sides and three-way redistribution.
 
-This is native snapshot correctness, not stock canonical-savepoint qualification. Complete
-stock state projection must additionally preserve probe ordering/cursors, versioned row kinds,
-the registered event-timer value and queued callbacks that can outlive TTL cleanup. That adapter
-and automatic temporal plan binding remain open in
+These controls cover native recovery. The separate canonical adapter described below preserves
+probe indices/cursors, versioned row kinds, registered timer values and queued callbacks that can
+outlive TTL cleanup. Automatic temporal plan binding remains open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
 
 ## Released cursor and callback contract controls
@@ -102,5 +101,22 @@ The shared released trace runs through native recovery after every transition, i
 switches and aligned/redistributed persistent checkpoints. Orphan callback memory remains accounted
 until the callback fires.
 
-Stock temporal savepoint transfer and automatic plan binding remain unfinished. Native recovery correctness does not count as qualified stock conversion coverage.
-Benchmarking remains deferred.
+## Canonical interchange: partial
+
+The released 2.2.1 adapter reads live native rows and bookkeeping directly into stock map/value
+states and Void timer queues, with original key/row serializers and signed probe-map indices.
+It creates no intermediate native snapshot. Preflight validates the complete stock inventory,
+serializers, row keys/timestamps and callback ownership before native mutation.
+
+Eighty positive operator cases cover INNER/LEFT, both stock/native stores, the shared metadata
+trace, unchanged-state handoff, ordinary native recovery, NULL payloads, all four row kinds,
+version overwrites and continued execution in both engines. Thirty-two malformed-state controls
+verify rejection without partial native import. Serializer snapshots restore with StreamFusion
+and planner classes blocked; Arrow allocation checks remain strict. The independent clean build
+passes 1,184 native tests (two existing ignores) and 185 Java controls. Shared 1.18 runtime checks
+also pass, but do not qualify canonical temporal transfer on that version.
+
+These fixtures use BIGINT keys/payloads and compact time fields. Automatic temporal plan binding,
+unchanged upstream temporal restore fixtures, isolated complete-job switches and the broader
+schema/rescale/failure/version matrix remain pending under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.

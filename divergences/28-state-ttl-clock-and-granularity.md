@@ -56,13 +56,15 @@ and the planner-derived max retention preserve released Java-long wraparound.
 
 Callback-driven execution disables lazy touch/sweep expiry, preserving mailbox input/callback
 ordering. Native standalone callers retain lazy enforcement unless they bind host cleanup timers.
-Both stores force expiry independently of event time when the callback fires.
+Both stores force expiry independently of event time when the callback fires. Finish retains
+updated native deadlines without re-registering callbacks on a stopped processing-time service.
 
 Both stores now refresh cleanup on actual event callbacks, including build-only callbacks.
 Independent event callback ownership survives cleanup and recovery. Watermarks without callbacks
 do not prune build versions; this preserves released Flink behavior for late probes. Native
 checkpoints preserve signed per-key probe cursors, registered event values and orphan callbacks,
-including metadata-only key groups. Stock canonical temporal transfer remains unfinished.
+including metadata-only key groups. Representative released 2.2.1 temporal canonical transfer is verified directly from live state;
+automatic plan binding and complete-job qualification remain unfinished.
 
 The OVER aggregate's rowtime deadline shapes retain the same lazy + sweep substitution. Flink's fired timer defers a rowtime key that still has buffered rows
 awaiting a watermark, re-registering from the fire time (`fire + max`); our deferral re-arm runs

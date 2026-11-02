@@ -1,9 +1,14 @@
 # Canonical state format
 
-StreamFusion uses Flink's canonical savepoint container and full-snapshot writer. Native operator
-state is represented as reserved managed keyed state, so Flink owns the state metadata, key-group
-index, stream handles, redistribution, and integrity checks. The payload is StreamFusion's logical
-operator state; it is not yet the managed-state schema of the equivalent stock Flink operator.
+StreamFusion uses Flink's canonical savepoint container and full-snapshot writer. Operators
+bound to a verified stock contract project directly into the corresponding released Flink state
+schema. Their qualified scope is documented below. Unbound operators retain reserved managed
+state containing StreamFusion's logical representation, which still requires StreamFusion on restore.
+Flink owns state metadata, key-group indexes, stream handles, redistribution and integrity checks.
+
+Representative canonical conversion paths now exist in all **15 operator families**, including
+tested draft adapters awaiting consolidation. Every family remains partial; this count excludes
+connector protocols and is not a percentage of overall completion or individual state variants.
 
 Each non-empty key group has a versioned `SFCS` header in
 `__streamfusion_canonical_native_state_v1` and zero or more 4 MiB chunk states. The header records:
@@ -18,7 +23,7 @@ All header integers are big-endian. The byte layout is `SFCS` (4 bytes), format 
 UTF-8 operator-id length (`i32`) and bytes, processing-time deadline (`i64`), chunk count (`i32`),
 payload length (`i32`), and CRC32C (`u32`). Chunk `n` is stored in the reserved value state
 `__streamfusion_canonical_native_state_v1_chunk_n` under the same Flink key group. This naming and
-envelope are the stable reader boundary for a future translation tool.
+envelope remain an internal native-recovery boundary.
 
 The chunks contain the operator's logical Arrow IPC snapshot sections. Memory and RocksDB operators
 produce and consume the same representation. Direct RocksDB state is decoded from its typed table
@@ -489,17 +494,16 @@ Benchmarking remains deferred.
 
 Native temporal join snapshots retain cleanup-only key groups even when neither row side holds
 records in that group. Memory and persistent logical exports take the union of both row-side
-inventories and independent cleanup-state groups. The existing frame layout and deadline values
-remain unchanged. Restore and redistribution therefore retain timer-only state rather than
+inventories and independent cleanup-state groups. Versioned native snapshots now retain exact
+deadlines together with signed cursors and independent event callbacks. Restore and redistribution therefore retain timer-only state rather than
 silently omitting its key group.
 
 Two native regressions first reproduce the loss on each original backend, then verify both
 source/target stores, 64 negative keys, empty/mixed row sides, exact deadline ages, redistribution
 across three subtasks, repeated export and silent expiry. The clean native suite passes 1,166
 tests with two existing ignores; targeted Java operator, SQL/backend and key-group checks also
-pass. This fixes native logical snapshots; it does not establish stock temporal-join canonical
-interchange, which remains open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
-Benchmarking remains deferred.
+pass. Those regressions establish native logical-snapshot retention; direct stock temporal
+interchange is qualified separately below. Benchmarking remains deferred.
 
 ### Complete event-time and processing-time interval handoffs
 
@@ -531,7 +535,40 @@ retained build versions when no callback is queued. The internal native metadata
 versioned codec follow this trace and reject malformed metadata without conflating MIN with
 absence. The clean native suite passes 1,168 tests with two existing ignores.
 
-These are component/stock contract controls. The helper still needs integration with live native
-temporal state, ordinary native recovery and direct stock canonical transfer; this does not
-qualify a temporal adapter or automatic native restore. That work remains in
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+Both native stores now execute and recover this bookkeeping. They prune versions only when the
+owning key has a due callback, preserve signed per-key indices, and account orphan callbacks until
+they fire. Four-section raw snapshots and versioned persistent metadata preserve original clocks,
+with frozen previous-writer fixtures qualifying legacy raw and persistent recovery.
+
+## Stock temporal canonical interchange
+
+Released Flink 2.2.1 INNER/LEFT temporal operator fixtures now transfer live state directly in
+both directions. The adapter writes stock `left`/`right` maps with their original row serializers,
+signed probe indices, version timestamps and row kinds; independent `next-index`, `timer` and
+optional `cleanup-timestamp` values; and the actual Void-namespace event/processing queues.
+Cursor-only, cleanup-only and orphan-callback state survive even when both row caches are empty.
+Export visits native memory or typed persistent tables in bounded row chunks without creating a
+native snapshot first. Import preflights the complete stock inventory, serializers, key/row/time
+agreement and callback ownership before any native mutation.
+
+The clean qualification contains 80 positive controls and 32 malformed-state rejections. The
+72 trace cases combine both join kinds and both stock/native stores, with 384 canonical handoffs
+across the shared 48-transition released trace. Every next native action is checked against stock;
+continued stock actions after export are also checked. Ordinary native checkpoints alternate with
+stock-schema re-imports. Eight additional cases preserve NULL payloads, all four row kinds,
+last-write-wins build versions, late probes and continued execution in both engine orders.
+Rejected descriptors, callback/value mismatches and corrupt row keys/timestamps leave native state
+empty. Exported serializer snapshots restore with StreamFusion and planner classes blocked.
+Strict Arrow ownership checks remain enabled across every handoff and teardown.
+
+The independent build passes 1,184 native tests (two existing ignores) and 185 Java checks on
+2.2.1, including the controls above and 73 overlapping stock/runtime/SQL regressions. Shared
+runtime checks on 1.18.1 pass 54 cases with one existing unsupported SESSION table-function skip;
+those checks do not qualify the temporal canonical adapter on 1.18. Finish retains final native
+cleanup clocks without trying to schedule on an already stopped processing-time service.
+
+This qualifies representative operator conversion using BIGINT keys/payloads and compact time
+fixtures. Automatic temporal plan binding, unchanged upstream temporal restore programs, isolated
+complete-job switches, wider schemas, rescaling and the full failure/version/connector matrix
+remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Every one of the 15 operator families still has partial coverage. Benchmarking remains deferred.
