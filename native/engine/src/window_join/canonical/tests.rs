@@ -382,3 +382,111 @@ fn failed_receiver_does_not_consume_live_rows() {
         assert_eq!(source.flush(1000).unwrap().num_rows(), 1);
     }
 }
+
+fn tagged(batch: RecordBatch, kind: i8, name: &str) -> RecordBatch {
+    let mut fields = batch.schema().fields().iter().cloned().collect::<Vec<_>>();
+    fields.push(Arc::new(Field::new(name, DataType::Int8, false)));
+    let mut columns = batch.columns().to_vec();
+    columns.push(Arc::new(Int8Array::from(vec![kind; batch.num_rows()])));
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+}
+
+#[test]
+fn tagged_live_input_and_plain_canonical_rows_keep_one_logical_schema() {
+    for disk in [false, cfg!(feature = "rocksdb-state")] {
+        let path = tempfile::tempdir().unwrap();
+        let mut source = operator(JoinKind::FullOuter, disk.then_some(path.path()));
+        let mut target = operator(JoinKind::FullOuter, None);
+        source
+            .push_left(tagged(
+                rows(&[(Some(1), Some(10), 1000)]),
+                0,
+                ROW_KIND_COLUMN,
+            ))
+            .unwrap();
+        for batch in capture(&source, true) {
+            assert_eq!(batch.schema(), schema());
+            target.import_canonical_rows(true, &batch).unwrap();
+        }
+        for op in [&mut source, &mut target] {
+            op.push_right(tagged(
+                rows(&[(Some(1), Some(100), 1000)]),
+                0,
+                ROW_KIND_COLUMN,
+            ))
+            .unwrap();
+            op.push_left(rows(&[(Some(2), Some(20), 1000)])).unwrap();
+        }
+        assert_eq!(
+            output(source.flush(1000).unwrap()),
+            output(target.flush(1000).unwrap())
+        );
+    }
+}
+
+#[test]
+fn malformed_input_companions_fail_before_changing_live_state() {
+    let mut source = operator(JoinKind::Inner, None);
+    source
+        .push_left(rows(&[(Some(1), Some(10), 1000)]))
+        .unwrap();
+    let expected = digest(&source);
+    for (kind, name) in [(1, ROW_KIND_COLUMN), (0, "unknown-companion")] {
+        assert!(source
+            .push_left(tagged(rows(&[(Some(1), Some(20), 1000)]), kind, name))
+            .is_err());
+        assert_eq!(expected, digest(&source));
+    }
+    let batch = rows(&[(Some(2), Some(20), 2000)]);
+    let mut fields = batch.schema().fields().iter().cloned().collect::<Vec<_>>();
+    fields[1] = Arc::new(Field::new(ROW_KIND_COLUMN, DataType::Int64, true));
+    source
+        .push_left(
+            RecordBatch::try_new(Arc::new(Schema::new(fields)), batch.columns().to_vec()).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        capture(&source, true)
+            .iter()
+            .map(RecordBatch::num_rows)
+            .sum::<usize>(),
+        2
+    );
+}
+
+#[test]
+fn older_tagged_native_snapshots_normalize_before_continued_input() {
+    let left = tagged(rows(&[(Some(1), Some(10), 1000)]), 0, ROW_KIND_COLUMN);
+    let saved = WindowJoiner::snapshot_parts(write_ipc(&left), Vec::new());
+    let mut restored = WindowJoiner::restore(
+        vec![0],
+        vec![0],
+        2,
+        3,
+        2,
+        3,
+        None,
+        JoinKind::Inner,
+        schema(),
+        schema(),
+        &saved,
+    );
+    assert_eq!(capture(&restored, true)[0].schema(), schema());
+    restored
+        .push_left(rows(&[(Some(1), Some(20), 1000)]))
+        .unwrap();
+    restored
+        .push_right(rows(&[(Some(1), Some(100), 1000)]))
+        .unwrap();
+    assert_eq!(restored.flush(1000).unwrap().num_rows(), 2);
+    #[cfg(feature = "rocksdb-state")]
+    {
+        let path = tempfile::tempdir().unwrap();
+        let mut persistent = operator(JoinKind::Inner, Some(path.path()));
+        persistent.import_partitions(&[saved], i64::MIN).unwrap();
+        persistent
+            .push_right(rows(&[(Some(1), Some(100), 1000)]))
+            .unwrap();
+        assert_eq!(persistent.flush(1000).unwrap().num_rows(), 1);
+    }
+}

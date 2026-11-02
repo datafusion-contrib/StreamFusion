@@ -57,6 +57,12 @@ Regional RocksDB firing first collects distinct local window ends and converts t
 A second scan retains only closed rows for output. Pending payloads remain in RocksDB rather than
 being copied into a resident candidate list; fixed-offset firing keeps its existing single scan.
 
+Both stores retain the logical input schema. INSERT-only transport row-kind tags and Java string
+cache companions are removed before buffering; retractions and unknown companions fail before
+state changes. Older native IPC checkpoints with an INSERT tag are normalized during recovery,
+so subsequent input and canonical imports use the same schema. This also prevents transient
+metadata columns from entering the persistent row codec or the join output.
+
 ## Stock canonical savepoint interoperability
 
 The unmerged [#569 implementation](https://github.com/datafusion-contrib/StreamFusion/issues/569)

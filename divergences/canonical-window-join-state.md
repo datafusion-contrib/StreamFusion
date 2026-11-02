@@ -20,6 +20,14 @@ frontier and waits for input watermark replay, matching released recovery semant
 inventory/key/namespace/timer preflight precedes native mutation. Native processing-time window
 joins cannot use this event-time contract: the released stock planner rejects that shape.
 
+The native join retains only its eager logical input schema. Planner paths may receive an
+INSERT-only changelog tag or optional string-cache companions from an upstream columnar island;
+these are validated and removed before either store buffers rows. Native IPC recovery applies
+the same normalization to older tagged batches. This prevents plain canonical rows and tagged
+live rows from producing incompatible buffer schemas and keeps the persistent row codec typed
+by the actual logical fields. Logical user fields are selected by their declared positions,
+including a user field whose name happens to equal the row-kind transport tag.
+
 Canonical bindings pass the resolved stock maximum parallelism to both columnar exchanges and
 the native join. Resolving it again from the new environment can hash imported rows into a
 different key-group layout, including a keyless stock operator whose maximum is one. Ordinary

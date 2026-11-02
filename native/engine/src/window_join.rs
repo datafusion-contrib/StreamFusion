@@ -2,6 +2,7 @@ use crate::window_calendar::WindowCalendar;
 use crate::*;
 
 mod canonical;
+mod input;
 
 /// Buffered rows of one side of a window join, grouped by window then by equi-join key.
 /// Event-time INNER window join: the join of two windowing-TVF inputs on their equi-join key within
@@ -147,6 +148,7 @@ impl WindowJoiner {
     }
 
     pub(crate) fn push_left(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
+        let batch = self.logical_input(batch, true)?;
         self.left_schema = Some(batch.schema());
         let (batch, dropped) = Self::filter_late(
             batch,
@@ -164,6 +166,7 @@ impl WindowJoiner {
     }
 
     pub(crate) fn push_right(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
+        let batch = self.logical_input(batch, false)?;
         self.right_schema = Some(batch.schema());
         let (batch, dropped) = Self::filter_late(
             batch,
@@ -287,6 +290,7 @@ impl WindowJoiner {
                 (false, &bytes[4 + left_len..]),
             ] {
                 for batch in read_ipc_if_present(section) {
+                    let batch = self.logical_input(batch, left)?;
                     if left {
                         self.left_schema = Some(batch.schema());
                     } else {
@@ -672,10 +676,16 @@ impl WindowJoiner {
         }
         let left_len = u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
         for batch in read_ipc_if_present(&bytes[4..4 + left_len]) {
+            let batch = joiner
+                .logical_input(batch, true)
+                .expect("window-join left snapshot input");
             joiner.left_schema = Some(batch.schema());
             joiner.left_buffered.push(batch);
         }
         for batch in read_ipc_if_present(&bytes[4 + left_len..]) {
+            let batch = joiner
+                .logical_input(batch, false)
+                .expect("window-join right snapshot input");
             joiner.right_schema = Some(batch.schema());
             joiner.right_buffered.push(batch);
         }
