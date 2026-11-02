@@ -89,6 +89,13 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
   }
 
   @Override
+  public void setStockStateContract(tech.streamfusion.state.StockStateContract contract) {
+    if (proctime && contract instanceof tech.streamfusion.state.StockIntervalJoinStateContract)
+      throw new IllegalArgumentException("The stock interval state contract requires event time");
+    super.setStockStateContract(contract);
+  }
+
+  @Override
   protected long processingTimeTimerDeadlineForSnapshot() {
     return proctime ? registeredTimer : Long.MIN_VALUE;
   }

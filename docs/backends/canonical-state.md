@@ -411,3 +411,20 @@ The shared Flink 1.18 planner retains its previous implementation; its regressio
 qualify Flink 1.18 stock canonical interchange. Canonical conversion runs only at the canonical
 savepoint boundary; ordinary native checkpoints retain their existing paths. Benchmarking remains
 deferred while the full #569 functionality is completed.
+
+### Event-time interval cache projection
+
+The released Flink 2.2.1 interval component projects live native rows into stock timestamp-keyed
+map buckets of row/matched-flag tuples, the two independent cleanup value states and the shared
+void-namespace event timer queue. Timer-only keys survive even without cached rows. Full inventory,
+key/row/timestamp, serializer and callback ownership validation finishes before native import;
+rows then enter retained state directly with owned buffers. Stock metadata contains only released
+Flink serializer classes. Native canonical export takes no intermediate native snapshot.
+
+The explicit component binding passes 240 positive and 45 rejection/guard controls, plus typed
+key native-checkpoint continuation. Automatic plan binding, processing-time payloads and wider
+full-job/version/rescale/failure coverage remain open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). See the
+[interval contract](../operators/joins/interval-join.md#released-stock-event-time-state-adapter)
+for the exact qualified types and remaining nonpositive/overflow-time boundaries. Benchmarking
+remains deferred.

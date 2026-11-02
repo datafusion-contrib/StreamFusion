@@ -109,7 +109,32 @@ chunking, ownership, ordinary native recovery, malformed input and memory-denial
 clean component passes 1,158 native tests with two existing ignores and 29 Java checks, including
 18 direct JNI handoff/failure controls and 11 ordinary interval operator/watermark controls.
 
-This is the native bridge, not yet a stock interval-savepoint adapter or automatic planner
-binding. Released stock cache/list serializers, timer-state and queue validation, processing-time
-payload preservation, clean stock continuations and the full version/rescale/type matrix remain
-open. Interval joins are not yet counted as stock canonical coverage. Benchmarking is deferred.
+### Released stock event-time state adapter
+
+The Flink 2.2.1 event-time adapter now writes the stock `IntervalJoinLeftCache` and
+`IntervalJoinRightCache` maps. Their long timestamp buckets contain lists of `(RowData, Boolean)`
+tuples with the original row serializer and outer-match flags. The two stock long value states
+retain each side's actual cleanup deadline; their names refer to the opposite input. The shared
+`user-timers` event-time queue and void namespaces remain stock-compatible. Timers whose cached
+rows were eagerly removed transfer independently. Canonical export visits live native state into
+the stock writer, without a native snapshot or input replay.
+
+Import validates the complete descriptor/namespace inventory, both cache serializers, keys, row
+timestamps/kinds, stored deadlines and callback ownership before mutating native rows. Unknown
+state or pending processing-time callbacks fail closed. The event-time contract cannot bind to a
+native processing-time operator. The original stock row/key/timer serializer snapshots load with
+StreamFusion and planner classes blocked.
+
+An isolated component passes 240 positive controls and 45 rejection/guard controls. These cover
+both native stores and switch directions, immediate re-export, timer-only and empty state, NULL
+payloads/keys, all four join kinds and BIGINT or compact TIMESTAMP event-time payloads. A separate
+144-case typed-key cohort also resumes ordinary native checkpoints before continuation, covering
+BIGINT, INT, VARCHAR, DECIMAL(38,2), compact/noncompact TIMESTAMP, BOOLEAN, DOUBLE and binary keys.
+The combined component/regression run passes 618 Java controls; shared Flink 1.18 operator tests
+pass without claiming stock canonical qualification for that line. These cohorts overlap.
+
+Binding is currently explicit at the component boundary. Automatic compiled-plan binding,
+unchanged upstream interval restore programs, clean-classpath complete jobs, residual predicates,
+processing-time payload preservation and the wider type/version/rescale/failure matrix remain
+open. Nonpositive/overflow event-time cleanup remains an explicitly unqualified interchange edge;
+the released heap/Rocks distinction described above still applies. Benchmarking is deferred.
