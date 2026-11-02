@@ -84,3 +84,26 @@ stock, actual previous RAM-backed candidate state and current RocksDB trials. Th
 one-million-row MAP jobs improve stock medians by 2.29–3.75×, while costing 1.35–2.28× the
 previous RAM-backed implementation. The capacity regression retains 10,000 candidates for one
 key under a 16 KiB operator budget and recovers them from native database files.
+
+## Canonical interchange qualification
+
+Stock-compatible canonical import/export for native materialization remains unfinished in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Native version-2 portable
+snapshots are not stock Flink canonical savepoints.
+
+Released 2.2.1 stock protocol controls cover LEGACY, VALUE, MAP and both ADAPTIVE representations
+across heap/RocksDB canonical handoffs, including a second handoff without input. They compare
+actual serialized keys/values and descriptor serializers, then check continued changelog output.
+LEGACY uses `values` with a list serializer and optional whole-list TTL age. VALUE uses `list`
+with row/timestamp tuples. MAP uses `rowToSqnState`, `sqnToNodeState` and `highestSqnState` for
+matching indexes, linked candidates and the sequence cursor/size. ADAPTIVE registers both layouts.
+V2 retains sampled timestamps even with TTL disabled; import, ordinary native recovery and later
+canonical re-export must preserve them. Current native payloads do not retain those per-candidate
+timestamps, so row serialization alone cannot supply a complete adapter.
+
+The controls retain a released MAP/linked-ADAPTIVE failure boundary: replacing an older input-key
+candidate moves the cursor; appending can overwrite a live sequence, and a later removal throws
+from the stock `REMOVAL_ALL` invariant. They assert the same failure before and after handoffs,
+alongside successful continuation sequences. Canonical conversion must preserve the stock cursor
+and indexes rather than rebuild an apparently equivalent ordered list. These are stock protocol
+controls, not native interoperability coverage. Benchmarking remains deferred for #569.
