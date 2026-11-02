@@ -1,28 +1,36 @@
 package tech.streamfusion.planner;
 
-import java.util.Arrays;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
+import java.util.Map;
+import java.util.Locale;
 import org.apache.calcite.rel.core.Project;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.internal.TableImpl;
+import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.binary.BinaryStringData;
 import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
 import org.apache.flink.table.planner.operations.PlannerQueryOperation;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.utils.LogicalTypeParser;
 import tech.streamfusion.operator.NativeUdf;
 
-/** Actual released SQL/encoder controls for integer expression producers. */
+/** Actual released SQL/encoder controls for prepared scalar expressions. */
 public final class IntegralExpressionBenchmarkFunctions {
   private static NativeUdf.Binding binding;
   private static FlinkExpressionFunction stock;
   private static RowData[] rows;
   private static String type;
+  private static boolean booleanOutput;
+  private static boolean stringOutput;
   private static volatile long consumed;
 
   private IntegralExpressionBenchmarkFunctions() {}
@@ -32,6 +40,8 @@ public final class IntegralExpressionBenchmarkFunctions {
     Thread.currentThread().setContextClassLoader(IntegralExpressionBenchmarkFunctions.class.getClassLoader());
     type = element;
     var table = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
+    table.getConfig().set("table.exec.legacy-cast-behaviour",
+        Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
     String declaration = type + (nullable ? "" : " NOT NULL");
     table.executeSql("CREATE TABLE inputs(v " + declaration + ") WITH ('connector'='datagen')");
     String expression = System.getProperty("sf.integral.expression", "ABS(v+CAST(1 AS $TYPE))")
@@ -40,30 +50,99 @@ public final class IntegralExpressionBenchmarkFunctions {
     var project = (Project) ((PlannerQueryOperation) query).getCalciteTree();
     LogicalType inputType = LogicalTypeParser.parse(declaration, getLoader());
     LogicalType outputType = FlinkTypeFactory.toLogicalType(project.getProjects().get(0).getType());
+    booleanOutput = outputType.getTypeRoot() == LogicalTypeRoot.BOOLEAN;
+    stringOutput = outputType.getTypeRoot() == LogicalTypeRoot.VARCHAR
+        || outputType.getTypeRoot() == LogicalTypeRoot.CHAR;
+    boolean configuredCast = stringOutput || type.equals("BOOLEAN") || type.startsWith("DECIMAL(");
     stock = FlinkExpressionGenerator.generate(project.getProjects(), null,
         new LogicalType[] {inputType}, RowType.of(outputType), table.getConfig(), getLoader());
     var context = new FunctionContext(null) {
       @Override public ClassLoader getUserCodeClassLoader() { return getLoader(); }
     };
     stock.open(context);
-    var encoded = RexExpression.encodeProjections(project.getProjects(), List.of("v"));
-    if (encoded == null || encoded.strings().length != 0 || encoded.doubles().length != 0)
-      throw new IllegalStateException("Expected an integer expression with no text/float constants");
     boolean previous = Boolean.getBoolean("sf.integral.previous");
-    if (previous == encoded.jvmFunctionCalls().isEmpty())
-      throw new IllegalStateException("Unexpected encoder route: " + encoded.jvmFunctionCalls());
-    if (!previous && encoded.nativeFunctionCalls().isEmpty())
-      throw new IllegalStateException("Expected the intended native function before constant folding");
-    binding = encoded.udfBinding();
-    long[] constants = binding.bind(encoded.longs(), context);
+    boolean fallbackControl = Boolean.getBoolean("sf.integral.fallbackControl");
+    if (fallbackControl && !previous)
+      throw new IllegalStateException("A fallback control requires the preceding encoder");
+    String fallbackReason = null;
+    var encoded = configuredCast ? null
+        : RexExpression.encodeProjections(project.getProjects(), List.of("v"));
+    if (configuredCast) {
+      var constructor = RexExpression.class.getDeclaredConstructor();
+      constructor.setAccessible(true);
+      encoded = constructor.newInstance();
+      var configure = RexExpression.class.getDeclaredMethod("configure", org.apache.flink.table.api.TableConfig.class);
+      configure.setAccessible(true);
+      configure.invoke(encoded, table.getConfig());
+      var emit = RexExpression.class.getDeclaredMethod("emit", org.apache.calcite.rex.RexNode.class);
+      emit.setAccessible(true);
+      if (!(Boolean) emit.invoke(encoded, project.getProjects().get(0))) {
+        if (!fallbackControl)
+          throw new IllegalStateException("Expected an admitted configured expression");
+        var reason = RexExpression.class.getDeclaredField("reason");
+        reason.setAccessible(true);
+        fallbackReason = (String) reason.get(encoded);
+        if (fallbackReason == null || !fallbackReason.startsWith("unsupported TRY_CAST DECIMAL"))
+          throw new IllegalStateException("Unexpected preceding fallback: " + fallbackReason);
+        encoded = null;
+      } else if (fallbackControl) {
+        throw new IllegalStateException("Expected the preceding encoder to reject this signature");
+      }
+    }
+    if (encoded == null && !fallbackControl)
+      throw new IllegalStateException("Expected an admitted integer expression");
     var serializer = new RowDataSerializer(RowType.of(inputType));
     rows = new RowData[count];
     for (int i = 0; i < count; i++) {
       RowData row = GenericRowData.of(nullable && i % 7 == 0 ? null : value(type, i));
       rows[i] = binary ? serializer.toBinaryRow(row).copy() : row;
     }
-    return Arrays.deepToString(new Object[] {
-        encoded.kinds(), encoded.payload(), encoded.childCounts(), constants});
+    if (fallbackControl) {
+      System.err.println("PREVIOUS_FALLBACK," + fallbackReason);
+      return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(
+          Map.of("fallback", true, "reason", fallbackReason));
+    }
+    if (previous == encoded.jvmFunctionCalls().isEmpty())
+      throw new IllegalStateException("Unexpected encoder route: " + encoded.jvmFunctionCalls());
+    if (!previous && encoded.nativeFunctionCalls().isEmpty())
+      throw new IllegalStateException("Expected the intended native function before constant folding");
+    binding = encoded.udfBinding();
+    long[] constants = binding.bind(encoded.longs(), context);
+    return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of(
+        "kinds", encoded.kinds(), "payload", encoded.payload(),
+        "child_counts", encoded.childCounts(), "longs", constants,
+        "doubles", encoded.doubles(), "strings", encoded.strings(),
+        "boolean_output", booleanOutput, "string_output", stringOutput));
+  }
+
+  /** A rejected native signature runs in Java on RowData in the actual preceding implementation. */
+  public static void main(String[] args) throws Exception {
+    String element = args[0];
+    boolean nullable = Boolean.parseBoolean(args[1]);
+    boolean binary = Boolean.parseBoolean(args[2]);
+    int count = Integer.parseInt(args[3]);
+    int loops = Integer.parseInt(args[4]);
+    int warmups = Integer.parseInt(args[5]);
+    int runs = Integer.parseInt(args[6]);
+    try {
+      var route = new com.fasterxml.jackson.databind.ObjectMapper()
+          .readTree(register(element, nullable, binary, count));
+      if (!route.path("fallback").asBoolean())
+        throw new IllegalStateException("This control must verify stock fallback");
+      long expected = measure(1)[1] * loops;
+      for (int trial = 0; trial < warmups + runs; trial++) {
+        for (int turn = 0; turn < 2; turn++) {
+          int engine = (trial + turn) & 1;
+          long[] measured = measure(loops);
+          if (measured[1] != expected) throw new IllegalStateException("Fallback checksum differs");
+          System.out.printf(Locale.ROOT, "integral_expression,%s,%s,%s,%d,%d,%d,%s,%s,%d,%d%n",
+              element, nullable, binary, count, count * loops, trial, trial < warmups,
+              engine == 0 ? "flink" : "previous", measured[0], measured[1]);
+        }
+      }
+    } finally {
+      close();
+    }
   }
 
   private static ClassLoader getLoader() {
@@ -73,12 +152,26 @@ public final class IntegralExpressionBenchmarkFunctions {
   private static Object value(String type, int row) {
     long v = row * 7919L;
     switch (type) {
+      case "BOOLEAN": return row % 2 == 0;
       case "TINYINT": return row % 17 == 0 ? Byte.MIN_VALUE : (byte) v;
       case "SMALLINT": return row % 17 == 0 ? Short.MIN_VALUE : (short) v;
       case "INT": return row % 17 == 0 ? Integer.MIN_VALUE : (int) ((row % 2 == 0 ? -1L : 1L) * v);
       case "BIGINT": return row % 17 == 0 ? Long.MIN_VALUE
           : (row % 2 == 0 ? -1L : 1L) * (9007199254740993L + v);
-      default: throw new IllegalArgumentException(type);
+      default:
+        int precision;
+        int scale;
+        switch (type) {
+          case "DECIMAL(18,2)": precision = 18; scale = 2; break;
+          case "DECIMAL(19,19)": precision = 19; scale = 19; break;
+          case "DECIMAL(38,18)": precision = 38; scale = 18; break;
+          case "DECIMAL(38,38)": precision = 38; scale = 38; break;
+          default: throw new IllegalArgumentException(type);
+        }
+        BigInteger maximum = BigInteger.TEN.pow(precision).subtract(BigInteger.ONE);
+        BigInteger unscaled = row % 17 == 0 ? maximum : row % 17 == 1 ? maximum.negate()
+            : BigInteger.valueOf((row % 2 == 0 ? -1L : 1L) * (9007199254740993L + v));
+        return DecimalData.fromBigDecimal(new BigDecimal(unscaled, scale), precision, scale);
     }
   }
 
@@ -89,6 +182,12 @@ public final class IntegralExpressionBenchmarkFunctions {
       for (RowData input : rows) {
         RowData result = (RowData) stock.evalRow(input);
         if (result.isNullAt(0)) sum--;
+        else if (booleanOutput) sum += result.getBoolean(0) ? 1 : 0;
+        else if (stringOutput) {
+          var value = (BinaryStringData) result.getString(0);
+          int length = value.getSizeInBytes();
+          sum += length + (length == 0 ? 0 : value.byteAt(0) + value.byteAt(length - 1));
+        }
         else switch (type) {
           case "TINYINT": sum += result.getByte(0); break;
           case "SMALLINT": sum += result.getShort(0); break;

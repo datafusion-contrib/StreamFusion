@@ -55,6 +55,7 @@ mod array_timsort;
 mod ascii;
 mod binary_boundary;
 mod binary_strings;
+mod boolean_string;
 mod cardinality;
 mod charset;
 mod chr;
@@ -84,6 +85,7 @@ mod map_union;
 mod negate;
 pub(crate) mod numeric;
 pub(crate) mod numeric_cast;
+mod numeric_classification;
 mod row_constructor;
 mod scalar;
 pub(crate) mod sha2_runtime;
@@ -106,6 +108,10 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         238 => string_classification::alpha(),
         239 => string_classification::digit(),
         240 => string_decimal::function(),
+        241 => numeric_classification::alpha(),
+        242 => numeric_classification::digit(),
+        243 => numeric_classification::decimal(),
+        244 => boolean_string::function(),
         65 => sign::function(),
         67 => ascii::function(),
         81 => chr::function(),

@@ -185,6 +185,7 @@ nav:
       - Window-rank timestamp cells: optimizations/window-rank-timestamp-cells.md
       - Aggregate specialization fast paths: optimizations/aggregate-specialization-fast-paths.md
       - Allocation discipline: optimizations/allocation-discipline.md
+      - Boolean word blocks: optimizations/boolean-word-blocks.md
       - Memory accounting off the hot path: optimizations/memory-accounting-off-hot-path.md
       - Checkpoint partitioning in one pass: optimizations/checkpoint-partition-in-one-pass.md
       - Asynchronous Top-N memory checkpoints: optimizations/async-topn-memory-checkpoints.md

@@ -99,6 +99,17 @@ class FlinkIntegralRoundPositionSqlHarnessTest {
     BuiltinFunctionParity.assertParity(
         () -> environment("BIGINT", true),
         "SELECT CASE WHEN id<0 THEN ROUND(v/(id-id),-1) ELSE ROUND(v,-1) END FROM src");
+    BuiltinFunctionParity.assertParity(
+        () -> environment("BIGINT", true),
+        "SELECT ROUND(v/(id-id),CAST(NULL AS INT)) FROM src WHERE id<0");
+    NativeFailureParity.run(
+            () -> environment("BIGINT", true),
+            "SELECT ROUND(v/(id-id),CAST(NULL AS INT)) FROM src")
+        .assertFailure(
+            ArithmeticException.class,
+            "zero",
+            NativeFailureParity.Phase.ROW_EVALUATION,
+            NativeFailureParity.Route.NATIVE);
     NativeFailureParity.run(
             () -> environment("BIGINT", true), "SELECT ROUND(v/(id-id),-1) FROM src")
         .assertFailure(

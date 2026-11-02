@@ -1,5 +1,8 @@
 //! Release stock/previous/native integer-expression controls; native timers stay inside Rust.
-use arrow::array::{Array, ArrayRef, Int16Array, Int32Array, Int64Array, Int8Array};
+use arrow::array::{
+    Array, ArrayRef, BooleanArray, Decimal128Array, Int16Array, Int32Array, Int64Array, Int8Array,
+    StringArray,
+};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use jni::objects::JValue;
@@ -9,6 +12,19 @@ use streamfusion_benchmark_support::{measure, report, CountingAllocator};
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
+
+#[derive(serde::Deserialize)]
+struct EncodedProgram {
+    kinds: Vec<i64>,
+    payload: Vec<i64>,
+    child_counts: Vec<i64>,
+    longs: Vec<i64>,
+    doubles: Vec<f64>,
+    strings: Vec<Option<String>>,
+    boolean_output: bool,
+    #[serde(default)]
+    string_output: bool,
+}
 
 macro_rules! java {
     ($env:ident, $call:expr) => {{
@@ -33,11 +49,26 @@ fn checksum(batch: &RecordBatch) -> i64 {
         };
     }
     match batch.column(0).data_type() {
+        DataType::Boolean => sum!(BooleanArray),
         DataType::Int8 => sum!(Int8Array),
         DataType::Int16 => sum!(Int16Array),
         DataType::Int32 => sum!(Int32Array),
         DataType::Int64 => sum!(Int64Array),
-        other => panic!("Unsupported integer-expression output {other}"),
+        DataType::Utf8 => batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap()
+            .iter()
+            .map(|value| {
+                value.map_or(-1, |value| {
+                    value.len() as i64
+                        + value.as_bytes().first().map_or(0, |v| i64::from(*v))
+                        + value.as_bytes().last().map_or(0, |v| i64::from(*v))
+                })
+            })
+            .sum(),
+        other => panic!("Unsupported exact-numeric-expression output {other}"),
     }
 }
 
@@ -55,6 +86,10 @@ fn main() {
         .unwrap_or_else(|_| "ABS(v+CAST(1 AS $TYPE))".into());
     let previous_option = format!("-Dsf.integral.previous={previous}");
     let expression_option = format!("-Dsf.integral.expression={expression}");
+    let legacy_option = format!(
+        "-Dsf.integral.legacy={}",
+        std::env::var("SF_INTEGRAL_LEGACY").is_ok()
+    );
     let cp = format!(
         "-Djava.class.path={}",
         std::env::var("SF_NATIVE_BENCH_CLASSPATH").unwrap()
@@ -69,6 +104,7 @@ fn main() {
         .option(&lib)
         .option(&previous_option)
         .option(&expression_option)
+        .option(&legacy_option)
         .option("-Xmx1g")
         .option("-Dstreamfusion.native.development=true")
         .option("--add-opens=java.base/java.nio=ALL-UNNAMED")
@@ -99,7 +135,7 @@ fn main() {
         .get_string(&jni::objects::JString::from(program))
         .unwrap()
         .into();
-    let program: Vec<Vec<i64>> = serde_json::from_str(&program).unwrap();
+    let program: EncodedProgram = serde_json::from_str(&program).unwrap();
     let value = |i: usize| {
         let v = (i as i64) * 7919;
         match element {
@@ -124,10 +160,39 @@ fn main() {
     };
     let values = (0..rows).map(|i| (!nullable || i % 7 != 0).then(|| value(i)));
     let input: ArrayRef = match element {
+        "BOOLEAN" => Arc::new(BooleanArray::from_iter(
+            (0..rows).map(|i| (!nullable || i % 7 != 0).then_some(i % 2 == 0)),
+        )),
         "TINYINT" => Arc::new(Int8Array::from_iter(values.map(|v| v.map(|v| v as i8)))),
         "SMALLINT" => Arc::new(Int16Array::from_iter(values.map(|v| v.map(|v| v as i16)))),
         "INT" => Arc::new(Int32Array::from_iter(values.map(|v| v.map(|v| v as i32)))),
-        _ => Arc::new(Int64Array::from_iter(values)),
+        "BIGINT" => Arc::new(Int64Array::from_iter(values)),
+        "DECIMAL(18,2)" | "DECIMAL(19,19)" | "DECIMAL(38,18)" | "DECIMAL(38,38)" => {
+            let (precision, scale) = match element {
+                "DECIMAL(18,2)" => (18, 2),
+                "DECIMAL(19,19)" => (19, 19),
+                "DECIMAL(38,18)" => (38, 18),
+                "DECIMAL(38,38)" => (38, 38),
+                _ => unreachable!(),
+            };
+            let maximum = 10_i128.pow(precision as u32) - 1;
+            let values = (0..rows).map(|row| {
+                (!nullable || row % 7 != 0).then(|| match row % 17 {
+                    0 => maximum,
+                    1 => -maximum,
+                    _ => {
+                        (if row % 2 == 0 { -1 } else { 1 })
+                            * (9_007_199_254_740_993 + row as i128 * 7919)
+                    }
+                })
+            });
+            Arc::new(
+                Decimal128Array::from_iter(values)
+                    .with_precision_and_scale(precision, scale)
+                    .unwrap(),
+            )
+        }
+        _ => panic!("Unsupported exact-numeric-expression input {element}"),
     };
     let batch = RecordBatch::try_new(
         Arc::new(Schema::new(vec![Field::new(
@@ -139,16 +204,25 @@ fn main() {
     )
     .unwrap();
     let mut native = CalcProgram::new(
-        program[0].clone(),
-        program[1].clone(),
-        program[2].clone(),
-        program[3].clone(),
-        vec![],
-        vec![],
+        program.kinds,
+        program.payload,
+        program.child_counts,
+        program.longs,
+        program.doubles,
+        program.strings,
     );
     let actual = native.run(batch.clone());
     assert_eq!(actual.num_rows(), rows);
-    assert_eq!(actual.column(0).data_type(), batch.column(0).data_type());
+    assert_eq!(
+        actual.column(0).data_type(),
+        if program.string_output {
+            &DataType::Utf8
+        } else if program.boolean_output {
+            &DataType::Boolean
+        } else {
+            batch.column(0).data_type()
+        }
+    );
     let expected = checksum(&actual).wrapping_mul(loops as i64);
     let (diagnostic, allocations) = measure(|| native.run(batch.clone()));
     report(

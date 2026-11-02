@@ -24,11 +24,38 @@ class IntegralArithmeticProducerEncodingTest {
     assertVerifiedArithmetic(FlinkSqlOperatorTable.UNARY_MINUS);
   }
 
+  @Test
+  void signAdmitsOnlyRecursivelyVerifiedWrappingIntegerArithmetic() {
+    assertVerifiedArithmetic(FlinkSqlOperatorTable.SIGN);
+  }
+
+  @Test
+  void floorAdmitsOnlyRecursivelyVerifiedWrappingIntegerArithmetic() {
+    assertVerifiedArithmetic(FlinkSqlOperatorTable.FLOOR);
+  }
+
+  @Test
+  void ceilAdmitsOnlyRecursivelyVerifiedWrappingIntegerArithmetic() {
+    assertVerifiedArithmetic(FlinkSqlOperatorTable.CEIL);
+  }
+
+  @Test
+  void roundAdmitsOnlyRecursivelyVerifiedWrappingIntegerArithmetic() {
+    assertVerifiedArithmetic(FlinkSqlOperatorTable.ROUND);
+  }
+
+  @Test
+  void truncateAdmitsOnlyRecursivelyVerifiedWrappingIntegerArithmetic() {
+    assertVerifiedArithmetic(FlinkSqlOperatorTable.TRUNCATE);
+  }
+
   private void assertVerifiedArithmetic(SqlOperator function) {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
     for (var name : List.of(SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
         SqlTypeName.INTEGER, SqlTypeName.BIGINT)) {
+      if ((function == FlinkSqlOperatorTable.SIGN || function == FlinkSqlOperatorTable.TRUNCATE)
+          && name != SqlTypeName.INTEGER && name != SqlTypeName.BIGINT) continue;
       var type = types.createSqlType(name);
       RexNode input = rex.makeInputRef(type, 0);
       var one = rex.makeExactLiteral(BigDecimal.ONE, type);

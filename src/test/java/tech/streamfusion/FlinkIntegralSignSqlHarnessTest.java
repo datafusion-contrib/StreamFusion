@@ -104,7 +104,7 @@ class FlinkIntegralSignSqlHarnessTest {
   void unverifiedProducersKeepTheGeneratedProgram() {
     for (String expression :
         List.of(
-            "SIGN(v+1)", "SIGN(-v)", "SIGN(CAST(CAST(v AS SMALLINT) AS INT))", "SIGN(1/(id-id))")) {
+            "SIGN(v+MOD(v,2))", "SIGN(-v)", "SIGN(CAST(CAST(v AS SMALLINT) AS INT))", "SIGN(1/(id-id))")) {
       var table = environment("INT");
       var scan = NativePlanner.install(table);
       table.explainSql("SELECT " + expression + " FROM src");

@@ -103,7 +103,7 @@ class FlinkIntegralTruncateSqlHarnessTest {
   void unverifiedProducersKeepTheGeneratedProgram() {
     for (String expression :
         List.of(
-            "TRUNCATE(v+1)",
+            "TRUNCATE(v+MOD(v,2))",
             "TRUNCATE(-v)",
             "TRUNCATE(CAST(CAST(v AS SMALLINT) AS INT))",
             "TRUNCATE(v, -39)",

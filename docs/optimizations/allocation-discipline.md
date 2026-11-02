@@ -1,7 +1,8 @@
 # Allocation discipline on the per-row paths
 
 **Applies to:** windowed/session aggregation, [GROUP BY](../operators/group-by.md), [Top-N](../operators/top-n.md),
-the updating join, `OVER`, deduplication, [Calc string encoding](../benchmarks/scalar-functions.md#hex)
+the updating join, `OVER`, deduplication, [Calc string encoding](../benchmarks/scalar-functions.md#hex),
+[Calc integer expressions](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
 
 Beyond the arrow-row and mini-batch mechanisms covered elsewhere, a series of targeted fixes removed
 allocations and redundant per-row work from specific hot loops: reuse instead of realloc, move
@@ -25,6 +26,53 @@ the work. The benchmark records preserve that initial implementation, independen
 paired stock/main controls and the qualified result after removing those copies. See
 [integer ABS arithmetic](../benchmarks/scalar-functions.md#integer-abs-over-arithmetic)
 for workload, timing boundaries, allocation requests and remaining small-batch costs.
+
+## Proven integer rounding with a NULL position
+
+A literal NULL position makes integer ROUND and INT/BIGINT TRUNCATE return a typed NULL.
+The planner folds this only after its recursive operand proof excludes failures: integer inputs/literals,
+lossless widening, admitted bounded rounding and wrapping addition/subtraction/multiplication.
+The fold avoids evaluating the arithmetic tree and allocating its intermediate arrays.
+Division, remainder, narrowing and unverified producers keep their generated evaluation,
+so a failing argument is not silently discarded. This is a bounded purity proof, not a
+general NULL propagation rule for arbitrary functions or UDFs.
+
+Eight 1,024-row nullable GenericRowData/Arrow diagnostics on released Flink 1.18.1/2.2.1
+retain the rejected eager implementation and the fold. Native medians move from
+2.50-2.72 to 0.62-0.72 ns/row; paired stock/native ratios move from 0.65-0.71x to
+2.48-2.80x. These are separate warmed release/default-feature/mimalloc processes with
+nine measurements and a Rust timer around production Calc and result consumption.
+They measure folded-result handling, not execution of a ROUND kernel. The
+untimed Rust allocation probe drops from 79-99 requests to 16 per batch; it excludes
+JVM/other-thread allocation and does not measure retained memory. The
+[arithmetic benchmark](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
+retains both probes, raw trials, stock drift and the independent function
+qualification and complete jobs with both transposes. Separate
+[TRUNCATE controls](../benchmarks/scalar-functions.md#integer-truncate-over-arithmetic)
+retain the same fold boundary and explicitly exclude NULL-fold samples from function-work evidence.
+
+## Failure-free numeric classification operands
+
+Numeric `IS_ALPHA` returns FALSE from the released internal argument type, regardless of
+its value or NULL. Numeric `IS_DIGIT` and `IS_DECIMAL` likewise have a type-based result: TRUE for integers
+(including NULL) and FALSE for internal DECIMAL. A native call initially still materialized arithmetic arguments which
+the predicate never reads. Fold a composed integer operand only after the bounded integer
+producer proof excludes failures and state changes. Direct inputs retain the predicate
+kernel; division, remainder, narrowing, UDFs and unverified producers retain the complete
+generated call.
+This is not a general license to discard arguments of constant-result functions.
+
+A nullable 1,024-row INT nested-arithmetic probe moves from 2.352 to 0.381 ns/row;
+paired stock/native moves from 0.882x to 5.815x. Untimed Rust allocation requests drop
+from 96 to 13 per batch (18,560 to 782 requested bytes). These are separate warmed
+release/default-feature/mimalloc processes; JVM/other-thread allocations and retained memory
+are not measured. The [numeric classification record](../benchmarks/scalar-functions.md#numeric-is_alpha)
+keeps the initial/folded probes, stock drift, full type matrix and complete-job controls.
+Folded samples are excluded from executed predicate-kernel qualification.
+The [numeric digit matrix](../benchmarks/scalar-functions.md#numeric-is_digit) applies the
+same proof and keeps its own predicate and fold controls separate.
+The [numeric decimal matrix](../benchmarks/scalar-functions.md#numeric-is_decimal) qualifies
+that overload independently with the same bounded producer proof.
 
 ## Per-row allocation cuts
 

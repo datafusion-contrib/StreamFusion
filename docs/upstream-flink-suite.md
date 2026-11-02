@@ -1360,6 +1360,11 @@ round-trips, nested schema evolution, nested equality-key/null-parent handling,
 v2 position deletes/v3 vectors and row lineage, plus nested savepoint/rescaling
 through normal, range and dynamic sinks. SQL witnesses require native source/sink
 nodes, no payload transpose nodes, native task counters and Rust data-file footers.
+Captured-channel recovery witnesses also require zero Arrow allocations and zero
+task off-heap reservations after each scenario, alongside zero native handles. Failed
+handover batches may await their cleaner backstop, so the bounded cleanup check drains
+them before another MiniCluster selects a different task off-heap budget. The normal
+runtime guard still rejects changing that budget while reservations remain live.
 Unsupported nested name mapping, pushed predicates and partition sources have explicit
 admission checks. These are StreamFusion witness tests alongside the unchanged
 published Iceberg streaming test inventory.

@@ -28,7 +28,7 @@ class FlinkDecimalCastOverflowSqlHarnessTest {
     String sql = "SELECT id,CAST(d*d AS STRING),CAST(d*d AS CHAR(8)),CAST(d*d AS VARCHAR(3)),"
         + "CASE WHEN MOD(id,2)=0 THEN CAST(d*d AS STRING) ELSE 'other' END,"
         + "CASE WHEN MOD(id,2)=0 THEN CAST(d*d AS STRING) ELSE CAST(NULL AS STRING) END,"
-        + "CAST(ABS(d) AS STRING) FROM src";
+        + "CAST(ABS(d) AS STRING),CAST(ABS(d*d) AS STRING),CAST(-(d*d) AS STRING) FROM src";
     for (String policy : List.of("ERROR", "DROP")) {
       TreeMap<Integer, List<Object>> expected = null;
       List<DataType> expectedTypes = null;
@@ -94,7 +94,7 @@ class FlinkDecimalCastOverflowSqlHarnessTest {
     // TRY_CAST remains nullable; overflowing operands must not inherit CAST's empty default.
     for (String target : List.of("STRING", "VARCHAR(3)", "CHAR(8)")) {
       NativeFailureParity.run(factory, "SELECT id,TRY_CAST(d*d AS " + target + ") FROM src")
-          .assertSuccess(NativeFailureParity.Route.FALLBACK);
+          .assertSuccess(NativeFailureParity.Route.NATIVE);
     }
   }
 
