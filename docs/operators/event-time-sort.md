@@ -31,7 +31,35 @@ subtasks** — the same singleton limitation Flink's implementation has. See
 [#22](https://github.com/datafusion-contrib/StreamFusion/issues/22) for that constraint.
 
 The last emitted timestamp survives checkpoints even when the pending buffer is empty.
-Memory checkpoints and canonical savepoints include it in a versioned prefix before the
-pending Arrow IPC data; legacy snapshots containing only IPC remain readable. RocksDB
+Native memory checkpoints and native-format savepoints include it in a versioned prefix before
+the pending Arrow IPC data; legacy snapshots containing only IPC remain readable. RocksDB
 checkpoints retain it as reserved metadata. Recovery and memory/RocksDB backend transitions
 preserve both the late-row cutoff and any pending rows.
+
+
+## Stock-compatible canonical interchange
+
+The #569 integration adapter exports directly to released Flink 2.2.1 `dataState` timestamp buckets
+of full original `RowData` rows, `lastTriggeringTsState` and the Void event-timer queue. It iterates
+live native input batches or the persistent row store in chunks; it does not first write or decode
+a native checkpoint. The cutoff is independent of buffered rows, including an empty buffer and
+valid MIN or MAX timestamps. Stock serializers encode the actual empty key and rows, so exported
+state does not require StreamFusion classes on the stock classpath.
+
+Import validates descriptor ownership, the empty key, row/time/INSERT consistency and exact timer
+membership before installing native state. Nullable and nested payloads retain their full original
+values, and equal-time peers retain their arrival order. User column names that resemble internal
+metadata remain payload. A failed export leaves live native state available for retry.
+
+The draft portable planner retains the stock submission graph and binds only the admitted single
+ascending rowtime sort. It preserves stock maximum parallelism, including the normal larger key-group
+space for a single running task; the logical empty key is assigned by Flink's stock serializer and
+hashing. The native raw buffer remains one internal group and cannot split across tasks. Its raw
+layout is separate from stock canonical state. Secondary order keys continue to use the stock sort.
+
+Focused qualification covers both heap/RocksDB stores, maximum parallelism 1 and 128, pending-only
+and mixed state, an empty cutoff-only state, negative/extreme timestamps, empty watermarks, NULLs,
+nested rows, arrays, maps, binary values, non-finite doubles, malformed state and unchanged re-export.
+Full job, upstream restore-suite and remaining matrix qualification are tracked in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). The portable planner is still
+under consolidation. Benchmarking remains deferred under the functionality-first requirement.

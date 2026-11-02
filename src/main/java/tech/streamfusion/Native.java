@@ -1207,6 +1207,15 @@ public final class Native {
   /** Serializes the sorter's buffered rows for a checkpoint. */
   public static native byte[] snapshotTemporalSorter(long handle);
 
+  public static native void exportTemporalSortCanonicalRows(long handle, BatchReceiver receiver);
+
+  public static native long[] temporalSortCanonicalCutoff(long handle);
+
+  public static native void importTemporalSortCanonicalCutoff(long handle, long[] cutoff);
+
+  public static native void importTemporalSortCanonicalRows(long handle, long array, long schema);
+
+
   /** Rebuilds an event-time sorter from a snapshot and returns a fresh handle. */
   public static native long restoreTemporalSorter(
       int rtColumn, byte[] snapshot, long memoryBudgetBytes);

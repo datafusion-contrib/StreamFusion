@@ -1,7 +1,5 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.Native;
-import tech.streamfusion.state.RocksDBNativeStateSupport;
 import java.nio.ByteBuffer;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -12,17 +10,19 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.Native;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
  * Columnar event-time sort (`ORDER BY rowtime`): Arrow in, Arrow out. The Arrow-batch analog of the
  * host's {@code RowTimeSortOperator}. Each input batch is buffered natively; on a watermark the
  * native sorter emits the rows it has completed (rowtime at or before the watermark) in ascending
  * rowtime order and keeps the rest. Insert-only — the watermark guarantees no earlier-rowtime row
- * can still arrive, so the emitted order is final. The buffering, the sort, and the watermark-driven
- * release all live in the native sorter; this layer moves batches across the bridge and owns the
- * handle's checkpointed state. On the RocksDB backend the buffered rows live in the persistent
- * store (written through on arrival) and the watermark firing is a range read; memory state travels
- * as one raw keyed-state blob.
+ * can still arrive, so the emitted order is final. The buffering, the sort, and the
+ * watermark-driven release all live in the native sorter; this layer moves batches across the
+ * bridge and owns the handle's checkpointed state. On the RocksDB backend the buffered rows live in
+ * the persistent store (written through on arrival) and the watermark firing is a range read;
+ * memory state travels as one raw keyed-state blob.
  */
 public class NativeColumnarTemporalSortOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
@@ -35,7 +35,12 @@ public class NativeColumnarTemporalSortOperator extends AbstractNativeStatefulOp
   private final RowType rowType;
 
   public NativeColumnarTemporalSortOperator(int rowtimeColumn, RowType rowType) {
-    super("temporal sort", new int[0], 1);
+    this(rowtimeColumn, rowType, 1);
+  }
+
+  public NativeColumnarTemporalSortOperator(
+      int rowtimeColumn, RowType rowType, int maxParallelism) {
+    super("temporal sort", new int[0], maxParallelism);
     this.rowtimeColumn = rowtimeColumn;
     this.rowType = rowType;
   }
@@ -54,11 +59,19 @@ public class NativeColumnarTemporalSortOperator extends AbstractNativeStatefulOp
         rowType,
         s ->
             Native.createRocksDBTemporalSorter(
-                rowtimeColumn, memoryBudgetBytes(), s,
-                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
-                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-                rocksdb.aligned(), restoredPartitions));
+                rowtimeColumn,
+                memoryBudgetBytes(),
+                s,
+                rocksdb.tableDirectory(),
+                maxParallelism(),
+                rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(),
+                rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(),
+                rocksdb.keyGroupStart(),
+                rocksdb.keyGroupEnd(),
+                rocksdb.aligned(),
+                restoredPartitions));
   }
 
   @Override
@@ -156,5 +169,4 @@ public class NativeColumnarTemporalSortOperator extends AbstractNativeStatefulOp
     publishStateBytes();
     super.processWatermark(mark);
   }
-
 }

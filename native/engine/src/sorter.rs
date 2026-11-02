@@ -1,5 +1,7 @@
 use crate::*;
 
+mod canonical;
+
 const SNAPSHOT_PREFIX: &[u8] = b"SFTSORT1";
 
 fn snapshot_with_last_emitted(buffer: Vec<u8>, last_emitted: Option<i64>) -> Vec<u8> {
