@@ -36,14 +36,48 @@ belong in personal forks. Tags do not trigger these branch test workflows. Manua
 are available for retries. For the upstream Flink merge gate, use or rerun a **push** run: a manual
 SQL-inventory dispatch may execute only part of the matrix and is never accepted as full-suite evidence.
 
-The lightweight **Fork CI status** workflow reads public fork runs on PR updates, every 15 minutes,
-and on manual dispatch in the canonical repository. It reports the existing **All CI tests** and
+The lightweight **Fork CI status** workflow reads public fork runs on PR updates and watches
+unfinished runs every two minutes. Scheduled and manual refreshes remain available in the
+canonical repository. It reports the existing **All CI tests** and
 **All upstream integration tests** checks for the exact PR head SHA and branch. It also mirrors the
 CI result under the legacy **Rust tests** and **Java tests (debug native build)** names required by
 the older ruleset. Each mirrored CI check requires the entire CI workflow to succeed. Failed,
 canceled, skipped or neutral workflows cannot satisfy the gates; missing or disabled workflows
 report action required. Existing GitHub rulesets stay in place. The reporter checks out only
 trusted default-branch code and never executes PR code with its write-capable token.
+
+GitHub cron is best effort: a requested fifteen-minute schedule can be delayed or dropped for
+hours. Fork workflow completions do not trigger `workflow_run` in the canonical repository,
+so a single PR-event refresh followed only by cron can leave successful tests displayed as
+pending. The schedule requests minutes 7, 22, 37 and 52 to avoid the busiest quarter-hour
+boundaries; active-run tracking does not depend on that schedule.
+
+Each watcher uses a short `ubuntu-slim` job and dispatches a follow-up on the trusted default
+branch before its six-minute polling window ends. Continuations retain the original six-hour
+deadline. They fetch the current PR head on every poll and stop when both suites are terminal
+or the PR closes. Unchanged results do not generate repeated check writes. A brief startup grace
+allows fork runs to appear after a PR update; absent/disabled workflows still report action
+required. Temporary network/server failures retry within the same deadline; permission failures
+remain visible. Deadline exhaustion fails the watcher without passing unfinished checks.
+
+The reporter's `actions: write` permission is used to dispatch only this trusted reporter workflow
+with a PR number and deadline; no contributor workflow is dispatched and no personal access token
+or fork secret is required. Per-PR concurrency queues continuations instead of canceling their
+parent. Lightweight canonical runner time is consumed while watching; expensive builds and tests
+remain in the personal fork. Runner queue delays can still postpone a refresh, so the two-minute
+poll interval is not a guaranteed delivery time.
+
+To refresh and watch a particular PR, including a manually rerun fork suite:
+
+```sh
+gh workflow run fork-ci-status.yml --repo datafusion-contrib/StreamFusion -f pr_number=123
+```
+
+Omit `pr_number` to refresh every open PR and start watchers for unfinished suites. The
+`watch_until` input is for internal continuation; leaving it empty starts a new watch deadline.
+The reporter does not rerun tests, weaken required checks or accept partial upstream inventory
+runs as complete coverage. Its polling and continuation tests run in ordinary fork CI without
+a write-capable token.
 
 Reporter-created checks carry a `streamfusion:fork-ci:v1:` external ID scoped to the PR,
 workflow and check name. The reporter searches every check-run page for that marker and the
