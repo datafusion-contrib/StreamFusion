@@ -3165,6 +3165,16 @@ final class RexExpression {
       return reject(call.getOperator().getName() + " requires at least two arguments");
     }
     RelDataType result = call.getType();
+    if (nativeMixedExactExtremum(call)) {
+      add(KIND_CALL, op, args.size());
+      for (RexNode arg : args) {
+        if (!org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(arg.getType(), result)) {
+          add(KIND_CAST_DECIMAL, result.getPrecision() * 100 + result.getScale(), 1);
+        }
+        if (!emit(arg)) return false;
+      }
+      return true;
+    }
     SqlTypeName type = result.getSqlTypeName();
     boolean integer = SqlTypeFamily.INTEGER.getTypeNames().contains(type);
     boolean character = type.getFamily() == SqlTypeFamily.CHARACTER;
@@ -4281,6 +4291,30 @@ final class RexExpression {
     }
   }
 
+  private static boolean nativeMixedExactExtremum(RexCall call) {
+    RelDataType result = call.getType();
+    if (!"GREATEST".equalsIgnoreCase(call.getOperator().getName())
+        || result.getSqlTypeName() != SqlTypeName.DECIMAL
+        || call.getOperands().size() < 2) return false;
+    int integerDigits = result.getPrecision() - result.getScale();
+    for (RexNode operand : call.getOperands()) {
+      if (!(operand instanceof RexInputRef || operand instanceof RexLiteral)) return false;
+      RelDataType source = operand.getType();
+      if (SqlTypeFamily.INTEGER.contains(source)) {
+        if (integerDigits < source.getPrecision()) return false;
+      } else if (source.getSqlTypeName() == SqlTypeName.DECIMAL) {
+        if (source.getScale() > result.getScale()
+            || source.getPrecision() - source.getScale() > integerDigits) return false;
+        // Released numericCasting dereferences a DECIMAL before checking its NULL flag.
+        if (source.isNullable()
+            && !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(source, result)) {
+          return false;
+        }
+      } else return false;
+    }
+    return true;
+  }
+
   private static boolean nativeTemporalExtremum(RexCall call) {
     String name = call.getOperator().getName();
     SqlTypeName result = call.getType().getSqlTypeName();
@@ -4528,6 +4562,7 @@ final class RexExpression {
         return SqlTypeFamily.CHARACTER.contains(call.getType())
             || temporalTypeCode(call.getType()) >= 0
             || call.getType().getSqlTypeName() == SqlTypeName.DECIMAL
+                && !nativeMixedExactExtremum(call)
                 && call.getOperands().stream()
                     .anyMatch(
                         operand ->

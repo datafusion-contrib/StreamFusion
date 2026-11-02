@@ -2087,17 +2087,26 @@ Character inputs produce BYTES. Either hex letter case is accepted; invalid byte
 ### GREATEST
 
 Integers, BOOLEAN and matching-precision/scale DECIMAL retain their Rust kernels and strict NULL
-propagation. Character results, mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
+propagation. Mixed exact-numeric GREATEST also uses explicit casts to Flink's resolved DECIMAL
+type before the existing extrema kernel when every argument is a direct input or literal,
+integer capacity is sufficient and no DECIMAL loses scale. A DECIMAL argument whose metadata
+changes must be NOT NULL: released Flink can dereference it before checking its NULL flag.
+Nullable DECIMAL metadata changes, scale reduction and unverified producers retain generated
+evaluation. Character results, other mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
 Flink-generated expressions through the batch JVM bridge, preserving coercions and nanoseconds.
 Runtime strings use that bridge when the Calc reads an external DataStream whose conversion
 produces Java-backed strings. Unknown or binary-backed input representations retain fallback:
 Flink can use UTF-16 ordering before serialization and byte ordering afterward. Floating-point
 extrema retain fallback.
 
+[Release qualification](../benchmarks/scalar-functions.md#mixed-exact-greatest) retains
+stock/previous/native comparisons, slower tiny batches and complete jobs with both transposes.
+
 ### LEAST
 
 Uses the same kernels, generated-expression paths and string-representation gates as GREATEST,
-with strict NULL propagation and minimum comparison.
+with strict NULL propagation and minimum comparison. Mixed exact-numeric LEAST still uses
+generated evaluation; the new bounded mixed-numeric admission currently applies to GREATEST.
 
 ### INITCAP
 

@@ -86,6 +86,8 @@ fn main() {
         .unwrap_or_else(|_| "ABS(v+CAST(1 AS $TYPE))".into());
     let previous_option = format!("-Dsf.integral.previous={previous}");
     let expression_option = format!("-Dsf.integral.expression={expression}");
+    let secondary = std::env::var("SF_INTEGRAL_SECONDARY_TYPE").unwrap_or_default();
+    let secondary_option = format!("-Dsf.integral.secondaryType={secondary}");
     let legacy_option = format!(
         "-Dsf.integral.legacy={}",
         std::env::var("SF_INTEGRAL_LEGACY").is_ok()
@@ -104,6 +106,7 @@ fn main() {
         .option(&lib)
         .option(&previous_option)
         .option(&expression_option)
+        .option(&secondary_option)
         .option(&legacy_option)
         .option("-Xmx1g")
         .option("-Dstreamfusion.native.development=true")
@@ -136,7 +139,7 @@ fn main() {
         .unwrap()
         .into();
     let program: EncodedProgram = serde_json::from_str(&program).unwrap();
-    let value = |i: usize| {
+    let value = |element: &str, i: usize| {
         let v = (i as i64) * 7919;
         match element {
             "TINYINT" => i64::from(if i % 17 == 0 { i8::MIN } else { v as i8 }),
@@ -158,7 +161,7 @@ fn main() {
             _ => panic!("Unsupported integer-expression input {element}"),
         }
     };
-    let values = (0..rows).map(|i| (!nullable || i % 7 != 0).then(|| value(i)));
+    let values = (0..rows).map(|i| (!nullable || i % 7 != 0).then(|| value(element, i)));
     let input: ArrayRef = match element {
         "BOOLEAN" => Arc::new(BooleanArray::from_iter(
             (0..rows).map(|i| (!nullable || i % 7 != 0).then_some(i % 2 == 0)),
@@ -194,15 +197,20 @@ fn main() {
         }
         _ => panic!("Unsupported exact-numeric-expression input {element}"),
     };
-    let batch = RecordBatch::try_new(
-        Arc::new(Schema::new(vec![Field::new(
-            "v",
-            input.data_type().clone(),
-            nullable,
-        )])),
-        vec![input],
-    )
-    .unwrap();
+    let mut fields = vec![Field::new("v", input.data_type().clone(), nullable)];
+    let mut columns = vec![input];
+    if !secondary.is_empty() {
+        let values =
+            (0..rows).map(|i| (!nullable || i % 11 != 0).then(|| value(&secondary, i + 3)));
+        let input: ArrayRef = match secondary.as_str() {
+            "INT" => Arc::new(Int32Array::from_iter(values.map(|v| v.map(|v| v as i32)))),
+            "BIGINT" => Arc::new(Int64Array::from_iter(values)),
+            _ => panic!("Unsupported secondary exact-numeric input {secondary}"),
+        };
+        fields.push(Field::new("n", input.data_type().clone(), nullable));
+        columns.push(input);
+    }
+    let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
     let mut native = CalcProgram::new(
         program.kinds,
         program.payload,

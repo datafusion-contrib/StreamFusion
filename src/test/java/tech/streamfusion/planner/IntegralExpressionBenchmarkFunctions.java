@@ -43,19 +43,27 @@ public final class IntegralExpressionBenchmarkFunctions {
     table.getConfig().set("table.exec.legacy-cast-behaviour",
         Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
     String declaration = type + (nullable ? "" : " NOT NULL");
-    table.executeSql("CREATE TABLE inputs(v " + declaration + ") WITH ('connector'='datagen')");
+    String secondary = System.getProperty("sf.integral.secondaryType", "");
+    if (!secondary.isEmpty() && !List.of("INT", "BIGINT").contains(secondary))
+      throw new IllegalArgumentException("Unsupported secondary input " + secondary);
+    String secondaryDeclaration = secondary + (nullable ? "" : " NOT NULL");
+    table.executeSql("CREATE TABLE inputs(v " + declaration
+        + (secondary.isEmpty() ? "" : ",n " + secondaryDeclaration)
+        + ") WITH ('connector'='datagen')");
     String expression = System.getProperty("sf.integral.expression", "ABS(v+CAST(1 AS $TYPE))")
         .replace("$TYPE", type);
     var query = ((TableImpl) table.sqlQuery("SELECT " + expression + " FROM inputs")).getQueryOperation();
     var project = (Project) ((PlannerQueryOperation) query).getCalciteTree();
     LogicalType inputType = LogicalTypeParser.parse(declaration, getLoader());
+    LogicalType[] inputTypes = secondary.isEmpty() ? new LogicalType[] {inputType}
+        : new LogicalType[] {inputType, LogicalTypeParser.parse(secondaryDeclaration, getLoader())};
     LogicalType outputType = FlinkTypeFactory.toLogicalType(project.getProjects().get(0).getType());
     booleanOutput = outputType.getTypeRoot() == LogicalTypeRoot.BOOLEAN;
     stringOutput = outputType.getTypeRoot() == LogicalTypeRoot.VARCHAR
         || outputType.getTypeRoot() == LogicalTypeRoot.CHAR;
     boolean configuredCast = stringOutput || type.equals("BOOLEAN") || type.startsWith("DECIMAL(");
     stock = FlinkExpressionGenerator.generate(project.getProjects(), null,
-        new LogicalType[] {inputType}, RowType.of(outputType), table.getConfig(), getLoader());
+        inputTypes, RowType.of(outputType), table.getConfig(), getLoader());
     var context = new FunctionContext(null) {
       @Override public ClassLoader getUserCodeClassLoader() { return getLoader(); }
     };
@@ -91,10 +99,12 @@ public final class IntegralExpressionBenchmarkFunctions {
     }
     if (encoded == null && !fallbackControl)
       throw new IllegalStateException("Expected an admitted integer expression");
-    var serializer = new RowDataSerializer(RowType.of(inputType));
+    var serializer = new RowDataSerializer(RowType.of(inputTypes));
     rows = new RowData[count];
     for (int i = 0; i < count; i++) {
-      RowData row = GenericRowData.of(nullable && i % 7 == 0 ? null : value(type, i));
+      Object primary = nullable && i % 7 == 0 ? null : value(type, i);
+      RowData row = secondary.isEmpty() ? GenericRowData.of(primary)
+          : GenericRowData.of(primary, nullable && i % 11 == 0 ? null : value(secondary, i + 3));
       rows[i] = binary ? serializer.toBinaryRow(row).copy() : row;
     }
     if (fallbackControl) {

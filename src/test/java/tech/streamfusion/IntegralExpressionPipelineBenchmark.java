@@ -28,8 +28,16 @@ class IntegralExpressionPipelineBenchmark {
     boolean bigintInput = Boolean.getBoolean("sf.integral.bigintInput");
     int decimalPrecision = Integer.getInteger("sf.integral.decimalPrecision", 0);
     int decimalScale = Integer.getInteger("sf.integral.decimalScale", 0);
-    var inputType = decimalPrecision > 0 ? DataTypes.DECIMAL(decimalPrecision, decimalScale)
+    boolean notNull = Boolean.getBoolean("sf.integral.primaryNotNull");
+    String secondary = System.getProperty("sf.integral.secondaryType", "");
+    assertTrue(secondary.isEmpty() || secondary.equals("INT") || secondary.equals("BIGINT"));
+    var primary = decimalPrecision > 0 ? DataTypes.DECIMAL(decimalPrecision, decimalScale)
         : booleanInput ? DataTypes.BOOLEAN() : bigintInput ? DataTypes.BIGINT() : DataTypes.INT();
+    var inputType = notNull ? primary.notNull() : primary;
+    var second = secondary.equals("BIGINT") ? DataTypes.BIGINT() : DataTypes.INT();
+    var sourceType = secondary.isEmpty() ? DataTypes.ROW(DataTypes.FIELD("v", inputType))
+        : DataTypes.ROW(DataTypes.FIELD("v", inputType),
+            DataTypes.FIELD("n", notNull ? second.notNull() : second));
     String expression = System.getProperty("sf.integral.expression", "ABS(v+CAST(1 AS $TYPE))")
         .replace("$TYPE", bigintInput ? "BIGINT" : "INT");
     for (int trial = 0; trial < warmups + runs; trial++) {
@@ -51,10 +59,18 @@ class IntegralExpressionPipelineBenchmark {
             else if (bigintInput) value = i % 17 == 0 ? Long.MIN_VALUE
                 : (i % 2 == 0 ? -1L : 1L) * (9007199254740993L + i * 7919L);
             else value = i % 17 == 0 ? Integer.MIN_VALUE : (int) ((i % 2 == 0 ? -1 : 1) * i * 7919);
-            return Row.of(i % 7 == 0 ? null : value);
-          }).returns(ExternalTypeInfo.<Row>of(DataTypes.ROW(DataTypes.FIELD("v", inputType))));
+            Object first = !notNull && i % 7 == 0 ? null : value;
+            if (secondary.isEmpty()) return Row.of(first);
+            long index = i + 3;
+            Object other;
+            if (secondary.equals("INT")) other = index % 17 == 0 ? Integer.MIN_VALUE
+                : (int) ((index % 2 == 0 ? -1L : 1L) * index * 7919L);
+            else other = index % 17 == 0 ? Long.MIN_VALUE
+                : (index % 2 == 0 ? -1L : 1L) * (9007199254740993L + index * 7919L);
+            return Row.of(first, !notNull && i % 11 == 0 ? null : other);
+          }).returns(ExternalTypeInfo.<Row>of(sourceType));
           table.createTemporaryView("inputs", source,
-              Schema.newBuilder().column("v", inputType).build());
+              Schema.newBuilder().fromRowDataType(sourceType).build());
           var resultType = table.sqlQuery("SELECT " + expression + " FROM inputs")
               .getResolvedSchema().getColumnDataTypes().get(0).getLogicalType();
           table.executeSql("CREATE TABLE output_rows(v " + resultType.asSerializableString()
