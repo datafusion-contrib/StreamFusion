@@ -59,3 +59,16 @@ see [Lookup join](lookup-join.md).
 - a residual non-equi predicate beyond the `FOR SYSTEM_TIME` condition isn't expressible by the
   native expression engine;
 - the join is processing-time against a versioned table (parity, not a real gap — see above).
+
+## Independent native cleanup state
+
+Partitioned native snapshots preserve cleanup-only key groups independently of probe rows and
+build versions. Both memory and persistent logical exporters include those groups; restore and
+rescaling retain the original deadline and silent expiry. Regressions cover both backend
+switch directions, 64 keys, empty/mixed row sides and three-way redistribution.
+
+This is native snapshot correctness, not stock canonical-savepoint qualification. Complete
+stock state projection must additionally preserve probe ordering/cursors, versioned row kinds,
+the registered event-timer value and queued callbacks that can outlive TTL cleanup. That adapter
+and automatic temporal plan binding remain open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

@@ -694,7 +694,12 @@ impl TemporalJoiner {
         let cleanup = sections.get(2).map(|bytes| {
             Self::side_raw_partitions(bytes, &cleanup_keys, max_parallelism, timestamp_precisions)
         });
-        let mut groups: Vec<i32> = left.keys().chain(right.keys()).copied().collect();
+        let mut groups: Vec<i32> = left
+            .keys()
+            .chain(right.keys())
+            .chain(cleanup.iter().flat_map(|partitions| partitions.keys()))
+            .copied()
+            .collect();
         groups.sort_unstable();
         groups.dedup();
         let mut snapshots = BTreeMap::new();
@@ -1252,6 +1257,7 @@ impl TemporalJoiner {
         let mut groups: Vec<i32> = left_by_group
             .keys()
             .chain(right_by_group.keys())
+            .chain(cleanup_by_group.keys())
             .copied()
             .collect();
         groups.sort_unstable();
@@ -1539,3 +1545,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTemporalJoinerPartit
         boxed_or_throw(&mut env, joiner)
     })
 }
+
+#[cfg(test)]
+mod tests;

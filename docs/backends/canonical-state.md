@@ -483,3 +483,19 @@ to the original stock operator identity, key serializer and resolved maximum par
 clean planner/regression selection passes 175 checks, including 29 interval planner controls.
 The expanded complete-job switching matrix and remaining #569 requirements are separately
 qualified; component and upstream passes do not establish them. Benchmarking remains deferred.
+
+## Independent temporal cleanup partitions
+
+Native temporal join snapshots retain cleanup-only key groups even when neither row side holds
+records in that group. Memory and persistent logical exports take the union of both row-side
+inventories and independent cleanup-state groups. The existing frame layout and deadline values
+remain unchanged. Restore and redistribution therefore retain timer-only state rather than
+silently omitting its key group.
+
+Two native regressions first reproduce the loss on each original backend, then verify both
+source/target stores, 64 negative keys, empty/mixed row sides, exact deadline ages, redistribution
+across three subtasks, repeated export and silent expiry. The clean native suite passes 1,166
+tests with two existing ignores; targeted Java operator, SQL/backend and key-group checks also
+pass. This fixes native logical snapshots; it does not establish stock temporal-join canonical
+interchange, which remains open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
