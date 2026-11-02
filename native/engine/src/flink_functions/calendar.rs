@@ -133,8 +133,8 @@ fn extract(days: i32, field: Field) -> i32 {
         Field::Month => calendar_date(julian).1,
         Field::Day => calendar_date(julian).2,
         // Released DATE clock extraction uses the physical integer as milliseconds.
-        Field::Hour => extract_millis(i64::from(days), field) as i32,
-        Field::Minute | Field::Second => 0,
+        Field::Hour | Field::Minute => extract_millis(i64::from(days), field) as i32,
+        Field::Second => 0,
         Field::DayOfWeek => julian.wrapping_add(1).rem_euclid(7) + 1,
         Field::Quarter => (calendar_date(julian).1 + 2) / 3,
         Field::Week => {
@@ -335,6 +335,23 @@ mod tests {
                 Some(0),
                 Some(0),
                 Some(20),
+            ],
+        );
+    }
+
+    #[test]
+    fn date_minute_keeps_released_signed_physical_integer_arithmetic() {
+        assert_date_clock_field(
+            Field::Minute,
+            vec![
+                Some(-31),
+                Some(-11),
+                Some(-1),
+                Some(0),
+                None,
+                Some(0),
+                Some(0),
+                Some(31),
             ],
         );
     }

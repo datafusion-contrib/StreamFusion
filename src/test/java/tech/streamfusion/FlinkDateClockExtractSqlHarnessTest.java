@@ -19,7 +19,7 @@ import tech.streamfusion.planner.NativePlanner;
 
 class FlinkDateClockExtractSqlHarnessTest {
   @ParameterizedTest
-  @ValueSource(strings = {"HOUR"})
+  @ValueSource(strings = {"HOUR", "MINUTE"})
   void dateClockFieldsKeepReleasedSignedIntegerArithmetic(String unit) throws Exception {
     var type = ROW(FIELD("id", INT().notNull()), FIELD("d", DATE()));
     int[] days = {Integer.MIN_VALUE, Integer.MIN_VALUE + 1, -86400001, -86400000, -86399999,
