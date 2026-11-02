@@ -1492,3 +1492,17 @@ the presence of a runner or a passing stock lifecycle test does not prove native
 The selected window-join restore lane passes eight stock and eight native invocations against
 the compiled-plan integration, including its six actual native state owners and two verified
 stock SEMI/ANTI fallbacks. Benchmarking remains deferred.
+
+### Released runtime control qualification
+
+The full seven-class Flink 2.2.1 runtime selection passes 51 active invocations on each configured
+engine classpath, with zero failures or errors. Each lane reports the same one upstream-disabled
+`SavepointITCase.testTriggerSavepointAndResumeWithNoClaim` invocation (FLINK-25427). The active
+controls comprise 16 savepoint-format cases, eight heap/Rocks backend-switch cases, one timer
+case, 18 savepoint lifecycle cases, four stop-with-savepoint cases and four JobMaster triggering
+cases. The original classes and assertions are unchanged.
+
+These controls have no native state-owner execution contracts. They exercise the released Flink
+runtime/backend lifecycle with stock and StreamFusion dependency visibility; they do not establish
+conversion of StreamFusion operator state. Native-family SQL restore witnesses and isolated
+cross-engine job continuations remain separate qualifications.
