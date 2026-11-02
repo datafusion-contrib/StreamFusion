@@ -307,6 +307,8 @@ public final class CanonicalJobWorker {
         while (!Files.exists(ready)
             || twoInputs && !Files.exists(rightReady)
             || !Files.exists(Path.of(witness + "-sink-ready"))
+            || Files.exists(root.resolve("wait-sink-output"))
+                && !Files.exists(Path.of(witness + "-sink-output-ready"))
             || nativeRun
                 && limit > restoredLimit
                 && Files.exists(root.resolve("wait-native-input"))

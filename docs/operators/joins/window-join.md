@@ -139,3 +139,12 @@ and exact key-layout/admission limits are documented in
 [ordinary SQL canonical handoffs](../../backends/canonical-state.md#ordinary-sql-canonical-handoffs).
 This does not qualify the full ordinary variant/type/rescale/failure/connector matrix; the family
 remains partial under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+All 46 ordinary SQL window-join handoffs now pass with default SQL UIDs and no compiled artifact,
+covering the same continued-input, no-input, native-checkpoint and 64-key rescale matrix above.
+Generated-ID rescaling disables chaining from the initial job on both engines. Keyed/keyless
+INNER TUMBLE/HOP/CUMULATE and keyed outer TUMBLE cases retain two custom sources, the transactional
+sink and both transposes; actual native input, clean stock classpaths, stock-only metadata and
+external committed effects are checked. This extends submission coverage without qualifying
+wider key/type/version/failure/connector variants. Every operator family remains partial.

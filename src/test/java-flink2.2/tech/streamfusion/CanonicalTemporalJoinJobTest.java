@@ -116,8 +116,7 @@ class CanonicalTemporalJoinJobTest {
     }
   }
 
-  private static List<String> expectedRows(Path root, String kind, boolean residual)
-      throws Exception {
+  static List<String> expectedRows(Path root, String kind, boolean residual) throws Exception {
     var versions = new HashMap<String, TreeMap<Long, Long>>();
     for (String line : Files.readAllLines(root.resolve("right-input.csv"))) {
       String[] row = line.split(",");

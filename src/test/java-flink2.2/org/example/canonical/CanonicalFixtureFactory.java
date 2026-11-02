@@ -567,6 +567,7 @@ public final class CanonicalFixtureFactory
     private final List<byte[]> pending = new ArrayList<>();
     private long transaction;
     private boolean witnessed;
+    private boolean outputWitnessed;
 
     RowsWriter(RowType type, String witness, Collection<WriterState> restored) throws IOException {
       serializer = new RowDataSerializer(type);
@@ -583,6 +584,10 @@ public final class CanonicalFixtureFactory
       var encoded = new DataOutputSerializer(64);
       serializer.serialize(row, encoded);
       pending.add(encoded.getCopyOfBuffer());
+      if (!outputWitnessed) {
+        Files.writeString(Path.of(witness + "-sink-output-ready"), "row received");
+        outputWitnessed = true;
+      }
       if (!witnessed) {
         for (StackTraceElement frame : Thread.currentThread().getStackTrace()) {
           if (frame

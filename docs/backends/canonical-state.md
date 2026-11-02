@@ -681,12 +681,23 @@ This boundary preserves existing native checkpoint routing pending complete key-
 
 The clean regression selection passes 331 checks, including 21 compiled/ordinary identity and
 key-layout controls, eight deployed ordinary native-family parity controls and existing stock
-state/metadata/SQL controls. Four isolated native-first INNER temporal round trips pass across
-both native stores: two with ordinary default SQL UIDs and two with `ALWAYS`. They submit SQL
-without a compiled artifact, retain two custom sources, a transactional sink and both transposes,
-verify positive native input and stock-only metadata, and compare external committed effects with
-stock and an independent temporal oracle. These initial jobs do not establish the complete ordinary
-SQL variant/rescale/failure matrix. All 15 unchanged released join restore programs still pass on
+state/metadata/SQL controls. All 26 ordinary temporal handoffs and all 46 ordinary window-join
+handoffs pass across their compiled-plan scenario matrices above, using default SQL UIDs. The
+rescale fixtures disable chaining from the initial job to preserve original generated stock IDs.
+Two additional ordinary temporal `ALWAYS` UID controls pass on the native stores. These jobs
+submit SQL without a compiled artifact, retain two custom sources, a transactional sink and both
+transposes, verify positive native input and stock-only metadata, and compare external committed
+effects with stock. Temporal results also match an independent version-history oracle.
+
+Eight further ordinary temporal cases emit duplicate probe results before the first boundary,
+while other probes remain pending. They fail immediately before or after the external atomic sink
+write, on either initial engine and both native stores. Each restores a real ordinary checkpoint,
+then makes a canonical round trip through both engines. The failure is verified, the initial
+external result is exactly zero or two rows, and final committed effects match stock and the
+independent oracle with no duplication. Native progress is required after every advancing native
+leg. This qualifies the fixture's idempotent transaction protocol; full-job TTL expiry, other sink
+protocols/writer rescaling and broader type/version/failure matrices remain open. Ordinary interval
+complete-job qualification remains separate. All 15 unchanged released join restore programs still pass on
 each engine: 12 actual native imports with continued input, two verified stock window owners and
 one join elided by Flink. Every family remains partial under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.

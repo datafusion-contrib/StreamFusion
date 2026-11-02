@@ -347,9 +347,9 @@ The [temporal workflow](operators/joins/temporal-join.md#canonical-interchange-p
 stock compiled plans automatically. Twenty-six complete-job round trips qualify INNER/LEFT
 continuation, residual predicates, immediate re-export, native checkpoint recovery and 64-key
 rescaling through 1 → 3 → 2 tasks at maximum parallelism 128, on both native stores and with both
-engine orders. The custom sources and transactional sink stay at one task. Probes remain pending
-until final drain; intermediate temporal-output commit failures, full-job TTL expiry and wider
-schema/version/connector guarantees remain unqualified. Keep the same released Flink version,
+engine orders. The custom sources and transactional sink stay at one task. Those probes remain pending
+until final drain; emitted-output transaction failures have separate ordinary SQL qualification
+below. Full-job TTL expiry and wider schema/version/connector guarantees remain unqualified. Keep the same released Flink version,
 portable plan and normal user dependencies on both engines; stock needs no StreamFusion JARs.
 
 
@@ -369,8 +369,10 @@ Qualified temporal, interval and window joins can also use ordinary SQL submissi
 compiled artifact. Keep the same SQL, schemas, planner options, connector/user code, released
 Flink version and maximum parallelism on both engines; stop with a canonical savepoint and restore
 through Flink's normal savepoint configuration. StreamFusion retains the original stock logical
-roles during planning and installs the conversion automatically. The initial ordinary temporal
-round trips cover default SQL UIDs and `ALWAYS` on both native stores. Wider ordinary job matrices,
+roles during planning and installs the conversion automatically. All 26 temporal and 46 window
+ordinary handoffs pass with default SQL UIDs; two temporal `ALWAYS` controls pass too. Eight
+additional temporal cases recover failures before/after an external sink commit, then switch
+engines without duplicate committed effects. Wider ordinary job matrices,
 ambiguous graph rewrites, other native families/connectors and wide decimal/high-precision timestamp
 keys still need qualification. See the exact
 [ordinary SQL scope](backends/canonical-state.md#ordinary-sql-canonical-handoffs). Existing native

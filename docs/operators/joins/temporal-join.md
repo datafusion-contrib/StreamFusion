@@ -175,3 +175,14 @@ and exact key-layout/admission limits are documented in
 [ordinary SQL canonical handoffs](../../backends/canonical-state.md#ordinary-sql-canonical-handoffs).
 This does not qualify the full ordinary variant/type/rescale/failure/connector matrix; the family
 remains partial under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+All 26 ordinary SQL temporal scenarios pass with default SQL UIDs, using the same INNER/LEFT,
+store/order, residual, no-input, checkpoint and rescale matrix above. No compiled plan is created
+or loaded. Two `ALWAYS` controls pass across the stores. Eight additional ordinary SQL cases emit
+results before the first boundary and fail before or after the external sink write, on either
+initial engine and native store. They verify the injected failure and exact initial committed
+count, recover a real checkpoint, then complete canonical engine switches. Final external effects
+match uninterrupted stock execution and the independent temporal-history oracle without duplicate
+transactions. This qualifies the fixture's idempotent commit protocol; full-job TTL expiry, writer
+rescaling, other connector protocols and broader schema/version/failure matrices remain open.
