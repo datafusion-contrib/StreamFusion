@@ -1207,6 +1207,12 @@ public final class Native {
   /** Serializes the sorter's buffered rows for a checkpoint. */
   public static native byte[] snapshotTemporalSorter(long handle);
 
+  /** Binds independent cache clocks after the original processing-time row payload. */
+  public static native void bindIntervalJoinCanonicalClock(long handle, int leftArity, int rightArity);
+
+  /** Returns no deadline or the earliest actual native cleanup deadline. */
+  public static native long[] intervalJoinCleanupDeadline(long handle);
+
   public static native void bindIntervalJoinCanonicalKeys(long handle, int[] descriptor);
 
   public static native void exportIntervalJoinCanonicalRows(

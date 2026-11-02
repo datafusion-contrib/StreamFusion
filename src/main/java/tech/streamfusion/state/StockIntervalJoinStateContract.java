@@ -35,7 +35,9 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
-/** Released event-time interval caches, outer-match flags and independent cleanup deadlines. */
+/**
+ * Released interval caches, original payloads, outer-match flags and independent cleanup clocks.
+ */
 public final class StockIntervalJoinStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
   private static final String EVENTS = "_timer_state/event_user-timers";
@@ -43,6 +45,7 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
   private static final int CHUNK = 1024;
   private static final RowType TIMER_TRANSFER =
       RowType.of(new VarBinaryType(VarBinaryType.MAX_LENGTH), new BigIntType());
+  private final boolean processingTime;
   private final TypeSerializer<RowData> keys;
   private final RowType keyType;
   private final RowType[] inputs, transfers;
@@ -62,6 +65,20 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
       int[] rightKeys,
       int leftTime,
       int rightTime) {
+    this(keys, keyType, left, right, leftKeys, rightKeys, leftTime, rightTime, false);
+  }
+
+  public StockIntervalJoinStateContract(
+      TypeSerializer<RowData> keys,
+      RowType keyType,
+      RowType left,
+      RowType right,
+      int[] leftKeys,
+      int[] rightKeys,
+      int leftTime,
+      int rightTime,
+      boolean processingTime) {
+    this.processingTime = processingTime;
     this.keys = Objects.requireNonNull(keys).duplicate();
     this.keyType = keyType;
     inputs = new RowType[] {left, right};
@@ -82,10 +99,9 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
     }
     for (int side = 0; side < 2; side++) {
       if (columns[side].length != keyType.getFieldCount()
-          || times[side] < 0
-          || times[side] >= inputs[side].getFieldCount())
+          || !processingTime && (times[side] < 0 || times[side] >= inputs[side].getFieldCount()))
         throw new IllegalArgumentException("Invalid interval-join state layout");
-      var time = inputs[side].getTypeAt(times[side]);
+      var time = processingTime ? new BigIntType() : inputs[side].getTypeAt(times[side]);
       if (!(time.is(LogicalTypeRoot.BIGINT)
           || (time.is(LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE)
                   || time.is(LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE))
@@ -98,10 +114,31 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
             || !inputs[side].getTypeAt(column).copy(true).equals(keyType.getTypeAt(i).copy(true)))
           throw new IllegalArgumentException("Interval-join key type changed");
       }
-      var fields = new ArrayList<>(inputs[side].getFields());
+      var fields = new ArrayList<RowType.RowField>();
+      for (var field : inputs[side].getFields()) {
+        var physical = field.getType();
+        if (processingTime && LogicalTypeChecks.isProctimeAttribute(physical))
+          physical = physical.copy(true);
+        fields.add(new RowType.RowField(field.getName(), physical));
+      }
+      if (processingTime)
+        fields.add(new RowType.RowField("__canonical_clock__", new BigIntType(false)));
       fields.add(new RowType.RowField("__canonical_matched__", new BooleanType(false)));
       transfers[side] = new RowType(fields);
     }
+  }
+
+  public boolean processingTime() {
+    return processingTime;
+  }
+
+  private int matchIndex(int side) {
+    return inputs[side].getFieldCount() + (processingTime ? 1 : 0);
+  }
+
+  private KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, VoidNamespace>>
+      callbacks() {
+    return processingTime ? processing : events;
   }
 
   @Override
@@ -160,9 +197,9 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
   @Override
   public Map<String, StockStateInventory.Timer> timerSchema() {
     return Map.of(
-        EVENTS,
+        processingTime ? PROCESSING : EVENTS,
         StockStateInventory.Timer.consumed(VoidNamespaceSerializer.INSTANCE),
-        PROCESSING,
+        processingTime ? EVENTS : PROCESSING,
         StockStateInventory.Timer.empty(VoidNamespaceSerializer.INSTANCE));
   }
 
@@ -179,6 +216,9 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
 
   @Override
   public void configureNativeState(long handle, boolean persistent) {
+    if (processingTime)
+      Native.bindIntervalJoinCanonicalClock(
+          handle, inputs[0].getFieldCount(), inputs[1].getFieldCount());
     Native.bindIntervalJoinCanonicalKeys(handle, keyDescriptor);
   }
 
@@ -218,7 +258,7 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
     queues(backend);
     var projection = new StockKeyProjection(keyType);
     var scheduled = new HashSet<Pending>();
-    try (var iterator = events.iterator()) {
+    try (var iterator = callbacks().iterator()) {
       while (iterator.hasNext()) {
         var event = iterator.next();
         if (!scheduled.add(
@@ -258,7 +298,7 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
                   || pair.f0 == null
                   || pair.f1 == null
                   || pair.f0.getRowKind() != RowKind.INSERT
-                  || millis(pair.f0, side) != entry.getKey()
+                  || !processingTime && millis(pair.f0, side) != entry.getKey()
                   || !key.equals(projectedKey(pair.f0, side, projection)))
                 throw new IllegalStateException(
                     "Stock interval row disagrees with its cache key or timestamp");
@@ -320,18 +360,18 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
                 for (int field = 0; field < payload.getArity(); field++)
                   payload.setField(
                       field,
-                      RowData.createFieldGetter(inputs[input].getTypeAt(field), field)
+                      RowData.createFieldGetter(inputs[input].getTypeAt(field).copy(true), field)
                           .getFieldOrNull(row));
-                if (row.isNullAt(payload.getArity()))
+                if (row.isNullAt(matchIndex(input)))
                   throw new IllegalStateException("NULL native match flag");
-                long time = millis(payload, input);
+                long time =
+                    processingTime ? row.getLong(payload.getArity()) : millis(payload, input);
                 backend.setCurrentKey(projectedKey(payload, input, projection));
                 var retained = values.get(time);
                 if (retained == null) retained = new ArrayList<>();
                 retained.add(
                     Tuple2.of(
-                        serializer.toBinaryRow(payload).copy(),
-                        row.getBoolean(payload.getArity())));
+                        serializer.toBinaryRow(payload).copy(), row.getBoolean(matchIndex(input))));
                 values.put(time, retained);
               }
             } catch (Exception failure) {
@@ -360,7 +400,7 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
                 if (deadline.value() != null)
                   throw new IllegalStateException("Duplicate native interval deadline");
                 deadline.update(time);
-                events.add(new TimerHeapInternalTimer<>(time, key, VoidNamespace.INSTANCE));
+                callbacks().add(new TimerHeapInternalTimer<>(time, key, VoidNamespace.INSTANCE));
               }
             } catch (Exception failure) {
               throw new IllegalStateException("Cannot export stock interval timers", failure);
@@ -384,13 +424,14 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
           backend.setCurrentKey(iterator.next());
           for (var entry : values.entries()) {
             for (var pair : entry.getValue()) {
-              var row = new GenericRowData(inputs[side].getFieldCount() + 1);
+              var row = new GenericRowData(transfers[side].getFieldCount());
               for (int field = 0; field < inputs[side].getFieldCount(); field++)
                 row.setField(
                     field,
-                    RowData.createFieldGetter(inputs[side].getTypeAt(field), field)
+                    RowData.createFieldGetter(inputs[side].getTypeAt(field).copy(true), field)
                         .getFieldOrNull(pair.f0));
-              row.setField(inputs[side].getFieldCount(), pair.f1);
+              if (processingTime) row.setField(inputs[side].getFieldCount(), entry.getKey());
+              row.setField(matchIndex(side), pair.f1);
               rows.add(row);
               if (rows.size() == CHUNK) {
                 send(handle, side, rows, false);

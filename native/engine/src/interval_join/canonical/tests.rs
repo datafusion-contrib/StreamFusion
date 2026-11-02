@@ -3,7 +3,7 @@ use super::*;
 use crate::state::rocks_config::FlinkRocksOptions;
 
 #[cfg(feature = "rocksdb-state")]
-fn options_json() -> String {
+pub(in crate::interval_join) fn options_json() -> String {
     serde_json::to_string(&FlinkRocksOptions {
         max_background_threads: 2,
         max_open_files: -1,

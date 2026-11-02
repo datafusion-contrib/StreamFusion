@@ -277,6 +277,7 @@ class CanonicalIntervalJoinInteropTest {
     final int kind;
     final RowType input, output, keyType;
     final boolean timestamp;
+    final boolean processingTime;
     final RowDataKeySelector selector;
     final String keyEncoding;
 
@@ -285,6 +286,11 @@ class CanonicalIntervalJoinInteropTest {
     }
 
     Plan(int kind, boolean timestamp, String keyEncoding) {
+      this(kind, timestamp, keyEncoding, false);
+    }
+
+    Plan(int kind, boolean timestamp, String keyEncoding, boolean processingTime) {
+      this.processingTime = processingTime;
       this.kind = kind;
       this.timestamp = timestamp;
       this.keyEncoding = keyEncoding;
@@ -318,11 +324,19 @@ class CanonicalIntervalJoinInteropTest {
           key = new BigIntType();
       }
       input =
-          RowType.of(key, new BigIntType(), timestamp ? new TimestampType(3) : new BigIntType());
+          RowType.of(
+              key,
+              new BigIntType(),
+              timestamp
+                  ? processingTime
+                      ? new org.apache.flink.table.types.logical.LocalZonedTimestampType(
+                          false, org.apache.flink.table.types.logical.TimestampKind.PROCTIME, 3)
+                      : new TimestampType(3)
+                  : new BigIntType());
       var fields = new ArrayList<RowType.RowField>();
       for (int side = 0; side < 2; side++)
         for (int column = 0; column < input.getFieldCount(); column++)
-          fields.add(new RowType.RowField("f" + side + column, input.getTypeAt(column)));
+          fields.add(new RowType.RowField("f" + side + column, input.getTypeAt(column).copy(true)));
       output = new RowType(fields);
       selector =
           KeySelectorUtil.getRowDataSelector(
@@ -437,18 +451,29 @@ class CanonicalIntervalJoinInteropTest {
           new FlinkJoinType[] {
             FlinkJoinType.INNER, FlinkJoinType.LEFT, FlinkJoinType.RIGHT, FlinkJoinType.FULL
           };
-      var interval =
-          new RowTimeIntervalJoin(
-              kinds[kind],
-              -100,
-              100,
-              0,
-              0,
-              InternalTypeInfo.of(input),
-              InternalTypeInfo.of(input),
-              join,
-              2,
-              2);
+      org.apache.flink.streaming.api.functions.co.KeyedCoProcessFunction<
+              RowData, RowData, RowData, RowData>
+          interval =
+              processingTime
+                  ? new org.apache.flink.table.runtime.operators.join.interval.ProcTimeIntervalJoin(
+                      kinds[kind],
+                      -100,
+                      100,
+                      0,
+                      InternalTypeInfo.of(input),
+                      InternalTypeInfo.of(input),
+                      join)
+                  : new RowTimeIntervalJoin(
+                      kinds[kind],
+                      -100,
+                      100,
+                      0,
+                      0,
+                      InternalTypeInfo.of(input),
+                      InternalTypeInfo.of(input),
+                      join,
+                      2,
+                      2);
       var h =
           new KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData>(
               new KeyedCoProcessOperator<>(interval),
@@ -466,7 +491,15 @@ class CanonicalIntervalJoinInteropTest {
     StockIntervalJoinStateContract contract() throws Exception {
       var contract =
           new StockIntervalJoinStateContract(
-              keySerializer(), keyType, input, input, new int[] {0}, new int[] {0}, 2, 2);
+              keySerializer(),
+              keyType,
+              input,
+              input,
+              new int[] {0},
+              new int[] {0},
+              2,
+              2,
+              processingTime);
       var loader =
           new ClassLoader(getClass().getClassLoader()) {
             @Override
@@ -483,7 +516,7 @@ class CanonicalIntervalJoinInteropTest {
 
     KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
         nativeHarness(boolean disk) throws Exception {
-      var operator = new CanonicalInterval(input, kind);
+      var operator = new CanonicalInterval(input, kind, processingTime);
       var contract = contract();
       operator.setStockStateContract(contract);
       var h =
@@ -578,7 +611,7 @@ class CanonicalIntervalJoinInteropTest {
   private static final class CanonicalInterval extends NativeIntervalJoinOperator {
     private boolean canonical;
 
-    CanonicalInterval(RowType input, int kind) {
+    CanonicalInterval(RowType input, int kind, boolean processingTime) {
       super(
           new int[] {0},
           new int[] {0},
@@ -590,7 +623,7 @@ class CanonicalIntervalJoinInteropTest {
           input,
           input,
           EncodedPredicate.NONE,
-          false,
+          processingTime,
           new int[] {-1},
           128);
     }

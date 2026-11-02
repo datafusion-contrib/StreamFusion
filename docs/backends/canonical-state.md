@@ -451,3 +451,32 @@ rows successfully. Processing-time interchange and the submitted-graph proof for
 stateless negative-interval fixture remain open; the full interval upstream lane is not green.
 Ordinary SQL identities and the remaining full #569 matrix also remain open. Benchmarking stays
 deferred.
+
+### Processing-time interval payloads and callbacks
+
+The released Flink 2.2.1 processing-time interval adapter preserves original SQL rows separately
+from each row's arrival clock. A private physical BIGINT column holds that clock in native state;
+joined output projects it out. Canonical export writes the original payload and matched flag into
+the stock tuple list and uses the independent clock as the stock map bucket. Native export visits
+live state directly without an intermediate native snapshot. Original stock row/key serializers
+remain unchanged and require no StreamFusion classes on restore.
+
+Flink represents a PROCTIME attribute as a NULL placeholder even when the logical type is NOT
+NULL. The native physical and transfer schemas permit that placeholder, and export preserves its
+NULL bit. Residual predicates retain their original logical left/right field positions despite
+the private clock. Original NULL or arbitrary timestamp payloads are never replaced by the clock.
+
+Processing-time state consumes the stock processing `user-timers` queue and requires an empty
+event queue. The event-time contract applies the converse rule. Both modes reject a mismatched
+native operator. Import validates all cache, key, serializer and callback ownership before any
+native row is installed. Idle and already-due callbacks rearm from the earliest retained native
+deadline after import or ordinary native checkpoint recovery. End of input does not force future
+processing-time callbacks to fire, matching stock behavior. Unbound legacy native jobs retain
+their existing stamping and finish paths.
+
+Controlled-clock coverage comprises 208 positive processing-time cases and 17 rejection/guard
+cases: all four join kinds, both stock/native stores, both switch orders, NULL/original payloads,
+nine scalar key layouts, no-input re-export, timer-only keys, overdue callbacks on open, end of
+input and native checkpoint continuation. These are component controls; automatic processing-time
+job switching and the full #569 matrix require separate qualification. Benchmarking remains
+deferred.

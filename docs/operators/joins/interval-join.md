@@ -147,12 +147,11 @@ The combined clean workflow passes 198 controls, including four shared-runner wi
 
 The unchanged released event-time interval restore program also passes on each engine, with ten
 pending rows imported and five new rows processed by the native state owner. The broader interval
-upstream selection remains red: processing-time payload transfer is missing, and the negative
-interval program is already stateless in Flink but still lacks an accurate submitted-graph
-execution contract. Both gaps remain visible; unrelated Calc work does not satisfy a join gate.
+upstream selection in the event-time-only qualification remains red: the processing-time workflow
+and the submitted-graph proof for Flink's stateless negative interval were not yet installed. Both gaps remain visible; unrelated Calc work does not satisfy a join gate.
 
-Ordinary SQL identities, full-job residual predicates, processing-time payload preservation and
-the wider type/version/rescale/failure matrix remain open. Nonpositive/overflow event-time cleanup remains an explicitly unqualified interchange edge;
+Ordinary SQL identities, full-job residual predicates, automatic processing-time job qualification
+and the wider type/version/rescale/failure matrix remain open. Nonpositive/overflow event-time cleanup remains an explicitly unqualified interchange edge;
 the released heap/Rocks distinction described above still applies. Benchmarking is deferred.
 
 ### Logical input and retained native frames
@@ -168,3 +167,25 @@ framing and independent timer sections are unchanged. Three new native regressio
 transport input, rejection without mutation, and older tagged frames on both restore routes.
 The isolated component passes 1,161 native tests with two existing ignores and 618 Java
 component/regression controls. Canonical benchmarking remains deferred.
+
+### Released stock processing-time state adapter
+
+The processing-time adapter preserves SQL rows independently of the cache's arrival clock. Native
+state appends a private BIGINT clock column and projects it out of joined output; canonical export
+writes only the original payload and matched flag into the stock tuple while using the clock for
+its timestamp bucket. PROCTIME's physical NULL placeholder survives even when its logical type
+is NOT NULL. Residual expressions still reference their original logical fields.
+
+The stock processing `user-timers` queue transfers independent cleanup deadlines, including
+keys with no cached rows. The opposite event queue must be empty. Both adapters reject a native
+operator with a different clock mode before importing any rows. Imported deadlines, including
+already-due timers, rearm without new input; native checkpoint recovery retains the same behavior.
+End of input does not advance the processing clock to infinity or emit premature outer padding.
+
+The isolated controlled-clock component passes 208 positive cases and 17 rejection/guard cases,
+covering both stores/orders, four join kinds, nine scalar key layouts, original/NULL payloads,
+no-input re-export, timer-only keys, overdue callbacks, EOF and native checkpoint continuation.
+The combined clean component/regression selection passes 843 Java controls, while the clean native
+suite passes 1,164 tests with two existing ignores. These counts overlap earlier cohorts.
+Automatic processing-time job conversion and the full interoperability matrix require separate
+qualification. Canonical export remains a direct live-state transfer. Benchmarking is deferred.

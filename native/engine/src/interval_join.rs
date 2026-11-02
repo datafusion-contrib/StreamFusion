@@ -7,6 +7,7 @@ use datafusion::physical_expr::ScalarFunctionExpr;
 use streamfusion_bridge::timestamp::TimestampColumn;
 
 mod canonical;
+mod clock;
 mod index;
 mod input;
 mod probe;
@@ -77,6 +78,7 @@ pub(crate) struct IntervalJoiner {
     #[cfg(feature = "rocksdb-state")]
     store_timers_initialized: bool,
     key_timestamp_precisions: Vec<i32>,
+    clock_arities: Option<[usize; 2]>,
 }
 
 /// Estimated footprint of one matched-row-id set entry (an i64 plus the hash-set slot).
@@ -130,6 +132,7 @@ impl IntervalJoiner {
             #[cfg(feature = "rocksdb-state")]
             store_timers_initialized: false,
             key_timestamp_precisions: vec![-1; key_arity],
+            clock_arities: None,
         }
     }
 
@@ -381,7 +384,8 @@ impl IntervalJoiner {
         batch: RecordBatch,
         proctime_now: Option<i64>,
     ) -> Result<RecordBatch, DataFusionError> {
-        self.push(batch, true, proctime_now)
+        let output = self.push(batch, true, proctime_now)?;
+        self.user_output(output)
     }
 
     /// Joins an incoming right batch against the buffered left rows, then buffers it. As with {@link
@@ -391,7 +395,8 @@ impl IntervalJoiner {
         batch: RecordBatch,
         proctime_now: Option<i64>,
     ) -> Result<RecordBatch, DataFusionError> {
-        self.push(batch, false, proctime_now)
+        let output = self.push(batch, false, proctime_now)?;
+        self.user_output(output)
     }
 
     fn push(
@@ -400,16 +405,10 @@ impl IntervalJoiner {
         left: bool,
         proctime_now: Option<i64>,
     ) -> Result<RecordBatch, DataFusionError> {
-        let schema = if left {
-            &self.left_data_schema
-        } else {
-            &self.right_data_schema
-        };
-        let batch = crate::logical_input::insert_only(batch, schema, "interval join")?;
+        let batch = self.clock_input(batch, left, proctime_now)?;
         if let Some(now) = proctime_now {
             self.operator_time = now;
         }
-        let batch = self.stamp(batch, left, proctime_now);
         let expiration = self.expiration_time(!left);
         let (keys, time, offset, previous_expiration) = if left {
             (
@@ -1453,6 +1452,11 @@ impl IntervalJoiner {
     /// never matched are padded in timer order. Flink retains an existing row at horizon equality
     /// and keeps the first registered timer when earlier rows arrive out of order.
     pub(crate) fn advance(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        let output = self.advance_native(watermark)?;
+        self.user_output(output)
+    }
+
+    fn advance_native(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         self.operator_time = watermark.max(0);
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {

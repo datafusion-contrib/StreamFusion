@@ -15,7 +15,7 @@ impl IntervalJoiner {
         }
     }
 
-    fn visit_canonical_rows(
+    pub(super) fn visit_canonical_rows(
         &self,
         left: bool,
         mut accept: impl FnMut(RecordBatch, Vec<bool>) -> Result<(), DataFusionError>,
@@ -59,7 +59,7 @@ impl IntervalJoiner {
         Ok(())
     }
 
-    fn import_canonical_rows(
+    pub(super) fn import_canonical_rows(
         &mut self,
         left: bool,
         batch: &RecordBatch,
@@ -174,7 +174,7 @@ impl IntervalJoiner {
         Ok(())
     }
 
-    fn visit_canonical_timers(
+    pub(super) fn visit_canonical_timers(
         &mut self,
         left: bool,
         mut accept: impl FnMut(&[u8], i64) -> Result<(), DataFusionError>,
@@ -199,7 +199,7 @@ impl IntervalJoiner {
         Ok(())
     }
 
-    fn import_canonical_timer(
+    pub(super) fn import_canonical_timer(
         &mut self,
         left: bool,
         key: &[u8],
@@ -443,4 +443,4 @@ pub extern "system" fn Java_tech_streamfusion_Native_importIntervalJoinCanonical
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

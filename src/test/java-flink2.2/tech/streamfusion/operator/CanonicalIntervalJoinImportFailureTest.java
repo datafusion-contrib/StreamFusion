@@ -160,7 +160,7 @@ class CanonicalIntervalJoinImportFailureTest {
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
-  private static MapState<Long, List<Tuple2<RowData, Boolean>>> cache(
+  static MapState<Long, List<Tuple2<RowData, Boolean>>> cache(
       org.apache.flink.runtime.state.CheckpointableKeyedStateBackend<RowData> backend,
       CanonicalIntervalJoinInteropTest.Plan plan)
       throws Exception {
