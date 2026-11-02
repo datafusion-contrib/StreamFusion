@@ -899,3 +899,32 @@ node compares only its rank/key definition and remains compilable on Flink 1.18.
 placement correction passes 100 current 2.2 controls (including eight ordinary process jobs)
 and 31 shared 1.18 processing/checkpoint controls. These cohorts overlap earlier runs and
 do not establish Flink 1.18 canonical interchange.
+
+
+## Direct changelog-normalizer state projection
+
+The direct Flink 2.2.1 adapter projects the existing native normalizer's full retained row into
+released `deduplicate-state` VALUE state with its stock row/key serializers and optional original
+TTL write timestamp. It reads live memory or bounded raw typed-RocksDB rows, with no serialized
+native snapshot and no replay. Canonical iteration keeps expired raw ages; processing still
+applies the existing expiry rules. Ordinary native checkpoint codecs remain unchanged.
+
+Restore requires an empty native target. The complete stock view is validated before insertion;
+each transfer also checks row kinds, reserved metadata, schemas, duplicates and agreement between
+the actual key and the retained row's key columns. Persisted duplicates are hydrated without TTL
+expiry before detection. Invalid later chunks cannot leave earlier valid rows imported.
+Moved Arrow buffers close before JNI errors, and export can retry after receiver failure.
+
+The isolated native suite passes 1,204 tests with two existing ignores, including four new
+red-to-green import reproductions and continuation, TTL, mini-batch-drain and raw-scan controls.
+All 30 Java checks pass: 16 direct controls across both native stores and 14 existing processing/
+checkpoint controls. They cover repeated stock/native handoffs, full tombstone payloads, null keys,
+late row-kind/key mismatches, nonempty targets, 2,049-row transfers, receiver retry and exact raw
+write ages with expiry at the original boundary. This primitive does not yet
+install a state contract during ordinary or compiled job submission; automatic normalizer
+binding, complete jobs, released restore fixtures and wider schema/backend/version/failure
+matrices remain required by [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+Shared Flink 1.18 first-N/normalizer processing and checkpoint controls pass 31 checks;
+this does not qualify canonical interchange on that line.

@@ -2589,6 +2589,15 @@ public final class Native {
       byte[][] snapshots,
       long memoryBudgetBytes);
 
+  public static native void exportChangelogNormalizerCanonical(
+      long handle, boolean persistent, long rowSchema, BatchReceiver receiver);
+
+  public static native void importChangelogNormalizerCanonical(
+      long handle, boolean persistent, long array, long schema);
+
+  public static native void validateChangelogNormalizerCanonical(
+      long handle, boolean persistent, long array, long schema);
+
   /** Releases a changelog normalizer handle. */
   public static native void closeChangelogNormalizer(long handle);
 

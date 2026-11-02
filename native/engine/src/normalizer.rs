@@ -1,5 +1,7 @@
 use crate::*;
 
+mod canonical;
+
 /// Changelog normalization (Flink's `ChangelogNormalize` / `ProcTimeDeduplicateKeepLastRowFunction`,
 /// keep-last on a changelog): turns an upsert or duplicate-bearing changelog into a regular
 /// INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE changelog with no duplication, keyed by the unique key.
