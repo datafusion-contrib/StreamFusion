@@ -1,6 +1,5 @@
 package tech.streamfusion.planner;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import org.apache.calcite.rel.RelNode;
@@ -121,7 +120,7 @@ final class TableFunctionMatcher {
     if (verifiedConversion(type) || primitiveConversion(type) || temporalConversion(type))
       return true;
     if (!type.getLogicalType().is(LogicalTypeRoot.ARRAY)
-        || type.getConversionClass() != ArrayList.class) return false;
+        || !List.class.isAssignableFrom(type.getConversionClass())) return false;
     var element = type.getChildren().get(0);
     return defaultScalarConversion(element);
   }
