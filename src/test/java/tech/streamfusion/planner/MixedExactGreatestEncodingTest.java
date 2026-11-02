@@ -40,8 +40,7 @@ class MixedExactGreatestEncodingTest {
         {"d DECIMAL(19,19), n INT", "GREATEST(n,d)"},
         {"d DECIMAL(38,38) NOT NULL, n INT", "GREATEST(d,n)"},
         {"d DECIMAL(18,2) NOT NULL, n INT", "GREATEST(ABS(d),n)"},
-        {"d DECIMAL(18,2) NOT NULL, n INT", "GREATEST(d+d,n)"},
-        {"d DECIMAL(18,2) NOT NULL, n INT", "LEAST(d,n)"}}) {
+        {"d DECIMAL(18,2) NOT NULL, n INT", "GREATEST(d+d,n)"}}) {
       var encoded = encode(project(pair[0], pair[1]));
       assertEquals(17, encoded.kinds()[0], Arrays.toString(pair));
       assertFalse(encoded.jvmFunctionCalls().isEmpty());

@@ -6667,7 +6667,7 @@ to Flink's resolved DECIMAL precision/scale before the existing Arrow extrema ke
 Integer capacity must be sufficient and no DECIMAL may lose scale. A DECIMAL whose metadata
 changes must be NOT NULL: released Flink can dereference it before checking its NULL flag.
 Nullable metadata changes, scale reduction and computed/unverified producers retain generated
-evaluation. This commit covers GREATEST; LEAST retains its prior route. No production Rust,
+evaluation. These measurements qualify GREATEST; LEAST has its own qualification. No production Rust,
 JNI/ownership or configuration changes.
 
 The [result record](results/mixed-exact-greatest-2026-11-02.json) and
@@ -6731,3 +6731,62 @@ released GreatestLeastFunctionsITCase passes 146 stock-oracle invocations; 44 fi
 pass separately. Existing native production code and its DSO are unchanged; this is not a
 claim of a new Rust core-suite run. Further mixed numeric, rounding and producer scope remains
 in [#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## Mixed exact LEAST
+
+Verified mixed integer/DECIMAL LEAST reuses the lossless casts and existing Arrow minimum
+kernel described for GREATEST. Nullable DECIMAL metadata changes, scale reduction, insufficient
+integral capacity and unverified/computed producers retain generated evaluation. This preserves
+released Flink's nullable-conversion failures. No production Rust, JNI, ownership or option changes.
+
+The [result record](results/mixed-exact-least-2026-11-02.json) and
+[raw trials](results/mixed-exact-least-2026-11-02.csv.gz) retain 112 configurations/11,200 trials.
+The actual preceding encoder is independently recompiled from `a7eaea10`, the separate GREATEST
+commit on canonical main `b0eb507c`. Both paths use the same release/default-feature/mimalloc DSO,
+fresh benchmark executable and two-column fixture. JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows per trial match the GREATEST methodology.
+Prepared GenericRowData/BinaryRowData and Arrow contain equal values/types/NULLs. Rust timing
+excludes initial JNI/import/export and perimeter transposes; intrinsic previous callbacks remain.
+Checksums match, with consumed native function work and empty candidate evaluator descriptors.
+
+DECIMAL(18,2)/(19,19)/(38,18) with INT/BIGINT, both orders, a three-argument control, NULL/NOT NULL,
+signed extrema and large coefficients use `LEAST(v,n)>0 OR CAST(NULL AS BOOLEAN)`. These timings
+consume a nullable BOOLEAN, not final DECIMAL output. Bulk batches contain 1,024 rows and tiny
+controls 16. Requested-byte/output-buffer allocation probes remain in the result record.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 38 | 1.911-13.370x | 6.227-15.783x | 0 |
+| 1.18.1 | tiny control | 18 | 0.070-0.552x | 6.984-8.190x | 18 |
+| 2.2.1 | bulk | 38 | 1.200-13.535x | 5.905-15.711x | 0 |
+| 2.2.1 | tiny control | 18 | 0.073-0.532x | 6.956-8.294x | 18 |
+
+All 76 bulk medians beat stock and previous. All 36 tiny controls remain slower than stock.
+Eight million-row row-source/blackhole controls retain startup/planning, source generation,
+production JNI and both transposes at parallelism one, with two warmups/five measurements.
+Seconds are median (min-max); independent stock controls and unfavorable samples are retained.
+
+| Flink / inputs | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / compact-int | 0.280502 (0.261990-0.367126) | 0.315172 (0.205658-0.333249) | 0.210022 (0.193419-0.293259) | 0.272373 (0.242126-0.282771) |
+| 1.18.1 / compact-bigint | 0.216120 (0.200640-0.235634) | 0.229793 (0.212071-0.291695) | 0.222998 (0.195001-0.241038) | 0.343002 (0.275064-0.491480) |
+| 1.18.1 / wide-bigint | 0.286441 (0.224139-0.691903) | 0.308327 (0.235885-0.503705) | 0.227179 (0.208461-0.231006) | 0.280126 (0.269329-0.381201) |
+| 1.18.1 / fractional-bigint | 0.219772 (0.213547-0.227718) | 0.218514 (0.212634-0.229046) | 0.216152 (0.211148-0.221203) | 0.285881 (0.277306-0.305001) |
+| 2.2.1 / compact-int | 0.204871 (0.198575-0.211131) | 0.209832 (0.204694-0.221375) | 0.204786 (0.196269-0.207228) | 0.250877 (0.243003-0.270677) |
+| 2.2.1 / compact-bigint | 0.205481 (0.203301-0.217226) | 0.214091 (0.207014-0.227696) | 0.201066 (0.197392-0.217963) | 0.258565 (0.248192-0.292048) |
+| 2.2.1 / wide-bigint | 0.215578 (0.211774-0.219300) | 0.217707 (0.214002-0.225476) | 0.214131 (0.210309-0.233518) | 0.272811 (0.254320-0.355432) |
+| 2.2.1 / fractional-bigint | 0.298122 (0.272389-0.354822) | 0.255497 (0.245776-0.353708) | 0.308293 (0.245968-0.486820) | 0.474460 (0.336639-0.607842) |
+
+Native/stock elapsed ratios span 0.857-1.124 and native/previous 0.539-1.157. Several
+short jobs have wide sample ranges and differing stock controls; these are retained, not
+discarded or interpreted as universal complete-job acceleration.
+
+All 264 focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17,
+compiled for Java release 11, plus 44 fixture smokes. Complete 5,003-row runtime witnesses
+compare values/types/NULLs/IDs/cardinality and require consumed NativeCalc work with no
+fallback and empty evaluators. Consumers, grouping, selected failures, empty batches,
+nullable metadata failures and current DECIMAL projection defaults remain covered. The 146
+unchanged GreatestLeastFunctionsITCase stock-oracle invocations recorded for GREATEST cover
+both extrema functions; they are not claimed as a second new run. Production Rust is unchanged.
+Further mixed numeric and producer scope remains in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).

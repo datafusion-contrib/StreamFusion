@@ -2105,8 +2105,11 @@ stock/previous/native comparisons, slower tiny batches and complete jobs with bo
 ### LEAST
 
 Uses the same kernels, generated-expression paths and string-representation gates as GREATEST,
-with strict NULL propagation and minimum comparison. Mixed exact-numeric LEAST still uses
-generated evaluation; the new bounded mixed-numeric admission currently applies to GREATEST.
+with strict NULL propagation and minimum comparison. Verified mixed exact-numeric LEAST uses
+the same lossless casts to Flink's resolved DECIMAL type. It retains the same nullable-metadata,
+scale-reduction and producer guards; it does not remove Flink's nullable-conversion failures.
+The [separate qualification](../benchmarks/scalar-functions.md#mixed-exact-least) records
+stock/previous/native measurements, slower small batches and complete-job variability.
 
 ### INITCAP
 

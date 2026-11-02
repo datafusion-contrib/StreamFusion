@@ -4293,7 +4293,8 @@ final class RexExpression {
 
   private static boolean nativeMixedExactExtremum(RexCall call) {
     RelDataType result = call.getType();
-    if (!"GREATEST".equalsIgnoreCase(call.getOperator().getName())
+    String name = call.getOperator().getName();
+    if (!("GREATEST".equalsIgnoreCase(name) || "LEAST".equalsIgnoreCase(name))
         || result.getSqlTypeName() != SqlTypeName.DECIMAL
         || call.getOperands().size() < 2) return false;
     int integerDigits = result.getPrecision() - result.getScale();
