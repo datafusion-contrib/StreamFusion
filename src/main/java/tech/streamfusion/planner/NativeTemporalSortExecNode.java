@@ -64,6 +64,14 @@ public class NativeTemporalSortExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
+    if (input instanceof OneInputTransformation) {
+      var factory = ((OneInputTransformation<?, ?>) input).getOperatorFactory();
+      if (factory instanceof org.apache.flink.streaming.api.operators.SimpleOperatorFactory
+          && ((org.apache.flink.streaming.api.operators.SimpleOperatorFactory<?>) factory)
+                  .getOperator()
+              instanceof tech.streamfusion.operator.RowDataToArrowOperator)
+        input.setMaxParallelism(maxParallelism);
+    }
     ConstantArrowBatchKeySelector emptyKeySelector = new ConstantArrowBatchKeySelector(0);
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(

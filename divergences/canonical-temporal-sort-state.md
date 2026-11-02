@@ -25,3 +25,8 @@ must not substitute maximum parallelism one for a stock operator that retains a 
 
 Full qualification and planner consolidation remain in issue569. Performance validation is deferred
 under the maintainer's explicit functionality-first instruction.
+
+A singleton input can cause Flink's generic single-transformation translation to pin a row-to-Arrow
+transpose to maximum parallelism one. Because that stateless transpose can head the operator chain,
+it must carry the sort's preserved maximum after translation. Changing that helper metadata does
+not change the sort's one active task or modify an upstream stateful operator.

@@ -53,13 +53,16 @@ metadata remain payload. A failed export leaves live native state available for 
 
 The draft portable planner retains the stock submission graph and binds only the admitted single
 ascending rowtime sort. It preserves stock maximum parallelism, including the normal larger key-group
-space for a single running task; the logical empty key is assigned by Flink's stock serializer and
-hashing. The native raw buffer remains one internal group and cannot split across tasks. Its raw
-layout is separate from stock canonical state. Secondary order keys continue to use the stock sort.
+space for a single running task; its representation-only input transpose retains the same maximum
+so it cannot impose a different key-group space on the chained task. The logical empty key is
+assigned by Flink's stock serializer and hashing. The native raw buffer remains one internal group
+and cannot split across tasks. Its raw layout is separate from stock canonical state. Secondary order keys continue to use the stock sort.
 
 Focused qualification covers both heap/RocksDB stores, maximum parallelism 1 and 128, pending-only
 and mixed state, an empty cutoff-only state, negative/extreme timestamps, empty watermarks, NULLs,
 nested rows, arrays, maps, binary values, non-finite doubles, malformed state and unchanged re-export.
-Full job, upstream restore-suite and remaining matrix qualification are tracked in
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). The portable planner is still
-under consolidation. Benchmarking remains deferred under the functionality-first requirement.
+Complete-job controls preserve both transposes, custom source and transactional sink state, stock
+workers without StreamFusion dependencies, unchanged-state re-export and ordinary native-checkpoint
+recovery. Unchanged upstream restore-suite, remaining version/rescale matrix qualification and
+portable-planner consolidation are still tracked in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred under the functionality-first requirement.
