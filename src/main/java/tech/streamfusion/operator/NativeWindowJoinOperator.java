@@ -137,6 +137,13 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
     return this;
   }
 
+  @Override
+  public void setStockStateContract(tech.streamfusion.state.StockStateContract contract) {
+    if (proctime && contract instanceof tech.streamfusion.state.StockWindowJoinStateContract)
+      throw new IllegalArgumentException("Released stock window joins require event time");
+    super.setStockStateContract(contract);
+  }
+
   // A proctime window join closes on processing-time timers, so the deadline must travel in every
   // raw key group; an event-time one writes the frame with no deadline.
   @Override

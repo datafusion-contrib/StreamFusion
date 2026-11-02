@@ -20,6 +20,8 @@ const SEQ_KEYS: [&[u8]; 2] = [
     b"\xff\xff\xff\xffstreamfusion-window-seq-right",
 ];
 
+mod canonical;
+
 /// Bespoke persistent buffer for the window join: both sides' pending rows live as individual
 /// KVs in one shared DB (left table 0, right table 1, one checkpoint manifest). A row appends on
 /// arrival — the buffer IS RocksDB, with no resident working set — under a fresh arrival

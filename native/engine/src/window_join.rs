@@ -1,6 +1,8 @@
 use crate::window_calendar::WindowCalendar;
 use crate::*;
 
+mod canonical;
+
 /// Buffered rows of one side of a window join, grouped by window then by equi-join key.
 /// Event-time INNER window join: the join of two windowing-TVF inputs on their equi-join key within
 /// the same window — `a JOIN b ON a.k = b.k` where both sides carry matching `window_start` /

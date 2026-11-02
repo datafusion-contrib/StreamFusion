@@ -56,3 +56,33 @@ multi-source rescaling through this particular regression.
 Regional RocksDB firing first collects distinct local window ends and converts their deadlines.
 A second scan retains only closed rows for output. Pending payloads remain in RocksDB rather than
 being copied into a resident candidate list; fixed-offset firing keeps its existing single scan.
+
+## Stock canonical savepoint interoperability
+
+The unmerged [#569 implementation](https://github.com/datafusion-contrib/StreamFusion/issues/569)
+has a direct state adapter for released Flink 2.2.1 event-time window joins. A bound operator
+exports its live left and right input rows into stock `left-records` and `right-records`
+`ListState<RowData>`, using the original join-key serializer, `LongSerializer` window-end
+namespaces, and the stock `window-timers` event-time queue. Flink's canonical writer writes that
+projection directly; no native checkpoint or IPC snapshot is produced first. Imported rows enter
+native pending state without replaying input or firing windows. Memory imports own their Arrow
+buffers after Java releases the transfer batch; persistent imports retain individual store records.
+
+Operator harnesses cover both switch directions and both stores, INNER/LEFT/RIGHT/FULL, keyed and
+keyless input, NULLs and duplicates, empty saves, partial firing, immediate re-export, and continued
+input after an ordinary native checkpoint. Attached TUMBLE, overlapping HOP and CUMULATE namespaces
+are checked against released stock output. UTC, a fixed non-hour offset, and the New York spring
+DST transition have separate controls. Restored serializer metadata loads with StreamFusion and
+planner classes blocked. Malformed keys, namespaces, row flags, deadlines, missing/orphan timers,
+processing-time timers, and unowned descriptors fail before importing rows; ownership checks cover
+failed imports as well as successful switches.
+
+This is component qualification with an explicitly bound stock state contract. Automatic window-join
+binding in compiled plans and ordinary SQL, full jobs with transposes/custom connectors, unchanged
+upstream savepoint fixtures, rescaling, other payload/key types and residual predicates remain
+unqualified for this adapter. Keyless harnesses use one task; they do not establish the resolved
+maximum parallelism of a stock compiled plan. Released Flink 2.2.1 rejects processing-time window
+joins, so its event-time contract cannot be bound to a native processing-time operator. Native
+processing-time execution and native checkpoint recovery remain available independently.
+
+Benchmarking and tuning of canonical handoff are deferred while functionality is completed.
