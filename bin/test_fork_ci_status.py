@@ -1,13 +1,14 @@
 """Exercise fork result selection and required-check reporting with fake GitHub responses."""
 
 import copy
+from contextlib import contextmanager
 import importlib.util
 import json
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -216,11 +217,239 @@ class ForkCiStatusTest(unittest.TestCase):
                 'GITHUB_REPOSITORY': 'datafusion-contrib/StreamFusion', 'GITHUB_EVENT_PATH': str(event),
             }), patch.object(STATUS, 'pages') as pages, \
                     patch.object(STATUS, 'api', return_value=PR) as api, \
-                    patch.object(STATUS, 'mirror') as mirror:
+                    patch.object(STATUS, 'mirror', return_value=False) as mirror:
                 STATUS.main()
             pages.assert_not_called()
             api.assert_called_once_with('GET', 'repos/datafusion-contrib/StreamFusion/pulls/42')
-            mirror.assert_called_once_with('datafusion-contrib/StreamFusion', PR)
+            mirror.assert_called_once_with('datafusion-contrib/StreamFusion', PR, wait_for_runs=True)
+
+    def test_unchanged_owned_checks_do_not_generate_repeated_writes(self):
+        result = {'status': 'in_progress', 'details_url': RUN['html_url'],
+                  'output': {'title': 'running', 'summary': 'waiting'}}
+        checks = [
+            {'id': index, 'name': name, 'app': {'slug': 'github-actions'},
+             'external_id': f'streamfusion:fork-ci:v1:42:{workflow}:{name}', **result}
+            for index, (workflow, name) in enumerate(
+                (workflow, name) for workflow, names in STATUS.WORKFLOWS.items() for name in names)
+        ]
+        with patch.object(STATUS, 'api', return_value={'check_runs': checks}) as api, \
+                patch.object(STATUS, 'payload', return_value=result):
+            self.assertTrue(STATUS.mirror('datafusion-contrib/StreamFusion', PR))
+        self.assertEqual(['GET'], [call.args[0] for call in api.call_args_list])
+
+    def test_pending_to_failure_and_output_changes_are_not_skipped(self):
+        check = {'status': 'completed', 'conclusion': 'success', 'details_url': RUN['html_url'],
+                 'output': {'title': 'success', 'summary': 'old'}}
+        self.assertTrue(STATUS.unchanged(check, check))
+        for change in ({'status': 'in_progress', 'conclusion': None},
+                       {'conclusion': 'failure'}, {'details_url': 'new-run'},
+                       {'output': {'title': 'success', 'summary': 'new'}}):
+            with self.subTest(change=change):
+                self.assertFalse(STATUS.unchanged(check, {**check, **change}))
+
+    def test_missing_runs_get_a_startup_grace_without_becoming_successful(self):
+        result = {'status': 'completed', 'conclusion': 'action_required'}
+        with patch.object(STATUS, 'api', return_value={'check_runs': []}) as api, \
+                patch.object(STATUS, 'payload', return_value=result):
+            self.assertTrue(STATUS.mirror('datafusion-contrib/StreamFusion', PR, wait_for_runs=True))
+            self.assertFalse(STATUS.mirror('datafusion-contrib/StreamFusion', PR))
+        writes = [call.args[2] for call in api.call_args_list if call.args[0] == 'POST']
+        self.assertTrue(all(write['conclusion'] == 'action_required' for write in writes))
+        same_repo = copy.deepcopy(PR)
+        same_repo['head']['repo'] = {**PR['base']['repo'], 'fork': False}
+        with patch.object(STATUS, 'api', return_value={'check_runs': []}), \
+                patch.object(STATUS, 'payload', return_value=result):
+            self.assertFalse(STATUS.mirror('datafusion-contrib/StreamFusion', same_repo,
+                                          wait_for_runs=True))
+
+
+class ForkCiWatchTest(unittest.TestCase):
+    @contextmanager
+    def clock(self):
+        elapsed = [0]
+        with patch.object(STATUS, 'time') as clock:
+            clock.time.side_effect = lambda: 1000 + elapsed[0]
+            clock.monotonic.side_effect = lambda: elapsed[0]
+            clock.sleep.side_effect = lambda seconds: elapsed.__setitem__(0, elapsed[0] + seconds)
+            yield clock
+
+    @contextmanager
+    def event(self, value):
+        with tempfile.TemporaryDirectory() as directory:
+            event = Path(directory) / 'event.json'
+            event.write_text(json.dumps(value))
+            with patch.dict(STATUS.os.environ, {
+                'GITHUB_REPOSITORY': 'datafusion-contrib/StreamFusion',
+                'GITHUB_EVENT_PATH': str(event),
+            }):
+                yield
+
+    def test_watch_refreshes_new_heads_until_both_suites_are_terminal(self):
+        newer = copy.deepcopy(PR)
+        newer['head']['sha'] = 'new-head'
+        with self.clock() as clock, \
+                patch.object(STATUS, 'api', side_effect=[PR, newer, newer]) as api, \
+                patch.object(STATUS, 'mirror', side_effect=[True, True, False]) as mirror, \
+                patch.object(STATUS, 'dispatch_watch') as dispatch:
+            STATUS.watch('datafusion-contrib/StreamFusion', 42, 10000, 'main')
+        self.assertEqual(3, api.call_count)
+        self.assertEqual(['abc123', 'new-head', 'new-head'],
+                         [call.args[1]['head']['sha'] for call in mirror.call_args_list])
+        self.assertEqual([True, False, False],
+                         [call.kwargs['wait_for_runs'] for call in mirror.call_args_list])
+        self.assertEqual([120, 120], [call.args[0] for call in clock.sleep.call_args_list])
+        dispatch.assert_not_called()
+
+    def test_real_mirroring_tracks_independently_finishing_suites(self):
+        for conclusion in ('success', 'failure'):
+            with self.subTest(conclusion=conclusion):
+                checks = []
+                poll = [0]
+
+                def response(method, path, data=None):
+                    if path.endswith('/pulls/42'):
+                        poll[0] += 1
+                        return copy.deepcopy(PR)
+                    if '/check-runs?' in path:
+                        return {'check_runs': copy.deepcopy(checks)}
+                    if '/actions/workflows/' in path:
+                        complete = poll[0] >= (2 if '/ci.yml/' in path else 3)
+                        return {'workflow_runs': [{
+                            **RUN, 'status': 'completed' if complete else 'in_progress',
+                            'conclusion': conclusion if complete else None,
+                        }]}
+                    if method == 'POST':
+                        checks.append({'id': len(checks) + 1,
+                                       'app': {'slug': 'github-actions'}, **copy.deepcopy(data)})
+                        return copy.deepcopy(checks[-1])
+                    if method == 'PATCH':
+                        check = checks[int(path.rsplit('/', 1)[-1]) - 1]
+                        check.update(copy.deepcopy(data))
+                        return copy.deepcopy(check)
+                    self.fail(f'Unexpected API request: {method} {path}')
+
+                with self.clock() as clock, patch.object(STATUS, 'api', side_effect=response) as api, \
+                        patch.object(STATUS, 'dispatch_watch') as dispatch:
+                    STATUS.watch('datafusion-contrib/StreamFusion', 42, 10000, 'main')
+                self.assertEqual(3, poll[0])
+                self.assertEqual([120, 120], [call.args[0] for call in clock.sleep.call_args_list])
+                self.assertEqual(4, len(checks))
+                self.assertTrue(all(check['status'] == 'completed'
+                                    and check['conclusion'] == conclusion for check in checks))
+                self.assertTrue(all(check['head_sha'] == PR['head']['sha'] for check in checks))
+                self.assertEqual(4, sum(call.args[0] == 'PATCH' for call in api.call_args_list))
+                dispatch.assert_not_called()
+
+    def test_long_running_suites_continue_without_extending_the_deadline(self):
+        with self.clock() as clock, patch.object(STATUS, 'api', return_value=PR), \
+                patch.object(STATUS, 'mirror', return_value=True), \
+                patch.object(STATUS, 'dispatch_watch') as dispatch:
+            STATUS.watch('datafusion-contrib/StreamFusion', 42, 10000, 'trusted-default')
+        dispatch.assert_called_once_with('datafusion-contrib/StreamFusion', 42, 10000,
+                                         'trusted-default')
+        self.assertEqual([120, 120], [call.args[0] for call in clock.sleep.call_args_list])
+
+    def test_watch_deadline_expires_without_passing_or_restarting_tests(self):
+        with self.clock() as clock, patch.object(STATUS, 'api', return_value=PR), \
+                patch.object(STATUS, 'mirror', return_value=True), \
+                patch.object(STATUS, 'dispatch_watch') as dispatch:
+            with self.assertRaisesRegex(SystemExit, 'Required checks remain pending'):
+                STATUS.watch('datafusion-contrib/StreamFusion', 42, 1110, 'main')
+        dispatch.assert_not_called()
+        self.assertEqual([110], [call.args[0] for call in clock.sleep.call_args_list])
+
+    def test_transient_api_failure_does_not_abandon_the_watch(self):
+        for error in (URLError('connection reset'), TimeoutError('timeout'),
+                      HTTPError('url', 503, 'Unavailable', {}, None),
+                      HTTPError('url', 429, 'Too Many Requests', {}, None)):
+            with self.subTest(error=error), self.clock() as clock, \
+                    patch.object(STATUS, 'api', side_effect=[error, PR]), \
+                    patch.object(STATUS, 'mirror', return_value=False), \
+                    patch.object(STATUS, 'dispatch_watch') as dispatch:
+                STATUS.watch('datafusion-contrib/StreamFusion', 42, 10000, 'main')
+                clock.sleep.assert_called_once_with(120)
+                dispatch.assert_not_called()
+
+    def test_permanent_permission_failures_are_not_retried_or_hidden(self):
+        with self.clock() as clock, patch.object(STATUS, 'api', side_effect=
+                HTTPError('url', 403, 'Forbidden', {}, None)), \
+                patch.object(STATUS, 'dispatch_watch') as dispatch:
+            with self.assertRaises(HTTPError):
+                STATUS.watch('datafusion-contrib/StreamFusion', 42, 10000, 'main')
+        clock.sleep.assert_not_called()
+        dispatch.assert_not_called()
+
+    def test_closed_pr_and_completed_failure_stop_the_watch(self):
+        for pr in ({**PR, 'state': 'closed'}, PR):
+            with self.subTest(state=pr['state']), self.clock() as clock, \
+                    patch.object(STATUS, 'api', return_value=pr), \
+                    patch.object(STATUS, 'payload', return_value={
+                        'status': 'completed', 'conclusion': 'failure'}), \
+                    patch.object(STATUS, 'pages', return_value=[]), \
+                    patch.object(STATUS, 'dispatch_watch') as dispatch:
+                STATUS.watch('datafusion-contrib/StreamFusion', 42, 10000, 'main')
+                clock.sleep.assert_not_called()
+                dispatch.assert_not_called()
+
+    def test_scheduled_refresh_starts_only_pending_pr_watches(self):
+        with self.event({}), self.clock(), \
+                patch.object(STATUS, 'pages', return_value=[{'number': 42}, {'number': 43}]), \
+                patch.object(STATUS, 'api', side_effect=lambda method, path: {
+                    **PR, 'number': int(path.rsplit('/', 1)[-1])}), \
+                patch.object(STATUS, 'mirror', side_effect=lambda repo, pr: pr['number'] == 42), \
+                patch.object(STATUS, 'dispatch_watch') as dispatch:
+            STATUS.main()
+        dispatch.assert_called_once_with('datafusion-contrib/StreamFusion', 42, 22600, 'main')
+
+    def test_one_failed_refresh_does_not_prevent_other_pr_watches(self):
+        def fetch(method, path):
+            if path.endswith('/42'):
+                raise HTTPError(path, 403, 'Forbidden', {}, None)
+            return {**PR, 'number': 43}
+        with self.event({}), self.clock(), \
+                patch.object(STATUS, 'pages', return_value=[{'number': 42}, {'number': 43}]), \
+                patch.object(STATUS, 'api', side_effect=fetch), \
+                patch.object(STATUS, 'mirror', return_value=True), \
+                patch.object(STATUS, 'dispatch_watch') as dispatch:
+            with self.assertRaisesRegex(SystemExit, 'PR #42'):
+                STATUS.main()
+        dispatch.assert_called_once_with('datafusion-contrib/StreamFusion', 43, 22600, 'main')
+
+    def test_dispatch_uses_only_the_default_branch_and_preserves_the_deadline(self):
+        with patch.object(STATUS, 'api') as api:
+            STATUS.dispatch_watch('datafusion-contrib/StreamFusion', 42, 10000, 'main')
+        api.assert_called_once_with('POST',
+            'repos/datafusion-contrib/StreamFusion/actions/workflows/fork-ci-status.yml/dispatches',
+            {'ref': 'main', 'inputs': {'pr_number': '42', 'watch_until': '10000'}})
+
+    def test_manual_continuation_is_scoped_and_cannot_extend_past_six_hours(self):
+        for value, deadline in (('5000', 5000), ('999999999', 22600), ('', 22600)):
+            with self.subTest(value=value), self.event({
+                'inputs': {'pr_number': '42', 'watch_until': value},
+                'repository': {'default_branch': 'trusted-default'},
+            }), self.clock(), patch.object(STATUS, 'watch') as watch, \
+                    patch.object(STATUS, 'pages') as pages:
+                STATUS.main()
+                watch.assert_called_once_with('datafusion-contrib/StreamFusion', 42, deadline,
+                                              'trusted-default')
+                pages.assert_not_called()
+
+    def test_invalid_dispatch_inputs_do_not_make_requests(self):
+        for inputs in ({'pr_number': '-1'}, {'pr_number': '42; evil'}, {'pr_number': 42.5},
+                       {'pr_number': '42', 'watch_until': 'not-a-time'}):
+            with self.subTest(inputs=inputs), self.event({'inputs': inputs}), \
+                    patch.object(STATUS, 'api') as api:
+                with self.assertRaisesRegex(SystemExit, 'Invalid fork CI watch inputs'):
+                    STATUS.main()
+                api.assert_not_called()
+
+    def test_workflow_dispatch_accepts_githubs_empty_response(self):
+        with patch.dict(STATUS.os.environ, {'GH_TOKEN': 'test-only'}), \
+                patch.object(STATUS, 'urlopen') as urlopen:
+            response = urlopen.return_value.__enter__.return_value
+            response.status = 204
+            self.assertIsNone(STATUS.api('POST', 'repos/owner/repo/dispatches', {}))
+            response.read.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -4,18 +4,27 @@ on:
   pull_request_target:
     types: [opened, reopened, synchronize]
   schedule:
-    - cron: '*/15 * * * *'
-  workflow_dispatch: {}
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR to watch; 0 refreshes all open PRs'
+        type: number
+        default: 0
+      watch_until:
+        description: 'Continuation deadline in Unix seconds; empty starts a six-hour watch'
+        type: string
+        default: ''
 
 permissions:
   contents: read
-  actions: read
+  actions: write
   checks: write
   pull-requests: read
 
 concurrency:
-  group: fork-ci-status-${{ github.event.pull_request.number || 'refresh' }}
-  cancel-in-progress: true
+  group: fork-ci-status-${{ github.event.pull_request.number || inputs.pr_number || 'refresh' }}
+  cancel-in-progress: false
 
 jobs:
   mirror:

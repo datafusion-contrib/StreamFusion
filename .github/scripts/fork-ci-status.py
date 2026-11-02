@@ -3,7 +3,8 @@
 import json
 import os
 import sys
-from urllib.error import HTTPError
+import time
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -13,6 +14,9 @@ WORKFLOWS = {
     'flink-suite.yml': ('All upstream integration tests',),
 }
 GUIDE = 'https://datafusion-contrib.github.io/StreamFusion/ci/'
+POLL_SECONDS = 120
+WATCH_SECONDS = 360
+MAX_WATCH_SECONDS = 6 * 60 * 60
 
 
 def api(method, path, data=None):
@@ -27,7 +31,7 @@ def api(method, path, data=None):
         },
     )
     with urlopen(request, timeout=30) as response:
-        return json.load(response)
+        return None if response.status == 204 else json.load(response)
 
 
 def pages(path, key=None):
@@ -73,7 +77,8 @@ def payload(pr, workflow):
     result['output'] = {
         'title': f'{workflow}: {run["conclusion"] or run["status"]}',
         'summary': (f'[{fork["full_name"]} fork run]({run["html_url"]}) for `{head["sha"]}`. '
-                    'Refreshed on PR updates and every 15 minutes; manual refresh is also available. '
+                    'Active PR checks are watched until completion; scheduled and manual refreshes '
+                    'are also available. '
                     f'See {GUIDE}'),
     }
     if run['status'] == 'completed':
@@ -85,13 +90,26 @@ def payload(pr, workflow):
     return result
 
 
-def mirror(repository, pr):
+def unchanged(check, result):
+    return (all(check.get(key) == result.get(key)
+                for key in ('status', 'conclusion', 'details_url'))
+            and all(check.get('output', {}).get(key) == value
+                    for key, value in result.get('output', {}).items()))
+
+
+def mirror(repository, pr, *, wait_for_runs=False):
     if pr['state'] != 'open':
-        return
+        return False
     sha = pr['head']['sha']
+    fork = pr['head'].get('repo')
+    watch_missing = (wait_for_runs and fork and fork['fork']
+                     and fork['full_name'] != repository)
+    pending = False
     checks = list(pages(f'repos/{repository}/commits/{sha}/check-runs?filter=all', 'check_runs'))
     for workflow, names in WORKFLOWS.items():
         result = payload(pr, workflow)
+        pending |= (result['status'] != 'completed'
+                    or bool(watch_missing and result.get('conclusion') == 'action_required'))
         for name in names:
             external_id = f'streamfusion:fork-ci:v1:{pr["number"]}:{workflow}:{name}'
             owned_result = {'external_id': external_id, **result}
@@ -100,27 +118,51 @@ def mirror(repository, pr):
                           if check['name'] == name and check['app']['slug'] == 'github-actions'
                           and check.get('external_id') == external_id), None)
             if check:
-                api('PATCH', f'repos/{repository}/check-runs/{check["id"]}', owned_result)
+                if not unchanged(check, owned_result):
+                    api('PATCH', f'repos/{repository}/check-runs/{check["id"]}', owned_result)
             else:
                 api('POST', f'repos/{repository}/check-runs', {'name': name, 'head_sha': sha, **owned_result})
     print(f'Mirrored PR #{pr["number"]} at {sha}')
+    return pending
 
 
-def main():
-    repository = os.environ['GITHUB_REPOSITORY']
-    if repository != 'datafusion-contrib/StreamFusion':
-        return
-    with open(os.environ['GITHUB_EVENT_PATH']) as source:
-        event = json.load(source)
-    if 'pull_request' in event:
-        numbers = [event['pull_request']['number']]
-    else:
-        numbers = [pr['number'] for pr in pages(f'repos/{repository}/pulls?state=open')]
+def dispatch_watch(repository, number, deadline, branch):
+    api('POST', f'repos/{repository}/actions/workflows/fork-ci-status.yml/dispatches', {
+        'ref': branch,
+        'inputs': {'pr_number': str(number), 'watch_until': str(deadline)},
+    })
+    print(f'Queued follow-up for PR #{number}; deadline {deadline}', flush=True)
+
+
+def watch(repository, number, deadline, branch):
+    started = time.monotonic()
+    startup_grace = time.time() + POLL_SECONDS
+    while True:
+        # Fetch the current head every time; a new push must never inherit an old head's result.
+        try:
+            pr = api('GET', f'repos/{repository}/pulls/{number}')
+            if not mirror(repository, pr, wait_for_runs=time.time() < startup_grace):
+                return
+        except (URLError, TimeoutError) as error:
+            if isinstance(error, HTTPError) and error.code not in (429, 500, 502, 503, 504):
+                raise
+            print(f'PR #{number}: temporary refresh failure: {error}; retrying', file=sys.stderr)
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            raise SystemExit(f'PR #{number}: fork CI is still pending after the watch deadline; '
+                             'refresh manually or inspect the fork runs. Required checks remain pending.')
+        if time.monotonic() - started + POLL_SECONDS >= WATCH_SECONDS:
+            dispatch_watch(repository, number, deadline, branch)
+            return
+        time.sleep(min(POLL_SECONDS, remaining))
+
+
+def refresh(repository, numbers, deadline, branch):
     errors = []
     for number in numbers:
-        # Refresh the head: a scheduled update must not report on a superseded PR revision.
         try:
-            mirror(repository, api('GET', f'repos/{repository}/pulls/{number}'))
+            if mirror(repository, api('GET', f'repos/{repository}/pulls/{number}')):
+                dispatch_watch(repository, number, deadline, branch)
         except Exception as error:
             location = f' ({error.filename})' if isinstance(error, HTTPError) else ''
             message = f'PR #{number}: {error}{location}'
@@ -132,6 +174,29 @@ def main():
             with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as target:
                 target.write(summary + '\n')
         raise SystemExit(summary)
+
+
+def main():
+    repository = os.environ['GITHUB_REPOSITORY']
+    if repository != 'datafusion-contrib/StreamFusion':
+        return
+    with open(os.environ['GITHUB_EVENT_PATH']) as source:
+        event = json.load(source)
+    inputs = event.get('inputs') or {}
+    try:
+        number = int(str(event.get('pull_request', {}).get('number') or inputs.get('pr_number') or 0))
+        deadline = min(int(inputs.get('watch_until') or time.time() + MAX_WATCH_SECONDS),
+                       int(time.time() + MAX_WATCH_SECONDS))
+        if number < 0:
+            raise ValueError('negative PR number')
+    except (ValueError, TypeError) as error:
+        raise SystemExit(f'Invalid fork CI watch inputs: {error}') from error
+    branch = event.get('repository', {}).get('default_branch', 'main')
+    if number:
+        watch(repository, number, deadline, branch)
+        return
+    numbers = [pr['number'] for pr in pages(f'repos/{repository}/pulls?state=open')]
+    refresh(repository, numbers, deadline, branch)
 
 
 if __name__ == '__main__':
