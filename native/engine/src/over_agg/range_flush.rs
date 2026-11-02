@@ -8,7 +8,14 @@ impl OverWindowAggregator {
     ) -> Result<RecordBatch, DataFusionError> {
         self.ensure_canonical_distinct_ready()?;
         let Some(offset) = self.range_offset() else {
-            return self.flush_inner(watermark, now_ms);
+            let output = self.flush_inner(watermark, now_ms)?;
+            return if !self.proctime
+                && matches!(&self.inner, OverInner::Bounded(inner) if inner.rows_frame)
+            {
+                self.order_event_output(output)
+            } else {
+                Ok(output)
+            };
         };
         let mut outputs = Vec::new();
         loop {
@@ -64,6 +71,13 @@ impl OverWindowAggregator {
             return Ok(outputs.pop().unwrap());
         }
         let output = concat_batches(&batches[0].schema(), batches.iter().copied())?;
+        self.order_event_output(output)
+    }
+
+    fn order_event_output(&self, output: RecordBatch) -> Result<RecordBatch, DataFusionError> {
+        if output.num_rows() < 2 {
+            return Ok(output);
+        }
         let times = rt_to_millis(output.column(self.rt_column));
         let mut order = (0..output.num_rows()).collect::<Vec<_>>();
         order.sort_by_key(|&row| times.value(row));

@@ -23,6 +23,8 @@ use string_views::StringView;
 #[cfg(test)]
 mod bounded_arithmetic_tests;
 #[cfg(test)]
+mod event_rows_tests;
+#[cfg(test)]
 mod tests;
 
 #[cfg(test)]
@@ -1499,7 +1501,13 @@ impl BoundedOverAggregator {
             let (lower, upper) = if proc_rows.is_some() {
                 (0, i)
             } else if self.rows_frame {
-                (i.saturating_sub(self.offset as usize), i)
+                let mut lower = i.saturating_sub(self.offset as usize);
+                if cur_rt == i64::MAX {
+                    // Stock's bucket search starts at MAX and uses a strict comparison. Once
+                    // only the MAX bucket remains it accumulates peers without retracting them.
+                    lower = lower.min(buffer.partition_point(|row| row.rt < i64::MAX));
+                }
+                (lower, i)
             } else {
                 let lo = buffer.partition_point(|r| r.rt < cur_rt - self.offset);
                 let hi = buffer.partition_point(|r| r.rt <= cur_rt) - 1;
@@ -1743,7 +1751,10 @@ impl BoundedOverAggregator {
                 } else {
                     (offset as usize).max(1)
                 };
-                let dropped = buffer.len().saturating_sub(keep);
+                let mut dropped = buffer.len().saturating_sub(keep);
+                if buffer.last().is_some_and(|row| row.rt == i64::MAX) {
+                    dropped = dropped.min(buffer.partition_point(|row| row.rt < i64::MAX));
+                }
                 if dropped > 0 {
                     if track {
                         freed += buffer[..dropped]

@@ -315,6 +315,17 @@ Retains the preceding row slice plus the current row. Numeric SUM/SUM0/AVG, COUN
 reductions retract expired membership; other reductions fold the retained slice. Non-numeric
 DISTINCT COUNT retains its existing frame recomputation path.
 
+Completed event-time ROWS output follows event-timer timestamp order, retaining arrival order
+within a timestamp even when inputs arrived out of order. At `Long.MAX_VALUE`, the released
+stock bucket search cannot select that timestamp for retraction: it starts at the same sentinel
+and uses a strict comparison. Native execution therefore keeps the terminal bucket's peers and
+raw arithmetic instead of truncating them to the nominal frame width. The bucket can exceed that
+width, matching stock state. Original-row export, native snapshots and memory/RocksDB transfers
+preserve it. Older native writers cannot recover peers they already discarded.
+This ordinary native correction does not complete the stock event-time ROWS canonical contract
+tracked in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking
+remains deferred.
+
 ### Bounded `RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW`
 
 Retains every row within `n` of the current row's rowtime. Incremental reductions retract

@@ -2360,9 +2360,10 @@ fn bounded_rows_over_sums_the_frame_slice() {
     over.push(batch, 0).unwrap();
     let out = over.flush(2000, 0).unwrap();
     assert_eq!(out.num_rows(), 3);
-    // Epoch zero is late. The remaining rows use their actual preceding frame.
-    assert_eq!(values(&out, 1), vec![20, 30, 100]); // v passed through
-    assert_eq!(values(&out, 3), vec![20, 50, 100]);
+    // Epoch zero is late. Event timers emit the remaining rows by timestamp across keys.
+    assert_eq!(rt_to_millis(out.column(2)).values().as_ref(), &[500, 1000, 2000]);
+    assert_eq!(values(&out, 1), vec![100, 20, 30]); // v passed through
+    assert_eq!(values(&out, 3), vec![100, 20, 50]);
 }
 
 // Bounded RANGE frame (1 SECOND PRECEDING): each row's SUM covers the rows within 1000ms of it,

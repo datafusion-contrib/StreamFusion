@@ -89,6 +89,16 @@ keeps the full current frame. RANGE evicts values older than its key's latest ro
 Our orchestration remains the incremental streaming operator rather than Arroyo's per-instant
 DataFusion window execution plan, because the state must survive native and stock snapshots.
 
+Event-time ROWS additionally preserves the released stock operator's terminal-timestamp sentinel
+behavior. Its minimum-bucket search starts at `Long.MAX_VALUE` and requires a strictly smaller
+timestamp, so peers in that bucket cease being retracted once earlier buckets are exhausted.
+We retain their original inputs and raw fold rather than applying a logical frame-width truncation.
+Native checkpoint/backend transfers keep that full bucket; an older writer cannot recreate peers
+it discarded. Completed rows emit in event-timer timestamp order, with stable peer order, instead
+of the pending buffer's original arrival order. These are stock runtime semantics rather than
+Arroyo/DataFusion's logical ROWS-frame rule. The stock event-time ROWS descriptor/counter/timer
+adapter is still pending under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
 Processing-time bounded ROWS additionally follows Flink's clock-bucket eviction protocol rather
 than truncating an arrival slice. A per-key processed counter and minimum timestamp select the
 oldest element of the named bucket. When that bucket empties, the minimum is selected before
