@@ -358,6 +358,13 @@ public final class Native {
 
   public static native long temporalJoinerStateBytes(long handle);
 
+  public static native void bindTemporalJoinCleanupTimers(long handle);
+
+  public static native long[] nextTemporalJoinCleanup(long handle);
+
+  public static native void fireTemporalJoinCleanup(long handle, long timestamp);
+
+
   public static native long updatingJoinerStateBytes(long handle);
 
   public static native long topNRankerStateBytes(long handle);

@@ -52,7 +52,7 @@ pub(crate) struct TemporalJoiner {
     /// it fires, clears the key's entire state — both sides — silently. Cleaning is enabled iff
     /// this is `> 1` (Flink's literal `minRetentionTime > 1`; a 1ms retention disables cleaning).
     min_retention_ms: i64,
-    /// The planner-derived max retention, `min * 3 / 2` (Flink `TableConfigUtils`), saturating.
+    /// The planner-derived max retention, `min * 3 / 2`, using Java long wraparound.
     max_retention_ms: i64,
     /// Per-key cleanup deadline (Flink's `"cleanup-timestamp"` ValueState plus its registered
     /// timer): the key's state is observably gone once the wall clock reaches the deadline. A
@@ -62,6 +62,7 @@ pub(crate) struct TemporalJoiner {
     /// When the last full deadline sweep ran; it reclaims keys never touched again, at most once
     /// per min-retention period.
     last_sweep_ms: i64,
+    external_cleanup_timers: bool,
     pub(crate) memory: OperatorMemory,
     /// Persistent-state mode: the probe rows, the versioned build side, and the cleanup deadlines
     /// live in the persistent store; the in-memory maps stay empty, and a watermark firing walks
@@ -109,6 +110,7 @@ impl TemporalJoiner {
             max_retention_ms: 0,
             cleanup_state: HashMap::default(),
             last_sweep_ms: 0,
+            external_cleanup_timers: false,
             memory: OperatorMemory::unaccounted(),
             #[cfg(feature = "rocksdb-state")]
             store: None,
@@ -125,10 +127,17 @@ impl TemporalJoiner {
     }
 
     /// Sets the idle-state retention (`table.exec.state.ttl`) in millis. The max deadline horizon
-    /// is derived natively as Flink's planner does — `minRetentionTime * 3 / 2`, saturating.
+    /// is derived natively as Flink's planner does — `minRetentionTime * 3 / 2`, with Java long arithmetic.
     pub(crate) fn with_state_retention(mut self, min_retention_ms: i64) -> Self {
         self.min_retention_ms = min_retention_ms.max(0);
-        self.max_retention_ms = self.min_retention_ms.saturating_mul(3) / 2;
+        self.max_retention_ms = self.min_retention_ms.wrapping_mul(3) / 2;
+        #[cfg(feature = "rocksdb-state")]
+        {
+            let cleaning = self.cleaning_enabled();
+            if let Some(store) = &mut self.store {
+                store.set_cleaning_mode(cleaning);
+            }
+        }
         self
     }
 
@@ -142,8 +151,8 @@ impl TemporalJoiner {
     fn register_cleanup(&mut self, key: &GroupKey, now_ms: i64, grew: &mut isize, track: bool) {
         match self.cleanup_state.get_mut(key) {
             Some(deadline) => {
-                if now_ms.saturating_add(self.min_retention_ms) > *deadline {
-                    *deadline = now_ms.saturating_add(self.max_retention_ms);
+                if now_ms.wrapping_add(self.min_retention_ms) > *deadline {
+                    *deadline = now_ms.wrapping_add(self.max_retention_ms);
                 }
             }
             None => {
@@ -151,7 +160,7 @@ impl TemporalJoiner {
                     *grew += group_key_bytes(key) as isize;
                 }
                 self.cleanup_state
-                    .insert(key.clone(), now_ms.saturating_add(self.max_retention_ms));
+                    .insert(key.clone(), now_ms.wrapping_add(self.max_retention_ms));
             }
         }
     }
@@ -243,7 +252,7 @@ impl TemporalJoiner {
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn adopt_store_retention(&mut self, now_ms: i64) -> Result<(), DataFusionError> {
         if self.cleaning_enabled() && self.store.as_ref().unwrap().source_cleaning() != Some(true) {
-            let stamp = now_ms.saturating_add(self.max_retention_ms);
+            let stamp = now_ms.wrapping_add(self.max_retention_ms);
             self.store_mut().adopt_retention(stamp)?;
         }
         Ok(())
@@ -308,7 +317,7 @@ impl TemporalJoiner {
             return self.push_store(batch, true, now_ms);
         }
         let cleaning = self.cleaning_enabled();
-        if cleaning {
+        if cleaning && !self.external_cleanup_timers {
             self.maybe_sweep(now_ms);
         }
         let arity = data_arity(batch);
@@ -325,8 +334,10 @@ impl TemporalJoiner {
                 })
                 .collect();
             if cleaning {
-                if let Some(reclaimed) = self.expire_if_due(&key, now_ms, track) {
-                    delta -= reclaimed as isize;
+                if !self.external_cleanup_timers {
+                    if let Some(reclaimed) = self.expire_if_due(&key, now_ms, track) {
+                        delta -= reclaimed as isize;
+                    }
                 }
                 self.register_cleanup(&key, now_ms, &mut delta, track);
             }
@@ -364,7 +375,7 @@ impl TemporalJoiner {
             return self.push_store(batch, false, now_ms);
         }
         let cleaning = self.cleaning_enabled();
-        if cleaning {
+        if cleaning && !self.external_cleanup_timers {
             self.maybe_sweep(now_ms);
         }
         let arity = data_arity(batch);
@@ -382,8 +393,10 @@ impl TemporalJoiner {
                 })
                 .collect();
             if cleaning {
-                if let Some(reclaimed) = self.expire_if_due(&key, now_ms, track) {
-                    delta -= reclaimed as isize;
+                if !self.external_cleanup_timers {
+                    if let Some(reclaimed) = self.expire_if_due(&key, now_ms, track) {
+                        delta -= reclaimed as isize;
+                    }
                 }
                 self.register_cleanup(&key, now_ms, &mut delta, track);
             }
@@ -422,7 +435,7 @@ impl TemporalJoiner {
             return self.advance_store(watermark, now_ms);
         }
         let cleaning = self.cleaning_enabled();
-        if cleaning {
+        if cleaning && !self.external_cleanup_timers {
             self.expire_processing_time(now_ms)?;
         }
         let has_pred = self.predicate.is_some();
@@ -434,7 +447,7 @@ impl TemporalJoiner {
         let mut delta = 0isize;
         let keys = self.due_callbacks(watermark, &mut delta, track);
         for key in &keys {
-            if cleaning {
+            if cleaning && !self.external_cleanup_timers {
                 if let Some(reclaimed) = self.expire_if_due(key, now_ms, track) {
                     freed += reclaimed;
                 }
@@ -945,7 +958,7 @@ impl TemporalJoiner {
         // Enable-retention migration: a key restored without a deadline (a pre-retention writer)
         // is stamped a full max retention from the restore instead of expiring on first touch.
         if joiner.cleaning_enabled() && !source_cleaning {
-            let stamp = restored_at_ms.saturating_add(joiner.max_retention_ms);
+            let stamp = restored_at_ms.wrapping_add(joiner.max_retention_ms);
             let TemporalJoiner {
                 left_state,
                 right_state,
@@ -1053,7 +1066,7 @@ impl TemporalJoiner {
         now_ms: i64,
     ) -> Result<(), DataFusionError> {
         let cleaning = self.cleaning_enabled();
-        if cleaning {
+        if cleaning && !self.external_cleanup_timers {
             self.store_sweep(now_ms)?;
         }
         let key_columns = if left {
@@ -1099,10 +1112,11 @@ impl TemporalJoiner {
             if !seen.insert(key.clone()) {
                 continue;
             }
-            if self
-                .store_mut()
-                .deadline(key)
-                .is_some_and(|deadline| now_ms >= deadline)
+            if !self.external_cleanup_timers
+                && self
+                    .store_mut()
+                    .deadline(key)
+                    .is_some_and(|deadline| now_ms >= deadline)
             {
                 self.store_mut().clear_key(key)?;
             }
@@ -1122,8 +1136,8 @@ impl TemporalJoiner {
         let max_retention_ms = self.max_retention_ms;
         let store = self.store_mut();
         match store.deadline(key) {
-            Some(deadline) if now_ms.saturating_add(min_retention_ms) <= deadline => Ok(()),
-            _ => store.set_deadline(key, now_ms.saturating_add(max_retention_ms)),
+            Some(deadline) if now_ms.wrapping_add(min_retention_ms) <= deadline => Ok(()),
+            _ => store.set_deadline(key, now_ms.wrapping_add(max_retention_ms)),
         }
     }
 
@@ -1152,7 +1166,7 @@ impl TemporalJoiner {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         let cleaning = self.cleaning_enabled();
-        if cleaning {
+        if cleaning && !self.external_cleanup_timers {
             self.expire_processing_time(now_ms)?;
         }
         let due = self.store_mut().take_due_callbacks(watermark)?;
@@ -1736,6 +1750,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTemporalJoinerPartit
 #[cfg(test)]
 mod tests;
 
+mod cleanup;
 pub(crate) mod stock_meta;
 
 mod stock_state;

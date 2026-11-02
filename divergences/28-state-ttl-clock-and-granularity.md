@@ -47,11 +47,16 @@ Arroyo's per-timestamp window-execution retention. Benchmarking is deferred unde
 
 Flink retention-bounds the temporal join not with per-value TTL but with one per-key
 processing-time cleanup timer (deadline `now + 1.5×retention`, moved under a hysteresis rule,
-clearing the key's whole state when it fires). Both native stores retain that deadline and enforce
-it at key touches, watermark calls and periodic ingestion sweeps. A native forced-expiry operation
-also clears idle keys without advancing event time. Host timer scheduling remains pending under
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); until then, an untouched idle
-key can retain physical state beyond its deadline until one of those native calls.
+clearing the key's whole state when it fires). The operator runtime now schedules one callback
+for the minimum native per-key deadline. Each callback expires all keys due at its timestamp,
+then schedules the next minimum. Moving the minimum cancels the prior callback. Cleanup remains
+silent; retained per-key clocks re-arm native checkpoint recovery without a second persisted host
+timer. The zero-or-one deadline result keeps `Long.MIN_VALUE` valid. Processing clock additions
+and the planner-derived max retention preserve released Java-long wraparound.
+
+Callback-driven execution disables lazy touch/sweep expiry, preserving mailbox input/callback
+ordering. Native standalone callers retain lazy enforcement unless they bind host cleanup timers.
+Both stores force expiry independently of event time when the callback fires.
 
 Both stores now refresh cleanup on actual event callbacks, including build-only callbacks.
 Independent event callback ownership survives cleanup and recovery. Watermarks without callbacks

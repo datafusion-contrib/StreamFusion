@@ -35,8 +35,12 @@ the scheme exactly:
 - an existing deadline only moves when a touch lands within one retention of it;
 - when the clock reaches the deadline, the key's **entire** state clears silently — both the
   buffered probe rows and every build-side version;
-- enforcement is lazy at each key touch, plus a once-per-retention silent sweep (equivalent to
-  Flink's timer, since firing emits nothing);
+- the host schedules a callback for the minimum native cleanup deadline; expiry clears all keys
+  due at that timestamp and re-arms the next minimum, even without input or watermarks;
+- moving the minimum cancels the old callback; native recovery re-arms from retained per-key
+  clocks, including already-overdue clocks, without persisting an extra host timer;
+- callback-driven execution disables lazy expiry so mailbox ordering controls which callback
+  or input runs first; deadline arithmetic preserves Java long overflow;
 - the deadline rides checkpoints exactly as Flink's does;
 - cleaning only activates when retention exceeds one millisecond — Flink's own literal
   `minRetentionTime > 1` quirk.
@@ -98,6 +102,5 @@ The shared released trace runs through native recovery after every transition, i
 switches and aligned/redistributed persistent checkpoints. Orphan callback memory remains accounted
 until the callback fires.
 
-Stock temporal savepoint transfer, host cleanup-timer scheduling and automatic plan binding remain
-unfinished. Native recovery correctness does not count as qualified stock conversion coverage.
+Stock temporal savepoint transfer and automatic plan binding remain unfinished. Native recovery correctness does not count as qualified stock conversion coverage.
 Benchmarking remains deferred.

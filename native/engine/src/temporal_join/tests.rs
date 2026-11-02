@@ -443,6 +443,11 @@ fn check_stock_trace(source_disk: bool, target_disk: bool, sst: bool, aligned: b
             let recovered = operator(None)
                 .with_state_retention(retention)
                 .with_store(store);
+            assert_eq!(
+                recovered.store.as_ref().unwrap().source_cleaning(),
+                Some(retention > 1),
+                "{line}"
+            );
             assert_eq!(inspect(&recovered), (state, deadline), "{line}");
             joiner = recovered;
             directories.push(target);
@@ -815,6 +820,94 @@ fn orphan_callback_groups_rescale_without_any_rows_or_cleanup_deadlines() {
                 assert!(target.metadata.is_empty());
             }
             assert_eq!(count, 64);
+        }
+    }
+}
+
+#[test]
+fn externally_scheduled_cleanup_does_not_expire_keys_before_the_callback() {
+    for persistent in [false, true] {
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let mut joiner = operator(persistent.then_some(directory.path()));
+        joiner.external_cleanup_timers = true;
+        joiner.push_left(&batch(vec![1]), 0).unwrap();
+        assert_eq!(joiner.next_cleanup(), Some(150));
+        assert_eq!(joiner.advance(99, 150).unwrap().num_rows(), 0);
+        assert_eq!(joiner.next_cleanup(), Some(150));
+        // The mailbox can deliver another record before the scheduled cleanup. A touch replaces
+        // the old deadline; calling the cancelled callback must not clear the refreshed key.
+        joiner.push_left(&batch(vec![1]), 150).unwrap();
+        assert_eq!(joiner.next_cleanup(), Some(300));
+        joiner.expire_processing_time(150).unwrap();
+        assert_eq!(joiner.advance(100, 150).unwrap().num_rows(), 2);
+        assert_eq!(joiner.next_cleanup(), None);
+    }
+}
+
+#[test]
+fn cleanup_minimum_preserves_the_entire_signed_deadline_range() {
+    for persistent in [false, true] {
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let mut joiner = operator(persistent.then_some(directory.path()));
+        for (key, deadline) in [(1, i64::MAX), (2, i64::MIN)] {
+            #[cfg(feature = "rocksdb-state")]
+            if let Some(store) = &mut joiner.store {
+                let keys = store.entry_keys(&batch(vec![key]), &[0], &[-1]);
+                store.set_deadline(&keys[0], deadline).unwrap();
+            } else {
+                joiner
+                    .cleanup_state
+                    .insert(vec![ScalarValue::Int64(Some(key))], deadline);
+            }
+            #[cfg(not(feature = "rocksdb-state"))]
+            {
+                joiner
+                    .cleanup_state
+                    .insert(vec![ScalarValue::Int64(Some(key))], deadline);
+            }
+        }
+        assert_eq!(joiner.next_cleanup(), Some(i64::MIN));
+        joiner.expire_processing_time(i64::MIN).unwrap();
+        assert_eq!(joiner.next_cleanup(), Some(i64::MAX));
+        joiner.expire_processing_time(i64::MAX).unwrap();
+        assert_eq!(joiner.next_cleanup(), None);
+    }
+}
+
+#[test]
+fn processing_cleanup_deadlines_use_released_java_long_arithmetic() {
+    for persistent in [false, true] {
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        for retention in [100, i64::MAX / 2 + 1, i64::MAX] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut joiner =
+                operator(persistent.then_some(directory.path())).with_state_retention(retention);
+            joiner.external_cleanup_timers = true;
+            let now = i64::MAX - 50;
+            let max = retention.wrapping_mul(3) / 2;
+            assert_eq!(joiner.max_retention_ms, max);
+            joiner.push_left(&batch(vec![1]), now).unwrap();
+            let first = now.wrapping_add(max);
+            assert_eq!(joiner.next_cleanup(), Some(first));
+            let next_now = now.wrapping_add(25);
+            joiner.push_right(&batch(vec![1]), next_now).unwrap();
+            let expected = if next_now.wrapping_add(retention) > first {
+                next_now.wrapping_add(max)
+            } else {
+                first
+            };
+            assert_eq!(joiner.next_cleanup(), Some(expected));
         }
     }
 }
