@@ -4405,12 +4405,18 @@ final class RexExpression {
     return input == SqlTypeName.TIME && !months ? 212 : 0;
   }
 
-  private static boolean isNativeCalendarRound(RexCall call) {
+  private boolean isNativeCalendarRound(RexCall call) {
     if (call.getKind() != SqlKind.FLOOR && call.getKind() != SqlKind.CEIL) return false;
     if (call.getOperands().size() != 2 || !(call.getOperands().get(1) instanceof RexLiteral))
       return false;
     SqlTypeName input = call.getOperands().get(0).getType().getSqlTypeName();
-    return (input == SqlTypeName.DATE || input == SqlTypeName.TIMESTAMP)
+    boolean utcLtz = input == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+        && call.getKind() == SqlKind.FLOOR
+        && (call.getOperands().get(0) instanceof RexInputRef
+            || call.getOperands().get(0) instanceof RexLiteral)
+        && sessionZoneId != null
+        && java.time.ZoneId.of(sessionZoneId).normalized().equals(java.time.ZoneOffset.UTC);
+    return (input == SqlTypeName.DATE || input == SqlTypeName.TIMESTAMP || utcLtz)
         && java.util.Set.of("MONTH", "YEAR")
             .contains(String.valueOf(((RexLiteral) call.getOperands().get(1)).getValue()));
   }

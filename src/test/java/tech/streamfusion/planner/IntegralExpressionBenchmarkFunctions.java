@@ -32,6 +32,9 @@ public final class IntegralExpressionBenchmarkFunctions {
   private static boolean booleanOutput;
   private static boolean stringOutput;
   private static volatile long consumed;
+  private static final long[] TIMESTAMP_EPOCHS = {Long.MIN_VALUE, Long.MAX_VALUE,
+      -62135596800000L, -12219292800000L, -2208988800000L, -86400001, -1, 0, 1,
+      951827696123L, 1706659200000L, 1710037800000L, 253402300799999L};
 
   private IntegralExpressionBenchmarkFunctions() {}
 
@@ -40,6 +43,9 @@ public final class IntegralExpressionBenchmarkFunctions {
     Thread.currentThread().setContextClassLoader(IntegralExpressionBenchmarkFunctions.class.getClassLoader());
     type = element;
     var table = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
+    boolean timestampInput = type.startsWith("TIMESTAMP_LTZ(");
+    if (timestampInput) table.getConfig().setLocalTimeZone(
+        java.time.ZoneId.of(System.getProperty("sf.integral.zone", "UTC")));
     table.getConfig().set("table.exec.legacy-cast-behaviour",
         Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
     String declaration = type + (nullable ? "" : " NOT NULL");
@@ -61,7 +67,8 @@ public final class IntegralExpressionBenchmarkFunctions {
     booleanOutput = outputType.getTypeRoot() == LogicalTypeRoot.BOOLEAN;
     stringOutput = outputType.getTypeRoot() == LogicalTypeRoot.VARCHAR
         || outputType.getTypeRoot() == LogicalTypeRoot.CHAR;
-    boolean configuredCast = stringOutput || type.equals("BOOLEAN") || type.startsWith("DECIMAL(");
+    boolean configuredCast = stringOutput || type.equals("BOOLEAN") || type.startsWith("DECIMAL(")
+        || timestampInput;
     stock = FlinkExpressionGenerator.generate(project.getProjects(), null,
         inputTypes, RowType.of(outputType), table.getConfig(), getLoader());
     var context = new FunctionContext(null) {
@@ -168,6 +175,10 @@ public final class IntegralExpressionBenchmarkFunctions {
       case "INT": return row % 17 == 0 ? Integer.MIN_VALUE : (int) ((row % 2 == 0 ? -1L : 1L) * v);
       case "BIGINT": return row % 17 == 0 ? Long.MIN_VALUE
           : (row % 2 == 0 ? -1L : 1L) * (9007199254740993L + v);
+      case "TIMESTAMP_LTZ(3)": return org.apache.flink.table.data.TimestampData.fromEpochMillis(
+          temporalMillis(row));
+      case "TIMESTAMP_LTZ(9)": return org.apache.flink.table.data.TimestampData.fromEpochMillis(
+          temporalMillis(row), (row * 7919) % 1000000);
       default:
         int precision;
         int scale;
@@ -185,6 +196,11 @@ public final class IntegralExpressionBenchmarkFunctions {
                 * (precision == 4 ? v % 10000 : 9007199254740993L + v));
         return DecimalData.fromBigDecimal(new BigDecimal(unscaled, scale), precision, scale);
     }
+  }
+
+  public static long temporalMillis(long row) {
+    int index = (int) (row % TIMESTAMP_EPOCHS.length);
+    return TIMESTAMP_EPOCHS[index] + (index < 2 ? 0 : row / TIMESTAMP_EPOCHS.length * 7919);
   }
 
   public static long[] measure(int loops) throws Exception {

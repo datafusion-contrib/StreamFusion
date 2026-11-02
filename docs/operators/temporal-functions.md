@@ -18,7 +18,7 @@ unsupported `MATCH_RECOGNIZE` operator.
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
 | `TIMESTAMPADD`, `TIMESTAMPDIFF` | Planner rewrites can use native interval arithmetic and comparisons. Verified runtime MONTH/DAY addition, MONTH difference and LTZ SECOND difference have no generated children; other rewrites retain their existing expression admission. Month-end and precision rules follow Flink. |
-| `FLOOR(timepoint TO unit)`, `CEIL`, `CEILING` | DATE/plain-TIMESTAMP MONTH/YEAR and plain TIMESTAMP DAY/HOUR/MINUTE/SECOND/MILLISECOND use Rust kernels. Other units/types retain Flink. Numeric FLOOR/CEIL admission is unchanged. |
+| `FLOOR(timepoint TO unit)`, `CEIL`, `CEILING` | DATE/plain-TIMESTAMP MONTH/YEAR and plain TIMESTAMP DAY/HOUR/MINUTE/SECOND/MILLISECOND use Rust kernels. Direct/literal LTZ FLOOR to MONTH/YEAR also uses the existing kernel in fixed zero-offset zones. Other LTZ units, CEIL, nonzero/regional zones and computed inputs retain their existing routes. Numeric FLOOR/CEIL admission is unchanged. |
 | Temporal `CAST`, date/time/timestamp/interval literals, interval arithmetic, temporal comparisons, `OVERLAPS` | Timestamp +/- day-time/year-month intervals, DATE +/- month intervals and verified day literals, and TIME +/- day-time intervals execute in Rust. Timestamp results preserve nanoseconds. Matching temporal GREATEST/LEAST operands use native null-propagating comparisons. OVERLAPS can rewrite to native comparisons, including the verified runtime plain-timestamp/day-time-interval form. Other casts, comparisons and interval computations retain their existing expression admission. |
 | `CURRENT_WATERMARK(time_attribute)` | Calc projections and predicates read the last watermark received by that operator; NULL before its first watermark. Join/UNNEST residuals without a Calc watermark context fall back. |
 | `SOURCE_WATERMARK()` | Source declaration, not a scalar calculation. Existing DataStream/source watermarks are forwarded into the native pipeline. Native connector scan admission is unchanged. |
@@ -44,6 +44,21 @@ The [correctness record](../benchmarks/results/date-clock-extraction-2026-11-02.
 retains twelve failing before-fix assertions and twelve passing final SQL invocations across
 Flink 1.18.1/2.2.1 and JDK 11/17, plus the unchanged released extraction oracle and 886
 passing Rust core tests. This repairs existing native results; it is not an acceleration claim.
+
+## Native UTC LTZ calendar FLOOR
+
+FLOOR to MONTH/YEAR over a direct LTZ input or literal reuses the plain-timestamp calendar
+kernel when the configured session zone normalizes to the fixed UTC offset. This includes
+UTC, Z and fixed zero-offset aliases; a regional zone with a current/raw offset of zero
+does not qualify. Released Flink adds/subtracts no offset in these zones and uses the same
+Julian-date arithmetic, including signed millisecond division, int overflow and the Gregorian
+cutover. Output fractions are zero and the declared SQL precision is retained.
+
+Computed inputs, nonzero/regional zones, other units and CEIL keep their existing paths.
+In particular, fixed-unit LTZ CEIL has different submillisecond/overflow behavior from plain
+TIMESTAMP CEIL, so the plain kernel is not a blanket replacement. This adds no new native
+kernel, JNI bridge or switch. The [qualification](../benchmarks/scalar-functions.md#utc-ltz-calendar-floor)
+records stock/actual-previous/native timings and complete jobs with both transposes.
 
 ## Native FROM_UNIXTIME
 

@@ -9,6 +9,7 @@ use jni::objects::JValue;
 use std::{hint::black_box, sync::Arc, time::Instant};
 use streamfusion::bench::CalcProgram;
 use streamfusion_benchmark_support::{measure, report, CountingAllocator};
+use streamfusion_bridge::timestamp::{timestamp_array, TimestampValue};
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
@@ -170,6 +171,40 @@ fn main() {
         "SMALLINT" => Arc::new(Int16Array::from_iter(values.map(|v| v.map(|v| v as i16)))),
         "INT" => Arc::new(Int32Array::from_iter(values.map(|v| v.map(|v| v as i32)))),
         "BIGINT" => Arc::new(Int64Array::from_iter(values)),
+        "TIMESTAMP_LTZ(3)" | "TIMESTAMP_LTZ(9)" => {
+            let epochs = [
+                i64::MIN,
+                i64::MAX,
+                -62_135_596_800_000,
+                -12_219_292_800_000,
+                -2_208_988_800_000,
+                -86_400_001,
+                -1,
+                0,
+                1,
+                951_827_696_123,
+                1_706_659_200_000,
+                1_710_037_800_000,
+                253_402_300_799_999,
+            ];
+            Arc::new(timestamp_array((0..rows).map(|row| {
+                (!nullable || row % 7 != 0).then(|| {
+                    let index = row % epochs.len();
+                    let millis = epochs[index]
+                        + if index < 2 {
+                            0
+                        } else {
+                            (row / epochs.len()) as i64 * 7919
+                        };
+                    let nanos = if element == "TIMESTAMP_LTZ(9)" {
+                        (row * 7919 % 1_000_000) as u32
+                    } else {
+                        0
+                    };
+                    TimestampValue::new(millis, nanos).unwrap()
+                })
+            })))
+        }
         "DECIMAL(4,2)" | "DECIMAL(18,2)" | "DECIMAL(19,19)" | "DECIMAL(38,18)"
         | "DECIMAL(38,38)" => {
             let (precision, scale) = match element {
