@@ -266,16 +266,41 @@ and mini-batch assigners retain original logical roles in the metadata projectio
 calculation, filter and watermark roles retain one execution owner, with Arrow reference-count
 sharing rebuilt for their actual consumers.
 
-Forty-eight planner controls and four initial clean-process INNER multiset round trips pass across
+Fifty-six planner controls and four initial clean-process INNER multiset round trips pass across
 both stores/submission forms. The jobs retain custom changelog sources, the transactional sink
 and both transposes, and compare external materialized results with stock and an independent
 oracle. All 15 unchanged released regular-join restore programs pass per engine with actual native
 state imports; 14 also process new join input, and the literal-aggregate fixture verifies restored
 native execution. Eight additional shared-calculation round trips pass across both engine orders,
-both native stores and both submission forms. The wider 164-case job matrix is still under qualification.
+both native stores and both submission forms. All 164 scenarios in the frozen regular-binding job
+matrix also pass: 144 continued-input handoffs, eight no-input re-exports, four native checkpoint
+recoveries and eight rescalings at 1→3→2/maxP128. The later shared-role fix has separate job and
+planner qualification.
 
 Constructed retained payloads, unaligned exchange reassembly, async/changelog state backends and
 unqualified ordinary wide keys are outside this binding scope. Existing native processing and
 checkpoints retain their paths. Complete variant/type/backend/version/TTL/failure/connector and
-rescale qualification remains open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+broader rescale qualification remains open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking stays deferred. See [automatic regular binding](../../backends/canonical-state.md#automatic-regular-join-binding).
+
+
+Keyless canonical binding preserves the stock singleton/empty-row state context and maximum
+parallelism one. Compiled-plan loading admits it only for INNER joins with payload columns and
+original source changelogs proven insert-only through known row-preserving stages. Unsupported
+outer/updating keyless joins retain their stock join implementation, as ordinary admission does.
+
+
+Eight keyless INNER clean-process round trips pass across both engine orders, native stores and
+submission forms. They retain duplicate rows and NULL payload keys, and check the stock singleton
+state, external committed effects and an independent nested-loop oracle. The planner selection
+passes 56 controls, including keyless INNER binding and preserved stock owners for unsupported
+keyless outer/updating inputs.
+
+Mini-batch FULL joins with a changing residual predicate remain unqualified. In a new eight-case
+job cohort, every switched result matches the independent oracle, but three uninterrupted stock
+baselines omit an unmatched opposite row. A deterministic released-stock-only control reproduces
+this: after a matched left value changes from 10 to 15 under a `MOD(left,3)<>0` residual,
+immediate FULL join emits both unmatched rows, while mini-batch suppression omits the right row.
+Both stock behavior controls pass; they provide no native interoperability credit. The discrepant
+job evidence is retained, and stock-baseline assertions have not been relaxed. Complete mini-batch
+qualification remains open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

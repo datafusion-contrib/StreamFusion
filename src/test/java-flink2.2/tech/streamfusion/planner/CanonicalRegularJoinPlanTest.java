@@ -230,6 +230,61 @@ class CanonicalRegularJoinPlanTest {
                 .getString("streamfusion.canonical.metadata-projection-active", "false")));
   }
 
+  @ParameterizedTest
+  @CsvSource({"false,INNER", "true,INNER", "false,LEFT", "true,LEFT", "false,FULL", "true,FULL"})
+  void keylessBindingPreservesTheExistingInnerJoinAdmission(boolean compiled, String kind)
+      throws Exception {
+    var table = environment("none", false);
+    String query =
+        "INSERT INTO output_table SELECT l.k,l.v,r.v FROM left_input l "
+            + kind
+            + " JOIN right_input r ON l.v<r.v";
+    var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
+    var transformations =
+        compiled
+            ? planner.translatePlan(
+                planner.loadPlan(
+                    PlanReference.fromJsonString(table.compilePlanSql(query).asJsonString())))
+            : translate(planner, query);
+    var graph = graph(planner, table, transformations);
+    var nativeJoins =
+        graph.getStreamNodes().stream()
+            .filter(node -> node.getOperatorName().contains("NativeColumnarUpdatingJoin"))
+            .collect(java.util.stream.Collectors.toList());
+    assertEquals(kind.equals("INNER") ? 1 : 0, nativeJoins.size(), graph.getStreamingPlanAsJSON());
+    if (kind.equals("INNER")) {
+      var owner = nativeJoins.get(0);
+      assertEquals(1, owner.getParallelism());
+      assertEquals(1, owner.getMaxParallelism());
+      var operator = ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();
+      var binding = AbstractNativeStatefulOperator.class.getDeclaredField("stockStateContract");
+      binding.setAccessible(true);
+      assertInstanceOf(StockJoinStateContract.class, binding.get(operator));
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource({"false", "true"})
+  void keylessJoinWithAnUpdatingInputKeepsItsStockOwner(boolean compiled) throws Exception {
+    var table = environment("none", false);
+    table.executeSql(
+        "CREATE TEMPORARY VIEW updates AS SELECT k,SUM(v) AS v FROM left_input GROUP BY k");
+    String query =
+        "INSERT INTO output_table SELECT l.k,l.v,r.v FROM updates l JOIN right_input r ON l.v<r.v";
+    var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
+    var transformations =
+        compiled
+            ? planner.translatePlan(
+                planner.loadPlan(
+                    PlanReference.fromJsonString(table.compilePlanSql(query).asJsonString())))
+            : translate(planner, query);
+    var graph = graph(planner, table, transformations);
+    assertTrue(
+        graph.getStreamNodes().stream()
+            .noneMatch(node -> node.getOperatorName().contains("NativeColumnarUpdatingJoin")),
+        graph.getStreamingPlanAsJSON());
+  }
+
   static List<Transformation<?>> translate(PlannerBase planner, String sql) {
     return planner.translate(
         planner.getParser().parse(sql).stream()

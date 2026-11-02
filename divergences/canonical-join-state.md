@@ -40,7 +40,22 @@ filter and watermark copies of one original shared role collapse only with match
 shapes and original input roles. Arrow sharing is rebuilt to reflect actual consumers, preserving
 batch ownership and one stock identity per execution owner. Eight clean-process shared-input
 round trips and the deployed native self-join regression cover this boundary. Constructed payloads, async
-state, broader mini-batch/changelog qualification, complete job matrices, connector protocols,
-versions and rescaling remain required by
+state, broader mini-batch/changelog qualification, connector protocols, schemas, versions and
+broader failure/rescale cases remain required by
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking and tuning are
 deferred until the required functionality is complete.
+
+
+Compiled keyless lowering also checks original source changelog contracts through known
+row-preserving roles. It preserves the native matcher's INNER/insert-only/payload requirement;
+loading a portable plan must not admit a previously unsupported outer or updating keyless join.
+The empty-row key keeps Flink's resolved singleton maximum rather than the surrounding pipeline
+maximum. The broader keyed job cohort passes 164 cases; shared-role handoffs are qualified separately.
+
+
+A separate released-stock-only test reproduces the mini-batch FULL residual baseline discrepancy.
+The suppressed UPDATE_BEFORE/UPDATE_AFTER pair stops matching the opposite row, but stock omits
+the newly unmatched opposite-side output. Immediate stock emits it. New canonical jobs all match
+an independent join oracle, yet three of eight uninterrupted stock baselines differ. This does
+not qualify the variant; retain the discrepancy rather than modifying stock assertions, rewriting
+association state to hide it, or attributing these stock controls to native interoperability.

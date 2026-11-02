@@ -757,7 +757,7 @@ for the actual fan-out. Missing or incompatible roles still reject canonical bin
 Constructed payloads, unaligned exchange reassembly, asynchronous/changelog state backends,
 ambiguous rewrites and unqualified ordinary wide-key layouts retain their existing owners/routes.
 
-Forty-eight planner controls pass across six join kinds, three stock side layouts, both submission
+Fifty-six planner controls pass across six join kinds, three stock side layouts, both submission
 forms, generated IDs, mini-batch binding, explicit maximum 257 and unset maxima at parallelism
 1/172. Four initial native-first INNER multiset round trips pass across both stores and submission
 forms, with two custom changelog sources, a transactional sink, both transposes and clean stock
@@ -771,7 +771,38 @@ selection passes all 30 programs per engine, including existing temporal/interva
 Eight additional shared-calculation round trips pass across both engine orders, native stores and
 submission forms. These compare materialized external effects with stock and an independent oracle;
 they reproduce the duplicated-owner gap that previously left a native self-join unbound.
-The separate 164-case regular complete-job matrix is under qualification; wider schema/backend/version,
-mini-batch job, connector, TTL expiry and failure/rescale qualification remains required by
+The frozen regular-binding candidate passes all 164 complete-job scenarios: 144 continuation
+cases across six kinds, three stock side layouts, both engine orders, native stores and submission
+forms; eight no-input re-exports; four native checkpoint recoveries; and eight 64-key rescalings at
+1→3→2 with maximum parallelism 128. Its combined cohort passes 216 checks. The later shared-role
+candidate separately passes 179 planner/regression checks and the eight shared-input jobs above.
+Wider schema/backend/version, mini-batch jobs, connector protocols, TTL expiry and failure/rescale
+qualification remains required by
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). All families stay partial.
 Benchmarking remains deferred.
+
+
+### Keyless regular-join admission
+
+A stock empty-row key is a singleton state boundary. Its released maximum parallelism is one,
+even when the surrounding pipeline configures a larger maximum. Keyless INNER binding preserves
+that stock context. The compiled-plan path checks the original source changelog through known
+row-preserving stages before selecting the native route: both inputs must be insert-only and
+retain a payload column. Outer or updating keyless joins keep their stock join owner, matching
+ordinary native admission rather than enabling a new unqualified native mode during plan loading.
+
+
+Eight keyless INNER clean-process round trips pass across both engine orders, native stores and
+submission forms. They retain duplicate rows and NULL payload keys, and check the stock singleton
+state, external committed effects and an independent nested-loop oracle. The planner selection
+passes 56 controls, including keyless INNER binding and preserved stock owners for unsupported
+keyless outer/updating inputs.
+
+Mini-batch FULL joins with a changing residual predicate remain unqualified. In a new eight-case
+job cohort, every switched result matches the independent oracle, but three uninterrupted stock
+baselines omit an unmatched opposite row. A deterministic released-stock-only control reproduces
+this: after a matched left value changes from 10 to 15 under a `MOD(left,3)<>0` residual,
+immediate FULL join emits both unmatched rows, while mini-batch suppression omits the right row.
+Both stock behavior controls pass; they provide no native interoperability credit. The discrepant
+job evidence is retained, and stock-baseline assertions have not been relaxed. Complete mini-batch
+qualification remains open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

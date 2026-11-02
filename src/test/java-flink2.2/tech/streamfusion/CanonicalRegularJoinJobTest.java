@@ -87,6 +87,14 @@ class CanonicalRegularJoinJobTest {
     check("INNER", "shared", nativeFirst, backend, "continuation");
   }
 
+  @ParameterizedTest
+  @MethodSource("handoffs")
+  @Timeout(value = 8, unit = TimeUnit.MINUTES)
+  void keylessInnerJoinContinuesFromTheStockSingletonState(boolean nativeFirst, String backend)
+      throws Exception {
+    check("INNER", "keyless", nativeFirst, backend, "continuation");
+  }
+
   private void check(String kind, String shape, boolean nativeFirst, String backend, String mode)
       throws Exception {
     var runner = new CanonicalJobRunner(directory);
@@ -232,6 +240,17 @@ class CanonicalRegularJoinJobTest {
       right.set(2, "INSERT,1,100");
       right.set(6, "DELETE,1,100");
     }
+    if (shape.equals("keyless")) {
+      left.clear();
+      right.clear();
+      for (int i = 0; i < 12; i++) {
+        left.add("INSERT," + (i == 0 ? "null" : i % 3) + "," + (10 * i + 1));
+        right.add("INSERT," + (i % 2) + "," + (100 * i + 2));
+      }
+      right.set(3, right.get(0));
+      Files.createFile(root.resolve("insert-only"));
+      Files.createFile(root.resolve("keyless"));
+    }
     Files.write(root.resolve("input.csv"), left);
     Files.write(root.resolve("right-input.csv"), right);
     String columns =
@@ -239,12 +258,13 @@ class CanonicalRegularJoinJobTest {
             + (shape.equals("join") ? " NOT NULL" : "")
             + ",v BIGINT"
             + (shape.equals("other") ? " NOT NULL" : "")
-            + (shape.equals("none") || shape.equals("shared")
+            + (!shape.equals("join") && !shape.equals("other")
                 ? ""
                 : ",PRIMARY KEY(" + (shape.equals("join") ? "k" : "v") + ") NOT ENFORCED");
     Files.writeString(root.resolve("input-columns.sql"), columns);
     Files.writeString(root.resolve("right_input_table-columns.sql"), columns);
-    String condition = "l.k=r.k AND l.v<r.v AND MOD(l.v,3)<>0";
+    String condition =
+        (shape.equals("keyless") ? "" : "l.k=r.k AND ") + "l.v<r.v AND MOD(l.v,3)<>0";
     boolean semi = kind.equals("SEMI") || kind.equals("ANTI");
     String query =
         semi
@@ -291,6 +311,7 @@ class CanonicalRegularJoinJobTest {
   private static Map<String, Long> expected(Path root, String kind) throws Exception {
     var left = input(root.resolve("input.csv"));
     boolean shared = !Files.exists(root.resolve("right-input.csv"));
+    boolean keyless = Files.exists(root.resolve("keyless"));
     var right = shared ? left : input(root.resolve("right-input.csv"));
     if (shared) {
       left = calculate(left);
@@ -303,8 +324,7 @@ class CanonicalRegularJoinJobTest {
       boolean found = false;
       for (var r : right.entrySet()) {
         String[] rv = r.getKey().split("\\|");
-        if (!lv[0].equals("null")
-            && lv[0].equals(rv[0])
+        if ((keyless || !lv[0].equals("null") && lv[0].equals(rv[0]))
             && (shared
                 || Long.parseLong(lv[1]) < Long.parseLong(rv[1])
                     && Long.parseLong(lv[1]) % 3 != 0)) {

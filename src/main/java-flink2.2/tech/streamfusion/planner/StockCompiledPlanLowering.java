@@ -56,6 +56,7 @@ final class StockCompiledPlanLowering {
   private final boolean nativeKeyedState;
   private final Map<Integer, JsonNode> definitions = new HashMap<>();
   private final Map<Integer, String> stockUids = new HashMap<>();
+  private final Map<Integer, ExecNode<?>> stockNodes = new HashMap<>();
   private final Map<Integer, Transformation<?>> stockTransformations = new HashMap<>();
   private final Map<ExecNode<?>, ExecNode<?>> lowered = new IdentityHashMap<>();
   private final Map<ExecNode<?>, StockBinding> bindings = new IdentityHashMap<>();
@@ -252,6 +253,7 @@ final class StockCompiledPlanLowering {
   private void collectUids(List<ExecNode<?>> nodes) {
     for (ExecNode<?> node : nodes) {
       if (stockUids.containsKey(node.getId())) continue;
+      stockNodes.put(node.getId(), node);
       stockUids.put(node.getId(), ((ExecNodeBase<?>) node).getTransformation().getUid());
       stockTransformations.put(node.getId(), ((ExecNodeBase<?>) node).getTransformation());
       if (node.getInputEdges().stream()
@@ -536,6 +538,15 @@ final class StockCompiledPlanLowering {
     var right = stock.getInputEdges().get(1).getSource();
     RowType leftType = (RowType) left.getOutputType(), rightType = (RowType) right.getOutputType();
     RowType outputType = (RowType) stock.getOutputType();
+    if (leftKeys.length == 0
+        && (kind != 0
+            || leftType.getFieldCount() == 0
+            || rightType.getFieldCount() == 0
+            || !stockProducesOnlyInserts(
+                stockNodes.get(stock.getId()).getInputEdges().get(0).getSource())
+            || !stockProducesOnlyInserts(
+                stockNodes.get(stock.getId()).getInputEdges().get(1).getSource()))) return stock;
+
     if (!RowDataArrowConverter.supports(leftType)
         || !RowDataArrowConverter.supports(rightType)
         || !RowDataArrowConverter.supports(outputType)
@@ -610,8 +621,8 @@ final class StockCompiledPlanLowering {
                 FlinkKeyGroupUtils.stockKeyDescriptor(leftType, leftKeys),
                 leftSpec.joinKeyContainsUniqueKey(),
                 rightSpec.joinKeyContainsUniqueKey(),
-                false,
-                false,
+                leftKeys.length == 0,
+                leftKeys.length == 0,
                 leftTtl,
                 rightTtl)
             .withStateMaxParallelism(maximum);
@@ -625,6 +636,29 @@ final class StockCompiledPlanLowering {
         new ArrowToRowDataExecNode(config, InputProperty.DEFAULT, outputType, "ArrowToRowData");
     connect(join, exit);
     return exit;
+  }
+
+  private boolean stockProducesOnlyInserts(ExecNode<?> node) {
+    if (node instanceof StreamExecTableSourceScan)
+      return ((StreamExecTableSourceScan) node)
+          .getTableSourceSpec()
+          .getScanTableSource(planner.getFlinkContext(), planner.getTypeFactory())
+          .getChangelogMode()
+          .containsOnly(org.apache.flink.types.RowKind.INSERT);
+    if (!(node instanceof StreamExecCalc
+        || node instanceof StreamExecExchange
+        || node
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWatermarkAssigner
+        || node
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecMiniBatchAssigner
+        || node
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWindowTableFunction))
+      return false;
+    return node.getInputEdges().size() == 1
+        && stockProducesOnlyInserts(node.getInputEdges().get(0).getSource());
   }
 
   private int stockMaximum(Transformation<?> original) {
