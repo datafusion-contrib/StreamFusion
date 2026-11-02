@@ -310,6 +310,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         231 => integral_round::function(true),
         232 => from_base64::function(),
         237 => binary_character::function(),
+        245 => unnest_temporal::function(unnest_temporal::Operation::EpochSeconds),
         _ => return None,
     })
 }

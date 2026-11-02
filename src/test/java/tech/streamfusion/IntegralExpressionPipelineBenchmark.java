@@ -28,8 +28,21 @@ class IntegralExpressionPipelineBenchmark {
     boolean bigintInput = Boolean.getBoolean("sf.integral.bigintInput");
     int decimalPrecision = Integer.getInteger("sf.integral.decimalPrecision", 0);
     int decimalScale = Integer.getInteger("sf.integral.decimalScale", 0);
-    var inputType = decimalPrecision > 0 ? DataTypes.DECIMAL(decimalPrecision, decimalScale)
-        : booleanInput ? DataTypes.BOOLEAN() : bigintInput ? DataTypes.BIGINT() : DataTypes.INT();
+    int timestampPrecision = Integer.getInteger("sf.integral.timestampPrecision", -1);
+    boolean epochMillisInput = Boolean.getBoolean("sf.integral.epochMillisInput");
+    boolean epochSecondsInput = Boolean.getBoolean("sf.integral.epochSecondsInput");
+    boolean notNull = Boolean.getBoolean("sf.integral.primaryNotNull");
+    String secondary = System.getProperty("sf.integral.secondaryType", "");
+    assertTrue(secondary.isEmpty() || secondary.equals("INT") || secondary.equals("BIGINT"));
+    var primary = timestampPrecision >= 0 ? DataTypes.TIMESTAMP_LTZ(timestampPrecision)
+        : decimalPrecision > 0 ? DataTypes.DECIMAL(decimalPrecision, decimalScale)
+        : booleanInput ? DataTypes.BOOLEAN()
+        : bigintInput || epochMillisInput || epochSecondsInput ? DataTypes.BIGINT() : DataTypes.INT();
+    var inputType = notNull ? primary.notNull() : primary;
+    var second = secondary.equals("BIGINT") ? DataTypes.BIGINT() : DataTypes.INT();
+    var sourceType = secondary.isEmpty() ? DataTypes.ROW(DataTypes.FIELD("v", inputType))
+        : DataTypes.ROW(DataTypes.FIELD("v", inputType),
+            DataTypes.FIELD("n", notNull ? second.notNull() : second));
     String expression = System.getProperty("sf.integral.expression", "ABS(v+CAST(1 AS $TYPE))")
         .replace("$TYPE", bigintInput ? "BIGINT" : "INT");
     for (int trial = 0; trial < warmups + runs; trial++) {
@@ -38,23 +51,42 @@ class IntegralExpressionPipelineBenchmark {
         try (var metrics = new RecoveryExecutionMetrics()) {
           var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
           var table = StreamTableEnvironment.create(env);
+          if (timestampPrecision >= 0 || epochMillisInput || epochSecondsInput) table.getConfig().setLocalTimeZone(
+              java.time.ZoneId.of(System.getProperty("sf.integral.zone", "UTC")));
           table.getConfig().set("table.exec.legacy-cast-behaviour",
               Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
           BigInteger maximum = BigInteger.TEN.pow(decimalPrecision).subtract(BigInteger.ONE);
           var source = env.fromSequence(0, count - 1).map(i -> {
             Object value;
-            if (decimalPrecision > 0) {
+            if (epochSecondsInput) {
+              value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.epochSeconds(i);
+            } else if (epochMillisInput) {
+              value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.epochMillis(i);
+            } else if (timestampPrecision >= 0) {
+              value = java.time.Instant.ofEpochMilli(
+                  tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.temporalMillis(i))
+                  .plusNanos(timestampPrecision > 3 ? i % 1024 * 7919 % 1000000 : 0);
+            } else if (decimalPrecision > 0) {
               BigInteger unscaled = i % 17 == 0 ? maximum : i % 17 == 1 ? maximum.negate()
-                  : BigInteger.valueOf((i % 2 == 0 ? -1L : 1L) * (9007199254740993L + i * 7919L));
+                  : BigInteger.valueOf((i % 2 == 0 ? -1L : 1L)
+                      * (decimalPrecision == 4 ? i * 7919L % 10000 : 9007199254740993L + i * 7919L));
               value = new BigDecimal(unscaled, decimalScale);
             } else if (booleanInput) value = i % 2 == 0;
             else if (bigintInput) value = i % 17 == 0 ? Long.MIN_VALUE
                 : (i % 2 == 0 ? -1L : 1L) * (9007199254740993L + i * 7919L);
             else value = i % 17 == 0 ? Integer.MIN_VALUE : (int) ((i % 2 == 0 ? -1 : 1) * i * 7919);
-            return Row.of(i % 7 == 0 ? null : value);
-          }).returns(ExternalTypeInfo.<Row>of(DataTypes.ROW(DataTypes.FIELD("v", inputType))));
+            Object first = !notNull && i % 7 == 0 ? null : value;
+            if (secondary.isEmpty()) return Row.of(first);
+            long index = i + 3;
+            Object other;
+            if (secondary.equals("INT")) other = index % 17 == 0 ? Integer.MIN_VALUE
+                : (int) ((index % 2 == 0 ? -1L : 1L) * index * 7919L);
+            else other = index % 17 == 0 ? Long.MIN_VALUE
+                : (index % 2 == 0 ? -1L : 1L) * (9007199254740993L + index * 7919L);
+            return Row.of(first, !notNull && i % 11 == 0 ? null : other);
+          }).returns(ExternalTypeInfo.<Row>of(sourceType));
           table.createTemporaryView("inputs", source,
-              Schema.newBuilder().column("v", inputType).build());
+              Schema.newBuilder().fromRowDataType(sourceType).build());
           var resultType = table.sqlQuery("SELECT " + expression + " FROM inputs")
               .getResolvedSchema().getColumnDataTypes().get(0).getLogicalType();
           table.executeSql("CREATE TABLE output_rows(v " + resultType.asSerializableString()

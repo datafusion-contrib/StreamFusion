@@ -70,6 +70,91 @@ impl ScalarUDFImpl for DecimalCast {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
+pub(crate) struct DecimalIf {
+    precision: u8,
+    scale: i8,
+    signature: Signature,
+}
+
+impl DecimalIf {
+    pub(crate) fn new(precision: u8, scale: i8) -> Self {
+        Self {
+            precision,
+            scale,
+            signature: Signature::any(3, Volatility::Immutable),
+        }
+    }
+}
+
+impl ScalarUDFImpl for DecimalIf {
+    fn name(&self) -> &str {
+        "flink_exact_decimal_if"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, args: &[DataType]) -> Result<DataType> {
+        let [DataType::Boolean, left, right] = args else {
+            return exec_err!("decimal IF requires a condition and two exact numeric branches");
+        };
+        for source in [left, right] {
+            DecimalRescale::new(source_scale(source)? as i16, self.precision, self.scale)?;
+        }
+        Ok(DataType::Decimal128(self.precision, self.scale))
+    }
+
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let [condition, left, right] = args.args.as_slice() else {
+            return exec_err!("decimal IF requires three arguments");
+        };
+        let scalar = args
+            .args
+            .iter()
+            .all(|arg| matches!(arg, ColumnarValue::Scalar(_)));
+        let rows = if scalar { 1 } else { args.number_rows };
+        check_lengths(&args.args, rows)?;
+        let mask = condition.to_array(rows)?;
+        let mask = datafusion::common::cast::as_boolean_array(&mask)?;
+        let left_rescale = DecimalRescale::new(
+            source_scale(&left.data_type())? as i16,
+            self.precision,
+            self.scale,
+        )?;
+        let right_rescale = DecimalRescale::new(
+            source_scale(&right.data_type())? as i16,
+            self.precision,
+            self.scale,
+        )?;
+        let left = DecimalInput::new(left)?;
+        let right = DecimalInput::new(right)?;
+        // Admission proves branch leaves and lossless casts; no filtered batches are needed.
+        let select = |row| {
+            if mask.is_valid(row) && mask.value(row) {
+                left.value(row).and_then(|value| left_rescale.narrow(value))
+            } else {
+                right
+                    .value(row)
+                    .and_then(|value| right_rescale.narrow(value))
+            }
+        };
+        if scalar {
+            return Ok(ColumnarValue::Scalar(ScalarValue::Decimal128(
+                select(0),
+                self.precision,
+                self.scale,
+            )));
+        }
+        let output = (0..rows)
+            .map(select)
+            .collect::<Decimal128Array>()
+            .with_precision_and_scale(self.precision, self.scale)?;
+        Ok(ColumnarValue::Array(Arc::new(output)))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct DecimalRound {
     precision: u8,
     scale: i8,
@@ -457,6 +542,126 @@ mod tests {
     use super::*;
     use arrow::datatypes::Field;
     use datafusion::common::config::ConfigOptions;
+
+    #[test]
+    fn decimal_if_selects_nullable_sliced_branches_and_treats_null_conditions_as_false() {
+        use arrow::array::BooleanArray;
+        let mask = BooleanArray::from(vec![
+            Some(false),
+            Some(true),
+            Some(false),
+            None,
+            Some(true),
+            Some(false),
+            Some(true),
+            None,
+        ])
+        .slice(1, 7);
+        let left = Decimal128Array::from(vec![
+            Some(9999),
+            Some(123),
+            Some(-456),
+            Some(789),
+            None,
+            Some(9999),
+            Some(0),
+            Some(1),
+        ])
+        .with_precision_and_scale(4, 2)
+        .unwrap()
+        .slice(1, 7);
+        let right = Int32Array::from(vec![
+            Some(7),
+            Some(8),
+            Some(i32::MIN),
+            Some(2),
+            None,
+            Some(4),
+            Some(5),
+            Some(6),
+            Some(i32::MAX),
+        ])
+        .slice(2, 7);
+        let ColumnarValue::Array(output) = invoke(
+            &DecimalIf::new(12, 2),
+            vec![
+                ColumnarValue::Array(Arc::new(mask)),
+                ColumnarValue::Array(Arc::new(left)),
+                ColumnarValue::Array(Arc::new(right)),
+            ],
+            7,
+        )
+        .unwrap() else {
+            panic!("expected array");
+        };
+        let expected = Decimal128Array::from(vec![
+            Some(123),
+            Some(200),
+            None,
+            None,
+            Some(500),
+            Some(0),
+            Some(214748364700),
+        ])
+        .with_precision_and_scale(12, 2)
+        .unwrap();
+        output.to_data().validate_full().unwrap();
+        assert_eq!(output.as_ref(), &expected);
+    }
+
+    #[test]
+    fn decimal_if_preserves_scalar_metadata_and_bigints_without_double_conversion() {
+        for condition in [Some(true), Some(false), None] {
+            for left in [Some(123), None] {
+                let output = invoke(
+                    &DecimalIf::new(38, 19),
+                    vec![
+                        ColumnarValue::Scalar(ScalarValue::Boolean(condition)),
+                        ColumnarValue::Scalar(ScalarValue::Decimal128(left, 4, 2)),
+                        ColumnarValue::Scalar(ScalarValue::Int64(Some(i64::MAX))),
+                    ],
+                    1024,
+                )
+                .unwrap();
+                let expected = if condition == Some(true) {
+                    left.map(|value| value * 100_000_000_000_000_000)
+                } else {
+                    Some(92_233_720_368_547_758_070_000_000_000_000_000_000)
+                };
+                let ColumnarValue::Scalar(output) = output else {
+                    panic!("expected scalar");
+                };
+                assert_eq!(output, ScalarValue::Decimal128(expected, 38, 19));
+            }
+        }
+    }
+
+    #[test]
+    fn decimal_if_accepts_empty_batches_and_rejects_unverified_branch_types() {
+        use arrow::array::BooleanArray;
+        let output = invoke(
+            &DecimalIf::new(12, 2),
+            vec![
+                ColumnarValue::Array(Arc::new(BooleanArray::from(Vec::<Option<bool>>::new()))),
+                ColumnarValue::Array(Arc::new(
+                    Decimal128Array::from(Vec::<Option<i128>>::new())
+                        .with_precision_and_scale(4, 2)
+                        .unwrap(),
+                )),
+                ColumnarValue::Scalar(ScalarValue::Int32(Some(1))),
+            ],
+            0,
+        )
+        .unwrap();
+        let ColumnarValue::Array(output) = output else {
+            panic!("expected array");
+        };
+        assert_eq!(output.len(), 0);
+        assert_eq!(output.data_type(), &DataType::Decimal128(12, 2));
+        assert!(DecimalIf::new(12, 2)
+            .return_type(&[DataType::Boolean, DataType::Utf8, DataType::Int32])
+            .is_err());
+    }
 
     #[test]
     fn legacy_integer_conversion_overflow_is_checked_after_both_null_guards() {

@@ -62,6 +62,32 @@ time final DECIMAL output or establish universal complete-job acceleration.
 
 See the [complete results and measured boundaries](../benchmarks/scalar-functions.md#decimal-abs-over-arithmetic).
 
+## Proven DECIMAL selection
+
+Mixed integer/DECIMAL IF proves that both branches are direct inputs/literals with lossless
+conversion to Flink's resolved noncompact DECIMAL type (precision greater than 18).
+A typed selector reads each condition once, takes
+the selected value and rescales it directly into one output array. NULL conditions select ELSE;
+NULL selected values stay NULL. Literals stay scalar, sliced offsets remain valid, and every
+output retains the resolved precision/scale. No filtered RecordBatches, separate branch cast
+arrays or generic merge are needed.
+
+This follows Comet's CASE principle: bypass filtering only after proving that evaluating
+branch inputs cannot introduce a failure or side effect. Our proof is intentionally limited
+to exact numeric leaves; arbitrary CASE, computed mixed branches, UDFs and volatile calls
+retain their existing paths. The existing typed DECIMAL expression encoding carries the
+result metadata, and the kernel reuses the released-Flink decimal rescaler. This does not
+generalize Spark coercion rules to Flink.
+
+The initial generic CASE qualification had 16/48 bulk cells slower than stock. A five-second
+process sample identifies CASE filtering/merge and MutableArrayData copies; a representative
+1,024-row compact control requests 68,528 bytes in 109 allocations. Fusing the selector reduces
+that control to 20,418 bytes in 56 allocations, but its 7.84 ns/row still loses to stock's
+6.78 ns/row. Mixed normalization to a compact result therefore retains generated evaluation;
+matching-type compact branches keep their existing native CASE path. The failed investigation,
+all initial trials and final measurements remain in the
+[separate qualification](../benchmarks/scalar-functions.md#mixed-exact-if).
+
 ## Certified string builtins
 
 A verified ASCII batch runs regex, LIKE ESCAPE and SIMILAR matching in Rust. Its original
@@ -1259,3 +1285,34 @@ Its GenericRowData stock/native range is 0.571–1.223x. The complete job takes 
 time than the callback but 11.6% more than stock. The
 [suffix benchmark record](../benchmarks/scalar-functions.md#binary-endswith) retains every
 trial and the slower controls; neither comparison is a universal complete-job speedup.
+
+## Share epoch millisecond buffers and pack validity
+
+Verified BIGINT epoch-millisecond conversion retains the input's immutable Arrow value buffer
+as the timestamp's non-null millisecond component. Only zero nanoseconds and the parent's
+combined input/range validity are materialized. Packed range bits and wordwise NULL
+intersection avoid per-row Option handling and repeated value-vector growth/copies. Slices
+retain their aligned value ranges; the output owns its buffer reference after inputs are dropped.
+This follows Comet's immutable Arrow-buffer ownership pattern while retaining Flink's own
+inclusive conversion bounds and NULL semantics, rather than Spark's timestamp conversion rules.
+JNI and the existing two-component timestamp contract do not change.
+
+A 1,024-row IS NULL probe reduces 55 allocation requests/28,575 requested bytes to 31/6,231.
+The initial nullable Flink 1.18 pilot takes 4.490 native versus 3.160 stock ns/row; after
+buffer sharing and packed validity the final native pilot takes 1.269 ns/row. Allocation
+counts alone were insufficient: an intermediate 29-request version retained per-row NULL
+checks and one isolated pilot still lost to stock. Final release/System qualification has
+all 32 bulk medians faster than stock (1.343-5.014x) and actual previous (5.438-42.181x).
+All eight tiny controls remain slower than stock, and complete million-row jobs retain
+native/stock elapsed ratios 1.021-1.150 with both transposes. Full provenance, variability,
+failed/intermediate trials and measured limits are on the
+[scalar benchmark page](../benchmarks/scalar-functions.md#bigint-epoch-millisecond-conversion).
+
+Direct BIGINT epoch-second conversion uses the same packed parent validity but materializes
+scaled milliseconds. Its fixed original-second bounds are specialized by unit before scaling;
+moving the scaled buffer avoids an extra immutable-buffer reference clone. The
+[seconds qualification](../benchmarks/scalar-functions.md#bigint-epoch-second-conversion)
+retains the first implementation, final stock/prior-encoder/native trials and retained
+millisecond controls. All 32 final bulk cells beat stock by 1.342-4.511x, while tiny controls
+and all measured complete seconds jobs still lose to stock. One final millisecond NULL probe
+also remains 6.7% slower than retained native; no universal unchanged-path speedup is claimed.

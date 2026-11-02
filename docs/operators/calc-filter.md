@@ -324,8 +324,22 @@ condition selects the first value; false or NULL selects the second. Pure branch
 types already match Flink's result type use the existing native searched-CASE expression,
 so unselected branches are not evaluated. Empty filtered batches skip the projection.
 
-When Flink must normalize branch types, or the expression contains scalar UDFs or volatile
-calls, the complete IF uses the existing generated-expression bridge inside native Calc.
+Mixed integer/DECIMAL and DECIMAL branches also use native selection when both branches are direct
+inputs/literals, fit the resolved DECIMAL integral capacity, require no scale reduction and resolve
+to a noncompact DECIMAL result (precision greater than 18).
+The typed Arrow selector converts only each row's selected value to that resolved precision/scale.
+It avoids filtered input batches, separate cast columns and a result merge. Unlike GREATEST/LEAST,
+released IF checks the selected branch's NULL flag before conversion, so verified nullable
+DECIMAL metadata changes remain native here. Typed NULLs and TRUE/FALSE/NULL conditions retain
+their branch selection. The [qualification](../benchmarks/scalar-functions.md#mixed-exact-if)
+records stock/actual-previous/native measurements and complete jobs with both transposes.
+
+Mixed normalization to a compact result retains generated evaluation: even the fused selector
+remains slower than released Flink for the measured compact control. Matching-type compact
+branches continue to use the existing native CASE path.
+Other branch normalization, scalar UDFs and volatile calls use the existing generated-expression
+bridge inside native Calc. Computed/unverified mixed branches, narrowing and scale reduction
+retain generated evaluation.
 This retains Flink's branch casts, call counts and code-generation evaluation order. A
 user-defined function named IF retains its own implementation. Unsupported children retain
 the existing admission rules. SQL parity tests cover exact numerics, strings, temporal and
@@ -2087,17 +2101,29 @@ Character inputs produce BYTES. Either hex letter case is accepted; invalid byte
 ### GREATEST
 
 Integers, BOOLEAN and matching-precision/scale DECIMAL retain their Rust kernels and strict NULL
-propagation. Character results, mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
+propagation. Mixed exact-numeric GREATEST also uses explicit casts to Flink's resolved DECIMAL
+type before the existing extrema kernel when every argument is a direct input or literal,
+integer capacity is sufficient and no DECIMAL loses scale. A DECIMAL argument whose metadata
+changes must be NOT NULL: released Flink can dereference it before checking its NULL flag.
+Nullable DECIMAL metadata changes, scale reduction and unverified producers retain generated
+evaluation. Character results, other mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
 Flink-generated expressions through the batch JVM bridge, preserving coercions and nanoseconds.
 Runtime strings use that bridge when the Calc reads an external DataStream whose conversion
 produces Java-backed strings. Unknown or binary-backed input representations retain fallback:
 Flink can use UTF-16 ordering before serialization and byte ordering afterward. Floating-point
 extrema retain fallback.
 
+[Release qualification](../benchmarks/scalar-functions.md#mixed-exact-greatest) retains
+stock/previous/native comparisons, slower tiny batches and complete jobs with both transposes.
+
 ### LEAST
 
 Uses the same kernels, generated-expression paths and string-representation gates as GREATEST,
-with strict NULL propagation and minimum comparison.
+with strict NULL propagation and minimum comparison. Verified mixed exact-numeric LEAST uses
+the same lossless casts to Flink's resolved DECIMAL type. It retains the same nullable-metadata,
+scale-reduction and producer guards; it does not remove Flink's nullable-conversion failures.
+The [separate qualification](../benchmarks/scalar-functions.md#mixed-exact-least) records
+stock/previous/native measurements, slower small batches and complete-job variability.
 
 ### INITCAP
 

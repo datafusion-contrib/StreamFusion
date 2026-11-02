@@ -1,0 +1,3849 @@
+{
+  "qualification": {
+    "base": "11e134865b1777377b78ed3f43919a1335ff24ad",
+    "validation": {
+      "22-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=17 succeeded=17 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "22-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=17 succeeded=17 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=17 succeeded=17 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=17 succeeded=17 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "source_files_sha256": {
+        "src/main/java/tech/streamfusion/planner/RexExpression.java": "f624098deb8d8fd640ca439f3c9355aeba05ce0ab2058a9a7621f4d5b46e599c",
+        "src/main/java/tech/streamfusion/planner/FlinkExpressionGenerator.java": "b977f6e1872cfd81f4807aa90d0551205888eaaa659fbdff149015d60d554692",
+        "src/main/java/tech/streamfusion/planner/JvmFunctionConversions.java": "a15474c083f74fb3fc13aabcd74d578643b8a8df2c564583f50c81b83b535603",
+        "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "563e6c62f31aee929658da2231a9a5e18c496ad1459e06829fff4db1a95264c7",
+        "src/test/java/tech/streamfusion/FlinkUtcLtzCalendarFloorSqlHarnessTest.java": "71a09192dce00f9311eb0784aa03567035a2c01fce0517ba3098d66425d9fd1f",
+        "src/test/java/tech/streamfusion/planner/UtcLtzCalendarFloorAdmissionTest.java": "967c866f67c9b3a598fc139c94c50c5e35b081192af7b694e8a7c242d4aade43",
+        "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "10e4b924f53de95800eab3e4c353526ededa9d1b420736f71049e1ead9748c57",
+        "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "df7c9aeb7c728ac30cfabedd7b37b66579bc8ea16f33a548947c9aae8d6b27cc"
+      },
+      "native_files_sha256": {
+        "native/engine/src/flink_functions/decimal.rs": "6b5f00c9fb321928a9a603519fc2cc2d10dda5fde507612dd314b953dd6efd90",
+        "native/engine/src/flink_functions/calendar.rs": "841b4bd6257a64143c7dadcdc0757762ac0a735f060b6cbd37decd9cf9bbf778",
+        "native/engine/src/expr.rs": "d357a41f914f057d93c5badbf06814d8fc2d6db7fcccd20a9ce2e608e7fdca1d"
+      },
+      "dso_sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98"
+    },
+    "fixture_sources": {
+      "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "10e4b924f53de95800eab3e4c353526ededa9d1b420736f71049e1ead9748c57",
+      "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "df7c9aeb7c728ac30cfabedd7b37b66579bc8ea16f33a548947c9aae8d6b27cc",
+      "native/engine/examples/integral_expression.rs": "bd79874b8bfed45b53f57df6fe595caa5190f48bf3910b878e6be5ac65265e08"
+    },
+    "unchanged_production_dso_sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98",
+    "rust_core_reused": "886 passed without default features, production Rust/DSO unchanged",
+    "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+  },
+  "matrix": {
+    "base": "11e134865b1777377b78ed3f43919a1335ff24ad",
+    "function": "FLOOR",
+    "jdk": "Oracle JDK 17.0.12",
+    "warmups": 16,
+    "runs": 9,
+    "processed_rows_per_trial": 131072,
+    "previous_dso_sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98",
+    "previous_executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+    "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+    "dso_sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98",
+    "cases": [
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 35.18390655517578,
+              "median_ns_per_row": 37.41931915283203,
+              "max_ns_per_row": 58.57276916503906
+            },
+            "native": {
+              "min_ns_per_row": 24.694129943847656,
+              "median_ns_per_row": 25.07050323486328,
+              "max_ns_per_row": 25.84203338623047
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 36.17731475830078,
+              "median_ns_per_row": 37.78807067871094,
+              "max_ns_per_row": 41.310943603515625
+            },
+            "previous": {
+              "min_ns_per_row": 64.36634063720703,
+              "median_ns_per_row": 69.93993377685547,
+              "max_ns_per_row": 82.60472869873047
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 32.13819122314453,
+              "median_ns_per_row": 33.45330047607422,
+              "max_ns_per_row": 55.02351379394531
+            },
+            "native": {
+              "min_ns_per_row": 24.487815856933594,
+              "median_ns_per_row": 24.92205047607422,
+              "max_ns_per_row": 26.058509826660156
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 33.19390869140625,
+              "median_ns_per_row": 34.85234832763672,
+              "max_ns_per_row": 39.03070831298828
+            },
+            "previous": {
+              "min_ns_per_row": 56.96836853027344,
+              "median_ns_per_row": 65.8995361328125,
+              "max_ns_per_row": 78.26455688476562
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 36.50379180908203,
+              "median_ns_per_row": 37.250518798828125,
+              "max_ns_per_row": 59.63262176513672
+            },
+            "native": {
+              "min_ns_per_row": 24.59081268310547,
+              "median_ns_per_row": 25.43926239013672,
+              "max_ns_per_row": 26.57953643798828
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 36.89701843261719,
+              "median_ns_per_row": 41.81035614013672,
+              "max_ns_per_row": 53.208030700683594
+            },
+            "previous": {
+              "min_ns_per_row": 61.196327209472656,
+              "median_ns_per_row": 63.446678161621094,
+              "max_ns_per_row": 75.40067291259766
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 32.55621337890625,
+              "median_ns_per_row": 33.939361572265625,
+              "max_ns_per_row": 55.8592529296875
+            },
+            "native": {
+              "min_ns_per_row": 24.913787841796875,
+              "median_ns_per_row": 25.36614227294922,
+              "max_ns_per_row": 26.369728088378906
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.53612518310547,
+              "median_ns_per_row": 36.95329284667969,
+              "max_ns_per_row": 38.341209411621094
+            },
+            "previous": {
+              "min_ns_per_row": 64.99767303466797,
+              "median_ns_per_row": 74.2823257446289,
+              "max_ns_per_row": 106.73332214355469
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 33.30199432373047,
+              "median_ns_per_row": 33.96574401855469,
+              "max_ns_per_row": 43.18046569824219
+            },
+            "native": {
+              "min_ns_per_row": 24.285316467285156,
+              "median_ns_per_row": 25.3143310546875,
+              "max_ns_per_row": 31.226478576660156
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.21321105957031,
+              "median_ns_per_row": 33.98291015625,
+              "max_ns_per_row": 34.87554931640625
+            },
+            "previous": {
+              "min_ns_per_row": 66.19390106201172,
+              "median_ns_per_row": 80.44497680664062,
+              "max_ns_per_row": 84.69612884521484
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 29.4647216796875,
+              "median_ns_per_row": 30.7464599609375,
+              "max_ns_per_row": 50.70781707763672
+            },
+            "native": {
+              "min_ns_per_row": 24.032272338867188,
+              "median_ns_per_row": 24.906158447265625,
+              "max_ns_per_row": 26.13353729248047
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 29.768943786621094,
+              "median_ns_per_row": 30.794464111328125,
+              "max_ns_per_row": 31.813621520996094
+            },
+            "previous": {
+              "min_ns_per_row": 66.05020904541016,
+              "median_ns_per_row": 73.53019714355469,
+              "max_ns_per_row": 78.04170989990234
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 37.123046875,
+              "median_ns_per_row": 38.8673095703125,
+              "max_ns_per_row": 51.63128662109375
+            },
+            "native": {
+              "min_ns_per_row": 24.578094482421875,
+              "median_ns_per_row": 24.763107299804688,
+              "max_ns_per_row": 25.62872314453125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 37.210784912109375,
+              "median_ns_per_row": 38.9083251953125,
+              "max_ns_per_row": 48.784889221191406
+            },
+            "previous": {
+              "min_ns_per_row": 58.69611358642578,
+              "median_ns_per_row": 61.00749969482422,
+              "max_ns_per_row": 66.36555480957031
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 33.711753845214844,
+              "median_ns_per_row": 36.080039978027344,
+              "max_ns_per_row": 50.76122283935547
+            },
+            "native": {
+              "min_ns_per_row": 23.912429809570312,
+              "median_ns_per_row": 24.895034790039062,
+              "max_ns_per_row": 25.372825622558594
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 33.45520782470703,
+              "median_ns_per_row": 35.863243103027344,
+              "max_ns_per_row": 40.18751525878906
+            },
+            "previous": {
+              "min_ns_per_row": 59.30296325683594,
+              "median_ns_per_row": 64.30912017822266,
+              "max_ns_per_row": 78.94547271728516
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 34.265838623046875,
+              "median_ns_per_row": 36.490760803222656,
+              "max_ns_per_row": 56.383766174316406
+            },
+            "native": {
+              "min_ns_per_row": 24.179771423339844,
+              "median_ns_per_row": 24.433135986328125,
+              "max_ns_per_row": 24.799346923828125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 36.38648986816406,
+              "median_ns_per_row": 38.015045166015625,
+              "max_ns_per_row": 45.3170166015625
+            },
+            "previous": {
+              "min_ns_per_row": 59.404052734375,
+              "median_ns_per_row": 61.570167541503906,
+              "max_ns_per_row": 70.52803039550781
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 32.829917907714844,
+              "median_ns_per_row": 33.879600524902344,
+              "max_ns_per_row": 44.77342224121094
+            },
+            "native": {
+              "min_ns_per_row": 24.351760864257812,
+              "median_ns_per_row": 25.119468688964844,
+              "max_ns_per_row": 25.954879760742188
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.04791259765625,
+              "median_ns_per_row": 33.23173522949219,
+              "max_ns_per_row": 34.30907440185547
+            },
+            "previous": {
+              "min_ns_per_row": 53.41339111328125,
+              "median_ns_per_row": 58.07813262939453,
+              "max_ns_per_row": 69.17539978027344
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 36.92913055419922,
+              "median_ns_per_row": 37.38212585449219,
+              "max_ns_per_row": 57.067237854003906
+            },
+            "native": {
+              "min_ns_per_row": 23.65398406982422,
+              "median_ns_per_row": 23.740127563476562,
+              "max_ns_per_row": 24.246536254882812
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 38.46263885498047,
+              "median_ns_per_row": 39.89379119873047,
+              "max_ns_per_row": 49.42829895019531
+            },
+            "previous": {
+              "min_ns_per_row": 57.446800231933594,
+              "median_ns_per_row": 60.30909729003906,
+              "max_ns_per_row": 67.61710357666016
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 32.80067443847656,
+              "median_ns_per_row": 35.17564392089844,
+              "max_ns_per_row": 55.62305450439453
+            },
+            "native": {
+              "min_ns_per_row": 23.706436157226562,
+              "median_ns_per_row": 23.897804260253906,
+              "max_ns_per_row": 24.133682250976562
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 36.14234924316406,
+              "median_ns_per_row": 37.06995391845703,
+              "max_ns_per_row": 39.67157745361328
+            },
+            "previous": {
+              "min_ns_per_row": 56.29571533203125,
+              "median_ns_per_row": 59.27594757080078,
+              "max_ns_per_row": 66.3884506225586
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 31.449951171875,
+              "median_ns_per_row": 31.825698852539062,
+              "max_ns_per_row": 52.27342987060547
+            },
+            "native": {
+              "min_ns_per_row": 24.03131866455078,
+              "median_ns_per_row": 24.61560821533203,
+              "max_ns_per_row": 25.928184509277344
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.386146545410156,
+              "median_ns_per_row": 33.020660400390625,
+              "max_ns_per_row": 34.18414306640625
+            },
+            "previous": {
+              "min_ns_per_row": 56.90033721923828,
+              "median_ns_per_row": 61.63819885253906,
+              "max_ns_per_row": 70.22857666015625
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 29.296234130859375,
+              "median_ns_per_row": 30.463218688964844,
+              "max_ns_per_row": 52.439369201660156
+            },
+            "native": {
+              "min_ns_per_row": 24.026870727539062,
+              "median_ns_per_row": 24.88231658935547,
+              "max_ns_per_row": 25.251068115234375
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 29.070220947265625,
+              "median_ns_per_row": 29.43865203857422,
+              "max_ns_per_row": 30.369125366210938
+            },
+            "previous": {
+              "min_ns_per_row": 59.68634033203125,
+              "median_ns_per_row": 62.672935485839844,
+              "max_ns_per_row": 73.116943359375
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 37.544883728027344,
+              "median_ns_per_row": 38.99414825439453,
+              "max_ns_per_row": 56.196533203125
+            },
+            "native": {
+              "min_ns_per_row": 23.691177368164062,
+              "median_ns_per_row": 23.887954711914062,
+              "max_ns_per_row": 24.050079345703125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 37.26323699951172,
+              "median_ns_per_row": 38.907371520996094,
+              "max_ns_per_row": 48.478126525878906
+            },
+            "previous": {
+              "min_ns_per_row": 55.818878173828125,
+              "median_ns_per_row": 61.56476593017578,
+              "max_ns_per_row": 65.92146301269531
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 34.56846618652344,
+              "median_ns_per_row": 36.75587463378906,
+              "max_ns_per_row": 50.44047546386719
+            },
+            "native": {
+              "min_ns_per_row": 23.8936767578125,
+              "median_ns_per_row": 24.031326293945312,
+              "max_ns_per_row": 24.10443878173828
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.35308074951172,
+              "median_ns_per_row": 34.62696075439453,
+              "max_ns_per_row": 43.92559814453125
+            },
+            "previous": {
+              "min_ns_per_row": 56.0423583984375,
+              "median_ns_per_row": 60.8046875,
+              "max_ns_per_row": 64.21184539794922
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "tiny",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 29.290199279785156,
+              "median_ns_per_row": 29.47393798828125,
+              "max_ns_per_row": 49.00233459472656
+            },
+            "native": {
+              "min_ns_per_row": 142.16232299804688,
+              "median_ns_per_row": 151.38976287841797,
+              "max_ns_per_row": 161.12613677978516
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4531,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 28.574630737304688,
+              "median_ns_per_row": 28.82671356201172,
+              "max_ns_per_row": 30.65045166015625
+            },
+            "previous": {
+              "min_ns_per_row": 1198.373161315918,
+              "median_ns_per_row": 1229.7767028808594,
+              "max_ns_per_row": 1267.7745819091797
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "tiny",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 35.37432861328125,
+              "median_ns_per_row": 35.839080810546875,
+              "max_ns_per_row": 51.86748504638672
+            },
+            "native": {
+              "min_ns_per_row": 146.68687438964844,
+              "median_ns_per_row": 148.45053100585938,
+              "max_ns_per_row": 152.22835540771484
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4531,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.31201171875,
+              "median_ns_per_row": 35.729408264160156,
+              "max_ns_per_row": 36.830902099609375
+            },
+            "previous": {
+              "min_ns_per_row": 1266.1345825195312,
+              "median_ns_per_row": 1284.6943588256836,
+              "max_ns_per_row": 1309.5461502075195
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "tiny",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 28.927169799804688,
+              "median_ns_per_row": 29.69391632080078,
+              "max_ns_per_row": 51.467262268066406
+            },
+            "native": {
+              "min_ns_per_row": 144.6990966796875,
+              "median_ns_per_row": 147.75054168701172,
+              "max_ns_per_row": 154.3118133544922
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4531,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 28.826072692871094,
+              "median_ns_per_row": 29.71331024169922,
+              "max_ns_per_row": 32.21893310546875
+            },
+            "previous": {
+              "min_ns_per_row": 1257.2914733886719,
+              "median_ns_per_row": 1275.8124618530273,
+              "max_ns_per_row": 1338.5985717773438
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "22",
+        "workload": "tiny",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 36.249481201171875,
+              "median_ns_per_row": 37.25751495361328,
+              "max_ns_per_row": 56.978546142578125
+            },
+            "native": {
+              "min_ns_per_row": 145.7083969116211,
+              "median_ns_per_row": 150.8448944091797,
+              "max_ns_per_row": 157.1817398071289
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4531,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.547889709472656,
+              "median_ns_per_row": 36.186859130859375,
+              "max_ns_per_row": 38.230262756347656
+            },
+            "previous": {
+              "min_ns_per_row": 1239.399269104004,
+              "median_ns_per_row": 1255.3730010986328,
+              "max_ns_per_row": 1447.4525451660156
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 35.785987854003906,
+              "median_ns_per_row": 36.52635955810547,
+              "max_ns_per_row": 36.91831970214844
+            },
+            "native": {
+              "min_ns_per_row": 24.376548767089844,
+              "median_ns_per_row": 24.5850830078125,
+              "max_ns_per_row": 24.98912811279297
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.63435363769531,
+              "median_ns_per_row": 36.4837646484375,
+              "max_ns_per_row": 37.564598083496094
+            },
+            "previous": {
+              "min_ns_per_row": 62.861122131347656,
+              "median_ns_per_row": 64.82982635498047,
+              "max_ns_per_row": 79.77708435058594
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 31.644508361816406,
+              "median_ns_per_row": 32.60675811767578,
+              "max_ns_per_row": 35.175010681152344
+            },
+            "native": {
+              "min_ns_per_row": 23.905433654785156,
+              "median_ns_per_row": 24.54217529296875,
+              "max_ns_per_row": 25.43036651611328
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.20526123046875,
+              "median_ns_per_row": 33.05944061279297,
+              "max_ns_per_row": 33.33091735839844
+            },
+            "previous": {
+              "min_ns_per_row": 54.64649200439453,
+              "median_ns_per_row": 61.248779296875,
+              "max_ns_per_row": 68.8203125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 36.20942687988281,
+              "median_ns_per_row": 37.01305389404297,
+              "max_ns_per_row": 37.68634796142578
+            },
+            "native": {
+              "min_ns_per_row": 23.732505798339844,
+              "median_ns_per_row": 24.735450744628906,
+              "max_ns_per_row": 25.50792694091797
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 37.60528564453125,
+              "median_ns_per_row": 39.15373229980469,
+              "max_ns_per_row": 55.99021911621094
+            },
+            "previous": {
+              "min_ns_per_row": 59.80650329589844,
+              "median_ns_per_row": 68.94620513916016,
+              "max_ns_per_row": 107.2549819946289
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 34.584999084472656,
+              "median_ns_per_row": 35.98594665527344,
+              "max_ns_per_row": 36.87858581542969
+            },
+            "native": {
+              "min_ns_per_row": 24.26178741455078,
+              "median_ns_per_row": 25.52635955810547,
+              "max_ns_per_row": 26.186622619628906
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 34.47119140625,
+              "median_ns_per_row": 35.276100158691406,
+              "max_ns_per_row": 35.45410919189453
+            },
+            "previous": {
+              "min_ns_per_row": 54.75902557373047,
+              "median_ns_per_row": 58.361366271972656,
+              "max_ns_per_row": 68.65055847167969
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 31.202003479003906,
+              "median_ns_per_row": 31.500816345214844,
+              "max_ns_per_row": 46.44902801513672
+            },
+            "native": {
+              "min_ns_per_row": 23.699440002441406,
+              "median_ns_per_row": 23.895584106445312,
+              "max_ns_per_row": 24.182952880859375
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.323516845703125,
+              "median_ns_per_row": 32.482460021972656,
+              "max_ns_per_row": 33.61034393310547
+            },
+            "previous": {
+              "min_ns_per_row": 58.684349060058594,
+              "median_ns_per_row": 61.74913787841797,
+              "max_ns_per_row": 70.4793930053711
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 29.043838500976562,
+              "median_ns_per_row": 29.553726196289062,
+              "max_ns_per_row": 45.244850158691406
+            },
+            "native": {
+              "min_ns_per_row": 23.91083526611328,
+              "median_ns_per_row": 24.142906188964844,
+              "max_ns_per_row": 24.753570556640625
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 29.920257568359375,
+              "median_ns_per_row": 30.28997039794922,
+              "max_ns_per_row": 30.898094177246094
+            },
+            "previous": {
+              "min_ns_per_row": 55.58617401123047,
+              "median_ns_per_row": 61.684288024902344,
+              "max_ns_per_row": 70.2184066772461
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 35.933815002441406,
+              "median_ns_per_row": 37.400245666503906,
+              "max_ns_per_row": 47.22785949707031
+            },
+            "native": {
+              "min_ns_per_row": 23.714385986328125,
+              "median_ns_per_row": 24.10761260986328,
+              "max_ns_per_row": 24.720191955566406
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 36.26092529296875,
+              "median_ns_per_row": 37.911415100097656,
+              "max_ns_per_row": 46.119056701660156
+            },
+            "previous": {
+              "min_ns_per_row": 59.357322692871094,
+              "median_ns_per_row": 60.8994140625,
+              "max_ns_per_row": 70.08075714111328
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 33.51561737060547,
+              "median_ns_per_row": 36.561012268066406,
+              "max_ns_per_row": 45.270286560058594
+            },
+            "native": {
+              "min_ns_per_row": 23.7611083984375,
+              "median_ns_per_row": 24.07964324951172,
+              "max_ns_per_row": 24.37432861328125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 33.05847930908203,
+              "median_ns_per_row": 34.44639587402344,
+              "max_ns_per_row": 37.63929748535156
+            },
+            "previous": {
+              "min_ns_per_row": 54.732635498046875,
+              "median_ns_per_row": 57.63117980957031,
+              "max_ns_per_row": 69.26949310302734
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 33.34840393066406,
+              "median_ns_per_row": 33.52101135253906,
+              "max_ns_per_row": 33.795677185058594
+            },
+            "native": {
+              "min_ns_per_row": 23.656524658203125,
+              "median_ns_per_row": 23.71184539794922,
+              "max_ns_per_row": 24.088539123535156
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 35.28118133544922,
+              "median_ns_per_row": 37.172950744628906,
+              "max_ns_per_row": 37.613868713378906
+            },
+            "previous": {
+              "min_ns_per_row": 60.09387969970703,
+              "median_ns_per_row": 63.79350280761719,
+              "max_ns_per_row": 75.75035095214844
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 32.42143249511719,
+              "median_ns_per_row": 33.550262451171875,
+              "max_ns_per_row": 34.98808288574219
+            },
+            "native": {
+              "min_ns_per_row": 23.86919403076172,
+              "median_ns_per_row": 24.825096130371094,
+              "max_ns_per_row": 25.367103576660156
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.548583984375,
+              "median_ns_per_row": 33.2489013671875,
+              "max_ns_per_row": 43.99713134765625
+            },
+            "previous": {
+              "min_ns_per_row": 55.18754577636719,
+              "median_ns_per_row": 58.381080627441406,
+              "max_ns_per_row": 67.54302978515625
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 35.93794250488281,
+              "median_ns_per_row": 36.042213439941406,
+              "max_ns_per_row": 36.25043487548828
+            },
+            "native": {
+              "min_ns_per_row": 23.89240264892578,
+              "median_ns_per_row": 23.909255981445312,
+              "max_ns_per_row": 24.263702392578125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 38.584075927734375,
+              "median_ns_per_row": 40.12616729736328,
+              "max_ns_per_row": 40.6510009765625
+            },
+            "previous": {
+              "min_ns_per_row": 56.34626007080078,
+              "median_ns_per_row": 59.02513122558594,
+              "max_ns_per_row": 71.19878387451172
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": false,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 34.37964630126953,
+              "median_ns_per_row": 34.81769561767578,
+              "max_ns_per_row": 35.78789520263672
+            },
+            "native": {
+              "min_ns_per_row": 24.541534423828125,
+              "median_ns_per_row": 24.936363220214844,
+              "max_ns_per_row": 25.29589080810547
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 34.961700439453125,
+              "median_ns_per_row": 36.78607940673828,
+              "max_ns_per_row": 48.49592590332031
+            },
+            "previous": {
+              "min_ns_per_row": 55.065467834472656,
+              "median_ns_per_row": 58.595977783203125,
+              "max_ns_per_row": 69.83724975585938
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 31.44709014892578,
+              "median_ns_per_row": 32.61884307861328,
+              "max_ns_per_row": 46.63340759277344
+            },
+            "native": {
+              "min_ns_per_row": 24.335227966308594,
+              "median_ns_per_row": 24.98468017578125,
+              "max_ns_per_row": 25.307655334472656
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 32.093360900878906,
+              "median_ns_per_row": 32.895408630371094,
+              "max_ns_per_row": 34.5595703125
+            },
+            "previous": {
+              "min_ns_per_row": 58.6868896484375,
+              "median_ns_per_row": 62.90118408203125,
+              "max_ns_per_row": 71.20323181152344
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 29.092147827148438,
+              "median_ns_per_row": 29.92121124267578,
+              "max_ns_per_row": 45.208290100097656
+            },
+            "native": {
+              "min_ns_per_row": 24.306930541992188,
+              "median_ns_per_row": 25.305747985839844,
+              "max_ns_per_row": 27.141891479492188
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 30.22162628173828,
+              "median_ns_per_row": 30.677162170410156,
+              "max_ns_per_row": 42.39368438720703
+            },
+            "previous": {
+              "min_ns_per_row": 57.73893737792969,
+              "median_ns_per_row": 62.567710876464844,
+              "max_ns_per_row": 73.0164794921875
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 37.53852844238281,
+              "median_ns_per_row": 38.29319763183594,
+              "max_ns_per_row": 49.619041442871094
+            },
+            "native": {
+              "min_ns_per_row": 24.135276794433594,
+              "median_ns_per_row": 24.831130981445312,
+              "max_ns_per_row": 25.821372985839844
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 37.22699737548828,
+              "median_ns_per_row": 38.85841369628906,
+              "max_ns_per_row": 47.507598876953125
+            },
+            "previous": {
+              "min_ns_per_row": 61.878204345703125,
+              "median_ns_per_row": 65.48912811279297,
+              "max_ns_per_row": 70.35318756103516
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "direct",
+        "expression": "YEAR(FLOOR(v TO YEAR))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 1024,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "YEAR",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 34.03886413574219,
+              "median_ns_per_row": 35.60987854003906,
+              "max_ns_per_row": 53.801536560058594
+            },
+            "native": {
+              "min_ns_per_row": 24.24652862548828,
+              "median_ns_per_row": 25.067649841308594,
+              "max_ns_per_row": 25.636993408203125
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",96,55803,0,256"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 34.722328186035156,
+              "median_ns_per_row": 37.03117370605469,
+              "max_ns_per_row": 41.38024139404297
+            },
+            "previous": {
+              "min_ns_per_row": 63.29313659667969,
+              "median_ns_per_row": 70.7117691040039,
+              "max_ns_per_row": 80.40587615966797
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,18462,0,256"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "tiny",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 29.013633728027344,
+              "median_ns_per_row": 29.164627075195312,
+              "max_ns_per_row": 45.16919708251953
+            },
+            "native": {
+              "min_ns_per_row": 147.0667495727539,
+              "median_ns_per_row": 150.76319122314453,
+              "max_ns_per_row": 153.0955581665039
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4531,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 28.597198486328125,
+              "median_ns_per_row": 29.24665069580078,
+              "max_ns_per_row": 29.82299041748047
+            },
+            "previous": {
+              "min_ns_per_row": 1249.3200302124023,
+              "median_ns_per_row": 1260.0580825805664,
+              "max_ns_per_row": 1265.755973815918
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "tiny",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(3)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 35.1546630859375,
+              "median_ns_per_row": 35.868011474609375,
+              "max_ns_per_row": 45.80720520019531
+            },
+            "native": {
+              "min_ns_per_row": 138.37877655029297,
+              "median_ns_per_row": 141.66259765625,
+              "max_ns_per_row": 146.29045867919922
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4531,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 34.50775146484375,
+              "median_ns_per_row": 35.170555114746094,
+              "max_ns_per_row": 35.2919921875
+            },
+            "previous": {
+              "min_ns_per_row": 1189.8495330810547,
+              "median_ns_per_row": 1200.9572982788086,
+              "max_ns_per_row": 1234.2942504882812
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "tiny",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": false,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 28.703689575195312,
+              "median_ns_per_row": 29.368080139160156,
+              "max_ns_per_row": 47.94025421142578
+            },
+            "native": {
+              "min_ns_per_row": 140.77377319335938,
+              "median_ns_per_row": 143.38970184326172,
+              "max_ns_per_row": 149.9608383178711
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4531,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 28.45732879638672,
+              "median_ns_per_row": 28.85755157470703,
+              "max_ns_per_row": 29.635116577148438
+            },
+            "previous": {
+              "min_ns_per_row": 1208.7993621826172,
+              "median_ns_per_row": 1234.5056533813477,
+              "max_ns_per_row": 1265.4755935668945
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      },
+      {
+        "line": "118",
+        "workload": "tiny",
+        "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+        "type": "TIMESTAMP_LTZ(9)",
+        "nullable": true,
+        "binary_rows": true,
+        "batch_rows": 16,
+        "legacy": false,
+        "target": "BOOLEAN",
+        "producer": "MONTH",
+        "secondary_type": "",
+        "results": {
+          "candidate_control": {
+            "flink": {
+              "min_ns_per_row": 35.503074645996094,
+              "median_ns_per_row": 35.84861755371094,
+              "max_ns_per_row": 45.40697479248047
+            },
+            "native": {
+              "min_ns_per_row": 142.27549743652344,
+              "median_ns_per_row": 142.8982391357422,
+              "max_ns_per_row": 145.64100646972656
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",72,4531,0,10"
+            ]
+          },
+          "previous_control": {
+            "flink": {
+              "min_ns_per_row": 34.84185791015625,
+              "median_ns_per_row": 35.58985137939453,
+              "max_ns_per_row": 36.055885314941406
+            },
+            "previous": {
+              "min_ns_per_row": 1214.6457061767578,
+              "median_ns_per_row": 1229.6428680419922,
+              "max_ns_per_row": 1244.279541015625
+            },
+            "allocation_probe": [
+              "NATIVE_ALLOCATION,\"integral_expression\",152,9842,0,10"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "pipelines": {
+    "118-millis-month": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.468706292
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.385341584
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.252705292
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.189219458
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.18802375
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.226492958
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.226698333
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188040458
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.205862917
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.221072458
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.214705375
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.18674875
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.193603
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.214228958
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.487845167
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.436236
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.280852166
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.189517584
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.201651791
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.248278
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.246338792
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.1855835
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.193261375
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.2457225
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.23585625
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.202123167
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188820792
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.242818
+        }
+      ]
+    },
+    "118-millis-year": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.505143667
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.408161917
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.278156084
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.180464917
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.203306334
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.212743458
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.220039959
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.186409708
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.1955385
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.211578041
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.227368666
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.1893115
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.201228833
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.263017875
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.520092542
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.473862875
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.30007575
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.219690542
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.180760875
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.2671335
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.253261792
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.191060584
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.186410292
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.238445792
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.236860958
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.177186167
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.175119125
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.237706875
+        }
+      ]
+    },
+    "118-nanos-month": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.473011542
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.373070542
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.243163625
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.188919042
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.181629875
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.219350542
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.212674417
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188743916
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.177151542
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.212659292
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.213857917
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.18020725
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.179367375
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.211109459
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.455304625
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.409558542
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.283718875
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.189542875
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.180593584
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.246597208
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.235365667
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.185782333
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.179583041
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.2385705
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.235504834
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.187134125
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188839417
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.235585334
+        }
+      ]
+    },
+    "118-nanos-year": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.454749833
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.362444208
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.252297667
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.178496375
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.182063959
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.223227875
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.211255209
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.182030292
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.176935417
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.220441333
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.2166625
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.176542417
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.181046666
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.214037541
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.441896292
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.4118495
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.270745667
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.1833575
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.173856792
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.237409625
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.228118833
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.17287
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.186010584
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.231438333
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.229410917
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.17733575
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.180139083
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.229550208
+        }
+      ]
+    },
+    "22-millis-month": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.507274333
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.363414084
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.233095666
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.195822
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.178079125
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.226058292
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.211332375
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.182647459
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.1937025
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.212927375
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.20900475
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.179602291
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.175361
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.213768333
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.510167166
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.462104917
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.28835375
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.198505042
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.18357775
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.263775625
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.246426084
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.192828792
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.18809325
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.237546792
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.249541458
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.179894958
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.180905958
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.234360916
+        }
+      ]
+    },
+    "22-millis-year": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.525793958
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.381672042
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.268388584
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.187405584
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.183545125
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.251673625
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.239016125
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.197168917
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.183784042
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.231608084
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.229450958
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.196000959
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.182588917
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.22884475
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.560584
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.502195083
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.343560417
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.189882791
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.201295833
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.274733917
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.252418958
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.185015708
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.179068917
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.228666416
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.239004833
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.180244167
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.180030042
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.235924917
+        }
+      ]
+    },
+    "22-nanos-month": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.528290708
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.377977834
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.231417375
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.192242958
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.190350084
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.227967958
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.220334166
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.18093275
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.186914375
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.217172666
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.216323875
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.181038125
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.185796917
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.218771458
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.510494709
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.444292334
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.269328875
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.192803291
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.18158125
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.246484042
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.239713292
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.189566833
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.202551084
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.236932792
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.240640541
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.190060709
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.187344833
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.235645333
+        }
+      ]
+    },
+    "22-nanos-year": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.485798083
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.389471375
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.232357459
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.191229042
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.172019625
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.226664584
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.212453
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.1781965
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.178443541
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.217609042
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.220378458
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.178038
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.185764458
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.218075584
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.479634167
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.43047325
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.260343709
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.197122625
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.17474575
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.262086875
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.237412375
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.180981208
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.191225041
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.24139175
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.235958583
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.175792375
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.176826333
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.233252958
+        }
+      ]
+    }
+  },
+  "fixture_smokes": [
+    {
+      "line": "22",
+      "label": "INT-original",
+      "type": "INT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "22",
+      "label": "INT-expanded",
+      "type": "INT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "22",
+      "label": "BIGINT-original",
+      "type": "BIGINT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "22",
+      "label": "BIGINT-expanded",
+      "type": "BIGINT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "22",
+      "label": "DECIMAL(18,2)-original",
+      "type": "DECIMAL(18,2)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "22",
+      "label": "DECIMAL(18,2)-expanded",
+      "type": "DECIMAL(18,2)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "22",
+      "label": "DECIMAL(19,19)-original",
+      "type": "DECIMAL(19,19)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-2048",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "22",
+      "label": "DECIMAL(19,19)-expanded",
+      "type": "DECIMAL(19,19)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-2048",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "22",
+      "label": "DECIMAL(38,18)-original",
+      "type": "DECIMAL(38,18)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "22",
+      "label": "DECIMAL(38,18)-expanded",
+      "type": "DECIMAL(38,18)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "22",
+      "label": "TIMESTAMP_LTZ(3)-False",
+      "type": "TIMESTAMP_LTZ(3)",
+      "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 33.14018249511719,
+        "min_ns_per_row": 30.46703338623047,
+        "max_ns_per_row": 51.84332275390625
+      },
+      "native": {
+        "median_ns_per_row": 25.603294372558594,
+        "min_ns_per_row": 24.34253692626953,
+        "max_ns_per_row": 26.049293518066406
+      }
+    },
+    {
+      "line": "22",
+      "label": "TIMESTAMP_LTZ(3)-True",
+      "type": "TIMESTAMP_LTZ(3)",
+      "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": {
+        "median_ns_per_row": 70.27721405029297,
+        "min_ns_per_row": 62.757171630859375,
+        "max_ns_per_row": 82.50872039794922
+      },
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 32.35626220703125,
+        "min_ns_per_row": 31.90167999267578,
+        "max_ns_per_row": 33.54295349121094
+      }
+    },
+    {
+      "line": "22",
+      "label": "TIMESTAMP_LTZ(9)-False",
+      "type": "TIMESTAMP_LTZ(9)",
+      "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 31.892135620117188,
+        "min_ns_per_row": 30.904769897460938,
+        "max_ns_per_row": 54.73773193359375
+      },
+      "native": {
+        "median_ns_per_row": 24.0478515625,
+        "min_ns_per_row": 23.73504638671875,
+        "max_ns_per_row": 25.21991729736328
+      }
+    },
+    {
+      "line": "22",
+      "label": "TIMESTAMP_LTZ(9)-True",
+      "type": "TIMESTAMP_LTZ(9)",
+      "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": {
+        "median_ns_per_row": 75.33295440673828,
+        "min_ns_per_row": 68.42422485351562,
+        "max_ns_per_row": 88.14366912841797
+      },
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 32.72883605957031,
+        "min_ns_per_row": 31.60730743408203,
+        "max_ns_per_row": 46.88136291503906
+      }
+    },
+    {
+      "line": "118",
+      "label": "INT-original",
+      "type": "INT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "118",
+      "label": "INT-expanded",
+      "type": "INT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "118",
+      "label": "BIGINT-original",
+      "type": "BIGINT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "118",
+      "label": "BIGINT-expanded",
+      "type": "BIGINT",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-396",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "118",
+      "label": "DECIMAL(18,2)-original",
+      "type": "DECIMAL(18,2)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "118",
+      "label": "DECIMAL(18,2)-expanded",
+      "type": "DECIMAL(18,2)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "118",
+      "label": "DECIMAL(19,19)-original",
+      "type": "DECIMAL(19,19)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-2048",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "118",
+      "label": "DECIMAL(19,19)-expanded",
+      "type": "DECIMAL(19,19)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-2048",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "118",
+      "label": "DECIMAL(38,18)-original",
+      "type": "DECIMAL(38,18)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7"
+    },
+    {
+      "line": "118",
+      "label": "DECIMAL(38,18)-expanded",
+      "type": "DECIMAL(38,18)",
+      "expression": "SIGN(v)>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "-292",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490"
+    },
+    {
+      "line": "118",
+      "label": "TIMESTAMP_LTZ(3)-False",
+      "type": "TIMESTAMP_LTZ(3)",
+      "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 32.33051300048828,
+        "min_ns_per_row": 31.88196563720703,
+        "max_ns_per_row": 46.802520751953125
+      },
+      "native": {
+        "median_ns_per_row": 24.58667755126953,
+        "min_ns_per_row": 23.502349853515625,
+        "max_ns_per_row": 25.12518310546875
+      }
+    },
+    {
+      "line": "118",
+      "label": "TIMESTAMP_LTZ(3)-True",
+      "type": "TIMESTAMP_LTZ(3)",
+      "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": {
+        "median_ns_per_row": 65.6728744506836,
+        "min_ns_per_row": 62.140464782714844,
+        "max_ns_per_row": 72.88551330566406
+      },
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 32.242454528808594,
+        "min_ns_per_row": 31.774520874023438,
+        "max_ns_per_row": 36.576271057128906
+      }
+    },
+    {
+      "line": "118",
+      "label": "TIMESTAMP_LTZ(9)-False",
+      "type": "TIMESTAMP_LTZ(9)",
+      "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": false,
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 32.33750915527344,
+        "min_ns_per_row": 30.529022216796875,
+        "max_ns_per_row": 44.72541809082031
+      },
+      "native": {
+        "median_ns_per_row": 23.941993713378906,
+        "min_ns_per_row": 23.36883544921875,
+        "max_ns_per_row": 24.546310424804688
+      }
+    },
+    {
+      "line": "118",
+      "label": "TIMESTAMP_LTZ(9)-True",
+      "type": "TIMESTAMP_LTZ(9)",
+      "expression": "YEAR(FLOOR(v TO MONTH))>0 OR CAST(NULL AS BOOLEAN)",
+      "previous": {
+        "median_ns_per_row": 64.2379150390625,
+        "min_ns_per_row": 62.44532012939453,
+        "max_ns_per_row": 74.04963684082031
+      },
+      "checksum": "76288",
+      "executable_sha256": "0db36067b101649217c7bef9f6c8aa3249768b3c4bf929e8debceacfee367490",
+      "flink": {
+        "median_ns_per_row": 32.598182678222656,
+        "min_ns_per_row": 31.266845703125,
+        "max_ns_per_row": 42.68804931640625
+      }
+    }
+  ],
+  "released_stock_oracle": {
+    "22-11": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    },
+    "22-17": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    },
+    "118-11": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    },
+    "118-17": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    }
+  },
+  "oracle_scope": "Unchanged released ScalarFunctionsTest.testTemporalFloor stock controls; runtime LTZ SQL witnesses establish the new intended native route.",
+  "allocator_attribution": {
+    "scope": "Retained 4a10d804 core DSO uses System; no mimalloc-specific qualification claimed for the historical prepared executable.",
+    "evidence_record": "function-allocator-provenance-2026-11-02.json",
+    "original_trial_values_and_runtime_hashes_unchanged": true
+  }
+}

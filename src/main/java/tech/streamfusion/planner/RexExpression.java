@@ -88,6 +88,7 @@ final class RexExpression {
   private static final int KIND_CERTIFIED_BUILTIN = 44;
   private static final int KIND_ZONED_EXTRACT = 45;
   private static final int KIND_COLLECTION_CAST = 46;
+  private static final int KIND_DECIMAL_IF = 47;
   // A narrowing cast to an integer type: payload is the target integer type code (CAST_TINYINT..
   // CAST_BIGINT), one child. Built natively as a wrapping/saturating kernel matching Flink's
   // primitive
@@ -2207,8 +2208,12 @@ final class RexExpression {
     }
     int certifiedBuiltin = certifiedBuiltin(call);
     if (certifiedBuiltin != 0) return emitCertifiedBuiltin(call, certifiedBuiltin);
-    if (unnestOperand && isEpochMillisTimestamp(call)) {
-      add(KIND_CALL, 173, 1);
+    int epochTimestamp = nativeEpochTimestamp(call);
+    if (epochTimestamp != 0
+        && (epochTimestamp == 173 && unnestOperand
+            || call.getOperands().get(0) instanceof RexInputRef
+            || call.getOperands().get(0) instanceof RexLiteral)) {
+      add(KIND_CALL, epochTimestamp, 1);
       return emit(call.getOperands().get(0));
     }
     if (unnestOperand && isNativeUnnestTemporalCast(call)) return emitCast(call);
@@ -2369,17 +2374,23 @@ final class RexExpression {
           break;
       }
       if (!supportedType) return reject("IF requires a verified scalar result type");
+      boolean mixedExact = nativeMixedExactIf(call);
       if (!RexUtil.isDeterministic(call)
           || containsScalarUdf(call)
-          || call.getOperands().subList(1, 3).stream()
-              .anyMatch(
-                  operand ->
-                      !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
-                          operand.getType(), call.getType()))) {
+          || (!mixedExact
+              && call.getOperands().subList(1, 3).stream()
+                  .anyMatch(
+                      operand ->
+                          !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
+                              operand.getType(), call.getType())))) {
         // Flink inserts branch casts in codegen and can hoist volatile/UDF evaluation.
         return emitHostExpression(call, true);
       }
-      add(KIND_CALL, opCode(SqlKind.CASE), 3);
+      if (mixedExact) {
+        add(KIND_DECIMAL_IF, call.getType().getPrecision() * 100 + call.getType().getScale(), 3);
+      } else {
+        add(KIND_CALL, opCode(SqlKind.CASE), 3);
+      }
       for (RexNode operand : call.getOperands()) {
         if (!emit(operand)) return false;
       }
@@ -3165,6 +3176,13 @@ final class RexExpression {
       return reject(call.getOperator().getName() + " requires at least two arguments");
     }
     RelDataType result = call.getType();
+    if (nativeMixedExactExtremum(call)) {
+      add(KIND_CALL, op, args.size());
+      for (RexNode arg : args) {
+        if (!emitDecimalCoercion(arg, result)) return false;
+      }
+      return true;
+    }
     SqlTypeName type = result.getSqlTypeName();
     boolean integer = SqlTypeFamily.INTEGER.getTypeNames().contains(type);
     boolean character = type.getFamily() == SqlTypeFamily.CHARACTER;
@@ -4281,6 +4299,56 @@ final class RexExpression {
     }
   }
 
+  private static boolean nativeMixedExactExtremum(RexCall call) {
+    RelDataType result = call.getType();
+    String name = call.getOperator().getName();
+    if (!("GREATEST".equalsIgnoreCase(name) || "LEAST".equalsIgnoreCase(name))
+        || result.getSqlTypeName() != SqlTypeName.DECIMAL
+        || call.getOperands().size() < 2) return false;
+    for (RexNode operand : call.getOperands()) {
+      if (!losslessExactDecimalLeaf(operand, result)) return false;
+      RelDataType source = operand.getType();
+      if (source.getSqlTypeName() == SqlTypeName.DECIMAL) {
+        // Released numericCasting dereferences a DECIMAL before checking its NULL flag.
+        if (source.isNullable()
+            && !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(source, result)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  private static boolean nativeMixedExactIf(RexCall call) {
+    return call.getType().getSqlTypeName() == SqlTypeName.DECIMAL
+        && call.getType().getPrecision() > 18
+        && call.getOperands().size() == 3
+        && call.getOperands().subList(1, 3).stream()
+            .anyMatch(
+                branch ->
+                    !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
+                        branch.getType(), call.getType()))
+        && call.getOperands().subList(1, 3).stream()
+            .allMatch(branch -> losslessExactDecimalLeaf(branch, call.getType()));
+  }
+
+  private static boolean losslessExactDecimalLeaf(RexNode operand, RelDataType result) {
+    if (!(operand instanceof RexInputRef || operand instanceof RexLiteral)) return false;
+    RelDataType source = operand.getType();
+    int integerDigits = result.getPrecision() - result.getScale();
+    if (SqlTypeFamily.INTEGER.contains(source)) return integerDigits >= source.getPrecision();
+    return source.getSqlTypeName() == SqlTypeName.DECIMAL
+        && source.getScale() <= result.getScale()
+        && source.getPrecision() - source.getScale() <= integerDigits;
+  }
+
+  private boolean emitDecimalCoercion(RexNode operand, RelDataType result) {
+    if (!org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(operand.getType(), result)) {
+      add(KIND_CAST_DECIMAL, result.getPrecision() * 100 + result.getScale(), 1);
+    }
+    return emit(operand);
+  }
+
   private static boolean nativeTemporalExtremum(RexCall call) {
     String name = call.getOperator().getName();
     SqlTypeName result = call.getType().getSqlTypeName();
@@ -4341,23 +4409,30 @@ final class RexExpression {
     return input == SqlTypeName.TIME && !months ? 212 : 0;
   }
 
-  private static boolean isNativeCalendarRound(RexCall call) {
+  private boolean isNativeCalendarRound(RexCall call) {
     if (call.getKind() != SqlKind.FLOOR && call.getKind() != SqlKind.CEIL) return false;
     if (call.getOperands().size() != 2 || !(call.getOperands().get(1) instanceof RexLiteral))
       return false;
     SqlTypeName input = call.getOperands().get(0).getType().getSqlTypeName();
-    return (input == SqlTypeName.DATE || input == SqlTypeName.TIMESTAMP)
+    boolean utcLtz = input == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+        && (call.getOperands().get(0) instanceof RexInputRef
+            || call.getOperands().get(0) instanceof RexLiteral)
+        && sessionZoneId != null
+        && java.time.ZoneId.of(sessionZoneId).normalized().equals(java.time.ZoneOffset.UTC);
+    return (input == SqlTypeName.DATE || input == SqlTypeName.TIMESTAMP || utcLtz)
         && java.util.Set.of("MONTH", "YEAR")
             .contains(String.valueOf(((RexLiteral) call.getOperands().get(1)).getValue()));
   }
 
-  private static boolean isEpochMillisTimestamp(RexCall call) {
+  private static int nativeEpochTimestamp(RexCall call) {
     if (!"TO_TIMESTAMP_LTZ".equals(call.getOperator().getName())
         || call.getOperands().size() != 2
         || call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.BIGINT
-        || !(call.getOperands().get(1) instanceof RexLiteral)) return false;
+        || !(call.getOperands().get(1) instanceof RexLiteral)) return 0;
     BigDecimal precision = ((RexLiteral) call.getOperands().get(1)).getValueAs(BigDecimal.class);
-    return precision != null && precision.compareTo(BigDecimal.valueOf(3)) == 0;
+    if (precision == null) return 0;
+    if (precision.compareTo(BigDecimal.valueOf(3)) == 0) return 173;
+    return precision.signum() == 0 ? 245 : 0;
   }
 
   private boolean isNativeUnnestTemporalCast(RexCall call) {
@@ -4528,6 +4603,7 @@ final class RexExpression {
         return SqlTypeFamily.CHARACTER.contains(call.getType())
             || temporalTypeCode(call.getType()) >= 0
             || call.getType().getSqlTypeName() == SqlTypeName.DECIMAL
+                && !nativeMixedExactExtremum(call)
                 && call.getOperands().stream()
                     .anyMatch(
                         operand ->

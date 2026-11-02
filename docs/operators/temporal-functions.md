@@ -10,16 +10,16 @@ unsupported `MATCH_RECOGNIZE` operator.
 |---|---|
 | `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `LOCALTIME`, `LOCALTIMESTAMP`, `NOW()`, `CURRENT_ROW_TIMESTAMP()` | Rust clock functions; sampled during each batch evaluation, using the session zone for local fields. These nondeterministic functions are admitted by default. |
 | `PROCTIME()`, internal `PROCTIME_MATERIALIZE` | Direct native calls and verified simple COALESCE selections use the Rust execution-time clock. Inside Flink-generated scalar or complete-Calc expressions, materialization reads the owning task's live processing-time service, bound at open and cleared at close. CASE/COALESCE input branches preserve their timestamp precision; materialized values follow Flink's millisecond clock and declared casts. See [generated processing time](calc-filter.md#generated-processing-time). |
-| `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. DATE/plain-TIMESTAMP calendar fields and HOUR/MINUTE/SECOND over plain TIMESTAMP/TIME execute in Rust, preserving Java signed arithmetic. Direct LTZ extraction uses the planning JDK's serialized fixed/finite offset history; recurring-DST zones retain Flink. Interval fields and unverified wrappers remain generated. |
+| `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. DATE/plain-TIMESTAMP calendar fields and HOUR/MINUTE/SECOND over DATE, plain TIMESTAMP and TIME execute in Rust, preserving Java signed arithmetic. Direct LTZ extraction uses the planning JDK's serialized fixed/finite offset history; recurring-DST zones retain Flink. Interval fields and unverified wrappers remain generated. |
 | `TO_DATE(text)`, `TO_DATE(text, format)` | The one-argument parser stays in Rust; formatted parsing uses Flink. Dynamic formats, NULL behavior and invalid-input failures follow Flink. |
 | `TO_TIMESTAMP(text[, format])` | Flink parsing, including dynamic formats and full-range timestamp results. |
-| `TO_TIMESTAMP_LTZ` | Flink's numeric and string overloads, including format and explicit-zone arguments. Flink validates numeric precision (0 or 3). |
+| `TO_TIMESTAMP_LTZ` | Direct/literal BIGINT epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. Ordinary Calc computed inputs, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
 | `DATE_FORMAT`, `UNIX_TIMESTAMP(text[, format])`, `CONVERT_TZ` | Flink evaluation supports dynamic patterns and zones. The existing literal numeric-pattern DATE_FORMAT fast path for plain timestamps remains in Rust. |
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
-| `TIMESTAMPADD`, `TIMESTAMPDIFF` | Flink calendar and elapsed-time arithmetic, including its month-end and precision rules. |
-| `FLOOR(timepoint TO unit)`, `CEIL`, `CEILING` | DATE/plain-TIMESTAMP MONTH/YEAR and plain TIMESTAMP DAY/HOUR/MINUTE/SECOND/MILLISECOND use Rust kernels. Other units/types retain Flink. Numeric FLOOR/CEIL admission is unchanged. |
-| Temporal `CAST`, date/time/timestamp/interval literals, interval arithmetic, temporal comparisons, `OVERLAPS` | Timestamp +/- day-time/year-month intervals, DATE +/- month intervals and verified day literals, and TIME +/- day-time intervals execute in Rust. Timestamp results preserve nanoseconds. Matching temporal GREATEST/LEAST operands use native null-propagating comparisons. Other casts, comparisons, OVERLAPS and interval computations retain generated subexpressions. |
+| `TIMESTAMPADD`, `TIMESTAMPDIFF` | Planner rewrites can use native interval arithmetic and comparisons. Verified runtime MONTH/DAY addition, MONTH difference and LTZ SECOND difference have no generated children; other rewrites retain their existing expression admission. Month-end and precision rules follow Flink. |
+| `FLOOR(timepoint TO unit)`, `CEIL`, `CEILING` | DATE/plain-TIMESTAMP MONTH/YEAR and plain TIMESTAMP DAY/HOUR/MINUTE/SECOND/MILLISECOND use Rust kernels. Direct/literal LTZ FLOOR/CEIL to MONTH/YEAR also uses the existing kernel in fixed zero-offset zones. Other LTZ units, nonzero/regional zones and computed inputs retain their existing routes. Numeric FLOOR/CEIL admission is unchanged. |
+| Temporal `CAST`, date/time/timestamp/interval literals, interval arithmetic, temporal comparisons, `OVERLAPS` | Timestamp +/- day-time/year-month intervals, DATE +/- month intervals and verified day literals, and TIME +/- day-time intervals execute in Rust. Timestamp results preserve nanoseconds. Matching temporal GREATEST/LEAST operands use native null-propagating comparisons. OVERLAPS can rewrite to native comparisons, including the verified runtime plain-timestamp/day-time-interval form. Other casts, comparisons and interval computations retain their existing expression admission. |
 | `CURRENT_WATERMARK(time_attribute)` | Calc projections and predicates read the last watermark received by that operator; NULL before its first watermark. Join/UNNEST residuals without a Calc watermark context fall back. |
 | `SOURCE_WATERMARK()` | Source declaration, not a scalar calculation. Existing DataStream/source watermarks are forwarded into the native pipeline. Native connector scan admission is unchanged. |
 | `TUMBLE`, `HOP`, `CUMULATE`, `SESSION` | Native window implementations with released-Flink calendar conversion for regional LTZ zones and nonaligned fixed offsets; existing shape/changelog restrictions remain. See [window aggregate](window-aggregate.md) and [windowing TVF](window-aggregate.md#windowing-tvf-window-assignment). |
@@ -28,6 +28,69 @@ unsupported `MATCH_RECOGNIZE` operator.
 
 Flink still rejects invalid signatures, invalid units and expressions outside their SQL context.
 The inventory describes Flink's functions, not extra overloads supplied by other SQL dialects.
+
+DATE `HOUR(d)`/`MINUTE(d)`/`SECOND(d)` and their EXTRACT aliases follow released Flink's physical-integer
+arithmetic: `(epochDays % 86400000) / 3600000` for HOUR and
+`(epochDays % 3600000) / 60000` for MINUTE, and `(epochDays % 60000) / 1000` for SECOND,
+with signed remainder and truncation
+towards zero. This can be nonzero for large internal DATE values; interpreting every DATE
+as midnight would produce different results. The Arrow kernel preserves NULLs, sliced
+offsets and empty batches without introducing a JVM callback. Runtime regression sources
+carry internal DATE integers directly so the full signed range reaches SQL evaluation.
+For example DATE '2024-01-31' produces SECOND 19 and DATE '0001-01-01' produces
+MINUTE -11 and SECOND -59. These match both supported released Flink lines rather
+than an assumed SQL-midnight interpretation.
+The [correctness record](../benchmarks/results/date-clock-extraction-2026-11-02.json)
+retains twelve failing before-fix assertions and twelve passing final SQL invocations across
+Flink 1.18.1/2.2.1 and JDK 11/17, plus the unchanged released extraction oracle and 886
+passing Rust core tests. This repairs existing native results; it is not an acceleration claim.
+
+## Native BIGINT epoch milliseconds
+
+`TO_TIMESTAMP_LTZ(n,3)` for a direct BIGINT column or literal reuses the existing epoch
+millisecond kernel in ordinary Calc expressions. The conversion does not depend on the
+session zone. Both supported released Flink lines return NULL outside the inclusive physical
+millisecond range `[-62167219200000,253402300799999]`; the kernel preserves these exact
+bounds, NULL inputs and declared TIMESTAMP_LTZ(3) output. It does not reinterpret them as
+an assumed year-1-to-year-9999 proleptic range or wrap an invalid long into a valid timestamp.
+
+The two-component Arrow timestamp shares the input's immutable millisecond buffer, creates
+zero nanoseconds and keeps combined input/range validity on the parent. Non-null component
+children remain consistent with the existing schema, including sliced inputs and empty
+batches. No input bytes are modified and the output owns its retained Arrow buffer reference.
+This removes temporary value vectors and their copies without changing JNI or timestamp
+transport. Computed ordinary-Calc operands, other numeric types and runtime/other
+precisions keep their existing routes. No production switch is added.
+
+The [qualification](../benchmarks/scalar-functions.md#bigint-epoch-millisecond-conversion)
+retains stock/actual-previous/native measurements, the initial slower pilot, profiling and
+allocation evidence, and complete jobs with both transposes. Broader conversion work stays
+in [#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
+
+`TO_TIMESTAMP_LTZ(n,0)` also accepts direct BIGINT columns/literals. It checks the original
+seconds against the inclusive released range `[-62167219200,253402300799]` before scaling
+to milliseconds. In particular, an invalid long must not wrap into the timestamp range
+when multiplied by 1000. It uses the same parent validity/two-component representation,
+with a new immutable millisecond buffer and zero sub-millisecond nanos. Session zones do
+not affect the numeric conversion. The admission does not extend computed UNNEST inputs,
+numeric precision or the string/format overloads.
+
+## Native UTC LTZ calendar rounding
+
+FLOOR/CEIL to MONTH/YEAR over a direct LTZ input or literal reuses the plain-timestamp calendar
+kernel when the configured session zone normalizes to the fixed UTC offset. This includes
+UTC, Z and fixed zero-offset aliases; a regional zone with a current/raw offset of zero
+does not qualify. Released Flink adds/subtracts no offset in these zones and uses the same
+Julian-date arithmetic, including signed millisecond division, int overflow and the Gregorian
+cutover. Output fractions are zero and the declared SQL precision is retained.
+
+Computed inputs, nonzero/regional zones and other units keep their existing paths.
+In particular, fixed-unit LTZ CEIL has different submillisecond/overflow behavior from plain
+TIMESTAMP CEIL, so the plain kernel is not a blanket replacement. This adds no new native
+kernel, JNI bridge or switch. The separate
+[FLOOR](../benchmarks/scalar-functions.md#utc-ltz-calendar-floor) and
+[CEIL](../benchmarks/scalar-functions.md#utc-ltz-calendar-ceil) qualifications record
+stock/actual-previous/native timings and complete jobs with both transposes.
 
 ## Native FROM_UNIXTIME
 
@@ -103,10 +166,24 @@ both row/Arrow transposes, are on the [scalar benchmark page](../benchmarks/scal
 ## Remaining native boundaries
 
 [Issue #504](https://github.com/datafusion-contrib/StreamFusion/issues/504) still tracks
-TIMESTAMPADD/TIMESTAMPDIFF rewrites with generated interval/scalar children, recurring-DST
-LTZ extraction and rounding, mixed temporal coercions and OVERLAPS. A native outer arithmetic
-kernel does not establish that a generated child also ran in Rust. Native execution tests
-inspect complete expression assignments, including rowtime-materialization children.
+LTZ rounding outside the direct/literal fixed-zero MONTH/YEAR subset and recurring-DST LTZ
+extraction. Runtime FLOOR(LTZ TO DAY) retains generated evaluation even in UTC, Asia/Shanghai
+and GMT+05:30. MONTH/YEAR rounding in nonzero/regional zones also retains it.
+America/New_York extraction retains it because the zone has recurring future DST transitions.
+
+The [expanded route audit](../benchmarks/results/calendar-residual-routes-2026-11-02.json)
+compares 128 independent queries, each with 5,003 runtime rows, across Flink 1.18.1/2.2.1,
+JDK 11/17 and those four zones. It predates the bounded UTC calendar rounding admission;
+its original CEIL(LTZ TO MONTH) route is retained as historical evidence.
+Direct runtime TIMESTAMPADD(MONTH/DAY),
+TIMESTAMPDIFF(MONTH), TIMESTAMPDIFF(SECOND over LTZ) and the inspected plain-timestamp
+OVERLAPS form are already native, with complete parity, consumed Calc work, no fallback
+and empty evaluators. The two TIMESTAMPDIFF arguments come from distinct runtime columns
+so the difference cannot fold to zero. These forms are not remaining blanket gaps.
+
+Other units, mixed temporal coercions, interval extraction and rowtime wrappers require their
+own expression-route checks. A native outer arithmetic kernel does not establish that a
+generated child also ran in Rust, and this audit does not qualify every possible rewrite.
 
 Matching logical timestamp extrema accept both compact millisecond arrays and full
 millisecond/nanosecond component arrays, including mixtures produced by collection expressions.

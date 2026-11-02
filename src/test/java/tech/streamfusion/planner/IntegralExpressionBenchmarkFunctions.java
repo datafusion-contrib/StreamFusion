@@ -32,6 +32,18 @@ public final class IntegralExpressionBenchmarkFunctions {
   private static boolean booleanOutput;
   private static boolean stringOutput;
   private static volatile long consumed;
+  private static final long[] TIMESTAMP_EPOCHS = {Long.MIN_VALUE, Long.MAX_VALUE,
+      -62135596800000L, -12219292800000L, -2208988800000L, -86400001, -1, 0, 1,
+      951827696123L, 1706659200000L, 1710037800000L, 253402300799999L};
+  private static final long[] EPOCH_MILLIS = {Long.MIN_VALUE, Long.MAX_VALUE,
+      -62167219200001L, -62167219200000L, -62167219199999L,
+      253402300799999L, 253402300800000L, -62135596800000L, -12219292800000L,
+      -86400001, -1, 0, 1, 951827696123L, 1706659200000L, 1710037800000L};
+  private static final long[] EPOCH_SECONDS = {Long.MIN_VALUE, Long.MAX_VALUE,
+      Long.MIN_VALUE / 1000 - 1, Long.MAX_VALUE / 1000 + 1,
+      -62167219201L, -62167219200L, -62167219199L, 253402300798L,
+      253402300799L, 253402300800L, -62135596800L, -12219292800L,
+      -86401, -1, 0, 1, 951827696, 1706659200, 1710037800};
 
   private IntegralExpressionBenchmarkFunctions() {}
 
@@ -40,22 +52,34 @@ public final class IntegralExpressionBenchmarkFunctions {
     Thread.currentThread().setContextClassLoader(IntegralExpressionBenchmarkFunctions.class.getClassLoader());
     type = element;
     var table = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
+    boolean timestampInput = type.startsWith("TIMESTAMP_LTZ(") || epochMillisInput() || epochSecondsInput();
+    if (timestampInput) table.getConfig().setLocalTimeZone(
+        java.time.ZoneId.of(System.getProperty("sf.integral.zone", "UTC")));
     table.getConfig().set("table.exec.legacy-cast-behaviour",
         Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
     String declaration = type + (nullable ? "" : " NOT NULL");
-    table.executeSql("CREATE TABLE inputs(v " + declaration + ") WITH ('connector'='datagen')");
+    String secondary = System.getProperty("sf.integral.secondaryType", "");
+    if (!secondary.isEmpty() && !List.of("INT", "BIGINT").contains(secondary))
+      throw new IllegalArgumentException("Unsupported secondary input " + secondary);
+    String secondaryDeclaration = secondary + (nullable ? "" : " NOT NULL");
+    table.executeSql("CREATE TABLE inputs(v " + declaration
+        + (secondary.isEmpty() ? "" : ",n " + secondaryDeclaration)
+        + ") WITH ('connector'='datagen')");
     String expression = System.getProperty("sf.integral.expression", "ABS(v+CAST(1 AS $TYPE))")
         .replace("$TYPE", type);
     var query = ((TableImpl) table.sqlQuery("SELECT " + expression + " FROM inputs")).getQueryOperation();
     var project = (Project) ((PlannerQueryOperation) query).getCalciteTree();
     LogicalType inputType = LogicalTypeParser.parse(declaration, getLoader());
+    LogicalType[] inputTypes = secondary.isEmpty() ? new LogicalType[] {inputType}
+        : new LogicalType[] {inputType, LogicalTypeParser.parse(secondaryDeclaration, getLoader())};
     LogicalType outputType = FlinkTypeFactory.toLogicalType(project.getProjects().get(0).getType());
     booleanOutput = outputType.getTypeRoot() == LogicalTypeRoot.BOOLEAN;
     stringOutput = outputType.getTypeRoot() == LogicalTypeRoot.VARCHAR
         || outputType.getTypeRoot() == LogicalTypeRoot.CHAR;
-    boolean configuredCast = stringOutput || type.equals("BOOLEAN") || type.startsWith("DECIMAL(");
+    boolean configuredCast = stringOutput || type.equals("BOOLEAN") || type.startsWith("DECIMAL(")
+        || timestampInput;
     stock = FlinkExpressionGenerator.generate(project.getProjects(), null,
-        new LogicalType[] {inputType}, RowType.of(outputType), table.getConfig(), getLoader());
+        inputTypes, RowType.of(outputType), table.getConfig(), getLoader());
     var context = new FunctionContext(null) {
       @Override public ClassLoader getUserCodeClassLoader() { return getLoader(); }
     };
@@ -91,10 +115,12 @@ public final class IntegralExpressionBenchmarkFunctions {
     }
     if (encoded == null && !fallbackControl)
       throw new IllegalStateException("Expected an admitted integer expression");
-    var serializer = new RowDataSerializer(RowType.of(inputType));
+    var serializer = new RowDataSerializer(RowType.of(inputTypes));
     rows = new RowData[count];
     for (int i = 0; i < count; i++) {
-      RowData row = GenericRowData.of(nullable && i % 7 == 0 ? null : value(type, i));
+      Object primary = nullable && i % 7 == 0 ? null : value(type, i);
+      RowData row = secondary.isEmpty() ? GenericRowData.of(primary)
+          : GenericRowData.of(primary, nullable && i % 11 == 0 ? null : value(secondary, i + 3));
       rows[i] = binary ? serializer.toBinaryRow(row).copy() : row;
     }
     if (fallbackControl) {
@@ -156,12 +182,18 @@ public final class IntegralExpressionBenchmarkFunctions {
       case "TINYINT": return row % 17 == 0 ? Byte.MIN_VALUE : (byte) v;
       case "SMALLINT": return row % 17 == 0 ? Short.MIN_VALUE : (short) v;
       case "INT": return row % 17 == 0 ? Integer.MIN_VALUE : (int) ((row % 2 == 0 ? -1L : 1L) * v);
-      case "BIGINT": return row % 17 == 0 ? Long.MIN_VALUE
+      case "BIGINT": return epochSecondsInput() ? epochSeconds(row)
+          : epochMillisInput() ? epochMillis(row) : row % 17 == 0 ? Long.MIN_VALUE
           : (row % 2 == 0 ? -1L : 1L) * (9007199254740993L + v);
+      case "TIMESTAMP_LTZ(3)": return org.apache.flink.table.data.TimestampData.fromEpochMillis(
+          temporalMillis(row));
+      case "TIMESTAMP_LTZ(9)": return org.apache.flink.table.data.TimestampData.fromEpochMillis(
+          temporalMillis(row), (row * 7919) % 1000000);
       default:
         int precision;
         int scale;
         switch (type) {
+          case "DECIMAL(4,2)": precision = 4; scale = 2; break;
           case "DECIMAL(18,2)": precision = 18; scale = 2; break;
           case "DECIMAL(19,19)": precision = 19; scale = 19; break;
           case "DECIMAL(38,18)": precision = 38; scale = 18; break;
@@ -170,9 +202,35 @@ public final class IntegralExpressionBenchmarkFunctions {
         }
         BigInteger maximum = BigInteger.TEN.pow(precision).subtract(BigInteger.ONE);
         BigInteger unscaled = row % 17 == 0 ? maximum : row % 17 == 1 ? maximum.negate()
-            : BigInteger.valueOf((row % 2 == 0 ? -1L : 1L) * (9007199254740993L + v));
+            : BigInteger.valueOf((row % 2 == 0 ? -1L : 1L)
+                * (precision == 4 ? v % 10000 : 9007199254740993L + v));
         return DecimalData.fromBigDecimal(new BigDecimal(unscaled, scale), precision, scale);
     }
+  }
+
+  public static long temporalMillis(long row) {
+    int index = (int) (row % TIMESTAMP_EPOCHS.length);
+    return TIMESTAMP_EPOCHS[index] + (index < 2 ? 0 : row / TIMESTAMP_EPOCHS.length * 7919);
+  }
+
+  private static boolean epochMillisInput() {
+    return Boolean.getBoolean("sf.integral.epochMillisInput")
+        || "epoch-millis".equals(System.getenv("SF_INTEGRAL_CORPUS"));
+  }
+
+  public static long epochMillis(long row) {
+    int index = (int) (row % EPOCH_MILLIS.length);
+    return EPOCH_MILLIS[index] + (index < 7 ? 0 : row / EPOCH_MILLIS.length * 7919);
+  }
+
+  private static boolean epochSecondsInput() {
+    return Boolean.getBoolean("sf.integral.epochSecondsInput")
+        || "epoch-seconds".equals(System.getenv("SF_INTEGRAL_CORPUS"));
+  }
+
+  public static long epochSeconds(long row) {
+    int index = (int) (row % EPOCH_SECONDS.length);
+    return EPOCH_SECONDS[index] + (index < 10 ? 0 : row / EPOCH_SECONDS.length * 7919);
   }
 
   public static long[] measure(int loops) throws Exception {

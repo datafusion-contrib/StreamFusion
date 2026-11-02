@@ -1,0 +1,114 @@
+{
+  "problem": "Released DATE clock-field extraction uses signed arithmetic on the physical integer",
+  "original_canonical_base": "b0eb507c6adde40b2e8ddc79f726daf843981ea7",
+  "before": {
+    "22-11": {
+      "exit": 1,
+      "result": [
+        "RESULT found=3 succeeded=0 aborted=0 skipped=0 failed=3"
+      ]
+    },
+    "22-17": {
+      "exit": 1,
+      "result": [
+        "RESULT found=3 succeeded=0 aborted=0 skipped=0 failed=3"
+      ]
+    },
+    "118-11": {
+      "exit": 1,
+      "result": [
+        "RESULT found=3 succeeded=0 aborted=0 skipped=0 failed=3"
+      ]
+    },
+    "118-17": {
+      "exit": 1,
+      "result": [
+        "RESULT found=3 succeeded=0 aborted=0 skipped=0 failed=3"
+      ]
+    },
+    "source_sha256": "cb8ec302d501944a49ffefd46d74ca67c4a8c71215efc18d3fac24900d867baa"
+  },
+  "after": {
+    "22-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=3 succeeded=3 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "22-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=3 succeeded=3 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=3 succeeded=3 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=3 succeeded=3 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "source_sha256": "3fc245854e61395d16c73b972a751428e22a023560dfc6941aa716bf614a8756",
+    "native_source_sha256": "841b4bd6257a64143c7dadcdc0757762ac0a735f060b6cbd37decd9cf9bbf778",
+    "dso_sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98"
+  },
+  "unchanged_released_stock_oracle": {
+    "22-11": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    },
+    "22-17": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    },
+    "118-11": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    },
+    "118-17": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    }
+  },
+  "rust_core": {
+    "passed": 886,
+    "failed": 0,
+    "ignored": 0,
+    "features": "no-default-features"
+  },
+  "runtime_contract": {
+    "rows_per_unit_per_pair": 5003,
+    "units": [
+      "HOUR",
+      "MINUTE",
+      "SECOND"
+    ],
+    "checks": [
+      "complete value maps",
+      "resolved SQL types",
+      "NULLs",
+      "unique IDs/cardinality",
+      "EXTRACT aliases",
+      "comparison consumer",
+      "consumed NativeCalc input",
+      "no fallback",
+      "empty evaluator descriptors"
+    ],
+    "internal_DATE_range": "signed i32",
+    "java_release": 11
+  },
+  "performance_claim": "correctness repair for already-admitted functions; no acceleration claim"
+}

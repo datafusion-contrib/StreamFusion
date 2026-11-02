@@ -9,6 +9,7 @@ use jni::objects::JValue;
 use std::{hint::black_box, sync::Arc, time::Instant};
 use streamfusion::bench::CalcProgram;
 use streamfusion_benchmark_support::{measure, report, CountingAllocator};
+use streamfusion_bridge::timestamp::{timestamp_array, TimestampValue};
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
@@ -82,10 +83,14 @@ fn main() {
     let warmups: usize = args.get(6).map_or(12, |s| s.parse().unwrap());
     let runs: usize = args.get(7).map_or(9, |s| s.parse().unwrap());
     let previous = std::env::var("SF_INTEGRAL_PREVIOUS").is_ok();
+    let epoch_millis = std::env::var("SF_INTEGRAL_CORPUS").as_deref() == Ok("epoch-millis");
+    let epoch_seconds = std::env::var("SF_INTEGRAL_CORPUS").as_deref() == Ok("epoch-seconds");
     let expression = std::env::var("SF_INTEGRAL_EXPRESSION")
         .unwrap_or_else(|_| "ABS(v+CAST(1 AS $TYPE))".into());
     let previous_option = format!("-Dsf.integral.previous={previous}");
     let expression_option = format!("-Dsf.integral.expression={expression}");
+    let secondary = std::env::var("SF_INTEGRAL_SECONDARY_TYPE").unwrap_or_default();
+    let secondary_option = format!("-Dsf.integral.secondaryType={secondary}");
     let legacy_option = format!(
         "-Dsf.integral.legacy={}",
         std::env::var("SF_INTEGRAL_LEGACY").is_ok()
@@ -104,6 +109,7 @@ fn main() {
         .option(&lib)
         .option(&previous_option)
         .option(&expression_option)
+        .option(&secondary_option)
         .option(&legacy_option)
         .option("-Xmx1g")
         .option("-Dstreamfusion.native.development=true")
@@ -136,7 +142,7 @@ fn main() {
         .unwrap()
         .into();
     let program: EncodedProgram = serde_json::from_str(&program).unwrap();
-    let value = |i: usize| {
+    let value = |element: &str, i: usize| {
         let v = (i as i64) * 7919;
         match element {
             "TINYINT" => i64::from(if i % 17 == 0 { i8::MIN } else { v as i8 }),
@@ -149,7 +155,62 @@ fn main() {
                 }
             }
             "BIGINT" => {
-                if i % 17 == 0 {
+                if epoch_seconds {
+                    let epochs = [
+                        i64::MIN,
+                        i64::MAX,
+                        i64::MIN / 1000 - 1,
+                        i64::MAX / 1000 + 1,
+                        -62_167_219_201,
+                        -62_167_219_200,
+                        -62_167_219_199,
+                        253_402_300_798,
+                        253_402_300_799,
+                        253_402_300_800,
+                        -62_135_596_800,
+                        -12_219_292_800,
+                        -86_401,
+                        -1,
+                        0,
+                        1,
+                        951_827_696,
+                        1_706_659_200,
+                        1_710_037_800,
+                    ];
+                    let index = i % epochs.len();
+                    epochs[index]
+                        + if index < 10 {
+                            0
+                        } else {
+                            (i / epochs.len()) as i64 * 7919
+                        }
+                } else if epoch_millis {
+                    let epochs = [
+                        i64::MIN,
+                        i64::MAX,
+                        -62_167_219_200_001,
+                        -62_167_219_200_000,
+                        -62_167_219_199_999,
+                        253_402_300_799_999,
+                        253_402_300_800_000,
+                        -62_135_596_800_000,
+                        -12_219_292_800_000,
+                        -86_400_001,
+                        -1,
+                        0,
+                        1,
+                        951_827_696_123,
+                        1_706_659_200_000,
+                        1_710_037_800_000,
+                    ];
+                    let index = i % epochs.len();
+                    epochs[index]
+                        + if index < 7 {
+                            0
+                        } else {
+                            (i / epochs.len()) as i64 * 7919
+                        }
+                } else if i % 17 == 0 {
                     i64::MIN
                 } else {
                     (if i % 2 == 0 { -1 } else { 1 }) * (9_007_199_254_740_993 + v)
@@ -158,7 +219,7 @@ fn main() {
             _ => panic!("Unsupported integer-expression input {element}"),
         }
     };
-    let values = (0..rows).map(|i| (!nullable || i % 7 != 0).then(|| value(i)));
+    let values = (0..rows).map(|i| (!nullable || i % 7 != 0).then(|| value(element, i)));
     let input: ArrayRef = match element {
         "BOOLEAN" => Arc::new(BooleanArray::from_iter(
             (0..rows).map(|i| (!nullable || i % 7 != 0).then_some(i % 2 == 0)),
@@ -167,8 +228,44 @@ fn main() {
         "SMALLINT" => Arc::new(Int16Array::from_iter(values.map(|v| v.map(|v| v as i16)))),
         "INT" => Arc::new(Int32Array::from_iter(values.map(|v| v.map(|v| v as i32)))),
         "BIGINT" => Arc::new(Int64Array::from_iter(values)),
-        "DECIMAL(18,2)" | "DECIMAL(19,19)" | "DECIMAL(38,18)" | "DECIMAL(38,38)" => {
+        "TIMESTAMP_LTZ(3)" | "TIMESTAMP_LTZ(9)" => {
+            let epochs = [
+                i64::MIN,
+                i64::MAX,
+                -62_135_596_800_000,
+                -12_219_292_800_000,
+                -2_208_988_800_000,
+                -86_400_001,
+                -1,
+                0,
+                1,
+                951_827_696_123,
+                1_706_659_200_000,
+                1_710_037_800_000,
+                253_402_300_799_999,
+            ];
+            Arc::new(timestamp_array((0..rows).map(|row| {
+                (!nullable || row % 7 != 0).then(|| {
+                    let index = row % epochs.len();
+                    let millis = epochs[index]
+                        + if index < 2 {
+                            0
+                        } else {
+                            (row / epochs.len()) as i64 * 7919
+                        };
+                    let nanos = if element == "TIMESTAMP_LTZ(9)" {
+                        (row * 7919 % 1_000_000) as u32
+                    } else {
+                        0
+                    };
+                    TimestampValue::new(millis, nanos).unwrap()
+                })
+            })))
+        }
+        "DECIMAL(4,2)" | "DECIMAL(18,2)" | "DECIMAL(19,19)" | "DECIMAL(38,18)"
+        | "DECIMAL(38,38)" => {
             let (precision, scale) = match element {
+                "DECIMAL(4,2)" => (4, 2),
                 "DECIMAL(18,2)" => (18, 2),
                 "DECIMAL(19,19)" => (19, 19),
                 "DECIMAL(38,18)" => (38, 18),
@@ -180,6 +277,9 @@ fn main() {
                 (!nullable || row % 7 != 0).then(|| match row % 17 {
                     0 => maximum,
                     1 => -maximum,
+                    _ if precision == 4 => {
+                        (if row % 2 == 0 { -1 } else { 1 }) * (row as i128 * 7919 % 10_000)
+                    }
                     _ => {
                         (if row % 2 == 0 { -1 } else { 1 })
                             * (9_007_199_254_740_993 + row as i128 * 7919)
@@ -194,15 +294,20 @@ fn main() {
         }
         _ => panic!("Unsupported exact-numeric-expression input {element}"),
     };
-    let batch = RecordBatch::try_new(
-        Arc::new(Schema::new(vec![Field::new(
-            "v",
-            input.data_type().clone(),
-            nullable,
-        )])),
-        vec![input],
-    )
-    .unwrap();
+    let mut fields = vec![Field::new("v", input.data_type().clone(), nullable)];
+    let mut columns = vec![input];
+    if !secondary.is_empty() {
+        let values =
+            (0..rows).map(|i| (!nullable || i % 11 != 0).then(|| value(&secondary, i + 3)));
+        let input: ArrayRef = match secondary.as_str() {
+            "INT" => Arc::new(Int32Array::from_iter(values.map(|v| v.map(|v| v as i32)))),
+            "BIGINT" => Arc::new(Int64Array::from_iter(values)),
+            _ => panic!("Unsupported secondary exact-numeric input {secondary}"),
+        };
+        fields.push(Field::new("n", input.data_type().clone(), nullable));
+        columns.push(input);
+    }
+    let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
     let mut native = CalcProgram::new(
         program.kinds,
         program.payload,

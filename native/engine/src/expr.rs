@@ -240,6 +240,29 @@ pub(crate) fn build_expr(
                 cursor,
             )])
         }
+        47 => {
+            let children = (0..3)
+                .map(|_| {
+                    build_expr(
+                        schema,
+                        kinds,
+                        payload,
+                        child_counts,
+                        longs,
+                        doubles,
+                        strings,
+                        cursor,
+                    )
+                })
+                .collect();
+            datafusion::logical_expr::ScalarUDF::new_from_impl(
+                crate::flink_functions::decimal::DecimalIf::new(
+                    (arg / 100) as u8,
+                    (arg % 100) as i8,
+                ),
+            )
+            .call(children)
+        }
         43 => {
             let target = encoded_field_type(strings[arg].as_deref().expect("ARRAY cast schema"));
             let child = build_expr(
