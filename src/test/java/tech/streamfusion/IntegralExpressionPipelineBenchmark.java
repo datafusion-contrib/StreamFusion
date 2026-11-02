@@ -53,7 +53,8 @@ class IntegralExpressionPipelineBenchmark {
             Object value;
             if (decimalPrecision > 0) {
               BigInteger unscaled = i % 17 == 0 ? maximum : i % 17 == 1 ? maximum.negate()
-                  : BigInteger.valueOf((i % 2 == 0 ? -1L : 1L) * (9007199254740993L + i * 7919L));
+                  : BigInteger.valueOf((i % 2 == 0 ? -1L : 1L)
+                      * (decimalPrecision == 4 ? i * 7919L % 10000 : 9007199254740993L + i * 7919L));
               value = new BigDecimal(unscaled, decimalScale);
             } else if (booleanInput) value = i % 2 == 0;
             else if (bigintInput) value = i % 17 == 0 ? Long.MIN_VALUE

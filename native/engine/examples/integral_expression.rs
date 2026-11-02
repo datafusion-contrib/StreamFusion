@@ -170,8 +170,10 @@ fn main() {
         "SMALLINT" => Arc::new(Int16Array::from_iter(values.map(|v| v.map(|v| v as i16)))),
         "INT" => Arc::new(Int32Array::from_iter(values.map(|v| v.map(|v| v as i32)))),
         "BIGINT" => Arc::new(Int64Array::from_iter(values)),
-        "DECIMAL(18,2)" | "DECIMAL(19,19)" | "DECIMAL(38,18)" | "DECIMAL(38,38)" => {
+        "DECIMAL(4,2)" | "DECIMAL(18,2)" | "DECIMAL(19,19)" | "DECIMAL(38,18)"
+        | "DECIMAL(38,38)" => {
             let (precision, scale) = match element {
+                "DECIMAL(4,2)" => (4, 2),
                 "DECIMAL(18,2)" => (18, 2),
                 "DECIMAL(19,19)" => (19, 19),
                 "DECIMAL(38,18)" => (38, 18),
@@ -183,6 +185,9 @@ fn main() {
                 (!nullable || row % 7 != 0).then(|| match row % 17 {
                     0 => maximum,
                     1 => -maximum,
+                    _ if precision == 4 => {
+                        (if row % 2 == 0 { -1 } else { 1 }) * (row as i128 * 7919 % 10_000)
+                    }
                     _ => {
                         (if row % 2 == 0 { -1 } else { 1 })
                             * (9_007_199_254_740_993 + row as i128 * 7919)

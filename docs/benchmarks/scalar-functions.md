@@ -6790,3 +6790,80 @@ unchanged GreatestLeastFunctionsITCase stock-oracle invocations recorded for GRE
 both extrema functions; they are not claimed as a second new run. Production Rust is unchanged.
 Further mixed numeric and producer scope remains in
 [#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+
+## Mixed exact IF
+
+Direct/literal mixed integer/DECIMAL IF branches use a typed Arrow selector when both
+conversions are lossless and the resolved DECIMAL precision exceeds 18. NULL conditions
+select ELSE; selected NULL values stay NULL. The selector writes one output array without
+filtered batches, separate cast arrays or a merge. Matching branch types retain the existing
+native CASE path. Computed/unverified mixed branches, scale reduction, insufficient integral
+capacity, stateful/volatile calls and compact-result mixed normalization retain their existing
+routes. No JNI, ownership or configuration change is introduced.
+
+The first generic CASE investigation had **16/48 bulk cells slower than stock**. Process
+sampling identified `CaseBody::expr_or_expr`, `arrow_select::merge` and `MutableArrayData::extend`.
+A representative 1,024-row compact-result control went from 109 allocations/68,528 requested
+bytes to 56/20,418 after fusion. Its fused median was still 7.84 ns/row against stock's
+6.78 ns/row, so compact mixed normalization stays generated. The
+[result record](results/mixed-exact-if-2026-11-02.json) preserves this failed matrix and pilot;
+[initial raw trials](results/mixed-exact-if-initial-2026-11-02.csv.gz) are separate from the
+[final raw trials](results/mixed-exact-if-2026-11-02.csv.gz).
+
+The final noncompact matrix retains 72 configurations/7,200 trials against independently
+recompiled actual preceding commit `289b69f0`, on canonical main `b0eb507c`. The candidate
+uses the new release/default-feature/mimalloc DSO; previous controls use their independently
+preserved preceding DSO/executable and the same expanded logical corpus. Apple M4 Pro,
+JDK 17.0.12, one thread, 16 warmups/nine measurements, 131,072 rows/trial and matching prepared
+GenericRowData/BinaryRowData/Arrow inputs follow the preceding extrema method. Timing stays
+inside Rust and includes intrinsic JVM callbacks, allocations, conversions and output consumption;
+initial JNI/import/export and perimeter transposes are outside this small-function timer.
+Every trial checksum agrees and the admitted candidate requires empty evaluators.
+
+DECIMAL(4,2)/(18,2)/(19,19)/(38,18) with INT/BIGINT, both branch orders, NULL/NOT NULL,
+signed extrema and large coefficients use `IF(n>=0,v,n)>0 OR CAST(NULL AS BOOLEAN)`.
+Every selected bulk combination resolves to precision greater than 18. This measures a nullable
+BOOLEAN consumer, not final DECIMAL output. Bulk batches have 1,024 rows and tiny controls 16.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 1.051-5.253x | 6.298-12.165x | 0 |
+| 1.18.1 | tiny control | 12 | 0.065-0.326x | 6.936-8.202x | 12 |
+| 2.2.1 | bulk | 24 | 1.523-5.820x | 5.314-14.075x | 0 |
+| 2.2.1 | tiny control | 12 | 0.066-0.319x | 7.117-8.761x | 12 |
+
+All 48 bulk medians beat stock and previous. All 24 tiny controls remain slower than stock.
+Eight complete million-row source/blackhole jobs retain startup, JNI and both transposes, at
+parallelism one with two warmups/five measurements. `fractional-int` uses DECIMAL(19,19)/INT;
+`compact-bigint` uses DECIMAL(18,2)/BIGINT (the resolved result is noncompact); `wide-bigint`
+uses DECIMAL(38,18)/BIGINT; `fractional-bigint` uses DECIMAL(19,19)/BIGINT. Seconds are median
+(min-max); independent stock controls and unfavorable samples remain recorded.
+
+| Flink / inputs | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / fractional-int | 0.207477 (0.201241-0.208401) | 0.223703 (0.215123-0.231077) | 0.202862 (0.196273-0.206931) | 0.275605 (0.272918-0.285621) |
+| 1.18.1 / compact-bigint | 0.215457 (0.205784-0.220610) | 0.224521 (0.213762-0.234266) | 0.202049 (0.192554-0.209908) | 0.258307 (0.256854-0.272890) |
+| 1.18.1 / wide-bigint | 0.202431 (0.198542-0.209724) | 0.220264 (0.214817-0.227628) | 0.205333 (0.200273-0.229048) | 0.293870 (0.281837-0.301714) |
+| 1.18.1 / fractional-bigint | 0.213749 (0.211021-0.221769) | 0.232539 (0.227125-0.249843) | 0.206994 (0.200390-0.297613) | 0.293367 (0.268386-0.505663) |
+| 2.2.1 / fractional-int | 0.204839 (0.202637-0.214151) | 0.235065 (0.228285-0.237179) | 0.212130 (0.208221-0.220079) | 0.282727 (0.272990-0.290860) |
+| 2.2.1 / compact-bigint | 0.199342 (0.197950-0.216623) | 0.217757 (0.211355-0.227652) | 0.191884 (0.185234-0.202888) | 0.253936 (0.243814-0.262679) |
+| 2.2.1 / wide-bigint | 0.206973 (0.199895-0.215854) | 0.235268 (0.226704-0.252028) | 0.202695 (0.195838-0.210014) | 0.277684 (0.274433-0.317087) |
+| 2.2.1 / fractional-bigint | 0.213100 (0.206608-0.223398) | 0.230963 (0.227135-0.242107) | 0.205177 (0.198572-0.223956) | 0.275922 (0.266477-0.288107) |
+
+Native/stock elapsed ratios span 1.042-1.148: every measured complete job remains slower
+than stock. Native/previous ratios span 0.750-0.869. This establishes improved function work
+and previous-path costs, not whole-job acceleration.
+
+The new Rust selector passes scalar, nullable array, sliced-offset, full-BIGINT and empty-input
+regressions; 883 core tests pass with `--no-default-features`. The released upstream
+`ScalarFunctionsTest.testIf` stock oracle passes on Flink 1.18.1/2.2.1 with JDK 11/17.
+All 538 final focused JVM invocations pass (two released-1.18 negative-TIME controls abort
+as expected), plus 48 fixture smokes. Runtime SQL witnesses compare complete 5,003-row
+outputs, schemas, NULLs, IDs/cardinality,
+consumers, grouping, lazy branches, selected failures, empty filtered batches and current
+DECIMAL projection defaults, requiring consumed native work and empty evaluators for admitted
+paths. Final source hashes and focused results accompany the measurement record. A final
+admission-only restriction preserves matching-type CASE; measured mixed-signature lowering
+is unchanged. Further producers, compact mixed normalization and rounding remain in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).

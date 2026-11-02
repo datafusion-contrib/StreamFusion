@@ -62,6 +62,32 @@ time final DECIMAL output or establish universal complete-job acceleration.
 
 See the [complete results and measured boundaries](../benchmarks/scalar-functions.md#decimal-abs-over-arithmetic).
 
+## Proven DECIMAL selection
+
+Mixed integer/DECIMAL IF proves that both branches are direct inputs/literals with lossless
+conversion to Flink's resolved noncompact DECIMAL type (precision greater than 18).
+A typed selector reads each condition once, takes
+the selected value and rescales it directly into one output array. NULL conditions select ELSE;
+NULL selected values stay NULL. Literals stay scalar, sliced offsets remain valid, and every
+output retains the resolved precision/scale. No filtered RecordBatches, separate branch cast
+arrays or generic merge are needed.
+
+This follows Comet's CASE principle: bypass filtering only after proving that evaluating
+branch inputs cannot introduce a failure or side effect. Our proof is intentionally limited
+to exact numeric leaves; arbitrary CASE, computed mixed branches, UDFs and volatile calls
+retain their existing paths. The existing typed DECIMAL expression encoding carries the
+result metadata, and the kernel reuses the released-Flink decimal rescaler. This does not
+generalize Spark coercion rules to Flink.
+
+The initial generic CASE qualification had 16/48 bulk cells slower than stock. A five-second
+process sample identifies CASE filtering/merge and MutableArrayData copies; a representative
+1,024-row compact control requests 68,528 bytes in 109 allocations. Fusing the selector reduces
+that control to 20,418 bytes in 56 allocations, but its 7.84 ns/row still loses to stock's
+6.78 ns/row. Mixed normalization to a compact result therefore retains generated evaluation;
+matching-type compact branches keep their existing native CASE path. The failed investigation,
+all initial trials and final measurements remain in the
+[separate qualification](../benchmarks/scalar-functions.md#mixed-exact-if).
+
 ## Certified string builtins
 
 A verified ASCII batch runs regex, LIKE ESCAPE and SIMILAR matching in Rust. Its original

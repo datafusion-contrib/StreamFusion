@@ -172,6 +172,7 @@ public final class IntegralExpressionBenchmarkFunctions {
         int precision;
         int scale;
         switch (type) {
+          case "DECIMAL(4,2)": precision = 4; scale = 2; break;
           case "DECIMAL(18,2)": precision = 18; scale = 2; break;
           case "DECIMAL(19,19)": precision = 19; scale = 19; break;
           case "DECIMAL(38,18)": precision = 38; scale = 18; break;
@@ -180,7 +181,8 @@ public final class IntegralExpressionBenchmarkFunctions {
         }
         BigInteger maximum = BigInteger.TEN.pow(precision).subtract(BigInteger.ONE);
         BigInteger unscaled = row % 17 == 0 ? maximum : row % 17 == 1 ? maximum.negate()
-            : BigInteger.valueOf((row % 2 == 0 ? -1L : 1L) * (9007199254740993L + v));
+            : BigInteger.valueOf((row % 2 == 0 ? -1L : 1L)
+                * (precision == 4 ? v % 10000 : 9007199254740993L + v));
         return DecimalData.fromBigDecimal(new BigDecimal(unscaled, scale), precision, scale);
     }
   }

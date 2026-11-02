@@ -88,6 +88,7 @@ final class RexExpression {
   private static final int KIND_CERTIFIED_BUILTIN = 44;
   private static final int KIND_ZONED_EXTRACT = 45;
   private static final int KIND_COLLECTION_CAST = 46;
+  private static final int KIND_DECIMAL_IF = 47;
   // A narrowing cast to an integer type: payload is the target integer type code (CAST_TINYINT..
   // CAST_BIGINT), one child. Built natively as a wrapping/saturating kernel matching Flink's
   // primitive
@@ -2369,17 +2370,23 @@ final class RexExpression {
           break;
       }
       if (!supportedType) return reject("IF requires a verified scalar result type");
+      boolean mixedExact = nativeMixedExactIf(call);
       if (!RexUtil.isDeterministic(call)
           || containsScalarUdf(call)
-          || call.getOperands().subList(1, 3).stream()
-              .anyMatch(
-                  operand ->
-                      !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
-                          operand.getType(), call.getType()))) {
+          || (!mixedExact
+              && call.getOperands().subList(1, 3).stream()
+                  .anyMatch(
+                      operand ->
+                          !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
+                              operand.getType(), call.getType())))) {
         // Flink inserts branch casts in codegen and can hoist volatile/UDF evaluation.
         return emitHostExpression(call, true);
       }
-      add(KIND_CALL, opCode(SqlKind.CASE), 3);
+      if (mixedExact) {
+        add(KIND_DECIMAL_IF, call.getType().getPrecision() * 100 + call.getType().getScale(), 3);
+      } else {
+        add(KIND_CALL, opCode(SqlKind.CASE), 3);
+      }
       for (RexNode operand : call.getOperands()) {
         if (!emit(operand)) return false;
       }
@@ -3168,10 +3175,7 @@ final class RexExpression {
     if (nativeMixedExactExtremum(call)) {
       add(KIND_CALL, op, args.size());
       for (RexNode arg : args) {
-        if (!org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(arg.getType(), result)) {
-          add(KIND_CAST_DECIMAL, result.getPrecision() * 100 + result.getScale(), 1);
-        }
-        if (!emit(arg)) return false;
+        if (!emitDecimalCoercion(arg, result)) return false;
       }
       return true;
     }
@@ -4297,23 +4301,48 @@ final class RexExpression {
     if (!("GREATEST".equalsIgnoreCase(name) || "LEAST".equalsIgnoreCase(name))
         || result.getSqlTypeName() != SqlTypeName.DECIMAL
         || call.getOperands().size() < 2) return false;
-    int integerDigits = result.getPrecision() - result.getScale();
     for (RexNode operand : call.getOperands()) {
-      if (!(operand instanceof RexInputRef || operand instanceof RexLiteral)) return false;
+      if (!losslessExactDecimalLeaf(operand, result)) return false;
       RelDataType source = operand.getType();
-      if (SqlTypeFamily.INTEGER.contains(source)) {
-        if (integerDigits < source.getPrecision()) return false;
-      } else if (source.getSqlTypeName() == SqlTypeName.DECIMAL) {
-        if (source.getScale() > result.getScale()
-            || source.getPrecision() - source.getScale() > integerDigits) return false;
+      if (source.getSqlTypeName() == SqlTypeName.DECIMAL) {
         // Released numericCasting dereferences a DECIMAL before checking its NULL flag.
         if (source.isNullable()
             && !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(source, result)) {
           return false;
         }
-      } else return false;
+      }
     }
     return true;
+  }
+
+  private static boolean nativeMixedExactIf(RexCall call) {
+    return call.getType().getSqlTypeName() == SqlTypeName.DECIMAL
+        && call.getType().getPrecision() > 18
+        && call.getOperands().size() == 3
+        && call.getOperands().subList(1, 3).stream()
+            .anyMatch(
+                branch ->
+                    !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
+                        branch.getType(), call.getType()))
+        && call.getOperands().subList(1, 3).stream()
+            .allMatch(branch -> losslessExactDecimalLeaf(branch, call.getType()));
+  }
+
+  private static boolean losslessExactDecimalLeaf(RexNode operand, RelDataType result) {
+    if (!(operand instanceof RexInputRef || operand instanceof RexLiteral)) return false;
+    RelDataType source = operand.getType();
+    int integerDigits = result.getPrecision() - result.getScale();
+    if (SqlTypeFamily.INTEGER.contains(source)) return integerDigits >= source.getPrecision();
+    return source.getSqlTypeName() == SqlTypeName.DECIMAL
+        && source.getScale() <= result.getScale()
+        && source.getPrecision() - source.getScale() <= integerDigits;
+  }
+
+  private boolean emitDecimalCoercion(RexNode operand, RelDataType result) {
+    if (!org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(operand.getType(), result)) {
+      add(KIND_CAST_DECIMAL, result.getPrecision() * 100 + result.getScale(), 1);
+    }
+    return emit(operand);
   }
 
   private static boolean nativeTemporalExtremum(RexCall call) {
