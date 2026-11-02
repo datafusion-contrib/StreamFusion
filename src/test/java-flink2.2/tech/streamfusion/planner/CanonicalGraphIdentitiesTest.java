@@ -30,6 +30,36 @@ import tech.streamfusion.operator.RowDataToArrowOperator;
 class CanonicalGraphIdentitiesTest {
   @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory;
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void generatedStockSourceIdsDependOnChainabilityDuringRescale(boolean chaining) {
+    String before = generatedSourceHash(1, chaining);
+    String rescaled = generatedSourceHash(3, chaining);
+    if (chaining) assertNotEquals(before, rescaled);
+    else assertEquals(before, rescaled);
+  }
+
+  private String generatedSourceHash(int parallelism, boolean chaining) {
+    var environment = StreamExecutionEnvironment.getExecutionEnvironment();
+    environment.setParallelism(1);
+    if (!chaining) environment.disableOperatorChaining();
+    var source = environment.fromData(org.apache.flink.api.common.typeinfo.Types.INT, 1);
+    source
+        .map((MapFunction<Integer, Integer>) value -> value)
+        .returns(org.apache.flink.api.common.typeinfo.Types.INT)
+        .setParallelism(parallelism)
+        .sinkTo(
+            FileSink.forRowFormat(
+                    new Path(directory.resolve("generated-identity").toUri()),
+                    new SimpleStringEncoder<Integer>())
+                .build())
+        .setParallelism(1);
+    var graph = environment.getStreamGraph(false);
+    assertNull(graph.getStreamNode(source.getId()).getTransformationUID());
+    return hex(
+        new StreamGraphHasherV2().traverseStreamGraphAndGenerateHashes(graph).get(source.getId()));
+  }
+
   @Test
   void unionInputsAndRepeatedEdgesSurviveHelperElision() {
     for (boolean repeated : List.of(false, true)) {

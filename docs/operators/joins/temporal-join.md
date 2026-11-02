@@ -153,3 +153,15 @@ errors or skips: these 26 jobs, four interval job controls and 210 temporal/stoc
 Component and upstream cohorts overlap this selection and are not added cumulatively. Every
 operator family remains partial under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+
+The compiled-plan matrix also passes all 26 scenarios with explicit SQL UID generation disabled.
+Automatic state registration uses the actual native primary IDs, while the canonical artifact
+keeps the original stock IDs. Both engine orders/stores, no-input re-export, native checkpoint
+recovery and 64-key rescaling retain the scope above. Generated-ID rescaling disables chaining
+from the initial job on both engines, preserving stock IDs across changes in parallelism. Stock
+itself rejects the original chained generated-ID graph when its chain boundaries change. Six
+cross-family identity controls compare registered contract keys with the real runtime hashes; explicit-UID controls still pass. This
+removes the UID prerequisite from the qualified compiled-plan workflow. Ordinary SQL optimizer
+integration and the remaining #569 matrix stay open. See
+[generated operator IDs](../../backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans).

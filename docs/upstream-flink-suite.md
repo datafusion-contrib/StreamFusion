@@ -1559,3 +1559,14 @@ version-history oracle. These StreamFusion-owned fixtures preserve all probes un
 and do not qualify intermediate temporal-output commit failures. They complement the unchanged
 released upstream programs; they do not replace their assertions or complete the broader #569
 connector/failure/version/ordinary-SQL matrix. Benchmarking remains deferred.
+
+
+After changing state registration to use actual runtime primary IDs, all 15 unchanged released
+2.2.1 temporal/interval/window restore programs pass on each engine. The native audit verifies
+12 actual join state imports with continued native input, two stock window SEMI/ANTI owners and
+one join elided by Flink. These retain the released programs' original UID settings. Separate
+StreamFusion integration jobs qualify 34 generated-ID round trips and ten explicit-UID controls;
+124 planner/identity and 249 job/runtime/metadata checks pass. The generated-ID job scope is
+listed in [canonical state coverage](backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans).
+Ordinary-SQL optimizer and broader connector/type/version/failure qualification remain open;
+benchmarking is deferred.

@@ -138,7 +138,7 @@ class CanonicalTemporalJoinJobTest {
     return expected;
   }
 
-  private static void rescaleInput(Path root) throws Exception {
+  void rescaleInput(Path root) throws Exception {
     var left = new ArrayList<String>();
     var right = new ArrayList<String>();
     for (int round = 0; round < 6; round++)
@@ -150,7 +150,7 @@ class CanonicalTemporalJoinJobTest {
     Files.write(root.resolve("right-input.csv"), right);
   }
 
-  private Path prepare(String name, String kind, boolean residual) throws Exception {
+  Path prepare(String name, String kind, boolean residual) throws Exception {
     var root = directory.resolve(name);
     Files.createDirectories(root);
     Files.write(

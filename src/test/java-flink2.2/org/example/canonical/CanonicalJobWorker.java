@@ -112,6 +112,7 @@ public final class CanonicalJobWorker {
             cluster, config, parallelism, java.util.List.of(), java.util.List.of());
     environment.setParallelism(parallelism);
     environment.setMaxParallelism(128);
+    if (Files.exists(root.resolve("disable-chaining"))) environment.disableOperatorChaining();
     if (Files.exists(root.resolve("eager-watermarks")))
       environment.getConfig().setAutoWatermarkInterval(1);
     if (nativeCheckpoint) environment.enableCheckpointing(TimeUnit.HOURS.toMillis(1));
@@ -126,6 +127,12 @@ public final class CanonicalJobWorker {
               environment,
               EnvironmentSettings.newInstance().inStreamingMode().withClassLoader(loader).build());
       table.getConfig().set("streamfusion.native.enabled", Boolean.toString(nativeRun));
+      if (Files.exists(root.resolve("uid-generation")))
+        table
+            .getConfig()
+            .set(
+                "table.exec.uid.generation",
+                Files.readString(root.resolve("uid-generation")).trim());
       if (Files.exists(root.resolve("time-zone")))
         table
             .getConfig()

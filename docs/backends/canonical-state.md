@@ -621,3 +621,41 @@ errors or skips: these 26 jobs, four interval job controls and 210 temporal/stoc
 Component and upstream cohorts overlap this selection and are not added cumulatively. Every
 operator family remains partial under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+## Generated operator IDs in qualified compiled plans
+
+Temporal, interval and window join bindings also work with `table.exec.uid.generation=DISABLED`.
+State contracts are registered against the actual primary IDs of the completed native runtime
+graph, after any explicit UIDs have been applied. They no longer infer the runtime ID by hashing
+a required UID string. Canonical metadata still projects the complete source/operator/sink graph
+to the original stock primary IDs in both directions. No invented UID, manual mapping or
+unmatched-state allowance is needed. Native checkpoints retain their native IDs and state paths.
+
+The independent clean selection passes 373 checks with no failures, errors or skips: 124
+planner/identity checks and 249 job/runtime/metadata checks. Thirty-four complete jobs disable
+explicit SQL UIDs: the full 26-case temporal matrix above; four native-first INNER interval
+round trips across both clocks and stores; and four native-first INNER TUMBLE window round trips
+across keyed/keyless variants and both stores. Ten complete jobs retain explicit UIDs as controls.
+The temporal cases include both initial engine orders, no-input returns, native checkpoint
+recovery and 64-key rescaling at 1 → 3 → 2/maxP128. Generated-ID rescale cases disable chaining
+from the initial job on both engines so the original stock IDs stay stable. With default
+chaining, changing these parallelisms changes chain boundaries and generated IDs: the first four
+rescale cases failed, and released stock also rejects its own original stock savepoint in that
+configuration. Two stock hash controls verify the distinction. Do not change chaining only at
+restore or drop the resulting unmatched state. The six identity controls verify that the
+registered contract key equals the actual runtime primary ID, with and without explicit UIDs.
+The original three disabled-UID join controls failed before this change; explicit-UID controls
+already passed.
+
+All 15 unchanged released temporal/interval/window restore programs pass on each engine with the
+same production change. Twelve native-side programs require positive state import and continued
+input in the actual native join; two verify stock window SEMI/ANTI owners and one verifies a join
+Flink elides. These upstream programs use their original UID settings. Their strict audit exposed
+a false
+fallback diagnostic for a join already elided by stock. The final source passes the complete
+373-check selection as well as all native programs; initial failed reports and stock-only
+negative evidence are retained. Cohorts overlap earlier qualification and are not added cumulatively.
+Ordinary-SQL optimizer binding, wider operator,
+connector, type/version and failure coverage remain open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Every family stays partial;
+benchmarking is deferred.

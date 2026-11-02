@@ -102,7 +102,7 @@ class CanonicalWindowJoinJobTest {
     Files.write(root.resolve("right-input.csv"), right);
   }
 
-  private Path prepare(String name, String kind, String shape, boolean keyless) throws Exception {
+  Path prepare(String name, String kind, String shape, boolean keyless) throws Exception {
     var root = directory.resolve(name);
     Files.createDirectories(root);
     Files.write(

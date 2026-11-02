@@ -405,7 +405,6 @@ final class StockCompiledPlanLowering {
       recordFallback("temporal join: canonical exchange reassembly is not yet bound");
       return stock;
     }
-    if (stockUids.get(stock.getId()) == null) return stock;
     var definition = definitions.get(stock.getId());
     int leftTime = definition.path("leftTimeAttributeIndex").asInt(-1);
     int rightTime = definition.path("rightTimeAttributeIndex").asInt(-1);
@@ -534,7 +533,6 @@ final class StockCompiledPlanLowering {
       recordFallback("interval join: canonical exchange reassembly is not yet bound");
       return stock;
     }
-    if (stockUids.get(stock.getId()) == null) return stock;
     var spec =
         reader
             .forType(org.apache.flink.table.planner.plan.nodes.exec.spec.IntervalJoinSpec.class)
@@ -542,7 +540,7 @@ final class StockCompiledPlanLowering {
                 definitions.get(stock.getId()).path("intervalJoinSpec"));
     var bounds = spec.getWindowBounds();
     if (bounds.getLeftUpperBound() - bounds.getLeftLowerBound() < 0) {
-      recordFallback("interval join: negative bounds retain stock stateless filters");
+      LOG.debug("Stock interval bounds already eliminate the join");
       return stock;
     }
     var joinSpec = spec.getJoinSpec();
@@ -673,7 +671,6 @@ final class StockCompiledPlanLowering {
       recordFallback("window join: canonical exchange reassembly is not yet bound");
       return stock;
     }
-    if (stockUids.get(stock.getId()) == null) return stock;
     var definition = definitions.get(stock.getId());
     var joinSpec =
         reader
@@ -879,28 +876,39 @@ final class StockCompiledPlanLowering {
         (node, binding) -> {
           Transformation<?> transformation = ((ExecNodeBase<?>) node).getTransformation();
           if (binding.uid != null) transformation.setUid(binding.uid);
+          if (binding.contract != null)
+            nativeOperator(node).setStockStateContract(binding.contract);
+        });
+  }
+
+  void configureStateBackend(StreamGraph runtime) {
+    var hashes = new StreamGraphHasherV2().traverseStreamGraphAndGenerateHashes(runtime);
+    bindings.forEach(
+        (node, binding) -> {
           if (binding.contract == null) return;
-          var factory =
-              transformation instanceof OneInputTransformation
-                  ? ((OneInputTransformation<?, ?>) transformation).getOperatorFactory()
-                  : ((org.apache.flink.streaming.api.transformations.TwoInputTransformation<
-                              ?, ?, ?>)
-                          transformation)
-                      .getOperatorFactory();
-          var operator =
-              (AbstractNativeStatefulOperator<?>)
-                  ((SimpleOperatorFactory<?>) factory).getOperator();
-          operator.setStockStateContract(binding.contract);
-          String operatorId =
-              new OperatorID(StreamGraphHasherV2.generateUserSpecifiedHash(binding.uid)).toString();
+          Transformation<?> transformation = ((ExecNodeBase<?>) node).getTransformation();
+          byte[] hash = hashes.get(transformation.getId());
+          if (hash == null)
+            throw new IllegalStateException("Native state owner has no physical primary identity");
           CanonicalStateBackend.install(
               planner.getExecEnv(),
               planner.getTableConfig().getConfiguration(),
-              operatorId,
-              operator.getClass().getSimpleName(),
+              new OperatorID(hash).toString(),
+              nativeOperator(node).getClass().getSimpleName(),
               binding.contract,
               planner.getFlinkContext().getClassLoader());
         });
+  }
+
+  private static AbstractNativeStatefulOperator<?> nativeOperator(ExecNode<?> node) {
+    Transformation<?> transformation = ((ExecNodeBase<?>) node).getTransformation();
+    var factory =
+        transformation instanceof OneInputTransformation
+            ? ((OneInputTransformation<?, ?>) transformation).getOperatorFactory()
+            : ((org.apache.flink.streaming.api.transformations.TwoInputTransformation<?, ?, ?>)
+                    transformation)
+                .getOperatorFactory();
+    return (AbstractNativeStatefulOperator<?>) ((SimpleOperatorFactory<?>) factory).getOperator();
   }
 
   private static final class StockBinding {

@@ -214,3 +214,12 @@ payloads, idle/overdue callbacks and EOF. The combined clean job/control selecti
 checks with no failures, errors or skips. These overlap the component and planner cohorts.
 Wider ordinary-SQL identity/type/version/failure and connector-protocol requirements remain open
 in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+
+Qualified compiled plans can disable explicit SQL UID generation. Four native-first INNER job
+round trips pass across both clocks and native stores with generated IDs; explicit-UID job
+controls pass too. The runtime state contract uses the actual native primary ID and canonical
+metadata retains the original stock identities automatically. These generated-ID cases do not
+extend the qualified rescale/type/version/failure scope. Ordinary-SQL integration remains open
+under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); see
+[generated operator IDs](../../backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans).

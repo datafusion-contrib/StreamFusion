@@ -351,3 +351,15 @@ engine orders. The custom sources and transactional sink stay at one task. Probe
 until final drain; intermediate temporal-output commit failures, full-job TTL expiry and wider
 schema/version/connector guarantees remain unqualified. Keep the same released Flink version,
 portable plan and normal user dependencies on both engines; stock needs no StreamFusion JARs.
+
+
+The qualified temporal, interval and window compiled-plan handoffs also support
+`table.exec.uid.generation=DISABLED`. Keep the same original stock plan and qualified Flink
+version/maximum parallelism; explicit UIDs or a manual identity map are unnecessary for that
+workflow. For the generated-ID rescale cases, set `pipeline.operator-chaining.enabled=false`
+from the initial job on both engines. Default chained graphs can change their generated IDs
+when parallelism changes, and
+stock also rejects that restore. Changing chaining only at restore cannot repair existing IDs.
+The [generated-ID matrix](backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans)
+covers 34 complete jobs plus explicit-UID controls. Ordinary SQL submission still needs its
+separate optimizer integration and does not inherit this qualification.

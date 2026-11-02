@@ -85,6 +85,7 @@ final class NativeStreamPlanner extends StreamPlanner {
         (org.apache.flink.streaming.api.graph.StreamGraph)
             executor.createPipeline(
                 runtimeTransformations, getTableConfig().getConfiguration(), null);
+    lowering.configureStateBackend(runtimeStreamGraph);
     tech.streamfusion.state.CanonicalCheckpointStorageFactory.install(
         getExecEnv(),
         getTableConfig().getConfiguration(),

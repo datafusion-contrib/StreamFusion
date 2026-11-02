@@ -120,3 +120,12 @@ Native Calc work alone cannot satisfy either state route. The sources, frozen pl
 and expected results come from the released test artifact. These controls qualify those fixtures;
 they do not qualify ordinary SQL submission identities or the remaining full #569 matrix.
 See the [savepoint lane](../../upstream-flink-suite.md#window-join-canonical-restore-qualification).
+
+
+Qualified compiled plans also work with explicit SQL UID generation disabled. Four native-first
+INNER TUMBLE job round trips pass across keyed/keyless variants and both native stores, alongside
+explicit-UID controls. State registration uses actual native primary IDs; canonical metadata
+continues to retain the original stock graph identities. Wider generated-ID variant/rescale and
+ordinary-SQL qualification remain open under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). See
+[generated operator IDs](../../backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans).

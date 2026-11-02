@@ -116,7 +116,7 @@ class CanonicalIntervalJoinJobTest {
     Files.write(root.resolve("right-input.csv"), right);
   }
 
-  private Path prepare(String name, String kind, boolean processingTime, boolean residual)
+  Path prepare(String name, String kind, boolean processingTime, boolean residual)
       throws Exception {
     var root = directory.resolve(name);
     Files.createDirectories(root);
