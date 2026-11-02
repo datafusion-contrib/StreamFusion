@@ -1450,7 +1450,7 @@ fixture assertions alongside the native-family requirement.
 
 ## Window join canonical restore qualification
 
-The unmerged #569 private-plan integration passes all eight released Flink 2.2.1
+The unmerged #569 stock compiled-plan integration passes all eight released Flink 2.2.1
 `WindowJoinEventTimeRestoreTest` programs in the stock control and native lanes, with no failures,
 errors or skips. The six admitted INNER/LEFT/RIGHT/FULL TUMBLE and INNER HOP/CUMULATE programs
 require successful native window-join input. The agent also records successful direct canonical
@@ -1463,10 +1463,10 @@ but unused stock operator, missing state, or an incorrect fallback cannot satisf
 The summary keeps stock state-owner work separate from native input. The original released test
 classes, frozen plans/savepoints and expected outputs are unchanged.
 
-This is qualification of the private integration snapshot, not a claim that the committed
-production archive already contains the complete automatic planner workflow. Reverse-direction
-jobs, ordinary SQL identities, and the rest of #569 remain separate requirements. Benchmarking
-of canonical handoff is deferred while functionality is completed.
+The window-join stock compiled-plan workflow also passes these fixtures in a clean component
+with automatic state and identity binding. Its separate 46-case job matrix covers both engine
+orders and repeated switches. Ordinary SQL identities and the rest of the full #569 matrix
+remain separate requirements. Benchmarking of canonical handoff remains deferred.
 
 ## Released canonical savepoint runner
 

@@ -24,8 +24,7 @@ public final class KafkaPlannerExtension implements NativePlannerExtension {
         Substitution.of(StreamPhysicalTableSourceScan.class, KafkaTables::substituteDecode)
             .matching(
                 scan ->
-                    KafkaTables.isCdcDecode(scan)
-                        && NativeConfig.operatorEnabled("kafkaDecode"))
+                    KafkaTables.isCdcDecode(scan) && NativeConfig.operatorEnabled("kafkaDecode"))
             .changelogSafe());
     entries.add(
         Substitution.of(RelNode.class, KafkaTables::reportCdcWatermark)
@@ -33,6 +32,24 @@ public final class KafkaPlannerExtension implements NativePlannerExtension {
             .yieldingOnDecline());
     entries.add(
         Substitution.of(RelNode.class, KafkaTables::reportAppendWatermark).yieldingOnDecline());
+  }
+
+  @Override
+  public org.apache.flink.table.planner.plan.nodes.exec.ExecNode<
+          tech.streamfusion.operator.ArrowBatch>
+      lowerCompiledSource(
+          StreamPhysicalTableSourceScan scan,
+          org.apache.flink.configuration.ReadableConfig config) {
+    if (!NativeConfig.operatorEnabled("kafkaDecode")
+        || !(KafkaTables.isNativeKafkaDecode(scan) || KafkaTables.isCdcDecode(scan))) return null;
+    return new NativeKafkaDecodeExecNode(
+        config,
+        org.apache.flink.table.planner.calcite.FlinkTypeFactory$.MODULE$.toLogicalRowType(
+            scan.getRowType()),
+        FilesystemTables.physicalRowType(scan),
+        "NativeKafkaDecode(table=[" + String.join(".", scan.getTable().getQualifiedName()) + "])",
+        KafkaTables.decodeOptions(scan),
+        ScanWatermarkSpec.of(scan));
   }
 
   @Override

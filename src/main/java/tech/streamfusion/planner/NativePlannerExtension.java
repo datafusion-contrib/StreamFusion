@@ -13,4 +13,14 @@ public interface NativePlannerExtension {
   default String sourceSharingKey(RelNode node) {
     return null;
   }
+
+  /** Reuses this artifact's source admission policy when loading a portable stock plan. */
+  default org.apache.flink.table.planner.plan.nodes.exec.ExecNode<
+          tech.streamfusion.operator.ArrowBatch>
+      lowerCompiledSource(
+          org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan
+              scan,
+          org.apache.flink.configuration.ReadableConfig config) {
+    return null;
+  }
 }

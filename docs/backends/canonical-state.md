@@ -370,9 +370,9 @@ Publication validates the complete metadata before finalizing the provider's met
 Relative file handles retain their relocation behavior, temporary reader context files are
 removed, and cancellation can close a blocked storage read or write. Twenty isolated clean-build
 controls cover identity/state ownership, finished and union branches, relocation, malformed or
-unmapped state, stale/disabled configuration and failure/cancellation cleanup. The component is
-committed separately from the private automatic planner installation, which remains under
-consolidation in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+unmapped state, stale/disabled configuration and failure/cancellation cleanup. Automatic installation for qualified stock compiled plans is described below; the remaining
+operator and submission coverage stays open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking of canonical handoff remains deferred.
 
 ### Binding the complete logical topology
@@ -389,3 +389,25 @@ same stage into different generated class names. Seven isolated graph controls c
 boundaries, repeated connector names, expanded sinks, unions/repeated edges and invalid bindings;
 the combined clean graph/metadata run passes 27 controls. This component does not itself install
 an automatic planner workflow or qualify stateful exchange reassembly.
+
+### Automatic stock compiled-plan binding
+
+The unmerged Flink 2.2 planner retains a stock compiled plan as the portable artifact. Compiling
+SQL writes stock JSON; explaining or executing that artifact with StreamFusion enabled lowers a
+private runtime copy. The copy binds event-time window joins to the actual stock key serializer,
+list/namespace/timer layout and resolved maximum parallelism, and installs canonical metadata
+identity projection automatically. The original JSON remains executable on stock Flink. Ordinary
+SQL submission identities and the other state families are still being consolidated in #569.
+
+Stateless Calc and optional connector source extensions retain their existing admission checks
+when loading a stock artifact. Connectors without a compiled-source extension stay stock. The
+Kafka extension uses its existing source whitelist; this planner support does not qualify broker
+offset, transaction or fault-recovery interchange. Unaligned window-join exchange reassembly
+currently retains the stock join state owner rather than eliding its pending work.
+
+The clean compiled-plan qualification includes 46 complete-job window-join cases, 50 planner
+controls, unchanged released restore fixtures and existing ordinary SQL/planner regression checks.
+The shared Flink 1.18 planner retains its previous implementation; its regression checks do not
+qualify Flink 1.18 stock canonical interchange. Canonical conversion runs only at the canonical
+savepoint boundary; ordinary native checkpoints retain their existing paths. Benchmarking remains
+deferred while the full #569 functionality is completed.

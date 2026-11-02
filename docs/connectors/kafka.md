@@ -140,3 +140,12 @@ makes the byte-array boundary the measured bottleneck.
 If a native decode fails after other partition batches from the same poll have decoded,
 the source closes those un-emitted Arrow batches immediately before propagating the error.
 This releases staged off-heap memory without waiting for the abandoned-batch Cleaner.
+
+## Portable compiled-plan source admission
+
+The Flink 2.2 compiled-plan loader can ask the optional Kafka planner extension to apply its
+existing source whitelist to a stock table-source node. Admitted scans use the same native decode
+source and sharing behavior as ordinary planning; unsupported configurations keep the stock scan.
+This preserves planner behavior while the portable artifact remains stock JSON. It does not yet
+qualify cross-engine broker offsets, transactions, rescaling or fault recovery for
+[canonical handoff](https://github.com/datafusion-contrib/StreamFusion/issues/569).

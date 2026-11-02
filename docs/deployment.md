@@ -317,3 +317,19 @@ newer shared source. Its negative control demonstrates implicit duplication; the
 compiler flag preserves only the connector's explicit class. A runtime probe executes the
 connector and verifies its dependency resolves from the core JAR. Image CI runs the regression
 before packaging, and the unchanged artifact checker verifies ownership in the real bundle.
+
+## Portable compiled plans and canonical handoff
+
+The unmerged [#569 work](https://github.com/datafusion-contrib/StreamFusion/issues/569) binds
+qualified Flink 2.2 event-time window joins automatically when executing a stock compiled SQL plan.
+Retain the same stock JSON artifact, normal connector dependencies and user code on both engines.
+Use Flink's canonical savepoint format to stop the current execution, then restore that savepoint
+with the same artifact on the other engine. With StreamFusion installed and enabled, loading the
+artifact constructs its private native runtime graph and imports the stock state during normal
+initialization. The stock leg needs the stock connector/user JARs and no StreamFusion JARs.
+
+This qualifies the [window-join compiled-plan scope](operators/joins/window-join.md#stock-canonical-savepoint-interoperability),
+not unrestricted SQL submission, every operator variant, or every connector delivery mode. Keep
+the Flink version and maximum parallelism within the qualified matrix. See the
+[canonical state contract](backends/canonical-state.md#automatic-stock-compiled-plan-binding) for
+remaining boundaries. Ordinary native checkpoints do not provide a cross-engine handoff artifact.

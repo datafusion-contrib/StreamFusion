@@ -426,7 +426,7 @@ final class KafkaTables {
         decodeOptions(scan), scan.getRowType(), scan.getRowType(), ScanWatermarkSpec.of(scan));
   }
 
-  private static Map<String, String> decodeOptions(StreamPhysicalTableSourceScan scan) {
+  static Map<String, String> decodeOptions(StreamPhysicalTableSourceScan scan) {
     Map<String, String> options = FilesystemTables.options(scan);
     if (!options.containsKey("key.format")) {
       return options;

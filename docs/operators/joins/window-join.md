@@ -87,36 +87,36 @@ Canonical plan binding can supply the original stock graph's resolved maximum pa
 both native columnar exchanges and the join state owner. This takes precedence over the new
 execution environment's setting, preserving the saved key-group layout. Isolated planner-boundary
 controls cover a singleton and keyed layouts with maxima 17 and 256 while the environment requests
-257. The setter itself does not provide automatic stock-plan binding.
+257. The compiled-plan loader binds these values automatically from the original stock graph.
 
-The component archive binds stock state explicitly. Its private stock compiled-plan integration
-also passes 48 planner controls and 46 isolated complete-job cases: 36 continued-input switches,
-four no-input re-exports, two ordinary native-checkpoint recoveries and four 64-key rescaling
-cases. These retain two custom sources, a transactional sink and both transposes; stock workers
-exclude StreamFusion. INNER TUMBLE/HOP/CUMULATE cover keyed/keyless paths, while LEFT/RIGHT/FULL
-use keyed TUMBLE. Both stores and engine orders are exercised. FULL TUMBLE keys redistribute
-through 1 → 3 → 2 tasks at maximum parallelism 128; source and sink parallelism stay at one.
-Committed sink effects match the stock baseline. A fixture wait was corrected to require fresh
-native input only when the source limit advances: 40 cases passed initially and the six affected
-no-input/checkpoint cases passed on rerun.
+The stock compiled-plan loader now constructs the runtime state binding automatically. It retains
+portable stock JSON and lowers only a private execution graph. The clean workflow passes 50
+planner controls and 46 isolated complete-job cases: 36 continued-input switches, four no-input
+re-exports, two ordinary native-checkpoint recoveries and four 64-key rescaling cases. These
+retain two custom sources, a transactional sink and both transposes; stock workers exclude
+StreamFusion. INNER TUMBLE/HOP/CUMULATE cover keyed/keyless paths, while LEFT/RIGHT/FULL use
+keyed TUMBLE. Both stores and engine orders are exercised. FULL TUMBLE keys redistribute through
+1 → 3 → 2 tasks at maximum parallelism 128; source and sink parallelism stay at one. Committed
+sink effects match the stock baseline. Unaligned checkpoints currently retain the stock window
+join because canonical exchange reassembly is not yet bound; two negative planner controls
+verify this boundary.
 
-The private planner and common job fixtures still await consolidation into the committed
-production workflow. Ordinary SQL identities, wider rescale/type/version matrices and residual
-predicates remain unqualified. The isolated job fixtures use BIGINT keys/payloads; they do not
-establish every supported data type. Released Flink 2.2.1 rejects processing-time window
-joins, so its event-time contract cannot be bound to a native processing-time operator. Native
-processing-time execution and native checkpoint recovery remain available independently.
+Ordinary SQL identities, wider rescale/type/version matrices and residual predicates remain
+unqualified. The isolated job fixtures use BIGINT keys/payloads; they do not establish every
+supported data type. Released Flink 2.2.1 rejects processing-time window joins, so its event-time
+contract cannot be bound to a native processing-time operator. Native processing-time execution
+and native checkpoint recovery remain available independently.
 
 Benchmarking and tuning of canonical handoff are deferred while functionality is completed.
 
 ### Unchanged upstream restore fixtures
 
-The private stock compiled-plan integration passes all eight unchanged released Flink 2.2.1
+The stock compiled-plan integration passes all eight unchanged released Flink 2.2.1
 `WindowJoinEventTimeRestoreTest` fixtures on both engines. Six require native window-join work
 (INNER/LEFT/RIGHT/FULL TUMBLE, INNER HOP and CUMULATE), with actual imported native rows also
 recorded. SEMI and ANTI keep the released stock operator: their contracts require the exact
 planner fallback, initialized stock lists/timer service, and successfully processed stock input.
 Native Calc work alone cannot satisfy either state route. The sources, frozen plans/savepoints
 and expected results come from the released test artifact. These controls qualify those fixtures;
-they do not complete the private planner consolidation or ordinary SQL submission workflow.
+they do not qualify ordinary SQL submission identities or the remaining full #569 matrix.
 See the [savepoint lane](../../upstream-flink-suite.md#window-join-canonical-restore-qualification).
