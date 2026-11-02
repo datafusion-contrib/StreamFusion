@@ -351,3 +351,26 @@ pending-only frames, invalid state, direct re-export, clean classpaths and ordin
 The automatic portable-plan binding is still under consolidation. Bounded ROWS counters/buckets,
 remaining RANGE views, the full version/rescale matrix and other #569 requirements remain open.
 Benchmarking and tuning remain deferred.
+
+## Canonical metadata identity projection
+
+The Flink 2.2 component can project native operator identities to the original stock identities
+while publishing canonical savepoint metadata, and reverse that mapping while restoring it.
+It retains subtask state handles, coordinator state, master state, parallelism and finished
+markers. Payload streams and their ownership stay with the configured Flink storage provider;
+ordinary checkpoints and native-format savepoints retain their metadata bytes.
+
+Unknown durable state, even a zero-byte coordinator handle, cannot be omitted. Only explicitly
+identified empty native helpers may lose finished markers on export. Import reconstructs their
+finished status from upstream operators: partial status propagates only over pointwise boundaries
+at unchanged parallelism, and a union requires all its inputs to finish. This preserves bounded
+branches when the runtime graph inserts transposes or exchanges.
+
+Publication validates the complete metadata before finalizing the provider's metadata stream.
+Relative file handles retain their relocation behavior, temporary reader context files are
+removed, and cancellation can close a blocked storage read or write. Twenty isolated clean-build
+controls cover identity/state ownership, finished and union branches, relocation, malformed or
+unmapped state, stale/disabled configuration and failure/cancellation cleanup. The component is
+committed separately from the private automatic planner installation, which remains under
+consolidation in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking of canonical handoff remains deferred.
