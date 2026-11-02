@@ -15,6 +15,14 @@ public final class Native {
   /** Key descriptor prefix selecting Flink's generated projection layout, including NULL slots. */
   public static final int STOCK_KEY_PROJECTION = Integer.MIN_VALUE;
 
+  public static native void exportFirstNCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importFirstNCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void validateFirstNCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
   public static native void exportUpdatingJoinCanonical(
       long handle, boolean persistent, boolean left, BatchReceiver receiver);
 

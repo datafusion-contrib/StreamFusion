@@ -273,7 +273,8 @@ final class StockCompiledPlanLowering {
       if (ordinaryHelper(node)) continue;
       if (!graph.originals.containsKey(node)) return false;
       if (node.getClass().getName().startsWith("tech.streamfusion.")
-          && !(node instanceof NativeColumnarUpdatingJoinExecNode
+          && !(node instanceof NativeFirstNExecNode
+              || node instanceof NativeColumnarUpdatingJoinExecNode
               || node instanceof NativeTemporalJoinExecNode
               || node instanceof NativeIntervalJoinExecNode
               || node instanceof NativeWindowJoinExecNode
@@ -311,7 +312,8 @@ final class StockCompiledPlanLowering {
       for (ExecNode<?> node : nodes) {
         if (ordinaryHelper(node) || replacements.containsKey(node)) continue;
         ExecNode<?> stock = graph.originals.get(node);
-        if (node instanceof NativeColumnarUpdatingJoinExecNode
+        if (node instanceof NativeFirstNExecNode
+            || node instanceof NativeColumnarUpdatingJoinExecNode
             || node instanceof NativeTemporalJoinExecNode
             || node instanceof NativeIntervalJoinExecNode
             || node instanceof NativeWindowJoinExecNode) {
@@ -319,7 +321,11 @@ final class StockCompiledPlanLowering {
           if (!ordinaryKeyLayout(stockTransformations.get(stock.getId()))) return null;
           definitions.put(stock.getId(), reader.readTree(writer.writeValueAsString(stock)));
           ExecNode<?> exit;
-          if (node instanceof NativeTemporalJoinExecNode
+          if (node instanceof NativeFirstNExecNode
+              && stock
+                  instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecRank)
+            exit = lowerFirstN(stock);
+          else if (node instanceof NativeTemporalJoinExecNode
               && stock
                   instanceof
                   org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecTemporalJoin)
@@ -346,7 +352,7 @@ final class StockCompiledPlanLowering {
           if (owner.getClass() != node.getClass())
             throw new IllegalStateException(
                 "Ordinary SQL state binding changed its logical operator");
-          for (int side = 0; side < 2; side++) {
+          for (int side = 0; side < node.getInputEdges().size(); side++) {
             ExecNode<?> source = node.getInputEdges().get(side).getSource();
             if (source instanceof NativeColumnarExchangeExecNode)
               source = source.getInputEdges().get(0).getSource();
@@ -441,12 +447,15 @@ final class StockCompiledPlanLowering {
   }
 
   private static boolean ordinaryKeyLayout(Transformation<?> original) {
-    if (!(original
-        instanceof org.apache.flink.streaming.api.transformations.TwoInputTransformation))
-      return false;
     var keys =
-        ((org.apache.flink.streaming.api.transformations.TwoInputTransformation<?, ?, ?>) original)
-            .getStateKeyType();
+        original instanceof OneInputTransformation
+            ? ((OneInputTransformation<?, ?>) original).getStateKeyType()
+            : original
+                    instanceof org.apache.flink.streaming.api.transformations.TwoInputTransformation
+                ? ((org.apache.flink.streaming.api.transformations.TwoInputTransformation<?, ?, ?>)
+                        original)
+                    .getStateKeyType()
+                : null;
     if (!(keys instanceof org.apache.flink.table.runtime.typeutils.InternalTypeInfo)) return false;
     for (LogicalType field :
         ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>) keys).toRowFieldTypes())
@@ -518,8 +527,100 @@ final class StockCompiledPlanLowering {
         && NativeConfig.operatorEnabled("updatingJoin"))
       result =
           lowerJoin((org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecJoin) node);
+    else if (node instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecRank
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("topN")) result = lowerFirstN(node);
     lowered.put(node, result);
     return result;
+  }
+
+  private ExecNode<?> lowerFirstN(ExecNode<?> stock) throws IOException {
+    Transformation<?> transformation = stockTransformations.get(stock.getId());
+    if (!(transformation instanceof OneInputTransformation)) return stock;
+    var original = (OneInputTransformation<?, ?>) transformation;
+    if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)) return stock;
+    Object operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
+    if (!(operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator))
+      return stock;
+    Object function =
+        ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
+            .getUserFunction();
+    if (!(function
+        instanceof org.apache.flink.table.runtime.operators.rank.AppendOnlyFirstNFunction))
+      return stock;
+    JsonNode definition = definitions.get(stock.getId());
+    var range =
+        reader
+            .forType(org.apache.flink.table.runtime.operators.rank.RankRange.class)
+            .<org.apache.flink.table.runtime.operators.rank.RankRange>readValue(
+                definition.path("rankRange"));
+    if (!(range instanceof org.apache.flink.table.runtime.operators.rank.ConstantRankRange))
+      return stock;
+    var constant = (org.apache.flink.table.runtime.operators.rank.ConstantRankRange) range;
+    if (constant.getRankStart() != 1
+        || constant.getRankEnd() < 1
+        || constant.getRankEnd() > Integer.MAX_VALUE) return stock;
+    var partition =
+        reader
+            .forType(org.apache.flink.table.planner.plan.nodes.exec.spec.PartitionSpec.class)
+            .<org.apache.flink.table.planner.plan.nodes.exec.spec.PartitionSpec>readValue(
+                definition.path("partition"));
+    int[] keys = partition.getFieldIndices();
+    ExecNode<?> input = stock.getInputEdges().get(0).getSource();
+    RowType inputType = (RowType) input.getOutputType();
+    if (!RowDataArrowConverter.supports(inputType)
+        || !RowDataArrowConverter.supports((RowType) stock.getOutputType())
+        || !ArrowRowTypeSupport.supportsFields(inputType, keys)) return stock;
+    Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
+    ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
+    if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
+        || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
+      return stock;
+    org.apache.flink.api.common.state.StateTtlConfig ttl;
+    try {
+      var field =
+          org.apache.flink.table.runtime.operators.rank.AbstractTopNFunction.class.getDeclaredField(
+              "ttlConfig");
+      field.setAccessible(true);
+      ttl = (org.apache.flink.api.common.state.StateTtlConfig) field.get(function);
+    } catch (ReflectiveOperationException failure) {
+      throw new IOException("Cannot capture released first-N TTL", failure);
+    }
+    config.setString(
+        "table.exec.state.ttl", (ttl.isEnabled() ? ttl.getTimeToLive().toMillis() : 0) + " ms");
+    @SuppressWarnings("unchecked")
+    TypeSerializer<RowData> serializer =
+        (TypeSerializer<RowData>)
+            original
+                .getStateKeyType()
+                .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
+    RowType keyType =
+        RowType.of(Arrays.stream(keys).mapToObj(inputType::getTypeAt).toArray(LogicalType[]::new));
+    var contract =
+        new tech.streamfusion.state.StockFirstNStateContract(serializer, keyType, ttl.isEnabled());
+    int maximum = stockMaximum(original);
+    var exchange =
+        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
+    exchange.withStateMaxParallelism(maximum);
+    var first =
+        new NativeFirstNExecNode(
+                config,
+                InputProperty.DEFAULT,
+                (RowType) stock.getOutputType(),
+                "NativeColumnarFirstN",
+                keys,
+                FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys),
+                (int) constant.getRankEnd(),
+                definition.path("outputRowNumber").asBoolean())
+            .withStateMaxParallelism(maximum);
+    connect(exchange, first);
+    bindings.put(first, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
+    columnar.add(first);
+    var exit =
+        new ArrowToRowDataExecNode(
+            config, InputProperty.DEFAULT, (RowType) stock.getOutputType(), "ArrowToRowData");
+    connect(first, exit);
+    return exit;
   }
 
   private ExecNode<?> lowerJoin(

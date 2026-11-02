@@ -814,3 +814,62 @@ right arrivals that retract unmatched left rows retained before the savepoint. B
 and engine orders retain custom sources, the transactional sink, both transposes and stock-only
 classpath/metadata checks. The unchanged released ANTI restore program remains a required native
 execution contract rather than a permitted fallback.
+
+
+## Stock-compatible first-N counters
+
+Flink 2.2.1 arrival-ordered first-N binds the released `counterState` VALUE descriptor, stock INT
+serializer and optional raw TTL envelope. Native memory and typed RocksDB export actual keys,
+counters and original write timestamps directly through bounded Arrow batches into the stock
+canonical writer. No retained input rows or intermediate native snapshot are needed. The RocksDB
+visitor reads self-contained persisted values without applying TTL read expiry or refreshing ages;
+ordinary state reads retain their expiry behavior.
+
+Whole-view import requires an empty native target and rejects pre-existing counters before any
+insertion. It then validates the complete stock view before inserting counters. The same native decoder
+checks transfer schemas, fixed key width/row kind, duplicate keys and counter values. A malformed
+counter after the first 1,024 rows cannot leave earlier valid state imported. RocksDB hydration
+preserves raw ages and detects duplicates across persisted chunks. Arrow buffers are released
+before JNI errors are thrown, and closing a failed target releases its existing memory reservation.
+
+Both stock compiled-plan execution and ordinary SQL submission capture the actual released
+first-N implementation, constant start-one range, output-rank mode, key serializer, retention and
+resolved maximum parallelism. Generated IDs work without manual mappings. The existing `topN`
+operator switch still controls admission. The portable compiled JSON remains stock-only.
+Ordinary keys with non-compact decimal or high-precision timestamp root layouts retain their
+existing native route pending key-layout migration. Async/changelog backends, unaligned exchange
+state and non-first-N rank variants require their separate contracts. Existing native checkpoint
+encodings and processing remain unchanged; checkpoint upgrades still require compatible graph
+identities and maxima. Older native jobs whose maximum differs from the stock reference are not
+qualified by these new-job controls.
+
+The independent native suite passes 1,195 tests with two existing ignores, including four newly
+reproduced first-N validation failures and resource-limit cleanup. Twenty direct operator controls
+cover both stores, keyless and nullable keys, rank-column modes, raw TTL ages/expiry, 2,049-key
+transfers, late malformed input and receiver-failure retry. Thirty-two planner controls cover both
+submission forms, limits 2/5, keyless state, projected/hidden rank, retention and maximum 257.
+
+All 60 complete-job scenarios pass: 32 ordinary/compiled continuation cases across both native
+stores/orders and projected, hidden, keyless and long-retention modes; eight no-input re-exports;
+four native checkpoint recoveries; eight empty-state handoffs; and eight 64-key rescalings at
+1→3→2/maxP128. They retain custom sources, the transactional sink and both transposes, use clean
+stock classpaths/metadata, require actual native input and compare external effects with stock and
+an independent arrival-count oracle. Expiry is exercised by clocked direct controls; the one-hour
+job fixtures do not establish downtime expiry.
+
+A thin suite class selects the released `RankTestPrograms.RANK_N_TEST` and inherits the original
+restore implementation and assertions. The original fixture imports two native counters and
+processes four new native rows. Combined with existing joins, all 31 selected released programs
+pass per engine. The other three rank programs and their original contracts remain unchanged;
+this selector supplies no qualification for their adapters. Wider schemas, backend/version and
+connector/failure/delivery matrices remain open under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). All families remain partial;
+benchmarking stays deferred.
+
+
+The final whole-view import check additionally rejects nonempty native targets, preserving their
+existing counters. A late persisted target duplicate first reproduced partial insertion of 1,024
+new rows and is now rejected before any are inserted. The final combined cohort passes all 129 checks, including all 60 complete-job scenarios
+with this stricter initialization check.
+Shared Flink 1.18 processing/checkpoint controls pass 17 cases without claiming stock canonical
+interchange on that line.

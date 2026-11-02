@@ -387,3 +387,13 @@ stock side layouts, both native stores/submission forms, repeated switching, no-
 checkpoint recovery and fixed-maximum rescaling. Eight separate shared-input round trips cover
 the later shared-role fix. Keep the exact [regular-join binding scope](operators/joins/regular-join.md#automatic-planner-binding);
 broader types, backends, versions, connector protocols, TTL and failure/rescale cases remain under qualification.
+
+
+Arrival-ordered first-N now follows the same Flink 2.2.1 canonical stop/restore workflow in both
+normal SQL and portable stock compiled plans. Its qualified scope includes native memory/RocksDB,
+projected/hidden ranks, keyless/empty state, no-input re-export, native checkpoint recovery and
+fixed-maximum rescaling, with custom source/sink state preserved. No manual state or operator
+mapping is required. Keep connector/UDF dependencies on both engines and retain compatible graph
+identities/maxima for native checkpoint upgrades. See the remaining
+[first-N limits](backends/canonical-state.md#stock-compatible-first-n-counters);
+this does not qualify other rank algorithms or the complete connector/version matrix.

@@ -422,3 +422,34 @@ string-to-string MAP, on heap/RocksDB with two restores. Ordinary scalar orderin
 Sorting by a computed collection expression still preserves the existing final-projection/fused-
 consumer guard: richer collection representations cannot enter an unverified stateful boundary.
 These are callback/schema checks, not additional UDF type admission or throughput evidence.
+
+
+## First-N canonical handoffs
+
+The Flink 2.2.1 first-N counter now has automatic stock canonical binding in normal SQL and stock
+compiled-plan execution. It preserves `counterState`, the stock INT/TTL serializers, actual grouping
+keys, original write ages, stock identities and resolved maximum parallelism. Export reads live
+native counters directly; import validates the whole view before inserting state. Other rank
+algorithms use separate state contracts.
+
+Qualification passes 60 complete-job cases across both stores/orders and submission forms,
+including hidden/projected ranks, keyless and empty state, no-input re-export, native checkpoint
+recovery and rescaling at 1→3→2/maxP128. External committed output matches stock and an independent
+arrival-count oracle, with custom source/sink state and both transposes retained. Twenty direct
+controls additionally cover raw TTL ages/expiry, bounded transfer, malformed input and callback
+failure; 32 planner controls verify the actual owner and stock contract. The original released
+first-N restore fixture imports two counters and consumes four new native rows.
+
+Ordinary wide decimal/nanosecond root-key layouts, other rank algorithms, backend/version matrices,
+full-job TTL expiry and broader connector/failure/delivery cases remain open. Existing native
+processing/checkpoint encodings are unchanged. See the exact
+[first-N scope](../backends/canonical-state.md#stock-compatible-first-n-counters).
+Benchmarking of canonical handoff remains deferred.
+
+
+The final whole-view import check additionally rejects nonempty native targets, preserving their
+existing counters. A late persisted target duplicate first reproduced partial insertion of 1,024
+new rows and is now rejected before any are inserted. The earlier 60-job cohort passed before
+this stricter initialization check; the final combined 129-check cohort is under qualification.
+Shared Flink 1.18 processing/checkpoint controls pass 17 cases without claiming stock canonical
+interchange on that line.

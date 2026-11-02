@@ -1570,3 +1570,21 @@ StreamFusion integration jobs qualify 34 generated-ID round trips and ten explic
 listed in [canonical state coverage](backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans).
 Ordinary-SQL optimizer and broader connector/type/version/failure qualification remain open;
 benchmarking is deferred.
+
+
+### Selecting the released first-N restore program
+
+`tech.streamfusion.canonical.FirstNRestoreTest` is a thin subclass of the released
+`RankRestoreTest`; its only override selects `RankTestPrograms.RANK_N_TEST`. It keeps the
+released compiled plan/savepoint fixture, inputs, inherited restore implementation and original
+assertions. The full upstream rank class and all its execution contracts remain intact for
+qualifying other rank adapters.
+
+Select it through the canonical lane with
+`CANONICAL_UPSTREAM_TESTS=tech.streamfusion.canonical.FirstNRestoreTest#testRestore bin/canonical-savepoints.sh sql`.
+The stock leg excludes StreamFusion runtime classes. The native leg requires positive first-N
+input and records actual imported counter batches, excluding the validation-only pass. The
+qualified fixture imports two counters and processes four new rows. Together with the four
+existing join restore classes, the selection passes 31 original programs on each engine. These
+reports overlap previous cohorts and are not cumulative coverage counts. This proves that
+first-N fixture, not the other rank algorithms or all schema/backend/version variants.
