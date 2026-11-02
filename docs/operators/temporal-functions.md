@@ -10,7 +10,7 @@ unsupported `MATCH_RECOGNIZE` operator.
 |---|---|
 | `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `LOCALTIME`, `LOCALTIMESTAMP`, `NOW()`, `CURRENT_ROW_TIMESTAMP()` | Rust clock functions; sampled during each batch evaluation, using the session zone for local fields. These nondeterministic functions are admitted by default. |
 | `PROCTIME()`, internal `PROCTIME_MATERIALIZE` | Direct native calls and verified simple COALESCE selections use the Rust execution-time clock. Inside Flink-generated scalar or complete-Calc expressions, materialization reads the owning task's live processing-time service, bound at open and cleared at close. CASE/COALESCE input branches preserve their timestamp precision; materialized values follow Flink's millisecond clock and declared casts. See [generated processing time](calc-filter.md#generated-processing-time). |
-| `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. DATE/plain-TIMESTAMP calendar fields and HOUR/MINUTE/SECOND over plain TIMESTAMP/TIME execute in Rust, preserving Java signed arithmetic. Direct LTZ extraction uses the planning JDK's serialized fixed/finite offset history; recurring-DST zones retain Flink. Interval fields and unverified wrappers remain generated. |
+| `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. DATE/plain-TIMESTAMP calendar fields and HOUR/MINUTE/SECOND over DATE, plain TIMESTAMP and TIME execute in Rust, preserving Java signed arithmetic. Direct LTZ extraction uses the planning JDK's serialized fixed/finite offset history; recurring-DST zones retain Flink. Interval fields and unverified wrappers remain generated. |
 | `TO_DATE(text)`, `TO_DATE(text, format)` | The one-argument parser stays in Rust; formatted parsing uses Flink. Dynamic formats, NULL behavior and invalid-input failures follow Flink. |
 | `TO_TIMESTAMP(text[, format])` | Flink parsing, including dynamic formats and full-range timestamp results. |
 | `TO_TIMESTAMP_LTZ` | Flink's numeric and string overloads, including format and explicit-zone arguments. Flink validates numeric precision (0 or 3). |
@@ -29,15 +29,21 @@ unsupported `MATCH_RECOGNIZE` operator.
 Flink still rejects invalid signatures, invalid units and expressions outside their SQL context.
 The inventory describes Flink's functions, not extra overloads supplied by other SQL dialects.
 
-DATE `HOUR(d)`/`MINUTE(d)` and their EXTRACT aliases follow released Flink's physical-integer
+DATE `HOUR(d)`/`MINUTE(d)`/`SECOND(d)` and their EXTRACT aliases follow released Flink's physical-integer
 arithmetic: `(epochDays % 86400000) / 3600000` for HOUR and
-`(epochDays % 3600000) / 60000` for MINUTE, with signed remainder and truncation
+`(epochDays % 3600000) / 60000` for MINUTE, and `(epochDays % 60000) / 1000` for SECOND,
+with signed remainder and truncation
 towards zero. This can be nonzero for large internal DATE values; interpreting every DATE
 as midnight would produce different results. The Arrow kernel preserves NULLs, sliced
 offsets and empty batches without introducing a JVM callback. Runtime regression sources
 carry internal DATE integers directly so the full signed range reaches SQL evaluation.
-The remaining DATE SECOND discrepancy is tracked by
-[#587](https://github.com/datafusion-contrib/StreamFusion/issues/587).
+For example DATE '2024-01-31' produces SECOND 19 and DATE '0001-01-01' produces
+MINUTE -11 and SECOND -59. These match both supported released Flink lines rather
+than an assumed SQL-midnight interpretation.
+The [correctness record](../benchmarks/results/date-clock-extraction-2026-11-02.json)
+retains twelve failing before-fix assertions and twelve passing final SQL invocations across
+Flink 1.18.1/2.2.1 and JDK 11/17, plus the unchanged released extraction oracle and 886
+passing Rust core tests. This repairs existing native results; it is not an acceleration claim.
 
 ## Native FROM_UNIXTIME
 
