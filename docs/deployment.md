@@ -377,3 +377,12 @@ ambiguous graph rewrites, other native families/connectors and wide decimal/high
 keys still need qualification. See the exact
 [ordinary SQL scope](backends/canonical-state.md#ordinary-sql-canonical-handoffs). Existing native
 processing/checkpoint paths remain available for jobs without a stock canonical binding.
+
+
+Regular joins now have the same automatic submission workflow on qualified Flink 2.2.1 paths.
+Stock compiled JSON stays portable; ordinary SQL needs no compiled artifact. The planner captures
+original side layouts/serializers/retention, resolves the original maximum parallelism and preserves
+complete stock identities. Initial complete jobs cover INNER multiset state on both native stores
+and both submission forms, while released restore programs exercise the other stock side layouts
+and join kinds. Keep the exact [regular-join binding scope](operators/joins/regular-join.md#automatic-planner-binding);
+the wider job/connector/type/version/failure/rescale matrix is still under qualification.

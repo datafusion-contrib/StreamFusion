@@ -250,7 +250,32 @@ including indexed RocksDB records and legacy buckets, without an intermediate na
 The clean direct-operator component passes 78 Java controls across six join kinds, three side
 shapes, keyed/keyless paths and both native stores. It covers continued stock/native execution,
 multi-batch transfer, original TTL ages and invalid state, including forced late-batch rejection.
-These BIGINT fixtures use stock heap projections. Automatic regular-join planner binding and
-complete job/connector/type/backend/version/rescale/failure qualification remain open in
+These BIGINT fixtures use stock heap projections. Automatic binding is described below;
+complete job/connector/type/backend/version/rescale/failure qualification remains open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Existing native processing
 and checkpoints retain their paths. Benchmarking is deferred.
+
+
+### Automatic planner binding
+
+The deployed Flink 2.2.1 planner binds this adapter for qualified stock compiled plans and ordinary
+SQL jobs, preserving stock side schemas, unique-key selectors, serializers, retention, actual
+operator identities and resolved/default maximum parallelism. Ordinary SQL retains its existing
+native mini-batch/input mode. Explicit UIDs and manual mappings are unnecessary. Native filters
+and mini-batch assigners retain original logical roles in the metadata projection. Shared stock
+calculation, filter and watermark roles retain one execution owner, with Arrow reference-count
+sharing rebuilt for their actual consumers.
+
+Forty-eight planner controls and four initial clean-process INNER multiset round trips pass across
+both stores/submission forms. The jobs retain custom changelog sources, the transactional sink
+and both transposes, and compare external materialized results with stock and an independent
+oracle. All 15 unchanged released regular-join restore programs pass per engine with actual native
+state imports; 14 also process new join input, and the literal-aggregate fixture verifies restored
+native execution. Eight additional shared-calculation round trips pass across both engine orders,
+both native stores and both submission forms. The wider 164-case job matrix is still under qualification.
+
+Constructed retained payloads, unaligned exchange reassembly, async/changelog state backends and
+unqualified ordinary wide keys are outside this binding scope. Existing native processing and
+checkpoints retain their paths. Complete variant/type/backend/version/TTL/failure/connector and
+rescale qualification remains open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking stays deferred. See [automatic regular binding](../../backends/canonical-state.md#automatic-regular-join-binding).

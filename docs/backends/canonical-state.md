@@ -48,13 +48,11 @@ redistributed by key group when parallelism changes. Unknown format versions, a 
 identifier, missing chunks, invalid lengths, and checksum mismatches fail restore before native code
 interprets the payload.
 
-This is a StreamFusion compatibility format, not stock Flink operator state. A future translation
-API can read these versioned logical sections and emit the exact managed-state descriptors and
-serializer snapshots expected by a target Flink operator. Until such a translator exists, restoring
-the savepoint requires the corresponding StreamFusion operator. Stateful job upgrades are safe only
-when the new StreamFusion version still supports the saved format and the operator definition is
-compatible; changing keys, aggregate definitions, join shape, or other state schema is not implied
-safe merely because the savepoint is canonical.
+The reserved-state envelope above is a StreamFusion compatibility format. Restoring an unbound
+operator's envelope requires its StreamFusion implementation. Operators bound to the stock contracts
+below instead write stock operator state directly and can use the qualified stock handoff paths.
+Neither format makes arbitrary job upgrades safe: keys, aggregate definitions, join shape and the
+operator state schema must remain compatible with the saved artifact.
 
 ## Timestamp layout upgrade
 
@@ -664,7 +662,7 @@ benchmarking is deferred.
 
 The deployed Flink 2.2 planner now captures the original stock logical roles after physical
 optimization and carries those origins through native substitution. Normal `executeSql` submission
-can bind temporal, interval and window joins without compiling or loading a plan. The state schema,
+can bind temporal, interval, window and regular joins without compiling or loading a plan. The state schema,
 key serializer, resolved maximum parallelism and complete source/operator/sink identities come
 from the original stock graph. Native input operators and both perimeter transposes remain in the
 actual execution graph. Connector-created writer names retain their original logical sink role.
@@ -681,8 +679,10 @@ This boundary preserves existing native checkpoint routing pending complete key-
 
 The clean regression selection passes 331 checks, including 21 compiled/ordinary identity and
 key-layout controls, eight deployed ordinary native-family parity controls and existing stock
-state/metadata/SQL controls. All 26 ordinary temporal handoffs and all 46 ordinary window-join
-handoffs pass across their compiled-plan scenario matrices above, using default SQL UIDs. The
+state/metadata/SQL controls. All 26 ordinary temporal, 84 ordinary interval and 46 ordinary window-join
+handoffs pass across their compiled-plan scenario matrices above, using default SQL UIDs.
+The final clean cohort passes all 271 checks, including the eight emitted-output failure cases,
+78 direct regular-state controls, 21 generated-identity controls and eight native parity cases. The
 rescale fixtures disable chaining from the initial job to preserve original generated stock IDs.
 Two additional ordinary temporal `ALWAYS` UID controls pass on the native stores. These jobs
 submit SQL without a compiled artifact, retain two custom sources, a transactional sink and both
@@ -696,8 +696,8 @@ then makes a canonical round trip through both engines. The failure is verified,
 external result is exactly zero or two rows, and final committed effects match stock and the
 independent oracle with no duplication. Native progress is required after every advancing native
 leg. This qualifies the fixture's idempotent transaction protocol; full-job TTL expiry, other sink
-protocols/writer rescaling and broader type/version/failure matrices remain open. Ordinary interval
-complete-job qualification remains separate. All 15 unchanged released join restore programs still pass on
+protocols/writer rescaling and broader type/version/failure matrices remain open.
+All 15 unchanged released temporal/interval/window restore programs still pass on
 each engine: 12 actual native imports with continued input, two verified stock window owners and
 one join elided by Flink. Every family remains partial under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.
@@ -729,7 +729,7 @@ keyed/keyless continued execution, both native stores, multi-batch import/export
 ages, and malformed state. Eight new complete-validation cases first failed with partially
 imported left state and now pass, including a malformed row forced after 1,025 valid rows. This
 qualifies direct operator conversion using BIGINT fixtures and stock heap projections, not
-automatic regular-join job binding, arbitrary schemas or the complete backend/version/rescale/
+arbitrary schemas or the complete backend/version/rescale/
 connector/failure matrix. Those remain required by
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.
 
@@ -737,3 +737,41 @@ The same isolated native source passes 1,187 tests with two existing ignores. Sh
 compilation and runtime regressions pass 44 checks, with one existing skip because that release
 has no `STATE_TTL` hint. These shared controls do not qualify stock canonical regular-join
 interchange on Flink 1.18.
+
+
+## Automatic regular-join binding
+
+The Flink 2.2.1 planner now binds the direct regular-join adapter during stock compiled-plan
+execution and ordinary SQL submission. It reads actual stock side layouts, unique-key selectors,
+serializers and independent retention settings, and uses the original resolved maximum parallelism
+on both exchanges and the native state owner. When Flink defers an unset maximum, it uses Flink's
+released default for the original parallelism. Explicit UIDs are optional: state registration uses
+the actual native primary ID and metadata retains the complete original stock topology.
+
+Ordinary SQL binds the existing native join, retaining its input flags and mini-batch mode.
+Physical changes apply only after the complete graph qualifies. Native filters and mini-batch
+assigners keep explicit original logical identities; they are not elided as transpose helpers.
+When rewriting duplicates a shared stock calculation, filter or watermark role, equivalent copies
+with the same original input role collapse to one execution owner. Arrow sharing is then rebuilt
+for the actual fan-out. Missing or incompatible roles still reject canonical binding.
+Constructed payloads, unaligned exchange reassembly, asynchronous/changelog state backends,
+ambiguous rewrites and unqualified ordinary wide-key layouts retain their existing owners/routes.
+
+Forty-eight planner controls pass across six join kinds, three stock side layouts, both submission
+forms, generated IDs, mini-batch binding, explicit maximum 257 and unset maxima at parallelism
+1/172. Four initial native-first INNER multiset round trips pass across both stores and submission
+forms, with two custom changelog sources, a transactional sink, both transposes and clean stock
+classpath/metadata checks. Materialized external results match stock and an independent join oracle;
+concurrent input interleavings need not produce identical intermediate changelog order.
+
+All 15 unchanged released `JoinRestoreTest` programs pass on both engines. Every native program
+imports actual regular-join state; 14 also consume new join input, while the released literal-aggregate
+fixture requires restored native execution without new join input. The combined unchanged join
+selection passes all 30 programs per engine, including existing temporal/interval/window contracts.
+Eight additional shared-calculation round trips pass across both engine orders, native stores and
+submission forms. These compare materialized external effects with stock and an independent oracle;
+they reproduce the duplicated-owner gap that previously left a native self-join unbound.
+The separate 164-case regular complete-job matrix is under qualification; wider schema/backend/version,
+mini-batch job, connector, TTL expiry and failure/rescale qualification remains required by
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). All families stay partial.
+Benchmarking remains deferred.

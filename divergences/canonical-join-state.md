@@ -32,8 +32,15 @@ validated stock state. This extra pass avoids partial import on a malformed late
 it creates no native snapshot intermediate. Canonical handoff correctness takes priority over
 performance for this infrequent operation.
 
-This commit qualifies the direct operator adapter. Automatic planner binding, constructed join
-payloads, async state, broader mini-batch/changelog qualification, complete jobs, connector
-protocols, versions and rescaling remain required by
+Automatic planner binding now captures actual stock side specifications, unique-key selectors,
+retention and resolved/default maximum parallelism. Ordinary SQL binds the existing native owner
+to retain its hot input/mini-batch mode. Only after complete graph qualification are native edges
+changed; filters/mini-batch assigners retain explicit original roles. Duplicated calculation,
+filter and watermark copies of one original shared role collapse only with matching implementations,
+shapes and original input roles. Arrow sharing is rebuilt to reflect actual consumers, preserving
+batch ownership and one stock identity per execution owner. Eight clean-process shared-input
+round trips and the deployed native self-join regression cover this boundary. Constructed payloads, async
+state, broader mini-batch/changelog qualification, complete job matrices, connector protocols,
+versions and rescaling remain required by
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking and tuning are
 deferred until the required functionality is complete.

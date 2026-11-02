@@ -271,10 +271,13 @@ final class StockCompiledPlanLowering {
       if (ordinaryHelper(node)) continue;
       if (!graph.originals.containsKey(node)) return false;
       if (node.getClass().getName().startsWith("tech.streamfusion.")
-          && !(node instanceof NativeTemporalJoinExecNode
+          && !(node instanceof NativeColumnarUpdatingJoinExecNode
+              || node instanceof NativeTemporalJoinExecNode
               || node instanceof NativeIntervalJoinExecNode
               || node instanceof NativeWindowJoinExecNode
               || node instanceof NativeCalcExecNode
+              || node instanceof NativeFilterExecNode
+              || node instanceof NativeMiniBatchAssignerExecNode
               || node instanceof NativeWatermarkAssignerExecNode
               || node instanceof NativeWindowTableFunctionExecNode)) return false;
     }
@@ -285,9 +288,12 @@ final class StockCompiledPlanLowering {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
     collectUids(graph.stock.getRootNodes());
+    Map<ExecNode<?>, ExecNode<?>> replacements = ordinarySharedRoles(graph, nodes);
+    if (replacements == null) return null;
+    boolean sharedRoles = !replacements.isEmpty();
     Set<ExecNode<?>> assigned = Collections.newSetFromMap(new IdentityHashMap<>());
     for (ExecNode<?> node : nodes) {
-      if (ordinaryHelper(node)) continue;
+      if (ordinaryHelper(node) || replacements.containsKey(node)) continue;
       ExecNode<?> original = graph.originals.get(node);
       if (resolvedStockMaximums.containsKey(stockTransformations.get(original.getId()).getId())
           && !assigned.add(original)) return null;
@@ -297,13 +303,14 @@ final class StockCompiledPlanLowering {
     for (ExecNode<?> original : originals)
       if (resolvedStockMaximums.containsKey(stockTransformations.get(original.getId()).getId())
           && !assigned.contains(original)) return null;
-    Map<ExecNode<?>, ExecNode<?>> replacements = new IdentityHashMap<>();
+    Map<NativeColumnarUpdatingJoinExecNode, ExecNode<?>> regularOwners = new IdentityHashMap<>();
     try {
       var writer = CompiledPlanSerdeUtil.createJsonObjectWriter(planner.createSerdeContext());
       for (ExecNode<?> node : nodes) {
-        if (ordinaryHelper(node)) continue;
+        if (ordinaryHelper(node) || replacements.containsKey(node)) continue;
         ExecNode<?> stock = graph.originals.get(node);
-        if (node instanceof NativeTemporalJoinExecNode
+        if (node instanceof NativeColumnarUpdatingJoinExecNode
+            || node instanceof NativeTemporalJoinExecNode
             || node instanceof NativeIntervalJoinExecNode
             || node instanceof NativeWindowJoinExecNode) {
           if (!nativeKeyedState) return null;
@@ -325,6 +332,12 @@ final class StockCompiledPlanLowering {
                   instanceof
                   org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWindowJoin)
             exit = lowerWindowJoin(stock);
+          else if (node instanceof NativeColumnarUpdatingJoinExecNode
+              && stock
+                  instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecJoin)
+            exit =
+                lowerJoin(
+                    (org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecJoin) stock);
           else return null;
           if (exit == stock) return null;
           ExecNode<?> owner = exit.getInputEdges().get(0).getSource();
@@ -337,7 +350,10 @@ final class StockCompiledPlanLowering {
               source = source.getInputEdges().get(0).getSource();
             connect(source, owner.getInputEdges().get(side).getSource());
           }
-          replacements.put(node, owner);
+          if (node instanceof NativeColumnarUpdatingJoinExecNode) {
+            regularOwners.put((NativeColumnarUpdatingJoinExecNode) node, owner);
+            bindings.put(node, bindings.remove(owner));
+          } else replacements.put(node, owner);
         } else {
           bindings.put(
               node,
@@ -347,14 +363,72 @@ final class StockCompiledPlanLowering {
                   null));
         }
       }
+      regularOwners.forEach(
+          (node, owner) -> {
+            node.withStateMaxParallelism(
+                stockMaximum(stockTransformations.get(graph.originals.get(node).getId())));
+            var inputs = new ArrayList<ExecEdge>();
+            for (ExecEdge input : owner.getInputEdges())
+              inputs.add(
+                  new ExecEdge(
+                      input.getSource(), node, input.getShuffle(), input.getExchangeMode()));
+            node.setInputEdges(inputs);
+          });
+      if (sharedRoles)
+        for (ExecNode<?> node : nodes)
+          if (node instanceof NativeShareExecNode)
+            replacements.put(node, node.getInputEdges().get(0).getSource());
       var rewritten = new IdentityHashMap<ExecNode<?>, ExecNode<?>>();
       var roots = new ArrayList<ExecNode<?>>();
       for (ExecNode<?> root : graph.getRootNodes())
         roots.add(rewriteOrdinary(root, replacements, rewritten));
-      return new RuntimeGraph(graph.getFlinkVersion(), roots);
+      var result = new RuntimeGraph(graph.getFlinkVersion(), roots);
+      if (sharedRoles) {
+        Set<ExecNode<?>> reachable = Collections.newSetFromMap(new IdentityHashMap<>());
+        collectOrdinaryNodes(roots, reachable);
+        for (ExecNode<?> node : reachable)
+          if (node.getClass().getName().startsWith("tech.streamfusion.")
+              && !(node instanceof ArrowToRowDataExecNode)) columnar.add(node);
+        insertShares(result);
+      }
+      return result;
     } catch (IOException failure) {
       throw new TableException("Cannot capture ordinary SQL stock state contracts", failure);
     }
+  }
+
+  private static Map<ExecNode<?>, ExecNode<?>> ordinarySharedRoles(
+      SqlPlanOrigins.RuntimeGraph graph, Set<ExecNode<?>> nodes) {
+    Map<ExecNode<?>, ExecNode<?>> owners = new IdentityHashMap<>();
+    Map<ExecNode<?>, ExecNode<?>> copies = new IdentityHashMap<>();
+    for (ExecNode<?> node : nodes) {
+      if (!(node instanceof NativeCalcExecNode
+          || node instanceof NativeFilterExecNode
+          || node instanceof NativeWatermarkAssignerExecNode)) continue;
+      ExecNode<?> original = graph.originals.get(node);
+      ExecNode<?> owner = owners.putIfAbsent(original, node);
+      if (owner == null) continue;
+      if (node.getClass() != owner.getClass()
+          || !node.getDescription().equals(owner.getDescription())
+          || !node.getOutputType().equals(owner.getOutputType())
+          || !node.getInputEdges()
+              .get(0)
+              .getSource()
+              .getOutputType()
+              .equals(owner.getInputEdges().get(0).getSource().getOutputType())
+          || ordinaryInputRole(graph, node) == null
+          || ordinaryInputRole(graph, node) != ordinaryInputRole(graph, owner)) return null;
+      copies.put(node, owner);
+    }
+    return copies;
+  }
+
+  private static ExecNode<?> ordinaryInputRole(
+      SqlPlanOrigins.RuntimeGraph graph, ExecNode<?> node) {
+    ExecNode<?> source = node.getInputEdges().get(0).getSource();
+    while (source instanceof RowDataToArrowExecNode || source instanceof NativeShareExecNode)
+      source = source.getInputEdges().get(0).getSource();
+    return graph.originals.get(source);
   }
 
   private static boolean ordinaryHelper(ExecNode<?> node) {
@@ -394,7 +468,12 @@ final class StockCompiledPlanLowering {
       Map<ExecNode<?>, ExecNode<?>> replacements,
       Map<ExecNode<?>, ExecNode<?>> rewritten) {
     if (rewritten.containsKey(node)) return rewritten.get(node);
-    ExecNode<?> result = replacements.getOrDefault(node, node);
+    ExecNode<?> result = node;
+    while (replacements.containsKey(result)) result = replacements.get(result);
+    if (rewritten.containsKey(result)) {
+      rewritten.put(node, rewritten.get(result));
+      return rewritten.get(result);
+    }
     var edges = new ArrayList<ExecEdge>();
     for (ExecEdge edge : result.getInputEdges())
       edges.add(
@@ -432,8 +511,164 @@ final class StockCompiledPlanLowering {
             instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWindowJoin
         && nativeKeyedState
         && NativeConfig.operatorEnabled("windowJoin")) result = lowerWindowJoin(node);
+    else if (node instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecJoin
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("updatingJoin"))
+      result =
+          lowerJoin((org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecJoin) node);
     lowered.put(node, result);
     return result;
+  }
+
+  private ExecNode<?> lowerJoin(
+      org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecJoin stock)
+      throws IOException {
+    JsonNode definition = definitions.get(stock.getId());
+    var spec =
+        reader
+            .forType(org.apache.flink.table.planner.plan.nodes.exec.spec.JoinSpec.class)
+            .<org.apache.flink.table.planner.plan.nodes.exec.spec.JoinSpec>readValue(
+                definition.path("joinSpec"));
+    int kind = RegularJoinMatcher.joinTypeCode(spec.getJoinType());
+    int[] leftKeys = spec.getLeftKeys(), rightKeys = spec.getRightKeys();
+    if (kind < 0 || leftKeys.length != rightKeys.length) return stock;
+    var left = stock.getInputEdges().get(0).getSource();
+    var right = stock.getInputEdges().get(1).getSource();
+    RowType leftType = (RowType) left.getOutputType(), rightType = (RowType) right.getOutputType();
+    RowType outputType = (RowType) stock.getOutputType();
+    if (!RowDataArrowConverter.supports(leftType)
+        || !RowDataArrowConverter.supports(rightType)
+        || !RowDataArrowConverter.supports(outputType)
+        || !ArrowRowTypeSupport.supportsFields(leftType, leftKeys)
+        || !ArrowRowTypeSupport.supportsFields(rightType, rightKeys)
+        || Stream.concat(leftType.getChildren().stream(), rightType.getChildren().stream())
+            .anyMatch(type -> type.is(LogicalTypeFamily.CONSTRUCTED))) return stock;
+    Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
+    stock.getPersistedConfig().toMap().forEach(config::setString);
+    if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
+        || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
+      return stock;
+    RexExpression predicate = null;
+    if (spec.getNonEquiCondition().isPresent()) {
+      RexNode condition =
+          org.apache.calcite.rex.RexUtil.expandSearch(
+              new RexBuilder(planner.getTypeFactory()), null, spec.getNonEquiCondition().get());
+      predicate = RexExpression.encode(condition);
+      if (predicate == null || predicate.requiresCollectionRepresentation()) return stock;
+    }
+    var original =
+        (org.apache.flink.streaming.api.transformations.TwoInputTransformation<?, ?, ?>)
+            stockTransformations.get(stock.getId());
+    var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
+    var leftSpec =
+        (org.apache.flink.table.runtime.operators.join.stream.utils.JoinInputSideSpec)
+            stockJoinField(operator, "leftInputSideSpec");
+    var rightSpec =
+        (org.apache.flink.table.runtime.operators.join.stream.utils.JoinInputSideSpec)
+            stockJoinField(operator, "rightInputSideSpec");
+    long leftTtl = (Long) stockJoinField(operator, "leftStateRetentionTime");
+    long rightTtl = (Long) stockJoinField(operator, "rightStateRetentionTime");
+    @SuppressWarnings("unchecked")
+    TypeSerializer<RowData> serializer =
+        (TypeSerializer<RowData>)
+            original
+                .getStateKeyType()
+                .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
+    RowType keyType =
+        RowType.of(
+            Arrays.stream(leftKeys).mapToObj(leftType::getTypeAt).toArray(LogicalType[]::new));
+    var contract =
+        new tech.streamfusion.state.StockJoinStateContract(
+            serializer,
+            keyType,
+            stockJoinSide(leftType, leftSpec, kind == 1 || kind == 3 || kind >= 4, leftTtl),
+            stockJoinSide(rightType, rightSpec, kind == 2 || kind == 3, rightTtl));
+    int maximum = stockMaximum(original);
+    var leftExchange =
+        (NativeColumnarExchangeExecNode) canonicalJoinInput(left, config, leftType, leftKeys, true);
+    var rightExchange =
+        (NativeColumnarExchangeExecNode)
+            canonicalJoinInput(right, config, rightType, rightKeys, true);
+    leftExchange.withStateMaxParallelism(maximum);
+    rightExchange.withStateMaxParallelism(maximum);
+    var join =
+        new NativeColumnarUpdatingJoinExecNode(
+                config,
+                InputProperty.DEFAULT,
+                InputProperty.DEFAULT,
+                outputType,
+                "NativeColumnarUpdatingJoin",
+                leftKeys,
+                rightKeys,
+                java.util.stream.IntStream.range(0, spec.getFilterNulls().length)
+                    .map(i -> spec.getFilterNulls()[i] ? 1 : 0)
+                    .toArray(),
+                kind,
+                leftType,
+                rightType,
+                predicate,
+                FlinkKeyGroupUtils.stockKeyDescriptor(leftType, leftKeys),
+                leftSpec.joinKeyContainsUniqueKey(),
+                rightSpec.joinKeyContainsUniqueKey(),
+                false,
+                false,
+                leftTtl,
+                rightTtl)
+            .withStateMaxParallelism(maximum);
+    join.setInputEdges(
+        List.of(
+            ExecEdge.builder().source(leftExchange).target(join).build(),
+            ExecEdge.builder().source(rightExchange).target(join).build()));
+    bindings.put(join, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
+    columnar.add(join);
+    var exit =
+        new ArrowToRowDataExecNode(config, InputProperty.DEFAULT, outputType, "ArrowToRowData");
+    connect(join, exit);
+    return exit;
+  }
+
+  private int stockMaximum(Transformation<?> original) {
+    int maximum =
+        resolvedStockMaximums.getOrDefault(original.getId(), original.getMaxParallelism());
+    if (maximum < 1) {
+      int parallelism = original.getParallelism();
+      if (parallelism < 1) parallelism = planner.getExecEnv().getParallelism();
+      if (parallelism < 1)
+        parallelism =
+            planner
+                .getTableConfig()
+                .getConfiguration()
+                .get(org.apache.flink.configuration.CoreOptions.DEFAULT_PARALLELISM);
+      maximum = FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), Math.max(1, parallelism));
+    }
+    return maximum;
+  }
+
+  private static Object stockJoinField(Object operator, String name) throws IOException {
+    try {
+      var field =
+          org.apache.flink.table.runtime.operators.join.stream.AbstractStreamingJoinOperator.class
+              .getDeclaredField(name);
+      field.setAccessible(true);
+      return field.get(operator);
+    } catch (ReflectiveOperationException failure) {
+      throw new IOException("Cannot bind released join state " + name, failure);
+    }
+  }
+
+  private static tech.streamfusion.state.StockJoinStateContract.SideSpec stockJoinSide(
+      RowType rowType,
+      org.apache.flink.table.runtime.operators.join.stream.utils.JoinInputSideSpec spec,
+      boolean outer,
+      long ttl) {
+    boolean otherUnique = spec.hasUniqueKey() && !spec.joinKeyContainsUniqueKey();
+    return new tech.streamfusion.state.StockJoinStateContract.SideSpec(
+        rowType,
+        spec.joinKeyContainsUniqueKey(),
+        otherUnique ? spec.getUniqueKeyType().toRowType() : null,
+        otherUnique ? spec.getUniqueKeySelector() : null,
+        outer,
+        ttl);
   }
 
   private ExecNode<?> lowerSource(StreamExecTableSourceScan stock) throws IOException {
