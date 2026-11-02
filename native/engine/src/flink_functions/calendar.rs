@@ -132,7 +132,9 @@ fn extract(days: i32, field: Field) -> i32 {
         Field::Year => calendar_date(julian).0,
         Field::Month => calendar_date(julian).1,
         Field::Day => calendar_date(julian).2,
-        Field::Hour | Field::Minute | Field::Second => 0,
+        // Released DATE clock extraction uses the physical integer as milliseconds.
+        Field::Hour => extract_millis(i64::from(days), field) as i32,
+        Field::Minute | Field::Second => 0,
         Field::DayOfWeek => julian.wrapping_add(1).rem_euclid(7) + 1,
         Field::Quarter => (calendar_date(julian).1 + 2) / 3,
         Field::Week => {
@@ -271,6 +273,71 @@ mod tests {
     use arrow::array::{Array, Date32Array, Int64Array};
     use arrow::datatypes::Field as ArrowField;
     use datafusion::config::ConfigOptions;
+
+    fn assert_date_clock_field(field: Field, expected: Vec<Option<i64>>) {
+        use datafusion::common::ScalarValue;
+        let values = vec![
+            Some(i32::MIN + 1),
+            Some(-719162),
+            Some(-60000),
+            Some(-1000),
+            None,
+            Some(0),
+            Some(19753),
+            Some(i32::MAX),
+        ];
+        let invoke = |input, rows| {
+            function(field)
+                .invoke_with_args(ScalarFunctionArgs {
+                    args: vec![input],
+                    number_rows: rows,
+                    return_field: Arc::new(ArrowField::new("v", DataType::Int64, true)),
+                    config_options: Arc::new(ConfigOptions::default()),
+                    arg_fields: vec![],
+                })
+                .unwrap()
+        };
+        for (value, expected) in values.iter().zip(&expected) {
+            let ColumnarValue::Scalar(output) =
+                invoke(ColumnarValue::Scalar(ScalarValue::Date32(*value)), 1024)
+            else {
+                panic!("expected scalar");
+            };
+            assert_eq!(output, ScalarValue::Int64(*expected));
+        }
+        let input = Date32Array::from([vec![Some(42)], values, vec![Some(43)]].concat())
+            .slice(1, expected.len());
+        let output = invoke(ColumnarValue::Array(Arc::new(input)), expected.len())
+            .into_array(expected.len())
+            .unwrap();
+        output.to_data().validate_full().unwrap();
+        assert_eq!(output.as_ref(), &Int64Array::from(expected));
+        let output = invoke(
+            ColumnarValue::Array(Arc::new(Date32Array::from(Vec::<Option<i32>>::new()))),
+            0,
+        )
+        .into_array(0)
+        .unwrap();
+        assert_eq!(output.len(), 0);
+        assert_eq!(output.data_type(), &DataType::Int64);
+    }
+
+    #[test]
+    fn date_hour_keeps_released_signed_physical_integer_arithmetic() {
+        assert_date_clock_field(
+            Field::Hour,
+            vec![
+                Some(-20),
+                Some(0),
+                Some(0),
+                Some(0),
+                None,
+                Some(0),
+                Some(0),
+                Some(20),
+            ],
+        );
+    }
 
     #[test]
     fn fields_keep_iso_week_sunday_origin_nulls_and_sliced_offsets() {

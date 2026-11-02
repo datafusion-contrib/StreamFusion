@@ -29,6 +29,15 @@ unsupported `MATCH_RECOGNIZE` operator.
 Flink still rejects invalid signatures, invalid units and expressions outside their SQL context.
 The inventory describes Flink's functions, not extra overloads supplied by other SQL dialects.
 
+DATE `HOUR(d)` and `EXTRACT(HOUR FROM d)` follow released Flink's physical-integer
+arithmetic: `(epochDays % 86400000) / 3600000`, with signed remainder and truncation
+towards zero. This can be nonzero for large internal DATE values; interpreting every DATE
+as midnight would produce different results. The Arrow kernel preserves NULLs, sliced
+offsets and empty batches without introducing a JVM callback. Runtime regression sources
+carry internal DATE integers directly so the full signed range reaches SQL evaluation.
+The remaining DATE clock units are tracked by
+[#587](https://github.com/datafusion-contrib/StreamFusion/issues/587).
+
 ## Native FROM_UNIXTIME
 
 The default format and literal formats composed of `yyyy`, `MM`, `dd`, `HH`, `mm`, `ss`,
