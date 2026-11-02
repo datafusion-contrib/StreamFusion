@@ -1402,6 +1402,15 @@ public final class Native {
   public static native void flushKeepLastDeduplicator(
       long handle, long outArrayAddress, long outSchemaAddress);
 
+  public static native void exportEagerDeduplicatorCanonical(
+      long handle, boolean persistent, long rowSchema, BatchReceiver receiver);
+
+  public static native void importEagerDeduplicatorCanonical(
+      long handle, boolean persistent, long array, long schema);
+
+  public static native void validateEagerDeduplicatorCanonical(
+      long handle, boolean persistent, long array, long schema);
+
   /** Releases the deduplicator and its per-key state. */
   public static native void closeKeepLastDeduplicator(long handle);
 

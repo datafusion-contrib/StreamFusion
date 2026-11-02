@@ -85,3 +85,22 @@ Keep-last row-state decoding restores the exact nested Arrow field names and met
 before emitting a batch, using the same schema alignment as Top-N. This includes cached
 UTF-16 string representations and retained values after checkpoint restoration; changing a
 list child name during Arrow row decoding must not invalidate the output schema.
+
+
+## Canonical state adapter
+
+Direct Flink 2.2.1 eager-state conversion is partial. Processing-time keep-first transfers a
+Boolean presence marker; processing-time keep-last and eager event-time keep modes transfer
+the retained full row, stock serializers, actual key and original TTL age. The proctime
+suppression kind survives conversion. Memory and typed RocksDB export live state directly,
+without a serialized native snapshot. Whole-view validation precedes insertion into a fresh target.
+
+All 66 direct controls pass across the four eager modes, both native stores, TTL on/off and
+nullable/NOT NULL/keyless keys, with explicit expiry, late-corruption and PROCTIME-placeholder
+checks. Thirty-two existing processing/checkpoint controls also pass on each Flink line; this
+does not qualify stock canonical interchange on 1.18. The full native suite passes 1,216 tests with two existing ignores.
+
+The adapter is not yet installed automatically during ordinary or compiled job submission.
+Buffered rowtime-first candidates/timers, mini-batch algorithm variants, other output settings,
+wider types, rescaling and connector/failure guarantees remain open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

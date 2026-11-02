@@ -1,3 +1,4 @@
+mod canonical;
 #[cfg(test)]
 mod indexed_tests;
 mod pending;

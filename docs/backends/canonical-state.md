@@ -964,3 +964,39 @@ ROW-bearing keys, ordinary wide root-key layouts, async/changelog backends, unal
 state, other shared stateful roles and unqualified native consumers remain separate work. Older
 native graph/maxP upgrades are not established by these new-job tests. All families remain partial
 under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking is deferred.
+
+
+## Direct eager-dedup state projection
+
+The released Flink 2.2.1 eager contracts use `deduplicate-state` VALUE state: Boolean presence
+for processing-time keep-first, or the full retained row for processing-time keep-last and
+eager event-time keep modes. The adapter retains actual key bytes, the stock Boolean/row
+serializer, original TTL write age and the proctime row-kind bit used by duplicate suppression.
+The event-time comparator is checked against the retained row's timestamp during import.
+
+Memory and typed RocksDB project live rows directly in bounded batches without a native snapshot
+intermediate or input replay. Presence-marker transport fields are nullable even when the original
+input was NOT NULL; they are placeholders in the bridge, while the actual stock value is Boolean.
+Full-row state retains its declared schema. Invalid NONNULL primitive data is rejected rather
+than exported as a fabricated valid value. Physical NULL PROCTIME placeholders pass explicit
+controls with the existing timestamp representation; no epoch-zero substitution is introduced.
+
+Restore requires a fresh target and validates the complete stock view before native insertion.
+It checks keys against payloads, row kinds, timestamps, frame bounds and duplicates, including
+persisted earlier chunks. Late corruptions cannot leave earlier valid chunks imported. Resource
+exhaustion aborts initialization; closing the failed target releases its existing reservation.
+Moved Arrow buffers close before JNI errors. Ordinary processing and raw native checkpoint
+formats keep their existing paths; imported presence markers survive native memory checkpoints.
+
+Direct qualification contains 66 Java controls: 48 continued mode/store/TTL/key-layout cases,
+eight exact-age/expiry cases, eight forced late corruptions and two PROCTIME placeholder cases.
+The key cases are nullable, NOT NULL and keyless; payloads are BIGINT and compact timestamps.
+Thirty-two existing processing/checkpoint controls pass on both Flink lines. The final native suite passes 1,216 tests with two existing ignores, including
+resource-failure cleanup and invalid-data controls. These cohorts
+overlap and are not cumulative counts. There is no Flink 1.18 canonical-interchange claim.
+
+Automatic compiled/ordinary dedup binding, buffered rowtime-first candidates/timers, mini-batch
+algorithm variants, other emission settings and wider schemas/backend/version/connector/failure
+matrices remain required by [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+This direct adapter alone does not establish normal-submission interoperability for dedup jobs.
+Benchmarking remains deferred.
