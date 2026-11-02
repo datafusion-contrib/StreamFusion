@@ -133,10 +133,26 @@ BIGINT, INT, VARCHAR, DECIMAL(38,2), compact/noncompact TIMESTAMP, BOOLEAN, DOUB
 The combined component/regression run passes 618 Java controls; shared Flink 1.18 operator tests
 pass without claiming stock canonical qualification for that line. These cohorts overlap.
 
-Binding is currently explicit at the component boundary. Automatic compiled-plan binding,
-unchanged upstream interval restore programs, clean-classpath complete jobs, residual predicates,
-processing-time payload preservation and the wider type/version/rescale/failure matrix remain
-open. Nonpositive/overflow event-time cleanup remains an explicitly unqualified interchange edge;
+The stock compiled-plan loader now binds this event-time state contract automatically, using the
+original stock serializer/UID and resolved maximum parallelism for both exchanges and the native
+state owner. The portable JSON remains stock-only. Twenty-two planner controls and two maximum
+parallelism controls cover the binding and unsupported-mode boundaries.
+
+All 26 isolated complete-job cases pass: 16 continued-input switches across four join kinds,
+both stores and engine orders; four no-input re-exports; two ordinary native-checkpoint recoveries;
+and four FULL-join 64-key rescale cases through 1 → 3 → 2 tasks at maximum parallelism 128. They
+retain two custom sources, a transactional sink and both transposes, require actual native input,
+exclude StreamFusion from stock workers, and match committed sink effects to a stock baseline.
+The combined clean workflow passes 198 controls, including four shared-runner window-join checks.
+
+The unchanged released event-time interval restore program also passes on each engine, with ten
+pending rows imported and five new rows processed by the native state owner. The broader interval
+upstream selection remains red: processing-time payload transfer is missing, and the negative
+interval program is already stateless in Flink but still lacks an accurate submitted-graph
+execution contract. Both gaps remain visible; unrelated Calc work does not satisfy a join gate.
+
+Ordinary SQL identities, full-job residual predicates, processing-time payload preservation and
+the wider type/version/rescale/failure matrix remain open. Nonpositive/overflow event-time cleanup remains an explicitly unqualified interchange edge;
 the released heap/Rocks distinction described above still applies. Benchmarking is deferred.
 
 ### Logical input and retained native frames

@@ -422,7 +422,7 @@ rows then enter retained state directly with owned buffers. Stock metadata conta
 Flink serializer classes. Native canonical export takes no intermediate native snapshot.
 
 The explicit component binding passes 240 positive and 45 rejection/guard controls, plus typed
-key native-checkpoint continuation. Automatic plan binding, processing-time payloads and wider
+key native-checkpoint continuation. Processing-time payloads and wider
 full-job/version/rescale/failure coverage remain open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). See the
 [interval contract](../operators/joins/interval-join.md#released-stock-event-time-state-adapter)
@@ -435,3 +435,19 @@ native IPC normalizes on memory/persistent recovery without changing its frame l
 identity/match flags or independent cleanup timers. Direct canonical export still visits live
 state. The clean normalization component passes 1,161 native tests (two existing ignores) and
 618 Java controls; these overlap the adapter qualification above.
+
+### Automatic event-time interval binding
+
+The stock compiled-plan workflow now installs the interval state contract and canonical identity
+projection during normal initialization. It resolves the original stock maximum parallelism and
+binds it to both native exchanges and the state owner. Portable JSON remains stock-executable.
+Twenty-six clean-process interval jobs pass across both stores/orders and all four join kinds,
+including repeated switches, no-input export, native-checkpoint recovery and 64-key rescaling
+through 1 → 3 → 2 tasks. Custom sources, transactional sink effects and both transposes remain in
+the jobs, while stock workers exclude StreamFusion. The clean workflow passes 198 controls.
+
+The released event-time interval fixture imports ten pending rows and processes five new native
+rows successfully. Processing-time interchange and the submitted-graph proof for Flink's
+stateless negative-interval fixture remain open; the full interval upstream lane is not green.
+Ordinary SQL identities and the remaining full #569 matrix also remain open. Benchmarking stays
+deferred.

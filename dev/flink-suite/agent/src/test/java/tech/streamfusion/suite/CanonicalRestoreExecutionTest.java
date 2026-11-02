@@ -92,6 +92,41 @@ class CanonicalRestoreExecutionTest {
 
   private static final class NativeWindowJoinOperator {}
 
+  private static final String INTERVAL =
+      "org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest";
+
+  @Test
+  void intervalRestoreRequiresItsActualNativeInputOwner() {
+    var scope = NativeExecution.beginRestore(INTERVAL, new Object(), "interval-join-event-time");
+    var interval = new NativeIntervalJoinOperator();
+    NativeExecution.opened(interval);
+    NativeExecution.restored("NativeIntervalJoinOperator", 3);
+    NativeExecution.completed(interval, 2);
+    assertDoesNotThrow(() -> NativeExecution.finish(scope));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"none", "open", "importOnly", "calc", "window"})
+  void unrelatedWorkCannotSatisfyIntervalRestore(String mode) {
+    var scope = NativeExecution.beginRestore(INTERVAL, new Object(), "interval-join-event-time");
+    if (mode.equals("open") || mode.equals("importOnly")) {
+      NativeExecution.opened(new NativeIntervalJoinOperator());
+      if (mode.equals("importOnly")) NativeExecution.restored("NativeIntervalJoinOperator", 3);
+    } else if (mode.equals("calc")) {
+      var calc = new NativeCalcOperator();
+      NativeExecution.opened(calc);
+      NativeExecution.completed(calc, 3);
+    } else if (mode.equals("window")) {
+      var window = new NativeWindowJoinOperator();
+      NativeExecution.opened(window);
+      NativeExecution.completed(window, 3);
+    }
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  private static final class NativeIntervalJoinOperator {}
+
   private static final String SORT = ElidedTemporalSort.TEST.replace("#testRestore", "");
 
   private static final String SORT_REASON =

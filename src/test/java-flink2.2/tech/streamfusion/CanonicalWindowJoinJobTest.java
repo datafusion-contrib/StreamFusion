@@ -6,9 +6,6 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
-import org.apache.flink.table.types.logical.BigIntType;
-import org.apache.flink.table.types.logical.RowType;
-import org.example.canonical.CanonicalFixtureFactory;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
@@ -83,82 +80,14 @@ class CanonicalWindowJoinJobTest {
   private void check(
       String kind, String shape, boolean keyless, boolean nativeFirst, String backend, String mode)
       throws Exception {
-    var runner = new CanonicalJobRunner(directory);
-    var fixture = runner.fixtureJar();
     var baseline = prepare("baseline", kind, shape, keyless);
-    if (mode.equals("rescale")) rescaleInput(baseline);
-    runner.run(fixture, false, baseline, Integer.MAX_VALUE, "none", "baseline", 3, "hashmap");
     var switched = prepare("switched", kind, shape, keyless);
     if (mode.equals("rescale")) {
+      rescaleInput(baseline);
       rescaleInput(switched);
-      Files.createFile(switched.resolve("rescale"));
-      Files.writeString(switched.resolve("native-rescale-family"), "WindowJoin");
-      Files.writeString(switched.resolve("prefix-parallelism"), "1");
-      Files.writeString(switched.resolve("middle-parallelism"), "3");
-      Files.writeString(switched.resolve("suffix-parallelism"), "2");
     }
-    if (mode.equals("checkpoint")) Files.createFile(switched.resolve("prefix-native-checkpoint"));
-    runner.run(
-        fixture,
-        nativeFirst,
-        switched,
-        mode.equals("rescale") ? 128 : 4,
-        "none",
-        "prefix",
-        3,
-        nativeFirst ? backend : "hashmap");
-    String restore = "prefix";
-    if (mode.equals("checkpoint")) {
-      runner.run(fixture, true, switched, 4, restore, "canonical", 3, backend);
-      restore = "canonical";
-    } else if (mode.equals("no-input")) {
-      runner.run(fixture, !nativeFirst, switched, 4, restore, "no-input", 3, backend);
-      runner.run(fixture, nativeFirst, switched, 4, "no-input", "return", 3, backend);
-      restore = "return";
-    }
-    runner.run(
-        fixture,
-        !nativeFirst,
-        switched,
-        mode.equals("rescale") ? 256 : 8,
-        restore,
-        "middle",
-        3,
-        nativeFirst ? "hashmap" : backend);
-    runner.run(
-        fixture,
-        nativeFirst,
-        switched,
-        Integer.MAX_VALUE,
-        "middle",
-        "suffix",
-        3,
-        nativeFirst ? backend : "hashmap");
-    var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
-    var expected =
-        CanonicalFixtureFactory.committedRows(baseline.resolve("committed"), type).stream()
-            .sorted()
-            .toArray();
-    assertTrue(expected.length > 0);
-    assertArrayEquals(
-        expected,
-        CanonicalFixtureFactory.committedRows(switched.resolve("committed"), type).stream()
-            .sorted()
-            .toArray());
-    for (String stage : List.of("prefix", "middle")) {
-      if (mode.equals("checkpoint") && stage.equals("prefix")) continue;
-      var savepoint =
-          Path.of(
-              java.net.URI.create(Files.readString(switched.resolve(stage + "-savepoint")).trim()));
-      var metadata =
-          new String(
-              Files.readAllBytes(savepoint.resolve("_metadata")),
-              java.nio.charset.StandardCharsets.ISO_8859_1);
-      assertFalse(metadata.contains("tech.streamfusion"));
-    }
-    assertTrue(
-        Files.exists(
-            switched.resolve((nativeFirst ? "middle" : "suffix") + "-stock-classpath-verified")));
+    new CanonicalJobRunner(directory)
+        .verifyJoinSwitch(baseline, switched, nativeFirst, backend, mode, "WindowJoin");
   }
 
   private static void rescaleInput(Path root) throws Exception {

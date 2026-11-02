@@ -196,6 +196,13 @@ public final class StreamFusionSuiteAgent {
                     ? builder.visit(
                         Advice.to(RecordCanonicalJoinImport.class).on(named("importBatch")))
                     : builder)
+        .type(named("tech.streamfusion.state.StockIntervalJoinStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalIntervalJoinImport.class).on(named("send")))
+                    : builder)
         .type(named("tech.streamfusion.state.StockWindowJoinStateContract"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -233,6 +240,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeColumnarChangelogNormalizeOperator",
                 "tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator",
+                "tech.streamfusion.operator.NativeIntervalJoinOperator",
                 "tech.streamfusion.operator.NativeWindowJoinOperator",
                 "tech.streamfusion.operator.NativeColumnarTopNOperator",
                 "tech.streamfusion.operator.NativeColumnarWindowRankOperator",
@@ -516,6 +524,14 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodExit
     static void exit(@Advice.Argument(3) java.util.List<?> rows) {
       NativeExecution.restored("NativeColumnarUpdatingJoinOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalIntervalJoinImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(2) java.util.List<?> rows, @Advice.Argument(3) boolean timers) {
+      if (!timers) NativeExecution.restored("NativeIntervalJoinOperator", rows.size());
     }
   }
 

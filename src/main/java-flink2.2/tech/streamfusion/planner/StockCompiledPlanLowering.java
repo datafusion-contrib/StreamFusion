@@ -277,6 +277,10 @@ final class StockCompiledPlanLowering {
     else if (node instanceof StreamExecCalc && NativeConfig.operatorEnabled("calc"))
       result = lowerCalc((StreamExecCalc) node);
     else if (node
+            instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecIntervalJoin
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("intervalJoin")) result = lowerIntervalJoin(node);
+    else if (node
             instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWindowJoin
         && nativeKeyedState
         && NativeConfig.operatorEnabled("windowJoin")) result = lowerWindowJoin(node);
@@ -389,6 +393,143 @@ final class StockCompiledPlanLowering {
     var exit =
         new ArrowToRowDataExecNode(config, InputProperty.DEFAULT, outputType, "ArrowToRowData");
     connect(nativeCalc, exit);
+    return exit;
+  }
+
+  private ExecNode<?> lowerIntervalJoin(ExecNode<?> stock) throws IOException {
+    if (planner.getExecEnv().getCheckpointConfig().isUnalignedCheckpointsEnabled()) {
+      recordFallback("interval join: canonical exchange reassembly is not yet bound");
+      return stock;
+    }
+    if (stockUids.get(stock.getId()) == null) return stock;
+    var spec =
+        reader
+            .forType(org.apache.flink.table.planner.plan.nodes.exec.spec.IntervalJoinSpec.class)
+            .<org.apache.flink.table.planner.plan.nodes.exec.spec.IntervalJoinSpec>readValue(
+                definitions.get(stock.getId()).path("intervalJoinSpec"));
+    var bounds = spec.getWindowBounds();
+    if (!bounds.isEventTime()) {
+      recordFallback("interval join: stock processing-time cache payloads are not yet bound");
+      return stock;
+    }
+    if (bounds.getLeftUpperBound() - bounds.getLeftLowerBound() < 0) {
+      recordFallback("interval join: negative bounds retain stock stateless filters");
+      return stock;
+    }
+    var joinSpec = spec.getJoinSpec();
+    int kind = IntervalJoinMatcher.joinTypeCode(joinSpec.getJoinType());
+    int[] leftKeys = joinSpec.getLeftKeys(), rightKeys = joinSpec.getRightKeys();
+    if (kind < 0 || leftKeys.length == 0 || leftKeys.length != rightKeys.length) return stock;
+    for (boolean filter : joinSpec.getFilterNulls()) if (!filter) return stock;
+    var left = stock.getInputEdges().get(0).getSource();
+    var right = stock.getInputEdges().get(1).getSource();
+    var leftType = (RowType) left.getOutputType();
+    var rightType = (RowType) right.getOutputType();
+    var outputType = (RowType) stock.getOutputType();
+    if (!RowDataArrowConverter.supports(leftType)
+        || !RowDataArrowConverter.supports(rightType)
+        || !RowDataArrowConverter.supports(outputType)
+        || !ArrowRowTypeSupport.supportsFields(leftType, leftKeys)
+        || !ArrowRowTypeSupport.supportsFields(rightType, rightKeys)
+        || Stream.concat(leftType.getChildren().stream(), rightType.getChildren().stream())
+            .anyMatch(type -> type.is(LogicalTypeFamily.CONSTRUCTED))) return stock;
+    var config = new Configuration(planner.getTableConfig().getConfiguration());
+    ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
+    if (config
+                .get(
+                    org.apache.flink.table.api.config.ExecutionConfigOptions
+                        .TABLE_EXEC_INTERVAL_JOIN_MIN_CLEAN_UP_INTERVAL)
+                .toMillis()
+            > 0
+        || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
+      return stock;
+    RexExpression predicate = null;
+    if (joinSpec.getNonEquiCondition().isPresent()) {
+      predicate =
+          RexExpression.encode(
+              org.apache.calcite.rex.RexUtil.expandSearch(
+                  new RexBuilder(planner.getTypeFactory()),
+                  null,
+                  joinSpec.getNonEquiCondition().get()));
+      if (predicate == null || predicate.requiresCollectionRepresentation()) return stock;
+    }
+    var originalTransform = stockTransformations.get(stock.getId());
+    if (!(originalTransform
+        instanceof org.apache.flink.streaming.api.transformations.TwoInputTransformation))
+      return stock;
+    var original =
+        (org.apache.flink.streaming.api.transformations.TwoInputTransformation<?, ?, ?>)
+            originalTransform;
+    if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)) return stock;
+    var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
+    if (!(operator instanceof org.apache.flink.streaming.api.operators.co.KeyedCoProcessOperator)
+        || !(((org.apache.flink.streaming.api.operators.co.KeyedCoProcessOperator<?, ?, ?, ?>)
+                    operator)
+                .getUserFunction()
+            instanceof org.apache.flink.table.runtime.operators.join.interval.RowTimeIntervalJoin))
+      return stock;
+    int maximum =
+        resolvedStockMaximums.getOrDefault(original.getId(), original.getMaxParallelism());
+    if (maximum < 1)
+      maximum =
+          FlinkKeyGroupUtils.maxParallelism(
+              planner.getExecEnv(), original.getParallelism() > 0 ? original.getParallelism() : 1);
+    @SuppressWarnings("unchecked")
+    TypeSerializer<RowData> keys =
+        (TypeSerializer<RowData>)
+            original
+                .getStateKeyType()
+                .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
+    var keyType =
+        RowType.of(
+            Arrays.stream(leftKeys).mapToObj(leftType::getTypeAt).toArray(LogicalType[]::new));
+    var contract =
+        new tech.streamfusion.state.StockIntervalJoinStateContract(
+            keys,
+            keyType,
+            leftType,
+            rightType,
+            leftKeys,
+            rightKeys,
+            bounds.getLeftTimeIdx(),
+            bounds.getRightTimeIdx());
+    var leftExchange =
+        (NativeColumnarExchangeExecNode)
+            canonicalJoinInput(left, config, leftType, leftKeys, false);
+    var rightExchange =
+        (NativeColumnarExchangeExecNode)
+            canonicalJoinInput(right, config, rightType, rightKeys, false);
+    leftExchange.withStateMaxParallelism(maximum);
+    rightExchange.withStateMaxParallelism(maximum);
+    var join =
+        new NativeIntervalJoinExecNode(
+                config,
+                InputProperty.DEFAULT,
+                InputProperty.DEFAULT,
+                outputType,
+                "NativeIntervalJoin",
+                leftKeys,
+                rightKeys,
+                bounds.getLeftTimeIdx(),
+                bounds.getRightTimeIdx(),
+                bounds.getLeftLowerBound(),
+                bounds.getLeftUpperBound(),
+                kind,
+                leftType,
+                rightType,
+                predicate,
+                false,
+                FlinkKeyGroupUtils.stockKeyDescriptor(leftType, leftKeys))
+            .withStateMaxParallelism(maximum);
+    join.setInputEdges(
+        List.of(
+            ExecEdge.builder().source(leftExchange).target(join).build(),
+            ExecEdge.builder().source(rightExchange).target(join).build()));
+    bindings.put(join, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
+    columnar.add(join);
+    var exit =
+        new ArrowToRowDataExecNode(config, InputProperty.DEFAULT, outputType, "ArrowToRowData");
+    connect(join, exit);
     return exit;
   }
 

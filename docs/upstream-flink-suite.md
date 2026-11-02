@@ -1506,3 +1506,18 @@ These controls have no native state-owner execution contracts. They exercise the
 runtime/backend lifecycle with stock and StreamFusion dependency visibility; they do not establish
 conversion of StreamFusion operator state. Native-family SQL restore witnesses and isolated
 cross-engine job continuations remain separate qualifications.
+
+### Interval restore state-owner proof
+
+The execution agent tracks successful native interval input and direct canonical row import,
+excluding timer-transfer batches from row counts. Sixty-five canonical witness controls pass,
+including rejection of opened-only, import-only, Calc-only or window-only work for an interval
+restore contract.
+
+The clean compiled-plan integration passes the unchanged released event-time interval program on
+both engines, with ten native imported rows and five newly consumed rows. Its companion window
+selection still passes all eight programs on each engine. The combined selection has eleven
+stock passes and nine of eleven native passes. Processing-time interval state is not bound; the
+negative-interval fixture has no join after Flink simplification and still needs a submitted-graph
+elision contract. Both fail the strict native-family gate. The broader interval lane remains red;
+these failures are not classified as passing fallbacks or silently excluded.

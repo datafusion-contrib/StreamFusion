@@ -321,7 +321,7 @@ before packaging, and the unchanged artifact checker verifies ownership in the r
 ## Portable compiled plans and canonical handoff
 
 The unmerged [#569 work](https://github.com/datafusion-contrib/StreamFusion/issues/569) binds
-qualified Flink 2.2 event-time window joins automatically when executing a stock compiled SQL plan.
+qualified Flink 2.2 event-time window and interval joins automatically when executing a stock compiled SQL plan.
 Retain the same stock JSON artifact, normal connector dependencies and user code on both engines.
 Use Flink's canonical savepoint format to stop the current execution, then restore that savepoint
 with the same artifact on the other engine. With StreamFusion installed and enabled, loading the
@@ -333,3 +333,8 @@ not unrestricted SQL submission, every operator variant, or every connector deli
 the Flink version and maximum parallelism within the qualified matrix. See the
 [canonical state contract](backends/canonical-state.md#automatic-stock-compiled-plan-binding) for
 remaining boundaries. Ordinary native checkpoints do not provide a cross-engine handoff artifact.
+
+The [event-time interval workflow](operators/joins/interval-join.md#released-stock-event-time-state-adapter)
+also has isolated clean-process qualification. Processing-time interval state, unrestricted SQL
+submission and the wider #569 matrix remain pending; retain the exact qualified scope when
+choosing a handoff plan.
