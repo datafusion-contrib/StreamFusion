@@ -72,3 +72,17 @@ stock state projection must additionally preserve probe ordering/cursors, versio
 the registered event-timer value and queued callbacks that can outlive TTL cleanup. That adapter
 and automatic temporal plan binding remain open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+## Released cursor and callback contract controls
+
+The actual released stock operator passes 18 cases covering a shared 48-transition metadata trace
+on both backends, with 96 canonical backend restores. The trace preserves cursors without rows,
+signed cursor overflow and output ordering, independent callbacks after TTL cleanup, right-only
+cleanup refresh, timer reordering and extreme timestamps. It also preserves an older build version
+when later watermarks arrive without a queued callback, so a later probe can still match it.
+Live Rocks queue head/size checks and complete freshly restored canonical queue views avoid
+mistaking the Rocks iterator's seek hint for missing state.
+
+The internal native metadata helper matches this trace and rejects corrupt codec values. Its
+runtime/recovery integration and direct stock temporal savepoint transfer remain unfinished;
+these controls do not count as native temporal conversion coverage. Benchmarking remains deferred.

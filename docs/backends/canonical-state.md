@@ -519,3 +519,19 @@ payloads, idle/overdue callbacks and EOF. The combined clean job/control selecti
 checks with no failures, errors or skips. These overlap the component and planner cohorts.
 Wider ordinary-SQL identity/type/version/failure and connector-protocol requirements remain open
 in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+## Released temporal bookkeeping contract
+
+A shared 48-transition trace pins temporal probe cursors, minimum registered timer values and
+physical callback ownership to released Flink 2.2.1. Eighteen stock-operator cases exercise both
+backends and canonically restore every transition onto the opposite backend (96 restores).
+Cases include cursor-only state, signed cursor overflow/output ordering, callback-only state after
+TTL cleanup, right-only callback cleanup refresh, timer reordering, extreme timestamps and
+retained build versions when no callback is queued. The internal native metadata helper and its
+versioned codec follow this trace and reject malformed metadata without conflating MIN with
+absence. The clean native suite passes 1,168 tests with two existing ignores.
+
+These are component/stock contract controls. The helper still needs integration with live native
+temporal state, ordinary native recovery and direct stock canonical transfer; this does not
+qualify a temporal adapter or automatic native restore. That work remains in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

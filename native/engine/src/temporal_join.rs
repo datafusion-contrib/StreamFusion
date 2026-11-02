@@ -1548,3 +1548,5 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTemporalJoinerPartit
 
 #[cfg(test)]
 mod tests;
+
+mod stock_meta;
