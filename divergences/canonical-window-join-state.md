@@ -20,6 +20,11 @@ frontier and waits for input watermark replay, matching released recovery semant
 inventory/key/namespace/timer preflight precedes native mutation. Native processing-time window
 joins cannot use this event-time contract: the released stock planner rejects that shape.
 
+Canonical bindings pass the resolved stock maximum parallelism to both columnar exchanges and
+the native join. Resolving it again from the new environment can hash imported rows into a
+different key-group layout, including a keyless stock operator whose maximum is one. Ordinary
+native planning keeps its existing default when no canonical binding supplies a maximum.
+
 See [window-join coverage](../docs/operators/joins/window-join.md#stock-canonical-savepoint-interoperability)
 for the tested component scope and remaining full-job/planner work. Complete interoperability
 remains tracked by [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

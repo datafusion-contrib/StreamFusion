@@ -77,6 +77,12 @@ planner classes blocked. Malformed keys, namespaces, row flags, deadlines, missi
 processing-time timers, and unowned descriptors fail before importing rows; ownership checks cover
 failed imports as well as successful switches.
 
+Canonical plan binding can supply the original stock graph's resolved maximum parallelism to
+both native columnar exchanges and the join state owner. This takes precedence over the new
+execution environment's setting, preserving the saved key-group layout. Isolated planner-boundary
+controls cover a singleton and keyed layouts with maxima 17 and 256 while the environment requests
+257. The setter itself does not provide automatic stock-plan binding.
+
 This is component qualification with an explicitly bound stock state contract. Automatic window-join
 binding in compiled plans and ordinary SQL, full jobs with transposes/custom connectors, unchanged
 upstream savepoint fixtures, rescaling, other payload/key types and residual predicates remain

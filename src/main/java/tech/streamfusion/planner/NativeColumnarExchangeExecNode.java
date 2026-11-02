@@ -37,6 +37,14 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] timestampPrecisions;
   private final int[] compactTimestampColumns;
   private final boolean singleKeyGroup;
+  private Integer stateMaxParallelism;
+
+  public NativeColumnarExchangeExecNode withStateMaxParallelism(int maximum) {
+    if (maximum < 1)
+      throw new IllegalArgumentException("State maximum parallelism must be positive");
+    stateMaxParallelism = maximum;
+    return this;
+  }
 
   public NativeColumnarExchangeExecNode(
       ReadableConfig tableConfig,
@@ -99,7 +107,11 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
     // Match the consumer's state namespace. Fixed-namespace singleton consumers use one group;
     // other consumers honor the configured count, independently of the destination count.
     int maxParallelism =
-        singleKeyGroup ? 1 : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), numChannels);
+        stateMaxParallelism != null
+            ? stateMaxParallelism
+            : singleKeyGroup
+                ? 1
+                : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), numChannels);
     boolean recoverable =
         planner.getExecEnv().getCheckpointConfig().isUnalignedCheckpointsEnabled();
     // Aligned jobs keep destination batching. Unaligned-enabled jobs use independently recoverable
