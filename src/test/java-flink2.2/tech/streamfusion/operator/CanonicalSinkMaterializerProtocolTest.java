@@ -326,7 +326,7 @@ class CanonicalSinkMaterializerProtocolTest {
     return field.get(object);
   }
 
-  private static final class Digest {
+  static final class Digest {
     final Map<String, String> metadata;
     final List<String> entries;
 
@@ -354,7 +354,7 @@ class CanonicalSinkMaterializerProtocolTest {
   }
 
   @SuppressWarnings("unchecked")
-  private static Digest digest(KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> h)
+  static Digest digest(KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> h)
       throws Exception {
     var backend =
         (CheckpointableKeyedStateBackend<RowData>) h.getOperator().<RowData>getKeyedStateBackend();

@@ -136,7 +136,10 @@ Operator controls cover both stock and native stores, repeated no-input handoffs
 and resumed processing, empty savepoints, nested ARRAY matching keys with released Java import
 buffers, LEGACY TTL expiry across ordinary native checkpoints, unknown state and mismatched keys.
 The native visitor preserves live state on receiver failure and exports large persistent groups
-in chunks. Broader logical types, key layouts/rescaling, planner identities and complete source-to-sink
+in chunks.
+Forty-eight JNI capture-failure controls throw before Arrow import and after importing the batch.
+They require the original JVM exception, released buffers, unchanged canonical metadata/entry bytes
+on retry, and correct native and stock continuation through later retractions. Broader logical types, key layouts/rescaling, planner identities and complete source-to-sink
 switches are still qualification work; these controls do not establish the normal submission workflow.
 
 The controls retain a released MAP/linked-ADAPTIVE failure boundary: replacing an older input-key
