@@ -374,3 +374,18 @@ unmapped state, stale/disabled configuration and failure/cancellation cleanup. T
 committed separately from the private automatic planner installation, which remains under
 consolidation in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking of canonical handoff remains deferred.
+
+### Binding the complete logical topology
+
+The Flink 2.2 graph-binding component derives original primary operator identities from an
+explicit mapping of replaced logical operators. It matches unchanged stages around those
+anchors, including connector-created writer/committer operators. It preserves union edge
+multiplicity and input positions, and rejects incomplete, ambiguous or changed topology.
+
+Only known empty transpose, batch-splitting and sharing helpers may be elided. A concrete
+operator wrapped in a simple factory cannot be replaced merely by reusing its display name;
+its replacement needs an explicit logical binding. Generated stock factories may compile the
+same stage into different generated class names. Seven isolated graph controls cover those
+boundaries, repeated connector names, expanded sinks, unions/repeated edges and invalid bindings;
+the combined clean graph/metadata run passes 27 controls. This component does not itself install
+an automatic planner workflow or qualify stateful exchange reassembly.
