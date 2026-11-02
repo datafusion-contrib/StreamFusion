@@ -6,9 +6,10 @@ use datafusion::logical_expr::{
 use datafusion::physical_expr::ScalarFunctionExpr;
 use streamfusion_bridge::timestamp::TimestampColumn;
 
-mod index;
-mod probe;
 mod canonical;
+mod index;
+mod input;
+mod probe;
 use index::BufferedIndex;
 const INDEX_BUFFER_THRESHOLD: usize = 1024;
 use probe::IntervalProbePlan;
@@ -399,6 +400,12 @@ impl IntervalJoiner {
         left: bool,
         proctime_now: Option<i64>,
     ) -> Result<RecordBatch, DataFusionError> {
+        let schema = if left {
+            &self.left_data_schema
+        } else {
+            &self.right_data_schema
+        };
+        let batch = crate::logical_input::insert_only(batch, schema, "interval join")?;
         if let Some(now) = proctime_now {
             self.operator_time = now;
         }
@@ -1296,6 +1303,12 @@ impl IntervalJoiner {
                     (&self.right_keys, self.right_time)
                 };
                 for batch in read_ipc_if_present(data_section) {
+                    let schema = if left {
+                        &self.left_data_schema
+                    } else {
+                        &self.right_data_schema
+                    };
+                    let batch = input::retained(batch, schema, self.join_type != JoinKind::Inner)?;
                     let (data, matched) = if self.join_type == JoinKind::Inner {
                         (batch.clone(), vec![false; batch.num_rows()])
                     } else {
@@ -1969,8 +1982,28 @@ impl IntervalJoiner {
             return joiner;
         }
         let sections = read_framed_sections(bytes);
-        joiner.left_buffered = read_ipc_if_present(&sections[0]);
-        joiner.right_buffered = read_ipc_if_present(&sections[1]);
+        joiner.left_buffered = read_ipc_if_present(&sections[0])
+            .into_iter()
+            .map(|batch| {
+                input::retained(
+                    batch,
+                    &joiner.left_data_schema,
+                    join_type != JoinKind::Inner,
+                )
+                .expect("valid retained interval input")
+            })
+            .collect();
+        joiner.right_buffered = read_ipc_if_present(&sections[1])
+            .into_iter()
+            .map(|batch| {
+                input::retained(
+                    batch,
+                    &joiner.right_data_schema,
+                    join_type != JoinKind::Inner,
+                )
+                .expect("valid retained interval input")
+            })
+            .collect();
         joiner.left_matched = deserialize_id_set(&sections[2]);
         joiner.right_matched = deserialize_id_set(&sections[3]);
         if sections.len() >= 6 {
@@ -2039,8 +2072,20 @@ impl IntervalJoiner {
                     left_cleanup.extend(Self::decode_cleanup(&sections[4]));
                     right_cleanup.extend(Self::decode_cleanup(&sections[5]));
                 }
-                let left = read_ipc_if_present(&sections[0]);
-                let right = read_ipc_if_present(&sections[1]);
+                let left = read_ipc_if_present(&sections[0])
+                    .into_iter()
+                    .map(|batch| {
+                        input::retained(batch, &left_data_schema, join_type != JoinKind::Inner)
+                            .expect("valid retained interval input")
+                    })
+                    .collect::<Vec<_>>();
+                let right = read_ipc_if_present(&sections[1])
+                    .into_iter()
+                    .map(|batch| {
+                        input::retained(batch, &right_data_schema, join_type != JoinKind::Inner)
+                            .expect("valid retained interval input")
+                    })
+                    .collect::<Vec<_>>();
                 if sections.len() < 6 {
                     legacy_left.extend(left.iter().cloned());
                     legacy_right.extend(right.iter().cloned());

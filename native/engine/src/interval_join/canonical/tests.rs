@@ -317,3 +317,141 @@ fn memory_denial_releases_rows_and_timer_keys() {
     assert_eq!(joiner.left_cleanup.capacity(), 0);
     assert_eq!(joiner.left_next_id, 0);
 }
+
+fn tagged(batch: &RecordBatch, outer: bool, kind: i8) -> RecordBatch {
+    let arity = if outer {
+        batch.num_columns() - 1
+    } else {
+        batch.num_columns()
+    };
+    let mut fields = batch.schema().fields()[..arity].to_vec();
+    let mut columns = batch.columns()[..arity].to_vec();
+    fields.push(Arc::new(Field::new(ROW_KIND_COLUMN, DataType::Int8, false)));
+    columns.push(Arc::new(Int8Array::from_value(kind, batch.num_rows())));
+    if outer {
+        fields.push(batch.schema().field(arity).clone().into());
+        columns.push(batch.column(arity).clone());
+    }
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+}
+
+#[test]
+fn transport_companions_do_not_enter_interval_state() {
+    for kind in [
+        JoinKind::Inner,
+        JoinKind::LeftOuter,
+        JoinKind::RightOuter,
+        JoinKind::FullOuter,
+    ] {
+        for disk in [false, true] {
+            #[cfg(not(feature = "rocksdb-state"))]
+            if disk {
+                continue;
+            }
+            let directory = tempfile::tempdir().unwrap();
+            let mut joiner = operator(kind, disk.then_some(directory.path()));
+            let left = batch(&[1, 2], &[Some(10), Some(20)], &[100, 100]);
+            joiner.push_left(tagged(&left, false, 0), None).unwrap();
+            let right = batch(&[1], &[Some(30)], &[150]);
+            assert_eq!(
+                joiner
+                    .push_right(tagged(&right, false, 0), None)
+                    .unwrap()
+                    .num_columns(),
+                6
+            );
+            assert_eq!(
+                rows(&joiner, true)
+                    .iter()
+                    .map(|(b, _)| b.num_rows())
+                    .sum::<usize>(),
+                2
+            );
+            assert!(rows(&joiner, true)
+                .iter()
+                .all(|(b, _)| b.num_columns() == 3));
+        }
+    }
+}
+
+#[test]
+fn invalid_companions_fail_before_changing_interval_frontiers_or_state() {
+    let mut joiner = operator(JoinKind::FullOuter, None);
+    let input = batch(&[1], &[Some(10)], &[100]);
+    for kind in [1, 2, 3] {
+        assert!(joiner
+            .push_left(tagged(&input, false, kind), Some(999))
+            .is_err());
+        assert_eq!(joiner.operator_time, 0);
+        assert!(digest(&joiner).is_empty());
+    }
+    let mut fields = input.schema().fields().to_vec();
+    fields.push(Arc::new(Field::new("unknown", DataType::Int64, false)));
+    let mut columns = input.columns().to_vec();
+    columns.push(Arc::new(Int64Array::from_value(0, 1)));
+    assert!(joiner
+        .push_left(
+            RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap(),
+            None
+        )
+        .is_err());
+    assert!(digest(&joiner).is_empty());
+}
+
+#[test]
+fn previous_tagged_native_frames_normalize_on_memory_and_persistent_restore() {
+    for kind in [
+        JoinKind::Inner,
+        JoinKind::LeftOuter,
+        JoinKind::RightOuter,
+        JoinKind::FullOuter,
+    ] {
+        let mut source = operator(kind, None);
+        source
+            .push_left(batch(&[1, 2], &[Some(10), Some(20)], &[100, 100]), None)
+            .unwrap();
+        source
+            .push_right(batch(&[1], &[Some(30)], &[150]), None)
+            .unwrap();
+        let left = tagged(&source.left_buffered[0], kind != JoinKind::Inner, 0);
+        let right = tagged(&source.right_buffered[0], kind != JoinKind::Inner, 0);
+        let raw = source.snapshot();
+        let sections = read_framed_sections(&raw);
+        let old = IntervalJoiner::snapshot_parts([
+            write_ipc(&left),
+            write_ipc(&right),
+            sections[2].to_vec(),
+            sections[3].to_vec(),
+            sections[4].to_vec(),
+            sections[5].to_vec(),
+        ]);
+        let mut restored = IntervalJoiner::restore(
+            vec![0],
+            vec![0],
+            2,
+            2,
+            -100,
+            100,
+            None,
+            kind,
+            schema(),
+            schema(),
+            &old,
+        );
+        assert_eq!(digest(&source), digest(&restored));
+        for left in [true, false] {
+            assert_eq!(timers(&mut source, left), timers(&mut restored, left));
+        }
+        #[cfg(feature = "rocksdb-state")]
+        {
+            let directory = tempfile::tempdir().unwrap();
+            let mut persistent = operator(kind, Some(directory.path()));
+            persistent.import_partitions(&[old], i64::MIN).unwrap();
+            assert_eq!(digest(&source), digest(&persistent));
+            assert_eq!(
+                output(&source.advance(400).unwrap()),
+                output(&persistent.advance(400).unwrap())
+            );
+        }
+    }
+}

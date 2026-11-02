@@ -138,3 +138,17 @@ unchanged upstream interval restore programs, clean-classpath complete jobs, res
 processing-time payload preservation and the wider type/version/rescale/failure matrix remain
 open. Nonpositive/overflow event-time cleanup remains an explicitly unqualified interchange edge;
 the released heap/Rocks distinction described above still applies. Benchmarking is deferred.
+
+### Logical input and retained native frames
+
+Interval and window joins share the insert-only input normalization boundary. It retains the
+declared logical fields, validates and removes trailing INSERT row-kind/string-cache transport
+companions, and rejects retractions or unknown companions before changing state or clock
+frontiers. A logical user field with a reserved transport name remains a user field by position.
+
+Older native interval IPC frames normalize the same companions during memory restore and
+persistent import while retaining outer row identities and match flags. The native snapshot
+framing and independent timer sections are unchanged. Three new native regressions cover
+transport input, rejection without mutation, and older tagged frames on both restore routes.
+The isolated component passes 1,161 native tests with two existing ignores and 618 Java
+component/regression controls. Canonical benchmarking remains deferred.

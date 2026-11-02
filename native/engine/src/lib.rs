@@ -46,6 +46,7 @@ mod flink_functions;
 mod flink_key;
 mod group_agg;
 mod interval_join;
+mod logical_input;
 mod ipc;
 mod join_common;
 mod keyed_upsert;

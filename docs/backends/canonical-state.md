@@ -428,3 +428,10 @@ full-job/version/rescale/failure coverage remain open in
 [interval contract](../operators/joins/interval-join.md#released-stock-event-time-state-adapter)
 for the exact qualified types and remaining nonpositive/overflow-time boundaries. Benchmarking
 remains deferred.
+
+Interval and window join input normalization now shares the same logical-schema boundary.
+Transport row-kind/cache companions do not become retained SQL fields. Older tagged interval
+native IPC normalizes on memory/persistent recovery without changing its frame layout, row
+identity/match flags or independent cleanup timers. Direct canonical export still visits live
+state. The clean normalization component passes 1,161 native tests (two existing ignores) and
+618 Java controls; these overlap the adapter qualification above.
