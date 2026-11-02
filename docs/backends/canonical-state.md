@@ -701,3 +701,34 @@ complete-job qualification remains separate. All 15 unchanged released join rest
 each engine: 12 actual native imports with continued input, two verified stock window owners and
 one join elided by Flink. Every family remains partial under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.
+
+
+## Direct regular-join state adapter
+
+An explicitly bound Flink 2.2.1 regular-join adapter transfers both live native input sides into
+released `left-records`/`right-records` state. Each side independently uses a scalar row, a map by
+another unique key, or a full-row occurrence map. Outer sides preserve association degrees;
+TTL descriptors preserve original per-row write timestamps. Keys, rows, tuples and TTL envelopes
+use stock serializers. Native export visits live state directly without a native snapshot
+intermediate. Indexed RocksDB scans records and legacy buckets without hydrating entire keys;
+imports merge chunks without expiring or refreshing retained rows.
+
+Before import, both complete input sides are validated in bounded Arrow batches using the same
+native row/key decoder as insertion. Only after every batch passes may either side mutate. This
+includes a malformed right side after valid left data or a malformed row beyond the first 1,024
+rows. Validation drops Arrow ownership before installing a JVM exception. Ordinary native row
+processing, checkpoint layouts and TTL read behavior are unchanged.
+
+The independent component passes 78 Java controls: six join kinds, three stock side shapes,
+keyed/keyless continued execution, both native stores, multi-batch import/export and original TTL
+ages, and malformed state. Eight new complete-validation cases first failed with partially
+imported left state and now pass, including a malformed row forced after 1,025 valid rows. This
+qualifies direct operator conversion using BIGINT fixtures and stock heap projections, not
+automatic regular-join job binding, arbitrary schemas or the complete backend/version/rescale/
+connector/failure matrix. Those remain required by
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.
+
+The same isolated native source passes 1,187 tests with two existing ignores. Shared Flink 1.18
+compilation and runtime regressions pass 44 checks, with one existing skip because that release
+has no `STATE_TTL` hint. These shared controls do not qualify stock canonical regular-join
+interchange on Flink 1.18.

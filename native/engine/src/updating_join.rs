@@ -1,7 +1,8 @@
 use crate::*;
 
+mod canonical;
 mod store;
-pub(crate) use store::{JoinProbe, JoinRowRef, JoinStateStore};
+pub(crate) use store::{import_bucket_row, JoinProbe, JoinRowRef, JoinStateStore};
 
 pub(crate) struct UpdatingJoiner<S: JoinStateStore = MemoryJoinStore> {
     left_keys: Vec<usize>,

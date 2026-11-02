@@ -236,3 +236,21 @@ matching Flink's binary-row serialization boundary. UTF-16 caches remain outside
 join payloads, and parent NULLs remain NULL. Immediate, minibatch and legacy decoded-restore
 paths use the same conversion before row encoding; the declared output schema and outer-join
 NULL padding remain unchanged.
+
+
+## Direct stock canonical state adapter
+
+An explicitly bound Flink 2.2.1 adapter projects the native join's actual left/right retained
+rows, multiplicities, association degrees and original TTL write timestamps into released stock
+state descriptors and serializers. It handles independent scalar, unique-key map and occurrence
+map layouts. Both input sides and every transfer batch validate before any native insertion;
+a malformed right side cannot leave valid left rows imported. Native export visits live state,
+including indexed RocksDB records and legacy buckets, without an intermediate native snapshot.
+
+The clean direct-operator component passes 78 Java controls across six join kinds, three side
+shapes, keyed/keyless paths and both native stores. It covers continued stock/native execution,
+multi-batch transfer, original TTL ages and invalid state, including forced late-batch rejection.
+These BIGINT fixtures use stock heap projections. Automatic regular-join planner binding and
+complete job/connector/type/backend/version/rescale/failure qualification remain open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Existing native processing
+and checkpoints retain their paths. Benchmarking is deferred.

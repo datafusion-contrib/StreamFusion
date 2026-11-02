@@ -15,6 +15,15 @@ public final class Native {
   /** Key descriptor prefix selecting Flink's generated projection layout, including NULL slots. */
   public static final int STOCK_KEY_PROJECTION = Integer.MIN_VALUE;
 
+  public static native void exportUpdatingJoinCanonical(
+      long handle, boolean persistent, boolean left, BatchReceiver receiver);
+
+  public static native void importUpdatingJoinCanonical(
+      long handle, boolean persistent, boolean left, long arrayAddress, long schemaAddress);
+
+  public static native void validateUpdatingJoinCanonical(
+      long handle, boolean persistent, boolean left, long arrayAddress, long schemaAddress);
+
   public static native void exportTumblingAggregatorCanonical(long handle, BatchReceiver receiver);
 
   public static native void exportWindowRankerCanonical(long handle, BatchReceiver receiver);
