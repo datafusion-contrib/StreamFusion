@@ -24,6 +24,74 @@ class CanonicalRestoreExecutionTest {
   private static final String FILTER_REASON =
       "changelog normalize: a pushed filter condition is not supported";
 
+  private static final String WINDOW_JOIN =
+      "org.apache.flink.table.planner.plan.nodes.exec.stream.WindowJoinEventTimeRestoreTest";
+  private static final String WINDOW_REASON =
+      "window join: semi/anti retain the released stock state owner";
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"SEMI", "ANTI"})
+  void windowSemiAntiRequiresTheActualReleasedStockListsAndTimers(String kind) {
+    var scope =
+        NativeExecution.beginRestore(
+            WINDOW_JOIN,
+            new Object(),
+            "window-join-" + kind.toLowerCase(java.util.Locale.ROOT) + "-tumble-event-time");
+    var join = new WindowJoinOperator(kind, true);
+    NativeExecution.stockOpened(join);
+    NativeExecution.stockCompleted(join);
+    NativeExecution.fallback(WINDOW_REASON);
+    assertDoesNotThrow(() -> NativeExecution.finish(scope));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"empty", "openOnly", "missingFallback", "nativeJoin", "wrongKind", "missingState"})
+  void windowSemiAntiCannotPassFromMissingOrUnrelatedWork(String mode) {
+    var scope =
+        NativeExecution.beginRestore(
+            WINDOW_JOIN, new Object(), "window-join-semi-tumble-event-time");
+    if (!mode.equals("empty")) {
+      var join =
+          new WindowJoinOperator(
+              mode.equals("wrongKind") ? "INNER" : "SEMI", !mode.equals("missingState"));
+      if (mode.equals("wrongKind") || mode.equals("missingState")) {
+        assertThrows(AssertionError.class, () -> NativeExecution.stockOpened(join));
+      } else {
+        NativeExecution.stockOpened(join);
+        if (!mode.equals("openOnly")) NativeExecution.stockCompleted(join);
+      }
+    }
+    if (mode.equals("nativeJoin")) {
+      var join = new NativeWindowJoinOperator();
+      NativeExecution.opened(join);
+      NativeExecution.completed(join, 3);
+    }
+    if (!mode.equals("missingFallback")) NativeExecution.fallback(WINDOW_REASON);
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  private static final class WindowJoinOperator {
+    final WindowJoinKind joinType;
+    final Object leftWindowState, rightWindowState, windowTimerService, helper;
+
+    WindowJoinOperator(String kind, boolean initialized) {
+      joinType = WindowJoinKind.valueOf(kind);
+      leftWindowState = initialized ? new Object() : null;
+      rightWindowState = initialized ? new Object() : null;
+      windowTimerService = initialized ? new Object() : null;
+      helper = initialized ? new Object() : null;
+    }
+  }
+
+  private enum WindowJoinKind {
+    INNER,
+    SEMI,
+    ANTI
+  }
+
+  private static final class NativeWindowJoinOperator {}
+
   private static final String SORT = ElidedTemporalSort.TEST.replace("#testRestore", "");
 
   private static final String SORT_REASON =

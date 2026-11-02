@@ -220,6 +220,16 @@ public final class NativeExecution {
           || field(operator, "comparator") == null)
         throw new AssertionError("Stock temporal sort state/comparator was not initialized");
       kind = "StockTemporalSort";
+    } else if (operator.getClass().getSimpleName().equals("WindowJoinOperator")) {
+      if (!CONTRACTS.get(active.test).get(active.variant).contains("StockWindowJoin")) return;
+      String kindName = ((Enum<?>) field(operator, "joinType")).name();
+      if ((!kindName.equals("SEMI") && !kindName.equals("ANTI"))
+          || field(operator, "leftWindowState") == null
+          || field(operator, "rightWindowState") == null
+          || field(operator, "windowTimerService") == null
+          || field(operator, "helper") == null)
+        throw new AssertionError("Stock semi/anti window join state/timers were not initialized");
+      kind = "StockWindowJoin";
     } else if (operator.getClass().getSimpleName().equals("UnalignedWindowTableFunctionOperator")) {
       if (!field(operator, "windowAssigner")
           .getClass()

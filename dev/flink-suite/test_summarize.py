@@ -373,6 +373,20 @@ class CanonicalRestoreSummaryTest(unittest.TestCase):
         self.assertEqual((0, 1, []), result)
         self.assertEqual("mixed", observations[0]["observed_route"])
 
+    def test_window_join_fallback_requires_the_real_stock_state_owner(self):
+        reason = "window join: semi/anti retain the released stock state owner"
+        contract = "!@NativeWindowJoinOperator:" + reason + "&&StockWindowJoin"
+        for fields in ({}, {"counts": "NativeCalcOperator=2", "reasons": reason},
+                       {"stock": "StockWindowJoin=2"},
+                       {"stock": "StockWindowJoin=0", "reasons": reason},
+                       {"stock": "StockWindowJoin=2", "counts": "NativeWindowJoinOperator=1", "reasons": reason},
+                       {"stock": "StockWindowJoin=2", "imported": "NativeWindowJoinOperator=1", "reasons": reason}):
+            self.assertTrue(self.check(contract, **fields)[0][2])
+        result, observations = self.check(contract, stock="StockWindowJoin=2", reasons=reason)
+        self.assertEqual((0, 1, []), result)
+        self.assertEqual({"StockWindowJoin": 2}, observations[0]["stock_state_owner_rows"])
+        self.assertNotIn("StockWindowJoin", observations[0]["native_input_rows"])
+
     def test_stock_work_cannot_be_counterfeited_as_native_rows(self):
         result, _ = self.check("NativeColumnarGroupAggregateOperator+StockSessionTableFunction",
             counts="NativeColumnarGroupAggregateOperator=3,StockSessionTableFunction=2")

@@ -131,7 +131,7 @@ def check_execution(
             stock = parse_counts(fields[5]) if len(fields) >= 6 else {}
             if any(name.startswith("Stock") for name in counts):
                 raise ValueError("stock state-owner work cannot be reported as native input")
-            if any(name not in ("StockSessionTableFunction", "StockSessionWindowAggregate", "StockTemporalSort") for name in stock):
+            if any(name not in ("StockSessionTableFunction", "StockSessionWindowAggregate", "StockTemporalSort", "StockWindowJoin") for name in stock):
                 raise ValueError("unknown stock state-owner witness")
             def work_satisfied(expression):
                 return any(all((stock if operator.startswith("Stock") else counts).get(operator, 0) > 0

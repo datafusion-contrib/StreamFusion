@@ -1447,3 +1447,23 @@ Window-deduplication restore programs require the shared native window-selection
 consume input. Opening it without rows, or running an unrelated native Calc, cannot satisfy
 that gate. Dedicated witness controls cover these cases, retaining the original released
 fixture assertions alongside the native-family requirement.
+
+## Window join canonical restore qualification
+
+The unmerged #569 private-plan integration passes all eight released Flink 2.2.1
+`WindowJoinEventTimeRestoreTest` programs in the stock control and native lanes, with no failures,
+errors or skips. The six admitted INNER/LEFT/RIGHT/FULL TUMBLE and INNER HOP/CUMULATE programs
+require successful native window-join input. The agent also records successful direct canonical
+imports; each of these six programs imports pending rows into the native state owner.
+
+Released SEMI/ANTI window joins retain their stock implementation. Each has an explicit contract
+requiring the exact planner fallback reason, absence of native window-join input/import, and
+successful input in the initialized stock list/timer owner. An unrelated native Calc, an opened
+but unused stock operator, missing state, or an incorrect fallback cannot satisfy these controls.
+The summary keeps stock state-owner work separate from native input. The original released test
+classes, frozen plans/savepoints and expected outputs are unchanged.
+
+This is qualification of the private integration snapshot, not a claim that the committed
+production archive already contains the complete automatic planner workflow. Reverse-direction
+jobs, ordinary SQL identities, and the rest of #569 remain separate requirements. Benchmarking
+of canonical handoff is deferred while functionality is completed.

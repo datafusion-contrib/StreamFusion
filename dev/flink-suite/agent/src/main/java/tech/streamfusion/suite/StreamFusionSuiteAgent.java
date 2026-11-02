@@ -119,7 +119,8 @@ public final class StreamFusionSuiteAgent {
             namedOneOf(
                 "org.apache.flink.table.runtime.operators.window.tvf.operator.UnalignedWindowTableFunctionOperator",
                 "org.apache.flink.table.runtime.operators.window.tvf.common.WindowAggOperator",
-                "org.apache.flink.table.runtime.operators.sort.RowTimeSortOperator"))
+                "org.apache.flink.table.runtime.operators.sort.RowTimeSortOperator",
+                "org.apache.flink.table.runtime.operators.join.window.WindowJoinOperator"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder
@@ -128,7 +129,9 @@ public final class StreamFusionSuiteAgent {
                             .on(named("open").and(takesArguments(0))))
                     .visit(
                         Advice.to(RecordStockWindowInput.class)
-                            .on(named("processElement").and(takesArguments(1)))))
+                            .on(
+                                namedOneOf("processElement", "processElement1", "processElement2")
+                                    .and(takesArguments(1)))))
         .type(named("org.apache.paimon.flink.FlinkTestBase"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -193,6 +196,13 @@ public final class StreamFusionSuiteAgent {
                     ? builder.visit(
                         Advice.to(RecordCanonicalJoinImport.class).on(named("importBatch")))
                     : builder)
+        .type(named("tech.streamfusion.state.StockWindowJoinStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalWindowJoinImport.class).on(named("send")))
+                    : builder)
         .type(namedOneOf(NativeExecution.testClasses()))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -223,6 +233,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeColumnarChangelogNormalizeOperator",
                 "tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator",
+                "tech.streamfusion.operator.NativeWindowJoinOperator",
                 "tech.streamfusion.operator.NativeColumnarTopNOperator",
                 "tech.streamfusion.operator.NativeColumnarWindowRankOperator",
                 "tech.streamfusion.operator.NativeColumnarTemporalSortOperator",
@@ -264,7 +275,7 @@ public final class StreamFusionSuiteAgent {
               return builder.visit(
                   Advice.to(RecordNativeElement.class)
                       .on(
-                          named("processElement")
+                          namedOneOf("processElement", "processElement1", "processElement2")
                               .and(
                                   takesArgument(
                                       0,
@@ -505,6 +516,13 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodExit
     static void exit(@Advice.Argument(3) java.util.List<?> rows) {
       NativeExecution.restored("NativeColumnarUpdatingJoinOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalWindowJoinImport {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(2) java.util.List<?> rows) {
+      NativeExecution.restored("NativeWindowJoinOperator", rows.size());
     }
   }
 

@@ -90,11 +90,23 @@ controls cover a singleton and keyed layouts with maxima 17 and 256 while the en
 257. The setter itself does not provide automatic stock-plan binding.
 
 This is component qualification with an explicitly bound stock state contract. Automatic window-join
-binding in compiled plans and ordinary SQL, full jobs with transposes/custom connectors, unchanged
-upstream savepoint fixtures, rescaling, other payload/key types and residual predicates remain
+binding in compiled plans and ordinary SQL, broader full jobs with transposes/custom connectors,
+rescaling, other payload/key types and residual predicates remain
 unqualified for this adapter. Keyless harnesses use one task; they do not establish the resolved
 maximum parallelism of a stock compiled plan. Released Flink 2.2.1 rejects processing-time window
 joins, so its event-time contract cannot be bound to a native processing-time operator. Native
 processing-time execution and native checkpoint recovery remain available independently.
 
 Benchmarking and tuning of canonical handoff are deferred while functionality is completed.
+
+### Unchanged upstream restore fixtures
+
+The private stock compiled-plan integration passes all eight unchanged released Flink 2.2.1
+`WindowJoinEventTimeRestoreTest` fixtures on both engines. Six require native window-join work
+(INNER/LEFT/RIGHT/FULL TUMBLE, INNER HOP and CUMULATE), with actual imported native rows also
+recorded. SEMI and ANTI keep the released stock operator: their contracts require the exact
+planner fallback, initialized stock lists/timer service, and successfully processed stock input.
+Native Calc work alone cannot satisfy either state route. The sources, frozen plans/savepoints
+and expected results come from the released test artifact. These controls qualify those fixtures;
+they do not complete the private planner consolidation or ordinary SQL submission workflow.
+See the [savepoint lane](../../upstream-flink-suite.md#window-join-canonical-restore-qualification).
