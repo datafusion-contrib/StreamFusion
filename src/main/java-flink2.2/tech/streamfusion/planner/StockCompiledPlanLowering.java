@@ -539,7 +539,7 @@ final class StockCompiledPlanLowering {
     RowType leftType = (RowType) left.getOutputType(), rightType = (RowType) right.getOutputType();
     RowType outputType = (RowType) stock.getOutputType();
     if (leftKeys.length == 0
-        && (kind != 0
+        && (kind != 0 && kind != 5
             || leftType.getFieldCount() == 0
             || rightType.getFieldCount() == 0
             || !stockProducesOnlyInserts(

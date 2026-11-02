@@ -47,8 +47,11 @@ deferred until the required functionality is complete.
 
 
 Compiled keyless lowering also checks original source changelog contracts through known
-row-preserving roles. It preserves the native matcher's INNER/insert-only/payload requirement;
-loading a portable plan must not admit a previously unsupported outer or updating keyless join.
+row-preserving roles. INNER and the previously verified compiled keyless ANTI restore path
+require two insert-only inputs with payload columns. The released nullable `NOT IN` ANTI fixture
+has no extracted equi-key; an INNER-only guard accidentally removed its native state owner.
+Retain that explicit compiled ANTI path and its strict upstream contract, while other unsupported
+outer/updating keyless joins keep stock owners. Ordinary keyless matching remains INNER-only.
 The empty-row key keeps Flink's resolved singleton maximum rather than the surrounding pipeline
 maximum. The broader keyed job cohort passes 164 cases; shared-role handoffs are qualified separately.
 

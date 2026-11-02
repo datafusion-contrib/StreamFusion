@@ -285,9 +285,12 @@ Benchmarking stays deferred. See [automatic regular binding](../../backends/cano
 
 
 Keyless canonical binding preserves the stock singleton/empty-row state context and maximum
-parallelism one. Compiled-plan loading admits it only for INNER joins with payload columns and
-original source changelogs proven insert-only through known row-preserving stages. Unsupported
-outer/updating keyless joins retain their stock join implementation, as ordinary admission does.
+parallelism one. Compiled-plan loading retains INNER and the verified keyless ANTI path with
+payload columns and original source changelogs proven insert-only through known row-preserving
+stages. Four additional process cases cover nullable-left `NOT IN`, pre-savepoint unmatched rows
+retracted by later right input, both native stores and both engine orders. The released ANTI
+restore fixture also requires actual native execution. Other outer/updating keyless joins retain
+stock owners; ordinary native matching still uses the keyless INNER admission described above.
 
 
 Eight keyless INNER clean-process round trips pass across both engine orders, native stores and

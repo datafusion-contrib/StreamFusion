@@ -787,9 +787,10 @@ Benchmarking remains deferred.
 A stock empty-row key is a singleton state boundary. Its released maximum parallelism is one,
 even when the surrounding pipeline configures a larger maximum. Keyless INNER binding preserves
 that stock context. The compiled-plan path checks the original source changelog through known
-row-preserving stages before selecting the native route: both inputs must be insert-only and
-retain a payload column. Outer or updating keyless joins keep their stock join owner, matching
-ordinary native admission rather than enabling a new unqualified native mode during plan loading.
+row-preserving stages before selecting INNER or ANTI: both inputs must be insert-only and retain
+a payload column. This retains the already verified null-aware `NOT IN` ANTI restore path;
+requiring INNER alone incorrectly removed that native owner. Other outer/updating keyless inputs
+keep their stock join owner. Ordinary native admission continues to require keyless INNER.
 
 
 Eight keyless INNER clean-process round trips pass across both engine orders, native stores and
@@ -806,3 +807,10 @@ immediate FULL join emits both unmatched rows, while mini-batch suppression omit
 Both stock behavior controls pass; they provide no native interoperability credit. The discrepant
 job evidence is retained, and stock-baseline assertions have not been relaxed. Complete mini-batch
 qualification remains open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+Four additional compiled keyless ANTI process round trips verify nullable-left `NOT IN`, including
+right arrivals that retract unmatched left rows retained before the savepoint. Both native stores
+and engine orders retain custom sources, the transactional sink, both transposes and stock-only
+classpath/metadata checks. The unchanged released ANTI restore program remains a required native
+execution contract rather than a permitted fallback.
