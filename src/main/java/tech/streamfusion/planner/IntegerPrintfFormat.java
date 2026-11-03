@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 /** Literal formats whose output depends only on exact integer formatting and ASCII. */
 final class IntegerPrintfFormat {
   private static final Pattern CONVERSION =
-      Pattern.compile("%(?:([0-9]+)\\$)?([-0+ <]*)([0-9]+)?(?:\\.([0-9]+))?([sSdxXo])");
+      Pattern.compile("%(?:([0-9]+)\\$)?([-0+ <]*)([0-9]+)?(?:\\.([0-9]+))?([sSdxXobB])");
 
   private IntegerPrintfFormat() {}
 

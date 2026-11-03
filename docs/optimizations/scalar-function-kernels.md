@@ -1373,6 +1373,10 @@ batches could already execute certified Rust despite retaining a JVM descriptor.
 initial/optimized pilots, independent stock, tiny and retained-formatter controls, and
 conversion-inclusive jobs remain in the [full qualification](../benchmarks/scalar-functions.md#integer-printf-with-a-literal-format).
 Allocation reductions alone are not a claim of universal job acceleration.
+Integer `%b`/`%B` also reuses this path: non-NULL objects, including zero, produce true;
+NULL produces false. Width, precision, case and indexing remain the Formatter contract.
+Its [separate qualification](../benchmarks/scalar-functions.md#integer-boolean-printf-formats)
+replays the original encoder/DSO and retains shared numeric-format controls.
 
 
 ## Map primitive integer casts without widening

@@ -2289,11 +2289,15 @@ retain their existing exact route.
 On Flink 2.2, ASCII literal formats of at most 512 characters have a JVM-free path when
 all arguments are verified integer inputs/literals, arithmetic, lossless widening or
 admitted integer rounding trees. Supported conversions are `%s`/`%S`, `%d`, `%x`/`%X`,
-`%o` and `%%`, including argument indices/reuse, alignment, sign/zero padding and string
+`%o`, `%b`/`%B` and `%%`, including argument indices/reuse, alignment, sign/zero padding and string
 precision. Width and precision are bounded at 256. The planner checks the running JDK's
 flags/indexing rules during planning with `Locale.US`; data rows execute only the Arrow formatter.
 Explicit index zero retains its preceding route because JDK 11 accepts it while JDK 17 rejects it.
 NULL arguments retain their formatted `null`/`NULL` text, including precision and padding.
+For `%b`/`%B`, every non-NULL integer, including zero, formats as `true`/`TRUE`;
+NULL formats as `false`/`FALSE`. Precision and space padding apply to those words.
+Boolean-object arguments retain their separate preceding route; integer formatting does
+not interpret zero as SQL FALSE. Invalid boolean-format flags still retain Flink's NULL result.
 Signed widths and two's-complement formatting remain exact. All child producers must be
 failure-free even when the format does not use an argument.
 
@@ -2306,10 +2310,13 @@ remove those guards. Flink 1.18 still rejects PRINTF, which that release does no
 The [integer-format qualification](../benchmarks/scalar-functions.md#integer-printf-with-a-literal-format)
 retains both release controls, stock/actual-previous/native measurements and the initial
 prototype that did not improve over every existing certified path.
+The separate [integer boolean-format qualification](../benchmarks/scalar-functions.md#integer-boolean-printf-formats)
+replays the actual preceding encoder and whole runtime, retaining independent stock and
+shared numeric-format controls.
 
 Other direct input/literal calls have a certified Rust path for ASCII formats and arguments:
 STRING/integer/DECIMAL `%s`, signed integer `%d`, two's-complement `%x`/`%X`/`%o`, ASCII integer
-`%c`/`%C` over TINYINT/SMALLINT/INT, `%%`, argument indices/reuse, width, string precision,
+`%c`/`%C` over TINYINT/SMALLINT/INT, integer `%b`/`%B`, `%%`, argument indices/reuse, width, string precision,
 alignment and sign/zero padding. BIGINT character conversions retain the formatter, which
 rejects non-NULL Long arguments.
 DECIMAL string conversion preserves scale and Java scientific notation. The released SQL

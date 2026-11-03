@@ -7982,3 +7982,96 @@ prior encoder with `sf.integral.previous=true`, `sf.integral.fallbackControl=tru
 exact `sf.integral.fallbackReason` (for example `unsupported TRY_CAST BIGINT` followed by
 U+2192 and `INTEGER`). Complete jobs use `IntegralExpressionPipelineBenchmark`, matching
 `sf.integral.expression`, BIGINT input flag when needed, and those previous fallback controls.
+
+
+## Integer boolean PRINTF formats
+
+On released Flink 2.2.1, `%b`/`%B` treats any non-NULL integer object, **including zero**,
+as `true`/`TRUE`; NULL becomes `false`/`FALSE`. Bounded literal ASCII formats use the
+existing evaluator-free integer formatter, including precision, space padding, explicit
+indices and argument reuse. This does not admit BOOLEAN-object or other argument types.
+Invalid flags and unverified producers keep Flink's NULL/error and lazy/empty behavior.
+Flink 1.18.1 has no PRINTF and retains its released SQL rejection.
+
+The [record](results/integer-boolean-printf-2026-11-03.json) uses released Flink 2.2.1, Oracle JDK 17.0.12, Apple M4 Pro,
+one thread and release/mimalloc-linked artifacts. Equal prepared GenericRowData,
+BinaryRowData and Arrow include all four integer widths, nullable/NOT NULL, signed
+extrema and zero. Each trial consumes 131,072 rows, with 16 warmups/nine measurements.
+The 48 cells cover short and padded formats, plus computed INT/BIGINT arithmetic.
+Timers start/stop inside Rust after import and before export, retaining production Calc,
+equivalent output consumption and intrinsic callbacks. Stock starts on prepared RowData;
+only initial JNI/import/export and perimeter transposes are outside the small-function gate.
+Complete jobs retain them.
+
+The actual preceding encoder and formatter-admission helper, plus saved **whole DSO and
+executable** from `5d46dde1`, run against the same final fixture/JDK/data. Both artifacts
+retain verified mimalloc aliases. This preserves the original integer boolean format's
+JDK route instead of accidentally giving the preceding certified path the new kernel.
+Existing compatible certified formats are not described as universal Java callbacks.
+
+The [four numeric-format controls](results/integer-boolean-printf-2026-11-03-retained-numeric-formats.csv.gz) and
+[reverse-order replay](results/integer-boolean-printf-2026-11-03-retained-numeric-formats-reversed.csv.gz) retain
+whole-runtime before/after differences for existing numeric formats. Both BIGINT controls
+have lower preceding-runtime medians in both orders, by approximately 3-6%. The new-format
+gains below do not establish an improvement for those unchanged numeric signatures.
+An attempted non-inlined default helper does not recover them
+([four diagnostic cells](results/integer-boolean-printf-2026-11-03-helper-experiment.csv.gz), initial/current
+0.938-1.011x); that extra indirection is discarded. Its [rejected patch](results/integer-boolean-printf-2026-11-03-rejected-helper.patch), source/artifact hashes and successful
+904-test Rust result remain separately recorded. The exact originally measured production
+source, DSO and executable are restored, checked by hash, then requalified with the final
+SQL tests including independently nullable indexing arguments. The residual numeric-format
+cost differences still need attribution/profile work; no cause is inferred from a source
+branch alone.
+
+| Scope | Cells | Paired stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk (1,024 rows) | 40 | 4.947-7.411x | 5.723-8.108x | 5.346-7.519x |
+| Tiny (16 rows) | 8 | 3.789-5.423x | 11.212-12.205x | 3.853-5.508x |
+
+All bulk cells beat paired stock and the actual previous implementation. Tiny controls
+retain 0 stock losses and 0 previous losses.
+The [4,800 trials](results/integer-boolean-printf-2026-11-03.csv.gz) retain warmups, checksums and variability.
+Four [numeric-format controls](results/integer-boolean-printf-2026-11-03-retained-numeric-formats.csv.gz) replay
+initial/current artifacts on the same final encoder and fixture. Their initial/current
+median ratios span 0.945-1.024x; all variation remains.
+
+Eight complete million-row INT/BIGINT jobs include direct/computed short/padded formats.
+They retain the bounded row source, blackhole sink, startup, JNI and both transposes.
+Two warmups and five measurements alternate stock/native. Each native control requires
+consumed NativeCalc work; new paths require empty evaluators and previous paths require
+their original retained evaluators. Seconds, median:
+
+| Flink / source / shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-short | 0.621235 | 0.259344 | 0.606269 | 0.634951 |
+| 2.2.1 / INT-padded | 0.750707 | 0.273240 | 0.784988 | 0.820727 |
+| 2.2.1 / INT-short-computed | 0.597576 | 0.266733 | 0.607545 | 0.619766 |
+| 2.2.1 / INT-padded-computed | 0.809255 | 0.270421 | 0.795140 | 0.804340 |
+| 2.2.1 / BIGINT-short | 0.671868 | 0.266082 | 0.578773 | 0.597283 |
+| 2.2.1 / BIGINT-padded | 0.828991 | 0.269570 | 0.783403 | 0.819152 |
+| 2.2.1 / BIGINT-short-computed | 0.673516 | 0.257944 | 0.571059 | 0.568660 |
+| 2.2.1 / BIGINT-padded-computed | 0.828161 | 0.274525 | 0.751099 | 0.753517 |
+
+Native/stock elapsed spans **0.325-0.446**; native/previous spans
+**0.329-0.454**. These are measured workloads; the prepared gate does
+not establish universal complete-job acceleration.
+
+All **716 focused JVM invocations** pass without skips across released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java release 11. Complete 5,003-row runtime maps/schema cover
+integer widths, NULLs, signed extrema/zero, computed producers, boolean format precision/
+padding/indexing with independently nullable arguments, all-filtered batches, remaining
+generated controls and adjacent scalar/ARRAY CAST paths. Pure claims require consumed NativeCalc work and empty evaluators.
+The actual preceding control compares full maps/schema then fails eight intended pure-route
+assertions; its generated control passes. Two fresh unchanged released PRINTF oracle runs
+pass **47 original assertions each**, separately as stock semantics. All **904 release Rust
+core tests** pass, including sliced/empty/NULL inputs and input ownership. Hosted CI remains
+separate. Remaining format/type/consumer scope stays in
+[#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).
+
+Reproduce with release `integral_expression`,
+`SF_INTEGRAL_EXPRESSION` set to `PRINTF('%b/%1$B/%1$.2b',v,v)`,
+and matching signed type/nullability/row-layout arguments. The previous control supplies
+its saved DSO/executable, separately compiled preceding encoder/helper and
+`SF_INTEGRAL_PREVIOUS=true`. Complete jobs use `IntegralExpressionPipelineBenchmark` with
+matching `sf.integral.expression`, `sf.integral.bigintInput=true` for BIGINT and previous
+route settings. All resources and data otherwise match.

@@ -176,6 +176,15 @@ fn write_format(pattern: &str, args: &[ArrayRef], row: usize, output: &mut Strin
                         value.to_string()
                     }
                 }
+                // Formatter treats any non-NULL boxed integer, including zero, as true.
+                b'b' | b'B'
+                    if matches!(
+                        arg.data_type(),
+                        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
+                    ) =>
+                {
+                    "true".to_owned()
+                }
                 b'f' => {
                     // The released SQL evaluator passes DecimalData, not BigDecimal.
                     // Formatter rejects it for %f; retain that evaluator for numeric formats.
@@ -286,7 +295,56 @@ fn decimal_text(value: i128, scale: i8) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::{Int32Array, Int64Array};
+    use arrow::array::{Array, Int16Array, Int32Array, Int64Array, Int8Array};
+    #[test]
+    fn boolean_integer_format_uses_object_nullness_not_numeric_truth() {
+        for input in [
+            Arc::new(Int8Array::from(vec![
+                Some(i8::MIN),
+                Some(0),
+                Some(i8::MAX),
+                None,
+            ])) as ArrayRef,
+            Arc::new(Int16Array::from(vec![
+                Some(i16::MIN),
+                Some(0),
+                Some(i16::MAX),
+                None,
+            ])),
+            Arc::new(Int32Array::from(vec![
+                Some(i32::MIN),
+                Some(0),
+                Some(i32::MAX),
+                None,
+            ])),
+            Arc::new(Int64Array::from(vec![
+                Some(i64::MIN),
+                Some(0),
+                Some(i64::MAX),
+                None,
+            ])),
+        ] {
+            let original = input.to_data();
+            for offset in 0..=input.len() {
+                let len = input.len() - offset;
+                let output =
+                    integer_literal("%b/%1$B/%1$.2b/%1$8.1B", &[input.slice(offset, len)], len)
+                        .unwrap();
+                let expected = StringArray::from(vec![
+                    "true/TRUE/tr/       T",
+                    "true/TRUE/tr/       T",
+                    "true/TRUE/tr/       T",
+                    "false/FALSE/fa/       F",
+                ]);
+                assert_eq!(output.to_data(), expected.slice(offset, len).to_data());
+            }
+            assert_eq!(input.to_data(), original);
+            for pattern in ["%+b", "%0b", "%#B"] {
+                assert!(format(pattern, &[input.clone()], 0).is_none());
+            }
+        }
+    }
+
     #[test]
     fn java_indexing_sign_padding_twos_complement_and_nulls() {
         let args = [

@@ -37,10 +37,13 @@ class FlinkIntegerPrintfSqlHarnessTest {
           var expressions = new ArrayList<String>();
           for (String format : List.of("%d", "%+08d", "% 08d", "%-12d", "%s", "%.0s",
               "%12.3S", "%x", "%08X", "%o", "%2$s:%1$d:%<x:%s",
-              "%%:%1$d/%2$08x/%<X")) {
+              "%%:%1$d/%2$08x/%<X", "%b", "%B", "%.0b", "%8.2B", "%-8.3b",
+              "%2$b:%1$d:%<B:%s")) {
             expressions.add("PRINTF('" + format + "',n,CAST(n AS BIGINT))");
           }
           expressions.add("PRINTF('%d/%1$x',n+CAST(1 AS " + type + "))");
+          expressions.add("PRINTF('%b/%1$B',n+CAST(1 AS " + type + "))");
+          expressions.add("PRINTF('%1$b/%2$b/%<B/%b',n,id)");
           String query = "SELECT id," + String.join(",", expressions) + " FROM src";
           FlinkIntegralEpochSqlHarnessTest.verify(type, nullable, "UTC", query, true);
           FlinkIntegralEpochSqlHarnessTest.verify(type, nullable, "UTC", query + " WHERE id<0", true);
@@ -51,7 +54,7 @@ class FlinkIntegerPrintfSqlHarnessTest {
     }
     cases.add(DynamicTest.dynamicTest("unverified formats and producers stay generated", () -> {
       FlinkIntegralEpochSqlHarnessTest.verify("INT", true, "UTC",
-          "SELECT id,PRINTF('%n/%d',n),PRINTF('%#x',n),PRINTF('%b',n),PRINTF('%0$d',n),"
+          "SELECT id,PRINTF('%n/%d',n),PRINTF('%#x',n),PRINTF('%+b',n),PRINTF('%0$d',n),"
               + "PRINTF('%s',CAST(n AS STRING)),"
               + "PRINTF(CASE WHEN id<1000 THEN '%d' ELSE '%08d' END,n) FROM src", false);
       FlinkIntegralEpochSqlHarnessTest.verify("INT", true, "UTC",
