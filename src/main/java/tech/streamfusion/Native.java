@@ -3027,6 +3027,15 @@ public final class Native {
   public static native void enableTopNFirstBound(
       long handle, boolean persistent, boolean generateUpdateBefore);
 
+  public static native void exportAppendTopNCanonical(
+      long handle, boolean persistent, long rowSchema, BatchReceiver receiver);
+
+  public static native void importAppendTopNCanonical(
+      long handle, boolean persistent, long array, long schema);
+
+  public static native void validateAppendTopNCanonical(
+      long handle, boolean persistent, long array, long schema);
+
   /**
    * Pushes an input batch, exporting the top-N changelog (input columns plus the row kind). {@code
    * nowMillis} is the operator's processing-time reading — the state-TTL clock. Returns the number

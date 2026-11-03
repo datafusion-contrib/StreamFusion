@@ -4,6 +4,7 @@ use arrow::array::{Float32Array, Float64Array, Int8Builder};
 mod window_canonical;
 
 mod append_top1;
+mod canonical;
 #[cfg(test)]
 mod first_bound_tests;
 #[cfg(test)]
@@ -212,18 +213,33 @@ impl TopNConverters {
         partition_columns: &[usize],
         sort_columns: &[SortColumn],
     ) -> Self {
+        Self::try_build(batch, arity, partition_columns, sort_columns).expect("top-n converters")
+    }
+
+    fn try_build(
+        batch: &RecordBatch,
+        arity: usize,
+        partition_columns: &[usize],
+        sort_columns: &[SortColumn],
+    ) -> Result<Self, DataFusionError> {
+        if arity > batch.num_columns()
+            || partition_columns.iter().any(|&column| column >= arity)
+            || sort_columns.iter().any(|column| column.index >= arity)
+        {
+            return Err(DataFusionError::Execution(
+                "invalid Top-N column layout".into(),
+            ));
+        }
         let payload = RowConverter::new(
             (0..arity)
                 .map(|i| SortField::new(batch.column(i).data_type().clone()))
                 .collect(),
-        )
-        .expect("top-n payload converter");
+        )?;
         // A plain LIMIT (no ORDER BY) has zero sort columns; like the empty partition key, encode a
         // constant dummy so all rows compare equal and the buffer preserves arrival order (Flink's
         // first-n by arrival). With sort columns present, encode them memcomparable with their options.
         let sort = if sort_columns.is_empty() {
-            RowConverter::new(vec![SortField::new(DataType::Boolean)])
-                .expect("top-n empty sort converter")
+            RowConverter::new(vec![SortField::new(DataType::Boolean)])?
         } else {
             RowConverter::new(
                 sort_columns
@@ -238,16 +254,20 @@ impl TopNConverters {
                         )
                     })
                     .collect(),
-            )
-            .expect("top-n sort converter")
+            )?
         };
         // A global Top-N (LIMIT / SortLimit with no PARTITION BY) has zero partition columns; arrow-row
         // can't encode N rows of no columns, so key on a constant dummy column (all rows → one group),
         // exactly as the group-aggregate keying does.
-        let partition_refs: Vec<&ArrayRef> =
-            partition_columns.iter().map(|&i| batch.column(i)).collect();
-        let partition = key_row_converter(&partition_refs);
-        TopNConverters {
+        let partition = RowConverter::new(if partition_columns.is_empty() {
+            vec![SortField::new(DataType::Boolean)]
+        } else {
+            partition_columns
+                .iter()
+                .map(|&column| SortField::new(batch.column(column).data_type().clone()))
+                .collect()
+        })?;
+        Ok(TopNConverters {
             partition,
             sort: Arc::new(sort),
             payload: Arc::new(payload),
@@ -257,7 +277,7 @@ impl TopNConverters {
                     DataType::Float32 | DataType::Float64
                 )
             }),
-        }
+        })
     }
 
     /// Builds the converter set from the operator's declared input type — the persistent path,

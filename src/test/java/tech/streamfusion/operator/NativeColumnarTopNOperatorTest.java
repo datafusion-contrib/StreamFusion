@@ -77,8 +77,8 @@ class NativeColumnarTopNOperatorTest {
       before.open();
       before.setProcessingTime(5000);
       before.processElement(new StreamRecord<>(batch(allocator, row(1, 5), row(1, 3))));
-      assertEquals(List.of(change(RowKind.INSERT, 1, 5), change(RowKind.DELETE, 1, 5),
-          change(RowKind.INSERT, 1, 3)), collect(before));
+      assertEquals(List.of(change(RowKind.INSERT, 1, 5), change(RowKind.UPDATE_BEFORE, 1, 5),
+          change(RowKind.UPDATE_AFTER, 1, 3)), collect(before));
       before.setProcessingTime(5800);
       before.processElement(new StreamRecord<>(batch(allocator, row(1, 3), row(1, 8))));
       assertEquals(List.of(), collect(before));
@@ -97,8 +97,8 @@ class NativeColumnarTopNOperatorTest {
       assertEquals(List.of(), collect(restored));
       restored.setProcessingTime(6800);
       restored.processElement(new StreamRecord<>(batch(allocator, row(1, 8), row(1, 7))));
-      assertEquals(List.of(change(RowKind.INSERT, 1, 8), change(RowKind.DELETE, 1, 8),
-          change(RowKind.INSERT, 1, 7)), collect(restored));
+      assertEquals(List.of(change(RowKind.INSERT, 1, 8), change(RowKind.UPDATE_BEFORE, 1, 8),
+          change(RowKind.UPDATE_AFTER, 1, 7)), collect(restored));
     }
   }
 

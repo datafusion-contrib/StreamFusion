@@ -1135,3 +1135,16 @@ replacing every pending candidate with new input. These nested schemas exercise 
 existing RocksDB snapshot-backed native path, not direct typed RocksDB. Canonical exports are
 guarded against calling any native snapshot/checkpoint entry point. The current full native
 suite passes 1,230 tests with two existing ignores. These are separate, overlapping cohorts.
+
+
+## Direct append Top-N projection
+
+The direct Flink 2.2.1 append contract uses `data-state-with-append` MAP state containing actual
+sort keys and lists of retained input rows, or `Top1-Rank-State` VALUE state for fast Top-1.
+Variable ranges additionally retain independent `rankEnd` LONG values. Each descriptor uses
+the released stock serializer and original TTL envelope. Canonical export visits live memory
+or raw persisted partitions in bounded Arrow batches; there is no intermediate native snapshot.
+Import validates the whole view before mutation and consumes stock state only after success.
+See [append scope and remaining qualification](../operators/top-n.md#value-ordered-append-canonical-state-partial).
+Automatic job binding, wider types and complete-process qualification remain open; this does not
+extend the qualified first-N workflow to arbitrary value-ordered ranks. Benchmarking is deferred.

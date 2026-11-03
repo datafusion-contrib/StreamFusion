@@ -434,3 +434,9 @@ stores and switch orders, empty/keyless state, no-input returns, native checkpoi
 fixed-maximum rescaling with custom connectors and both transposes. Broader qualification remains
 open; see
 [buffered canonical coverage](backends/canonical-state.md#buffered-event-time-first-row-state).
+
+
+Value-ordered append Top-N now has a direct stock-state projection foundation, including fast
+Top-1 and independent variable bounds. Automatic job submission binding and complete-process
+qualification are still pending, so the qualified first-N workflow above does not yet cover it.
+See [append canonical coverage](operators/top-n.md#value-ordered-append-canonical-state-partial).

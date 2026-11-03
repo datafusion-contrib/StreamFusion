@@ -468,3 +468,36 @@ node compares only its rank/key definition and remains compilable on Flink 1.18.
 placement correction passes 100 current 2.2 controls (including eight ordinary process jobs)
 and 31 shared 1.18 processing/checkpoint controls. These cohorts overlap earlier runs and
 do not establish Flink 1.18 canonical interchange.
+
+
+## Value-ordered append canonical state (partial)
+
+Direct Flink 2.2.1 state adapters now preserve `AppendOnlyTopNFunction` sort-key lists and
+`FastTop1Function` winners. These are separate from arrival-ordered first-N counters.
+They retain list tie order, projected-rank overflow rows, stored row kinds, original TTL ages,
+and independent variable `rankEnd` values, including bound-only partitions with negative bounds.
+The adapter reads live native state directly into stock descriptors and serializers; it does
+not write an intermediate native snapshot. Raw RocksDB iteration does not expire state during
+transfer. A stock restore requires no StreamFusion serializer classes for this projected state.
+
+Whole-view import validates the complete source before inserting any native row. It rejects
+foreign descriptors, mismatched partition/sort keys, empty lists, invalid non-null payloads,
+malformed metadata and duplicate Top-1/bound entries. Failed validation retains source state and
+an empty target for retry. Callback errors preserve the original Java exception and release
+moved Arrow buffers; native state remains available for another export. Native memory exhaustion
+aborts initialization and closing the failed target releases its reservation.
+
+Direct actual-operator controls cover projected/hidden ranks, fast Top-1 with either projection,
+variable bounds, nullable/keyless BIGINT partitions, stock heap/RocksDB and native memory/RocksDB,
+with TTL enabled and disabled. Additional controls cover overflow-list ages, bound-only state,
+late corrupt input beyond 1,024 valid partitions, bounded transfer and receiver failure. Stock
+FastTop1 emits UPDATE_BEFORE/UPDATE_AFTER on replacement even when rank is hidden; the regression
+expectations now match the released stock function. Non-time unbounded OVER ROW_NUMBER is a
+separate contract and is rejected by this adapter.
+
+**Pending:** automatic append binding in normal submission, complete-job identities/rescaling,
+upstream append restore qualification, wider key/sort/payload types, full TTL timelines and
+backend/version/connector delivery matrices. Updating and retracting Top-N still require their
+own consolidated state contracts. This direct foundation is not full job interoperability.
+All remain part of [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking is deferred.
