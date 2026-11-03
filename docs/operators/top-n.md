@@ -597,3 +597,38 @@ failure/delivery matrices remain open in [#569](https://github.com/datafusion-co
 Stock TTL restoration can retain nonconsecutive inner ranks; this TTL-disabled adapter rejects them
 rather than silently renumbering them. Older unbound native checkpoint upgrades remain unqualified.
 Benchmarking remains deferred.
+
+## Retracting state foundation (in progress)
+
+The compatibility implementation has a separate per-record retracting state model. Flink retains
+three independent structures: sort-key lists of actual rows, a sorted map of sort-key counts, and
+an optional first-observed variable bound. List ages, the count-map age and the bound age are
+independent. A present empty count map still owns its partition key. Counts cannot be reconstructed
+from retained rows: unmatched retractions and heap OFFSET row-kind mutation can leave rows whose
+sort key is absent from the count map, even without TTL.
+
+The native foundation preserves these structures, retained row kinds and backend-specific value
+copying through Arrow execution and native memory/RocksDB checkpoints. Snapshot clones freeze
+mutable row-kind headers while sharing immutable payload bytes. Its versioned checkpoint envelope
+is distinct from the existing flat buffers; enabling the new model over legacy rows is rejected
+because those buffers cannot prove the original independent map contents.
+
+Released Flink 2.2.1 reference tests generate 28 immutable traces for OFFSET, unmatched/matched
+retractions, count-only keys, independent TTL and changing first bounds, with hidden/projected
+rank and both backends. The native tests compare each record's exact changelog and retained state,
+then repeat with recovery after every record. RocksDB may reclaim fully expired values during
+reads or compaction; cross-engine state comparisons exclude expired garbage while native checkpoint
+round trips still require exact preservation of all stored rows, counts, kinds, ages and bounds.
+The qualification is BIGINT payloads and one ascending BIGINT sort field. It is groundwork, with
+no new SQL admission or stock canonical interoperability claim.
+
+Production JNI/operator checks pass 56 scenarios against those released traces, restoring at the
+critical boundary or after every record, then checkpointing and restoring again with no new input.
+Another 24 stock reference checks pass. All 484 shared rank/planner/processing controls pass on the
+same native library; the complete native suite passes 1,256 tests with two existing ignores.
+These are state-model and native recovery checks, not stock canonical qualification.
+
+Direct stock descriptor transfer, full validation/failure handling, planner binding, broader types,
+complete-process switching/rescaling and connector/transposition coverage for general retracting
+rank remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.

@@ -1,0 +1,175 @@
+{
+  "flink_version" : "2.2.1",
+  "output_rank" : true,
+  "rank_end" : 3,
+  "rank_start" : 1,
+  "restore_after" : 2,
+  "serializes_values" : false,
+  "steps" : [ {
+    "input" : {
+      "fields" : [ 1, 10, 1 ],
+      "kind" : 0
+    },
+    "output" : [ {
+      "fields" : [ 1, 10, 1, 1 ],
+      "kind" : 0
+    } ],
+    "state" : {
+      "counts" : [ [ 10, 1 ] ],
+      "lists" : {
+        "10" : [ {
+          "fields" : [ 1, 10, 1 ],
+          "kind" : 0
+        } ]
+      }
+    }
+  }, {
+    "input" : {
+      "fields" : [ 1, 10, 999 ],
+      "kind" : 3
+    },
+    "output" : [ ],
+    "state" : {
+      "counts" : [ ],
+      "lists" : {
+        "10" : [ {
+          "fields" : [ 1, 10, 1 ],
+          "kind" : 0
+        } ]
+      }
+    }
+  }, {
+    "input" : {
+      "fields" : [ 1, 25, 5 ],
+      "kind" : 0
+    },
+    "output" : [ {
+      "fields" : [ 1, 25, 5, 1 ],
+      "kind" : 0
+    } ],
+    "state" : {
+      "counts" : [ [ 25, 1 ] ],
+      "lists" : {
+        "10" : [ {
+          "fields" : [ 1, 10, 1 ],
+          "kind" : 0
+        } ],
+        "25" : [ {
+          "fields" : [ 1, 25, 5 ],
+          "kind" : 0
+        } ]
+      }
+    }
+  }, {
+    "input" : {
+      "fields" : [ 1, 30, 6 ],
+      "kind" : 0
+    },
+    "output" : [ {
+      "fields" : [ 1, 30, 6, 2 ],
+      "kind" : 0
+    } ],
+    "state" : {
+      "counts" : [ [ 25, 1 ], [ 30, 1 ] ],
+      "lists" : {
+        "10" : [ {
+          "fields" : [ 1, 10, 1 ],
+          "kind" : 0
+        } ],
+        "25" : [ {
+          "fields" : [ 1, 25, 5 ],
+          "kind" : 0
+        } ],
+        "30" : [ {
+          "fields" : [ 1, 30, 6 ],
+          "kind" : 0
+        } ]
+      }
+    }
+  }, {
+    "input" : {
+      "fields" : [ 1, 7, 7 ],
+      "kind" : 0
+    },
+    "output" : [ {
+      "fields" : [ 1, 25, 5, 1 ],
+      "kind" : 1
+    }, {
+      "fields" : [ 1, 7, 7, 1 ],
+      "kind" : 2
+    }, {
+      "fields" : [ 1, 30, 6, 2 ],
+      "kind" : 1
+    }, {
+      "fields" : [ 1, 25, 5, 2 ],
+      "kind" : 2
+    }, {
+      "fields" : [ 1, 30, 6, 3 ],
+      "kind" : 0
+    } ],
+    "state" : {
+      "counts" : [ [ 7, 1 ], [ 25, 1 ], [ 30, 1 ] ],
+      "lists" : {
+        "7" : [ {
+          "fields" : [ 1, 7, 7 ],
+          "kind" : 0
+        } ],
+        "10" : [ {
+          "fields" : [ 1, 10, 1 ],
+          "kind" : 0
+        } ],
+        "25" : [ {
+          "fields" : [ 1, 25, 5 ],
+          "kind" : 0
+        } ],
+        "30" : [ {
+          "fields" : [ 1, 30, 6 ],
+          "kind" : 0
+        } ]
+      }
+    }
+  }, {
+    "input" : {
+      "fields" : [ 1, 8, 8 ],
+      "kind" : 0
+    },
+    "output" : [ {
+      "fields" : [ 1, 25, 5, 2 ],
+      "kind" : 1
+    }, {
+      "fields" : [ 1, 8, 8, 2 ],
+      "kind" : 2
+    }, {
+      "fields" : [ 1, 30, 6, 3 ],
+      "kind" : 1
+    }, {
+      "fields" : [ 1, 25, 5, 3 ],
+      "kind" : 2
+    } ],
+    "state" : {
+      "counts" : [ [ 7, 1 ], [ 8, 1 ], [ 25, 1 ], [ 30, 1 ] ],
+      "lists" : {
+        "7" : [ {
+          "fields" : [ 1, 7, 7 ],
+          "kind" : 0
+        } ],
+        "8" : [ {
+          "fields" : [ 1, 8, 8 ],
+          "kind" : 0
+        } ],
+        "10" : [ {
+          "fields" : [ 1, 10, 1 ],
+          "kind" : 0
+        } ],
+        "25" : [ {
+          "fields" : [ 1, 25, 5 ],
+          "kind" : 0
+        } ],
+        "30" : [ {
+          "fields" : [ 1, 30, 6 ],
+          "kind" : 0
+        } ]
+      }
+    }
+  } ]
+}

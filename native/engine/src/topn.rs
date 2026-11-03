@@ -10,6 +10,7 @@ mod first_bound_tests;
 #[cfg(test)]
 mod non_time_row_number_tests;
 mod retract_offset;
+mod retract_state;
 #[cfg(all(test, feature = "rocksdb-state"))]
 mod rocks_memory_tests;
 #[cfg(test)]
@@ -329,6 +330,7 @@ struct FirstRankEnd {
 pub(crate) struct TopNPartition<R = TopNRow> {
     rows: Vec<R>,
     first_rank_end: Option<FirstRankEnd>,
+    retract: Option<Box<retract_state::RetractingState>>,
 }
 
 impl<R> Default for TopNPartition<R> {
@@ -336,6 +338,7 @@ impl<R> Default for TopNPartition<R> {
         Self {
             rows: Vec::new(),
             first_rank_end: None,
+            retract: None,
         }
     }
 }
@@ -356,7 +359,9 @@ impl<R> std::ops::DerefMut for TopNPartition<R> {
 
 impl<R> TopNPartition<R> {
     fn has_state(&self) -> bool {
-        !self.rows.is_empty() || self.first_rank_end.is_some()
+        !self.rows.is_empty()
+            || self.first_rank_end.is_some()
+            || self.retract.as_ref().is_some_and(|state| state.has_state())
     }
 
     fn expire_rank_end(&mut self, ttl: StateTtl) {
@@ -381,10 +386,12 @@ impl<R> TopNPartition<R> {
     }
 }
 
-const TOPN_BOUND_BYTES: usize = std::mem::size_of::<Option<FirstRankEnd>>();
+const TOPN_BOUND_BYTES: usize = std::mem::size_of::<Option<FirstRankEnd>>()
+    + std::mem::size_of::<Option<Box<retract_state::RetractingState>>>();
 const FIRST_BOUND_MAGIC: &[u8; 8] = b"SFRANK01";
 const RAW_RANK_END: &str = "$rank_end$";
 const RAW_RANK_END_TS: &str = "$rank_end_ts$";
+const RAW_RETRACT_STATE: &str = "$retract_state$";
 
 fn topn_staged_entry_bytes(key: &ByteKey, old: &Vec<Arc<OwnedRow>>) -> usize {
     // The key is owned once by the lookup map and once by the deterministic first-touch vector.
@@ -513,6 +520,7 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
     type Value = TopNPartition;
     fn resident_bytes(&self, value: &TopNPartition) -> usize {
         std::mem::size_of::<TopNPartition>()
+            + value.retract.as_ref().map_or(0, |state| state.resident_bytes())
             + value.capacity() * std::mem::size_of::<TopNRow>()
             + value
                 .iter()
@@ -532,6 +540,9 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
         vec![("rows".to_string(), DataType::Binary)]
     }
     fn value_bytes(&self, value: &TopNPartition) -> usize {
+        if let Some(state) = &value.retract {
+            return state.encode().expect("valid retracting state").len();
+        }
         4 + if value.first_rank_end.is_some() {
             24
         } else {
@@ -550,6 +561,9 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
             }
     }
     fn write_ms(&self, value: &TopNPartition) -> i64 {
+        if let Some(state) = &value.retract {
+            return state.write_ms();
+        }
         value
             .iter()
             .map(|entry| entry.ts_ms)
@@ -561,6 +575,11 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
         true
     }
     fn raw_write(&self, value: &TopNPartition, out: &mut Vec<u8>) {
+        if let Some(state) = &value.retract {
+            assert!(value.rows.is_empty() && value.first_rank_end.is_none());
+            out.extend_from_slice(&state.encode().expect("valid retracting state"));
+            return;
+        }
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
         for entry in value.iter() {
             write_length_prefixed(out, entry.sort.row().data());
@@ -583,6 +602,14 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
         }
     }
     fn from_raw(&self, bytes: &[u8]) -> TopNPartition {
+        if bytes.starts_with(retract_state::STATE_VERSION) {
+            return TopNPartition {
+                retract: Some(Box::new(retract_state::RetractingState::decode(
+                    bytes, &self.sort, &self.payload,
+                ).expect("valid persisted retracting state"))),
+                ..Default::default()
+            };
+        }
         let mut cursor = RawListCursor::new(bytes);
         let sort_parser = self.sort.parser();
         let payload_parser = self.payload.parser();
@@ -627,6 +654,7 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
         TopNPartition {
             rows: buffer,
             first_rank_end,
+            retract: None,
         }
     }
 }
@@ -1566,6 +1594,8 @@ fn write_raw_topn_snapshot_partition<'a>(
     let has_bounds = entries
         .iter()
         .any(|(_, state)| state.first_rank_end.is_some());
+    let has_retract = entries.iter().any(|(_, state)| state.retract.is_some());
+    let mut retract_states = BinaryBuilder::new();
     let mut bounds = Int64Builder::new();
     let mut bound_timestamps = Int64Builder::new();
     let mut keys = BinaryBuilder::new();
@@ -1576,7 +1606,21 @@ fn write_raw_topn_snapshot_partition<'a>(
     let mut sort_counts = Int64Builder::new();
     let mut offset_state = false;
     for (key, buffer) in entries {
+        if let Some(state) = &buffer.retract {
+            assert!(buffer.rows.is_empty() && buffer.first_rank_end.is_none());
+            keys.append_value(&key.0);
+            sorts.append_null();
+            rows.append_null();
+            write_timestamps.append_value(0);
+            stored_kinds.append_value(0);
+            sort_counts.append_null();
+            bounds.append_null();
+            bound_timestamps.append_null();
+            retract_states.append_value(state.encode().expect("valid retracting state"));
+            continue;
+        }
         if buffer.is_empty() && buffer.first_rank_end.is_some() {
+            retract_states.append_null();
             keys.append_value(&key.0);
             sorts.append_null();
             rows.append_null();
@@ -1587,6 +1631,7 @@ fn write_raw_topn_snapshot_partition<'a>(
             bound_timestamps.append_value(buffer.first_rank_end.unwrap().written_at);
         }
         for (index, entry) in buffer.iter().enumerate() {
+            retract_states.append_null();
             let bound = buffer.first_rank_end.filter(|_| index == 0);
             bounds.append_option(bound.map(|bound| bound.value));
             bound_timestamps.append_option(bound.map(|bound| bound.written_at));
@@ -1601,9 +1646,12 @@ fn write_raw_topn_snapshot_partition<'a>(
     }
     let mut fields = vec![
         Field::new(RAW_SNAPSHOT_KEY, DataType::Binary, false),
-        Field::new(RAW_SNAPSHOT_SORT, DataType::Binary, has_bounds),
-        Field::new(RAW_SNAPSHOT_ROW, DataType::Binary, has_bounds),
+        Field::new(RAW_SNAPSHOT_SORT, DataType::Binary, has_bounds || has_retract),
+        Field::new(RAW_SNAPSHOT_ROW, DataType::Binary, has_bounds || has_retract),
     ];
+    if has_retract {
+        fields.push(Field::new(RAW_RETRACT_STATE, DataType::Binary, true));
+    }
     if ttl_on {
         fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
     }
@@ -1627,6 +1675,9 @@ fn write_raw_topn_snapshot_partition<'a>(
         Arc::new(sorts.finish()),
         Arc::new(rows.finish()),
     ];
+    if has_retract {
+        columns.push(Arc::new(retract_states.finish()));
+    }
     if ttl_on {
         columns.push(Arc::new(write_timestamps.finish()));
     }
@@ -1936,6 +1987,7 @@ fn load_topn_batch_raw(
             .expect("normalize snapshot sort keys")
     });
     let rows = column_binary(batch, RAW_SNAPSHOT_ROW);
+    let retract_states = batch.column_by_name(RAW_RETRACT_STATE).map(|_| column_binary(batch, RAW_RETRACT_STATE));
     let stored_kinds = batch.column_by_name("$stored_kind$").map(|array| {
         array
             .as_any()
@@ -1965,6 +2017,17 @@ fn load_topn_batch_raw(
             Some(buffer) => buffer,
             None => groups.insert(ByteKey::from(part), TopNPartition::default()),
         };
+        if let Some(states) = retract_states.as_ref().filter(|states| !states.is_null(row)) {
+            assert!(!buffer.has_state(), "duplicate retracting checkpoint partition");
+            let mut state = retract_state::RetractingState::decode(
+                states.value(row), &conv.sort, &conv.payload,
+            ).expect("valid retracting checkpoint partition");
+            if write_timestamps.is_none() {
+                state.migrate_clocks(restored_at_ms);
+            }
+            buffer.retract = Some(Box::new(state));
+            continue;
+        }
         if let Some(bounds) = bounds.as_ref().filter(|bounds| !bounds.is_null(row)) {
             buffer.first_rank_end = Some(FirstRankEnd {
                 value: bounds.value(row),
@@ -2086,6 +2149,7 @@ pub(crate) struct RetractableTopNRanker<S: KeyedStateStore<TopNPartition> = Memo
     output_rank_number: bool,
     generate_update_before: bool,
     net_diff: bool,
+    stock_state: bool,
     // Idle-state retention millis (0 = off). Expiry granularity is the WHOLE buffer, clocked on
     // the head entry's `ts_ms` — see the invariant documented on `push`.
     ttl_ms: i64,
@@ -2122,6 +2186,7 @@ impl RetractableTopNRanker {
             output_rank_number,
             generate_update_before: true,
             net_diff: false,
+            stock_state: false,
             ttl_ms: 0,
             last_sweep_ms: 0,
             schema: None,
@@ -2142,6 +2207,7 @@ impl RetractableTopNRanker {
             .map(|(key, buffer)| {
                 byte_key_bytes(&key.0)
                     + TOPN_BOUND_BYTES
+                    + buffer.retract.as_ref().map_or(0, |state| state.resident_bytes())
                     + buffer.iter().map(topn_entry_bytes).sum::<usize>()
             })
             .sum();
@@ -2202,6 +2268,7 @@ impl<S: KeyedStateStore<TopNPartition>> RetractableTopNRanker<S> {
             output_rank_number: self.output_rank_number,
             generate_update_before: self.generate_update_before,
             net_diff: self.net_diff,
+            stock_state: self.stock_state,
             ttl_ms: self.ttl_ms,
             last_sweep_ms: self.last_sweep_ms,
             schema: self.schema,
@@ -2307,6 +2374,9 @@ impl<S: KeyedStateStore<TopNPartition>> RetractableTopNRanker<S> {
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        if self.stock_state {
+            return self.push_stock_state(batch, now_ms);
+        }
         if self.net_diff {
             return self.push_net_diff(batch, now_ms);
         }
@@ -2820,6 +2890,9 @@ impl<S: KeyedStateStore<TopNPartition>> RetractableTopNRanker<S> {
     fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
         for batch in read_ipc_if_present(bytes) {
             if batch.schema_ref().field(0).name() == RAW_SNAPSHOT_KEY {
+                if batch.column_by_name(RAW_RETRACT_STATE).is_some() {
+                    self.stock_state = true;
+                }
                 load_topn_batch_raw(
                     &mut self.schema,
                     &mut self.converters,
@@ -3180,6 +3253,7 @@ impl crate::state::RocksStateCodec for UpdatableTopNStateCodec {
         TopNPartition {
             rows,
             first_rank_end,
+            retract: None,
         }
     }
 }
@@ -5317,6 +5391,37 @@ pub extern "system" fn Java_tech_streamfusion_Native_enableTopNFirstBound<'local
         } else {
             unsafe { &mut *(handle as *mut TopNHandle) }
                 .enable_first_bound(generate_update_before != 0);
+        }
+    })
+}
+
+/// Selects independent released retracting maps before canonical state import or new input.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_enableStockRetractingTopNState<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    persistent: jboolean,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let result = if persistent != 0 {
+            #[cfg(feature = "rocksdb-state")]
+            {
+                match unsafe { &mut *(handle as *mut RocksTopNHandle) } {
+                    RocksTopNHandle::Retract(ranker) => ranker.enable_stock_state(),
+                    _ => Err(DataFusionError::Execution("stock retracting state requires a retracting ranker".into())),
+                }
+            }
+            #[cfg(not(feature = "rocksdb-state"))]
+            Err(DataFusionError::Execution("native RocksDB support is unavailable".into()))
+        } else {
+            match unsafe { &mut *(handle as *mut TopNHandle) } {
+                TopNHandle::Retract(ranker) => ranker.enable_stock_state(),
+                _ => Err(DataFusionError::Execution("stock retracting state requires a retracting ranker".into())),
+            }
+        };
+        if let Err(error) = result {
+            let _ = env.throw_new("tech/streamfusion/NativeException", error.to_string());
         }
     })
 }

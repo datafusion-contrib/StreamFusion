@@ -57,6 +57,10 @@
             <testResource>
                 <directory>${project.basedir}/../src/test/resources</directory>
             </testResource>
+            <testResource>
+                <directory>${project.basedir}/../native/engine/tests/fixtures</directory>
+                <includes><include>retracting-rank/*.json</include></includes>
+            </testResource>
         </testResources>
         <plugins>
             <plugin>

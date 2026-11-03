@@ -119,6 +119,7 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
                         TopNPartition {
                             rows: Vec::with_capacity(1),
                             first_rank_end: None,
+                            retract: None,
                         },
                     )
                 }

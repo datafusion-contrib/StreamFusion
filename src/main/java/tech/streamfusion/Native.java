@@ -3027,6 +3027,9 @@ public final class Native {
   public static native void enableTopNFirstBound(
       long handle, boolean persistent, boolean generateUpdateBefore);
 
+  /** Selects independent retracting data lists, counters and TTL clocks before state transfer. */
+  public static native void enableStockRetractingTopNState(long handle, boolean persistent);
+
   public static native void exportUpdatingTopNCanonical(
       long handle, boolean persistent, long rowSchemaAddress, BatchReceiver receiver);
 
