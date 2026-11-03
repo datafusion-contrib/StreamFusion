@@ -1319,7 +1319,7 @@ also remains 6.7% slower than retained native; no universal unchanged-path speed
 
 ## Select bounded integer rounding positions without CASE scattering
 
-For integer ROUND, the planner can prove a CASE position returns only INT literals in
+For integer ROUND and INT/BIGINT TRUNCATE, the planner can prove a CASE position returns only INT literals in
 -38..38 or NULL and that every condition/result is failure-free. This narrower contract
 allows eager condition evaluation and a single typed Arrow selection pass. It avoids
 generic CASE filtering, branch materialization and scattering while preserving first-TRUE
@@ -1341,3 +1341,12 @@ the eight-cell pilot measures 8.286-10.004 native ns/row and beats its paired st
 [full qualification](../benchmarks/scalar-functions.md#integer-round-with-a-bounded-runtime-position),
 alongside the final bulk matrix, tiny controls, literal-path rechecks and conversion-inclusive
 complete jobs. Allocation reductions and this pilot alone do not establish a job speedup.
+
+INT/BIGINT TRUNCATE reuses the same selector and toward-zero kernel branch without a
+new native implementation. Its [separate qualification](../benchmarks/scalar-functions.md#integer-truncate-with-a-bounded-runtime-position)
+compares the actual preceding encoder, whose bounded runtime TRUNCATE still calls the JVM,
+on the same release runtime and fixture. The ROUND measurements above retain their own
+original scope and provenance. All 40 TRUNCATE bulk cells beat paired stock by
+3.801-16.393x and the previous evaluator by 6.796-20.044x. Four of eight tiny controls
+still lose to stock. All eight measured complete jobs retain both transposes and improve
+over stock (native/stock elapsed 0.764-0.928); this does not imply a universal job gain.

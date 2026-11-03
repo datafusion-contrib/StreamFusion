@@ -92,9 +92,10 @@ records bulk function gains alongside slower tiny batches and complete jobs.
 Ordinary Calc also accepts verified integer trees as the first operand of
 `TO_TIMESTAMP_LTZ(...,0)` or `(...,3)`: integer addition/subtraction/multiplication,
 lossless widening, identity FLOOR/CEIL/ROUND, verified literal-position ROUND/TRUNCATE
-(-38 through 38 or NULL), and bounded runtime-position ROUND. The latter accepts only
+(-38 through 38 or NULL), and bounded runtime-position ROUND/TRUNCATE. The latter accepts only
 failure-free CASE conditions and literal/CASE results proven in that same range or NULL;
-see [the integer ROUND contract](calc-filter.md#integer-round-with-a-bounded-runtime-position).
+see the [ROUND contract](calc-filter.md#integer-round-with-a-bounded-runtime-position) and
+[INT/BIGINT TRUNCATE subset](calc-filter.md#integer-truncate-with-a-bounded-runtime-position).
 Every child must satisfy the same
 recursive proof. Division, remainder, narrowing, unknown/stateful producers and other
 signatures keep their existing correct evaluator. UNNEST admission is unchanged.

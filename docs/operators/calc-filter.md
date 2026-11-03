@@ -1692,7 +1692,7 @@ false. ROUND consumes that INT column without the generic CASE filter/scatter ma
 or a JVM evaluator. Empty filtered batches remain empty. No configuration switch or JNI
 contract changes are needed. Arbitrary position columns, out-of-range results,
 division/remainder, narrowing, stateful or other unverified conditions/producers retain the
-complete generated expression. TRUNCATE retains its separate literal-position scope below.
+complete generated expression. TRUNCATE has the separate verified subset below.
 The [runtime-position measurements](../benchmarks/scalar-functions.md#integer-round-with-a-bounded-runtime-position)
 retain the initial slower prototype, batch qualification and conversion-inclusive jobs.
 
@@ -1728,7 +1728,7 @@ values while retaining sliced validity.
 This removes Flink's DECIMAL(38,18) intermediate only in the verified domain, preserving
 resolved widths, signed minima and exact large BIGINTs without JVM computation.
 
-Runtime/extreme positions, division, remainder, narrowing and other unverified producers keep their
+Unverified runtime/extreme positions, division, remainder, narrowing and other unverified producers keep their
 complete generated expression. In particular, nonzero input with position -2147483648
 keeps Flink's Underflow exception. Direct TINYINT/SMALLINT signatures still preserve
 released Flink's generated-compilation failure; explicit widening is supported. Conditional
@@ -1738,6 +1738,24 @@ compare stock and the actual preceding scalar callback, including both transpose
 complete jobs.
 The [arithmetic controls](../benchmarks/scalar-functions.md#integer-truncate-over-arithmetic)
 add computed operands, bounded positions and failure-safe NULL folding.
+
+### Integer TRUNCATE with a bounded runtime position
+
+INT/BIGINT `TRUNCATE(value, position)` reuses the
+[bounded CASE proof](#integer-round-with-a-bounded-runtime-position), typed position selector
+and exact integer kernel. Every position result must be a literal in -38..38 or NULL,
+including nested CASE; every condition and value producer must satisfy the failure-free
+proof. Negative positions truncate toward zero without a DECIMAL(38,18) JVM intermediate.
+The selected NULL, input NULL, resolved width, integer overflow in verified producers,
+STRING/epoch consumers and empty-batch contracts remain exact.
+
+Arbitrary columns, out-of-range results, failing/stateful conditions and other unverified
+producers retain their complete generated expression. Direct TINYINT/SMALLINT TRUNCATE
+retains released Flink's compilation failure; explicit widening to INT/BIGINT is supported.
+No Rust implementation, opcode, JNI, transport or switch is added by this extension.
+The [TRUNCATE qualification](../benchmarks/scalar-functions.md#integer-truncate-with-a-bounded-runtime-position)
+compares both releases with stock and the actual preceding encoder, retaining tiny and
+conversion-inclusive complete-job controls.
 
 ### Exact unary and integral functions
 

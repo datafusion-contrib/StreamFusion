@@ -7627,7 +7627,8 @@ first TRUE branch in one Arrow pass, retaining NULL conditions and selected NULL
 ROUND consumes that position array, preserves resolved widths, signed overflow and HALF_UP
 ties, and uses no JVM evaluator. Nested bounded CASE and verified integer value producers
 are covered. Arbitrary position columns, extreme results and failing/stateful/unverified
-producers remain generated; TRUNCATE is still literal-position only.
+producers remain generated. TRUNCATE was literal-position only in this qualification;
+its later bounded-runtime extension is qualified separately below.
 
 The [2026-11-03 record](results/bounded-runtime-round-2026-11-03.json) retains released
 Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc-linked
@@ -7712,3 +7713,80 @@ Reproduce prepared measurements with the release `integral_expression` example,
 compiled preceding encoder for `SF_INTEGRAL_PREVIOUS=true`. Complete-job controls use
 `IntegralExpressionPipelineBenchmark`, `sf.integral.secondaryType=INT`, the matching
 `sf.integral.expression`, and `sf.integral.bigintInput=true` for BIGINT.
+
+
+## Integer TRUNCATE with a bounded runtime position
+
+INT/BIGINT TRUNCATE reuses the committed bounded-position selector and toward-zero integer
+kernel when the planner proves every CASE result is an INT literal in -38..38 or NULL
+and all conditions/value producers are failure-free. No new Rust implementation, opcode,
+JNI, transport, dependency or configuration switch is required. Direct narrow signatures
+retain released Flink's generated-compilation failure; explicit widening is supported.
+Arbitrary columns, extreme/out-of-range results and unverified/failing/stateful producers
+retain their preceding routes, including empty-batch and lazy-failure behavior.
+
+The [2026-11-03 record](results/bounded-runtime-truncate-2026-11-03.json) measures released
+Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro and one thread. Release/mimalloc-linked
+executable and DSO hashes are identical to the preceding ROUND qualification; allocator
+symbols remain verified. Equal prepared GenericRowData, BinaryRowData and Arrow contain
+nullable/NOT NULL INT/BIGINT, signed extrema and NULLs. Each trial consumes 131,072 rows,
+with 16 warmups and nine measurements. Rust times production Calc and equivalent output
+consumption after import and before export. Intrinsic prior evaluator callbacks remain
+timed. Initial JNI/import/export and perimeter transposes are excluded only from this
+small-function gate; complete jobs retain those costs.
+
+The short CASE chooses -2/-1; the wide-null CASE chooses -38/NULL/0. Extra computed controls
+add one at the original input width before truncation. Secondary condition input is INT.
+Actual preceding encoder `71b821c4` is independently compiled against the unchanged current
+runtime/fixture/allocator; it still evaluates runtime TRUNCATE in the JVM. This is an
+encoder comparison, not a whole historical DSO replay. Independent stock remains distinct.
+
+| Flink | Bulk cells | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 20 | 3.801-15.378x | 7.653-19.165x |
+| 1.18.1 | 20 | 3.915-16.393x | 6.796-20.044x |
+
+All 40 bulk cells beat paired stock and the previous evaluator. Independent prior-stock/
+native spans **3.970-16.296x**; all independent controls and
+variability remain in the record. Eight 16-row controls retain stock/native
+**0.565-1.466x**. The [4,800 raw trials](results/bounded-runtime-truncate-2026-11-03.csv.gz)
+include warmups and checksums; [400 initial pilot trials](results/bounded-runtime-truncate-2026-11-03-pilot.csv.gz)
+are separate. Reproduce with the release `integral_expression` example,
+`SF_INTEGRAL_SECONDARY_TYPE=INT` and the expressions above; the prior control supplies its
+independently compiled encoder and `SF_INTEGRAL_PREVIOUS=true`.
+
+Eight complete million-row jobs retain the bounded row source, blackhole sink, startup,
+JNI and both transposes. Two warmups and five measurements alternate engine order.
+Candidate requires consumed NativeCalc work and empty evaluators; previous requires the
+TRUNCATE evaluator. Seconds, median:
+
+| Flink / type / position shape | Paired stock | Native | Independent stock | Previous evaluator |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-short | 0.251914 | 0.192503 | 0.254554 | 0.285888 |
+| 2.2.1 / INT-wide-null | 0.219562 | 0.203798 | 0.211600 | 0.253925 |
+| 2.2.1 / BIGINT-short | 0.266054 | 0.212577 | 0.266745 | 0.299863 |
+| 2.2.1 / BIGINT-wide-null | 0.231545 | 0.210317 | 0.233702 | 0.272629 |
+| 1.18.1 / INT-short | 0.247101 | 0.189082 | 0.239740 | 0.280074 |
+| 1.18.1 / INT-wide-null | 0.226415 | 0.198152 | 0.212048 | 0.256564 |
+| 1.18.1 / BIGINT-short | 0.269613 | 0.217554 | 0.262311 | 0.316432 |
+| 1.18.1 / BIGINT-wide-null | 0.236126 | 0.214385 | 0.239261 | 0.274413 |
+
+Native/stock elapsed spans **0.764-0.928**; native/previous spans
+**0.673-0.803**. Every trial and range is retained. The prepared
+function gate does not establish a universal job speedup. Reproduce complete jobs with
+`IntegralExpressionPipelineBenchmark`, `sf.integral.secondaryType=INT`, matching
+`sf.integral.expression`, and `sf.integral.bigintInput=true` for BIGINT.
+
+All **344 focused JVM invocations** pass without skips on Flink 1.18.1/2.2.1 and JDK 11/17,
+targeting Java release 11. Complete 5,003-row maps compare values, schema, NULLs, IDs and
+cardinality for bounded runtime positions, toward-zero behavior, arithmetic/widening/nesting,
+STRING/epoch consumers and all-filtered batches. Existing literal TRUNCATE and ROUND
+encoding/rounding controls are included, preserving the narrow-input compilation contract.
+Admitted paths require actual consumed NativeCalc and empty evaluator descriptors.
+The actual preceding encoder matches full values/schema then fails the four new pure-route
+assertions; its retained unverified-position control passes. Four fresh unchanged released
+`ScalarFunctionsTest.testTruncate` stock-oracle invocations pass separately. The exact
+unchanged Rust runtime already passed **900 release core tests** without ignores,
+including dynamic-position TRUNCATE, slices, NULLs, ownership and empty arrays. Hosted CI
+remains separate; broader runtime/extreme numeric scope stays in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).

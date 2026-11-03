@@ -4731,7 +4731,7 @@ final class RexExpression {
   private static boolean nativeIntegralRoundPosition(RexCall call) {
     return call.getOperator()
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND
-        && nativeIntegralRoundingPosition(call, true);
+        && nativeIntegralRoundingPosition(call);
   }
 
   private static boolean nativeIntegralTruncatePosition(RexCall call) {
@@ -4739,18 +4739,16 @@ final class RexExpression {
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE
         && (call.getType().getSqlTypeName() == SqlTypeName.INTEGER
             || call.getType().getSqlTypeName() == SqlTypeName.BIGINT)
-        && nativeIntegralRoundingPosition(call, false);
+        && nativeIntegralRoundingPosition(call);
   }
 
-  private static boolean nativeIntegralRoundingPosition(RexCall call, boolean computedPosition) {
+  private static boolean nativeIntegralRoundingPosition(RexCall call) {
     if (call.getOperands().size() != 2
         || !SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
         || call.getType().getSqlTypeName() != call.getOperands().get(0).getType().getSqlTypeName()
         || call.getOperands().get(1).getType().getSqlTypeName() != SqlTypeName.INTEGER
         || !nativeIntegralRoundingOperand(call.getOperands().get(0))) return false;
-    RexNode position = call.getOperands().get(1);
-    return (computedPosition || position instanceof RexLiteral)
-        && nativeBoundedIntegralPosition(position);
+    return nativeBoundedIntegralPosition(call.getOperands().get(1));
   }
 
   private static boolean nativeBoundedIntegralPosition(RexNode node) {
