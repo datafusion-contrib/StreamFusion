@@ -635,6 +635,54 @@ class CanonicalRestoreExecutionTest {
   private static final class NativeColumnarKeepLastDeduplicateOperator {}
 
   @Test
+  void appendRankAuditsCommittedImportsSeparatelyFromValidationAndNewInput() throws Exception {
+    var scope =
+        NativeExecution.beginRestore(
+            "tech.streamfusion.canonical.AppendRankRestoreTest",
+            new Object(),
+            "rank-test-append-fast-strategy");
+    var operator = new NativeColumnarTopNOperator();
+    StreamFusionSuiteAgent.RecordCanonicalAppendRankImport.exit(java.util.List.of(1, 2, 3), true);
+    StreamFusionSuiteAgent.RecordCanonicalAppendRankImport.exit(java.util.List.of(1, 2), false);
+    NativeExecution.opened(operator);
+    NativeExecution.completed(operator, 4);
+    assertDoesNotThrow(() -> NativeExecution.finish(scope));
+    try (var files = java.nio.file.Files.list(reports)) {
+      var fields =
+          java.nio.file.Files.readString(files.findFirst().orElseThrow())
+              .stripTrailing()
+              .split("\\t", -1);
+      assertEquals("NativeColumnarTopNOperator=4", fields[2]);
+      assertEquals("NativeColumnarTopNOperator=2", fields[4]);
+    }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"empty", "openOnly", "importOnly", "firstN"})
+  void appendRankCannotPassWithoutItsOwnNewInput(String mode) {
+    var scope =
+        NativeExecution.beginRestore(
+            "tech.streamfusion.canonical.AppendRankRestoreTest",
+            new Object(),
+            "rank-test-append-fast-strategy");
+    if (mode.equals("firstN")) {
+      var operator = new NativeColumnarFirstNOperator();
+      NativeExecution.opened(operator);
+      NativeExecution.completed(operator, 4);
+    } else if (!mode.equals("empty")) {
+      NativeExecution.opened(new NativeColumnarTopNOperator());
+      if (mode.equals("importOnly"))
+        StreamFusionSuiteAgent.RecordCanonicalAppendRankImport.exit(java.util.List.of(1), false);
+    }
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  private static final class NativeColumnarTopNOperator {}
+
+  private static final class NativeColumnarFirstNOperator {}
+
+  @Test
   void supportedRestoreProgramRequiresItsNativeStateFamily() {
     var scope = NativeExecution.beginRestore(NORMALIZE, new Object(), "changelog-normalize-upsert");
     var operator = new NativeColumnarChangelogNormalizeOperator();

@@ -232,6 +232,13 @@ public final class StreamFusionSuiteAgent {
                     ? builder.visit(
                         Advice.to(RecordCanonicalEagerDedupImport.class).on(named("importBatch")))
                     : builder)
+        .type(named("tech.streamfusion.state.StockAppendTopNStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalAppendRankImport.class).on(named("importBatch")))
+                    : builder)
         .type(named("tech.streamfusion.state.StockFirstNStateContract"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -580,6 +587,14 @@ public final class StreamFusionSuiteAgent {
         @Advice.Argument(0) java.util.List<?> rows, @Advice.Argument(3) boolean validateOnly) {
       if (!validateOnly)
         NativeExecution.restored("NativeColumnarKeepLastDeduplicateOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalAppendRankImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(2) java.util.List<?> rows, @Advice.Argument(3) boolean validateOnly) {
+      if (!validateOnly) NativeExecution.restored("NativeColumnarTopNOperator", rows.size());
     }
   }
 

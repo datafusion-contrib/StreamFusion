@@ -43,8 +43,7 @@ import tech.streamfusion.state.StockAppendTopNStateContract;
 
 class CanonicalAppendRankMatrixTest {
   @TempDir Path directory;
-  private static final RowType INPUT =
-      RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
+  static final RowType INPUT = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
 
   static Stream<Arguments> cases() {
     return Stream.of("projected", "hidden", "fast1", "fast1-hidden", "variable")
@@ -131,11 +130,37 @@ class CanonicalAppendRankMatrixTest {
     }
   }
 
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource({
+    "false,false",
+    "false,true",
+    "true,false",
+    "true,true"
+  })
+  void fastTop1HonorsTheReleasedBeforeImagePolicyWithNullScores(boolean rocks, boolean before)
+      throws Exception {
+    String mode = "fast1-hidden";
+    long handle = create(mode, rocks, false, 0, before);
+    try (var stock = harness(mode, false, new int[] {0}, 0, true, before)) {
+      stock.open();
+      var rows =
+          List.<RowData>of(
+              row(2L, 10), row(3L, 20), row(2L, 10), GenericRowData.of(3L, null, 3L), row(2L, 30));
+      feed(stock, rows);
+      var expected = values(stock.extractOutputValues(), false);
+      assertTrue(expected.stream().anyMatch(row -> row.contains("null")));
+      assertEquals(expected, values(push(handle, rocks, mode, rows, 0), false));
+    } finally {
+      if (rocks) Native.closeRocksDBTopNRanker(handle);
+      else Native.closeTopNRanker(handle);
+    }
+  }
+
   private static RowData row(Long key, long value) {
     return GenericRowData.of(key, value, 3L);
   }
 
-  private static RowDataKeySelector selector(int[] keys) {
+  static RowDataKeySelector selector(int[] keys) {
     return KeySelectorUtil.getRowDataSelector(
         CanonicalAppendRankMatrixTest.class.getClassLoader(), keys, InternalTypeInfo.of(INPUT));
   }
@@ -146,8 +171,14 @@ class CanonicalAppendRankMatrixTest {
         : RowType.of(new BigIntType(), new BigIntType(), new BigIntType(), new BigIntType());
   }
 
-  private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
+  static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
       String mode, boolean disk, int[] keys, long ttl, boolean stock) throws Exception {
+    return harness(mode, disk, keys, ttl, stock, true);
+  }
+
+  static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
+      String mode, boolean disk, int[] keys, long ttl, boolean stock, boolean before)
+      throws Exception {
     OneInputStreamOperator<RowData, RowData> operator = new Projection();
     if (stock) {
       var comparator =
@@ -166,7 +197,7 @@ class CanonicalAppendRankMatrixTest {
                   selector(new int[] {1}),
                   RankType.ROW_NUMBER,
                   new ConstantRankRange(1, 1),
-                  true,
+                  before,
                   !mode.contains("hidden"),
                   10000)
               : new AppendOnlyTopNFunction(
@@ -202,6 +233,10 @@ class CanonicalAppendRankMatrixTest {
   }
 
   private long create(String mode, boolean rocks, boolean keyless, long ttl) {
+    return create(mode, rocks, keyless, ttl, true);
+  }
+
+  private long create(String mode, boolean rocks, boolean keyless, long ttl, boolean before) {
     int[] keys = keyless ? new int[0] : new int[] {0};
     int[] descriptor =
         keyless
@@ -224,7 +259,7 @@ class CanonicalAppendRankMatrixTest {
               bound,
               rank,
               false,
-              true,
+              before,
               false,
               ttl,
               1 << 24);
@@ -249,7 +284,7 @@ class CanonicalAppendRankMatrixTest {
                   bound,
                   rank,
                   false,
-                  true,
+                  before,
                   false,
                   ttl,
                   0,
@@ -326,7 +361,7 @@ class CanonicalAppendRankMatrixTest {
                     + ":"
                     + (row.isNullAt(0) ? "null" : row.getLong(0))
                     + ":"
-                    + row.getLong(1)
+                    + (row.isNullAt(1) ? "null" : row.getLong(1))
                     + ":"
                     + row.getLong(2)
                     + (rank ? ":" + row.getLong(3) : ""))

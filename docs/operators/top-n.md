@@ -472,32 +472,60 @@ do not establish Flink 1.18 canonical interchange.
 
 ## Value-ordered append canonical state (partial)
 
-Direct Flink 2.2.1 state adapters now preserve `AppendOnlyTopNFunction` sort-key lists and
-`FastTop1Function` winners. These are separate from arrival-ordered first-N counters.
-They retain list tie order, projected-rank overflow rows, stored row kinds, original TTL ages,
-and independent variable `rankEnd` values, including bound-only partitions with negative bounds.
-The adapter reads live native state directly into stock descriptors and serializers; it does
-not write an intermediate native snapshot. Raw RocksDB iteration does not expire state during
-transfer. A stock restore requires no StreamFusion serializer classes for this projected state.
+Normal Flink 2.2.1 SQL and portable stock compiled plans bind the released append lists and fast
+Top-1 winners automatically. Initial admission is AppendFast input, one sort column, INT/BIGINT/
+VARCHAR retained fields and start-one constant or variable ranges. Capture the real released
+function, partition/sort selectors, key serializer, TTL, stock operator identities and resolved
+maximum parallelism. Flink can fold a projected constant Top-1 rank into a downstream expression,
+so the actual function determines the retained schema. Stock restore needs only normal Flink,
+connector and user dependencies.
 
-Whole-view import validates the complete source before inserting any native row. It rejects
-foreign descriptors, mismatched partition/sort keys, empty lists, invalid non-null payloads,
-malformed metadata and duplicate Top-1/bound entries. Failed validation retains source state and
-an empty target for retry. Callback errors preserve the original Java exception and release
-moved Arrow buffers; native state remains available for another export. Native memory exhaustion
-aborts initialization and closing the failed target releases its reservation.
+The direct adapter preserves `data-state-with-append` sort-key lists or `Top1-Rank-State` winners,
+including tie order, hidden overflow rows, stored row kinds and original TTL ages. Variable
+`rankEnd` values remain independent, including negative bound-only partitions. Export visits live
+memory or raw persisted partitions directly into stock descriptors and serializers, without an
+intermediate native snapshot. Raw canonical reads do not expire state during transfer.
 
-Direct actual-operator controls cover projected/hidden ranks, fast Top-1 with either projection,
-variable bounds, nullable/keyless BIGINT partitions, stock heap/RocksDB and native memory/RocksDB,
-with TTL enabled and disabled. Additional controls cover overflow-list ages, bound-only state,
-late corrupt input beyond 1,024 valid partitions, bounded transfer and receiver failure. Stock
-FastTop1 emits UPDATE_BEFORE/UPDATE_AFTER on replacement even when rank is hidden; the regression
-expectations now match the released stock function. Non-time unbounded OVER ROW_NUMBER is a
-separate contract and is rejected by this adapter.
+Import validates the whole view before inserting native state. Foreign descriptors, mismatched
+partition/sort keys, empty lists, invalid non-null payloads, malformed metadata and duplicate
+winners/bounds fail without consuming source state. Failed validation leaves an empty target for
+retry. Receiver errors retain the original Java exception and release moved Arrow buffers; native
+state remains exportable. Closing a failed memory-limited target releases its prior reservation.
 
-**Pending:** automatic append binding in normal submission, complete-job identities/rescaling,
-upstream append restore qualification, wider key/sort/payload types, full TTL timelines and
-backend/version/connector delivery matrices. Updating and retracting Top-N still require their
-own consolidated state contracts. This direct foundation is not full job interoperability.
-All remain part of [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
-Benchmarking is deferred.
+Stock-bound rank keeps per-record changes under table mini-batching, with pending transposes and
+coalescers flushed before the barrier. Append constructors and native restore honor the requested
+update-before policy: fast Top-1 emits UPDATE_BEFORE when requested, then UPDATE_AFTER, even with
+hidden rank. An upsert stream omits the before-image. First-bound and non-time ROW_NUMBER runtime
+modes are installed before restore; otherwise valid bound headers would be rejected during the
+base initializer. Unbounded OVER still has its own separate state contract.
+
+Qualification covers 160 distinct complete-job scenarios across ordinary/compiled submission,
+both native stores and switch orders. Thirteen continuation variants include hidden/projected
+rank, fast Top-1, nullable/NOT NULL/keyless keys, long TTL, mini-batching, descending order and
+variable bounds. Further controls cover empty/no-input handoffs, native checkpoint recovery and
+1→3→2 rescaling at maxP128. Custom source/sink state and both transposes remain present. Every
+stage's committed table state matches an independent oracle; final effects and exact emitted
+kind/payload/counts match uninterrupted stock. Metadata/classpath checks retain stock-only restore.
+The complete-job matrix uses BIGINT input; the original released append restore fixture additionally
+imports three INT/STRING retained rows and consumes two new native rows.
+
+The initial 160-job cohort passed 158 cases and hit two 60-second handoff deadlines while native
+RocksDB was still initializing. Both affected ordinary paths passed four unchanged concurrent
+reruns, and the corresponding compiled paths passed four concurrent controls. Initial failures
+and thread dumps remain retained; their cause is not established. These eight repeated controls
+are not additional distinct scenarios. Broader startup/failure stress remains open.
+
+A further 410 distinct direct/planner/processing controls pass across retained cohorts. These
+include 96 actual-operator cases with INT/STRING keys, INT/BIGINT/STRING order, non-null order,
+distinct ties, reserved field-name collisions and reversed non-leading composite keys. Serialized
+future rows and kinds match stock in both directions and under controlled TTL expiry. The harness
+advances stock Guava and state-TTL clocks together. Guards reject native snapshot/checkpoint calls
+during canonical export. Fifty-two planner cases include variable-bound and rejected-contract
+controls. The native suite passes 1,241 tests with two existing ignores; shared Flink 1.18 code
+passes 125 processing/checkpoint controls without claiming stock canonical interchange there.
+
+**Pending:** updating/retracting ranks, OFFSET, multiple sort columns, other retained types,
+async/unaligned state, broader shared/upstream-native graphs, full-job TTL expiry and the complete
+backend/version/connector/delivery matrix. Existing unbound native paths keep their own recovery
+representation; older unbound native checkpoint upgrades are not qualified here. All remain in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

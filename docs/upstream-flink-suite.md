@@ -1626,3 +1626,20 @@ the eager family in the execution audit. The buffered import hook counts only mu
 99 audit controls include cases proving that buffered import/input cannot satisfy the historical
 eager contract. These upstream results do not qualify current buffered-rowtime SQL jobs; those
 have separate direct, planner and process tests. Reports overlap earlier selections.
+
+
+### Selecting the released append-rank restore program
+
+`tech.streamfusion.canonical.AppendRankRestoreTest` selects only
+`RankTestPrograms.RANK_TEST_APPEND_FAST_STRATEGY` from the released `RankRestoreTest`. The compiled
+plan, savepoint, source data, inherited restore method and expected results remain unchanged.
+Run it with
+`CANONICAL_UPSTREAM_TESTS=tech.streamfusion.canonical.AppendRankRestoreTest#testRestore bin/canonical-savepoints.sh sql`.
+Its native witness imports three retained rows and processes two new Top-N rows; validation-only
+visits do not count as imports. Stock runs exclude the StreamFusion runtime. The append, first-N,
+normalizer and full dedup selection passes ten original programs per engine; eight require their
+native owners and two keep the expected normalizer-filter fallback. The canonical agent passes
+104 audit controls, including checks that unrelated work or imports alone cannot satisfy append
+continuation. This qualifies the released append fixture and the
+[documented append scope](operators/top-n.md#value-ordered-append-canonical-state-partial), not
+updating/retracting ranks or the full operator/connector/version matrix. Benchmarking is deferred.

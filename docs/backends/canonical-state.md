@@ -1137,14 +1137,29 @@ guarded against calling any native snapshot/checkpoint entry point. The current 
 suite passes 1,230 tests with two existing ignores. These are separate, overlapping cohorts.
 
 
-## Direct append Top-N projection
+## Automatic append Top-N projection
 
-The direct Flink 2.2.1 append contract uses `data-state-with-append` MAP state containing actual
-sort keys and lists of retained input rows, or `Top1-Rank-State` VALUE state for fast Top-1.
-Variable ranges additionally retain independent `rankEnd` LONG values. Each descriptor uses
-the released stock serializer and original TTL envelope. Canonical export visits live memory
-or raw persisted partitions in bounded Arrow batches; there is no intermediate native snapshot.
-Import validates the whole view before mutation and consumes stock state only after success.
-See [append scope and remaining qualification](../operators/top-n.md#value-ordered-append-canonical-state-partial).
-Automatic job binding, wider types and complete-process qualification remain open; this does not
-extend the qualified first-N workflow to arbitrary value-ordered ranks. Benchmarking is deferred.
+Normal SQL and portable compiled-plan submission capture the released Flink 2.2.1 append contract
+without user mappings for AppendFast, INT/BIGINT/VARCHAR fields, one sort column and start-one
+ranges. `data-state-with-append` MAP holds actual sort keys and retained row lists;
+`Top1-Rank-State` VALUE holds the fast Top-1 winner. Variable ranges additionally retain independent
+`rankEnd` LONG values. All use stock serializers and original TTL envelopes. Stock identities and
+the resolved maximum parallelism also key the native columnar exchange.
+
+Canonical export visits live memory or raw persisted partitions through bounded Arrow batches;
+no intermediate native snapshot is written. Import validates the whole view before mutation and
+consumes stock state after success. Stock-bound rank preserves per-record changes under table
+mini-batching and the requested update-before policy. Runtime modes are installed before import,
+including first-observed bounds. These configuration fixes do not change native state encodings.
+
+Qualification covers 160 distinct BIGINT complete-job scenarios across both submission forms,
+stores and switch orders, including no-input/empty handoffs, native checkpoints and maxP128
+rescaling. Exact external changes match stock and final/stage tables match an independent oracle.
+The initial cohort's two RocksDB initialization deadlines remain documented; eight unchanged
+concurrent reruns/controls pass. Ninety-six typed actual-operator cases and fifty-two planner
+controls supplement the process scope. The released append fixture restores three INT/STRING
+rows and consumes two new native rows. See [the full append scope and limitations](../operators/top-n.md#value-ordered-append-canonical-state-partial).
+
+Async/unaligned state, OFFSET, additional sort columns, broader schemas/graphs and the other rank
+strategies require their own qualification. Full TTL timelines and the broader startup, failure,
+connector and version matrices remain open. Benchmarking is deferred.

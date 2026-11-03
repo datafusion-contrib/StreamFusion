@@ -436,7 +436,11 @@ open; see
 [buffered canonical coverage](backends/canonical-state.md#buffered-event-time-first-row-state).
 
 
-Value-ordered append Top-N now has a direct stock-state projection foundation, including fast
-Top-1 and independent variable bounds. Automatic job submission binding and complete-process
-qualification are still pending, so the qualified first-N workflow above does not yet cover it.
+Normal SQL and portable stock compiled plans now bind the initial Flink 2.2.1 value-ordered append
+Top-N contract automatically, including fast Top-1 and independent variable bounds. The initial
+scope has INT/BIGINT/VARCHAR fields, one sort column and start-one ranges. Stock Flink restores
+projected state with only its normal connector/user dependencies. The verified BIGINT process matrix includes both submission forms/stores/orders, no-input/empty
+handoffs, native checkpoint recovery and fixed-maxP rescaling, with exact stock changelog and
+independent table-state checks. Broader schemas/graphs, rank variants, TTL/failure/version cases
+and the documented startup timeouts remain open.
 See [append canonical coverage](operators/top-n.md#value-ordered-append-canonical-state-partial).

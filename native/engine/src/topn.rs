@@ -797,6 +797,11 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
         })
     }
 
+    pub(crate) fn with_generate_update_before(mut self, enabled: bool) -> Self {
+        self.generate_update_before = enabled;
+        self
+    }
+
     pub(crate) fn with_top1_fast(mut self, enabled: bool) -> Self {
         self.top1_fast = enabled;
         self
@@ -5266,6 +5271,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createTopNRanker<'local>(
                 )
                 .with_key_timestamp_precisions(timestamp_precisions)
                 .with_rank_end_column(rank_end_column)
+                .with_generate_update_before(generate_update_before != 0)
                 .with_state_ttl(state_ttl_millis),
             )
         };
@@ -5498,6 +5504,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTopNRankerPartitions
             retract.rank_end_column = (rank_end_column >= 0).then_some(rank_end_column as usize);
         }
         if let TopNHandle::Append(append) = &mut ranker {
+            append.generate_update_before = generate_update_before != 0;
             append.rank_end_column = (rank_end_column >= 0).then_some(rank_end_column as usize);
         }
         boxed_or_throw(&mut env, ranker.with_memory_budget(memory_budget_bytes))
