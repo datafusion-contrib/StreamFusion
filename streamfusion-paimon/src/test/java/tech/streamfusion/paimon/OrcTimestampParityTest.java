@@ -111,7 +111,8 @@ class OrcTimestampParityTest {
       assertEquals(
           PaimonTestTables.readRows(stock, type), PaimonTestTables.readRows(nativeTable, type));
       var nativeRead = stock.newReadBuilder();
-      PaimonSourceReadTest.assertRead(stock, nativeRead, nativeRead.newScan().plan().splits(), true);
+      PaimonSourceReadTest.assertRead(
+          stock, nativeRead, nativeRead.newScan().plan().splits(), false);
       var left = PaimonTestTables.dataFiles(stock).values().iterator().next().get(0);
       var right = PaimonTestTables.dataFiles(nativeTable).values().iterator().next().get(0);
       assertEquals(PaimonTestTables.describe(left, type), PaimonTestTables.describe(right, type));

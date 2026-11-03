@@ -151,7 +151,9 @@ the source follows Java's raw reader: native decoded values emit insert rows. Th
 need a merge. Selection merges drop winning retracts and retain the winning add kind;
 partial-update reductions follow the row-kind rules above. Changelog tailing continues to preserve all stored changes.
 
-`sort-spill-buffer-size` supplies the read resource budget. Before emission, the existing footer
+`sort-spill-buffer-size` supplies the snapshot merge read resource budget. Raw append/changelog
+decoding keeps the existing unbounded resource context rather than acquiring an unrelated merge
+limit; batch rows and the handover queue still bound batching, not total bytes. Before emission, the existing footer
 check requires the sum of each run's largest compressed-plus-uncompressed row group (Parquet),
 or conservative stripe/dictionary estimate (ORC), to fit half that budget. Larger splits retain
 Java's spill-capable reader. paimon-rust's `ResourceContext` charges projected Parquet row groups;
@@ -276,7 +278,10 @@ uses canonical paimon-rust 0.4.0. Both run the same fixture/harness, writer sett
 projection and resources, outside concurrent builds/tests. Files are written before timing.
 One warmup and three measured observations rotate reader order. Cells are median [minimum, maximum]
 in milliseconds; [raw observations](../benchmarks/paimon-rust-reader-2026-11-03.csv) include warmup,
-row counts, checksums and native merge evidence. Every required native measurement performed native work.
+row counts, checksums and native merge evidence. Final raw controls use separate benchmark-only
+JVMs (`final-isolated` in the CSV); initial combined runs and the intermediate validation run are
+retained under their own phases. Raw reads keep an unbounded resource context, as before this
+migration. Snapshot budget settings are unchanged. Every required native measurement performed native work.
 
 File reads use 262,144 rows and four projected columns, including a nested array. Stock rows
 checksum the id directly; Java-to-Arrow additionally pays the production fallback's copy/conversion.
@@ -285,10 +290,10 @@ not whole-job or remote-storage gains.
 
 | Format / read | Stock Java rows | Java to Arrow | Previous native | Released reader |
 |---|---:|---:|---:|---:|
-| parquet / append | 23.79 [23.46, 25.58] | 65.02 [62.49, 90.65] | 15.30 [15.21, 15.86] | 13.62 [13.61, 13.88] |
-| parquet / changelog | 22.74 [22.23, 23.74] | 78.20 [64.90, 78.36] | 11.14 [11.12, 11.28] | 9.52 [9.51, 9.57] |
-| orc / append | 17.55 [16.48, 25.43] | 81.95 [73.30, 88.55] | 17.46 [17.25, 17.74] | 17.91 [17.67, 18.50] |
-| orc / changelog | 13.23 [12.93, 13.98] | 54.91 [52.32, 67.37] | 9.98 [9.98, 10.10] | 11.45 [10.82, 11.47] |
+| parquet / append | 24.49 [21.97, 26.48] | 75.48 [63.04, 76.51] | 18.03 [17.28, 20.16] | 17.59 [15.98, 18.66] |
+| parquet / changelog | 23.82 [19.91, 28.08] | 64.31 [60.84, 83.75] | 12.01 [11.95, 12.38] | 10.75 [10.66, 11.14] |
+| orc / append | 17.75 [17.21, 20.39] | 55.99 [55.79, 56.09] | 20.12 [18.57, 21.36] | 21.88 [20.60, 22.77] |
+| orc / changelog | 17.96 [13.13, 21.26] | 66.13 [57.11, 82.37] | 10.81 [10.73, 11.00] | 12.82 [12.19, 13.15] |
 
 Snapshots use 65,536 keys, strings and nested arrays. Both paths output Arrow and checksum the same
 integer payload. Budgets are 64 MiB for Parquet and 256 MiB for ORC, unchanged between implementations.
@@ -310,8 +315,8 @@ Java controls below are the candidate run's stock merge plus production conversi
 | orc / partial-delete / 4 | 41.45 [40.93, 41.69] | 19.78 [19.59, 20.01] | 39.28 [39.09, 40.71] |
 | orc / partial-ignore / 4 | 41.92 [41.65, 42.12] | 19.82 [19.73, 20.37] | 39.92 [39.21, 40.72] |
 
-Public reader reuse improves the Parquet raw-read medians and keeps multi-run deduplication/first-row
-competitive. The one-commit Parquet snapshot and ORC cases regress against the previous native code.
+Public reader reuse keeps multi-run deduplication/first-row competitive. Raw-read medians vary
+against the previous implementation; the one-commit Parquet snapshot and ORC merges also regress.
 Partial updates regress substantially against our removed custom gatherer: upstream materializes
 per-key reductions before assembling batches. Their measured benefit over Java-to-Arrow is about
 1.2× for Parquet and only 1.03–1.06× for ORC. ORC append does not beat the Java row-only checksum;

@@ -96,10 +96,11 @@ impl Reader {
     ) -> Self {
         let task: Task = serde_json::from_str(json).expect("Paimon read descriptor");
         let filter_deletes = kinds && !task.raw && !task.streaming;
-        let resources = ResourceContext::builder()
-            .memory_limit(budget)
-            .build()
-            .expect("Paimon read budget");
+        let mut resources = ResourceContext::builder();
+        if !task.raw {
+            resources = resources.memory_limit(budget);
+        }
+        let resources = resources.build().expect("Paimon read resources");
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

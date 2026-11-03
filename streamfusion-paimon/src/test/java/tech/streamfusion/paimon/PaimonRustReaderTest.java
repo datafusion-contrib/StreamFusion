@@ -76,9 +76,9 @@ class PaimonRustReaderTest {
   }
 
   @Test
-  void exportedBatchOutlivesTheReaderAndUsesTheConfiguredFileIO() throws Exception {
+  void rawReadsIgnoreTheMergeBudgetAndExportedBatchesOutliveTheReader() throws Exception {
     TrackingIO io = new TrackingIO();
-    var table = table(io);
+    var table = table(io).copy(Map.of("sort-spill-buffer-size", "1 b"));
     var split = (DataSplit) table.newReadBuilder().newStreamScan().plan().splits().get(0);
     var reader =
         new PaimonRustReader(
