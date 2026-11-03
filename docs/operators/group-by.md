@@ -20,11 +20,12 @@ fail during planning with the same exception and message as Flink, for single-ph
 local/global plans. Mini-batch-disabled aggregation does not validate an unused size.
 
 Ordinary graphs containing an updating or general retracting Top-N can rebuild through the captured stock template
-when a native state owner lacks a qualified canonical binding. That route currently keeps grouped
+when a native state owner lacks a qualified canonical binding. That route keeps unqualified grouped
 aggregation on stock Flink and binds the supported rank state automatically. This preserves stock
 accumulators and identities; see [updating canonical coverage](top-n.md#updating-canonical-state-partial)
 and [retracting canonical coverage](top-n.md#retracting-canonical-state-partial).
-Automatic native aggregate-state binding in these graphs remains open in
+The qualified arithmetic contract below can bind its original grouped state automatically;
+broader aggregate bindings remain open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
 ## Single-phase
@@ -3059,14 +3060,33 @@ The current qualification is single-phase, per-record BIGINT arithmetic with nul
 COUNT(*), COUNT(v), SUM/AVG with hidden counts, shared COUNT/SUM0 layouts, both before-image policies,
 both native stores and both initial engine orders. Native checkpoints and canonical savepoints
 remain distinct paths. Broader state types, global/composite keys, filters, mini-batch/two-phase
-contracts, data views and automatic planner binding still require their own qualification under
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Ordinary jobs do not yet gain
-this adapter automatically; bound rank graphs continue retaining their stock aggregate owner.
+contracts and data views still require their own qualification under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Automatic binding is limited to the released single-phase retracting `GroupAggFunction` with one
+BIGINT grouping key, all-BIGINT physical input/output rows and the qualified generated arithmetic
+functions. Ordinary SQL and portable compiled plans capture the original physical aggregate calls,
+accumulator types, field offsets, hidden counter, key serializer, before-image policy, TTL and
+maximum parallelism. COUNT(*) uses Flink's unconditional Count1 semantics, while COUNT(v) preserves
+NULL filtering. Insert-only state without an input counter, filtered aggregates, views, wider
+schemas/keys and other phases are outside this automatic binding. An unqualified native ordinary
+graph retains its existing snapshot behavior; it has no new stock interchange guarantee.
+Unqualified upstream owners in the rank-template path remain stock-owned.
 The direct adapter is checked by 110 Flink 2.2.1 cases: 16 independent generated-layout controls,
 72 repeated handoff/long-counter cases, ten validation/receiver/resource-failure cases, eight
 native-checkpoint recovery cases and four restored AVG signed-division boundary cases. They compare complete stock accumulator bytes and write ages,
 retain the source on failed imports, and guard canonical export against intermediate native
 snapshots. Another 66 existing Java aggregate processing/SQL checks pass, including two-phase
 aggregation. The complete native suite passes 1,269 tests with two pre-existing ignores.
-Complete-job/custom-connector/delivery and cross-version matrices also remain open.
-Benchmarking is explicitly deferred.
+
+Automatic binding is exercised by 32 physical-map/identity/TTL/UID planner cases, ten unsupported
+compiled-layout controls and four TTL-hint overrides. The 28 isolated process scenarios retain
+custom source/sink state and both transposes, with ordinary SQL and compiled plans, both stores
+and initial engine orders, no-input re-export, native checkpoint recovery and rescaling 1→3→2.
+They compare the complete committed changelog with uninterrupted stock Flink, check final tables
+and verify actual native work/storage. Stock processes exclude StreamFusion JARs and exported
+metadata contains no StreamFusion classes. These are arithmetic cases, not a qualification of
+other connector transaction or failure combinations.
+
+The nine unchanged released Flink `GroupAggregateRestoreTest` programs also pass as stock-only
+controls. Their mixed schemas, filtered AVG, MIN and data-view/UDF variants remain outside this
+native canonical binding; no native pass is claimed for those programs. Broader complete-job,
+connector/delivery and cross-version matrices remain open. Benchmarking is explicitly deferred.

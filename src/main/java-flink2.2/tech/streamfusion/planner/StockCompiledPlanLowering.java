@@ -288,6 +288,7 @@ final class StockCompiledPlanLowering {
               || node instanceof NativeChangelogNormalizeExecNode
               || node instanceof NativeFirstNExecNode
               || node instanceof NativeColumnarTopNExecNode
+              || node instanceof NativeColumnarGroupAggExecNode
               || node instanceof NativeColumnarUpdatingJoinExecNode
               || node instanceof NativeTemporalJoinExecNode
               || node instanceof NativeIntervalJoinExecNode
@@ -330,6 +331,7 @@ final class StockCompiledPlanLowering {
             || node instanceof NativeChangelogNormalizeExecNode
             || node instanceof NativeFirstNExecNode
             || node instanceof NativeColumnarTopNExecNode
+            || node instanceof NativeColumnarGroupAggExecNode
             || node instanceof NativeColumnarUpdatingJoinExecNode
             || node instanceof NativeTemporalJoinExecNode
             || node instanceof NativeIntervalJoinExecNode
@@ -353,6 +355,11 @@ final class StockCompiledPlanLowering {
               && stock
                   instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecRank)
             exit = lowerRank(stock);
+          else if (node instanceof NativeColumnarGroupAggExecNode
+              && stock
+                  instanceof
+                  org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGroupAggregate)
+            exit = lowerGroupAggregate(stock);
           else if (node instanceof NativeTemporalJoinExecNode
               && stock
                   instanceof
@@ -575,11 +582,184 @@ final class StockCompiledPlanLowering {
             org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecChangelogNormalize
         && nativeKeyedState
         && NativeConfig.operatorEnabled("changelogNormalize")) result = lowerNormalize(node);
+    else if (node
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGroupAggregate
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("groupAggregate")) result = lowerGroupAggregate(node);
     else if (node instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecRank
         && nativeKeyedState
         && NativeConfig.operatorEnabled("topN")) result = lowerRank(node);
     lowered.put(node, result);
     return result;
+  }
+
+  private ExecNode<?> lowerGroupAggregate(ExecNode<?> stock) throws IOException {
+    var transformation = stockTransformations.get(stock.getId());
+    if (!(transformation instanceof OneInputTransformation)) return stock;
+    var original = (OneInputTransformation<?, ?>) transformation;
+    if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)) return stock;
+    var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
+    if (!(operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator))
+      return stock;
+    var function =
+        ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
+            .getUserFunction();
+    if (function.getClass()
+        != org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.class) return stock;
+    JsonNode definition = definitions.get(stock.getId());
+    int[] keys = reader.forType(int[].class).readValue(definition.path("grouping"));
+    ExecNode<?> input = stock.getInputEdges().get(0).getSource();
+    RowType inputType = (RowType) input.getOutputType();
+    RowType outputType = (RowType) stock.getOutputType();
+    if (keys.length != 1
+        || inputType.getChildren().stream().anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT))
+        || outputType.getChildren().stream().anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT))
+        || !(original.getStateKeySelector()
+            instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector)) return stock;
+    Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
+    ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
+    if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
+        || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
+      return stock;
+    boolean retract = definition.path("needRetraction").asBoolean();
+    if (!retract) return stock;
+    var calls =
+        reader
+            .forType(org.apache.calcite.rel.core.AggregateCall[].class)
+            .<org.apache.calcite.rel.core.AggregateCall[]>readValue(definition.path("aggCalls"));
+    boolean[] needsRetract =
+        reader.forType(boolean[].class).readValue(definition.path("aggCallNeedRetractions"));
+    var infos =
+        org.apache.flink.table.planner.plan.utils.AggregateUtil.transformToStreamAggregateInfoList(
+            planner.getTypeFactory(),
+            inputType,
+            org.apache.flink.table.planner.utils.JavaScalaConversionUtil.toScala(
+                Arrays.asList(calls)),
+            needsRetract,
+            true,
+            true,
+            true);
+    if (infos.distinctInfos().length != 0) return stock;
+    LogicalType[] accumulatorTypes = (LogicalType[]) releasedField(function, "accTypes");
+    LogicalType[] generatedTypes =
+        Arrays.stream(infos.getAccTypes())
+            .map(org.apache.flink.table.types.DataType::getLogicalType)
+            .toArray(LogicalType[]::new);
+    int recordCount = infos.getIndexOfCountStar();
+    if (!Arrays.equals(accumulatorTypes, generatedTypes)
+        || recordCount < 0
+        || recordCount
+            != (Integer) releasedField(releasedField(function, "recordCounter"), "indexOfCountStar")
+        || Arrays.stream(accumulatorTypes).anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT)))
+      return stock;
+    int size = infos.getActualAggregateInfos().length;
+    int[] kinds = new int[size],
+        columns = new int[size],
+        scalars = new int[size],
+        counts = new int[size];
+    Arrays.fill(counts, -1);
+    int slot = 0, actual = 0;
+    for (var info : infos.aggInfos()) {
+      int width = info.externalAccTypes().length;
+      if (infos.countStarInserted()
+          && info.aggIndex() == ((Number) infos.indexOfCountStar().get()).intValue()) {
+        slot += width;
+        continue;
+      }
+      var call = info.agg();
+      if (call.isDistinct()
+          || call.isApproximate()
+          || call.filterArg >= 0
+          || !call.getCollation().getFieldCollations().isEmpty()
+          || info.viewSpecs().length != 0
+          || info.argIndexes().length > 1) return stock;
+      Class<?> type = info.function().getClass();
+      int kind, fields;
+      boolean countEveryRow =
+          type == org.apache.flink.table.planner.functions.aggfunctions.Count1AggFunction.class;
+      if (countEveryRow
+          || type == org.apache.flink.table.planner.functions.aggfunctions.CountAggFunction.class) {
+        kind = 3;
+        fields = 1;
+      } else if (type
+          == org.apache.flink.table.planner.functions.aggfunctions.Sum0AggFunction
+              .LongSum0AggFunction.class) {
+        kind = 22;
+        fields = 1;
+      } else if (type
+          == org.apache.flink.table.planner.functions.aggfunctions.SumWithRetractAggFunction
+              .LongSumWithRetractAggFunction.class) {
+        kind = 0;
+        fields = 2;
+      } else if (type
+          == org.apache.flink.table.planner.functions.aggfunctions.AvgAggFunction.LongAvgAggFunction
+              .class) {
+        kind = 4;
+        fields = 2;
+      } else return stock;
+      if (width != fields || (kind != 3 && info.argIndexes().length != 1)) return stock;
+      kinds[actual] = kind;
+      columns[actual] = countEveryRow || info.argIndexes().length == 0 ? -1 : info.argIndexes()[0];
+      scalars[actual] = slot;
+      if (fields == 2) counts[actual] = slot + 1;
+      actual++;
+      slot += width;
+    }
+    if (actual != size || slot != accumulatorTypes.length) return stock;
+    var ttl =
+        (org.apache.flink.api.common.state.StateTtlConfig) releasedField(function, "ttlConfig");
+    long retention = ttl.isEnabled() ? ttl.getTimeToLive().toMillis() : 0;
+    config.setString("table.exec.state.ttl", retention + " ms");
+    config.setString("table.exec.mini-batch.enabled", "false");
+    var selector =
+        (org.apache.flink.table.runtime.keyselector.RowDataKeySelector)
+            original.getStateKeySelector();
+    @SuppressWarnings("unchecked")
+    TypeSerializer<RowData> serializer =
+        (TypeSerializer<RowData>)
+            original
+                .getStateKeyType()
+                .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
+    var contract =
+        new tech.streamfusion.state.StockGroupArithmeticStateContract(
+            serializer,
+            (RowType) selector.getProducedType().toLogicalType(),
+            RowType.of(accumulatorTypes),
+            kinds,
+            scalars,
+            counts,
+            recordCount,
+            ttl.isEnabled());
+    int maximum = stockMaximum(original);
+    var exchange =
+        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
+    exchange.withStateMaxParallelism(maximum);
+    var group =
+        new NativeColumnarGroupAggExecNode(
+                config,
+                InputProperty.DEFAULT,
+                outputType,
+                "NativeColumnarGroupAggregate",
+                kinds,
+                new int[size],
+                columns,
+                keys,
+                new int[0],
+                new int[0],
+                new int[0],
+                -1,
+                (Boolean) releasedField(function, "generateUpdateBefore"),
+                retention,
+                FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys))
+            .withStateMaxParallelism(maximum);
+    connect(exchange, group);
+    bindings.put(group, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
+    columnar.add(group);
+    var exit =
+        new ArrowToRowDataExecNode(config, InputProperty.DEFAULT, outputType, "ArrowToRowData");
+    connect(group, exit);
+    return exit;
   }
 
   private ExecNode<?> lowerDedup(ExecNode<?> stock) throws IOException {

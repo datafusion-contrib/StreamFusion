@@ -33,7 +33,7 @@ class CanonicalOrdinarySqlRegressionTest {
             "Deduplicate",
             "SELECT g,k,v FROM (SELECT g,k,v,ROW_NUMBER() OVER"
                 + " (PARTITION BY g ORDER BY rt ASC) rn FROM src) WHERE rn=1",
-            false),
+            true),
         Arguments.of(
             "OverAgg", "SELECT g,v,SUM(v) OVER (PARTITION BY g ORDER BY rt) FROM src", false),
         Arguments.of(
@@ -120,7 +120,7 @@ class CanonicalOrdinarySqlRegressionTest {
                 .anyMatch(entry -> entry.getKey().contains(family) && entry.getValue() > 0),
             () -> "No positive native input for " + family + ": " + inputs + "\n" + actualPlan);
       } else assertTrue(inputs.isEmpty(), inputs.toString());
-      if (nativeRun && family.equals("UpdatingJoin")) {
+      if (nativeRun && (family.equals("UpdatingJoin") || family.equals("Deduplicate"))) {
         assertFalse(
             table
                 .getConfig()

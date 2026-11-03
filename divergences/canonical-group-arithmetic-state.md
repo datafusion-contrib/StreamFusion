@@ -22,7 +22,14 @@ Import validates the full source
 and empty target before applying frames; source state is cleared only after complete success.
 A resource-denied target is closed before a fresh retry.
 
-This is the explicit single-phase BIGINT arithmetic contract. Automatic planner binding, additional
-schemas/keys/phases, state-backed data views and full version/connector/failure/delivery coverage
+Automatic binding recovers the released physical aggregate information from the original stock
+plan and checks its generated accumulator types against the captured running function. Hidden
+COUNT offsets are independent of displayed aggregate order; Count1 ignores argument nullability
+because its released accumulator advances unconditionally. The native state owner retains the
+original serializer, TTL policy, identity and maximum parallelism. Unsupported contracts retain
+the stock owner in compiled lowering and the existing ordinary graph behavior elsewhere.
+
+This is the single-phase retracting BIGINT arithmetic contract. Additional schemas/keys/phases,
+append-only layouts without an input counter, state-backed data views and full version/connector/failure/delivery coverage
 remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is
 explicitly deferred by the maintainer.
