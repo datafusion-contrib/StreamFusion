@@ -1144,6 +1144,9 @@ logical proof. Each comparison operand must be an integer reference/literal or t
 wrapping-arithmetic, lossless-widening and integral-rounding tree described below. This removes
 the formatting evaluator without dropping comparison inputs. The same verified integer operands
 also admit IS NULL/IS NOT NULL, including the optimizer's expansion of nullable comparisons.
+For character targets, the same proof additionally admits integer-to-BOOLEAN TRY_CAST
+over those verified integer operands, including surrounding logical and NULL checks.
+This character-consumer extension does not change the separate BOOLEAN-to-integer proof.
 The formatting operation is total for these BOOLEAN values; TRY_CAST still preserves
 failures while evaluating unverified operands. DECIMAL, character, floating,
 temporal, division, remainder and stateful comparison operands keep their existing routes.
@@ -1308,11 +1311,23 @@ stays NULL in both cast modes. This follows Flink's NumericToBoolean rule; ordin
 already lowers to this comparison through released planning. Conversion cannot fail.
 
 Division and other unverified/failing/stateful producers keep the preceding fallback,
-including operand failures, lazy branches and all-filtered batches. Character formatting
-of a new TRY_CAST BOOLEAN result retains its separate generated route; other source
-families also retain their preceding coverage.
+including operand failures, lazy branches and all-filtered batches. Verified character
+consumers of the new BOOLEAN result are covered below; other source families retain
+their preceding coverage.
 The [release qualification](../benchmarks/scalar-functions.md#integer-to-boolean-try_cast)
 retains actual preceding fallback, independent stock, tiny controls and complete jobs.
+
+### Character consumers of integer truth
+
+CAST and TRY_CAST of the verified integer-to-BOOLEAN TRY_CAST result to
+STRING/VARCHAR(n)/CHAR(n) reuse the existing native BOOLEAN formatter. The shared
+producer proof also permits surrounding logical/NULL checks inside these character casts;
+it does not extend the separately qualified integer-target cast proof or admit a failing
+or otherwise unverified integer producer. Modern/legacy
+spelling, VARCHAR truncation, CHAR padding and resolved output/nullability are unchanged.
+Ordinary integer-to-BOOLEAN CAST already has a released comparison rewrite.
+The [release qualification](../benchmarks/scalar-functions.md#character-consumers-of-integer-truth)
+retains actual preceding evaluation, independent stock, tiny controls and complete jobs.
 
 ### Integer/string casts
 

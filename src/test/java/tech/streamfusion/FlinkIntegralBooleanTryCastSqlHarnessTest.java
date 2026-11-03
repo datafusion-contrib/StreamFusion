@@ -31,7 +31,7 @@ class FlinkIntegralBooleanTryCastSqlHarnessTest {
     FlinkIntegralEpochSqlHarnessTest.verify(type, nullable, "UTC", query, true, legacy);
     FlinkIntegralEpochSqlHarnessTest.verify(type, nullable, "UTC", query + " WHERE id<0", true, legacy);
     FlinkIntegralEpochSqlHarnessTest.verify(type, nullable, "UTC",
-        "SELECT id,CAST(TRY_CAST(n AS BOOLEAN) AS CHAR(5)) FROM src", false, legacy);
+        "SELECT id,CAST(TRY_CAST(n AS BOOLEAN) AS CHAR(5)) FROM src", true, legacy);
   }
 
   @ParameterizedTest

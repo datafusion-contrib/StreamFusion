@@ -4019,8 +4019,7 @@ final class RexExpression {
       add(KIND_CAST, wideningTargetCode(SqlTypeName.TINYINT, targetType), 1);
       return emit(call.getOperands().get(0));
     }
-    if (tryCast && sourceInteger >= 0 && sourceInteger <= 3 && targetType == SqlTypeName.BOOLEAN
-        && nativeIntegralRoundingOperand(call.getOperands().get(0))) {
+    if (nativeIntegralBooleanTryCast(call)) {
       add(KIND_CALL, opCode(SqlKind.NOT_EQUALS), 2);
       if (!emit(call.getOperands().get(0))) return false;
       add(integerLiteralKind(source), longs.size(), 0);
@@ -4658,7 +4657,8 @@ final class RexExpression {
   private static boolean nativeBooleanCharacterCast(RexCall call) {
     return call.getOperands().size() == 1
         && SqlTypeFamily.CHARACTER.contains(call.getType())
-        && nativeBooleanFormattingOperand(call.getOperands().get(0));
+        && nativeBooleanFormattingOperand(
+            call.getOperands().get(0), RexExpression::nativeIntegralBooleanTryCast);
   }
 
   private static boolean nativeIntegerPrintf(RexCall call) {
@@ -4679,16 +4679,31 @@ final class RexExpression {
     return IntegerPrintfFormat.supports(format.getValueAs(String.class), call.getOperands().size() - 1);
   }
 
+  private static boolean nativeIntegralBooleanTryCast(RexCall call) {
+    return call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST
+        && call.getOperands().size() == 1
+        && call.getType().getSqlTypeName() == SqlTypeName.BOOLEAN
+        && SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
+        && nativeIntegralRoundingOperand(call.getOperands().get(0));
+  }
+
   private static boolean nativeBooleanFormattingOperand(RexNode node) {
+    return nativeBooleanFormattingOperand(node, call -> false);
+  }
+
+  private static boolean nativeBooleanFormattingOperand(
+      RexNode node, java.util.function.Predicate<RexCall> additionalProducer) {
     if (node.getType().getSqlTypeName() != SqlTypeName.BOOLEAN) return false;
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     var call = (RexCall) node;
+    if (additionalProducer.test(call)) return true;
     switch (call.getKind()) {
       case IS_NULL:
       case IS_NOT_NULL:
         return call.getOperands().size() == 1
-            && (nativeBooleanFormattingOperand(call.getOperands().get(0))
+            && (nativeBooleanFormattingOperand(call.getOperands().get(0), additionalProducer)
                 || SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
                     && nativeIntegralRoundingOperand(call.getOperands().get(0)));
       case NOT:
@@ -4697,11 +4712,12 @@ final class RexExpression {
       case IS_FALSE:
       case IS_NOT_FALSE:
         return call.getOperands().size() == 1
-            && nativeBooleanFormattingOperand(call.getOperands().get(0));
+            && nativeBooleanFormattingOperand(call.getOperands().get(0), additionalProducer);
       case AND:
       case OR:
         return call.getOperands().size() >= 2
-            && call.getOperands().stream().allMatch(RexExpression::nativeBooleanFormattingOperand);
+            && call.getOperands().stream().allMatch(
+                operand -> nativeBooleanFormattingOperand(operand, additionalProducer));
       case EQUALS:
       case NOT_EQUALS:
       case LESS_THAN:
