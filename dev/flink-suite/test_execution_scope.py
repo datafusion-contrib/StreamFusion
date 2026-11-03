@@ -9,37 +9,42 @@ from summarize import execution_contracts
 
 
 class ExecutionScopeTest(unittest.TestCase):
-    def test_overloaded_aggregate_covers_the_complete_released_parameter_matrix(self):
-        test = 'org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator'
-        root = Path(__file__).parent
-        for line, suffix in [('1.18', '-flink1.18'), ('2.2', '')]:
-            contracts = execution_contracts(root / 'agent/src/main/resources' / ('native-execution' + suffix + '.tsv'))[test]
-            if line == '1.18':
-                state_contracts = execution_contracts(root / 'agent/src/main/resources/native-execution-flink1.18-state.tsv')[test]
-                self.assertEqual(contracts, state_contracts)
-            scope = json.loads((root / ('runtime-route-scope-' + line + '.json')).read_text())
-            cases = {case['display_name']: case for case in scope['cases'] if case['test'] == test}
-            configurations = [('OFF', 'OFF', backend, False) for backend in ['HEAP', 'ROCKSDB']]
-            configurations += [(phase, 'ON', backend, False) for backend in ['HEAP', 'ROCKSDB'] for phase in ['OFF', 'ON']]
-            if line == '2.2': configurations.append(('OFF', 'OFF', 'HEAP', True))
-            self.assertEqual(len(configurations), len(cases))
-            for phase, mini, backend, asynchronous in configurations:
-                display = f'LocalGlobal={phase}, MiniBatch={mini}, StateBackend={backend}'
-                if line == '2.2': display += f', EnableAsyncState={str(asynchronous).lower()}'
-                else: display = 'testOverloadedAccumulator[' + display + ']'
-                self.assertIn(display, cases)
-                for changelog in ([False, True] if line == '1.18' else [False]):
-                    parameters = dict(aggMode=phase, miniBatch=str(mini == 'ON').lower(),
-                        enableAsyncState=str(asynchronous).lower(), changelog=str(changelog).lower())
-                    matched = [selector for selector in contracts if selector == '*' or all(
-                        parameters.get(key) == value for key, value in (condition.split('=', 1) for condition in selector.split('&')))]
-                    self.assertEqual(1, len(matched), (line, parameters, matched))
-                    selector = matched[0]
-                    expected = 'full_fallback' if changelog or asynchronous else 'native'
-                    self.assertEqual(expected == 'full_fallback', contracts[selector].startswith('!'))
-                    if expected == 'native': self.assertEqual('NativeColumnarJvmGroupOperator', contracts[selector])
-                    declared = cases[display]
-                    self.assertEqual(expected, declared.get('route', declared.get('route_by_contract_variant', {}).get(selector)))
+    def test_jvm_aggregates_cover_the_complete_released_parameter_matrix(self):
+        for method in ('testOverloadedAccumulator', 'testVarArgsNoGroupBy', 'testVarArgsWithGroupBy'):
+            test = 'org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#' + method
+            root = Path(__file__).parent
+            for line, suffix in [('1.18', '-flink1.18'), ('2.2', '')]:
+                contracts = execution_contracts(root / 'agent/src/main/resources' / ('native-execution' + suffix + '.tsv'))[test]
+                if line == '1.18':
+                    state_contracts = execution_contracts(root / 'agent/src/main/resources/native-execution-flink1.18-state.tsv')[test]
+                    self.assertEqual(contracts, state_contracts)
+                scope = json.loads((root / ('runtime-route-scope-' + line + '.json')).read_text())
+                cases = {case['display_name']: case for case in scope['cases'] if case['test'] == test}
+                configurations = [('OFF', 'OFF', backend, False) for backend in ['HEAP', 'ROCKSDB']]
+                configurations += [(phase, 'ON', backend, False) for backend in ['HEAP', 'ROCKSDB'] for phase in ['OFF', 'ON']]
+                if line == '2.2': configurations.append(('OFF', 'OFF', 'HEAP', True))
+                self.assertEqual(len(configurations), len(cases))
+                for phase, mini, backend, asynchronous in configurations:
+                    display = f'LocalGlobal={phase}, MiniBatch={mini}, StateBackend={backend}'
+                    if line == '2.2': display += f', EnableAsyncState={str(asynchronous).lower()}'
+                    else: display = method + '[' + display + ']'
+                    self.assertIn(display, cases)
+                    for changelog in ([False, True] if line == '1.18' else [False]):
+                        parameters = dict(aggMode=phase, miniBatch=str(mini == 'ON').lower(),
+                            enableAsyncState=str(asynchronous).lower(), changelog=str(changelog).lower())
+                        matched = [selector for selector in contracts if selector == '*' or all(
+                            parameters.get(key) == value for key, value in (condition.split('=', 1) for condition in selector.split('&')))]
+                        self.assertEqual(1, len(matched), (line, parameters, matched))
+                        selector = matched[0]
+                        expected = 'full_fallback' if changelog or asynchronous else 'native'
+                        self.assertEqual(expected == 'full_fallback', contracts[selector].startswith('!'))
+                        if expected == 'native':
+                            operators = ('NativeColumnarJvmLocalGroupOperator+NativeColumnarJvmGlobalGroupOperator'
+                                         if method != 'testOverloadedAccumulator' and phase == 'ON'
+                                         else 'NativeColumnarJvmGroupOperator')
+                            self.assertEqual(operators, contracts[selector])
+                        declared = cases[display]
+                        self.assertEqual(expected, declared.get('route', declared.get('route_by_contract_variant', {}).get(selector)))
 
     def test_pinned_vintage_fixture_names_use_the_selected_method(self):
         scope = json.loads(Path(__file__).with_name('runtime-route-scope-1.18.json').read_text())

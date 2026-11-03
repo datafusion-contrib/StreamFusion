@@ -177,7 +177,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
 
   private RelNode substitute(RelNode root, Set<String> repeatedSources, boolean finalOutput) {
     if (CollectionValueIdentity.observesCollectionKeyOrder(root)) {
-      recordFallback("COLLECT formatting over binary or nested elements requires Flink's JVM key order");
+      recordFallback(
+          "COLLECT formatting over binary or nested elements requires Flink's JVM key order");
       return root;
     }
     if (JvmGroupAggregateMatcher.unverifiedCollectionInputMaterialization(root)) {
@@ -341,6 +342,29 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             .keyedState()
             .matching(GroupAggregateMatcher::matches)
             .reason(GroupAggregateMatcher::unsupportedReason)
+            .changelogSafe());
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalLocalGroupAggregate.class,
+                "jvmGroupAggregate",
+                JvmTwoPhaseAggregateMatcher::substitute)
+            .shaped(node -> JvmTwoPhaseAggregateMatcher.enabled(node.aggCalls()))
+            .matchingWithContext(
+                (node, context) ->
+                    context.globalGroupForLocal(node) != null
+                        && JvmTwoPhaseAggregateMatcher.matches(node))
+            .reason(JvmTwoPhaseAggregateMatcher::unsupportedReason)
+            .changelogSafe());
+    entries.add(
+        Substitution.of(
+                StreamPhysicalGlobalGroupAggregate.class,
+                "jvmGroupAggregate",
+                JvmTwoPhaseAggregateMatcher::substitute)
+            .shaped(node -> JvmTwoPhaseAggregateMatcher.enabled(node.aggCalls()))
+            .matching(JvmTwoPhaseAggregateMatcher::matches)
+            .reason(JvmTwoPhaseAggregateMatcher::unsupportedReason)
+            .keyedState()
             .changelogSafe());
 
     // The global half of a two-phase non-windowed GROUP BY. It merges the local half's partials
@@ -712,6 +736,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
 
   private RelNode rewrite(RelNode node, PlanContext ctx) {
     node = FlinkPlannerCompat.prepareForRewrite(node);
+    if (node instanceof StreamPhysicalGlobalGroupAggregate)
+      ctx.rememberGlobalGroup((StreamPhysicalGlobalGroupAggregate) node);
     List<RelNode> inputs = new ArrayList<>(node.getInputs().size());
     boolean changed = false;
     for (RelNode input : node.getInputs()) {

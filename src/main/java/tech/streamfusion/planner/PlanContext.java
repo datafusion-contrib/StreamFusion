@@ -5,6 +5,8 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExchange;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGlobalGroupAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalGroupAggregate;
 
 /**
  * The services a {@link Substitution} needs from the scan that runs it: rewriting a keyed host
@@ -19,8 +21,21 @@ final class PlanContext {
   private final Set<String> repeatedSources;
   private final Set<RelNode> javaJsonInputs;
   private final Map<RelNode, RelNode> originals = new IdentityHashMap<>();
+  private final Map<RelNode, StreamPhysicalGlobalGroupAggregate> globalGroups =
+      new IdentityHashMap<>();
 
   private final Map<RelNode, Map<Substitution<?>, String>> probeFailures = new IdentityHashMap<>();
+
+  /** Retain the host accumulator layout before child substitution changes its metadata. */
+  void rememberGlobalGroup(StreamPhysicalGlobalGroupAggregate group) {
+    RelNode local = group.getInput();
+    if (local instanceof StreamPhysicalExchange) local = local.getInput(0);
+    if (local instanceof StreamPhysicalLocalGroupAggregate) globalGroups.put(local, group);
+  }
+
+  StreamPhysicalGlobalGroupAggregate globalGroupForLocal(RelNode local) {
+    return globalGroups.get(originalNode(local));
+  }
 
   void probeFailed(Substitution<?> entry, RelNode node, String reason) {
     probeFailures.computeIfAbsent(node, ignored -> new IdentityHashMap<>()).put(entry, reason);

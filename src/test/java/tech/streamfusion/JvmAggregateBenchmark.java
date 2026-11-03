@@ -29,6 +29,7 @@ class JvmAggregateBenchmark {
     int warmups = Integer.getInteger("jvmagg.warmup", 2);
     int runs = Integer.getInteger("jvmagg.runs", 5);
     int miniBatchRows = Integer.getInteger("jvmagg.miniBatchRows", 0);
+    boolean twoPhase = Boolean.getBoolean("jvmagg.twoPhase");
     int parallelism = Integer.getInteger("jvmagg.parallelism", 1);
     String keyType = System.getProperty("jvmagg.keyType", "int");
     int prefixChars = Integer.getInteger("jvmagg.keyPrefixChars", 16);
@@ -86,19 +87,25 @@ class JvmAggregateBenchmark {
                       System.getProperty(
                           "streamfusion.experimental.rustCollectionAggregates", "true"))
               ? "NativeColumnarGroupAggregate"
-              : jvm ? "NativeJvmGroup" : "NativeColumnarGroupAggregate";
+              : jvm
+                  ? (twoPhase ? "NativeJvmTwoPhaseGroup" : "NativeJvmGroup")
+                  : "NativeColumnarGroupAggregate";
       String argument =
-          collectionShape.endsWith("_fixed_binary") ? "CAST(v AS BINARY(8))" : collectionShape.endsWith("_char")
-              ? "CAST(v AS CHAR(8))"
-              : collectionShape.equals("array_agg_not_null")
-                  ? "COALESCE(v,CAST(0 AS BIGINT))"
-                  : collectionShape.endsWith("_boolean")
-                      ? "(v>3)"
-                      : collectionShape.endsWith("_tinyint")
-                          ? "CAST(v AS TINYINT)"
-                          : collectionShape.endsWith("_smallint")
-                              ? "CAST(v AS SMALLINT)"
-                              : collectionShape.equals("array_agg_int") ? "CAST(v AS INT)" : "v";
+          collectionShape.endsWith("_fixed_binary")
+              ? "CAST(v AS BINARY(8))"
+              : collectionShape.endsWith("_char")
+                  ? "CAST(v AS CHAR(8))"
+                  : collectionShape.equals("array_agg_not_null")
+                      ? "COALESCE(v,CAST(0 AS BIGINT))"
+                      : collectionShape.endsWith("_boolean")
+                          ? "(v>3)"
+                          : collectionShape.endsWith("_tinyint")
+                              ? "CAST(v AS TINYINT)"
+                              : collectionShape.endsWith("_smallint")
+                                  ? "CAST(v AS SMALLINT)"
+                                  : collectionShape.equals("array_agg_int")
+                                      ? "CAST(v AS INT)"
+                                      : "v";
       if (expanded) {
         assertTrue(arrayAgg, "Expansion requires an ARRAY_AGG case");
         if (!nullableExpanded)
@@ -129,8 +136,12 @@ class JvmAggregateBenchmark {
                 && !selectedEngine.equals(engine == 1 ? "native" : "flink")) continue;
             var env = metrics.environment(new Configuration(), parallelism, 0);
             var table = StreamTableEnvironment.create(env);
-            table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
-            table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(miniBatchRows > 0));
+            table
+                .getConfig()
+                .set("table.optimizer.agg-phase-strategy", twoPhase ? "TWO_PHASE" : "ONE_PHASE");
+            table
+                .getConfig()
+                .set("table.exec.mini-batch.enabled", Boolean.toString(miniBatchRows > 0));
             if (miniBatchRows > 0) {
               table.getConfig().set("table.exec.mini-batch.size", Integer.toString(miniBatchRows));
               table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
@@ -283,9 +294,16 @@ class JvmAggregateBenchmark {
                   metrics.nativeOperators().isEmpty(),
                   "fallback control executed native operators");
             if (engine == 1 && (!jvm || expectedUdf)) {
-              RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), groupOperator);
+              if (twoPhase && udf) {
+                RecoveryExecutionMetrics.assertConsumed(
+                    metrics.nativeOperators(), "NativeJvmLocalGroup");
+                RecoveryExecutionMetrics.assertConsumed(
+                    metrics.nativeOperators(), "NativeJvmGlobalGroup");
+              } else
+                RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), groupOperator);
               if (udf && miniBatchRows > 0) {
-                assertEquals(rows, metrics.counterValue("jvmMiniBatchRows"));
+                if (twoPhase) assertTrue(metrics.counterValue("jvmMiniBatchRows") > rows);
+                else assertEquals(rows, metrics.counterValue("jvmMiniBatchRows"));
                 assertTrue(metrics.counterValue("jvmMiniBatchBundles") > 0);
               }
               if (binaryElement || nestedElement)

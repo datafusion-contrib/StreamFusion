@@ -341,6 +341,10 @@ class FlinkTypedTableFunctionSqlHarnessTest {
     if (name.startsWith("TIMESTAMP("))
       return DataTypes.TIMESTAMP(Integer.parseInt(name.substring(10, name.length() - 1)));
     switch (name) {
+      case "INT":
+        return DataTypes.INT();
+      case "BIGINT":
+        return DataTypes.BIGINT();
       case "STRING":
         return DataTypes.STRING();
       case "FLOAT":
@@ -379,6 +383,10 @@ class FlinkTypedTableFunctionSqlHarnessTest {
     if (name.startsWith("CHAR("))
       return new String[] {"", "a", "a ", "abcd", "abcde", "  ", "z"}[slot];
     switch (name) {
+      case "INT":
+        return new int[] {Integer.MIN_VALUE, -1, 0, 1, 17, Integer.MAX_VALUE, 42}[slot];
+      case "BIGINT":
+        return new long[] {Long.MIN_VALUE, -1, 0, 1, 17, Long.MAX_VALUE, 42}[slot];
       case "STRING":
         return new String[] {"", "é🙂", "a", "a ", "\ud800", "\udc00", "x\ud800y"}[slot];
       case "FLOAT":

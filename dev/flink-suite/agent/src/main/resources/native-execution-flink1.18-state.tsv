@@ -97,3 +97,11 @@ org.apache.flink.table.planner.runtime.stream.sql.UnnestITCase#testUnnestObjectA
 # OverloadedMax remains single-phase; verify native work with changelog state disabled.
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator	changelog=false	NativeColumnarJvmGroupOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+
+# Merge-capable scalar JVM aggregates require consumed work in both local/global phases.
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy	aggMode=OFF&changelog=false	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy	aggMode=ON&changelog=false	NativeColumnarJvmLocalGroupOperator+NativeColumnarJvmGlobalGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy	aggMode=OFF&changelog=false	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy	aggMode=ON&changelog=false	NativeColumnarJvmLocalGroupOperator+NativeColumnarJvmGlobalGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state

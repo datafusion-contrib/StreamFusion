@@ -1,29 +1,28 @@
 package tech.streamfusion.operator;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import org.apache.flink.api.common.functions.util.FunctionUtils;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.runtime.context.ExecutionContext;
-import org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction;
+import org.apache.flink.table.runtime.operators.bundle.MapBundleFunction;
 import org.apache.flink.table.runtime.operators.bundle.trigger.BundleTrigger;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.util.Collector;
 
 /** Released bundle evaluation with independently owned keys and copied input rows. */
-final class JvmMiniBatchGroup {
-  private final MiniBatchGroupAggFunction function;
+final class JvmMiniBatchGroup<V> {
+  private final MapBundleFunction<RowData, V, RowData, RowData> function;
   private final BundleTrigger<RowData> trigger;
   private final RowDataSerializer keys;
   private final Collector<RowData> output;
   private final Counter rows;
   private final Counter bundles;
-  private final Map<RowData, List<RowData>> buffer = new HashMap<>();
+  private final Map<RowData, V> buffer = new HashMap<>();
 
   JvmMiniBatchGroup(
-      MiniBatchGroupAggFunction function,
+      MapBundleFunction<RowData, V, RowData, RowData> function,
       BundleTrigger<RowData> trigger,
       RowDataSerializer keys,
       Collector<RowData> output,
