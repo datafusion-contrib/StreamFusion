@@ -49,6 +49,7 @@ class FlinkIntegralEpochSqlHarnessTest {
       boolean legacy) throws Exception {
     DataType number;
     switch (name) {
+      case "BOOLEAN": number = BOOLEAN(); break;
       case "TINYINT": number = TINYINT(); break;
       case "SMALLINT": number = SMALLINT(); break;
       case "INT": number = INT(); break;
@@ -94,7 +95,8 @@ class FlinkIntegralEpochSqlHarnessTest {
     }
   }
 
-  private static Number value(String type, int index) {
+  private static Object value(String type, int index) {
+    if (type.equals("BOOLEAN")) return index % 2 == 0;
     long[] boundaries = {Long.MIN_VALUE, Long.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE,
         Short.MIN_VALUE, Short.MAX_VALUE, Byte.MIN_VALUE, Byte.MAX_VALUE,
         -62167219200001L, -62167219200000L, -62167219199999L,

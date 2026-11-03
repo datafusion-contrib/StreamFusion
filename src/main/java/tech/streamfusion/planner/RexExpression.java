@@ -4014,6 +4014,11 @@ final class RexExpression {
         if (switchResult1) return emitHostExpression(call, true);
       }
     }
+    if (tryCast && source == SqlTypeName.BOOLEAN && targetInteger >= 0 && targetInteger <= 3
+        && nativeBooleanFormattingOperand(call.getOperands().get(0))) {
+      add(KIND_CAST, wideningTargetCode(SqlTypeName.TINYINT, targetType), 1);
+      return emit(call.getOperands().get(0));
+    }
     boolean integralTryCast = tryCast && sourceInteger >= 0 && sourceInteger <= 3
         && targetInteger >= 0 && targetInteger <= 3
         && nativeIntegralRoundingOperand(call.getOperands().get(0));

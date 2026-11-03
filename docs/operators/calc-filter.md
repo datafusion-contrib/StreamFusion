@@ -1283,6 +1283,22 @@ retains initial/final kernel measurements, actual previous stock fallback, compl
 shared CAST controls. Other scalar TRY_CAST pairs remain governed by their separate coverage below and
 [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
 
+### BOOLEAN-to-integer TRY_CAST
+
+TRY_CAST from verified BOOLEAN inputs/literals, logical trees, NULL checks and integer
+comparisons to TINYINT/SMALLINT/INT/BIGINT uses the existing native primitive CAST.
+TRUE becomes 1, FALSE becomes 0 and NULL stays NULL, in both cast modes. This follows
+Flink's BooleanToNumeric rule and the same DataFusion-compatible primitive path used by
+Comet; there is no conversion error to catch. The resolved TRY_CAST type/nullability stays
+unchanged. Ordinary BOOLEAN-to-integer CAST already lowers to Flink's native-encodable
+CASE tree and needs no new admission.
+
+Division and other unverified/failing/stateful BOOLEAN producers retain fallback, including
+their operand failures, lazy branches and empty filtered batches. Other target families
+and reverse TRY_CAST conversions retain their separate preceding coverage.
+The [release qualification](../benchmarks/scalar-functions.md#boolean-to-integer-try_cast)
+retains actual preceding fallback, independent stock, tiny controls and complete jobs.
+
 ### Integer/string casts
 
 `CAST` and `TRY_CAST` between `STRING`/`VARCHAR`/`CHAR` and
