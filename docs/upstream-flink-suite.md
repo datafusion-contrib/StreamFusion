@@ -1661,3 +1661,33 @@ canonical audit controls pass. Stock controls exclude StreamFusion runtime class
 native library is verified against the qualified debug artifact. This qualifies the selected
 released fixture and the [documented updating subset](operators/top-n.md#updating-canonical-state-partial),
 while the wider operator/connector/version matrix remains open. Benchmarking is deferred.
+
+
+### Selecting the released retracting-rank restore program
+
+`tech.streamfusion.canonical.RetractRankRestoreTest` selects the released
+`RankTestPrograms.RANK_TEST_RETRACT_STRATEGY` through a thin subclass, retaining the original
+compiled plan/savepoint, source schema and changelog settings, input, inherited restore method
+and expected outputs. Select it with
+`CANONICAL_UPSTREAM_TESTS=tech.streamfusion.canonical.RetractRankRestoreTest#testRestore bin/canonical-savepoints.sh sql`.
+It imports six retained native rows and consumes two new Top-N rows. A dedicated witness counts
+only committed data row kinds, excluding count-map/list/bound headers and validation-only visits.
+The `@resume:NativeColumnarTopNOperator` contract requires both a nonempty canonical import into
+an opened Top-N operator and new input through that family; stock-owner work or fallback reasons
+cannot satisfy it. Import counts and new input remain separate evidence fields.
+
+The retract/update/append/first-N/normalizer/full-dedup selection passes twelve original programs
+per engine: ten required native paths and two expected normalizer-filter fallbacks. All 118
+canonical witness controls pass, including metadata-only, validation-only, import-only, open-only,
+wrong-family and fallback rejection. All 49 Python summary controls pass too. Stock test processes
+exclude StreamFusion classes; the embedded native library matches the qualified debug artifact.
+This qualifies the released restore fixture. Complete-process handoffs and the broader coverage
+matrix remain separate checks; see [retracting scope](operators/top-n.md#retracting-canonical-state-partial).
+Benchmarking remains deferred.
+
+
+The complete unchanged released `RankRestoreTest#testRestore` also passes all four original
+programs in each engine, with all four required native paths. Its retracting program separately
+proves six imported rows and two new Top-N rows through the stronger continuation contract.
+These are the same four rank programs selected by the thin classes above, so the qualification
+counts are overlapping, not additive. No program is excluded from this rank-class run.

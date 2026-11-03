@@ -32,7 +32,7 @@ def execution_contracts(
             len(fields) != 3
             or not re.fullmatch(r"[\w.$]+#[\w$]+", fields[0])
             or not re.fullmatch(r"\*|\w+=\w+(?:&\w+=\w+)*", fields[1])
-            or not re.fullmatch(r"\w+(?:[+|]\w+)*|!.+|@restore:\w+|@elided:(?:TemporalSort|IntervalJoin)", fields[2])
+            or not re.fullmatch(r"\w+(?:[+|]\w+)*|!.+|@(?:restore|resume):\w+|@elided:(?:TemporalSort|IntervalJoin)", fields[2])
             or fields[2].startswith("!@") and not re.fullmatch(r"!@\w+:.+", fields[2])
         ):
             raise ValueError(f"Invalid native execution contract: {line}")
@@ -179,6 +179,13 @@ def check_execution(
                     matched = True
                 else:
                     problems.append(f"{test} [{variant}]: missing native canonical import; observed {restored}")
+            elif contract.startswith("@resume:"):
+                operator = contract.removeprefix("@resume:")
+                if counts.get(operator, 0) > 0 and restored.get(operator, 0) > 0 and not stock and not reasons:
+                    proved += 1
+                    matched = True
+                else:
+                    problems.append(f"{test} [{variant}]: missing native canonical import and new input for {operator}")
             elif contract.startswith("!@"):
                 base_contract, separator, required = contract.partition("&&")
                 operator, reason = base_contract[2:].split(":", 1)

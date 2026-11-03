@@ -246,6 +246,13 @@ public final class StreamFusionSuiteAgent {
                     ? builder.visit(
                         Advice.to(RecordCanonicalRankImport.class).on(named("importBatch")))
                     : builder)
+        .type(named("tech.streamfusion.state.StockRetractingTopNStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalRetractingRankImport.class).on(named("batch")))
+                    : builder)
         .type(named("tech.streamfusion.state.StockFirstNStateContract"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -602,6 +609,27 @@ public final class StreamFusionSuiteAgent {
     static void exit(
         @Advice.Argument(2) java.util.List<?> rows, @Advice.Argument(3) boolean validateOnly) {
       if (!validateOnly) NativeExecution.restored("NativeColumnarTopNOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalRetractingRankImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.This Object contract,
+        @Advice.Argument(2) java.util.List<?> rows,
+        @Advice.Argument(3) boolean validating)
+        throws ReflectiveOperationException {
+      if (validating || rows.isEmpty()) return;
+      var field = contract.getClass().getDeclaredField("rowType");
+      field.setAccessible(true);
+      Object rowType = field.get(contract);
+      int tagColumn = (int) rowType.getClass().getMethod("getFieldCount").invoke(rowType) + 3;
+      int dataRows = 0;
+      for (Object row : rows) {
+        byte tag = (byte) row.getClass().getMethod("getByte", int.class).invoke(row, tagColumn);
+        if (tag >= 0 && tag <= 3) dataRows++;
+      }
+      NativeExecution.restored("NativeColumnarTopNOperator", dataRows);
     }
   }
 

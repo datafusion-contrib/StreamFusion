@@ -1186,3 +1186,30 @@ omits raw restore's enable-TTL migration timestamp because TTL-disabled stock st
 TTL/cache-age/gap metadata, independent bounds, OFFSET and the broader native graph/version/connector/
 failure/delivery matrix remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking is deferred.
+
+
+## Automatic retracting Top-N projection (partial)
+
+Normal Flink 2.2.1 SQL and portable stock compiled plans bind the released general retracting
+rank owner with its actual primary identity, selectors, key serializer, serializable comparator,
+maximum parallelism and before-image policy. Qualified retained types are INT/BIGINT/VARCHAR,
+with one/two sort fields, constant ranges including OFFSET/large limits, or non-null integral
+first-observed bounds. Per-record state semantics apply under table mini-batching too. Unknown
+upstream native state owners keep their stock template. A rejected binding also keeps stock rank
+state when a direct changelog source has no upstream aggregate to trigger that fallback.
+
+Direct export preserves independent `data-state` lists, `sorted-map` counters and optional `rankEnd`,
+including presence, row kinds and independent write ages. It visits live native state into released
+Flink serializers without an intermediate native checkpoint. Whole-source validation precedes
+import; source state remains available after validation/resource failure. Typed state and planner
+checks cover the qualified shapes and rejected contracts. The complete-process matrix verifies
+168 distinct scenarios across both submission forms/backends/orders, custom sources/sinks and both
+transposes, no-input/empty returns, native checkpoint recovery and 64-key rescaling 1→3→2. The
+initial eight ideal-table oracle failures are corrected against twelve isolated stock reference
+checks; the other 160 pass unchanged and all eight targeted reruns pass on identical production
+code. Exact stock changelog assertions remain. See [retracting rank coverage and its
+remaining limits](../operators/top-n.md#retracting-canonical-state-partial).
+
+Unsupported schemas, additional sort fields, nullable variable bounds, broader native graphs and
+full cross-version/failure/connector/delivery coverage remain in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.

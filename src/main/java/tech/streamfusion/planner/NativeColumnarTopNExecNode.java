@@ -42,6 +42,10 @@ public class NativeColumnarTopNExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] keyTimestampPrecisions;
   private Integer stateMaxParallelism;
 
+  public boolean hasRetractingState() {
+    return retracting;
+  }
+
   public boolean hasUniqueRowKeyState() {
     return rowKeyColumns != null;
   }

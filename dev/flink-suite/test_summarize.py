@@ -407,6 +407,22 @@ class CanonicalRestoreSummaryTest(unittest.TestCase):
         self.assertEqual((0, 1, []), result)
         self.assertEqual("mixed", observations[0]["observed_route"])
 
+    def test_resume_requires_import_and_new_input_from_the_same_family(self):
+        contract = "@resume:" + self.FAMILY
+        for fields in ({}, {"counts": self.FAMILY + "=2"},
+                       {"imported": self.FAMILY + "=3"},
+                       {"counts": self.FAMILY + "=2", "imported": self.FAMILY + "=0"},
+                       {"counts": "NativeCalcOperator=2", "imported": self.FAMILY + "=3"},
+                       {"counts": self.FAMILY + "=2", "imported": "NativeCalcOperator=3"},
+                       {"counts": self.FAMILY + "=2", "imported": self.FAMILY + "=3", "stock": "StockSessionTableFunction=2"},
+                       {"counts": self.FAMILY + "=2", "imported": self.FAMILY + "=3", "reasons": "unexpected fallback"}):
+            with self.subTest(fields=fields):
+                self.assertTrue(self.check(contract, **fields)[0][2])
+        result, observations = self.check(contract, counts=self.FAMILY + "=2", imported=self.FAMILY + "=3")
+        self.assertEqual((1, 0, []), result)
+        self.assertEqual("native", observations[0]["observed_route"])
+        self.assertEqual({self.FAMILY: 3}, observations[0]["native_canonical_import_rows"])
+
     def test_restore_only_proof_cannot_include_stock_input(self):
         result, _ = self.check("@restore:" + self.FAMILY, imported=self.FAMILY + "=3",
                                stock="StockSessionTableFunction=2")

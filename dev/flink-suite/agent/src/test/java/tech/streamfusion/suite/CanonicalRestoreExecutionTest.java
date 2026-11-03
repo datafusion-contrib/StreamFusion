@@ -722,6 +722,101 @@ class CanonicalRestoreExecutionTest {
     assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
   }
 
+  @Test
+  void retractingRankCountsOnlyCommittedDataRowsAndRequiresNewInput() throws Exception {
+    var scope = retractingRankScope();
+    var contract = new RetractingContract();
+    var rows =
+        java.util.List.of(
+            new TransferRow(-1),
+            new TransferRow(-2),
+            new TransferRow(-3),
+            new TransferRow(-4),
+            new TransferRow(0),
+            new TransferRow(1),
+            new TransferRow(2),
+            new TransferRow(3));
+    StreamFusionSuiteAgent.RecordCanonicalRetractingRankImport.exit(contract, rows, true);
+    StreamFusionSuiteAgent.RecordCanonicalRetractingRankImport.exit(contract, rows, false);
+    var operator = new NativeColumnarTopNOperator();
+    NativeExecution.opened(operator);
+    NativeExecution.completed(operator, 2);
+    assertDoesNotThrow(() -> NativeExecution.finish(scope));
+    try (var files = java.nio.file.Files.list(reports)) {
+      var fields =
+          java.nio.file.Files.readString(files.findFirst().orElseThrow())
+              .stripTrailing()
+              .split("\\t", -1);
+      assertEquals("NativeColumnarTopNOperator=2", fields[2]);
+      assertEquals("NativeColumnarTopNOperator=4", fields[4]);
+    }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "empty",
+        "openOnly",
+        "importOnly",
+        "newInputOnly",
+        "metadataOnly",
+        "validationOnly",
+        "firstN",
+        "fallback"
+      })
+  void retractingRankRejectsMissingOrUnrelatedImportAndInput(String mode) throws Exception {
+    var scope = retractingRankScope();
+    var operator = new NativeColumnarTopNOperator();
+    if (!mode.equals("empty")) NativeExecution.opened(operator);
+    if (!java.util.Set.of("empty", "openOnly", "importOnly").contains(mode))
+      NativeExecution.completed(operator, 2);
+    if (!java.util.Set.of("empty", "openOnly", "newInputOnly").contains(mode)) {
+      if (mode.equals("firstN")) {
+        NativeExecution.opened(new NativeColumnarFirstNOperator());
+        NativeExecution.restored("NativeColumnarFirstNOperator", 2);
+      } else {
+        var rows =
+            mode.equals("metadataOnly")
+                ? java.util.List.of(
+                    new TransferRow(-1),
+                    new TransferRow(-2),
+                    new TransferRow(-3),
+                    new TransferRow(-4))
+                : java.util.List.of(new TransferRow(0));
+        StreamFusionSuiteAgent.RecordCanonicalRetractingRankImport.exit(
+            new RetractingContract(), rows, mode.equals("validationOnly"));
+      }
+    }
+    if (mode.equals("fallback")) NativeExecution.fallback("unexpected fallback");
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  private NativeExecution.Scope retractingRankScope() {
+    return NativeExecution.beginRestore(
+        "tech.streamfusion.canonical.RetractRankRestoreTest",
+        new Object(),
+        "rank-test-retract-strategy");
+  }
+
+  public static final class RetractingContract {
+    private final org.apache.flink.table.types.logical.RowType rowType =
+        org.apache.flink.table.types.logical.RowType.of(
+            new org.apache.flink.table.types.logical.IntType());
+  }
+
+  public static final class TransferRow {
+    private final byte tag;
+
+    public TransferRow(int tag) {
+      this.tag = (byte) tag;
+    }
+
+    public byte getByte(int column) {
+      assertEquals(4, column);
+      return tag;
+    }
+  }
+
   private static final class NativeColumnarTopNOperator {}
 
   private static final class NativeColumnarFirstNOperator {}

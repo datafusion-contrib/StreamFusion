@@ -21,7 +21,7 @@ org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestor
 org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_with_state_ttl_hint	NativeColumnarUpdatingJoinOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=semi_anti_join_with_literal_agg	@restore:NativeColumnarUpdatingJoinOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.RankRestoreTest#testRestore	program=rank_test_append_fast_strategy	NativeColumnarTopNOperator
-org.apache.flink.table.planner.plan.nodes.exec.stream.RankRestoreTest#testRestore	program=rank_test_retract_strategy	NativeColumnarTopNOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.RankRestoreTest#testRestore	program=rank_test_retract_strategy	@resume:NativeColumnarTopNOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.RankRestoreTest#testRestore	program=rank_test_update_fast_strategy	NativeColumnarTopNOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.RankRestoreTest#testRestore	program=rank_n_test	NativeColumnarFirstNOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.WindowAggregateEventTimeRestoreTest#testRestore	program=window_aggregate_cumulate_event_time	NativeColumnarWindowAggregateOperator
@@ -77,3 +77,4 @@ tech.streamfusion.canonical.EagerDedupRestoreTest#testRestore	program=deduplicat
 tech.streamfusion.canonical.EagerDedupRestoreTest#testRestore	program=deduplicate_desc	NativeColumnarKeepLastDeduplicateOperator
 tech.streamfusion.canonical.AppendRankRestoreTest#testRestore	program=rank_test_append_fast_strategy	NativeColumnarTopNOperator
 tech.streamfusion.canonical.UpdateRankRestoreTest#testRestore	program=rank_test_update_fast_strategy	NativeColumnarTopNOperator
+tech.streamfusion.canonical.RetractRankRestoreTest#testRestore	program=rank_test_retract_strategy	@resume:NativeColumnarTopNOperator

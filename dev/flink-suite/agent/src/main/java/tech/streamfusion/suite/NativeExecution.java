@@ -60,7 +60,7 @@ public final class NativeExecution {
             || !fields[1].matches("\\*|\\w+=\\w+(?:&\\w+=\\w+)*")
             || !(fields[2].matches("\\w+(?:[+|]\\w+)*")
                 || fields[2].matches("!.+")
-                || fields[2].matches("@restore:\\w+")
+                || fields[2].matches("@(?:restore|resume):\\w+")
                 || fields[2].equals(ElidedTemporalSort.CONTRACT)
                 || fields[2].equals(ElidedIntervalJoin.CONTRACT))
             || fields[2].startsWith("!@") && !fields[2].matches("!@\\w+:.+")) {
@@ -442,6 +442,13 @@ public final class NativeExecution {
               && scope.stockRows.isEmpty()
               && scope.fallbacks.isEmpty()
               && restored.getOrDefault(contract.substring(9), 0L) > 0;
+    } else if (contract.startsWith("@resume:")) {
+      String operator = contract.substring(8);
+      satisfied =
+          scope.rows.getOrDefault(operator, 0L) > 0
+              && restored.getOrDefault(operator, 0L) > 0
+              && scope.stockRows.isEmpty()
+              && scope.fallbacks.isEmpty();
     } else if (contract.startsWith("!@")) {
       String[] clauses = contract.split("&&", 2);
       String[] requirement = clauses[0].substring(2).split(":", 2);
@@ -486,12 +493,14 @@ public final class NativeExecution {
                 ? "fallback: " + contract.substring(1)
                 : contract.startsWith("@restore:")
                     ? "canonical import: " + restoredCounts
-                    : contract.startsWith("@elided:")
-                        ? "submitted graph without "
-                            + contract.substring(8)
-                            + "; native input: "
-                            + counts
-                        : counts));
+                    : contract.startsWith("@resume:")
+                        ? "canonical import: " + restoredCounts + "; new input: " + counts
+                        : contract.startsWith("@elided:")
+                            ? "submitted graph without "
+                                + contract.substring(8)
+                                + "; native input: "
+                                + counts
+                            : counts));
   }
 
   public static final class Scope {

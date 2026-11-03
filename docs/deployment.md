@@ -452,3 +452,14 @@ updating-rank graphs with unqualified native state owners use their stock templa
 owners' layouts and identities on Flink. Stock restore requires only normal user/connector
 dependencies. See [updating canonical scope and pending coverage](operators/top-n.md#updating-canonical-state-partial).
 Benchmarking remains deferred.
+
+
+General retracting ranks also bind automatically on Flink 2.2.1 in ordinary SQL and portable stock
+compiled plans. The qualified contract supports INT/BIGINT/VARCHAR payloads, one/two sort fields,
+constant OFFSET/large-limit ranges and non-null INT/BIGINT first-observed bounds. It preserves the
+three independent stock structures and TTL ages through direct canonical projection. Unsupported
+contracts retain stock rank state, and unqualified upstream state owners keep stock layouts.
+The 168-scenario complete-job matrix covers both engine orders/stores/submission forms, custom
+source/sink state and both transposes, no-input/empty handoffs, checkpoint recovery and rescaling
+1→3→2. See [retracting canonical scope and qualification details](operators/top-n.md#retracting-canonical-state-partial).
+Benchmarking remains deferred.

@@ -266,11 +266,15 @@ final class StockCompiledPlanLowering {
     }
   }
 
-  static boolean hasUpdatingRank(SqlPlanOrigins.RuntimeGraph graph) {
+  static boolean requiresStockRankTemplate(SqlPlanOrigins.RuntimeGraph graph) {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
-    return nodes.stream().anyMatch(node -> node instanceof NativeColumnarTopNExecNode
-        && ((NativeColumnarTopNExecNode) node).hasUniqueRowKeyState());
+    return nodes.stream()
+        .anyMatch(
+            node ->
+                node instanceof NativeColumnarTopNExecNode
+                    && (((NativeColumnarTopNExecNode) node).hasUniqueRowKeyState()
+                        || ((NativeColumnarTopNExecNode) node).hasRetractingState()));
   }
 
   static boolean canBindOrdinary(SqlPlanOrigins.RuntimeGraph graph) {
@@ -913,8 +917,11 @@ final class StockCompiledPlanLowering {
         function instanceof org.apache.flink.table.runtime.operators.rank.FastTop1Function;
     boolean updateFunction =
         function instanceof org.apache.flink.table.runtime.operators.rank.UpdatableTopNFunction;
+    boolean retractFunction =
+        function instanceof org.apache.flink.table.runtime.operators.rank.RetractableTopNFunction;
     if (!top1
         && !updateFunction
+        && !retractFunction
         && !(function
             instanceof org.apache.flink.table.runtime.operators.rank.AppendOnlyTopNFunction))
       return stock;
@@ -928,13 +935,20 @@ final class StockCompiledPlanLowering {
         strategy
             instanceof
             org.apache.flink.table.planner.plan.utils.RankProcessStrategy.UpdateFastStrategy;
-    if (updating
-        ? !top1 && !updateFunction
-        : updateFunction
-            || !(strategy
-                instanceof
-                org.apache.flink.table.planner.plan.utils.RankProcessStrategy.AppendFastStrategy))
-      return stock;
+    boolean retracting =
+        strategy
+            instanceof
+            org.apache.flink.table.planner.plan.utils.RankProcessStrategy.RetractStrategy;
+    if (retracting
+        ? !retractFunction
+        : updating
+            ? !top1 && !updateFunction
+            : updateFunction
+                || retractFunction
+                || !(strategy
+                    instanceof
+                    org.apache.flink.table.planner.plan.utils.RankProcessStrategy
+                        .AppendFastStrategy)) return stock;
     int[] rowKeys =
         updating
             ? ((org.apache.flink.table.planner.plan.utils.RankProcessStrategy.UpdateFastStrategy)
@@ -948,12 +962,16 @@ final class StockCompiledPlanLowering {
             .<org.apache.flink.table.runtime.operators.rank.RankRange>readValue(
                 definition.path("rankRange"));
     int bound = -1;
+    long offset = 0;
     long limit;
     if (range instanceof org.apache.flink.table.runtime.operators.rank.ConstantRankRange) {
       var constant = (org.apache.flink.table.runtime.operators.rank.ConstantRankRange) range;
-      if (constant.getRankStart() != 1
-          || constant.getRankEnd() < 1
-          || constant.getRankEnd() > Integer.MAX_VALUE) return stock;
+      if (constant.getRankStart() < 1
+          || constant.getRankEnd() < constant.getRankStart()
+          || (!retracting
+              && (constant.getRankStart() != 1 || constant.getRankEnd() > Integer.MAX_VALUE)))
+        return stock;
+      offset = constant.getRankStart() - 1;
       limit = constant.getRankEnd();
     } else if (!updating
         && range instanceof org.apache.flink.table.runtime.operators.rank.VariableRankRange) {
@@ -975,7 +993,9 @@ final class StockCompiledPlanLowering {
     int[] keys = partition.getFieldIndices();
     ExecNode<?> input = stock.getInputEdges().get(0).getSource();
     RowType inputType = (RowType) input.getOutputType();
-    if ((updating ? sort.getFieldSize() < 1 || sort.getFieldSize() > 2 : sort.getFieldSize() != 1)
+    if (((updating || retracting)
+            ? sort.getFieldSize() < 1 || sort.getFieldSize() > 2
+            : sort.getFieldSize() != 1)
         || inputType.getChildren().stream()
             .anyMatch(
                 type ->
@@ -984,6 +1004,12 @@ final class StockCompiledPlanLowering {
                             LogicalTypeRoot.INTEGER,
                             LogicalTypeRoot.VARCHAR)
                         .contains(type.getTypeRoot()))) return stock;
+    if (retracting
+        && bound >= 0
+        && (bound >= inputType.getFieldCount()
+            || inputType.getTypeAt(bound).isNullable()
+            || !(inputType.getTypeAt(bound).is(LogicalTypeRoot.INTEGER)
+                || inputType.getTypeAt(bound).is(LogicalTypeRoot.BIGINT)))) return stock;
     if (!RowDataArrowConverter.supports(inputType)
         || !RowDataArrowConverter.supports((RowType) stock.getOutputType())
         || !ArrowRowTypeSupport.supportsFields(inputType, keys)) return stock;
@@ -1013,7 +1039,19 @@ final class StockCompiledPlanLowering {
                 .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
     RowType keyType = (RowType) selector.getProducedType().toLogicalType();
     tech.streamfusion.state.StockStateContract contract;
-    if (updating) {
+    if (retracting) {
+      contract =
+          new tech.streamfusion.state.StockRetractingTopNStateContract(
+              serializer,
+              selector,
+              sortSelector,
+              keyType,
+              inputType,
+              (org.apache.flink.table.runtime.operators.rank.ComparableRecordComparator)
+                  releasedField(function, "serializableComparator"),
+              bound >= 0,
+              ttl.isEnabled());
+    } else if (updating) {
       if (!ArrowRowTypeSupport.supportsFields(inputType, rowKeys)) return stock;
       var rowKeySelector =
           top1
@@ -1057,11 +1095,11 @@ final class StockCompiledPlanLowering {
                 Arrays.stream(sort.getFieldSpecs())
                     .mapToInt(field -> field.getNullIsLast() ? 0 : 1)
                     .toArray(),
-                0,
+                offset,
                 limit,
                 bound,
                 (Boolean) releasedField(function, "outputRankNumber"),
-                false,
+                retracting,
                 rowKeys,
                 (Boolean) releasedField(function, "generateUpdateBefore"),
                 rowKeys == null ? null : FlinkKeyGroupUtils.stockKeyDescriptor(inputType, rowKeys),

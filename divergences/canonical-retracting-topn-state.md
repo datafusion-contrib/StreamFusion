@@ -12,7 +12,8 @@ algorithm, including heap row aliases versus RocksDB copies on reads/writes. Imm
 capture deep-copies mutable kind headers while sharing immutable payload bytes. New native state
 has a checked versioned envelope; legacy row buffers cannot be silently promoted into this model.
 This is an explicit compatibility state mode. Existing unbound rank paths retain their current
-behavior; automatic planner binding remains open.
+behavior. Qualified Flink 2.2.1 ordinary/compiled submissions bind this mode automatically from
+the actual released retracting operator; unsupported contracts retain stock state.
 
 Arroyo has windowed Top-N declarations but no corresponding unbounded retracting operator to reuse.
 Flink's released operator is the behavioral reference; Comet's moved Arrow C Data ownership is the
@@ -24,7 +25,7 @@ They compare raw presence/counts/kinds/independent ages, with live-state compari
 expiry cleanup; exact raw native checkpoint round trips remain asserted. This state mode is
 functionality groundwork. Benchmarking is explicitly deferred under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569), which remains open for wider
-canonical schemas, automatic admission and full qualification.
+canonical schemas, broader native graphs and full qualification.
 
 
 ## Direct stock projection
@@ -46,4 +47,19 @@ Export reserves transient Arrow and decoded persistent state. Raw canonical read
 TTL-disabled metadata suppresses checkpoint-migration clocks without changing native timestamps.
 The initial direct qualification covers BIGINT rows/one ascending BIGINT sort, independent TTL and
 bounds, OFFSET, both stores, native checkpoints, no-input re-export and actual stock continuation.
-Automatic binding and complete-job/schema/version/connector qualification remain in #569.
+Typed/lifecycle tests extend this to INT/BIGINT/VARCHAR, one/two sort fields, both before-image
+policies and both rank projections. Automatic binding captures stock identities/metadata and keeps
+unqualified upstream state owners stock. Rejected binding also restores the stock template for
+direct changelog input, where no upstream aggregate can trigger the fallback. Larger schemas,
+broader graphs and full version/failure/delivery qualification remain in #569.
+
+
+## Released output reference for hidden OFFSET
+
+The full SQL hidden-OFFSET input reproduces retained row-kind effects on both released stock
+backends. Its final emitted table includes rows outside the ideal rank selection; heap additionally
+retains a duplicate. Treating the ideal SQL table as its oracle falsely rejects stock itself.
+Twelve isolated stock-only jobs pin explicit table references at all three input cuts across both
+backends and submission forms. The switch fixture uses those exact references and still requires
+exact stock changelog parity. Other fixtures keep independent SQL oracles. The converter preserves
+actual saved state, including this behavior, rather than silently repairing independent maps.
