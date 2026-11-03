@@ -72,6 +72,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Free disk space
+        run: python3 bin/ci-free-disk.py
+
       - uses: ./.github/actions/setup-rust
 
       # Keyed on Cargo.lock; also disables incremental compilation, which keeps the

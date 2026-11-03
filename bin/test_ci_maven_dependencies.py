@@ -18,7 +18,7 @@ class MavenDependenciesTest(unittest.TestCase):
     def options(self):
         return argparse.Namespace(maven="mvn", profile="flink-1.18", projects="streamfusion-runtime",
                                   also_make=True, pom=Path("checkout with spaces/pom.xml"),
-                                  repository=Path("repository with spaces"), artifact=[])
+                                  repository=Path("repository with spaces"), artifact=[], model_only=False)
 
     def invoke(self, statuses):
         results = [subprocess.CompletedProcess([], status) if isinstance(status, int) else status
@@ -41,6 +41,24 @@ class MavenDependenciesTest(unittest.TestCase):
         self.assertIn("checkout with spaces/pom.xml", command)
         self.assertIn("-Dmaven.repo.local=repository with spaces", command)
         self.assertEqual(PREPARE.GOAL, command[-1])
+        self.assertFalse({"test", "verify", "package", "install"} & set(command))
+        for option in PREPARE.TRANSPORT_OPTIONS:
+            self.assertIn(option, command)
+
+    def test_project_models_retry_without_building_or_resolving_reactor_artifacts(self):
+        options = self.options()
+        options.model_only = True
+        with patch.object(PREPARE.subprocess, "run", side_effect=[
+                subprocess.CompletedProcess([], status) for status in (1, 0)]) as run, \
+                patch.object(PREPARE.time, "sleep"):
+            self.assertEqual(0, PREPARE.resolve(options))
+        command = run.call_args_list[0].args[0]
+        self.assertEqual(command, run.call_args_list[1].args[0])
+        self.assertIn(PREPARE.MODEL_GOAL, command)
+        self.assertIn("-Dexpression=project.id", command)
+        self.assertIn("streamfusion-runtime", command)
+        self.assertIn("-am", command)
+        self.assertNotIn(PREPARE.GOAL, command)
         self.assertFalse({"test", "verify", "package", "install"} & set(command))
 
     def test_missing_download_is_rechecked_and_can_recover(self):

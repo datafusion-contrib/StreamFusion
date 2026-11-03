@@ -825,6 +825,13 @@ upstream consumers target 20 GiB before downloading the shared build. The script
 those targets cannot be met and refuses to delete anything outside GitHub-hosted Linux runners.
 These are initial capacity targets to validate on hosted runs, not measured peak usage guarantees.
 
+Before compiling Flink, preparation resolves the selected reactor's parent POMs and build
+extensions with `bin/ci-maven-dependencies.py --model-only`. The fixed Help `evaluate` goal
+loads models without executing a lifecycle or requiring unbuilt reactor artifacts. It uses
+the line's pinned wrapper, profile and isolated repository. Downloads have bounded setup
+retries and a 60-second HTTP read inactivity timeout for both Resolver and Wagon; the original
+build and unchanged upstream test commands still run once. See [dependency setup](ci.md#maven-dependencies).
+
 This follows [Flink's own compile-and-fan-out CI pattern](https://github.com/apache/flink/blob/master/.github/workflows/template.flink-ci.yml):
 compile once, transfer build outputs, then run module groups on independent runners. Flink also
 caches Maven dependencies, compiles with Maven reactor parallelism, and trims its transferred build
