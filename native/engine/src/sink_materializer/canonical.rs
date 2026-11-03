@@ -228,7 +228,7 @@ impl SinkMaterializer {
             return Ok(());
         };
         let mut reservation = self.memory.temporary_reservation();
-        let mut emit = |batch: RecordBatch| {
+        let mut emit = |batch: RecordBatch| -> Result<(), DataFusionError> {
             if let Some(memory) = &mut reservation {
                 memory.try_resize(batch.get_array_memory_size())?;
             }
