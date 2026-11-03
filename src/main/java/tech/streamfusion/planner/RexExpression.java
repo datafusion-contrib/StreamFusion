@@ -2150,14 +2150,19 @@ final class RexExpression {
     }
     long roundingWidth = nativeRoundingWidth(call);
     if (roundingWidth > 0) {
-      add(KIND_CALL, 154, 3);
+      boolean ltzCeil = call.getKind() == SqlKind.CEIL
+          && call.getOperands().get(0).getType().getSqlTypeName()
+              == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE;
+      add(KIND_CALL, ltzCeil ? 246 : 154, ltzCeil ? 2 : 3);
       if (!emit(call.getOperands().get(0))) {
         return false;
       }
       add(KIND_LIT_LONG, longs.size(), 0);
       longs.add(roundingWidth);
-      add(KIND_LIT_BOOL, longs.size(), 0);
-      longs.add("FLOOR".equals(call.getOperator().getName()) ? 0L : 1L);
+      if (!ltzCeil) {
+        add(KIND_LIT_BOOL, longs.size(), 0);
+        longs.add("FLOOR".equals(call.getOperator().getName()) ? 0L : 1L);
+      }
       return true;
     }
     String unixTimeFormat = nativeUnixTimeFormat(call);
@@ -5056,14 +5061,13 @@ final class RexExpression {
       return -1;
     }
     RexNode operand = call.getOperands().get(0);
-    boolean utcLtzFloor = "FLOOR".equals(name)
-        && operand.getType().getSqlTypeName() == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+    boolean utcLtz = operand.getType().getSqlTypeName() == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
         && (operand instanceof RexInputRef || operand instanceof RexLiteral)
         && sessionZoneId != null
         && java.time.ZoneId.of(sessionZoneId).normalized().equals(java.time.ZoneOffset.UTC);
-    if (operand.getType().getSqlTypeName() != SqlTypeName.TIMESTAMP && !utcLtzFloor) return -1;
+    if (operand.getType().getSqlTypeName() != SqlTypeName.TIMESTAMP && !utcLtz) return -1;
     RexLiteral unit = ((RexLiteral) unitCandidate);
-    if (utcLtzFloor && !tech.streamfusion.compat.FlinkCompat.supportsSubHourLtzRounding()
+    if (utcLtz && !tech.streamfusion.compat.FlinkCompat.supportsSubHourLtzRounding()
         && !java.util.Set.of("DAY", "HOUR").contains(String.valueOf(unit.getValue()))) return -1;
 
     switch (String.valueOf(unit.getValue())) {

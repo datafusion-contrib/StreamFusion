@@ -7465,3 +7465,79 @@ Four freshly executed unchanged released `ScalarFunctionsTest.testTemporalFloor`
 invocations pass separately, not as native-runtime coverage. The existing 892-test Rust core
 result covers the unchanged production Rust; hosted CI remains separate. Remaining temporal
 work stays in [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
+
+
+## UTC LTZ fixed-unit CEIL
+
+A separate Rust kernel preserves released LTZ signed-remainder CEIL, including ignored
+submillisecond fractions and final long overflow. The ordinary TIMESTAMP CEIL kernel stays
+unchanged. Direct/literal inputs qualify only in normalized fixed-zero zones, for DAY/HOUR
+on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The latter three forms retain the
+released 1.18 code-generation failure. Computed inputs, nonzero/regional zones and other
+units retain their existing routes. Component and primitive Arrow timestamps are accepted
+without changing JNI, timestamp transport or configuration.
+
+The [2026-11-03 record](results/utc-ltz-fixed-ceil-2026-11-03.json) compares released
+Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc-linked
+artifacts. Both executable and JNI DSO have malloc/mi_malloc symbol identity checks. Prepared
+GenericRowData, BinaryRowData and Arrow contain identical signed-long extrema, normal and
+pre-epoch values, LTZ(3/9), submillisecond fractions and nullable/NOT NULL columns. Each trial
+processes 131,072 rows with 16 warmups and nine measurements. The Rust-side timer retains
+production operation, output consumption and intrinsic prior callbacks; initial import/export
+and perimeter transposes are excluded only from this function comparison. The consumer is
+`YEAR(CEIL(v TO unit))>0 OR CAST(NULL AS BOOLEAN)`, not timestamp output serialization.
+
+Actual preceding encoder `e7b2a8e4` runs generated CEIL on the same current runtime, fixture
+and allocator. Its independent stock control remains distinct from candidate paired stock;
+this is not an entire historical DSO replay. The prior native artifacts are retained separately
+for provenance; this qualification isolates the encoder/kernel route change.
+
+| Flink | Bulk cells | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 40 | 1.208-1.632x | 3.798-7.901x |
+| 1.18.1 | 16 | 1.237-1.581x | 3.862-4.969x |
+
+All 56 bulk cells improve against stock and the prior evaluator. All fourteen 16-row
+controls lose to stock (stock/native **0.150-0.179x**). The
+[7,000 raw trials](results/utc-ltz-fixed-ceil-2026-11-03.csv.gz) retain warmups,
+checksums and both stock controls. Reproduce with `integral_expression`, LTZ(3/9),
+the expression above and each admitted unit.
+
+Ten complete million-row jobs retain startup, JNI and both transposes, using the existing
+row source/blackhole fixture in UTC with LTZ(3/9), two warmups, five measurements and
+alternating engine order. Candidate jobs require consumed NativeCalc work and empty
+evaluators; prior jobs require generated CEIL. Seconds, median:
+
+| Flink | Precision / unit | Paired stock | Native | Independent stock | Previous evaluator |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | 3 / DAY | 0.182005 | 0.200002 | 0.181019 | 0.235959 |
+| 2.2.1 | 3 / HOUR | 0.185597 | 0.203753 | 0.172905 | 0.230548 |
+| 2.2.1 | 3 / MILLISECOND | 0.178166 | 0.208781 | 0.174501 | 0.227337 |
+| 2.2.1 | 9 / DAY | 0.175395 | 0.206331 | 0.177940 | 0.234895 |
+| 2.2.1 | 9 / HOUR | 0.180320 | 0.203949 | 0.181615 | 0.237350 |
+| 2.2.1 | 9 / MILLISECOND | 0.170617 | 0.206994 | 0.173575 | 0.235976 |
+| 1.18.1 | 3 / DAY | 0.173835 | 0.206550 | 0.184450 | 0.245386 |
+| 1.18.1 | 3 / HOUR | 0.174190 | 0.202289 | 0.181930 | 0.233150 |
+| 1.18.1 | 9 / DAY | 0.185248 | 0.206611 | 0.173145 | 0.227567 |
+| 1.18.1 | 9 / HOUR | 0.173767 | 0.207287 | 0.178209 | 0.232716 |
+
+All ten complete native medians remain slower than stock: native/stock elapsed
+**1.098-1.213**, native/previous **0.842-0.918**.
+Every trial, range and independent control is retained. The prepared function gate does
+not establish complete-job acceleration.
+
+All **896 release Rust core tests** pass without default features, zero ignores. New tests
+exercise full signed millis, fractions, final-wrap overflow, distinct ordinary-TIMESTAMP
+behavior, primitive/component timestamps without coercion, scalar broadcasts, slices,
+NULL widths, empty/all-NULL arrays, ownership and rejected signatures. All **268 focused
+JVM invocations** pass on both released lines and JDK 11/17, targeting Java release 11,
+with no skips. Complete 5,003-row maps compare values/types/NULLs/IDs/cardinality, precisions
+0/3/9, zero-offset aliases, nonzero/regional generated controls, CASE and all-filtered batches.
+Admitted paths require consumed NativeCalc work and empty evaluators; computed/unsupported
+shapes and 1.18 code-generation failures retain explicit expectations. Adjacent fixed/calendar
+FLOOR/CEIL and narrow integer epoch routes are included. The actual before-change control
+matches values/schema but fails six zero-offset pure-route assertions with `jvm=[CEIL]`.
+Four fresh unchanged released `ScalarFunctionsTest.testTemporalFloor` oracle invocations
+pass separately; that upstream method contains both FLOOR and CEIL assertions and does not
+provide native-runtime coverage. Hosted CI remains separate. Further calendar/timezone work
+stays in [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).

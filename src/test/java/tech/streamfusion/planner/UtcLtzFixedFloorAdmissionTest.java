@@ -29,7 +29,8 @@ class UtcLtzFixedFloorAdmissionTest {
       table.executeSql("CREATE TABLE src(ts TIMESTAMP_LTZ(9),n BIGINT) WITH ('connector'='datagen')");
       for (String expression : List.of("FLOOR(ts TO DAY)", "FLOOR(ts TO HOUR)",
           "FLOOR(ts TO MINUTE)", "FLOOR(ts TO SECOND)", "FLOOR(ts TO MILLISECOND)",
-          "CEIL(ts TO DAY)", "CEIL(ts TO MILLISECOND)",
+          "CEIL(ts TO DAY)", "CEIL(ts TO HOUR)", "CEIL(ts TO MINUTE)",
+          "CEIL(ts TO SECOND)", "CEIL(ts TO MILLISECOND)",
           "FLOOR(TO_TIMESTAMP_LTZ(n,3) TO DAY)")) {
         var operation = ((TableImpl) table.sqlQuery("SELECT " + expression + " FROM src"))
             .getQueryOperation();
@@ -37,7 +38,7 @@ class UtcLtzFixedFloorAdmissionTest {
         var encoder = constructor.newInstance();
         configure.invoke(encoder, table.getConfig());
         boolean fixedUnitSupported = FlinkCompat.supportsSubHourLtzRounding()
-            || expression.equals("FLOOR(ts TO DAY)") || expression.equals("FLOOR(ts TO HOUR)");
+            || expression.endsWith("ts TO DAY)") || expression.endsWith("ts TO HOUR)");
         boolean admitted = (Boolean) emit.invoke(encoder, projection.getProjects().get(0));
         if (!FlinkCompat.supportsSubHourLtzRounding()
             && (expression.contains("TO MINUTE") || expression.contains("TO SECOND")
@@ -47,11 +48,13 @@ class UtcLtzFixedFloorAdmissionTest {
         }
         assertTrue(admitted, expression);
         boolean pure = ZoneId.of(zone).normalized().equals(java.time.ZoneOffset.UTC)
-            && expression.startsWith("FLOOR(ts") && fixedUnitSupported;
+            && (expression.startsWith("FLOOR(ts") || expression.startsWith("CEIL(ts"))
+            && fixedUnitSupported;
         assertEquals(pure, encoder.jvmFunctionCalls().isEmpty(), zone + " " + expression);
         if (pure) {
-          assertEquals(List.of("FLOOR"), encoder.nativeFunctionCalls());
-          assertEquals(154, encoder.payload()[0]);
+          boolean ceiling = expression.startsWith("CEIL");
+          assertEquals(List.of(ceiling ? "CEIL" : "FLOOR"), encoder.nativeFunctionCalls());
+          assertEquals(ceiling ? 246 : 154, encoder.payload()[0]);
         }
       }
     }

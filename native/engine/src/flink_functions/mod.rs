@@ -311,6 +311,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         232 => from_base64::function(),
         237 => binary_character::function(),
         245 => unnest_temporal::function(unnest_temporal::Operation::EpochSeconds),
+        246 => temporal_round::utc_ltz_ceil(),
         _ => return None,
     })
 }

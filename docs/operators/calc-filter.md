@@ -3121,10 +3121,11 @@ by default. Direct integer epoch inputs to `TO_TIMESTAMP_LTZ` with literal preci
 0 or 3 execute in Rust; TINYINT/SMALLINT/INT widen losslessly before the existing
 BIGINT kernel. Computed numeric and string/formatted signatures keep their existing
 routes. See the complete [temporal function inventory](temporal-functions.md).
-Direct/literal LTZ FLOOR in fixed-zero session zones also runs in Rust for DAY/HOUR
+Direct/literal LTZ FLOOR/CEIL in fixed-zero session zones also runs in Rust for DAY/HOUR
 on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The latter three forms retain
-released 1.18's code-generation failure. Fixed-unit LTZ CEIL, computed operands and
-nonzero/regional zones retain their existing routes.
+released 1.18's code-generation failure. LTZ CEIL uses a dedicated signed-remainder
+kernel that discards fractional nanos; ordinary TIMESTAMP rounding stays unchanged.
+Computed operands and nonzero/regional zones retain their existing routes.
 
 ### LTRIM
 
