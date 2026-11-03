@@ -412,7 +412,16 @@ native consumers or the full connector/delivery matrix; consult
 
 Qualified eager deduplication jobs also acquire Flink 2.2.1 canonical bindings automatically through
 ordinary SQL or the same portable compiled plan. No savepoint conversion utility is required.
-Stock Flink needs only its normal connector/user dependencies. Current process qualification
-covers mini-batch proctime last-row and rowtime first-row with both native stores and switch orders;
+Stock Flink needs only its normal connector/user dependencies. The qualified process matrix
+covers marker/row state, mini-batch full-chain/compact modes, empty/keyless state, no-input returns,
+native checkpoint recovery and fixed-maximum rescaling with both native stores and switch orders;
 see [eager dedup coverage](backends/canonical-state.md#automatic-eager-dedup-binding) for the remaining
-buffered-state, emission, rescaling and delivery/version work. Benchmarking is deferred.
+buffered state, emission/type variants and delivery/version work. Benchmarking is deferred.
+
+
+Proctime bare-update deduplication also follows this workflow with its empty stock-state projection,
+including mini-batch and TTL variants. Ordinary SQL preserves sink constraint-helper identities
+from their actual definitions even when Flink assigns different display IDs. See
+[bare-update and helper coverage](backends/canonical-state.md#bare-update-state-and-sink-helper-identities)
+for the verified cases and remaining limits. Stock workers still require only normal Flink,
+connector and user-code dependencies.

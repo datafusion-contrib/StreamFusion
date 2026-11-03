@@ -187,6 +187,80 @@ class CanonicalGraphIdentitiesTest {
     assertEquals(stock.graph.getStreamNodes().size(), bind(stock, runtime, Map.of()).size());
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"equal", "strategy", "fieldIndex", "fieldName", "sameNameDifferentStrategy"})
+  void sinkConstraintDefinitionsDetermineRolesInsteadOfDisplayIds(String variant) {
+    var stockType =
+        RowType.of(
+            new org.apache.flink.table.types.logical.LogicalType[] {
+              new BigIntType(false), new BigIntType()
+            },
+            new String[] {"a", "b"});
+    var runtimeType =
+        variant.equals("fieldIndex")
+            ? RowType.of(
+                new org.apache.flink.table.types.logical.LogicalType[] {
+                  new BigIntType(), new BigIntType(false)
+                },
+                new String[] {"a", "b"})
+            : variant.equals("fieldName")
+                ? RowType.of(
+                    new org.apache.flink.table.types.logical.LogicalType[] {
+                      new BigIntType(false), new BigIntType()
+                    },
+                    new String[] {"other", "b"})
+                : stockType;
+    var stock =
+        constraintGraph(
+            "ConstraintEnforcer[8]",
+            stockType,
+            org.apache.flink.table.api.config.ExecutionConfigOptions.NotNullEnforcer.ERROR);
+    var runtime =
+        constraintGraph(
+            variant.equals("sameNameDifferentStrategy")
+                ? "ConstraintEnforcer[8]"
+                : "ConstraintEnforcer[18]",
+            runtimeType,
+            variant.contains("trategy")
+                ? org.apache.flink.table.api.config.ExecutionConfigOptions.NotNullEnforcer.DROP
+                : org.apache.flink.table.api.config.ExecutionConfigOptions.NotNullEnforcer.ERROR);
+    if (variant.equals("equal"))
+      assertEquals(stock.graph.getStreamNodes().size(), bind(stock, runtime, Map.of()).size());
+    else assertThrows(IllegalArgumentException.class, () -> bind(stock, runtime, Map.of()));
+  }
+
+  private Graph constraintGraph(
+      String name,
+      RowType type,
+      org.apache.flink.table.api.config.ExecutionConfigOptions.NotNullEnforcer strategy) {
+    var env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    var information = InternalTypeInfo.<RowData>of(type);
+    var executor =
+        org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcerExecutor.create(
+                type,
+                strategy,
+                org.apache.flink.table.api.config.ExecutionConfigOptions.TypeLengthEnforcer.IGNORE,
+                org.apache.flink.table.api.config.ExecutionConfigOptions.NestedEnforcer.IGNORE)
+            .orElseThrow();
+    var rows =
+        env.fromData(information, GenericRowData.of(1L, 2L))
+            .name("source")
+            .transform(
+                name,
+                information,
+                new org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer(
+                    executor, "constraints"));
+    rows.sinkTo(
+            FileSink.forRowFormat(
+                    new Path(directory.resolve("constraint-sink").toUri()),
+                    new SimpleStringEncoder<RowData>())
+                .build())
+        .name("sink");
+    return new Graph(env.getStreamGraph(false), List.of(rows.getId()), Set.of());
+  }
+
   private static org.apache.flink.table.runtime.operators.CodeGenOperatorFactory<RowData>
       generatedMap(String name) {
     String code =

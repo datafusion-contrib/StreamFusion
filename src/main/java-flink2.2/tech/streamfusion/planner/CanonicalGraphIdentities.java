@@ -121,15 +121,38 @@ final class CanonicalGraphIdentities {
   private static boolean sameRole(StreamNode stock, StreamNode runtime, ClassLoader loader) {
     var original = stock.getOperatorFactory();
     var replacement = runtime.getOperatorFactory();
+    if (original == null || replacement == null || original.getClass() != replacement.getClass())
+      return false;
+    if (original instanceof org.apache.flink.streaming.api.operators.SimpleOperatorFactory) {
+      Class<?> implementation = original.getStreamOperatorClass(loader);
+      if (implementation != replacement.getStreamOperatorClass(loader)) return false;
+      if (implementation
+          == org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer.class) {
+        // Ordinary translation assigns fresh display IDs to equivalent sink helper stages.
+        // Compare the complete immutable executor, including ERROR/DROP and nested constraints.
+        return java.util.Arrays.equals(
+            constraintDefinition(original), constraintDefinition(replacement));
+      }
+    }
     // Generated factories compile equivalent stock stages into distinct classes.
-    // A simple factory wraps a concrete implementation that must stay unchanged.
-    return stock.getOperatorName().equals(runtime.getOperatorName())
-        && original != null
-        && replacement != null
-        && original.getClass() == replacement.getClass()
-        && (!(original instanceof org.apache.flink.streaming.api.operators.SimpleOperatorFactory)
-            || original.getStreamOperatorClass(loader)
-                == replacement.getStreamOperatorClass(loader));
+    return stock.getOperatorName().equals(runtime.getOperatorName());
+  }
+
+  private static byte[] constraintDefinition(
+      org.apache.flink.streaming.api.operators.StreamOperatorFactory<?> factory) {
+    try {
+      var field =
+          org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer.class
+              .getDeclaredField("executor");
+      field.setAccessible(true);
+      Object operator =
+          ((org.apache.flink.streaming.api.operators.SimpleOperatorFactory<?>) factory)
+              .getOperator();
+      return org.apache.flink.util.InstantiationUtil.serializeObject(field.get(operator));
+    } catch (ReflectiveOperationException | java.io.IOException failure) {
+      throw new IllegalArgumentException(
+          "Cannot compare released sink constraint definitions", failure);
+    }
   }
 
   private static List<Edge> edges(StreamGraph graph, Set<Integer> omitted) {

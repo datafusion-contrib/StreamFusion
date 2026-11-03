@@ -196,6 +196,12 @@ public final class CanonicalJobWorker {
             .set(
                 "table.exec.deduplicate.mini-batch.compact-changes-enabled",
                 Files.readString(root.resolve("dedup-compact-changes")).trim());
+      if (Files.exists(root.resolve("dedup-insert-sensitive")))
+        table
+            .getConfig()
+            .set(
+                "table.exec.deduplicate.insert-update-after-sensitive-enabled",
+                Files.readString(root.resolve("dedup-insert-sensitive")).trim());
       table.getConfig().set("streamfusion.transpose.batchRows", Integer.toString(batchRows));
       table.getConfig().set("table.plan.compile.catalog-objects", "SCHEMA");
       table.getConfig().set("table.plan.restore.catalog-objects", "IDENTIFIER");
@@ -218,10 +224,14 @@ public final class CanonicalJobWorker {
             fixedConnectorParallelism);
       table.executeSql(
           "CREATE TABLE output_table (k BIGINT, n BIGINT, total BIGINT"
-              + (sinkMaterializer ? ",PRIMARY KEY(k) NOT ENFORCED" : "")
+              + (sinkMaterializer || Files.exists(root.resolve("upsert-sink"))
+                  ? ",PRIMARY KEY(k) NOT ENFORCED"
+                  : "")
               + ") WITH ("
               + "'connector'='canonical-fixture','output'='"
               + sql(root.resolve("committed"))
+              + "','upsert'='"
+              + Files.exists(root.resolve("upsert-sink"))
               + "','witness'='"
               + sql(witness)
               + "'"

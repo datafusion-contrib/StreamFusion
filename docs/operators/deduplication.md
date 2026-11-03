@@ -104,18 +104,34 @@ Ordinary SQL and portable stock compiled plans now bind eager canonical state au
 The binding captures the actual released sync/bundle function, emission flags, TTL, key serializer,
 operator identity and resolved maximum parallelism. Eager versus watermark-buffered keep-first is
 selected from the stock function; Boolean presence is used only for processing-time first-row state.
-Processing-time bare-update mode, which retains no stock rows, and buffered rowtime-first remain
-on stock until their distinct contracts are bound.
+Processing-time bare-update mode registers Flink's row-state schema but exports no retained rows:
+its outputs do not depend on previous rows. Restore rejects unexpected saved rows before native
+insertion. Buffered rowtime-first still needs its distinct candidate/timer contract.
 
-Qualification adds 28 plan checks and 16 isolated-process mini-batch switches: processing-time
-last-row and event-time first-row, both submission forms, both native stores and both switch
-orders. The custom source and transactional sink retain their state, both transposes execute,
-pending native bundles flush at the canonical barrier, and final effects match an independent
-winner oracle and uninterrupted stock Flink. Stock processes exclude StreamFusion classes and
-exported metadata contains no StreamFusion types. The two released eager restore programs also
-pass with their original assertions; each imports two rows and consumes four new native rows.
+Qualification includes 28 eager plan checks and 152 isolated-process job scenarios (76 per
+submission form) on frozen binding commit `1ec00607`. They cover both native stores and switch
+orders; proctime first/last and eager rowtime last; mini-batch proctime modes and rowtime first/last;
+full-chain/compact rowtime bundles; long TTL; and keyless jobs. Empty state, repeated no-input
+re-export, native checkpoint recovery and fixed-maxP128 rescaling through 1→3→2 tasks are checked
+for both marker and row state. Rescale fixtures keep connectors at one task and disable chaining
+from the initial graph. The custom source and transactional sink preserve state, both transposes
+execute, pending native bundles flush at canonical barriers, and effects match an independent
+winner oracle and uninterrupted stock Flink. Stock classpaths and metadata contain no StreamFusion
+runtime types. The two released eager programs each import two rows and consume four new native
+rows. All 374 checks in the frozen cohort pass. Sixteen eager-switch cases also pass after the
+subsequent empty-state/sink-helper changes; overlapping counts are not cumulative.
 
-The broader continued-job matrix, compact/full-chain variants beyond these qualified cases,
-buffered candidates/timers, bare-update state, wider schemas, rescaling and the complete
-connector/failure/version guarantees remain open in
+Buffered candidates/timers, remaining emission/type variants, old graph/backend/version upgrades
+and the complete connector/failure matrix remain open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+
+Bare-update canonical qualification adds 16 direct controls (both native stores, TTL on/off,
+nullable/NOT NULL/keyless keys and rejection of unexpected retained rows), eight plan checks and
+32 isolated-process jobs across both submission forms, stores, switch orders, mini-batch and TTL
+settings. A custom upsert sink selects the released false/false emission flags. Immediate jobs
+commit exactly one `+U` per input, including identical duplicates; bundled jobs preserve final
+per-key upsert effects across savepoint flushes. Both forms check stock metadata/classpaths,
+connector state and both transposes. The same process cohort passes 16 eager-switch regressions
+and 32 existing processing/checkpoint controls. These overlapping counts do not qualify the full
+schema/backend/version/failure matrix or buffered rowtime-first.

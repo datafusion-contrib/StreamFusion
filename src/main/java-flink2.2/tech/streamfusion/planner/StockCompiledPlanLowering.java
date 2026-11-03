@@ -619,8 +619,7 @@ final class StockCompiledPlanLowering {
     boolean generateInsert = presenceOnly || (Boolean) releasedField(function, "generateInsert");
     boolean generateUpdateBefore =
         !presenceOnly && (Boolean) releasedField(function, "generateUpdateBefore");
-    // Stock proctime bare-update mode does not retain rows. Do not invent stock state for it.
-    if (!rowtime && keepLast && !generateInsert && !generateUpdateBefore) return stock;
+    boolean stateless = !rowtime && keepLast && !generateInsert && !generateUpdateBefore;
     long retention =
         (Long) releasedField(function, miniBatch ? "minRetentionTime" : "stateRetentionTime");
     int rowtimeColumn = rowtime ? (Integer) releasedField(function, "rowtimeIndex") : -1;
@@ -651,9 +650,12 @@ final class StockCompiledPlanLowering {
                 .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
     RowType keyType =
         RowType.of(Arrays.stream(keys).mapToObj(inputType::getTypeAt).toArray(LogicalType[]::new));
-    var contract =
-        new tech.streamfusion.state.StockDedupStateContract(
-            serializer, keyType, inputType, presenceOnly, rowtimeColumn, retention);
+    StockStateContract contract =
+        stateless
+            ? new tech.streamfusion.state.StockEmptyDedupStateContract(
+                serializer, keyType, inputType, retention)
+            : new tech.streamfusion.state.StockDedupStateContract(
+                serializer, keyType, inputType, presenceOnly, rowtimeColumn, retention);
     int maximum = stockMaximum(original);
     var exchange =
         (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);

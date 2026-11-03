@@ -177,6 +177,14 @@ public final class StockDedupStateContract implements StockStateContract {
     }
   }
 
+  void requireEmptyStockState(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
+    state(backend);
+    try (var keys = backend.getKeys(STATE, VoidNamespace.INSTANCE)) {
+      if (keys.findAny().isPresent())
+        throw new IllegalStateException("Stateless proctime dedup has unexpected retained rows");
+    }
+  }
+
   @Override
   public void importState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)

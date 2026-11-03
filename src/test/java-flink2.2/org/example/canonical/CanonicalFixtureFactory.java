@@ -104,7 +104,8 @@ public final class CanonicalFixtureFactory
         options.get("output"),
         options.get("witness"),
         (RowType) context.getPhysicalRowDataType().getLogicalType(),
-        options.containsKey("parallelism") ? Integer.valueOf(options.get("parallelism")) : null);
+        options.containsKey("parallelism") ? Integer.valueOf(options.get("parallelism")) : null,
+        Boolean.parseBoolean(options.getOrDefault("upsert", "false")));
   }
 
   public static final class TableSource implements ScanTableSource {
@@ -191,8 +192,10 @@ public final class CanonicalFixtureFactory
     private final String witness;
     private final RowType type;
     private final Integer parallelism;
+    private final boolean upsert;
 
-    TableSink(String output, String witness, RowType type, Integer parallelism) {
+    TableSink(String output, String witness, RowType type, Integer parallelism, boolean upsert) {
+      this.upsert = upsert;
       this.parallelism = parallelism;
       this.output = output;
       this.witness = witness;
@@ -201,7 +204,13 @@ public final class CanonicalFixtureFactory
 
     @Override
     public ChangelogMode getChangelogMode(ChangelogMode requested) {
-      return requested;
+      return upsert
+          ? ChangelogMode.newBuilder()
+              .addContainedKind(RowKind.INSERT)
+              .addContainedKind(RowKind.UPDATE_AFTER)
+              .addContainedKind(RowKind.DELETE)
+              .build()
+          : requested;
     }
 
     @Override
@@ -225,7 +234,7 @@ public final class CanonicalFixtureFactory
 
     @Override
     public DynamicTableSink copy() {
-      return new TableSink(output, witness, type, parallelism);
+      return new TableSink(output, witness, type, parallelism, upsert);
     }
 
     @Override

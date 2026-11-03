@@ -30,6 +30,14 @@ operator identity and maximum parallelism rather than deriving them from loading
 The released eager fixtures prove two imported rows and four new native rows per program; the
 qualified mini-batch process cases also require a pending native barrier flush.
 
-Buffered/timed state, bare-update mode with no retained stock rows, remaining mini-batch/emission
+Bare-update proctime state is a separate empty projection because the released helper does not
+retain rows when both emission flags are off. Keep its stock descriptor, omit unused native rows,
+and reject unexpected saved rows without mutating the target.
+
+Equivalent stock sink constraint helpers may have different ordinary-SQL display IDs. Compare the
+serialized immutable executor for the exact released class; labels omit settings such as ERROR
+versus DROP. Preserve topology/class/uniqueness checks and reject changed definitions.
+
+Buffered/timed state, remaining mini-batch/emission
 variants and the full schema/backend/version/connector/failure matrix remain part of
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

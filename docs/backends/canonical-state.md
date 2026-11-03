@@ -1003,21 +1003,68 @@ emission flags and retention. This preserves persisted TTL despite a changed loa
 Original stock key serializers, generated/user identities and resolved maxima are retained; no
 manual mapping or conversion command is required. The runtime explicitly selects eager state when
 that is the selected stock function. Buffered rowtime-first has a separate candidate/timer contract;
-processing-time last-row with both emission flags off has no retained stock rows. Both remain stock
-until those contracts are implemented, rather than attaching the full-row adapter to them.
+processing-time last-row with both emission flags off has no retained stock rows. Its empty-state
+projection keeps the released row schema while omitting unused native rows, and rejects unexpected
+saved rows before native insertion. Buffered rowtime-first remains on stock until its candidate/timer
+contract is implemented.
 
-All 28 eager plan checks pass alongside normalizer/first-N/join regressions. Sixteen isolated-process
-mini-batch continuation cases pass across both submission forms, both native stores and switch
-orders. They cover processing-time last-row and event-time first-row, require pending native work
-at the savepoint barrier, and verify custom source/transactional-sink state, both transposes,
-independent final winner results, uninterrupted stock effects and clean stock metadata/classpaths.
-Two original released eager restore programs pass in each engine; each native leg imports two
-saved rows and processes four new rows. Validation-only visits receive no import credit. The
-selected first-N and five normalizer programs also pass, eight programs per engine in this cohort.
-The common node changes retain all 32 shared 1.18 processing/checkpoint controls, without a 1.18
-canonical-interchange claim.
+The frozen eager binding at `1ec00607` passes all 374 checks, including 152 complete-job scenarios
+(76 per submission form) and 222 direct/plan/processing controls. Twelve continuation variants
+cover proctime first/last, rowtime last, mini-batch proctime modes and rowtime first/last,
+full-chain/compact rowtime bundles, one-hour TTL and keyless state. Additional marker/row controls
+cover empty state, repeated no-input returns, native checkpoint recovery and rescaling through
+1→3→2 tasks at unchanged maxP128. The rescale fixture uses 128 keys over six rounds, fixed source/
+sink parallelism one and chaining disabled from the initial graph. Long-TTL jobs do not establish
+downtime expiry; direct clocked controls cover age preservation and exact expiry.
 
-The larger continued-job and rescale matrix is not yet qualified. Buffered rowtime-first state,
-bare-update state, other mini-batch/emission settings and wider schema/backend/version/connector/
-failure matrices remain required by [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
-Benchmarking remains deferred.
+Custom source/transactional-sink state, both transposes, actual native input, pending bundle flushes
+at canonical barriers, independent final-winner results, uninterrupted stock effects and clean
+stock metadata/classpaths are verified. Two original released eager restore programs each import
+two saved rows and process four new native rows. Validation-only visits receive no import credit.
+The selected first-N and five normalizer programs also pass, eight programs per engine in that
+cohort. Shared 1.18 processing/checkpoint controls pass 32 checks without a canonical claim.
+
+After the empty-state/helper changes below, sixteen eager-switch regressions also pass with the
+new default-preserving connector fixture. These overlapping cohorts are not cumulative counts.
+Buffered rowtime-first state, remaining emission/type variants, old graph/backend/version upgrades
+and the full connector/failure matrix remain required by
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+## Bare-update state and sink helper identities
+
+Proctime last-row with both insert sensitivity and update-before emission disabled takes Flink's
+stateless helper branch: every input produces a bare update-after. Native retained rows do not
+control future outputs in this mode and must not be invented as stock state during export. The
+adapter registers the normal stock row descriptor, clears its temporary projection, and emits no
+rows. Import materializes and checks that descriptor, rejects unexpected saved rows and requires a
+fresh native target through the existing eager validator. Rejection leaves both engines unchanged.
+
+Sixteen direct checks cover stores, TTL and nullable/NOT NULL/keyless keys plus four unexpected-row
+rejections. Eight plan checks capture the actual empty-state contract and false/false emission
+flags with persisted TTL, generated identities and maxP257. Thirty-two complete jobs cover both
+submission forms, stores, switch orders, mini-batch and TTL settings, with custom source/upsert sink,
+transactional effects, both transposes and clean stock classpaths/metadata. Immediate jobs require
+one update-after per input, including identical duplicates. Bundled jobs compare final per-key
+upserts with an independent oracle and uninterrupted stock; stop barriers may change intermediate
+bundle netting. Pending native bundles must flush at those barriers. Sixteen eager-switch and 32
+processing/checkpoint regressions pass in the same cohort. Reports overlap earlier cohorts.
+
+Ordinary SQL assigns fresh display IDs to equivalent stock sink constraint helpers. Identity
+binding now compares the complete serialized immutable executor for the exact released helper
+class, while preserving factory, topology, neighbour and uniqueness checks. Comparing labels alone
+would miss differences such as ERROR versus DROP. Fourteen topology tests include five new
+positive/negative definition cases, and all eight original bare-update plans pass after the fix.
+The original four ordinary-plan errors and sixteen ordinary-job failures are retained as evidence;
+inputs and assertions were not weakened. All 132 focused controls pass after the fix.
+
+Buffered state, wider types, backend/version upgrades and the full connector/failure matrix remain
+required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+
+After adding the empty projection and semantic helper binding, all 32 shared Flink 1.18 processing/
+checkpoint controls still pass, without a canonical interchange claim on that line. Changing the
+loading session's insert-sensitivity option also leaves all eight bare-update plan checks passing:
+the persisted plan and actual released function determine emission behavior. The selected eight
+released first-N/normalizer/eager programs pass again per engine; each eager program still proves
+two imported rows and four new native rows, with strict route contracts intact.
