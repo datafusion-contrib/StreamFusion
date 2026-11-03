@@ -35,12 +35,12 @@ class FlinkIntegralEpochSqlHarnessTest {
 
   @ParameterizedTest
   @CsvSource({"TINYINT", "SMALLINT", "INT"})
-  void computedOperandsKeepTheirGeneratedRoute(String type) throws Exception {
-    verify(type, true, "UTC", "SELECT id,TO_TIMESTAMP_LTZ(n+CAST(1 AS " + type + "),3),"
-        + "TO_TIMESTAMP_LTZ(n+CAST(1 AS " + type + "),0) FROM src", false);
+  void unverifiedComputedOperandsKeepTheirGeneratedRoute(String type) throws Exception {
+    verify(type, true, "UTC", "SELECT id,TO_TIMESTAMP_LTZ(n/CAST(2 AS " + type + "),3),"
+        + "TO_TIMESTAMP_LTZ(n/CAST(2 AS " + type + "),0) FROM src", false);
   }
 
-  private static void verify(String name, boolean nullable, String zone, String sql, boolean pure)
+  static void verify(String name, boolean nullable, String zone, String sql, boolean pure)
       throws Exception {
     DataType number;
     switch (name) {
@@ -91,6 +91,11 @@ class FlinkIntegralEpochSqlHarnessTest {
   private static Number value(String type, int index) {
     long[] boundaries = {Long.MIN_VALUE, Long.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE,
         Short.MIN_VALUE, Short.MAX_VALUE, Byte.MIN_VALUE, Byte.MAX_VALUE,
+        -62167219200001L, -62167219200000L, -62167219199999L,
+        253402300799998L, 253402300799999L, 253402300800000L,
+        -62167219201L, -62167219200L, -62167219199L,
+        253402300798L, 253402300799L, 253402300800L,
+        Long.MIN_VALUE / 1000 - 1, Long.MAX_VALUE / 1000 + 1,
         -86400001, -1001, -1000, -999, -1, 0, 1, 999, 1000, 1001, 951827696, 1706659200};
     long value = index < boundaries.length ? boundaries[index]
         : (index % 2 == 0 ? -1L : 1L) * index * 7919;

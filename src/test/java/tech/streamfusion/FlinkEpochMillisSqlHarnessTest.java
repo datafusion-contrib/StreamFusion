@@ -46,10 +46,10 @@ class FlinkEpochMillisSqlHarnessTest {
 
   @ParameterizedTest
   @CsvSource({"UTC,true", "UTC,false"})
-  void otherUnitsAndComputedInputsKeepTheirExistingEvaluators(String zone, boolean nullable)
+  void computedInputsAndOtherSignaturesKeepTheirDeclaredRoutes(String zone, boolean nullable)
       throws Exception {
-    verify(zone, nullable, "SELECT id,TO_TIMESTAMP_LTZ(n+CAST(1 AS BIGINT),3) FROM src", false);
-    verify(zone, nullable, "SELECT id,TO_TIMESTAMP_LTZ(n+CAST(1 AS BIGINT),0) FROM src", false);
+    verify(zone, nullable, "SELECT id,TO_TIMESTAMP_LTZ(n+CAST(1 AS BIGINT),3) FROM src");
+    verify(zone, nullable, "SELECT id,TO_TIMESTAMP_LTZ(n+CAST(1 AS BIGINT),0) FROM src");
     verify(zone, nullable, "SELECT id,TO_TIMESTAMP_LTZ(CAST(n AS DECIMAL(20,0)),0) FROM src", false);
   }
 

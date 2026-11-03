@@ -7541,3 +7541,79 @@ Four fresh unchanged released `ScalarFunctionsTest.testTemporalFloor` oracle inv
 pass separately; that upstream method contains both FLOOR and CEIL assertions and does not
 provide native-runtime coverage. Hosted CI remains separate. Further calendar/timezone work
 stays in [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
+
+
+## Computed integer epoch conversion
+
+`TO_TIMESTAMP_LTZ(...,0/3)` now reuses the existing exact epoch kernels for recursively
+verified integer arithmetic, lossless widening and rounding trees in ordinary Calc.
+The child retains its resolved integer width before any widening, preserving intermediate
+wrap and the released epoch bounds. Division/remainder, narrowing, unknown/stateful producers,
+other signatures and existing UNNEST restrictions retain their preceding routes. No native
+implementation, JNI, transport, dependency or configuration changes.
+
+The [2026-11-03 record](results/computed-integral-epoch-2026-11-03.json) compares released
+Flink 1.18.1/2.2.1 on Oracle JDK 17.0.12, Apple M4 Pro, one thread, with release/mimalloc-linked
+artifacts. The executable and DSO retain verified malloc/mi_malloc identity. Equal prepared
+GenericRowData, BinaryRowData and Arrow contain nullable/NOT NULL TINYINT/SMALLINT/INT/BIGINT,
+signed extrema and released epoch boundaries. Each trial consumes 131,072 rows, with 16 warmups
+and nine measurements. Rust times production operation and equivalent result consumption after
+import and before export, including the prior evaluator's intrinsic callbacks. Initial JNI/import/
+export and perimeter transposes are excluded only from this prepared function comparison.
+
+The add consumer is `YEAR(TO_TIMESTAMP_LTZ(v+CAST(1 AS $TYPE),unit))`; composed controls use
+`TO_TIMESTAMP_LTZ(ROUND((v+CAST(1 AS $TYPE))*v,-2),unit) IS NULL`, at precision 0 and 3.
+This is not a timestamp output serialization benchmark. Actual preceding encoder `998df4fd`
+runs against the shared current runtime, fixture and allocator; it is not a whole historical
+DSO replay. Its independent stock control remains distinct from candidate paired stock.
+
+| Flink | Bulk cells | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 40 | 1.683-9.329x | 5.203-15.737x |
+| 1.18.1 | 40 | 1.584-5.455x | 5.411-14.469x |
+
+All 80 bulk cells improve against stock and previous. All sixteen 16-row controls lose to
+stock (stock/native **0.146-0.178x**).
+The [9,600 raw qualification trials](results/computed-integral-epoch-2026-11-03.csv.gz)
+retain warmups, checksums and independent controls. The separate
+[800 initial pilot trials](results/computed-integral-epoch-pilot-2026-11-03.csv.gz)
+are also retained, with their summaries in the result record. Reproduce with
+`integral_expression`, the types and expressions above, and matching epoch-seconds/millis corpora.
+
+Twelve complete million-row jobs use the existing row source/blackhole fixture in UTC,
+with two warmups, five measurements and alternating engine order. They retain startup,
+JNI and both transposes. Candidate requires consumed NativeCalc work and empty evaluators;
+prior requires generated epoch conversion. Seconds, median:
+
+| Flink / input / precision / shape | Paired stock | Native | Independent stock | Previous evaluator |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-0-add | 0.170323 | 0.173181 | 0.175443 | 0.207233 |
+| 2.2.1 / INT-3-add | 0.176385 | 0.176725 | 0.171943 | 0.207876 |
+| 2.2.1 / BIGINT-0-add | 0.166357 | 0.184379 | 0.164921 | 0.213727 |
+| 2.2.1 / BIGINT-3-add | 0.165382 | 0.176141 | 0.167736 | 0.221302 |
+| 2.2.1 / BIGINT-0-round-product | 0.195209 | 0.193531 | 0.205385 | 0.227742 |
+| 2.2.1 / BIGINT-3-round-product | 0.199279 | 0.194703 | 0.206845 | 0.229284 |
+| 1.18.1 / INT-0-add | 0.165017 | 0.175784 | 0.172271 | 0.207979 |
+| 1.18.1 / INT-3-add | 0.174836 | 0.175597 | 0.174498 | 0.205013 |
+| 1.18.1 / BIGINT-0-add | 0.175806 | 0.179489 | 0.173366 | 0.206188 |
+| 1.18.1 / BIGINT-3-add | 0.165088 | 0.184378 | 0.170795 | 0.214139 |
+| 1.18.1 / BIGINT-0-round-product | 0.196274 | 0.196922 | 0.196744 | 0.221564 |
+| 1.18.1 / BIGINT-3-round-product | 0.191578 | 0.192440 | 0.198439 | 0.222426 |
+
+Native/stock elapsed spans **0.977-1.117**; native/previous spans
+**0.796-0.889**. Every trial and variability range is retained;
+the prepared function gate does not establish complete-job acceleration.
+
+All **380 focused JVM invocations** pass without skips across Flink 1.18.1/2.2.1 and JDK
+11/17, targeting Java release 11. Complete 5,003-row maps compare values, resolved types,
+NULLs, IDs and cardinality for arithmetic overflow, epoch bounds and adjacent values,
+rounding and widening, nullable/NOT NULL inputs, CASE and all-filtered batches. Admitted
+paths require consumed NativeCalc work and empty evaluators. Narrowing, division, failing
+lazy/empty producers and recurring-DST extraction retain explicit generated controls.
+Adjacent direct epochs, UNNEST and fixed-unit LTZ rounding are included. The actual before
+control matches values/schema then fails all eight new pure-route assertions with
+`jvm=[TO_TIMESTAMP_LTZ]`; its unverified-producer control passes. Sixteen fresh unchanged
+released `TemporalTypesTest` oracle invocations pass separately, providing stock semantics,
+not native-runtime evidence. No Rust implementation changes from the preceding CEIL commit,
+which passed 896 release core tests without ignores. Hosted CI remains separate. Broader
+parsing/conversion work stays in [#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).

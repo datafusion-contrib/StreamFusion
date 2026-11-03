@@ -13,7 +13,7 @@ unsupported `MATCH_RECOGNIZE` operator.
 | `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. DATE/plain-TIMESTAMP calendar fields and HOUR/MINUTE/SECOND over DATE, plain TIMESTAMP and TIME execute in Rust, preserving Java signed arithmetic. Direct LTZ extraction uses the planning JDK's serialized fixed/finite offset history; recurring-DST zones retain Flink. Interval fields and unverified wrappers remain generated. |
 | `TO_DATE(text)`, `TO_DATE(text, format)` | The one-argument parser stays in Rust; formatted parsing uses Flink. Dynamic formats, NULL behavior and invalid-input failures follow Flink. |
 | `TO_TIMESTAMP(text[, format])` | Flink parsing, including dynamic formats and full-range timestamp results. |
-| `TO_TIMESTAMP_LTZ` | Direct/literal integer epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. TINYINT/SMALLINT/INT widen losslessly to BIGINT first. Ordinary Calc computed inputs, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
+| `TO_TIMESTAMP_LTZ` | Direct/literal integer epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. TINYINT/SMALLINT/INT widen losslessly to BIGINT first. Verified ordinary-Calc integer arithmetic, widening and rounding trees also execute in Rust; widening happens after the computed integer result. Unverified producers, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
 | `DATE_FORMAT`, `UNIX_TIMESTAMP(text[, format])`, `CONVERT_TZ` | Flink evaluation supports dynamic patterns and zones. The existing literal numeric-pattern DATE_FORMAT fast path for plain timestamps remains in Rust. |
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
@@ -59,8 +59,9 @@ zero nanoseconds and keeps combined input/range validity on the parent. Non-null
 children remain consistent with the existing schema, including sliced inputs and empty
 batches. No input bytes are modified and the output owns its retained Arrow buffer reference.
 This removes temporary value vectors and their copies without changing JNI or timestamp
-transport. Computed ordinary-Calc operands, non-integer numeric types and runtime/other
-precisions keep their existing routes. No production switch is added.
+transport. The verified computed-integer subset below also uses this kernel. Unverified
+producers, non-integer numeric types and runtime/other precisions keep their existing routes.
+No production switch is added.
 
 The [qualification](../benchmarks/scalar-functions.md#bigint-epoch-millisecond-conversion)
 retains stock/actual-previous/native measurements, the initial slower pilot, profiling and
@@ -80,10 +81,33 @@ Direct TINYINT/SMALLINT/INT columns and literals also use these kernels for prec
 there is no narrowing or floating conversion, and all such values fit both released
 epoch ranges. Output remains TIMESTAMP_LTZ(3), with input NULLs retained. Both Flink
 lines widen these inputs before applying their long-based timestamp conversion.
-Computed ordinary-Calc/UNNEST inputs do not gain admission through this extension.
+This direct-input extension leaves existing UNNEST admission unchanged; the additional
+ordinary-Calc computed subset is specified below.
 The BIGINT buffer-sharing and overflow-bound rules above remain unchanged.
 The [narrow-integer qualification](../benchmarks/scalar-functions.md#narrow-integer-epoch-conversion)
 records bulk function gains alongside slower tiny batches and complete jobs.
+
+## Native computed integer epochs
+
+Ordinary Calc also accepts verified integer trees as the first operand of
+`TO_TIMESTAMP_LTZ(...,0)` or `(...,3)`: integer addition/subtraction/multiplication,
+lossless widening, identity FLOOR/CEIL/ROUND and the existing verified ROUND/TRUNCATE
+literal-position subset (-38 through 38 or NULL). Every child must satisfy the same
+recursive proof. Division, remainder, narrowing, unknown/stateful producers and other
+signatures keep their existing correct evaluator. UNNEST admission is unchanged.
+
+The integer child executes at its resolved width before any widening for the BIGINT
+epoch kernel. This retains narrow and signed-long overflow, rounding NULLs and the
+released epoch bounds. For example, an overflowing INT addition must wrap as an INT
+before conversion; it must not become a wider addition. Existing millisecond/second
+kernels retain their parent validity, range checks and timestamp schema. Session zones
+do not affect the numeric conversion; a recurring-DST extraction consumer may still
+require generated evaluation independently of this epoch conversion.
+
+This reuses the existing verified integer proof and native kernels without a new
+switch, JNI bridge, transport or Rust implementation. The
+[computed-epoch qualification](../benchmarks/scalar-functions.md#computed-integer-epoch-conversion)
+retains prepared stock/actual-previous/native controls and conversion-inclusive jobs.
 
 ## Native UTC LTZ calendar rounding
 
@@ -220,9 +244,10 @@ both row/Arrow transposes, are on the [scalar benchmark page](../benchmarks/scal
 ## Remaining native boundaries
 
 [Issue #504](https://github.com/datafusion-contrib/StreamFusion/issues/504) still tracks
-LTZ rounding outside the direct/literal fixed-zero MONTH/YEAR subset and recurring-DST LTZ
-extraction. Runtime FLOOR(LTZ TO DAY) retains generated evaluation even in UTC, Asia/Shanghai
-and GMT+05:30. MONTH/YEAR rounding in nonzero/regional zones also retains it.
+LTZ rounding outside the direct/literal fixed-zero calendar/fixed-unit subsets above and
+recurring-DST LTZ extraction. Nonzero/regional zones, computed inputs and unverified units
+retain generated rounding; fixed-zero DAY/HOUR and release-supported sub-hour forms no
+longer require it. MONTH/YEAR rounding in nonzero/regional zones also retains it.
 America/New_York extraction retains it because the zone has recurring future DST transitions.
 
 The [expanded route audit](../benchmarks/results/calendar-residual-routes-2026-11-02.json)

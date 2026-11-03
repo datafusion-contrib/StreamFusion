@@ -2219,7 +2219,8 @@ final class RexExpression {
         && (epochTimestamp == 173 && unnestOperand
                 && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.BIGINT
             || call.getOperands().get(0) instanceof RexInputRef
-            || call.getOperands().get(0) instanceof RexLiteral)) {
+            || call.getOperands().get(0) instanceof RexLiteral
+            || !unnestOperand && nativeIntegralRoundingOperand(call.getOperands().get(0)))) {
       add(KIND_CALL, epochTimestamp, 1);
       if (call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.BIGINT) {
         add(KIND_CAST, CAST_BIGINT, 1);

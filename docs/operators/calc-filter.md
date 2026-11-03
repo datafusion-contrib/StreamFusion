@@ -3119,8 +3119,10 @@ this test-only setting empty and retains normal JVM exception optimization.
 calendar fields use Flink's own generated code. Timestamp results retain the complete millisecond/fraction pair and run
 by default. Direct integer epoch inputs to `TO_TIMESTAMP_LTZ` with literal precision
 0 or 3 execute in Rust; TINYINT/SMALLINT/INT widen losslessly before the existing
-BIGINT kernel. Computed numeric and string/formatted signatures keep their existing
-routes. See the complete [temporal function inventory](temporal-functions.md).
+BIGINT kernel. Verified integer arithmetic, widening and rounding trees also use these
+kernels in ordinary Calc; the computed child retains its resolved integer width before
+widening. Division, narrowing, unknown producers and string/formatted signatures retain
+their existing routes, as does UNNEST admission. See the complete [temporal function inventory](temporal-functions.md).
 Direct/literal LTZ FLOOR/CEIL in fixed-zero session zones also runs in Rust for DAY/HOUR
 on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The latter three forms retain
 released 1.18's code-generation failure. LTZ CEIL uses a dedicated signed-remainder
