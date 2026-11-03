@@ -5047,16 +5047,24 @@ final class RexExpression {
                 .getOperands().stream().anyMatch(RexExpression::containsExactScalarFunction));
   }
 
-  private static long nativeRoundingWidth(RexCall call) {
+  private long nativeRoundingWidth(RexCall call) {
     String name = call.getOperator().getName();
     Object unitCandidate;
     if (!("FLOOR".equals(name) || "CEIL".equals(name) || "CEILING".equals(name))
         || call.getOperands().size() != 2
-        || call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.TIMESTAMP
         || !((unitCandidate = call.getOperands().get(1)) instanceof RexLiteral)) {
       return -1;
     }
+    RexNode operand = call.getOperands().get(0);
+    boolean utcLtzFloor = "FLOOR".equals(name)
+        && operand.getType().getSqlTypeName() == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+        && (operand instanceof RexInputRef || operand instanceof RexLiteral)
+        && sessionZoneId != null
+        && java.time.ZoneId.of(sessionZoneId).normalized().equals(java.time.ZoneOffset.UTC);
+    if (operand.getType().getSqlTypeName() != SqlTypeName.TIMESTAMP && !utcLtzFloor) return -1;
     RexLiteral unit = ((RexLiteral) unitCandidate);
+    if (utcLtzFloor && !tech.streamfusion.compat.FlinkCompat.supportsSubHourLtzRounding()
+        && !java.util.Set.of("DAY", "HOUR").contains(String.valueOf(unit.getValue()))) return -1;
 
     switch (String.valueOf(unit.getValue())) {
       case "DAY":

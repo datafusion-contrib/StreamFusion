@@ -39,6 +39,10 @@ public final class FlinkCompat {
     return precision >= 3 ? 1 : (int) Math.pow(10, 3 - precision);
   }
 
+  public static boolean supportsSubHourLtzRounding() {
+    return true;
+  }
+
   public static org.apache.flink.table.functions.ScalarFunction scalarFunction(
       org.apache.calcite.sql.SqlOperator operator) {
     Object scalarCandidate;

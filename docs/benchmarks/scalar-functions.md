@@ -7393,3 +7393,75 @@ when input is narrow. Full hosted CI is separate.
 Sixteen freshly executed, unchanged released `TemporalTypesTest` stock-oracle
 invocations pass separately across both Flink lines and JDKs. They confirm released
 behavior and do not count as native-runtime coverage.
+
+
+## UTC LTZ fixed-unit FLOOR
+
+Direct/literal LTZ FLOOR in a fixed-zero session zone reuses the existing plain-timestamp
+fixed-width floor kernel. DAY/HOUR qualify on both released lines; MINUTE/SECOND/MILLISECOND
+qualify only on 2.2. Released 1.18 generates invalid Java casts for those sub-hour LTZ forms;
+explicit failure controls preserve that behavior. Regional/nonzero zones, computed operands
+and fixed-unit LTZ CEIL retain their preceding routes. No production Rust, JNI, timestamp
+schema or runtime switch changes.
+
+The [2026-11-03 record](results/utc-ltz-fixed-floor-2026-11-03.json) uses released
+Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc-linked
+artifacts. Equal prepared GenericRowData/BinaryRowData and Arrow contain signed-long extrema,
+normal/pre-epoch values, LTZ(3/9) fractional inputs and nullable/NOT NULL columns. The Rust-side
+timer retains production work, output consumption and intrinsic callbacks; initial import/export
+and perimeter transposes are excluded only from this prepared comparison. Each trial processes
+131,072 rows with 16 warmups and nine measurements. The consumer is
+`YEAR(FLOOR(v TO unit))>0 OR CAST(NULL AS BOOLEAN)`, not timestamp output serialization.
+
+The independently compiled actual preceding encoder `db05513e` retains generated FLOOR on
+the shared current runtime, fixture and allocator. Candidate paired stock and independent
+prior-stock controls remain distinct; this is not a complete historical DSO replay. Symbol
+checks confirm both the prepared executable and JNI DSO resolve malloc to mimalloc.
+
+| Flink | Bulk cells | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 40 | 1.099-1.612x | 3.520-4.682x |
+| 1.18.1 | 16 | 1.160-1.479x | 3.504-4.551x |
+
+All 56 bulk cells improve against stock and the previous encoder. All fourteen 16-row
+controls lose to stock (stock/native 0.146-0.175x); their overhead remains visible.
+[All 7,000 raw trials](results/utc-ltz-fixed-floor-2026-11-03.csv.gz) retain warmups,
+checksums and both stock controls. Reproduce with the existing `integral_expression`
+fixture, TIMESTAMP_LTZ(3/9), the expression above, and each admitted unit.
+
+Ten complete million-row jobs use the existing row source/blackhole fixture, UTC, LTZ(3/9),
+two warmups/five measurements and alternating engine order. Startup, JNI and both transposes
+remain in the timing. Candidate runs require consumed native Calc work and empty evaluators;
+previous runs require generated FLOOR. Seconds, median:
+
+| Flink | Precision / unit | Paired stock | Native | Independent stock | Previous evaluator |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | 3 / DAY | 0.176608 | 0.211898 | 0.182302 | 0.241057 |
+| 2.2.1 | 3 / HOUR | 0.171679 | 0.204881 | 0.174518 | 0.231262 |
+| 2.2.1 | 3 / MILLISECOND | 0.170209 | 0.215291 | 0.170087 | 0.242998 |
+| 2.2.1 | 9 / DAY | 0.180133 | 0.205462 | 0.173028 | 0.235460 |
+| 2.2.1 | 9 / HOUR | 0.177703 | 0.207438 | 0.179124 | 0.231418 |
+| 2.2.1 | 9 / MILLISECOND | 0.174788 | 0.211231 | 0.174412 | 0.238524 |
+| 1.18.1 | 3 / DAY | 0.174992 | 0.209729 | 0.178677 | 0.242289 |
+| 1.18.1 | 3 / HOUR | 0.177254 | 0.209395 | 0.175687 | 0.231452 |
+| 1.18.1 | 9 / DAY | 0.175201 | 0.216809 | 0.178319 | 0.241498 |
+| 1.18.1 | 9 / HOUR | 0.184392 | 0.211330 | 0.178049 | 0.258221 |
+
+Native/stock elapsed ratios span **1.141-1.265**;
+native/previous ratios span **0.818-0.905**.
+These complete-job results remain separate from bulk function qualification. The JSON retains
+every trial and range; prepared gains do not establish complete-job acceleration.
+
+A before-change runtime control matches complete values/schema, then fails six zero-offset
+pure-route assertions with `jvm=[FLOOR]`. The final 44 focused JVM invocations and 136 adjacent
+calendar FLOOR/CEIL/encoder regressions pass across both releases and JDK 11/17, targeting Java
+release 11, with no skips. The runtime matrix compares full 5,003-row maps, types, NULLs,
+IDs/cardinality, signed-long extrema, fractions, precisions 0/3/9, zero-offset aliases,
+nonzero/regional generated controls, CASE and all-filtered batches. Admitted paths require
+consumed NativeCalc work and empty evaluator descriptors; computed/CEIL/unsupported-unit
+encoder controls remain explicit. Released 1.18's three smaller LTZ units fail independently
+under both stock and native-enabled fallback with the same code-generation cause/phase.
+Four freshly executed unchanged released `ScalarFunctionsTest.testTemporalFloor` stock-oracle
+invocations pass separately, not as native-runtime coverage. The existing 892-test Rust core
+result covers the unchanged production Rust; hosted CI remains separate. Remaining temporal
+work stays in [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
