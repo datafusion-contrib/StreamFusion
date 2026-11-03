@@ -113,7 +113,10 @@ final class NativeStreamPlanner extends StreamPlanner {
     if (!NativeConfig.nativeEnabled()) return graph;
     if (!StockCompiledPlanLowering.containsNativeNodes(graph))
       return runtimeGraph(new ExecNodeGraph(graph.getFlinkVersion(), graph.getRootNodes()));
-    if (!StockCompiledPlanLowering.canBindOrdinary(graph)) return graph;
+    if (!StockCompiledPlanLowering.canBindOrdinary(graph)) {
+      // Unqualified native state owners must retain their stock layout for rank interchange.
+      return StockCompiledPlanLowering.hasUpdatingRank(graph) ? runtimeGraph(graph.stock) : graph;
+    }
     var executor = new org.apache.flink.table.planner.delegation.DefaultExecutor(getExecEnv());
     var stockTransformations = super.translateToPlan(graph.stock);
     var stockStreamGraph =

@@ -42,6 +42,10 @@ public class NativeColumnarTopNExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] keyTimestampPrecisions;
   private Integer stateMaxParallelism;
 
+  public boolean hasUniqueRowKeyState() {
+    return rowKeyColumns != null;
+  }
+
   public NativeColumnarTopNExecNode withStateMaxParallelism(int maximum) {
     if (maximum < 1)
       throw new IllegalArgumentException("State maximum parallelism must be positive");

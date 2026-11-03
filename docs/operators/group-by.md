@@ -19,6 +19,13 @@ size validation. Unset/default `-1`, zero and negative `table.exec.mini-batch.si
 fail during planning with the same exception and message as Flink, for single-phase and
 local/global plans. Mini-batch-disabled aggregation does not validate an unused size.
 
+Ordinary graphs containing an updating Top-N can rebuild through the captured stock template
+when a native state owner lacks a qualified canonical binding. That route currently keeps grouped
+aggregation on stock Flink and binds the supported rank state automatically. This preserves stock
+accumulators and identities; see [updating canonical coverage](top-n.md#updating-canonical-state-partial).
+Native aggregate-state interchange in these graphs remains open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
 ## Single-phase
 
 Flink's internal `SUM0` admits nullable TINYINT, SMALLINT, INT, BIGINT, FLOAT, DOUBLE and DECIMAL,

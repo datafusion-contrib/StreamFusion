@@ -298,9 +298,8 @@ fn emit_rows(
         Arc::new(Int32Array::from_iter_values(
             rows.iter().map(|(_, _, rank)| *rank),
         )),
-        Arc::new(Int64Array::from_iter_values(
-            rows.iter().map(|(_, row, _)| row.ts_ms),
-        )),
+        // Raw restore may install a migration clock; this TTL-disabled contract has no age.
+        Arc::new(Int64Array::from(vec![0; rows.len()])),
         Arc::new(Int8Array::from_iter_values(
             rows.iter().map(|(_, row, _)| row.stored_kind),
         )),

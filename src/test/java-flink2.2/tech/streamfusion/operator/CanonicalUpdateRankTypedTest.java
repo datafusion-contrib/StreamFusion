@@ -45,15 +45,17 @@ class CanonicalUpdateRankTypedTest {
         for (boolean rocks : new boolean[] {false, true})
           for (boolean before : new boolean[] {false, true})
             for (boolean rank : new boolean[] {false, true})
-              cases.add(Arguments.of(shape, fast, rocks, before, rank));
+              for (boolean twoSorts : new boolean[] {false, true})
+                cases.add(Arguments.of(shape, fast, rocks, before, rank, twoSorts));
     return cases.stream();
   }
 
   @ParameterizedTest
   @MethodSource("cases")
   void typedUniqueKeysAndStoredRowsContinueAcrossCanonicalSwitches(
-      String shape, boolean fast, boolean rocks, boolean before, boolean rank) throws Exception {
-    var layout = new Layout(shape);
+      String shape, boolean fast, boolean rocks, boolean before, boolean rank, boolean twoSorts)
+      throws Exception {
+    var layout = new Layout(shape, twoSorts);
     RowType output = layout.type;
     if (rank) {
       var fields = new ArrayList<>(output.getFields());
@@ -114,8 +116,9 @@ class CanonicalUpdateRankTypedTest {
     final int[] keys;
     final int[] rowKeys;
     final int sort;
+    final int[] sortColumns;
 
-    Layout(String shape) {
+    Layout(String shape, boolean twoSorts) {
       this.shape = shape;
       if (shape.equals("composite")) {
         type = RowType.of(new IntType(), new VarCharType(100), new IntType(), new VarCharType(100));
@@ -143,6 +146,7 @@ class CanonicalUpdateRankTypedTest {
         rowKeys = new int[] {0, 2};
         sort = 1;
       }
+      sortColumns = twoSorts ? new int[] {sort, keys[0]} : new int[] {sort};
     }
 
     RowData row(Integer key, Integer score, int id) {
@@ -181,14 +185,17 @@ class CanonicalUpdateRankTypedTest {
       Layout layout, RowType output, boolean fast, boolean rocks, boolean before, boolean rank)
       throws Exception {
     var selector = selector(layout.type, layout.keys);
-    var sort = selector(layout.type, layout.sort);
+    var sort = selector(layout.type, layout.sortColumns);
+    var sortSpec = SortSpec.builder();
+    for (int field = 0; field < layout.sortColumns.length; field++)
+      sortSpec.addField(field, true, false);
     var comparator =
         ComparatorCodeGenerator.gen(
             new Configuration(),
             CanonicalUpdateRankTypedTest.class.getClassLoader(),
             "CanonicalTypedUpdateComparator",
             (RowType) sort.getProducedType().toLogicalType(),
-            SortSpec.builder().addField(0, true, false).build());
+            sortSpec.build());
     AbstractTopNFunction function =
         fast
             ? new FastTop1Function(
@@ -231,7 +238,7 @@ class CanonicalUpdateRankTypedTest {
             new RowDataSerializer(keyType),
             selector,
             selector(layout.type, layout.rowKeys),
-            selector(layout.type, layout.sort),
+            selector(layout.type, layout.sortColumns),
             keyType,
             layout.type,
             fast);
@@ -290,6 +297,12 @@ class CanonicalUpdateRankTypedTest {
         .getJobManagerOwnedState();
   }
 
+  private static int[] ascending(int length) {
+    var order = new int[length];
+    java.util.Arrays.fill(order, 1);
+    return order;
+  }
+
   private static final class CanonicalRank extends NativeColumnarTopNOperator {
     private boolean canonical;
 
@@ -298,9 +311,9 @@ class CanonicalUpdateRankTypedTest {
           layout.keys,
           descriptor(layout.keys),
           layout.type,
-          new int[] {layout.sort},
-          new int[] {1},
-          new int[] {1},
+          layout.sortColumns,
+          ascending(layout.sortColumns.length),
+          ascending(layout.sortColumns.length),
           0,
           fast ? 1 : 3,
           rank,

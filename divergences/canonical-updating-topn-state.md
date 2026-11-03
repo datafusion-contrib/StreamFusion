@@ -19,9 +19,25 @@ A resource failure can partially populate its target, which must be closed; stoc
 cleared only after full success, allowing a fresh target to retry. Read-only validation releases
 read-through resident charges even on failure.
 
-The initial foundation covers fixed ranges without TTL and consecutive tied positions. Numeric
+Automatic binding covers fixed start-one ranges without TTL, one/two sort fields and the verified
+INT/BIGINT/VARCHAR payloads. Resolve the actual released strategy/function and selectors, identities,
+maximum parallelism and before-image flag. An ordinary graph with unqualified native state owners
+is rebuilt through the captured stock template: qualified roles accelerate while other owners
+retain stock state. This currently keeps upstream grouped aggregation on Flink. Stock-bound rank
+retains the per-record changelog under table mini-batching. The common node exposes only whether
+it owns unique-key state; stock-template selection remains in the Flink 2.2 planner layer.
+
+The adapter currently requires consecutive tied positions. Numeric
 inner-rank gaps may be legal after Flink TTL restoration: its initializer preserves them despite
 logging a warning. Do not silently replace those values with dense ordinals. Their representation,
 TTL write ages and independent variable bounds require further implementation and actual-operator
-qualification. Automatic binding, process and released fixture gates remain open in
+qualification. The selected released two-sort fixture and automatic binding are qualified; the
+broader process, native-graph, TTL, connector and version gates remain open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+
+Raw checkpoint restore intentionally stamps legacy/TTL-disabled rows for a possible enable-TTL
+migration. A TTL-disabled canonical projection must omit that internal clock, since the stock
+serializer has no age envelope. Preserve raw restore semantics and emit zero only in the qualified
+canonical wire contract. The initial process matrix caught four failures from forwarding that
+clock; focused memory/Rocks restore tests and the corrected full 120-job cohort pass.

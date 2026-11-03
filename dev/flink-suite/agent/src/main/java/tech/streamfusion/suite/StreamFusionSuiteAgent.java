@@ -237,7 +237,14 @@ public final class StreamFusionSuiteAgent {
             (builder, type, classLoader, module, protectionDomain) ->
                 Boolean.getBoolean("streamfusion.flink-suite.canonical")
                     ? builder.visit(
-                        Advice.to(RecordCanonicalAppendRankImport.class).on(named("importBatch")))
+                        Advice.to(RecordCanonicalRankImport.class).on(named("importBatch")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockUpdatingTopNStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalRankImport.class).on(named("importBatch")))
                     : builder)
         .type(named("tech.streamfusion.state.StockFirstNStateContract"))
         .transform(
@@ -590,7 +597,7 @@ public final class StreamFusionSuiteAgent {
     }
   }
 
-  public static final class RecordCanonicalAppendRankImport {
+  public static final class RecordCanonicalRankImport {
     @Advice.OnMethodExit
     static void exit(
         @Advice.Argument(2) java.util.List<?> rows, @Advice.Argument(3) boolean validateOnly) {

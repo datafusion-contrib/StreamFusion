@@ -1164,16 +1164,25 @@ Async/unaligned state, OFFSET, additional sort columns, broader schemas/graphs a
 strategies require their own qualification. Full TTL timelines and the broader startup, failure,
 connector and version matrices remain open. Benchmarking is deferred.
 
-## Direct updating Top-N projection (partial)
+## Automatic updating Top-N projection (partial)
 
-The Flink 2.2.1 fixed/no-TTL UpdateFast foundation projects stock `data-state-with-update` tuples
-or fast Top-1 `Top1-Rank-State` winners directly from live memory/persisted state. Actual unique
-keys, tied-row ordering, hidden overflow and stored kinds survive through stock serializers.
-Whole-view validation precedes mutation; successful imports consume the source. Failed validation
-preserves source state, and a resource-denied target can be closed before retrying on a fresh one.
+Flink 2.2.1 normal SQL and portable stock compiled plans bind TTL-disabled, start-one constant
+UpdateFast ranges with one/two sort fields and INT/BIGINT/VARCHAR payloads. Capture actual stock
+selectors, serializers, identities, maximum parallelism and before-image policy. Ordinary graphs
+with unqualified native state owners use the captured stock template: supported roles are native,
+while other state owners, including upstream grouped aggregation, keep stock layouts.
 
-The 135 direct/actual-operator controls cover typed and composite keys, both stores, both switch
-orders, hidden/projected ranks, before-image policies, multi-chunk order and error cleanup. No
-intermediate native snapshot is written. Normal-submission binding, complete jobs, TTL/gap/bound
-metadata and upstream fixture qualification remain pending. See the [updating scope](../operators/top-n.md#updating-canonical-state-direct-foundation-partial)
-and [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+`data-state-with-update` contains unique-key tuples; fast Top-1 uses `Top1-Rank-State` winners.
+Export visits live memory/raw persisted state directly. Import validates the whole view, requires
+an empty target and consumes the source only after success. Failed validation retains source state;
+close a resource-denied target before retrying on a fresh one. No intermediate native snapshot is
+written. Both direct and real restore-lifecycle tests cover ties, hidden overflow, stored kinds,
+composite keys, both stores, both before-image policies, receiver cleanup and late error/retry.
+
+The combined controls pass 484 cases, supplemented by the original released updating-rank fixture
+(six restored rows, two new native rows). All 120 complete-process scenarios pass on the final
+native library, including memory checkpoint recovery followed by canonical export. That projection
+omits raw restore's enable-TTL migration timestamp because TTL-disabled stock state has no age. See the [updating scope](../operators/top-n.md#updating-canonical-state-partial).
+TTL/cache-age/gap metadata, independent bounds, OFFSET and the broader native graph/version/connector/
+failure/delivery matrix remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking is deferred.

@@ -1643,3 +1643,21 @@ native owners and two keep the expected normalizer-filter fallback. The canonica
 continuation. This qualifies the released append fixture and the
 [documented append scope](operators/top-n.md#value-ordered-append-canonical-state-partial), not
 updating/retracting ranks or the full operator/connector/version matrix. Benchmarking is deferred.
+
+
+### Selecting the released updating-rank restore program
+
+`tech.streamfusion.canonical.UpdateRankRestoreTest` selects the released
+`RankTestPrograms.RANK_TEST_UPDATE_FAST_STRATEGY` through a thin subclass. It inherits the original
+restore implementation, compiled plan/savepoint, input, two-field ordering, settings and assertions.
+Select it with `CANONICAL_UPSTREAM_TESTS=tech.streamfusion.canonical.UpdateRankRestoreTest#testRestore bin/canonical-savepoints.sh sql`.
+The fixture imports six retained native rows and processes two new Top-N rows. Shared rank import
+advice records only successful applied transfers, excluding the validation-only pass; unrelated
+operators or import-only execution cannot satisfy continuation.
+
+The updating/append/first-N/normalizer/full-dedup selection passes eleven original programs in both
+engines, with nine required native paths and two expected normalizer-filter fallbacks. All 109
+canonical audit controls pass. Stock controls exclude StreamFusion runtime classes; the bundled
+native library is verified against the qualified debug artifact. This qualifies the selected
+released fixture and the [documented updating subset](operators/top-n.md#updating-canonical-state-partial),
+while the wider operator/connector/version matrix remains open. Benchmarking is deferred.

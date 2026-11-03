@@ -642,8 +642,8 @@ class CanonicalRestoreExecutionTest {
             new Object(),
             "rank-test-append-fast-strategy");
     var operator = new NativeColumnarTopNOperator();
-    StreamFusionSuiteAgent.RecordCanonicalAppendRankImport.exit(java.util.List.of(1, 2, 3), true);
-    StreamFusionSuiteAgent.RecordCanonicalAppendRankImport.exit(java.util.List.of(1, 2), false);
+    StreamFusionSuiteAgent.RecordCanonicalRankImport.exit(java.util.List.of(1, 2, 3), true);
+    StreamFusionSuiteAgent.RecordCanonicalRankImport.exit(java.util.List.of(1, 2), false);
     NativeExecution.opened(operator);
     NativeExecution.completed(operator, 4);
     assertDoesNotThrow(() -> NativeExecution.finish(scope));
@@ -673,7 +673,51 @@ class CanonicalRestoreExecutionTest {
     } else if (!mode.equals("empty")) {
       NativeExecution.opened(new NativeColumnarTopNOperator());
       if (mode.equals("importOnly"))
-        StreamFusionSuiteAgent.RecordCanonicalAppendRankImport.exit(java.util.List.of(1), false);
+        StreamFusionSuiteAgent.RecordCanonicalRankImport.exit(java.util.List.of(1), false);
+    }
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  @Test
+  void updatingRankAuditsCommittedImportsSeparatelyFromValidationAndNewInput() throws Exception {
+    var scope =
+        NativeExecution.beginRestore(
+            "tech.streamfusion.canonical.UpdateRankRestoreTest",
+            new Object(),
+            "rank-test-update-fast-strategy");
+    var operator = new NativeColumnarTopNOperator();
+    StreamFusionSuiteAgent.RecordCanonicalRankImport.exit(java.util.List.of(1, 2, 3), true);
+    StreamFusionSuiteAgent.RecordCanonicalRankImport.exit(java.util.List.of(1, 2), false);
+    NativeExecution.opened(operator);
+    NativeExecution.completed(operator, 4);
+    assertDoesNotThrow(() -> NativeExecution.finish(scope));
+    try (var files = java.nio.file.Files.list(reports)) {
+      var fields =
+          java.nio.file.Files.readString(files.findFirst().orElseThrow())
+              .stripTrailing()
+              .split("\\t", -1);
+      assertEquals("NativeColumnarTopNOperator=4", fields[2]);
+      assertEquals("NativeColumnarTopNOperator=2", fields[4]);
+    }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"empty", "openOnly", "importOnly", "firstN"})
+  void updatingRankCannotPassWithoutItsOwnNewInput(String mode) {
+    var scope =
+        NativeExecution.beginRestore(
+            "tech.streamfusion.canonical.UpdateRankRestoreTest",
+            new Object(),
+            "rank-test-update-fast-strategy");
+    if (mode.equals("firstN")) {
+      var operator = new NativeColumnarFirstNOperator();
+      NativeExecution.opened(operator);
+      NativeExecution.completed(operator, 4);
+    } else if (!mode.equals("empty")) {
+      NativeExecution.opened(new NativeColumnarTopNOperator());
+      if (mode.equals("importOnly"))
+        StreamFusionSuiteAgent.RecordCanonicalRankImport.exit(java.util.List.of(1), false);
     }
     assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
   }

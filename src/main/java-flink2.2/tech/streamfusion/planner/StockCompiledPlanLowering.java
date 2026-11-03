@@ -266,6 +266,13 @@ final class StockCompiledPlanLowering {
     }
   }
 
+  static boolean hasUpdatingRank(SqlPlanOrigins.RuntimeGraph graph) {
+    Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    collectOrdinaryNodes(graph.getRootNodes(), nodes);
+    return nodes.stream().anyMatch(node -> node instanceof NativeColumnarTopNExecNode
+        && ((NativeColumnarTopNExecNode) node).hasUniqueRowKeyState());
+  }
+
   static boolean canBindOrdinary(SqlPlanOrigins.RuntimeGraph graph) {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
@@ -823,7 +830,7 @@ final class StockCompiledPlanLowering {
             .getUserFunction();
     if (!(function
         instanceof org.apache.flink.table.runtime.operators.rank.AppendOnlyFirstNFunction))
-      return lowerAppendRank(stock, original, function);
+      return lowerValueRank(stock, original, function);
     JsonNode definition = definitions.get(stock.getId());
     var range =
         reader
@@ -899,12 +906,15 @@ final class StockCompiledPlanLowering {
     return exit;
   }
 
-  private ExecNode<?> lowerAppendRank(
+  private ExecNode<?> lowerValueRank(
       ExecNode<?> stock, OneInputTransformation<?, ?> original, Object function)
       throws IOException {
     boolean top1 =
         function instanceof org.apache.flink.table.runtime.operators.rank.FastTop1Function;
+    boolean updateFunction =
+        function instanceof org.apache.flink.table.runtime.operators.rank.UpdatableTopNFunction;
     if (!top1
+        && !updateFunction
         && !(function
             instanceof org.apache.flink.table.runtime.operators.rank.AppendOnlyTopNFunction))
       return stock;
@@ -914,10 +924,24 @@ final class StockCompiledPlanLowering {
             .forType(org.apache.flink.table.planner.plan.utils.RankProcessStrategy.class)
             .<org.apache.flink.table.planner.plan.utils.RankProcessStrategy>readValue(
                 definition.path("rankStrategy"));
-    if (!(strategy
-        instanceof
-        org.apache.flink.table.planner.plan.utils.RankProcessStrategy.AppendFastStrategy))
+    boolean updating =
+        strategy
+            instanceof
+            org.apache.flink.table.planner.plan.utils.RankProcessStrategy.UpdateFastStrategy;
+    if (updating
+        ? !top1 && !updateFunction
+        : updateFunction
+            || !(strategy
+                instanceof
+                org.apache.flink.table.planner.plan.utils.RankProcessStrategy.AppendFastStrategy))
       return stock;
+    int[] rowKeys =
+        updating
+            ? ((org.apache.flink.table.planner.plan.utils.RankProcessStrategy.UpdateFastStrategy)
+                    strategy)
+                .getPrimaryKeys()
+                .clone()
+            : null;
     var range =
         reader
             .forType(org.apache.flink.table.runtime.operators.rank.RankRange.class)
@@ -931,7 +955,8 @@ final class StockCompiledPlanLowering {
           || constant.getRankEnd() < 1
           || constant.getRankEnd() > Integer.MAX_VALUE) return stock;
       limit = constant.getRankEnd();
-    } else if (range instanceof org.apache.flink.table.runtime.operators.rank.VariableRankRange) {
+    } else if (!updating
+        && range instanceof org.apache.flink.table.runtime.operators.rank.VariableRankRange) {
       bound =
           ((org.apache.flink.table.runtime.operators.rank.VariableRankRange) range)
               .getRankEndIndex();
@@ -950,7 +975,7 @@ final class StockCompiledPlanLowering {
     int[] keys = partition.getFieldIndices();
     ExecNode<?> input = stock.getInputEdges().get(0).getSource();
     RowType inputType = (RowType) input.getOutputType();
-    if (sort.getFieldSize() != 1
+    if ((updating ? sort.getFieldSize() < 1 || sort.getFieldSize() > 2 : sort.getFieldSize() != 1)
         || inputType.getChildren().stream()
             .anyMatch(
                 type ->
@@ -969,6 +994,7 @@ final class StockCompiledPlanLowering {
       return stock;
     var ttl =
         (org.apache.flink.api.common.state.StateTtlConfig) releasedField(function, "ttlConfig");
+    if (updating && ttl.isEnabled()) return stock;
     config.setString(
         "table.exec.state.ttl", (ttl.isEnabled() ? ttl.getTimeToLive().toMillis() : 0) + " ms");
     if (!(original.getStateKeySelector()
@@ -986,17 +1012,33 @@ final class StockCompiledPlanLowering {
                 .getStateKeyType()
                 .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
     RowType keyType = (RowType) selector.getProducedType().toLogicalType();
-    var contract =
-        new tech.streamfusion.state.StockAppendTopNStateContract(
-            serializer,
-            selector,
-            sortSelector,
-            keyType,
-            inputType,
-            sort.getFieldIndices(),
-            top1,
-            bound >= 0,
-            ttl.isEnabled());
+    tech.streamfusion.state.StockStateContract contract;
+    if (updating) {
+      if (!ArrowRowTypeSupport.supportsFields(inputType, rowKeys)) return stock;
+      var rowKeySelector =
+          top1
+              ? org.apache.flink.table.planner.plan.utils.KeySelectorUtil.getRowDataSelector(
+                  planner.getClass().getClassLoader(),
+                  rowKeys,
+                  org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(inputType))
+              : (org.apache.flink.table.runtime.keyselector.RowDataKeySelector)
+                  releasedField(function, "rowKeySelector");
+      contract =
+          new tech.streamfusion.state.StockUpdatingTopNStateContract(
+              serializer, selector, rowKeySelector, sortSelector, keyType, inputType, top1);
+    } else {
+      contract =
+          new tech.streamfusion.state.StockAppendTopNStateContract(
+              serializer,
+              selector,
+              sortSelector,
+              keyType,
+              inputType,
+              sort.getFieldIndices(),
+              top1,
+              bound >= 0,
+              ttl.isEnabled());
+    }
     int maximum = stockMaximum(original);
     var exchange =
         (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
@@ -1020,9 +1062,9 @@ final class StockCompiledPlanLowering {
                 bound,
                 (Boolean) releasedField(function, "outputRankNumber"),
                 false,
-                null,
+                rowKeys,
                 (Boolean) releasedField(function, "generateUpdateBefore"),
-                null,
+                rowKeys == null ? null : FlinkKeyGroupUtils.stockKeyDescriptor(inputType, rowKeys),
                 FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys),
                 bound >= 0)
             .withStateMaxParallelism(maximum);

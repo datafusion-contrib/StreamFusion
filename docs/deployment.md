@@ -444,3 +444,11 @@ handoffs, native checkpoint recovery and fixed-maxP rescaling, with exact stock 
 independent table-state checks. Broader schemas/graphs, rank variants, TTL/failure/version cases
 and the documented startup timeouts remain open.
 See [append canonical coverage](operators/top-n.md#value-ordered-append-canonical-state-partial).
+
+
+Normal Flink 2.2.1 SQL and portable compiled plans also bind the qualified fixed/no-TTL UpdateFast
+rank subset, including fast Top-1 and one/two sort fields over INT/BIGINT/VARCHAR payloads. Ordinary
+updating-rank graphs with unqualified native state owners use their stock template, keeping those
+owners' layouts and identities on Flink. Stock restore requires only normal user/connector
+dependencies. See [updating canonical scope and pending coverage](operators/top-n.md#updating-canonical-state-partial).
+Benchmarking remains deferred.

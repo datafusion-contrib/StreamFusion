@@ -438,6 +438,82 @@ class CanonicalUpdateRankStateInteropTest {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void ttlDisabledCheckpointMigrationClockIsOmittedFromStockCanonicalState(boolean persistent)
+      throws Exception {
+    var prefix =
+        java.util.List.<RowData>of(
+            GenericRowData.of(1L, 10L, 3L),
+            GenericRowData.of(1L, 20L, 4L),
+            GenericRowData.of(1L, 30L, 5L),
+            GenericRowData.of(1L, 15L, 2L));
+    long source = create(false, false, 3);
+    byte[][] checkpoint;
+    try {
+      push(source, false, prefix, 1000);
+      checkpoint =
+          Native.snapshotTopNRankerPartitions(
+              source, 128, new int[] {Native.STOCK_KEY_PROJECTION, -1});
+      assertEquals(1, checkpoint.length);
+      int keyGroup = java.nio.ByteBuffer.wrap(checkpoint[0]).getInt();
+      assertTrue(keyGroup >= 0 && keyGroup < 128);
+      checkpoint[0] =
+          java.util.Arrays.copyOfRange(checkpoint[0], Integer.BYTES, checkpoint[0].length);
+    } finally {
+      close(source, false);
+    }
+    long restored = create(persistent, false, 3, 1 << 24, 5000, checkpoint);
+    try (var view = harness();
+        var stock = harness(true);
+        var resumed = harness(true)) {
+      view.open();
+      stock.open();
+      for (var row : prefix)
+        stock.processElement(new StreamRecord<>(new RowDataSerializer(INPUT).copy(row)));
+      stock.getOutput().clear();
+      var transferred = new java.util.concurrent.atomic.AtomicInteger();
+      visitNative(
+          restored,
+          persistent,
+          root -> {
+            var times =
+                (org.apache.arrow.vector.BigIntVector) root.getVector(INPUT.getFieldCount() + 3);
+            for (int row = 0; row < root.getRowCount(); row++) {
+              assertEquals(
+                  0,
+                  times.get(row),
+                  "TTL-disabled transfer must omit the raw-restore migration clock");
+              transferred.incrementAndGet();
+            }
+          });
+      assertEquals(4, transferred.get());
+      contract(false).exportState(backend(view), restored, persistent);
+      resumed.initializeState(
+          view.snapshotWithLocalState(
+                  1, 5000, SavepointType.savepoint(SavepointFormatType.CANONICAL))
+              .getJobManagerOwnedState());
+      resumed.open();
+      var future = GenericRowData.of(1L, 7L, 5L);
+      future.setRowKind(RowKind.UPDATE_AFTER);
+      stock.processElement(new StreamRecord<>(new RowDataSerializer(INPUT).copy(future)));
+      resumed.processElement(new StreamRecord<>(new RowDataSerializer(INPUT).copy(future)));
+      var expected =
+          stock.extractOutputValues().stream()
+              .map(CanonicalUpdateRankStateInteropTest::value)
+              .collect(java.util.stream.Collectors.toList());
+      assertFalse(expected.isEmpty());
+      assertEquals(
+          expected,
+          resumed.extractOutputValues().stream()
+              .map(CanonicalUpdateRankStateInteropTest::value)
+              .collect(java.util.stream.Collectors.toList()));
+      assertEquals(expected, push(restored, persistent, java.util.List.of(future), 6000));
+    } finally {
+      close(restored, persistent);
+    }
+  }
+
   private static int size(MapState<RowData, Tuple2<RowData, Integer>> rows) throws Exception {
     int count = 0;
     for (var ignored : rows.entries()) count++;
@@ -573,12 +649,41 @@ class CanonicalUpdateRankStateInteropTest {
   }
 
   private long create(boolean persistent, boolean top1, long limit, long budget) throws Exception {
+    return create(persistent, top1, limit, budget, 0, new byte[0][]);
+  }
+
+  private long create(
+      boolean persistent,
+      boolean top1,
+      long limit,
+      long budget,
+      long restoredAt,
+      byte[][] snapshots)
+      throws Exception {
     int[] partition = {0};
     int[] precision = {Native.STOCK_KEY_PROJECTION, -1};
     int[] rowKeys = {0, 2};
     int[] rowPrecision = {Native.STOCK_KEY_PROJECTION, -1, -1};
     int[] sort = {1};
     int[] order = {1};
+    if (!persistent && snapshots.length != 0)
+      return Native.restoreUpdateFastTopNRankerPartitions(
+          partition,
+          precision,
+          rowKeys,
+          rowPrecision,
+          sort,
+          order,
+          order,
+          0,
+          top1 ? 1 : limit,
+          -1,
+          true,
+          true,
+          0,
+          restoredAt,
+          snapshots,
+          budget);
     if (!persistent)
       return Native.createUpdateFastTopNRanker(
           partition,
@@ -619,7 +724,7 @@ class CanonicalUpdateRankStateInteropTest {
           true,
           true,
           0,
-          0,
+          restoredAt,
           budget,
           schema.memoryAddress(),
           directory.resolve("state-" + java.util.UUID.randomUUID()).toString(),
@@ -631,7 +736,7 @@ class CanonicalUpdateRankStateInteropTest {
           0,
           127,
           false,
-          new byte[0][]);
+          snapshots);
     }
   }
 
