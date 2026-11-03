@@ -29,6 +29,7 @@ public final class IntegralExpressionBenchmarkFunctions {
   private static FlinkExpressionFunction stock;
   private static RowData[] rows;
   private static String type;
+  private static LogicalTypeRoot outputRoot;
   private static boolean booleanOutput;
   private static boolean longOutput;
   private static boolean stringOutput;
@@ -74,6 +75,7 @@ public final class IntegralExpressionBenchmarkFunctions {
     LogicalType[] inputTypes = secondary.isEmpty() ? new LogicalType[] {inputType}
         : new LogicalType[] {inputType, LogicalTypeParser.parse(secondaryDeclaration, getLoader())};
     LogicalType outputType = FlinkTypeFactory.toLogicalType(project.getProjects().get(0).getType());
+    outputRoot = outputType.getTypeRoot();
     booleanOutput = outputType.getTypeRoot() == LogicalTypeRoot.BOOLEAN;
     longOutput = outputType.getTypeRoot() == LogicalTypeRoot.BIGINT;
     stringOutput = outputType.getTypeRoot() == LogicalTypeRoot.VARCHAR
@@ -91,9 +93,9 @@ public final class IntegralExpressionBenchmarkFunctions {
     if (fallbackControl && !previous)
       throw new IllegalStateException("A fallback control requires the preceding encoder");
     String fallbackReason = null;
-    var encoded = configuredCast ? null
+    var encoded = configuredCast || fallbackControl ? null
         : RexExpression.encodeProjections(project.getProjects(), List.of("v"));
-    if (configuredCast) {
+    if (configuredCast || fallbackControl) {
       var constructor = RexExpression.class.getDeclaredConstructor();
       constructor.setAccessible(true);
       encoded = constructor.newInstance();
@@ -108,7 +110,10 @@ public final class IntegralExpressionBenchmarkFunctions {
         var reason = RexExpression.class.getDeclaredField("reason");
         reason.setAccessible(true);
         fallbackReason = (String) reason.get(encoded);
-        if (fallbackReason == null || !fallbackReason.startsWith("unsupported TRY_CAST DECIMAL"))
+        String expectedReason = System.getProperty("sf.integral.fallbackReason", "");
+        if (fallbackReason == null || (expectedReason.isEmpty()
+            ? !fallbackReason.startsWith("unsupported TRY_CAST DECIMAL")
+            : !fallbackReason.equals(expectedReason)))
           throw new IllegalStateException("Unexpected preceding fallback: " + fallbackReason);
         encoded = null;
       } else if (fallbackControl) {
@@ -141,7 +146,7 @@ public final class IntegralExpressionBenchmarkFunctions {
         "child_counts", encoded.childCounts(), "longs", constants,
         "doubles", encoded.doubles(), "strings", encoded.strings(),
         "boolean_output", booleanOutput, "string_output", stringOutput,
-        "long_output", longOutput));
+        "long_output", longOutput, "integer_output", outputType.getTypeRoot().name()));
   }
 
   /** A rejected native signature runs in Java on RowData in the actual preceding implementation. */
@@ -250,12 +255,12 @@ public final class IntegralExpressionBenchmarkFunctions {
           int length = value.getSizeInBytes();
           sum += length + (length == 0 ? 0 : value.byteAt(0) + value.byteAt(length - 1));
         }
-        else switch (type) {
-          case "TINYINT": sum += result.getByte(0); break;
-          case "SMALLINT": sum += result.getShort(0); break;
-          case "INT": sum += result.getInt(0); break;
-          case "BIGINT": sum += result.getLong(0); break;
-          default: throw new IllegalArgumentException(type);
+        else switch (outputRoot) {
+          case TINYINT: sum += result.getByte(0); break;
+          case SMALLINT: sum += result.getShort(0); break;
+          case INTEGER: sum += result.getInt(0); break;
+          case BIGINT: sum += result.getLong(0); break;
+          default: throw new IllegalArgumentException(outputRoot.toString());
         }
       }
     }

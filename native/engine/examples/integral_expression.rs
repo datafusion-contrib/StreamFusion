@@ -27,6 +27,8 @@ struct EncodedProgram {
     string_output: bool,
     #[serde(default)]
     long_output: bool,
+    #[serde(default)]
+    integer_output: Option<String>,
 }
 
 macro_rules! java {
@@ -329,7 +331,13 @@ fn main() {
         } else if program.long_output {
             &DataType::Int64
         } else {
-            batch.column(0).data_type()
+            match program.integer_output.as_deref() {
+                Some("TINYINT") => &DataType::Int8,
+                Some("SMALLINT") => &DataType::Int16,
+                Some("INTEGER") => &DataType::Int32,
+                Some("BIGINT") => &DataType::Int64,
+                _ => batch.column(0).data_type(),
+            }
         }
     );
     let expected = checksum(&actual).wrapping_mul(loops as i64);

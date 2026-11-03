@@ -1373,3 +1373,25 @@ batches could already execute certified Rust despite retaining a JVM descriptor.
 initial/optimized pilots, independent stock, tiny and retained-formatter controls, and
 conversion-inclusive jobs remain in the [full qualification](../benchmarks/scalar-functions.md#integer-printf-with-a-literal-format).
 Allocation reductions alone are not a claim of universal job acceleration.
+
+
+## Map primitive integer casts without widening
+
+The shared integer narrowing kernel uses Arrow's typed unary value mapping directly from
+the original integer width, carrying the immutable validity buffer into the result. This
+follows Comet's legacy integer-cast structure: infallible low-bit narrowing needs no NULL
+branch per row. It removes the intermediate i64 column and rebuilding validity with
+Option iteration. Flink wraps integer overflow in both cast modes; Spark's ANSI/try error
+policy is not reused. Same-width arrays retain the existing identity fast path. Decimal
+and floating conversions keep their separate contracts.
+
+The first integer TRY_CAST admission reused the old narrowing kernel; four independent
+previous medians were lower despite all paired-stock bulk wins. The final nullable INT
+probe drops from 28 allocations/11,007 requested bytes to
+21/2,279 per 1,024-row batch. Final 112 bulk cells beat stock by
+2.463-15.672x. Ordinary integer CAST controls isolate a 4.190-8.023x
+initial/current kernel gain on the same encoder and final fixture. Tests cover signed
+wrapping, all six narrowing pairs, sliced/empty/shared NULL buffers, scalar materialization,
+input immutability and shared ARRAY casts. Initial losing controls, tiny batches, separate
+DECIMAL controls, independent previous stock fallback and conversion-inclusive jobs remain
+in the [full qualification](../benchmarks/scalar-functions.md#integer-try_cast).

@@ -42,6 +42,11 @@ class FlinkIntegralEpochSqlHarnessTest {
 
   static void verify(String name, boolean nullable, String zone, String sql, boolean pure)
       throws Exception {
+    verify(name, nullable, zone, sql, pure, false);
+  }
+
+  static void verify(String name, boolean nullable, String zone, String sql, boolean pure,
+      boolean legacy) throws Exception {
     DataType number;
     switch (name) {
       case "TINYINT": number = TINYINT(); break;
@@ -58,6 +63,7 @@ class FlinkIntegralEpochSqlHarnessTest {
         var env = metrics.environment(new Configuration(), 1, 0);
         var table = StreamTableEnvironment.create(env);
         table.getConfig().setLocalTimeZone(ZoneId.of(zone));
+        table.getConfig().set("table.exec.legacy-cast-behaviour", legacy ? "ENABLED" : "DISABLED");
         table.createTemporaryView("src", env.fromSequence(0, 5002)
             .map(index -> (RowData) GenericRowData.of(index.intValue(), nullable && index % 37 == 0
                 ? null : value(name, index.intValue())))

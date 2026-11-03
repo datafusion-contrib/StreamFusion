@@ -106,8 +106,10 @@ class IntegralExpressionPipelineBenchmark {
           } else if (nativeRun) {
             assertFalse(plan.contains("NativeCalc"), plan);
             assertEquals(0, scan.substitutions());
+            String expectedReason = System.getProperty(
+                "sf.integral.fallbackReason", "unsupported TRY_CAST DECIMAL");
             assertTrue(scan.fallbackReasons().stream()
-                .anyMatch(reason -> reason.contains("unsupported TRY_CAST DECIMAL")),
+                .anyMatch(reason -> reason.contains(expectedReason)),
                 scan.fallbackReasons().toString());
           }
           long start = System.nanoTime();

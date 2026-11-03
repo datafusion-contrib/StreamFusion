@@ -4014,7 +4014,11 @@ final class RexExpression {
         if (switchResult1) return emitHostExpression(call, true);
       }
     }
-    if (tryCast && !(source == SqlTypeName.DECIMAL && targetType == SqlTypeName.DECIMAL)) {
+    boolean integralTryCast = tryCast && sourceInteger >= 0 && sourceInteger <= 3
+        && targetInteger >= 0 && targetInteger <= 3
+        && nativeIntegralRoundingOperand(call.getOperands().get(0));
+    if (tryCast && !integralTryCast
+        && !(source == SqlTypeName.DECIMAL && targetType == SqlTypeName.DECIMAL)) {
       return reject("unsupported TRY_CAST " + source + "→" + targetType);
     }
     // A cast that leaves the value unchanged — same base type and precision/scale, differing only

@@ -7886,3 +7886,99 @@ Reproduce prepared controls with the release `integral_expression` example and
 `SF_INTEGRAL_PREVIOUS=true` for that control. Complete jobs use
 `IntegralExpressionPipelineBenchmark`, matching `sf.integral.expression`, and
 `sf.integral.bigintInput=true` for BIGINT. Other resources/settings remain identical.
+
+
+## Integer TRY_CAST
+
+Verified TINYINT/SMALLINT/INT/BIGINT TRY_CAST reuses exact native primitive conversion.
+Both modern and legacy Flink modes wrap integer narrowing overflow; they do not yield
+NULL on out-of-range integer input. NULL input stays NULL and resolved schemas remain
+unchanged. Inputs/literals, failure-free integer arithmetic, lossless widening and admitted
+rounding producers qualify; division, narrowing producers and other unverified trees retain
+fallback. Errors while computing an operand are not conversion errors. Same-type planner
+rewrites are covered by parity but excluded from performance claims.
+
+The first implementation only admitted the existing CAST kernel. All 112 bulk cells beat
+paired stock, but four independent previous medians remain slightly lower than native.
+The [initial 12,400 trials](results/integer-try-cast-2026-11-03-initial.csv.gz),
+[600 pilot trials](results/integer-try-cast-2026-11-03-initial-pilot.csv.gz), source and runtime hashes remain.
+The integer kernel used an intermediate i64 column and nullable row iteration. Following
+Comet's legacy integer-cast structure, the final implementation maps the original typed
+values in one Arrow unary pass and retains the immutable NULL buffer. Flink's own overflow
+rules apply in both modes; Spark's ANSI/try semantics are not imported. DECIMAL/floating
+paths remain separate. A nullable INT-to-TINYINT 1,024-row allocation probe drops from
+28 requests/11,007 requested bytes to
+21/2,279.
+
+The [final record](results/integer-try-cast-2026-11-03.json) measures released Flink 1.18.1/2.2.1, Oracle JDK
+17.0.12, Apple M4 Pro, one thread and release/mimalloc-linked artifacts, with verified
+allocator symbols. Equal prepared GenericRowData, BinaryRowData and Arrow contain all
+signed integer source/destination widths, nullable/NOT NULL, extrema and NULLs. Each trial
+consumes 131,072 rows, with 16 warmups and nine measurements. Native timing starts/stops
+inside Rust, after import and before export, retaining production Calc and equivalent
+output consumption. Only initial JNI/import/export and perimeter transposes are excluded
+from this small-function gate. Complete jobs retain them.
+
+Actual preceding encoder `04e0cf86` rejects these signatures. Its Java prepared control
+verifies the exact fallback reason, then measures the released generated expression on
+RowData without artificial native overhead. Independent stock and previous remain distinct
+samples of that stock fallback. Both controls use the same final fixture, which checks and
+consumes the resolved output width. Short/wide destination casts and extra computed inputs
+`v+CAST(1 AS source)` are qualified. No historical DSO callback is invented for the prior.
+
+| Flink | Bulk cells | Paired stock / native | Previous fallback / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | 56 | 2.468-15.672x | 2.435-13.883x | 2.468-13.879x |
+| 1.18.1 | 56 | 2.463-12.864x | 2.440-12.919x | 2.445-12.987x |
+
+All 112 bulk cells beat paired stock and the actual preceding fallback. Twelve 16-row
+controls retain stock/native 0.276-0.368x, including 12 slower controls.
+The [12,400 final trials](results/integer-try-cast-2026-11-03.csv.gz) retain warmups, checksums and variability;
+[600 optimized pilot trials](results/integer-try-cast-2026-11-03-optimized-pilot.csv.gz) remain separate.
+Ten [ordinary CAST controls](results/integer-try-cast-2026-11-03-retained-casts.csv.gz) replay saved initial
+executable/DSO and optimized artifacts on the same final encoder/fixture. Eight integer
+initial/current median ratios span 4.190-8.023x; two separate unchanged DECIMAL
+controls span 0.987-1.040x. All variation is retained.
+
+Eight complete million-row INT/BIGINT jobs retain the bounded row source, blackhole sink,
+startup, JNI and both native transposes. Two warmups and five measurements alternate order.
+Candidate requires consumed NativeCalc work and empty evaluators; actual previous must
+fall back with the exact expected reason and zero native substitutions/operators.
+Seconds, median:
+
+| Flink / source / destination | Paired stock | Native | Independent stock | Previous fallback |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-TINYINT | 0.162741 | 0.172488 | 0.146897 | 0.148155 |
+| 2.2.1 / INT-BIGINT | 0.160180 | 0.174861 | 0.143499 | 0.144603 |
+| 2.2.1 / BIGINT-TINYINT | 0.154210 | 0.164889 | 0.147629 | 0.148952 |
+| 2.2.1 / BIGINT-INT | 0.154995 | 0.168157 | 0.147347 | 0.152415 |
+| 1.18.1 / INT-TINYINT | 0.165774 | 0.170204 | 0.150125 | 0.144074 |
+| 1.18.1 / INT-BIGINT | 0.163677 | 0.172033 | 0.151377 | 0.149134 |
+| 1.18.1 / BIGINT-TINYINT | 0.174743 | 0.177714 | 0.156687 | 0.154429 |
+| 1.18.1 / BIGINT-INT | 0.163483 | 0.180986 | 0.168767 | 0.164599 |
+
+Native/stock elapsed spans **1.017-1.107**; native/previous spans
+**1.100-1.209**. Unfavorable complete jobs and independent controls remain;
+prepared gains do not establish universal complete-job acceleration.
+
+All **716 focused JVM invocations** pass without skips across released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java release 11. Complete 5,003-row maps/schema compare every
+integer source/destination width, NULLs, extrema, modern/legacy modes, computed overflow,
+filters, CASE and all-filtered batches. Failing/unverified producers retain explicit
+fallback and lazy/empty/failure controls. Shared ARRAY CAST and adjacent rounding/epoch/
+PRINTF paths are rechecked. Sixteen actual-before cases match full maps/schema, then fail
+the old fallback assertion; two old filter controls stop at missing native substitution
+before their final map assertion. Four unchanged released `CastRulesTest` integer-oracle
+runs each pass **41 original assertions**, separately as stock semantics. All **903 release
+Rust core tests** pass, including six integer narrowing pairs, signed wrapping, slices,
+empty arrays, NULL-buffer sharing, scalar materialization and input ownership. Hosted CI
+remains separate; broader scalar conversion work stays in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+Reproduce native prepared controls with release `integral_expression`,
+`SF_INTEGRAL_EXPRESSION='TRY_CAST(v AS target)'`, equal source type and nullable/row-layout
+arguments. The preceding control uses `IntegralExpressionBenchmarkFunctions` on the actual
+prior encoder with `sf.integral.previous=true`, `sf.integral.fallbackControl=true` and an
+exact `sf.integral.fallbackReason` (for example `unsupported TRY_CAST BIGINT` followed by
+U+2192 and `INTEGER`). Complete jobs use `IntegralExpressionPipelineBenchmark`, matching
+`sf.integral.expression`, BIGINT input flag when needed, and those previous fallback controls.

@@ -1211,35 +1211,32 @@ impl datafusion::logical_expr::ScalarUDFImpl for NarrowingCast {
         let arrays = ColumnarValue::values_to_arrays(&args.args)?;
         let input = &arrays[0];
         let result: ArrayRef = match input.data_type() {
-            // Integer source: widen losslessly to i64 (no overflow possible), then `as` the target,
-            // which truncates to the low bits exactly like Java's `(int)`/`(short)`/… primitive cast.
             DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
-                let widened = arrow::compute::cast(input, &DataType::Int64)?;
-                let vals = widened
-                    .as_any()
-                    .downcast_ref::<Int64Array>()
-                    .expect("i64 narrowing source");
-                match &self.target {
-                    DataType::Int8 => Arc::new(
-                        vals.iter()
-                            .map(|o| o.map(|v| v as i8))
-                            .collect::<Int8Array>(),
-                    ),
-                    DataType::Int16 => Arc::new(
-                        vals.iter()
-                            .map(|o| o.map(|v| v as i16))
-                            .collect::<Int16Array>(),
-                    ),
-                    DataType::Int32 => Arc::new(
-                        vals.iter()
-                            .map(|o| o.map(|v| v as i32))
-                            .collect::<Int32Array>(),
-                    ),
-                    _ => Arc::new(
-                        vals.iter()
-                            .map(|o| o.map(|v| v as i64))
-                            .collect::<Int64Array>(),
-                    ),
+                use arrow::datatypes::{Int16Type, Int32Type, Int64Type, Int8Type};
+                // Primitive narrowing is total: map values once and retain the immutable validity.
+                macro_rules! cast_integer {
+                    ($array:ty) => {{
+                        let values = input.as_any().downcast_ref::<$array>().unwrap();
+                        match &self.target {
+                            DataType::Int8 => {
+                                Arc::new(values.unary::<_, Int8Type>(|v| v as i8)) as ArrayRef
+                            }
+                            DataType::Int16 => {
+                                Arc::new(values.unary::<_, Int16Type>(|v| v as i16)) as ArrayRef
+                            }
+                            DataType::Int32 => {
+                                Arc::new(values.unary::<_, Int32Type>(|v| v as i32)) as ArrayRef
+                            }
+                            _ => Arc::new(values.unary::<_, Int64Type>(|v| v as i64)) as ArrayRef,
+                        }
+                    }};
+                }
+                match input.data_type() {
+                    DataType::Int8 => cast_integer!(Int8Array),
+                    DataType::Int16 => cast_integer!(Int16Array),
+                    DataType::Int32 => cast_integer!(Int32Array),
+                    DataType::Int64 => cast_integer!(Int64Array),
+                    _ => unreachable!(),
                 }
             }
             DataType::Decimal128(_, scale) if (0..=38).contains(scale) => {
@@ -1319,11 +1316,15 @@ mod narrowing_identity_tests {
 
     fn invoke(input: ColumnarValue, target: DataType) -> ColumnarValue {
         let source = input.data_type();
+        let rows = match &input {
+            ColumnarValue::Array(array) => array.len(),
+            ColumnarValue::Scalar(_) => 1,
+        };
         NarrowingCast::new(target.clone())
             .invoke_with_args(ScalarFunctionArgs {
                 args: vec![input],
                 arg_fields: vec![Arc::new(arrow::datatypes::Field::new("v", source, true))],
-                number_rows: 1,
+                number_rows: rows,
                 return_field: Arc::new(arrow::datatypes::Field::new("v", target, true)),
                 config_options: Arc::new(Default::default()),
             })
@@ -1393,6 +1394,86 @@ mod narrowing_identity_tests {
                 .unwrap(),
             &arrow::array::Int8Array::from(vec![Some(-1), None, Some(-128)])
         );
+    }
+
+    #[test]
+    fn primitive_narrowing_preserves_sliced_validity_and_wraps_each_destination_width() {
+        let short: ArrayRef = Arc::new(Int16Array::from(vec![
+            Some(i16::MIN),
+            Some(i16::MAX),
+            None,
+            Some(129),
+            Some(-129),
+        ]));
+        let int: ArrayRef = Arc::new(Int32Array::from(vec![
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(129),
+            Some(-129),
+        ]));
+        let long: ArrayRef = Arc::new(Int64Array::from(vec![
+            Some(i64::MIN),
+            Some(i64::MAX),
+            None,
+            Some(129),
+            Some(-129),
+        ]));
+        for (input, target) in [
+            (short, DataType::Int8),
+            (int.clone(), DataType::Int8),
+            (int, DataType::Int16),
+            (long.clone(), DataType::Int8),
+            (long.clone(), DataType::Int16),
+            (long, DataType::Int32),
+        ] {
+            let expected: ArrayRef = match target {
+                DataType::Int8 => Arc::new(Int8Array::from(vec![
+                    Some(0),
+                    Some(-1),
+                    None,
+                    Some(-127),
+                    Some(127),
+                ])),
+                DataType::Int16 => Arc::new(Int16Array::from(vec![
+                    Some(0),
+                    Some(-1),
+                    None,
+                    Some(129),
+                    Some(-129),
+                ])),
+                _ => Arc::new(Int32Array::from(vec![
+                    Some(0),
+                    Some(-1),
+                    None,
+                    Some(129),
+                    Some(-129),
+                ])),
+            };
+            let original = input.to_data();
+            for offset in 0..=input.len() {
+                let input = input.slice(offset, input.len() - offset);
+                let ColumnarValue::Array(output) =
+                    invoke(ColumnarValue::Array(input.clone()), target.clone())
+                else {
+                    panic!("expected integer array")
+                };
+                assert_eq!(
+                    output.to_data(),
+                    expected.slice(offset, input.len()).to_data()
+                );
+                assert_eq!(output.nulls(), input.nulls());
+                if let (Some(output), Some(input)) = (output.nulls(), input.nulls()) {
+                    assert_eq!(
+                        output.inner().values().as_ptr(),
+                        input.inner().values().as_ptr()
+                    );
+                }
+                drop(input);
+                output.to_data().validate_full().unwrap();
+            }
+            assert_eq!(input.to_data(), original);
+        }
     }
 }
 

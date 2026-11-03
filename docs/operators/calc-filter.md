@@ -1186,6 +1186,9 @@ Native, unconditionally, with no host involvement:
   reproduces Flink's primitive Java cast semantics exactly: two's-complement wraparound for an
   integer source, and saturation to INT/BIGINT followed by low-bit narrowing for a float source. Arrow's own
   cast kernel can't do this — it errors on overflow instead of wrapping/saturating.
+  Integer inputs map their original typed value buffer in one pass and retain its immutable
+  validity buffer, without allocating an intermediate i64 column. Decimal/floating conversion
+  paths keep their separate semantics.
 - **DECIMAL → TINYINT/SMALLINT/INT/BIGINT** — truncate toward zero, then keep the destination's
   low bits, matching Flink's BigDecimal `longValue()` followed by the Java integer cast.
   Overflow wraps rather than saturating or producing NULL; NULL input remains NULL.
@@ -1262,6 +1265,24 @@ When its input expression can fail, the existing generated-expression callback p
 Flink's input evaluation errors: TRY_CAST only catches conversion failures. The reverse
 BOOLEAN-to-character casts follow the direct-input and generated paths described above.
 
+### Integer TRY_CAST
+
+TRY_CAST between TINYINT, SMALLINT, INT and BIGINT reuses the existing native primitive
+cast kernels for verified inputs/literals, integer arithmetic, lossless widening and
+admitted rounding producers. Widening is exact; narrowing retains the low destination bits,
+matching Flink's primitive Java cast. Integer overflow wraps rather than becoming NULL.
+Input NULL stays NULL and the resolved TRY_CAST nullability is retained in both modern and
+legacy cast modes. Same-type expressions may be removed by the released planner.
+
+Every producer must be failure-free. Division, narrowing producers and other unverified
+trees retain their preceding fallback, including failures while evaluating an operand,
+untaken CASE branches and empty filtered batches. No conversion error is possible in the
+admitted integer subset, so TRY_CAST can reuse CAST without an exception-catching callback.
+The [integer TRY_CAST qualification](../benchmarks/scalar-functions.md#integer-try_cast)
+retains initial/final kernel measurements, actual previous stock fallback, complete jobs and
+shared CAST controls. Other scalar TRY_CAST pairs remain governed by their separate coverage below and
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
 ### Integer/string casts
 
 `CAST` and `TRY_CAST` between `STRING`/`VARCHAR`/`CHAR` and
@@ -1282,7 +1303,7 @@ through JNI. Successful results and NULL-on-error policies match as well.
 Integer formatting uses canonical decimal text, including signed minima and zero.
 `VARCHAR(n)` truncates to `n` characters; `CHAR(n)` also pads shorter results with spaces.
 Legacy mode leaves the formatted text unchanged regardless of the declared length, matching
-Flink. Other TRY_CAST pairs, except the BOOLEAN and temporal forms described here and
+Flink. Other TRY_CAST pairs, except the integer, BOOLEAN and temporal forms described here and
 the binary, DECIMAL and collection forms below, still fall back. Bare encoders without table configuration
 decline mode-dependent casts. See the [kernel ledger](../optimizations/scalar-function-kernels.md)
 for the release benchmark against the previous host-cast path.
