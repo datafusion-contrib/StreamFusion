@@ -1117,72 +1117,96 @@
       "display_name": "testRowTimeBoundedPartitionedRowOver[StateBackend=HEAP]",
       "count": 1,
       "route_by_contract_variant": {
-        "changelog=false": "native",
+        "changelog=false": "mixed",
         "changelog=true": "full_fallback"
-      }
+      },
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRowOver",
       "display_name": "testRowTimeBoundedPartitionedRowOver[StateBackend=ROCKSDB]",
       "count": 1,
       "route_by_contract_variant": {
-        "changelog=false": "native",
+        "changelog=false": "mixed",
         "changelog=true": "full_fallback"
-      }
+      },
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRangeOver",
       "display_name": "testRowTimeBoundedPartitionedRangeOver[StateBackend=HEAP]",
       "count": 1,
       "route_by_contract_variant": {
-        "changelog=false": "native",
+        "changelog=false": "mixed",
         "changelog=true": "full_fallback"
-      }
+      },
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRangeOver",
       "display_name": "testRowTimeBoundedPartitionedRangeOver[StateBackend=ROCKSDB]",
       "count": 1,
       "route_by_contract_variant": {
-        "changelog=false": "native",
+        "changelog=false": "mixed",
         "changelog=true": "full_fallback"
-      }
+      },
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
       "display_name": "testRowTimeUnBoundedPartitionedRangeOver[StateBackend=HEAP]",
       "count": 1,
       "route_by_contract_variant": {
-        "changelog=false": "native",
+        "changelog=false": "mixed",
         "changelog=true": "full_fallback"
-      }
+      },
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
       "display_name": "testRowTimeUnBoundedPartitionedRangeOver[StateBackend=ROCKSDB]",
       "count": 1,
       "route_by_contract_variant": {
-        "changelog=false": "native",
+        "changelog=false": "mixed",
         "changelog=true": "full_fallback"
-      }
+      },
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver",
       "display_name": "testRowTimeUnBoundedPartitionedRowsOver[StateBackend=HEAP]",
       "count": 1,
       "route_by_contract_variant": {
-        "changelog=false": "native",
+        "changelog=false": "mixed",
         "changelog=true": "full_fallback"
-      }
+      },
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver",
       "display_name": "testRowTimeUnBoundedPartitionedRowsOver[StateBackend=ROCKSDB]",
       "count": 1,
       "route_by_contract_variant": {
-        "changelog=false": "native",
+        "changelog=false": "mixed",
         "changelog=true": "full_fallback"
-      }
+      },
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
     }
   ]
 }

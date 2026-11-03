@@ -61,14 +61,18 @@ and callback failures, controlled clocks, positive TTL, late input, repeated hea
 RocksDB recovery, and 1→3→2-task checkpoint/savepoint restoration with pending event-time
 frames. Unchanged upstream scalar SQL and admitted Table API OVER methods separately
 require consumed JVM OVER work and their original assertions on both backend routes.
-Builtin-only direct FLOAT AVG controls and 1.18's legacy ARRAY output context retain their
-precise existing fallback contracts; see the [upstream witnesses](../upstream-flink-suite.md).
+Builtin-only direct FLOAT AVG controls and unverified collection-output contexts retain their
+precise existing fallback contracts on both lines. Event-time fixtures keep their upstream host time assigner,
+so the complete graph is explicitly mixed; native/mixed graph guards still prohibit a stock
+row OVER operator. See the [upstream witnesses](../upstream-flink-suite.md).
 
 JVM OVER keeps stock fallback for asynchronous state, non-insert-only input, general nested
 operator fields/results, specialized or Python definitions, custom legacy wrappers,
 unverified companion functions, ordinary non-time ordering, multiple groups/orders,
-other bounds and bounded processing-time RANGE. Released Flink validation failures remain
-failures. SQL FILTER support remains subject to the released OVER validator. A mixed JVM
+other bounds and bounded processing-time RANGE. Representation-sensitive collection
+consumers/constructors above OVER retain the existing producer-qualification fallback; this
+does not extend ARRAY/MAP/ROW operator-boundary coverage. Released Flink validation failures
+remain failures. SQL FILTER support remains subject to the released OVER validator. A mixed JVM
 frame may also contain released scalar SUM/SUM0/MIN/MAX/COUNT/AVG/FIRST_VALUE/LAST_VALUE
 or ranking calls; builtin-only frames retain the Rust matcher's coverage below.
 `streamfusion.operator.jvmOver.enabled=false` disables this substitution;

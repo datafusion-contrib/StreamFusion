@@ -15,10 +15,11 @@ def validate(audit, path, line):
     if not isinstance(requirements, list) or not requirements:
         raise ValueError('Runtime route scope requires nonempty cases')
     seen = set()
+    guard_key = 'forbidden_operators_on_native_routes'
     for requirement in requirements:
         base = {'test', 'display_name', 'count'}
         if (not isinstance(requirement, dict)
-                or set(requirement) not in (base | {'route'}, base | {'route_by_contract_variant'})
+                or set(requirement) - {guard_key} not in (base | {'route'}, base | {'route_by_contract_variant'})
                 or not isinstance(requirement['test'], str) or requirement['test'].count('#') != 1
                 or not all(requirement['test'].split('#'))
                 or not isinstance(requirement['display_name'], str) or not requirement['display_name']
@@ -36,6 +37,11 @@ def validate(audit, path, line):
                              for variant, route in variants.items()))
         if not valid:
             raise ValueError('Invalid runtime route requirement')
+        forbidden = requirement.get(guard_key, [])
+        if (not isinstance(forbidden, list)
+                or any(not isinstance(name, str) or not name for name in forbidden)
+                or len(set(forbidden)) != len(forbidden)):
+            raise ValueError('Invalid forbidden runtime operators')
         key = (requirement['test'], requirement['display_name'])
         if key in seen:
             raise ValueError('Duplicate runtime route requirement')
@@ -65,4 +71,23 @@ def validate(audit, path, line):
                     continue
             if actual != expected:
                 problems.append(f"{label}: expected runtime route {expected}, got {actual}")
+            forbidden = requirement.get(guard_key, [])
+            if forbidden and expected in ('native', 'mixed'):
+                jobs = case.get('jobs')
+                if not isinstance(jobs, dict) or not jobs:
+                    problems.append(f"{label}: missing operator graphs for forbidden-operator check")
+                    continue
+                for job, result in jobs.items():
+                    graph = result.get('graph') if isinstance(result, dict) else None
+                    nodes = graph.get('nodes') if isinstance(graph, dict) else None
+                    if (not isinstance(nodes, list) or not nodes
+                            or any(not isinstance(node, dict)
+                                   or not isinstance(node.get('operator_class'), str)
+                                   or not node['operator_class'] for node in nodes)):
+                        problems.append(f"{label}: missing operator graph for job {job}")
+                        continue
+                    found = sorted({node.get('operator_class') for node in nodes
+                                    if node.get('operator_class') in forbidden})
+                    if found:
+                        problems.append(f"{label}: forbidden operators in job {job}: {found}")
     return problems
