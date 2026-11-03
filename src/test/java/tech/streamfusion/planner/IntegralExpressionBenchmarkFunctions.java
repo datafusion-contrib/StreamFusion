@@ -209,7 +209,9 @@ public final class IntegralExpressionBenchmarkFunctions {
           default: throw new IllegalArgumentException(type);
         }
         BigInteger maximum = BigInteger.TEN.pow(precision).subtract(BigInteger.ONE);
-        BigInteger unscaled = row % 17 == 0 ? maximum : row % 17 == 1 ? maximum.negate()
+        boolean decimalTruth = "decimal-truth".equals(System.getenv("SF_INTEGRAL_CORPUS"));
+        BigInteger unscaled = decimalTruth && row % 17 == 2 ? BigInteger.ZERO
+            : row % 17 == 0 ? maximum : row % 17 == 1 ? maximum.negate()
             : BigInteger.valueOf((row % 2 == 0 ? -1L : 1L)
                 * (precision == 4 ? v % 10000 : 9007199254740993L + v));
         return DecimalData.fromBigDecimal(new BigDecimal(unscaled, scale), precision, scale);

@@ -277,10 +277,13 @@ fn main() {
                 _ => unreachable!(),
             };
             let maximum = 10_i128.pow(precision as u32) - 1;
+            let decimal_truth =
+                std::env::var("SF_INTEGRAL_CORPUS").is_ok_and(|value| value == "decimal-truth");
             let values = (0..rows).map(|row| {
                 (!nullable || row % 7 != 0).then(|| match row % 17 {
                     0 => maximum,
                     1 => -maximum,
+                    2 if decimal_truth => 0,
                     _ if precision == 4 => {
                         (if row % 2 == 0 { -1 } else { 1 }) * (row as i128 * 7919 % 10_000)
                     }

@@ -1329,6 +1329,23 @@ Ordinary integer-to-BOOLEAN CAST already has a released comparison rewrite.
 The [release qualification](../benchmarks/scalar-functions.md#character-consumers-of-integer-truth)
 retains actual preceding evaluation, independent stock, tiny controls and complete jobs.
 
+### DECIMAL-to-BOOLEAN TRY_CAST
+
+TRY_CAST from a direct DECIMAL input or literal to BOOLEAN compares with a DECIMAL zero
+of the same precision and scale in Rust. Every nonzero value is TRUE, zero is FALSE and
+NULL stays NULL in modern and legacy modes. This follows Flink's NumericToBoolean rule
+and Comet's same-type zero-comparison structure; no floating conversion or rescaling is
+needed. Logical/NULL checks, filters and nullable CASE consumers retain their native
+comparison path. Character formatting keeps its separate generated producer proof.
+
+Computed DECIMAL producers retain their preceding routes, including arithmetic overflow,
+selected failures, lazy branches and all-filtered batches. Ordinary CAST already reduces
+to a native comparison when the source precision exceeds its scale. Released Flink rejects
+ordinary DECIMAL(p,p)-to-BOOLEAN CAST while constructing its zero literal; that planning
+failure remains unchanged. TRY_CAST for that same source type is independently supported.
+The [release qualification](../benchmarks/scalar-functions.md#decimal-to-boolean-try_cast)
+retains actual preceding fallback, independent stock, tiny batches and complete jobs.
+
 ### Integer/string casts
 
 `CAST` and `TRY_CAST` between `STRING`/`VARCHAR`/`CHAR` and

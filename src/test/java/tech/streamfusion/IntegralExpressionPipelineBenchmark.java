@@ -32,6 +32,7 @@ class IntegralExpressionPipelineBenchmark {
     boolean epochMillisInput = Boolean.getBoolean("sf.integral.epochMillisInput");
     boolean epochSecondsInput = Boolean.getBoolean("sf.integral.epochSecondsInput");
     boolean notNull = Boolean.getBoolean("sf.integral.primaryNotNull");
+    boolean decimalTruth = "decimal-truth".equals(System.getenv("SF_INTEGRAL_CORPUS"));
     String secondary = System.getProperty("sf.integral.secondaryType", "");
     assertTrue(secondary.isEmpty() || secondary.equals("INT") || secondary.equals("BIGINT"));
     var primary = timestampPrecision >= 0 ? DataTypes.TIMESTAMP_LTZ(timestampPrecision)
@@ -67,7 +68,8 @@ class IntegralExpressionPipelineBenchmark {
                   tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.temporalMillis(i))
                   .plusNanos(timestampPrecision > 3 ? i % 1024 * 7919 % 1000000 : 0);
             } else if (decimalPrecision > 0) {
-              BigInteger unscaled = i % 17 == 0 ? maximum : i % 17 == 1 ? maximum.negate()
+              BigInteger unscaled = decimalTruth && i % 17 == 2 ? BigInteger.ZERO
+                  : i % 17 == 0 ? maximum : i % 17 == 1 ? maximum.negate()
                   : BigInteger.valueOf((i % 2 == 0 ? -1L : 1L)
                       * (decimalPrecision == 4 ? i * 7919L % 10000 : 9007199254740993L + i * 7919L));
               value = new BigDecimal(unscaled, decimalScale);

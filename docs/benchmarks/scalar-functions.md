@@ -8331,3 +8331,91 @@ batch arguments and `SF_INTEGRAL_EXPRESSION=CAST(TRY_CAST(v AS BOOLEAN) AS STRIN
 `SF_INTEGRAL_PREVIOUS=true` on the same release runtime. Complete jobs use
 `IntegralExpressionPipelineBenchmark`, the corresponding expression, bigint input flag
 and `sf.integral.previous=true` for the preceding control; other resources/data match.
+
+
+## DECIMAL-to-BOOLEAN TRY_CAST
+
+Direct DECIMAL inputs/literals use the existing native `<>` comparison against a
+zero with identical precision/scale. Every nonzero coefficient is TRUE, zero is FALSE
+and NULL remains NULL in both cast modes. This follows Flink's NumericToBoolean rule
+and Comet's same-type Decimal128 zero comparison. Ordinary CAST already rewrites to a
+comparison when precision exceeds scale; released ordinary DECIMAL(p,p) CAST fails
+during planning and remains unchanged. Computed/metadata-sensitive/failing/stateful
+producers retain their previous routes and character formatting retains its separate
+proof. No new Rust production kernel, setting, dependency or JNI contract is added.
+
+The [record](results/decimal-boolean-try-cast-2026-11-03.json) retains all 50 prepared configurations and
+[5,000 raw samples](results/decimal-boolean-try-cast-2026-11-03.csv.gz), including warmups, checksums and variability.
+Released Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread, and release/mimalloc
+are used. Five compact/noncompact input types are DECIMAL(4,2), (18,2), (19,19), (38,18)
+and (38,38), each nullable/NOT NULL and GenericRowData/BinaryRowData. Matching Arrow and
+Java fixtures include signed extrema, both signs and periodic zeros. The explicit
+`SF_INTEGRAL_CORPUS=decimal-truth` corpus adds the same zeros to both fixtures; the earlier
+nonzero-only pilot is retained separately and is not the final qualification.
+
+Each trial consumes 131,072 rows with 16 warmups/nine measurements. The Rust timer
+encloses production Calc and equivalent consumption after import/before export; Flink
+starts on equal prepared RowData. Setup/perimeter costs alone are outside this function
+timer; intrinsic costs remain. Actual preceding encoder `907c078c` rejects TRY_CAST and
+its real Java fallback is measured, not an invented callback. Both use the exact same
+unchanged accepted DSO and final fixtures. Only the benchmark executable changes to
+add the explicit zero corpus. Artifact/source hashes and matching mimalloc aliases remain.
+
+| Scope | Cells | Paired stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk (1,024 rows) | 40 | 4.245-52.674x | 4.250-45.661x | 4.222-45.962x |
+| Tiny (16 rows) | 10 | 0.341-1.487x | 0.406-1.842x | 0.390-1.810x |
+
+All bulk cells beat stock and actual previous behavior. Tiny cells retain
+5 stock losses and 5 previous losses.
+Independent stock ranges remain alongside paired controls.
+
+Ten complete million-row configurations cover all five input types on both released
+Flink lines. They retain bounded row input, blackhole output, startup, JNI and both
+transposes, with two warmups/five measurements in alternating order. Candidate controls
+require consumed NativeCalc work and empty evaluators; preceding controls require their
+actual fallback and zero native substitutions. Seconds, median:
+
+| Flink / source / target | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / DECIMAL(4,2)-BOOLEAN | 0.169193 | 0.184344 | 0.162222 | 0.157377 |
+| 2.2.1 / DECIMAL(18,2)-BOOLEAN | 0.161567 | 0.177438 | 0.151877 | 0.156473 |
+| 2.2.1 / DECIMAL(19,19)-BOOLEAN | 0.160679 | 0.194553 | 0.151313 | 0.161298 |
+| 2.2.1 / DECIMAL(38,18)-BOOLEAN | 0.169855 | 0.193467 | 0.148120 | 0.160680 |
+| 2.2.1 / DECIMAL(38,38)-BOOLEAN | 0.157564 | 0.192809 | 0.159520 | 0.148599 |
+| 1.18.1 / DECIMAL(4,2)-BOOLEAN | 0.173802 | 0.178297 | 0.154189 | 0.154342 |
+| 1.18.1 / DECIMAL(18,2)-BOOLEAN | 0.159733 | 0.180253 | 0.149595 | 0.154122 |
+| 1.18.1 / DECIMAL(19,19)-BOOLEAN | 0.167480 | 0.186420 | 0.146684 | 0.153933 |
+| 1.18.1 / DECIMAL(38,18)-BOOLEAN | 0.157908 | 0.190552 | 0.156317 | 0.147475 |
+| 1.18.1 / DECIMAL(38,38)-BOOLEAN | 0.163782 | 0.187075 | 0.154887 | 0.149671 |
+
+Native/stock elapsed spans **1.026-1.224**, retaining 10 stock losses;
+native/previous spans **1.134-1.298**, retaining 10 previous losses.
+Every unfavorable result remains; function qualification is distinct from full-job gains.
+
+All **456 focused JVM invocations** pass without skips on released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java release 11. Full 5,003-row maps/schema cover eleven
+precision/scale pairs from DECIMAL(1,0)/(1,1) to (38,38), nullable/NOT NULL, both cast
+modes, zero, signed extrema, logical/NULL/CASE consumers and all-filtered batches.
+Filters, retained character evaluators, computed/failing producers and lazy branches
+also pass. Admitted paths require actual consumed native work and empty evaluators.
+The four ordinary DECIMAL(p,p) planning failures are separately verified in both modes.
+Adjacent integer/BOOLEAN casts and DECIMAL projection/default regressions pass.
+
+Actual-before runs compare 44 positive invocations' first NOT NULL/modern normal
+maps/schema before the expected old-fallback assertion; later modes/nullability/empty
+queries are not claimed as reached. Eight before character-consumer controls also compare
+maps/schema before their fallback assertion, with later filters/negative checks unreached.
+All sixteen ordinary CAST planning-failure invocations pass, each covering both modes.
+Four fresh unchanged released CastRules oracles pass two original DECIMAL-to-BOOLEAN
+assertions each. A fresh release core run passes **904 Rust tests**, no ignores; only the
+benchmark fixture changes in Rust, and the production DSO hash stays identical.
+
+Reproduce with release `integral_expression`, matching DECIMAL input/nullability/row-layout/
+batch arguments, `SF_INTEGRAL_CORPUS=decimal-truth` and
+`SF_INTEGRAL_EXPRESSION=TRY_CAST(v AS BOOLEAN)`. Actual previous uses its frozen encoder
+with the same final Java fixture and explicit `sf.integral.fallbackControl=true` /
+`sf.integral.fallbackReason=unsupported TRY_CAST DECIMAL→BOOLEAN` control. Complete jobs use
+`IntegralExpressionPipelineBenchmark` and matching `sf.integral.decimalPrecision`/`decimalScale`;
+the preceding control must keep its fallback. Remaining producers, consumers and source/
+target families stay in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).

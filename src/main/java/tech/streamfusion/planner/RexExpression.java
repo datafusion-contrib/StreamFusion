@@ -4026,6 +4026,15 @@ final class RexExpression {
       longs.add(0L);
       return true;
     }
+    if (tryCast && source == SqlTypeName.DECIMAL && targetType == SqlTypeName.BOOLEAN
+        && (call.getOperands().get(0) instanceof RexInputRef
+            || call.getOperands().get(0) instanceof RexLiteral)) {
+      add(KIND_CALL, opCode(SqlKind.NOT_EQUALS), 2);
+      if (!emit(call.getOperands().get(0))) return false;
+      add(KIND_LIT_DECIMAL, strings.size(), 0);
+      strings.add("0|" + sourceType.getPrecision() + "|" + sourceType.getScale());
+      return true;
+    }
     boolean integralTryCast = tryCast && sourceInteger >= 0 && sourceInteger <= 3
         && targetInteger >= 0 && targetInteger <= 3
         && nativeIntegralRoundingOperand(call.getOperands().get(0));
