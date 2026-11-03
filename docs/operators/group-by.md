@@ -24,7 +24,7 @@ when a native state owner lacks a qualified canonical binding. That route curren
 aggregation on stock Flink and binds the supported rank state automatically. This preserves stock
 accumulators and identities; see [updating canonical coverage](top-n.md#updating-canonical-state-partial)
 and [retracting canonical coverage](top-n.md#retracting-canonical-state-partial).
-Native aggregate-state interchange in these graphs remains open in
+Automatic native aggregate-state binding in these graphs remains open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
 ## Single-phase
@@ -3028,3 +3028,43 @@ The columnar input capability also covers aggregates that inspect only a represe
 argument's parent NULL bit, such as COUNT(v). The shared check uses actual group/value
 references and aggregate kinds; aggregates that interpret complex values still require
 their existing verified representation contract.
+
+
+## Stock arithmetic accumulator projection (partial)
+
+A direct Flink 2.2.1 adapter now projects the qualified generated arithmetic `accState` value.
+It copies COUNT, SUM0, nullable SUM and raw AVG sums/counts, the independent input-record counter
+and the original TTL write age. It does not infer an accumulator from its displayed result.
+A NULL SUM accumulator differs from a non-null zero after cancellation, even when both display
+NULL. The existing native nullable accumulator already preserves this distinction; its state
+format is unchanged. Record and non-null counters wrap like released Java long counters when a
+restored maximum/minimum value is advanced or retracted, including in debug native builds.
+
+The field map follows the actual generated accumulator schema. An optimizer can share COUNT(v)
+and SUM0(v) to implement SQL SUM/AVG, while another plan retains separate nullable SUM and AVG
+buffers plus a hidden COUNT(*). Extra descriptors, unmapped fields, incompatible kinds/types,
+non-null violations, duplicate native groups and pending unflushed input are rejected. Import
+validates the complete source and empty target before applying data, consuming source state only
+after success. A resource-denied destination must be closed before retrying on a fresh target.
+
+Export visits live memory or raw native RocksDB state in bounded Arrow callbacks, preserving
+actual binary keys. It never writes an intermediate native checkpoint. Decoded persistent state
+and output buffers reserve the task's memory budget. TTL-disabled export emits no write age even
+when native checkpoint restoration has installed a migration clock. Canonical snapshot guards
+and actual operator restore tests distinguish direct projection from the native snapshot path.
+
+The current qualification is single-phase, per-record BIGINT arithmetic with nullable BIGINT keys,
+COUNT(*), COUNT(v), SUM/AVG with hidden counts, shared COUNT/SUM0 layouts, both before-image policies,
+both native stores and both initial engine orders. Native checkpoints and canonical savepoints
+remain distinct paths. Broader state types, global/composite keys, filters, mini-batch/two-phase
+contracts, data views and automatic planner binding still require their own qualification under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Ordinary jobs do not yet gain
+this adapter automatically; bound rank graphs continue retaining their stock aggregate owner.
+The direct adapter is checked by 106 Flink 2.2.1 cases: 16 independent generated-layout controls,
+72 repeated handoff/long-counter cases, ten validation/receiver/resource-failure cases and eight
+native-checkpoint recovery cases. They compare complete stock accumulator bytes and write ages,
+retain the source on failed imports, and guard canonical export against intermediate native
+snapshots. Another 66 existing Java aggregate processing/SQL checks pass, including two-phase
+aggregation. The complete native suite passes 1,268 tests with two pre-existing ignores.
+Complete-job/custom-connector/delivery and cross-version matrices also remain open.
+Benchmarking is explicitly deferred.

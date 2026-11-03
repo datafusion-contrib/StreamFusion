@@ -2,6 +2,7 @@ use crate::aggregates::{RAW_SUM_PARTIAL, RETRACTING_DECIMAL_SUM};
 use crate::*;
 
 mod collection_agg;
+mod canonical;
 use collection_agg::{is_collection, CollectionState};
 mod decimal_map_order;
 mod distinct;
@@ -629,7 +630,7 @@ impl GroupAggState {
         match self {
             GroupAggState::Running { agg, non_null } => {
                 agg.fold(value);
-                *non_null += 1;
+                *non_null = non_null.wrapping_add(1);
             }
             GroupAggState::Extremes { .. } => self.accumulate_extreme_key(MinMaxKey::of(value)),
             GroupAggState::Mapped(_)
@@ -696,7 +697,7 @@ impl GroupAggState {
         match self {
             GroupAggState::Running { agg, non_null } => {
                 agg.retract(value);
-                *non_null -= 1;
+                *non_null = non_null.wrapping_sub(1);
             }
             GroupAggState::Extremes { .. } => self.retract_extreme_key(MinMaxKey::of(value)),
             GroupAggState::Mapped(_)
@@ -2904,7 +2905,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         ttl.now(),
                     );
                 }
-                state.records += match record_counts {
+                state.records = state.records.wrapping_add(match record_counts {
                     Some(counts) => {
                         if counts.is_null(row) {
                             0
@@ -2919,7 +2920,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                             1
                         }
                     }
-                };
+                });
                 if ttl.enabled() {
                     // Every processed row is a state write (Flink's accState.update), so it
                     // refreshes the group's TTL. Reads never do.

@@ -1213,3 +1213,21 @@ remaining limits](../operators/top-n.md#retracting-canonical-state-partial).
 Unsupported schemas, additional sort fields, nullable variable bounds, broader native graphs and
 full cross-version/failure/connector/delivery coverage remain in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+## Arithmetic grouped accumulator projection (partial)
+
+The Flink 2.2.1 grouped-arithmetic adapter writes the released generated `accState` row directly
+with its actual RowData serializer, key serializer and TTL envelope. Physical slot maps preserve
+raw SUM/AVG accumulators, nullable SUM initialization, shared COUNT/SUM0 fields, hidden input-row
+counts and write ages. The native protocol visits live state through bounded Arrow batches; it
+does not encode and reread a native snapshot. Both memory and raw native RocksDB use the same
+transfer semantics. Whole-source validation precedes mutation, and a failed resource allocation
+retains the source for a fresh target. Receiver failures preserve native state for another export.
+
+This establishes the explicitly wired arithmetic contract and real operator restore lifecycle.
+It does not yet install grouped-state bindings automatically in ordinary SQL or compiled plans.
+Grouped state in the qualified rank-job graphs remains stock-owned. See [arithmetic aggregate
+scope and pending coverage](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial).
+All 15 families and the complete acceptance matrix remain partial/open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
