@@ -1,3 +1,5 @@
+mod update;
+
 use super::*;
 use jni::objects::JObject;
 

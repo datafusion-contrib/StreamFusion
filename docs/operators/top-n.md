@@ -529,3 +529,38 @@ async/unaligned state, broader shared/upstream-native graphs, full-job TTL expir
 backend/version/connector/delivery matrix. Existing unbound native paths keep their own recovery
 representation; older unbound native checkpoint upgrades are not qualified here. All remain in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+## Updating canonical state (direct foundation; partial)
+
+The direct Flink 2.2.1 adapter projects fixed, TTL-disabled UpdateFast state as the released
+`data-state-with-update` MAP: actual unique row key → stock `Tuple2<RowData, Integer>`. The integer
+preserves ordering within equal sort values. Fast Top-1 uses stock `Top1-Rank-State` VALUE instead.
+Capture real partition, unique-key and sort selectors and the stock key serializer. Export visits
+live memory or raw RocksDB partitions directly, in at most 1,024-row Arrow transfers, without
+writing an intermediate native snapshot. Hidden overflow rows and retained row kinds survive.
+
+Import requires an empty native target and validates all source state before applying any transfer.
+Foreign descriptors, key/payload disagreements, duplicate unique keys or tied positions, invalid
+non-null fields and nonconsecutive tied positions are rejected with the source retained. Successful
+import consumes the projected stock state. A resource-denied target must be closed; the untouched
+source can then restore into a fresh target. Receiver failures preserve the original Java exception,
+release transferred Arrow buffers and leave native state available for another export.
+
+Qualification passes 135 direct and actual-operator controls: 96 typed cases include INT/BIGINT/
+VARCHAR, nullable keys/sort values, reversed non-leading composite unique keys, reserved field-name
+collisions, fast Top-1, projected/hidden ranks, both stores and both update-before policies. Sixteen
+initialization cases exercise both switch orders against uninterrupted stock output. Other controls
+cover multi-chunk tie order, all four stored kinds, late corruption/retry, populated targets, foreign
+state, invalid non-null primitives, receiver failure and memory denial. Snapshot guards reject an
+intermediate native snapshot/checkpoint. A combined cohort passes 260 Java controls, and the full
+native suite passes 1,247 tests with two existing ignores. Shared Flink 1.18 processing/checkpoint
+controls pass 125 cases; this does not establish canonical interchange on that version.
+
+Automatic normal-submission binding, complete-job and released upstream fixture qualification are
+not supplied by this foundation. TTL envelopes, independent variable bounds, preserved numeric tie
+rank gaps, OFFSET and broader schema/graph/version/connector/failure coverage remain open under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). A stock TTL restore can retain
+nonconsecutive inner ranks; this foundation rejects them rather than silently renumbering them.
+The wider typed run initially failed 40 cases because its stock comparator selected NULLS LAST
+while native selected NULLS FIRST; matching those settings passes all unchanged inputs/assertions.
+Benchmarking remains deferred.

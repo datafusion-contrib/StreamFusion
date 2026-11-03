@@ -3027,6 +3027,15 @@ public final class Native {
   public static native void enableTopNFirstBound(
       long handle, boolean persistent, boolean generateUpdateBefore);
 
+  public static native void exportUpdatingTopNCanonical(
+      long handle, boolean persistent, long rowSchemaAddress, BatchReceiver receiver);
+
+  public static native void importUpdatingTopNCanonical(
+      long handle, boolean persistent, long arrayAddress, long schemaAddress);
+
+  public static native void validateUpdatingTopNCanonical(
+      long handle, boolean persistent, long arrayAddress, long schemaAddress);
+
   public static native void exportAppendTopNCanonical(
       long handle, boolean persistent, long rowSchema, BatchReceiver receiver);
 

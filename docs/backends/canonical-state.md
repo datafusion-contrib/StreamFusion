@@ -1163,3 +1163,17 @@ rows and consumes two new native rows. See [the full append scope and limitation
 Async/unaligned state, OFFSET, additional sort columns, broader schemas/graphs and the other rank
 strategies require their own qualification. Full TTL timelines and the broader startup, failure,
 connector and version matrices remain open. Benchmarking is deferred.
+
+## Direct updating Top-N projection (partial)
+
+The Flink 2.2.1 fixed/no-TTL UpdateFast foundation projects stock `data-state-with-update` tuples
+or fast Top-1 `Top1-Rank-State` winners directly from live memory/persisted state. Actual unique
+keys, tied-row ordering, hidden overflow and stored kinds survive through stock serializers.
+Whole-view validation precedes mutation; successful imports consume the source. Failed validation
+preserves source state, and a resource-denied target can be closed before retrying on a fresh one.
+
+The 135 direct/actual-operator controls cover typed and composite keys, both stores, both switch
+orders, hidden/projected ranks, before-image policies, multi-chunk order and error cleanup. No
+intermediate native snapshot is written. Normal-submission binding, complete jobs, TTL/gap/bound
+metadata and upstream fixture qualification remain pending. See the [updating scope](../operators/top-n.md#updating-canonical-state-direct-foundation-partial)
+and [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
