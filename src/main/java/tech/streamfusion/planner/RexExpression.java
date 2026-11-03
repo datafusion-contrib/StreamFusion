@@ -2212,6 +2212,7 @@ final class RexExpression {
       longs.add(call.getKind() == SqlKind.MINUS ? 1L : 0L);
       return true;
     }
+    if (nativeIntegerPrintf(call)) return emitBuiltinCall(call, 248);
     int certifiedBuiltin = certifiedBuiltin(call);
     if (certifiedBuiltin != 0) return emitCertifiedBuiltin(call, certifiedBuiltin);
     int epochTimestamp = nativeEpochTimestamp(call);
@@ -4596,7 +4597,7 @@ final class RexExpression {
       case "PARSE_URL":
         return true;
       case "PRINTF":
-        return true;
+        return !nativeIntegerPrintf(call);
       case "STARTSWITH":
       case "ENDSWITH":
         return false;
@@ -4641,6 +4642,24 @@ final class RexExpression {
     return call.getOperands().size() == 1
         && SqlTypeFamily.CHARACTER.contains(call.getType())
         && nativeBooleanFormattingOperand(call.getOperands().get(0));
+  }
+
+  private static boolean nativeIntegerPrintf(RexCall call) {
+    if (!(call.getOperator()
+        instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction)) return false;
+    var definition = ((org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction)
+        call.getOperator()).getDefinition();
+    if (!(definition instanceof org.apache.flink.table.functions.BuiltInFunctionDefinition)
+        || !"PRINTF".equalsIgnoreCase(((org.apache.flink.table.functions.BuiltInFunctionDefinition)
+            definition).getName())
+        || call.getOperands().isEmpty()
+        || !(call.getOperands().get(0) instanceof RexLiteral)) return false;
+    var format = (RexLiteral) call.getOperands().get(0);
+    if (!isCharacter(format) || format.isNull()
+        || call.getOperands().stream().skip(1).anyMatch(operand ->
+            !SqlTypeFamily.INTEGER.contains(operand.getType())
+                || !nativeIntegralRoundingOperand(operand))) return false;
+    return IntegerPrintfFormat.supports(format.getValueAs(String.class), call.getOperands().size() - 1);
   }
 
   private static boolean nativeBooleanFormattingOperand(RexNode node) {

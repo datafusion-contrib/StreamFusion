@@ -1,5 +1,5 @@
 use super::{integer, text};
-use arrow::array::{ArrayRef, Decimal128Array, StringArray};
+use arrow::array::{ArrayRef, Decimal128Array, StringArray, StringBuilder};
 use arrow::datatypes::DataType;
 use std::fmt::Write;
 use std::sync::Arc;
@@ -17,11 +17,27 @@ pub(super) fn evaluate(args: &[ArrayRef]) -> Option<ArrayRef> {
 }
 
 fn format(pattern: &str, args: &[ArrayRef], row: usize) -> Option<String> {
+    let mut output = String::with_capacity(pattern.len() + 32);
+    write_format(pattern, args, row, &mut output)?;
+    Some(output)
+}
+
+pub(super) fn integer_literal(pattern: &str, args: &[ArrayRef], rows: usize) -> Option<ArrayRef> {
+    let mut output = StringBuilder::with_capacity(rows, rows.saturating_mul(pattern.len() + 32));
+    let mut scratch = String::with_capacity(pattern.len() + 32);
+    for row in 0..rows {
+        scratch.clear();
+        write_format(pattern, args, row, &mut scratch)?;
+        output.append_value(&scratch);
+    }
+    Some(Arc::new(output.finish()))
+}
+
+fn write_format(pattern: &str, args: &[ArrayRef], row: usize, output: &mut String) -> Option<()> {
     let bytes = pattern.as_bytes();
     let mut i = 0;
     let mut ordinary = 0;
     let mut previous = None;
-    let mut output = String::with_capacity(pattern.len() + 32);
     while i < bytes.len() {
         if bytes[i] != b'%' {
             output.push(bytes[i] as char);
@@ -228,7 +244,7 @@ fn format(pattern: &str, args: &[ArrayRef], row: usize) -> Option<String> {
             output.push_str(&value);
         }
     }
-    Some(output)
+    Some(())
 }
 
 fn fixed_decimal(value: i128, scale: i8) -> Option<String> {

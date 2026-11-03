@@ -7790,3 +7790,99 @@ unchanged Rust runtime already passed **900 release core tests** without ignores
 including dynamic-position TRUNCATE, slices, NULLs, ownership and empty arrays. Hosted CI
 remains separate; broader runtime/extreme numeric scope stays in
 [#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+
+## Integer PRINTF with a literal format
+
+On released Flink 2.2.1, verified integer inputs/literals and failure-free arithmetic,
+lossless widening or admitted rounding trees use an evaluator-free Arrow formatter with
+an ASCII literal format of at most 512 characters. Conversions are `%s`/`%S`, `%d`,
+`%x`/`%X`, `%o` and `%%`; width/precision are at most 256. The planner validates flags and
+indexing during planning using the running JDK's `Formatter(Locale.US)`. Explicit index zero stays
+on its preceding route because JDK 11 accepts it and JDK 17 rejects it. Every producer
+must be failure-free, including unused arguments. Other formats/types and sensitive string
+consumers retain their existing routes. Flink 1.18 has no PRINTF and retains SQL rejection.
+
+The new path borrows the literal format, reuses an output scratch String, and appends into
+one Arrow builder rather than creating an output String and materialized format per row.
+The existing compatibility formatter remains shared; this does not substitute Rust format
+syntax for Java Formatter. Parsing and per-conversion strings are still rowwise. Actual
+preceding encoder `f910c352` is compiled independently against the shared current runtime,
+fixture and allocator. Its direct compatible ASCII batches can already execute certified
+Rust with a retained evaluator; computed producers retain generated evaluation. The previous
+control is not assumed to perform callbacks on every batch, nor is it a whole historical
+DSO replay.
+
+The [2026-11-03 record](results/integer-literal-printf-2026-11-03.json) uses released Flink 2.2.1, Oracle JDK 17.0.12,
+Apple M4 Pro, one thread and release/mimalloc-linked artifacts. Both executable and DSO
+verify identical malloc/mi_malloc addresses. Prepared GenericRowData, BinaryRowData and
+Arrow contain the same values, all signed integer widths, nullable/NOT NULL, extrema and
+NULLs. Each trial consumes 131,072 rows, with 16 warmups and nine measurements. Rust times
+production Calc and equivalent output consumption after input import and before output
+export. Intrinsic callbacks remain timed; initial JNI/import/export and perimeter transposes
+are excluded only from the prepared function gate. Complete jobs retain those costs.
+
+Short formatting uses `PRINTF('%d/%s/%1$x',v,v)`; padded formatting uses
+`PRINTF('%+020d:%2$-12.3S:%1$08X',v,v)`. Additional INT/BIGINT controls add one at the original
+input width in the first formatter argument. Secondary input is not needed.
+
+| Bulk cells | Paired stock / native median range | Previous / native median range | Independent stock / native |
+| ---: | ---: | ---: | ---: |
+| 40 | 2.532-5.180x | 1.072-5.250x | 2.462-5.094x |
+
+All 40 bulk cells beat paired stock and the actual preceding encoder. Independent stock
+has 0 lower medians than native; all independent measurements and variability remain.
+The eight 16-row controls retain paired stock/native 2.174-4.008x,
+including 0 controls slower than stock. The [4,800 raw trials](results/integer-literal-printf-2026-11-03.csv.gz)
+include checksums and warmups.
+
+The initial implementation merely removed the descriptor and reused certified formatting;
+its previous/native pilot spans 0.968-1.033x and loses several controls. Its
+[800 pilot trials](results/integer-literal-printf-2026-11-03-initial-pilot.csv.gz), source and artifact hashes remain
+separate from the [800 optimized pilot trials](results/integer-literal-printf-2026-11-03-optimized-pilot.csv.gz).
+For the 1,024-row nullable INT short probe, scratch/builder reuse reduces allocation requests
+from 4,136/195,476 requested bytes to
+3,102/91,842. Retained width-300 formats replay the saved pre-refactor
+executable/DSO and current artifacts, both retaining evaluators; initial/current median
+ratios span 0.987-1.005x. These [400 controls](results/integer-literal-printf-2026-11-03-retained-controls.csv.gz)
+retain shared-formatter variation separately from the admitted scope.
+
+Eight complete million-row INT/BIGINT jobs retain a bounded row source, blackhole sink,
+startup, JNI and both transposes; two warmups and five measurements alternate engine order.
+Candidate requires consumed NativeCalc work and empty evaluators. Previous requires its
+retained evaluator, which does not prove callbacks for every compatible direct batch.
+Seconds, median:
+
+| Flink / type / format shape | Paired stock | Native | Independent stock | Previous route |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-short | 0.512502 | 0.282118 | 0.528230 | 0.308422 |
+| 2.2.1 / INT-padded | 0.888427 | 0.326280 | 0.970378 | 0.331879 |
+| 2.2.1 / INT-short-computed | 0.511739 | 0.288623 | 0.483461 | 0.507033 |
+| 2.2.1 / INT-padded-computed | 0.983899 | 0.327239 | 0.933144 | 0.967021 |
+| 2.2.1 / BIGINT-short | 0.566439 | 0.293006 | 0.580639 | 0.325968 |
+| 2.2.1 / BIGINT-padded | 0.962960 | 0.319097 | 0.932796 | 0.343919 |
+| 2.2.1 / BIGINT-short-computed | 0.556859 | 0.298003 | 0.558454 | 0.609614 |
+| 2.2.1 / BIGINT-padded-computed | 0.925704 | 0.330283 | 0.969479 | 1.019794 |
+
+Native/stock elapsed spans **0.331-0.564**; native/previous spans
+**0.324-0.983**. All trials/ranges are retained; prepared function
+gains do not imply a universal complete-job speedup.
+
+All **392 focused JVM invocations** pass without skips across released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java release 11. Runtime tests compare complete 5,003-row maps,
+resolved schemas, IDs, cardinality, all signed widths/extrema, NULLs, indexing, padding,
+precision, computed wrapping producers and all-filtered batches. Generated controls retain
+unverified formats/producers, JDK-dependent index zero and CHAR_LENGTH representation guards.
+Existing certified/PRINTF tests qualify the shared formatter on Flink 2.2. Before controls
+match full maps/schema then fail all eight new pure-route assertions; the generated control
+passes. Two unchanged released `StringFunctionsITCase.printfTestCases` runs pass all **47
+original assertions each**, separately as stock oracles. All **902 release Rust core tests**
+pass without ignores, including slices, ownership, empty arrays and rejected contracts.
+Hosted CI remains separate; broader formats/types/consumers stay in
+[#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).
+
+Reproduce prepared controls with the release `integral_expression` example and
+`SF_INTEGRAL_EXPRESSION` above; supply independently compiled previous encoder and
+`SF_INTEGRAL_PREVIOUS=true` for that control. Complete jobs use
+`IntegralExpressionPipelineBenchmark`, matching `sf.integral.expression`, and
+`sf.integral.bigintInput=true` for BIGINT. Other resources/settings remain identical.

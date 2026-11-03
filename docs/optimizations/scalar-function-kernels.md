@@ -1350,3 +1350,26 @@ original scope and provenance. All 40 TRUNCATE bulk cells beat paired stock by
 3.801-16.393x and the previous evaluator by 6.796-20.044x. Four of eight tiny controls
 still lose to stock. All eight measured complete jobs retain both transposes and improve
 over stock (native/stock elapsed 0.764-0.928); this does not imply a universal job gain.
+
+
+## Reuse the integer formatter's literal and output buffers
+
+A verified literal integer PRINTF binds no JVM evaluator and borrows its format once per
+batch. A reusable scratch String writes each formatted row into one Arrow StringBuilder;
+there is no repeated-format StringArray or separate output String per row. Shared Java
+Formatter-compatible parsing preserves signed widths, NULL text, padding, precision and
+indexing. The planner uses the running JDK to validate formats during planning, with conservative
+bounds and an explicit index-zero exclusion for JDK 11/17 differences. Other formats and
+representation-sensitive consumers retain their previous routes. Parsing and individual
+conversion strings remain rowwise; this is not yet a compiled-format-token engine.
+
+The initial evaluator-free prototype did not consistently beat the existing certified Rust
+path (previous/native 0.968-1.033x), so buffer reuse is part of the final implementation.
+A nullable INT short-format allocation probe drops from 4,136 requests/
+195,476 requested bytes to 3,102/91,842 per 1,024-row batch.
+Final 40-cell bulk qualification beats stock by 2.532-5.180x and
+actual preceding encoder by 1.072-5.250x. Earlier direct compatible
+batches could already execute certified Rust despite retaining a JVM descriptor. Raw
+initial/optimized pilots, independent stock, tiny and retained-formatter controls, and
+conversion-inclusive jobs remain in the [full qualification](../benchmarks/scalar-functions.md#integer-printf-with-a-literal-format).
+Allocation reductions alone are not a claim of universal job acceleration.

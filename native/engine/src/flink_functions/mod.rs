@@ -68,6 +68,7 @@ mod hash_code;
 mod if_null;
 mod instr;
 pub(crate) mod integer_divide;
+mod integer_printf;
 pub(crate) mod integer_string;
 mod is_json;
 mod java_timsort;
@@ -314,6 +315,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         245 => unnest_temporal::function(unnest_temporal::Operation::EpochSeconds),
         246 => temporal_round::utc_ltz_ceil(),
         247 => round_position::function(),
+        248 => integer_printf::function(),
         _ => return None,
     })
 }

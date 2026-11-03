@@ -2265,7 +2265,28 @@ retain their existing exact route.
 
 ### PRINTF
 
-Direct input/literal calls have a certified Rust path for ASCII formats and arguments:
+On Flink 2.2, ASCII literal formats of at most 512 characters have a JVM-free path when
+all arguments are verified integer inputs/literals, arithmetic, lossless widening or
+admitted integer rounding trees. Supported conversions are `%s`/`%S`, `%d`, `%x`/`%X`,
+`%o` and `%%`, including argument indices/reuse, alignment, sign/zero padding and string
+precision. Width and precision are bounded at 256. The planner checks the running JDK's
+flags/indexing rules during planning with `Locale.US`; data rows execute only the Arrow formatter.
+Explicit index zero retains its preceding route because JDK 11 accepts it while JDK 17 rejects it.
+NULL arguments retain their formatted `null`/`NULL` text, including precision and padding.
+Signed widths and two's-complement formatting remain exact. All child producers must be
+failure-free even when the format does not use an argument.
+
+This path borrows the literal format and reuses an output scratch buffer, appending each
+result to Arrow directly. It binds no JVM evaluator. Dynamic/non-ASCII formats, STRING/
+DECIMAL/other argument types, other conversions, larger widths/precision and unverified
+producers retain their existing paths. Composed string consumers such as CHAR_LENGTH still
+use the existing generated representation protection; direct JVM-free formatting does not
+remove those guards. Flink 1.18 still rejects PRINTF, which that release does not provide.
+The [integer-format qualification](../benchmarks/scalar-functions.md#integer-printf-with-a-literal-format)
+retains both release controls, stock/actual-previous/native measurements and the initial
+prototype that did not improve over every existing certified path.
+
+Other direct input/literal calls have a certified Rust path for ASCII formats and arguments:
 STRING/integer/DECIMAL `%s`, signed integer `%d`, two's-complement `%x`/`%X`/`%o`, ASCII integer
 `%c`/`%C` over TINYINT/SMALLINT/INT, `%%`, argument indices/reuse, width, string precision,
 alignment and sign/zero padding. BIGINT character conversions retain the formatter, which
