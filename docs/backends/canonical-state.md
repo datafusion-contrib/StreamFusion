@@ -1220,7 +1220,8 @@ full cross-version/failure/connector/delivery coverage remain in
 The Flink 2.2.1 grouped-arithmetic adapter writes the released generated `accState` row directly
 with its actual RowData serializer, key serializer and TTL envelope. Physical slot maps preserve
 raw SUM/AVG accumulators, nullable SUM initialization, shared COUNT/SUM0 fields, hidden input-row
-counts and write ages. The native protocol visits live state through bounded Arrow batches; it
+counts and write ages. Continued integer AVG uses Java's wrapping division at
+`Long.MIN_VALUE / -1`, including for restored negative counts; the canonical accumulator stays raw. The native protocol visits live state through bounded Arrow batches; it
 does not encode and reread a native snapshot. Both memory and raw native RocksDB use the same
 transfer semantics. Whole-source validation precedes mutation, and a failed resource allocation
 retains the source for a fresh target. Receiver failures preserve native state for another export.

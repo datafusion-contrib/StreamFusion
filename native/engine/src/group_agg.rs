@@ -397,7 +397,7 @@ pub(crate) fn emit_running(agg: &RunningAgg, count: i64, result_type: &DataType)
         _ if count == 0 => null_scalar(result_type),
         // AVG divides the running sum by the live non-null count, truncating toward zero for an
         // integer result (Flink's div) and casting back to the input type — see AvgAggFunction.
-        RunningAgg::AvgInt { sum, result } => avg_int_scalar(*sum / count, result),
+        RunningAgg::AvgInt { sum, result } => avg_int_scalar(sum.wrapping_div(count), result),
         RunningAgg::AvgFloat { sum, result } => avg_float_scalar(*sum / count as f64, result),
         // Decimal AVG divides with Flink's exact decimal division (38-significant-digit
         // quotient, HALF_UP) and reports DECIMAL(38, max(6, s)) — findAvgAggType's type. An

@@ -3038,7 +3038,9 @@ and the original TTL write age. It does not infer an accumulator from its displa
 A NULL SUM accumulator differs from a non-null zero after cancellation, even when both display
 NULL. The existing native nullable accumulator already preserves this distinction; its state
 format is unchanged. Record and non-null counters wrap like released Java long counters when a
-restored maximum/minimum value is advanced or retracted, including in debug native builds.
+restored maximum/minimum value is advanced or retracted, including in debug native builds. Restored
+integer AVG also wraps `Long.MIN_VALUE / -1` like Java, preserving the raw sum/count and avoiding
+a native overflow panic when an imported count has wrapped negative.
 
 The field map follows the actual generated accumulator schema. An optimizer can share COUNT(v)
 and SUM0(v) to implement SQL SUM/AVG, while another plan retains separate nullable SUM and AVG
@@ -3060,11 +3062,11 @@ remain distinct paths. Broader state types, global/composite keys, filters, mini
 contracts, data views and automatic planner binding still require their own qualification under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Ordinary jobs do not yet gain
 this adapter automatically; bound rank graphs continue retaining their stock aggregate owner.
-The direct adapter is checked by 106 Flink 2.2.1 cases: 16 independent generated-layout controls,
-72 repeated handoff/long-counter cases, ten validation/receiver/resource-failure cases and eight
-native-checkpoint recovery cases. They compare complete stock accumulator bytes and write ages,
+The direct adapter is checked by 110 Flink 2.2.1 cases: 16 independent generated-layout controls,
+72 repeated handoff/long-counter cases, ten validation/receiver/resource-failure cases, eight
+native-checkpoint recovery cases and four restored AVG signed-division boundary cases. They compare complete stock accumulator bytes and write ages,
 retain the source on failed imports, and guard canonical export against intermediate native
 snapshots. Another 66 existing Java aggregate processing/SQL checks pass, including two-phase
-aggregation. The complete native suite passes 1,268 tests with two pre-existing ignores.
+aggregation. The complete native suite passes 1,269 tests with two pre-existing ignores.
 Complete-job/custom-connector/delivery and cross-version matrices also remain open.
 Benchmarking is explicitly deferred.

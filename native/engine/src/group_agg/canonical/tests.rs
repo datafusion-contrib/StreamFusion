@@ -292,3 +292,35 @@ fn restored_long_counters_wrap_on_continuation_like_flink() {
         assert_eq!(*non_null, expected);
     }
 }
+
+#[test]
+fn restored_integer_average_wraps_the_signed_division_boundary() {
+    let mut source = owner(vec![4], 0);
+    seed(&mut source, 1, 1, 0);
+    let GroupAggState::Running { agg, non_null } =
+        &mut source.store.get_mut(&key(1).0).unwrap().aggs[0]
+    else {
+        unreachable!()
+    };
+    agg.restore_value(&ScalarValue::Int64(Some(i64::MIN)));
+    *non_null = -1;
+    let mut restored = owner(vec![4], 0);
+    restored
+        .transfer_arithmetic(&frame(&source), false)
+        .unwrap();
+    restored.update(&input(None, 0), 0).unwrap();
+    let state = restored.store.get(&key(1).0).unwrap();
+    assert_eq!(
+        state.aggs[0].emit(&DataType::Int64),
+        ScalarValue::Int64(Some(i64::MIN))
+    );
+    assert_eq!(
+        frame(&restored)
+            .column(3)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .value(0),
+        i64::MIN
+    );
+}

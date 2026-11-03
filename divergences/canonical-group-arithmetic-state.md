@@ -10,6 +10,9 @@ schema: the optimizer can share COUNT(v) and SUM0(v) across SUM/AVG results, whi
 retains nullable SUM, AVG sum/count and an additional hidden input count. Native SUM already stores
 an optional raw value; copying it preserves NULL versus cancelled zero without a format change.
 AVG transfers its raw sum, never a value reconstructed from its displayed average.
+Continued integer AVG uses wrapping division, as Java does for `Long.MIN_VALUE / -1` and as the
+existing native integer AVG accumulator already does. A restored negative count must retain that
+behavior; rejecting or normalizing it would lose reachable overflowed state.
 
 The JNI boundary reuses Comet's moved Arrow ownership and the existing exception guard. Bounded
 callbacks and raw RocksDB iteration avoid an intermediate native snapshot, reserve transient
