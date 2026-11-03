@@ -273,7 +273,8 @@ final class StockCompiledPlanLowering {
       if (ordinaryHelper(node)) continue;
       if (!graph.originals.containsKey(node)) return false;
       if (node.getClass().getName().startsWith("tech.streamfusion.")
-          && !(node instanceof NativeChangelogNormalizeExecNode
+          && !(node instanceof NativeDeduplicateExecNode
+              || node instanceof NativeChangelogNormalizeExecNode
               || node instanceof NativeFirstNExecNode
               || node instanceof NativeColumnarUpdatingJoinExecNode
               || node instanceof NativeTemporalJoinExecNode
@@ -313,7 +314,8 @@ final class StockCompiledPlanLowering {
       for (ExecNode<?> node : nodes) {
         if (ordinaryHelper(node) || replacements.containsKey(node)) continue;
         ExecNode<?> stock = graph.originals.get(node);
-        if (node instanceof NativeChangelogNormalizeExecNode
+        if (node instanceof NativeDeduplicateExecNode
+            || node instanceof NativeChangelogNormalizeExecNode
             || node instanceof NativeFirstNExecNode
             || node instanceof NativeColumnarUpdatingJoinExecNode
             || node instanceof NativeTemporalJoinExecNode
@@ -323,7 +325,12 @@ final class StockCompiledPlanLowering {
           if (!ordinaryKeyLayout(stockTransformations.get(stock.getId()))) return null;
           definitions.put(stock.getId(), reader.readTree(writer.writeValueAsString(stock)));
           ExecNode<?> exit;
-          if (node instanceof NativeChangelogNormalizeExecNode
+          if (node instanceof NativeDeduplicateExecNode
+              && stock
+                  instanceof
+                  org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecDeduplicate)
+            exit = lowerDedup(stock);
+          else if (node instanceof NativeChangelogNormalizeExecNode
               && stock
                   instanceof
                   org.apache.flink.table.planner.plan.nodes.exec.stream
@@ -546,6 +553,10 @@ final class StockCompiledPlanLowering {
       result =
           lowerJoin((org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecJoin) node);
     else if (node
+            instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecDeduplicate
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("deduplicate")) result = lowerDedup(node);
+    else if (node
             instanceof
             org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecChangelogNormalize
         && nativeKeyedState
@@ -555,6 +566,120 @@ final class StockCompiledPlanLowering {
         && NativeConfig.operatorEnabled("topN")) result = lowerFirstN(node);
     lowered.put(node, result);
     return result;
+  }
+
+  private ExecNode<?> lowerDedup(ExecNode<?> stock) throws IOException {
+    var transformation = stockTransformations.get(stock.getId());
+    if (!(transformation instanceof OneInputTransformation)) return stock;
+    var original = (OneInputTransformation<?, ?>) transformation;
+    if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)) return stock;
+    var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
+    Object function;
+    boolean miniBatch;
+    if (operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator) {
+      function =
+          ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
+              .getUserFunction();
+      miniBatch = false;
+    } else if (operator
+        instanceof org.apache.flink.table.runtime.operators.bundle.KeyedMapBundleOperator) {
+      function = releasedField(operator, "function");
+      miniBatch = true;
+    } else return stock;
+    String name = function.getClass().getSimpleName();
+    boolean rowtime;
+    boolean keepLast;
+    boolean compact = false;
+    switch (name) {
+      case "ProcTimeDeduplicateKeepFirstRowFunction":
+      case "ProcTimeMiniBatchDeduplicateKeepFirstRowFunction":
+        rowtime = false;
+        keepLast = false;
+        break;
+      case "ProcTimeDeduplicateKeepLastRowFunction":
+      case "ProcTimeMiniBatchDeduplicateKeepLastRowFunction":
+        if (!(Boolean) releasedField(function, miniBatch ? "inputInsertOnly" : "inputIsInsertOnly")
+            || releasedField(function, "genFilterCondition") != null) return stock;
+        rowtime = false;
+        keepLast = true;
+        break;
+      case "RowTimeMiniBatchLatestChangeDeduplicateFunction":
+        compact = true;
+      // The compact and full-chain bundles retain the same winning row in keyed state.
+      case "RowTimeMiniBatchDeduplicateFunction":
+      case "RowTimeDeduplicateFunction":
+        rowtime = true;
+        keepLast = (Boolean) releasedField(function, "keepLastRow");
+        break;
+      default:
+        // Buffered keep-first also owns candidates and timers; it needs a distinct contract.
+        return stock;
+    }
+    boolean presenceOnly = !rowtime && !keepLast;
+    boolean generateInsert = presenceOnly || (Boolean) releasedField(function, "generateInsert");
+    boolean generateUpdateBefore =
+        !presenceOnly && (Boolean) releasedField(function, "generateUpdateBefore");
+    // Stock proctime bare-update mode does not retain rows. Do not invent stock state for it.
+    if (!rowtime && keepLast && !generateInsert && !generateUpdateBefore) return stock;
+    long retention =
+        (Long) releasedField(function, miniBatch ? "minRetentionTime" : "stateRetentionTime");
+    int rowtimeColumn = rowtime ? (Integer) releasedField(function, "rowtimeIndex") : -1;
+    var definition = definitions.get(stock.getId());
+    int[] keys = reader.forType(int[].class).readValue(definition.path("uniqueKeys"));
+    ExecNode<?> input = stock.getInputEdges().get(0).getSource();
+    RowType inputType = (RowType) input.getOutputType();
+    if (!RowDataArrowConverter.supports(inputType)
+        || !ArrowRowTypeSupport.supportsFields(inputType, keys)
+        || Arrays.stream(keys).anyMatch(key -> containsRow(inputType.getTypeAt(key)))) return stock;
+    Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
+    ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
+    if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
+        || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
+      return stock;
+    config.setString("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
+    config.setString(
+        "table.exec.deduplicate.mini-batch.compact-changes-enabled", Boolean.toString(compact));
+    config.setString(
+        "table.exec.deduplicate.insert-update-after-sensitive-enabled",
+        Boolean.toString(generateInsert));
+    config.setString("table.exec.state.ttl", retention + " ms");
+    @SuppressWarnings("unchecked")
+    TypeSerializer<RowData> serializer =
+        (TypeSerializer<RowData>)
+            original
+                .getStateKeyType()
+                .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
+    RowType keyType =
+        RowType.of(Arrays.stream(keys).mapToObj(inputType::getTypeAt).toArray(LogicalType[]::new));
+    var contract =
+        new tech.streamfusion.state.StockDedupStateContract(
+            serializer, keyType, inputType, presenceOnly, rowtimeColumn, retention);
+    int maximum = stockMaximum(original);
+    var exchange =
+        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
+    exchange.withStateMaxParallelism(maximum);
+    var dedup =
+        new NativeDeduplicateExecNode(
+                config,
+                InputProperty.DEFAULT,
+                (RowType) stock.getOutputType(),
+                "NativeDeduplicate",
+                keys,
+                rowtimeColumn,
+                keepLast,
+                generateUpdateBefore,
+                !rowtime,
+                FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys))
+            .withStockEagerState()
+            .withStateMaxParallelism(maximum);
+    connect(exchange, dedup);
+    bindings.put(dedup, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
+    columnar.add(dedup);
+    var exit =
+        new ArrowToRowDataExecNode(
+            config, InputProperty.DEFAULT, (RowType) stock.getOutputType(), "ArrowToRowData");
+    connect(dedup, exit);
+    return exit;
   }
 
   private ExecNode<?> lowerNormalize(ExecNode<?> stock) throws IOException {
@@ -582,18 +707,18 @@ final class StockCompiledPlanLowering {
       miniBatch = false;
     } else if (operator
         instanceof org.apache.flink.table.runtime.operators.bundle.KeyedMapBundleOperator) {
-      function = normalizerField(operator, "function");
+      function = releasedField(operator, "function");
       if (!(function
           instanceof
           org.apache.flink.table.runtime.operators.deduplicate
               .ProcTimeMiniBatchDeduplicateKeepLastRowFunction)) return stock;
       miniBatch = true;
     } else return stock;
-    if (!(Boolean) normalizerField(function, "generateInsert")
-        || (Boolean) normalizerField(function, miniBatch ? "inputInsertOnly" : "inputIsInsertOnly")
-        || normalizerField(function, "genFilterCondition") != null) return stock;
+    if (!(Boolean) releasedField(function, "generateInsert")
+        || (Boolean) releasedField(function, miniBatch ? "inputInsertOnly" : "inputIsInsertOnly")
+        || releasedField(function, "genFilterCondition") != null) return stock;
     long retention =
-        (Long) normalizerField(function, miniBatch ? "minRetentionTime" : "stateRetentionTime");
+        (Long) releasedField(function, miniBatch ? "minRetentionTime" : "stateRetentionTime");
     ExecNode<?> input = stock.getInputEdges().get(0).getSource();
     RowType inputType = (RowType) input.getOutputType();
     int[] keys = reader.forType(int[].class).readValue(definition.path("uniqueKeys"));
@@ -629,7 +754,7 @@ final class StockCompiledPlanLowering {
                 (RowType) stock.getOutputType(),
                 "NativeChangelogNormalize",
                 keys,
-                (Boolean) normalizerField(function, "generateUpdateBefore"),
+                (Boolean) releasedField(function, "generateUpdateBefore"),
                 FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys))
             .withStateMaxParallelism(maximum);
     connect(exchange, normalize);
@@ -648,7 +773,7 @@ final class StockCompiledPlanLowering {
         || type.getChildren().stream().anyMatch(StockCompiledPlanLowering::containsRow);
   }
 
-  private static Object normalizerField(Object object, String name) throws IOException {
+  private static Object releasedField(Object object, String name) throws IOException {
     for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass()) {
       try {
         var field = type.getDeclaredField(name);
@@ -657,10 +782,10 @@ final class StockCompiledPlanLowering {
       } catch (NoSuchFieldException absent) {
         continue;
       } catch (IllegalAccessException failure) {
-        throw new IOException("Cannot capture released normalizer field " + name, failure);
+        throw new IOException("Cannot capture released deduplication field " + name, failure);
       }
     }
-    throw new IOException("Missing released normalizer field " + name);
+    throw new IOException("Missing released deduplication field " + name);
   }
 
   private ExecNode<?> lowerFirstN(ExecNode<?> stock) throws IOException {

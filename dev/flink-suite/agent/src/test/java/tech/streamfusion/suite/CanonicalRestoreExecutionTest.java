@@ -543,6 +543,51 @@ class CanonicalRestoreExecutionTest {
     assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"deduplicate-asc-proctime", "deduplicate-desc"})
+  void eagerDedupAuditsCommittedImportsSeparatelyFromValidationAndNewInput(String program)
+      throws Exception {
+    var scope =
+        NativeExecution.beginRestore(
+            "tech.streamfusion.canonical.EagerDedupRestoreTest", new Object(), program);
+    var operator = new NativeColumnarKeepLastDeduplicateOperator();
+    StreamFusionSuiteAgent.RecordCanonicalEagerDedupImport.exit(java.util.List.of(1, 2, 3), true);
+    StreamFusionSuiteAgent.RecordCanonicalEagerDedupImport.exit(java.util.List.of(1, 2), false);
+    NativeExecution.opened(operator);
+    NativeExecution.completed(operator, 4);
+    assertDoesNotThrow(() -> NativeExecution.finish(scope));
+    try (var files = java.nio.file.Files.list(reports)) {
+      var fields =
+          java.nio.file.Files.readString(files.findFirst().orElseThrow())
+              .stripTrailing()
+              .split("\\t", -1);
+      assertEquals("NativeColumnarKeepLastDeduplicateOperator=4", fields[2]);
+      assertEquals("NativeColumnarKeepLastDeduplicateOperator=2", fields[4]);
+    }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"empty", "openOnly", "importOnly", "otherFamily"})
+  void eagerDedupCannotPassWithoutItsOwnNewInput(String mode) {
+    var scope =
+        NativeExecution.beginRestore(
+            "tech.streamfusion.canonical.EagerDedupRestoreTest", new Object(), "deduplicate-desc");
+    if (mode.equals("otherFamily")) {
+      var operator = new NativeColumnarChangelogNormalizeOperator();
+      NativeExecution.opened(operator);
+      NativeExecution.completed(operator, 3);
+    } else if (!mode.equals("empty")) {
+      NativeExecution.opened(new NativeColumnarKeepLastDeduplicateOperator());
+      if (mode.equals("importOnly"))
+        StreamFusionSuiteAgent.RecordCanonicalEagerDedupImport.exit(java.util.List.of(1, 2), false);
+    }
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  private static final class NativeColumnarKeepLastDeduplicateOperator {}
+
   @Test
   void supportedRestoreProgramRequiresItsNativeStateFamily() {
     var scope = NativeExecution.beginRestore(NORMALIZE, new Object(), "changelog-normalize-upsert");

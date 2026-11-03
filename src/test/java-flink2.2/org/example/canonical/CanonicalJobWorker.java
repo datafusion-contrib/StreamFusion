@@ -190,6 +190,12 @@ public final class CanonicalJobWorker {
                     ? Files.readString(root.resolve("mini-batch-latency")).trim()
                     : "10 s");
       }
+      if (Files.exists(root.resolve("dedup-compact-changes")))
+        table
+            .getConfig()
+            .set(
+                "table.exec.deduplicate.mini-batch.compact-changes-enabled",
+                Files.readString(root.resolve("dedup-compact-changes")).trim());
       table.getConfig().set("streamfusion.transpose.batchRows", Integer.toString(batchRows));
       table.getConfig().set("table.plan.compile.catalog-objects", "SCHEMA");
       table.getConfig().set("table.plan.restore.catalog-objects", "IDENTIFIER");

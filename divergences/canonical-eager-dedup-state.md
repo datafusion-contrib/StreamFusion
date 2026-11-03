@@ -23,6 +23,13 @@ Those controls pass without changing the runtime representation. A separate synt
 primitive containing NULL is invalid full-row state and must remain rejected. Neither invalid
 fixture expectations nor constructor errors receive bug-fix qualification credit.
 
-Automatic binding, buffered/timed and mini-batch variants, other emission modes and the full
-schema/backend/version/connector/failure matrix remain part of
+Normal ordinary/compiled submission now captures the actual released eager function and binds
+its state directly. Select the eager runtime path explicitly: a first-row comparator does not
+imply the watermark-buffered candidate/timer algorithm. Capture persisted TTL, stock keys,
+operator identity and maximum parallelism rather than deriving them from loading-session defaults.
+The released eager fixtures prove two imported rows and four new native rows per program; the
+qualified mini-batch process cases also require a pending native barrier flush.
+
+Buffered/timed state, bare-update mode with no retained stock rows, remaining mini-batch/emission
+variants and the full schema/backend/version/connector/failure matrix remain part of
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

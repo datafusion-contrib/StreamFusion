@@ -408,3 +408,11 @@ StreamFusion as usual. Both native stores and switch orders, repeated no-input r
 fixture. This does not qualify changing old native graph identities/maxima, arbitrary upstream
 native consumers or the full connector/delivery matrix; consult
 [canonical coverage](backends/canonical-state.md#automatic-normalizer-binding-and-continued-jobs).
+
+
+Qualified eager deduplication jobs also acquire Flink 2.2.1 canonical bindings automatically through
+ordinary SQL or the same portable compiled plan. No savepoint conversion utility is required.
+Stock Flink needs only its normal connector/user dependencies. Current process qualification
+covers mini-batch proctime last-row and rowtime first-row with both native stores and switch orders;
+see [eager dedup coverage](backends/canonical-state.md#automatic-eager-dedup-binding) for the remaining
+buffered-state, emission, rescaling and delivery/version work. Benchmarking is deferred.

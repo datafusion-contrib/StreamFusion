@@ -995,8 +995,29 @@ Thirty-two existing processing/checkpoint controls pass on both Flink lines. The
 resource-failure cleanup and invalid-data controls. These cohorts
 overlap and are not cumulative counts. There is no Flink 1.18 canonical-interchange claim.
 
-Automatic compiled/ordinary dedup binding, buffered rowtime-first candidates/timers, mini-batch
-algorithm variants, other emission settings and wider schemas/backend/version/connector/failure
-matrices remain required by [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
-This direct adapter alone does not establish normal-submission interoperability for dedup jobs.
+## Automatic eager-dedup binding
+
+Flink 2.2.1 ordinary SQL and portable stock compiled plans bind the eager adapter during normal
+submission. The actual released synchronous or bundled function supplies keep mode, time column,
+emission flags and retention. This preserves persisted TTL despite a changed loading-session TTL.
+Original stock key serializers, generated/user identities and resolved maxima are retained; no
+manual mapping or conversion command is required. The runtime explicitly selects eager state when
+that is the selected stock function. Buffered rowtime-first has a separate candidate/timer contract;
+processing-time last-row with both emission flags off has no retained stock rows. Both remain stock
+until those contracts are implemented, rather than attaching the full-row adapter to them.
+
+All 28 eager plan checks pass alongside normalizer/first-N/join regressions. Sixteen isolated-process
+mini-batch continuation cases pass across both submission forms, both native stores and switch
+orders. They cover processing-time last-row and event-time first-row, require pending native work
+at the savepoint barrier, and verify custom source/transactional-sink state, both transposes,
+independent final winner results, uninterrupted stock effects and clean stock metadata/classpaths.
+Two original released eager restore programs pass in each engine; each native leg imports two
+saved rows and processes four new rows. Validation-only visits receive no import credit. The
+selected first-N and five normalizer programs also pass, eight programs per engine in this cohort.
+The common node changes retain all 32 shared 1.18 processing/checkpoint controls, without a 1.18
+canonical-interchange claim.
+
+The larger continued-job and rescale matrix is not yet qualified. Buffered rowtime-first state,
+bare-update state, other mini-batch/emission settings and wider schema/backend/version/connector/
+failure matrices remain required by [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.

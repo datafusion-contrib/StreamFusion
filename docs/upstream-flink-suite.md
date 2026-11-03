@@ -1596,3 +1596,21 @@ consume new input; validation-only visits are excluded from import counts. The t
 paths retain the stock normalizer and exact fallback reason. Together with first-N and joins,
 all 36 selected programs pass per engine under their existing strict route contracts. This lane
 does not qualify unrelated aggregate/dedup/rank adapters or replace complete-job connector tests.
+
+
+### Selecting the released eager-dedup restore programs
+
+`tech.streamfusion.canonical.EagerDedupRestoreTest` subclasses the released `DeduplicationRestoreTest`
+and selects its `deduplicate-asc-proctime` and `deduplicate-desc` programs. Inputs, compiled plans,
+savepoint fixtures, inherited restoration and original assertions remain unchanged. The original
+full deduplication class and its native-route contract remain intact; the buffered ascending
+rowtime program is still required work, not qualified by this selection.
+
+Run it with
+`CANONICAL_UPSTREAM_TESTS=tech.streamfusion.canonical.EagerDedupRestoreTest#testRestore bin/canonical-savepoints.sh sql`.
+Both programs pass on each engine. Each native leg records two actual canonical imports and four
+new input rows in the eager deduplicator; validation-only visits are excluded. The stock leg
+excludes StreamFusion runtime classes. Six new audit controls reject missing/unrelated input and
+ensure validation does not inflate imported-row counts. Together with the selected first-N and
+five normalizer programs, this cohort passes eight programs per engine. These are overlapping
+cohorts, not cumulative coverage counts, and do not qualify the full deduplication family.

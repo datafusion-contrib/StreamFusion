@@ -71,3 +71,5 @@ org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreT
 org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalSortRestoreTest#testRestore	program=temporal_sort_rowtime	!@NativeColumnarTemporalSortOperator:temporal sort: secondary order keys require the stock sorter&&NativeCalcOperator+StockTemporalSort
 org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalSortRestoreTest#testRestore	program=temporal_sort_proctime	@elided:TemporalSort
 tech.streamfusion.canonical.FirstNRestoreTest#testRestore	program=rank_n_test	NativeColumnarFirstNOperator
+tech.streamfusion.canonical.EagerDedupRestoreTest#testRestore	program=deduplicate_asc_proctime	NativeColumnarKeepLastDeduplicateOperator
+tech.streamfusion.canonical.EagerDedupRestoreTest#testRestore	program=deduplicate_desc	NativeColumnarKeepLastDeduplicateOperator

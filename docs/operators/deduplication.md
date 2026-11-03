@@ -100,7 +100,22 @@ nullable/NOT NULL/keyless keys, with explicit expiry, late-corruption and PROCTI
 checks. Thirty-two existing processing/checkpoint controls also pass on each Flink line; this
 does not qualify stock canonical interchange on 1.18. The full native suite passes 1,216 tests with two existing ignores.
 
-The adapter is not yet installed automatically during ordinary or compiled job submission.
-Buffered rowtime-first candidates/timers, mini-batch algorithm variants, other output settings,
-wider types, rescaling and connector/failure guarantees remain open in
+Ordinary SQL and portable stock compiled plans now bind eager canonical state automatically.
+The binding captures the actual released sync/bundle function, emission flags, TTL, key serializer,
+operator identity and resolved maximum parallelism. Eager versus watermark-buffered keep-first is
+selected from the stock function; Boolean presence is used only for processing-time first-row state.
+Processing-time bare-update mode, which retains no stock rows, and buffered rowtime-first remain
+on stock until their distinct contracts are bound.
+
+Qualification adds 28 plan checks and 16 isolated-process mini-batch switches: processing-time
+last-row and event-time first-row, both submission forms, both native stores and both switch
+orders. The custom source and transactional sink retain their state, both transposes execute,
+pending native bundles flush at the canonical barrier, and final effects match an independent
+winner oracle and uninterrupted stock Flink. Stock processes exclude StreamFusion classes and
+exported metadata contains no StreamFusion types. The two released eager restore programs also
+pass with their original assertions; each imports two rows and consumes four new native rows.
+
+The broader continued-job matrix, compact/full-chain variants beyond these qualified cases,
+buffered candidates/timers, bare-update state, wider schemas, rescaling and the complete
+connector/failure/version guarantees remain open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
