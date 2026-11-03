@@ -1166,6 +1166,19 @@ Logical-operand CAST and TRY_CAST have separate
 [TRY_CAST qualification](../benchmarks/scalar-functions.md#boolean-try_cast-over-logical-operands),
 separate from direct-input formatting and existing planner simplifications.
 
+Verified BOOLEAN CASE forms can already run without evaluators after released-planner
+rewrites. For example, `CAST(CASE WHEN b THEN n<0 WHEN b IS NULL THEN n=1 ELSE NOT b END
+AS STRING)` and the corresponding TRY_CAST reduce to existing logical/integer-comparison
+trees. The [runtime route record](../benchmarks/results/boolean-case-existing-routes-2026-11-03.json)
+covers five CASE shapes, including nested cases and NULL branches, each cast to STRING,
+VARCHAR(1/3) and CHAR(4/8), in modern/legacy modes and nullable/NOT NULL inputs. All sixteen
+invocations across released Flink 1.18.1/2.2.1 and JDK 11/17 compare complete 5,003-row maps
+and resolved schemas, require consumed NativeCalc work and empty JVM evaluators. No planner
+or kernel change is needed for these existing rewrites; this supplies no new performance
+claim. CASE shapes and producers that do not reduce to the verified tree retain their
+existing routes, including failing/stateful and other comparison families tracked in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
 Native, unconditionally, with no host involvement:
 
 - **Widening numeric** — integer→wider integer, integer→float/double, float→double.
