@@ -59,8 +59,10 @@ not execution evidence. Focused checks cover all 19 scalar input/result and part
 all seven frames, NULLs, owned mutable output, shared calls, DISTINCT, constants, lifecycle
 and callback failures, controlled clocks, positive TTL, late input, repeated heap/native
 RocksDB recovery, and 1→3→2-task checkpoint/savepoint restoration with pending event-time
-frames. Unchanged upstream Table API OVER methods separately require consumed JVM OVER
-work and their original result assertions on both backend routes.
+frames. Unchanged upstream scalar SQL and admitted Table API OVER methods separately
+require consumed JVM OVER work and their original assertions on both backend routes.
+Builtin-only direct FLOAT AVG controls and 1.18's legacy ARRAY output context retain their
+precise existing fallback contracts; see the [upstream witnesses](../upstream-flink-suite.md).
 
 JVM OVER keeps stock fallback for asynchronous state, non-insert-only input, general nested
 operator fields/results, specialized or Python definitions, custom legacy wrappers,

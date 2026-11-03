@@ -39,14 +39,22 @@ nonempty work from successful jobs.
 The agent records the JVM aggregate and table-function operators after successful Arrow-batch
 consumption, using the same consumed-row recorder as the other columnar operators.
 
-The unchanged Table API `OverAggregateITCase` methods covering scalar JVM aggregates,
-constants, DISTINCT, managed DataViews and bounded/unbounded time frames now require
-consumed `NativeColumnarJvmOverOperator` input. Their original source failures, positive
-retention settings and assertions remain upstream's. Both backend invocations are retained
-in the runtime-route scopes. Flink 1.18's observed changelog-state setting still selects the
-existing explicit full fallback. Timer, ownership, scalar-type, late-row and repeated
-checkpoint/rescaling tests supplement these upstream witnesses; plan labels alone cannot
-satisfy the execution contract.
+The unchanged Table API `OverAggregateITCase` methods containing admitted scalar JVM
+aggregates require consumed `NativeColumnarJvmOverOperator` input. Constants, shared
+instances, managed DataViews, original source failures and retention settings remain
+upstream's. Scalar-only SQL `testRowTimeUnBoundedPartitionedRowsOver` and
+`testRowTimeUnBoundedPartitionedRangeOver` additionally require consumed JVM OVER work,
+including both 2.2 unbounded implementations. Both backend invocations remain in the scopes.
+Flink 1.18's observed changelog-state setting keeps its existing explicit full fallback.
+
+The four Table API DISTINCT methods contain builtin aggregates and a direct FLOAT AVG;
+they retain the precise existing OVER fallback contract. The Table API unbounded event-time
+RANGE fixture also produces an ARRAY above its UDAFs: Flink 1.18 retains its existing
+`collection value representation requires a final projection or fused consumer` fallback,
+regardless of changelog state, while 2.2 requires JVM OVER work. These controls are not
+scalar UDAF coverage failures and their upstream queries are unchanged. Timer, ownership,
+scalar-type, late-row and repeated checkpoint/rescaling tests supplement these witnesses;
+plan labels alone cannot satisfy the execution contract.
 
 Focused MAP/MULTISET collection-aggregate fixtures additionally require released values,
 resolved types, per-key ordered changes and consumed JVM group work, including two

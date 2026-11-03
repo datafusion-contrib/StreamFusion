@@ -111,11 +111,15 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWit
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeUnBoundedPartitionedRowOver	*	NativeColumnarJvmOverOperator
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testOverWindowWithConstant	*	NativeColumnarJvmOverOperator
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	*	NativeColumnarJvmOverOperator
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver	*	NativeColumnarJvmOverOperator
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver	*	NativeColumnarJvmOverOperator
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver	*	NativeColumnarJvmOverOperator
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver	*	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver	*	!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver	*	!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver	*	!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver	*	!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOver	*	NativeColumnarJvmOverOperator
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOverWithJavaAPI	*	NativeColumnarJvmOverOperator
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRowOver	*	NativeColumnarJvmOverOperator
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRangeOver	*	NativeColumnarJvmOverOperator
+
+# Scalar-only SQL UDAF witnesses retain unbounded event-time coverage without the Table API ARRAY result.
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	*	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver	*	NativeColumnarJvmOverOperator

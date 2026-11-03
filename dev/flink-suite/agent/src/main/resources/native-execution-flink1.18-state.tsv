@@ -111,16 +111,11 @@ org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProc
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeUnBoundedPartitionedRowOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testOverWindowWithConstant	changelog=false	NativeColumnarJvmOverOperator
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testOverWindowWithConstant	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	changelog=false	NativeColumnarJvmOverOperator
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver	changelog=false	NativeColumnarJvmOverOperator
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver	changelog=false	NativeColumnarJvmOverOperator
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver	changelog=false	NativeColumnarJvmOverOperator
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver	changelog=false	NativeColumnarJvmOverOperator
-org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	*	!collection value representation requires a final projection or fused consumer
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver	*	!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver	*	!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver	*	!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver	*	!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOver	changelog=false	NativeColumnarJvmOverOperator
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOverWithJavaAPI	changelog=false	NativeColumnarJvmOverOperator
@@ -129,3 +124,9 @@ org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowT
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRowOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRangeOver	changelog=false	NativeColumnarJvmOverOperator
 org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRangeOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+
+# Scalar-only SQL UDAF witnesses retain unbounded event-time coverage without the Table API ARRAY result.
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	changelog=false	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver	changelog=false	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state

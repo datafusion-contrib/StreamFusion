@@ -1020,91 +1020,61 @@
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
       "display_name": "testRowTimeUnBoundedPartitionedRangeOver[StateBackend=HEAP]",
       "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false": "native",
-        "changelog=true": "full_fallback"
-      }
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
       "display_name": "testRowTimeUnBoundedPartitionedRangeOver[StateBackend=ROCKSDB]",
       "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false": "native",
-        "changelog=true": "full_fallback"
-      }
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver",
       "display_name": "testRowTimeBoundedDistinctPartitionedRangeOver[StateBackend=HEAP]",
       "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false": "native",
-        "changelog=true": "full_fallback"
-      }
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver",
       "display_name": "testRowTimeBoundedDistinctPartitionedRangeOver[StateBackend=ROCKSDB]",
       "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false": "native",
-        "changelog=true": "full_fallback"
-      }
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver",
       "display_name": "testRowTimeUnBoundedDistinctPartitionedRangeOver[StateBackend=HEAP]",
       "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false": "native",
-        "changelog=true": "full_fallback"
-      }
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver",
       "display_name": "testRowTimeUnBoundedDistinctPartitionedRangeOver[StateBackend=ROCKSDB]",
       "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false": "native",
-        "changelog=true": "full_fallback"
-      }
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver",
       "display_name": "testRowTimeBoundedDistinctPartitionedRowsOver[StateBackend=HEAP]",
       "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false": "native",
-        "changelog=true": "full_fallback"
-      }
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver",
       "display_name": "testRowTimeBoundedDistinctPartitionedRowsOver[StateBackend=ROCKSDB]",
       "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false": "native",
-        "changelog=true": "full_fallback"
-      }
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver",
       "display_name": "testRowTimeUnBoundedDistinctPartitionedRowsOver[StateBackend=HEAP]",
       "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false": "native",
-        "changelog=true": "full_fallback"
-      }
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver",
       "display_name": "testRowTimeUnBoundedDistinctPartitionedRowsOver[StateBackend=ROCKSDB]",
       "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false": "native",
-        "changelog=true": "full_fallback"
-      }
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOver",
@@ -1172,6 +1142,42 @@
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRangeOver",
       "display_name": "testRowTimeBoundedPartitionedRangeOver[StateBackend=ROCKSDB]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+      "display_name": "testRowTimeUnBoundedPartitionedRangeOver[StateBackend=HEAP]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+      "display_name": "testRowTimeUnBoundedPartitionedRangeOver[StateBackend=ROCKSDB]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver",
+      "display_name": "testRowTimeUnBoundedPartitionedRowsOver[StateBackend=HEAP]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver",
+      "display_name": "testRowTimeUnBoundedPartitionedRowsOver[StateBackend=ROCKSDB]",
       "count": 1,
       "route_by_contract_variant": {
         "changelog=false": "native",

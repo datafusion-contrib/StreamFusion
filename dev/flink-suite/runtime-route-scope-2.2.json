@@ -864,49 +864,49 @@
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver",
       "display_name": "StateBackend=HEAP",
       "count": 1,
-      "route": "native"
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver",
       "display_name": "StateBackend=ROCKSDB",
       "count": 1,
-      "route": "native"
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver",
       "display_name": "StateBackend=HEAP",
       "count": 1,
-      "route": "native"
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver",
       "display_name": "StateBackend=ROCKSDB",
       "count": 1,
-      "route": "native"
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver",
       "display_name": "StateBackend=HEAP",
       "count": 1,
-      "route": "native"
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver",
       "display_name": "StateBackend=ROCKSDB",
       "count": 1,
-      "route": "native"
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver",
       "display_name": "StateBackend=HEAP",
       "count": 1,
-      "route": "native"
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver",
       "display_name": "StateBackend=ROCKSDB",
       "count": 1,
-      "route": "native"
+      "route": "full_fallback"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOver",
@@ -953,6 +953,54 @@
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRangeOver",
       "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+      "display_name": "StateBackend=HEAP, unboundedOverVersion2=1",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+      "display_name": "StateBackend=HEAP, unboundedOverVersion2=2",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+      "display_name": "StateBackend=ROCKSDB, unboundedOverVersion2=1",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+      "display_name": "StateBackend=ROCKSDB, unboundedOverVersion2=2",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver",
+      "display_name": "StateBackend=HEAP, unboundedOverVersion2=1",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver",
+      "display_name": "StateBackend=HEAP, unboundedOverVersion2=2",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver",
+      "display_name": "StateBackend=ROCKSDB, unboundedOverVersion2=1",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver",
+      "display_name": "StateBackend=ROCKSDB, unboundedOverVersion2=2",
       "count": 1,
       "route": "native"
     }

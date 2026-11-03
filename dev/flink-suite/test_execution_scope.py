@@ -59,16 +59,41 @@ class ExecutionScopeTest(unittest.TestCase):
                 self.assertEqual(2, len(cases))
                 for case in cases:
                     for selector, required in variants.items():
-                        fallback = selector == 'changelog=true'
+                        builtin_only = 'DistinctPartitioned' in test
+                        legacy_array = line == '1.18' and test.endswith('#testRowTimeUnBoundedPartitionedRangeOver')
+                        fallback = builtin_only or legacy_array or selector == 'changelog=true'
                         self.assertEqual(fallback, required.startswith('!'))
                         if not fallback:
                             self.assertEqual('NativeColumnarJvmOverOperator', required)
+                        elif builtin_only:
+                            self.assertEqual('!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL', required)
+                        elif legacy_array:
+                            self.assertEqual('!collection value representation requires a final projection or fused consumer', required)
                         declared = case.get('route', case.get('route_by_contract_variant', {}).get(selector))
                         self.assertEqual('full_fallback' if fallback else 'native', declared)
             if line == '1.18':
                 state = execution_contracts(root / 'agent/src/main/resources/native-execution-flink1.18-state.tsv')
                 for test, variants in tests.items():
                     self.assertEqual(variants, state[test])
+
+    def test_scalar_sql_over_requires_each_unbounded_event_time_implementation(self):
+        root = Path(__file__).parent
+        prefix = 'org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#'
+        for line, suffix in [('1.18', '-flink1.18'), ('2.2', '')]:
+            contracts = execution_contracts(root / 'agent/src/main/resources' / ('native-execution' + suffix + '.tsv'))
+            scope = json.loads((root / ('runtime-route-scope-' + line + '.json')).read_text())
+            for method in ['testRowTimeUnBoundedPartitionedRangeOver', 'testRowTimeUnBoundedPartitionedRowsOver']:
+                test = prefix + method
+                cases = [case for case in scope['cases'] if case['test'] == test]
+                self.assertEqual(4 if line == '2.2' else 2, len(cases))
+                for selector, required in contracts[test].items():
+                    fallback = selector == 'changelog=true'
+                    self.assertEqual(fallback, required.startswith('!'))
+                    if not fallback:
+                        self.assertEqual('NativeColumnarJvmOverOperator', required)
+                    for case in cases:
+                        declared = case.get('route', case.get('route_by_contract_variant', {}).get(selector))
+                        self.assertEqual('full_fallback' if fallback else 'native', declared)
 
     def test_pinned_vintage_fixture_names_use_the_selected_method(self):
         scope = json.loads(Path(__file__).with_name('runtime-route-scope-1.18.json').read_text())
