@@ -612,9 +612,15 @@ final class StockCompiledPlanLowering {
     ExecNode<?> input = stock.getInputEdges().get(0).getSource();
     RowType inputType = (RowType) input.getOutputType();
     RowType outputType = (RowType) stock.getOutputType();
-    if (keys.length != 1
-        || inputType.getChildren().stream().anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT))
-        || outputType.getChildren().stream().anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT))
+    if (keys.length != 1) return stock;
+    var keyRoot = inputType.getTypeAt(keys[0]).getTypeRoot();
+    if (!(keyRoot == LogicalTypeRoot.BIGINT || keyRoot == LogicalTypeRoot.INTEGER)
+        || java.util.stream.IntStream.range(0, inputType.getFieldCount())
+            .anyMatch(i -> i != keys[0] && !inputType.getTypeAt(i).is(LogicalTypeRoot.BIGINT))
+        || outputType.getTypeAt(0).getTypeRoot() != keyRoot
+        || outputType.getChildren().stream()
+            .skip(1)
+            .anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT))
         || !(original.getStateKeySelector()
             instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector)) return stock;
     Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
@@ -623,7 +629,6 @@ final class StockCompiledPlanLowering {
         || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
       return stock;
     boolean retract = definition.path("needRetraction").asBoolean();
-    if (!retract) return stock;
     var calls =
         reader
             .forType(org.apache.calcite.rel.core.AggregateCall[].class)
@@ -637,7 +642,7 @@ final class StockCompiledPlanLowering {
             org.apache.flink.table.planner.utils.JavaScalaConversionUtil.toScala(
                 Arrays.asList(calls)),
             needsRetract,
-            true,
+            retract,
             true,
             true);
     if (infos.distinctInfos().length != 0) return stock;
@@ -647,10 +652,13 @@ final class StockCompiledPlanLowering {
             .map(org.apache.flink.table.types.DataType::getLogicalType)
             .toArray(LogicalType[]::new);
     int recordCount = infos.getIndexOfCountStar();
+    var counter = releasedField(function, "recordCounter");
     if (!Arrays.equals(accumulatorTypes, generatedTypes)
-        || recordCount < 0
-        || recordCount
-            != (Integer) releasedField(releasedField(function, "recordCounter"), "indexOfCountStar")
+        || retract && recordCount < 0
+        || counter.getClass()
+            != org.apache.flink.table.runtime.operators.aggregate.RecordCounter.of(recordCount)
+                .getClass()
+        || recordCount >= 0 && recordCount != (Integer) releasedField(counter, "indexOfCountStar")
         || Arrays.stream(accumulatorTypes).anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT)))
       return stock;
     int size = infos.getActualAggregateInfos().length;
@@ -687,9 +695,16 @@ final class StockCompiledPlanLowering {
               .LongSum0AggFunction.class) {
         kind = 22;
         fields = 1;
-      } else if (type
-          == org.apache.flink.table.planner.functions.aggfunctions.SumWithRetractAggFunction
-              .LongSumWithRetractAggFunction.class) {
+      } else if (!retract
+          && type
+              == org.apache.flink.table.planner.functions.aggfunctions.SumAggFunction
+                  .LongSumAggFunction.class) {
+        kind = 0;
+        fields = 1;
+      } else if (retract
+          && type
+              == org.apache.flink.table.planner.functions.aggfunctions.SumWithRetractAggFunction
+                  .LongSumWithRetractAggFunction.class) {
         kind = 0;
         fields = 2;
       } else if (type
@@ -698,7 +713,11 @@ final class StockCompiledPlanLowering {
         kind = 4;
         fields = 2;
       } else return stock;
-      if (width != fields || (kind != 3 && info.argIndexes().length != 1)) return stock;
+      if (width != fields
+          || (kind != 3
+              && (info.argIndexes().length != 1
+                  || !inputType.getTypeAt(info.argIndexes()[0]).is(LogicalTypeRoot.BIGINT))))
+        return stock;
       kinds[actual] = kind;
       columns[actual] = countEveryRow || info.argIndexes().length == 0 ? -1 : info.argIndexes()[0];
       scalars[actual] = slot;

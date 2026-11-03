@@ -29,6 +29,10 @@ class CanonicalGroupArithmeticValidationTest {
   @org.junit.jupiter.api.io.TempDir(cleanup = org.junit.jupiter.api.io.CleanupMode.ON_SUCCESS)
   java.nio.file.Path directory;
 
+  boolean appendOnly() {
+    return false;
+  }
+
   static Stream<Arguments> invalidSources() {
     return Stream.of(false, true)
         .flatMap(
@@ -42,7 +46,7 @@ class CanonicalGroupArithmeticValidationTest {
   @SuppressWarnings("unchecked")
   void validationRetainsTheEntireSourceAndAnEmptyTarget(boolean rocks, String reason)
       throws Exception {
-    try (var source = new GroupAggregateStockTestFixture("star", rocks, 0, true);
+    try (var source = new GroupAggregateStockTestFixture("star", rocks, 0, true, appendOnly());
         var destination = nativeHarness(source, rocks)) {
       source.harness.open();
       destination.open();
@@ -96,7 +100,8 @@ class CanonicalGroupArithmeticValidationTest {
         var repaired = source.rawStateBytes();
         source.contract().importState(backend, owner.address(), owner.persistent());
         assertTrue(source.rawStateBytes().isEmpty(), "source consumed only after success");
-        try (var projected = new GroupAggregateStockTestFixture("star", rocks, 0, true)) {
+        try (var projected =
+            new GroupAggregateStockTestFixture("star", rocks, 0, true, appendOnly())) {
           projected.harness.initializeState(snapshot(destination));
           projected.harness.open();
           assertEquals(repaired, projected.rawStateBytes());
@@ -110,7 +115,8 @@ class CanonicalGroupArithmeticValidationTest {
   @SuppressWarnings("unchecked")
   void deniedImportKeepsTheSourceForAFreshDestination(boolean persistent) throws Exception {
     String handles = Native.liveNativeHandles();
-    try (var source = new GroupAggregateStockTestFixture("star", persistent, 0, true)) {
+    try (var source =
+        new GroupAggregateStockTestFixture("star", persistent, 0, true, appendOnly())) {
       source.harness.open();
       var backend =
           (CheckpointableKeyedStateBackend<RowData>)

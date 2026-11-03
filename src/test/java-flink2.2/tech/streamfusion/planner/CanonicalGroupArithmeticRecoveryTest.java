@@ -23,10 +23,15 @@ class CanonicalGroupArithmeticRecoveryTest {
   @MethodSource("cases")
   void ordinaryNativeCheckpointResumesBeforeStockCanonicalExport(
       String mode, boolean rocks, long ttl) throws Exception {
-    try (var reference = new GroupAggregateStockTestFixture(mode, rocks, ttl, true)) {
+    assertNativeRecovery(mode, rocks, ttl, false);
+  }
+
+  static void assertNativeRecovery(String mode, boolean rocks, long ttl, boolean append)
+      throws Exception {
+    try (var reference = new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append)) {
       reference.harness.open();
       OperatorSubtaskState checkpoint;
-      try (var fixture = new GroupAggregateStockTestFixture(mode, rocks, ttl, true);
+      try (var fixture = new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append);
           var source = nativeHarness(fixture, rocks)) {
         source.open();
         for (int i = 0; i < 3; i++) {
@@ -46,26 +51,26 @@ class CanonicalGroupArithmeticRecoveryTest {
       }
       OperatorSubtaskState canonical;
       long resumed = ttl == 0 ? 5000 : 1500;
-      try (var fixture = new GroupAggregateStockTestFixture(mode, rocks, ttl, true);
+      try (var fixture = new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append);
           var restored = nativeHarness(fixture, rocks)) {
         restored.setProcessingTime(resumed);
         restored.setStateTtlProcessingTime(resumed);
         restored.initializeState(checkpoint);
         restored.open();
         // Verify ages immediately after raw restoration, including TTL-off migration clocks.
-        assertState(reference, snapshot(restored), mode, rocks, ttl, true);
+        assertState(reference, snapshot(restored), mode, rocks, ttl, true, append);
         assertEquals(
             stockStep(reference, row(1L, 3L, 0), resumed + 50),
             nativeStep(restored, row(1L, 3L, 0), resumed + 50, reference.outputType));
         canonical = snapshot(restored);
-        assertState(reference, canonical, mode, rocks, ttl, true);
+        assertState(reference, canonical, mode, rocks, ttl, true, append);
       }
-      try (var returned = new GroupAggregateStockTestFixture(mode, rocks, ttl, true)) {
+      try (var returned = new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append)) {
         returned.harness.initializeState(canonical);
         returned.harness.open();
         assertEquals(
-            stockStep(reference, row(1L, 7L, 3), resumed + 100),
-            stockStep(returned, row(1L, 7L, 3), resumed + 100));
+            stockStep(reference, row(1L, 7L, append ? 0 : 3), resumed + 100),
+            stockStep(returned, row(1L, 7L, append ? 0 : 3), resumed + 100));
         assertEquals(reference.rawStateBytes(), returned.rawStateBytes());
       }
     }

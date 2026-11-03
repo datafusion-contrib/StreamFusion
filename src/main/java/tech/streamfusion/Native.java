@@ -1590,6 +1590,9 @@ public final class Native {
   public static native void configureGroupArithmeticCanonical(
       long handle, boolean persistent, int[] aggregateKinds);
 
+  public static native void configureGroupArithmeticCanonicalMode(
+      long handle, boolean persistent, int[] aggregateKinds, boolean appendOnly);
+
   public static native void exportGroupArithmeticCanonical(
       long handle, boolean persistent, BatchReceiver receiver);
 

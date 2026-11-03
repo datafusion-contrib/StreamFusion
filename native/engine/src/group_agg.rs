@@ -1004,8 +1004,8 @@ impl GroupAggState {
     }
 }
 
-/// Per-key state for a `GROUP BY` group: the per-aggregate state and the live record count (reaching
-/// zero deletes the group).
+/// Per-key accumulator state with a live record count, or a presence marker for stock append-only
+/// state whose generated accumulator has no input counter.
 pub(crate) struct GroupKeyState {
     aggs: Vec<GroupAggState>,
     records: i64,
@@ -1023,6 +1023,26 @@ pub(crate) struct GroupKeyState {
     /// while TTL is off.
     last_write_ms: i64,
     distinct_retention: Option<Box<DistinctViewRetention>>,
+}
+
+impl GroupKeyState {
+    fn retain_append_presence(&mut self) {
+        self.records = 1;
+        for state in &mut self.aggs {
+            if let GroupAggState::Running {
+                agg: RunningAgg::SumI64(sum),
+                non_null,
+            } = state
+            {
+                let present = i64::from(sum.is_some());
+                if *non_null == 0 && present != 0 {
+                    self.last_output = None;
+                    self.last_output_bytes = 0;
+                }
+                *non_null = present;
+            }
+        }
+    }
 }
 
 /// The resident default backend for the group store (see `state/` for the seam).
@@ -1465,6 +1485,7 @@ pub(crate) struct GroupAggregator<S: KeyedStateStore<GroupKeyState> = MemoryGrou
     // key's record count by this column's value instead of ±1, so liveness (the -D on zero) follows
     // the local's netted retractions — Flink's RecordCounter over indexOfCountStar.
     record_count_column: i64,
+    stock_append_only: Option<bool>,
     key_columns: Vec<usize>,
     key_timestamp_precisions: Vec<i32>,
     generate_update_before: bool,
@@ -1675,6 +1696,7 @@ impl GroupAggregator {
             count_columns,
             distinct_view_columns,
             record_count_column: -1,
+            stock_append_only: None,
             memory: OperatorMemory::unaccounted(),
         }
     }
@@ -1712,6 +1734,7 @@ impl GroupAggregator {
             count_columns: self.count_columns,
             distinct_view_columns: self.distinct_view_columns,
             record_count_column: self.record_count_column,
+            stock_append_only: self.stock_append_only,
             key_columns: self.key_columns,
             key_timestamp_precisions: self.key_timestamp_precisions,
             generate_update_before: self.generate_update_before,
@@ -1893,6 +1916,15 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     ) -> Result<RecordBatch, DataFusionError> {
         let canonical = string_input::canonical(batch)?;
         let batch = canonical.as_ref();
+        if self.stock_append_only == Some(true)
+            && row_kind_column(batch).is_some_and(|kinds| {
+                kinds.null_count() != 0 || kinds.iter().flatten().any(|kind| !matches!(kind, 0 | 2))
+            })
+        {
+            return Err(DataFusionError::Execution(
+                "append-only grouped state does not support retractions".into(),
+            ));
+        }
         for i in 0..self.kinds.len() {
             if self.value_columns[i] >= 0 {
                 self.bind_ordered_value_type(
@@ -1917,6 +1949,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        let stock_append_only = self.stock_append_only == Some(true);
         self.snapshot_cache = None;
         self.last_input_ms = now_ms;
         if self.mini_batch && self.ttl_ms > 0 && !self.draining_deferred {
@@ -2415,6 +2448,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             }
             let mut prev = if exists && (!self.mini_batch || first_bundle_touch) {
                 let state = self.store.get_mut(key).expect("key present");
+                if stock_append_only {
+                    state.retain_append_presence();
+                }
                 match state.last_output.take() {
                     Some(cached) => {
                         state.last_output_bytes = 0;
@@ -2905,22 +2941,26 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         ttl.now(),
                     );
                 }
-                state.records = state.records.wrapping_add(match record_counts {
-                    Some(counts) => {
-                        if counts.is_null(row) {
-                            0
-                        } else {
-                            counts.value(row)
+                if stock_append_only {
+                    state.retain_append_presence();
+                } else {
+                    state.records = state.records.wrapping_add(match record_counts {
+                        Some(counts) => {
+                            if counts.is_null(row) {
+                                0
+                            } else {
+                                counts.value(row)
+                            }
                         }
-                    }
-                    None => {
-                        if retract {
-                            -1
-                        } else {
-                            1
+                        None => {
+                            if retract {
+                                -1
+                            } else {
+                                1
+                            }
                         }
-                    }
-                });
+                    });
+                }
                 if ttl.enabled() {
                     // Every processed row is a state write (Flink's accState.update), so it
                     // refreshes the group's TTL. Reads never do.

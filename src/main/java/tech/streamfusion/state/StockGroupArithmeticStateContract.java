@@ -63,7 +63,9 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
     if (accumulatorType.getChildren().stream().anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT)))
       throw new IllegalArgumentException("Arithmetic state requires BIGINT accumulator fields");
     boolean[] covered = new boolean[accumulatorType.getFieldCount()];
-    cover(covered, recordCountField);
+    if (recordCountField >= 0) cover(covered, recordCountField);
+    else if (recordCountField != -1)
+      throw new IllegalArgumentException("Invalid input counter field");
     var fields = new ArrayList<LogicalType>();
     fields.add(new VarBinaryType(false, VarBinaryType.MAX_LENGTH));
     fields.add(new BigIntType(false));
@@ -72,9 +74,9 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
       if (kinds[i] != 0 && kinds[i] != 3 && kinds[i] != 4 && kinds[i] != 22)
         throw new IllegalArgumentException("Unsupported arithmetic aggregate kind");
       cover(covered, scalarFields[i]);
-      if (kinds[i] == 0 || kinds[i] == 4) cover(covered, countFields[i]);
+      if (kinds[i] == 4 || kinds[i] == 0 && recordCountField >= 0) cover(covered, countFields[i]);
       else if (countFields[i] != -1)
-        throw new IllegalArgumentException("COUNT and SUM0 have no separate physical count");
+        throw new IllegalArgumentException("Aggregate has no separate physical count");
       fields.add(new BigIntType(kinds[i] == 0));
       fields.add(new BigIntType(false));
     }
@@ -101,7 +103,7 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
 
   @Override
   public void configureNativeState(long handle, boolean persistent) {
-    Native.configureGroupArithmeticCanonical(handle, persistent, kinds);
+    Native.configureGroupArithmeticCanonicalMode(handle, persistent, kinds, recordCountField < 0);
   }
 
   private StockValueState<RowData> state(CheckpointableKeyedStateBackend<RowData> backend)
@@ -145,7 +147,8 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
               validateKey(key);
               var accumulator = new GenericRowData(accumulatorType.getFieldCount());
               boolean[] assigned = new boolean[accumulator.getArity()];
-              assign(accumulator, assigned, recordCountField, row.getLong(1));
+              if (recordCountField >= 0)
+                assign(accumulator, assigned, recordCountField, row.getLong(1));
               for (int i = 0; i < kinds.length; i++) {
                 assign(
                     accumulator,
@@ -190,7 +193,8 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
     for (int i = 0; i < row.getArity(); i++)
       if (!accumulatorType.getTypeAt(i).isNullable() && row.isNullAt(i))
         throw new IllegalStateException("NULL in a non-null accumulator field");
-    if (row.isNullAt(recordCountField)) throw new IllegalStateException("NULL group record count");
+    if (recordCountField >= 0 && row.isNullAt(recordCountField))
+      throw new IllegalStateException("NULL group record count");
     for (int i = 0; i < kinds.length; i++) {
       if (kinds[i] != 0 && row.isNullAt(scalarFields[i]))
         throw new IllegalStateException("NULL in a required accumulator scalar");
@@ -248,7 +252,7 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
             0,
             BinarySegmentUtils.copyToBytes(
                 encoded.getSegments(), encoded.getOffset(), encoded.getSizeInBytes()));
-        row.setField(1, accumulator.getLong(recordCountField));
+        row.setField(1, recordCountField >= 0 ? accumulator.getLong(recordCountField) : 1L);
         row.setField(2, wrapped.getLastAccessTimestamp());
         for (int i = 0; i < kinds.length; i++) {
           row.setField(
@@ -258,7 +262,9 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
               4 + 2 * i,
               countFields[i] >= 0
                   ? accumulator.getLong(countFields[i])
-                  : kinds[i] == 3 ? accumulator.getLong(scalarFields[i]) : 0L);
+                  : kinds[i] == 0
+                      ? (accumulator.isNullAt(scalarFields[i]) ? 0L : 1L)
+                      : kinds[i] == 3 ? accumulator.getLong(scalarFields[i]) : 0L);
         }
         rows.add(row);
         if (rows.size() == CHUNK_ROWS) {

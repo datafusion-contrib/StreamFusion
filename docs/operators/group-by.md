@@ -3056,35 +3056,50 @@ and output buffers reserve the task's memory budget. TTL-disabled export emits n
 when native checkpoint restoration has installed a migration clock. Canonical snapshot guards
 and actual operator restore tests distinguish direct projection from the native snapshot path.
 
-The current qualification is single-phase, per-record BIGINT arithmetic with nullable BIGINT keys,
-COUNT(*), COUNT(v), SUM/AVG with hidden counts, shared COUNT/SUM0 layouts, both before-image policies,
-both native stores and both initial engine orders. Native checkpoints and canonical savepoints
-remain distinct paths. Broader state types, global/composite keys, filters, mini-batch/two-phase
-contracts and data views still require their own qualification under
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Automatic binding is limited to the released single-phase retracting `GroupAggFunction` with one
-BIGINT grouping key, all-BIGINT physical input/output rows and the qualified generated arithmetic
-functions. Ordinary SQL and portable compiled plans capture the original physical aggregate calls,
-accumulator types, field offsets, hidden counter, key serializer, before-image policy, TTL and
-maximum parallelism. COUNT(*) uses Flink's unconditional Count1 semantics, while COUNT(v) preserves
-NULL filtering. Insert-only state without an input counter, filtered aggregates, views, wider
-schemas/keys and other phases are outside this automatic binding. An unqualified native ordinary
-graph retains its existing snapshot behavior; it has no new stock interchange guarantee.
-Unqualified upstream owners in the rank-template path remain stock-owned.
-The direct adapter is checked by 110 Flink 2.2.1 cases: 16 independent generated-layout controls,
-72 repeated handoff/long-counter cases, ten validation/receiver/resource-failure cases, eight
-native-checkpoint recovery cases and four restored AVG signed-division boundary cases. They compare complete stock accumulator bytes and write ages,
-retain the source on failed imports, and guard canonical export against intermediate native
-snapshots. Another 66 existing Java aggregate processing/SQL checks pass, including two-phase
-aggregation. The complete native suite passes 1,269 tests with two pre-existing ignores.
+The current qualification is single-phase, per-record BIGINT arithmetic with one nullable INT or
+BIGINT grouping key. It covers COUNT(*), COUNT(v), SUM/AVG with hidden counts, shared COUNT/SUM0
+layouts, both before-image policies, both native stores and both initial engine orders. Native
+checkpoints and canonical savepoints remain distinct paths. Broader state types, global/composite
+keys, filters, mini-batch/two-phase contracts and data views still require their own qualification
+under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
-Automatic binding is exercised by 32 physical-map/identity/TTL/UID planner cases, ten unsupported
-compiled-layout controls and four TTL-hint overrides. The 28 isolated process scenarios retain
-custom source/sink state and both transposes, with ordinary SQL and compiled plans, both stores
-and initial engine orders, no-input re-export, native checkpoint recovery and rescaling 1→3→2.
-They compare the complete committed changelog with uninterrupted stock Flink, check final tables
-and verify actual native work/storage. Stock processes exclude StreamFusion JARs and exported
-metadata contains no StreamFusion classes. These are arithmetic cases, not a qualification of
-other connector transaction or failure combinations.
+Automatic binding covers released single-phase `GroupAggFunction` arithmetic for append-only and
+retracting input. Other physical input fields and aggregate outputs remain BIGINT; SUM/AVG
+arguments must be BIGINT. The captured key serializer and native stock-key encoding retain each
+key type, including NULL and signed INT extremes. Ordinary SQL and portable compiled plans capture
+the original physical aggregate calls, accumulator types, field offsets, hidden counter, key
+serializer, before-image policy, TTL and maximum parallelism. COUNT(*) uses Flink's unconditional
+Count1 semantics, while COUNT(v) preserves NULL filtering. Filtered aggregates, views, wider
+schemas/keys and other phases remain outside this binding. An unqualified native ordinary graph
+retains its existing snapshot behavior; it has no new stock interchange guarantee. Unqualified
+upstream owners in the rank-template path remain stock-owned.
+
+Append-only accumulators can omit both the input-row counter and SUM's non-null counter. Native
+execution retains group existence and SUM initialization as presence markers; it never fabricates
+an exact input count. These markers are absent from the exported Flink row. Actual COUNT and AVG
+counts remain independent and wrap like Java, including through zero. A live append group with a
+zero aggregate count remains present. The append contract rejects retraction batches before
+mutation. Native checkpoints keep their format and initialization reapplies the captured liveness
+mode on fresh, raw-checkpoint and canonical restores.
+
+The state/lifecycle qualification covers 420 Flink 2.2.1 cases: 32 independent generated-layout
+controls; 72 retracting, 92 append-only and 128 INT-key lifecycle/overflow/recovery cases; twenty
+validation/receiver/resource-failure cases; eight additional retracting native-checkpoint recovery
+cases; four retracting AVG signed-division boundaries; and 64 initially-empty handoffs. They compare
+complete stock accumulator bytes and write ages, retain the source on failed imports, and guard
+canonical export against intermediate native snapshots. Another 66 existing Java aggregate
+processing/SQL checks pass, including two-phase aggregation. The complete native suite passes
+1,274 tests with two pre-existing ignores.
+
+Automatic binding has 96 physical-map/identity/TTL/UID planner cases for both input modes and key
+types, nine unsupported compiled-layout controls and eight distinct TTL-hint overrides. The
+64 isolated process scenarios cover 28 retracting jobs, 28 append-only jobs and eight additional
+INT-key rescaling jobs. They retain custom source/sink state and both transposes, with ordinary SQL
+and compiled plans, both stores and initial engine orders, no-input re-export, native checkpoint
+recovery and rescaling 1→3→2. They compare the complete committed changelog with uninterrupted stock
+Flink, check final tables and verify actual native work/storage. Stock processes exclude StreamFusion
+JARs and exported metadata contains no StreamFusion classes. These are arithmetic cases, not a
+qualification of other connector transaction or failure combinations.
 
 The nine unchanged released Flink `GroupAggregateRestoreTest` programs also pass as stock-only
 controls. Their mixed schemas, filtered AVG, MIN and data-view/UDF variants remain outside this

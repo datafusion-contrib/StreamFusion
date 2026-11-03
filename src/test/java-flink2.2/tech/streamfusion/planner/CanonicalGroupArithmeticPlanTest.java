@@ -23,24 +23,54 @@ import tech.streamfusion.state.StockGroupArithmeticStateContract;
 
 class CanonicalGroupArithmeticPlanTest {
   static Stream<Arguments> cases() {
-    return Stream.of("arithmetic", "hidden", "count", "star")
-        .flatMap(
-            mode ->
-                Stream.of(false, true)
-                    .flatMap(
-                        compiled ->
-                            Stream.of(0L, 1000L)
-                                .flatMap(
-                                    ttl ->
-                                        Stream.of("DISABLED", "ALWAYS")
-                                            .map(
-                                                uids -> Arguments.of(mode, compiled, ttl, uids)))));
+    var bigKeys =
+        Stream.of("arithmetic", "hidden", "count", "star")
+            .flatMap(
+                mode ->
+                    Stream.of(false, true)
+                        .flatMap(
+                            compiled ->
+                                Stream.of(0L, 1000L)
+                                    .flatMap(
+                                        ttl ->
+                                            Stream.of("DISABLED", "ALWAYS")
+                                                .flatMap(
+                                                    uids ->
+                                                        Stream.of(false, true)
+                                                            .map(
+                                                                append ->
+                                                                    Arguments.of(
+                                                                        mode, compiled, ttl, uids,
+                                                                        append, false))))));
+    var intKeys =
+        Stream.of("arithmetic", "hidden", "count", "star")
+            .flatMap(
+                mode ->
+                    Stream.of(false, true)
+                        .flatMap(
+                            compiled ->
+                                Stream.of(0L, 1000L)
+                                    .flatMap(
+                                        ttl ->
+                                            Stream.of(false, true)
+                                                .map(
+                                                    append ->
+                                                        Arguments.of(
+                                                            mode,
+                                                            compiled,
+                                                            ttl,
+                                                            "DISABLED",
+                                                            append,
+                                                            true)))));
+    return Stream.concat(bigKeys, intKeys);
   }
 
   @ParameterizedTest
   @MethodSource("cases")
   void normalSubmissionCapturesPhysicalStateAndOriginalIdentity(
-      String mode, boolean compiled, long ttl, String uids) throws Exception {
+      String mode, boolean compiled, long ttl, String uids, boolean append, boolean integerKey)
+      throws Exception {
+    String keyType = integerKey ? "INT" : "BIGINT";
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("parallelism.default", "2");
@@ -60,8 +90,12 @@ class CanonicalGroupArithmeticPlanTest {
         });
     table.useCatalog("fixture");
     table.executeSql(
-        "CREATE TABLE input_table(k BIGINT,v BIGINT) WITH"
-            + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready')");
+        "CREATE TABLE input_table(k "
+            + keyType
+            + ",v BIGINT) WITH"
+            + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready','insert-only'='"
+            + append
+            + "')");
     table.useCatalog("default_catalog");
     String fields =
         mode.equals("arithmetic")
@@ -70,7 +104,9 @@ class CanonicalGroupArithmeticPlanTest {
                 ? "SUM(v) AS c,AVG(v) AS d"
                 : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
     table.executeSql(
-        "CREATE TABLE output_table(k BIGINT,"
+        "CREATE TABLE output_table(k "
+            + keyType
+            + ","
             + (mode.equals("arithmetic")
                 ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
                 : mode.equals("hidden") ? "c BIGINT,d BIGINT" : "a BIGINT")
@@ -112,15 +148,17 @@ class CanonicalGroupArithmeticPlanTest {
     assertArrayEquals(
         mode.equals("arithmetic")
             ? new int[] {0, 1, 2}
-            : mode.equals("hidden") ? new int[] {0, 2} : new int[] {0},
+            : mode.equals("hidden")
+                ? (append ? new int[] {0, 1} : new int[] {0, 2})
+                : new int[] {0},
         (int[]) GroupAggregateStockTestFixture.field(contract, "scalarFields"));
     assertArrayEquals(
         mode.equals("hidden")
-            ? new int[] {1, 3}
+            ? (append ? new int[] {-1, 2} : new int[] {1, 3})
             : mode.equals("arithmetic") ? new int[] {-1, -1, -1} : new int[] {-1},
         (int[]) GroupAggregateStockTestFixture.field(contract, "countFields"));
     assertEquals(
-        mode.equals("hidden") ? 4 : mode.equals("count") ? 1 : 0,
+        append ? -1 : mode.equals("hidden") ? 4 : mode.equals("count") ? 1 : 0,
         GroupAggregateStockTestFixture.field(contract, "recordCountField"));
     assertEquals(ttl, GroupAggregateStockTestFixture.field(operator, "stateTtlMillis"));
     assertFalse((boolean) GroupAggregateStockTestFixture.field(operator, "miniBatch"));

@@ -29,7 +29,15 @@ because its released accumulator advances unconditionally. The native state owne
 original serializer, TTL policy, identity and maximum parallelism. Unsupported contracts retain
 the stock owner in compiled lowering and the existing ordinary graph behavior elsewhere.
 
-This is the single-phase retracting BIGINT arithmetic contract. Additional schemas/keys/phases,
-append-only layouts without an input counter, state-backed data views and full version/connector/failure/delivery coverage
+Flink's append-only RecordCounter tests whether an accumulator exists, rather than reading an
+input count. Append-only SUM likewise has a nullable sum with no physical non-null count, while
+AVG retains its actual sum/count pair. Native execution uses existence/initialization markers for
+those absent fields and projects only actual generated fields into Flink state. Markers do not
+replace aggregate counts: a zero COUNT/AVG count cannot delete an append group. The captured
+contract reinstalls this policy after native checkpoint restoration without a state-format flag.
+
+This is the single-phase BIGINT arithmetic contract for append-only and retracting input, with
+one INT/BIGINT grouping key. Additional schemas/keys/phases,
+state-backed data views and full version/connector/failure/delivery coverage
 remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is
 explicitly deferred by the maintainer.

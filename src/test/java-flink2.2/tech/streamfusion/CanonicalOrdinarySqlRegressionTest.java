@@ -22,7 +22,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 class CanonicalOrdinarySqlRegressionTest {
   static Stream<Arguments> queries() {
     return Stream.of(
-        Arguments.of("GroupAgg", "SELECT g,SUM(v),COUNT(*) FROM src GROUP BY g", false),
+        Arguments.of("GroupAgg", "SELECT g,SUM(v),COUNT(*) FROM src GROUP BY g", true),
         Arguments.of("UpdatingJoin", "SELECT a.k,a.v,b.v FROM src a JOIN src b ON a.k=b.k", true),
         Arguments.of(
             "TopN",
@@ -120,7 +120,10 @@ class CanonicalOrdinarySqlRegressionTest {
                 .anyMatch(entry -> entry.getKey().contains(family) && entry.getValue() > 0),
             () -> "No positive native input for " + family + ": " + inputs + "\n" + actualPlan);
       } else assertTrue(inputs.isEmpty(), inputs.toString());
-      if (nativeRun && (family.equals("UpdatingJoin") || family.equals("Deduplicate"))) {
+      if (nativeRun
+          && (family.equals("UpdatingJoin")
+              || family.equals("Deduplicate")
+              || family.equals("GroupAgg"))) {
         assertFalse(
             table
                 .getConfig()

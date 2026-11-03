@@ -8,6 +8,30 @@ fn invalid(message: &str) -> DataFusionError {
 }
 
 impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
+    fn configure_arithmetic(
+        &mut self,
+        kinds: &[i64],
+        append_only: bool,
+    ) -> Result<(), DataFusionError> {
+        self.arithmetic_contract()?;
+        if self.kinds != kinds {
+            return Err(invalid("aggregate kinds differ from stock contract"));
+        }
+        if append_only && self.mini_batch {
+            return Err(invalid("append-only state requires per-record aggregation"));
+        }
+        if self
+            .stock_append_only
+            .is_some_and(|mode| mode != append_only)
+        {
+            return Err(invalid(
+                "group liveness mode differs from the configured stock contract",
+            ));
+        }
+        self.stock_append_only = Some(append_only);
+        Ok(())
+    }
+
     fn arithmetic_contract(&self) -> Result<(), DataFusionError> {
         if self.kinds.is_empty()
             || self
@@ -62,6 +86,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 || keys.value(row)[0] != 0
                 || !seen.insert(keys.value(row))
                 || values[0].is_null(row)
+                || (self.stock_append_only == Some(true) && values[0].value(row) != 1)
                 || values[1].is_null(row)
                 || (self.ttl_ms == 0 && values[1].value(row) != 0)
             {
@@ -71,6 +96,14 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 if values[3 + 2 * i].is_null(row) || (*kind != 0 && values[2 + 2 * i].is_null(row))
                 {
                     return Err(invalid("NULL in a required accumulator field"));
+                }
+                if self.stock_append_only == Some(true)
+                    && *kind == 0
+                    && values[3 + 2 * i].value(row) != i64::from(!values[2 + 2 * i].is_null(row))
+                {
+                    return Err(invalid(
+                        "append-only SUM must retain initialization presence",
+                    ));
                 }
             }
         }
@@ -135,6 +168,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
 fn transfer_batch(
     kinds: &[i64],
     ttl: bool,
+    append_only: bool,
     entries: &[(&ByteKey, &GroupKeyState)],
 ) -> Result<RecordBatch, DataFusionError> {
     let mut fields = vec![
@@ -147,7 +181,9 @@ fn transfer_batch(
             entries.iter().map(|(key, _)| key.0.as_ref()),
         )),
         Arc::new(Int64Array::from_iter_values(
-            entries.iter().map(|(_, state)| state.records),
+            entries
+                .iter()
+                .map(|(_, state)| if append_only { 1 } else { state.records }),
         )),
         Arc::new(Int64Array::from_iter_values(
             entries
@@ -169,7 +205,11 @@ fn transfer_batch(
                 return Err(invalid("NULL in a required retained accumulator"));
             }
             values.push(value);
-            counts.push(*non_null);
+            counts.push(if append_only && *kind == 0 {
+                i64::from(value.is_some())
+            } else {
+                *non_null
+            });
         }
         fields.push(Field::new(format!("value{i}"), DataType::Int64, true));
         fields.push(Field::new(format!("count{i}"), DataType::Int64, false));
@@ -185,6 +225,7 @@ fn transfer_batch(
 fn visit<'a>(
     kinds: &[i64],
     ttl: bool,
+    append_only: bool,
     entries: impl Iterator<Item = (&'a ByteKey, &'a GroupKeyState)>,
     mut receiver: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
 ) -> Result<(), DataFusionError> {
@@ -192,12 +233,12 @@ fn visit<'a>(
     for entry in entries {
         chunk.push(entry);
         if chunk.len() == CHUNK_ROWS {
-            receiver(transfer_batch(kinds, ttl, &chunk)?)?;
+            receiver(transfer_batch(kinds, ttl, append_only, &chunk)?)?;
             chunk.clear();
         }
     }
     if !chunk.is_empty() {
-        receiver(transfer_batch(kinds, ttl, &chunk)?)?;
+        receiver(transfer_batch(kinds, ttl, append_only, &chunk)?)?;
     }
     Ok(())
 }
@@ -237,25 +278,40 @@ pub extern "system" fn Java_tech_streamfusion_Native_configureGroupArithmeticCan
     persistent: jboolean,
     kinds: JIntArray<'local>,
 ) {
+    configure(env, handle, persistent, kinds, false);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_configureGroupArithmeticCanonicalMode<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    persistent: jboolean,
+    kinds: JIntArray<'local>,
+    append_only: jboolean,
+) {
+    configure(env, handle, persistent, kinds, append_only != 0);
+}
+
+fn configure<'local>(
+    env: JNIEnv<'local>,
+    handle: jlong,
+    persistent: jboolean,
+    kinds: JIntArray<'local>,
+    append_only: bool,
+) {
     crate::bridge::jni_guard(env, move |mut env| {
         let expected = read_int_array(&env, &kinds);
-        let check = |actual: &[i64], result: Result<(), DataFusionError>| {
-            result.and_then(|()| {
-                if actual == expected {
-                    Ok(())
-                } else {
-                    Err(invalid("aggregate kinds differ from stock contract"))
-                }
-            })
-        };
         let result = if persistent == 0 {
-            let owner = unsafe { &*(handle as *const GroupAggregator) };
-            check(&owner.kinds, owner.arithmetic_contract())
+            unsafe { &mut *(handle as *mut GroupAggregator) }
+                .configure_arithmetic(&expected, append_only)
         } else {
             #[cfg(feature = "rocksdb-state")]
             {
-                let owner = unsafe { &*(handle as *const GroupAggregator<RocksGroupStore>) };
-                check(&owner.kinds, owner.arithmetic_contract())
+                unsafe { &mut *(handle as *mut GroupAggregator<RocksGroupStore>) }
+                    .configure_arithmetic(&expected, append_only)
             }
             #[cfg(not(feature = "rocksdb-state"))]
             Err(invalid("native RocksDB is unavailable"))
@@ -283,6 +339,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_exportGroupArithmeticCanoni
                 visit(
                     &owner.kinds,
                     owner.ttl_ms > 0,
+                    owner.stock_append_only == Some(true),
                     owner.store.iter(),
                     |batch| emit(&mut env, &receiver, batch, &mut memory),
                 )
@@ -295,6 +352,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_exportGroupArithmeticCanoni
                     let mut memory = owner.memory.temporary_reservation();
                     let kinds = &owner.kinds;
                     let ttl = owner.ttl_ms > 0;
+                    let append_only = owner.stock_append_only == Some(true);
                     owner.store.for_each_canonical_batch(1, |entries| {
                         if let Some(memory) = &mut decoded {
                             memory.try_resize(
@@ -306,10 +364,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_exportGroupArithmeticCanoni
                                     .sum(),
                             )?;
                         }
-                        let result =
-                            visit(kinds, ttl, entries.iter().map(|(k, v)| (k, v)), |batch| {
-                                emit(&mut env, &receiver, batch, &mut memory)
-                            });
+                        let result = visit(
+                            kinds,
+                            ttl,
+                            append_only,
+                            entries.iter().map(|(k, v)| (k, v)),
+                            |batch| emit(&mut env, &receiver, batch, &mut memory),
+                        );
                         let released = decoded
                             .as_mut()
                             .map_or(Ok(()), |memory| memory.try_resize(0));

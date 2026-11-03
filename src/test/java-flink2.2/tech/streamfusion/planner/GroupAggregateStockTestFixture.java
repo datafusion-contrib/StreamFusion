@@ -23,7 +23,7 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
   final KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness;
   final Object function;
   final RowDataKeySelector selector;
-  final RowType accumulatorType, outputType;
+  final RowType accumulatorType, outputType, inputType;
   final int[] kinds, scalarFields, countFields, valueColumns;
   final boolean before;
   final long ttl;
@@ -36,7 +36,32 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
   @SuppressWarnings("unchecked")
   GroupAggregateStockTestFixture(String mode, boolean rocks, long ttl, Boolean beforePolicy)
       throws Exception {
+    this(mode, rocks, ttl, beforePolicy, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  GroupAggregateStockTestFixture(
+      String mode, boolean rocks, long ttl, Boolean beforePolicy, boolean append) throws Exception {
+    this(mode, rocks, ttl, beforePolicy, append, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  GroupAggregateStockTestFixture(
+      String mode,
+      boolean rocks,
+      long ttl,
+      Boolean beforePolicy,
+      boolean append,
+      boolean integerKey)
+      throws Exception {
     this.ttl = ttl;
+    String keyType = integerKey ? "INT" : "BIGINT";
+    inputType =
+        RowType.of(
+            integerKey
+                ? new org.apache.flink.table.types.logical.IntType()
+                : new org.apache.flink.table.types.logical.BigIntType(),
+            new org.apache.flink.table.types.logical.BigIntType());
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "false");
     var table = NativePlannerTestEnvironment.create(config);
@@ -53,8 +78,12 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
         });
     table.useCatalog("fixture");
     table.executeSql(
-        "CREATE TABLE input_table(k BIGINT,v BIGINT) WITH"
-            + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready')");
+        "CREATE TABLE input_table(k "
+            + keyType
+            + ",v BIGINT) WITH"
+            + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready','insert-only'='"
+            + append
+            + "')");
     table.useCatalog("default_catalog");
     String fields =
         mode.equals("arithmetic")
@@ -63,7 +92,9 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
                 ? "SUM(v) AS c,AVG(v) AS d"
                 : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
     table.executeSql(
-        "CREATE TABLE output_table(k BIGINT,"
+        "CREATE TABLE output_table(k "
+            + keyType
+            + ","
             + (mode.equals("arithmetic")
                 ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
                 : mode.equals("hidden") ? "c BIGINT,d BIGINT" : "a BIGINT")
@@ -102,7 +133,13 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
           (org.apache.flink.table.runtime.generated.GeneratedRecordEqualiser)
               field(plannedFunction, "genRecordEqualiser");
       var acc = (LogicalType[]) field(plannedFunction, "accTypes");
-      int counter = (int) field(field(plannedFunction, "recordCounter"), "indexOfCountStar");
+      var plannedCounter = field(plannedFunction, "recordCounter");
+      int counter =
+          plannedCounter.getClass()
+                  == org.apache.flink.table.runtime.operators.aggregate.RecordCounter.of(-1)
+                      .getClass()
+              ? -1
+              : (int) field(plannedCounter, "indexOfCountStar");
       operator =
           new KeyedProcessOperator<>(
               new GroupAggFunction(generated, equaliser, acc, counter, beforePolicy, ttl));
@@ -121,8 +158,8 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
         break;
       case "hidden":
         kinds = new int[] {0, 4};
-        scalarFields = new int[] {0, 2};
-        countFields = new int[] {1, 3};
+        scalarFields = append ? new int[] {0, 1} : new int[] {0, 2};
+        countFields = append ? new int[] {-1, 2} : new int[] {1, 3};
         valueColumns = new int[] {1, 1};
         break;
       case "count":
@@ -153,7 +190,13 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
             .getProducedType()
             .createSerializer(
                 new org.apache.flink.api.common.ExecutionConfig().getSerializerConfig());
-    int recordCountField = (int) field(field(function, "recordCounter"), "indexOfCountStar");
+    var counter = field(function, "recordCounter");
+    int recordCountField =
+        counter.getClass()
+                == org.apache.flink.table.runtime.operators.aggregate.RecordCounter.of(-1)
+                    .getClass()
+            ? -1
+            : (int) field(counter, "indexOfCountStar");
     return new StockGroupArithmeticStateContract(
         keys,
         (RowType) selector.getProducedType().toLogicalType(),

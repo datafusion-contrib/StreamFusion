@@ -26,7 +26,6 @@ class CanonicalGroupArithmeticAdmissionTest {
         "two-phase",
         "keyless",
         "composite",
-        "append",
         "floating",
         "integer"
       })
@@ -80,10 +79,19 @@ class CanonicalGroupArithmeticAdmissionTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"false,0", "true,0", "false,3600000", "true,3600000"})
-  void actualStockTtlHintOverridesTheJobDefault(boolean compiled, long defaultTtl)
+  @CsvSource({
+    "false,0,false",
+    "true,0,false",
+    "false,3600000,false",
+    "true,3600000,false",
+    "false,0,true",
+    "true,0,true",
+    "false,3600000,true",
+    "true,3600000,true"
+  })
+  void actualStockTtlHintOverridesTheJobDefault(boolean compiled, long defaultTtl, boolean append)
       throws Exception {
-    var table = environment("hint");
+    var table = environment(append ? "hint-append" : "hint");
     table.getConfig().set("table.exec.state.ttl", defaultTtl + " ms");
     String sql =
         "INSERT INTO output_table SELECT /*+ STATE_TTL('input_table'='1 s') */"
@@ -109,6 +117,8 @@ class CanonicalGroupArithmeticAdmissionTest {
             StockGroupArithmeticStateContract.class,
             GroupAggregateStockTestFixture.field(operator, "stockStateContract"));
     assertEquals(true, GroupAggregateStockTestFixture.field(contract, "ttl"));
+    assertEquals(
+        append ? -1 : 4, GroupAggregateStockTestFixture.field(contract, "recordCountField"));
   }
 
   private static TableEnvironment environment(String mode) throws Exception {
@@ -134,7 +144,7 @@ class CanonicalGroupArithmeticAdmissionTest {
             + ") WITH"
             + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready',"
             + "'insert-only'='"
-            + mode.equals("append")
+            + mode.endsWith("append")
             + "')");
     table.useCatalog("default_catalog");
     table.executeSql(

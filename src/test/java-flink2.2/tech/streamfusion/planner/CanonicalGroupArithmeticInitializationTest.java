@@ -75,10 +75,37 @@ class CanonicalGroupArithmeticInitializationTest {
             row(1L, null, 3),
             row(1L, 17L, 0),
             row(2L, null, 0));
-    try (var reference = new GroupAggregateStockTestFixture(mode, rocks, ttl, before)) {
+    assertLifecycle(mode, rocks, ttl, nativeFirst, before, false, steps);
+  }
+
+  static void assertLifecycle(
+      String mode,
+      boolean rocks,
+      long ttl,
+      boolean nativeFirst,
+      boolean before,
+      boolean append,
+      List<? extends RowData> steps)
+      throws Exception {
+    assertLifecycle(mode, rocks, ttl, nativeFirst, before, append, false, steps);
+  }
+
+  static void assertLifecycle(
+      String mode,
+      boolean rocks,
+      long ttl,
+      boolean nativeFirst,
+      boolean before,
+      boolean append,
+      boolean integerKey,
+      List<? extends RowData> steps)
+      throws Exception {
+    try (var reference =
+        new GroupAggregateStockTestFixture(mode, rocks, ttl, before, append, integerKey)) {
       reference.harness.open();
       OperatorSubtaskState saved;
-      try (var stock = new GroupAggregateStockTestFixture(mode, rocks, ttl, before);
+      try (var stock =
+              new GroupAggregateStockTestFixture(mode, rocks, ttl, before, append, integerKey);
           var nativeHarness = nativeHarness(stock, rocks)) {
         if (nativeFirst) nativeHarness.open();
         else stock.harness.open();
@@ -87,23 +114,30 @@ class CanonicalGroupArithmeticInitializationTest {
           assertEquals(
               expected,
               nativeFirst
-                  ? nativeStep(nativeHarness, steps.get(i), now(i), reference.outputType)
+                  ? nativeStep(
+                      nativeHarness,
+                      steps.get(i),
+                      now(i),
+                      reference.outputType,
+                      reference.inputType)
                   : stockStep(stock, steps.get(i), now(i)),
               "prefix " + i);
         }
         saved = snapshot(nativeFirst ? nativeHarness : stock.harness);
-        assertState(reference, saved, mode, rocks, ttl, before);
+        assertState(reference, saved, mode, rocks, ttl, before, append);
       }
-      try (var stock = new GroupAggregateStockTestFixture(mode, rocks, ttl, before);
+      try (var stock =
+              new GroupAggregateStockTestFixture(mode, rocks, ttl, before, append, integerKey);
           var nativeHarness = nativeHarness(stock, rocks)) {
         var receiver = nativeFirst ? stock.harness : nativeHarness;
         receiver.initializeState(saved);
         receiver.open();
         // Re-export before any new input, preserving NULL accumulators and original TTL ages.
         saved = snapshot(receiver);
-        assertState(reference, saved, mode, rocks, ttl, before);
+        assertState(reference, saved, mode, rocks, ttl, before, append);
       }
-      try (var stock = new GroupAggregateStockTestFixture(mode, rocks, ttl, before);
+      try (var stock =
+              new GroupAggregateStockTestFixture(mode, rocks, ttl, before, append, integerKey);
           var nativeHarness = nativeHarness(stock, rocks)) {
         var receiver = nativeFirst ? stock.harness : nativeHarness;
         receiver.initializeState(saved);
@@ -114,13 +148,19 @@ class CanonicalGroupArithmeticInitializationTest {
               expected,
               nativeFirst
                   ? stockStep(stock, steps.get(i), now(i))
-                  : nativeStep(nativeHarness, steps.get(i), now(i), reference.outputType),
+                  : nativeStep(
+                      nativeHarness,
+                      steps.get(i),
+                      now(i),
+                      reference.outputType,
+                      reference.inputType),
               "middle " + i);
         }
         saved = snapshot(receiver);
-        assertState(reference, saved, mode, rocks, ttl, before);
+        assertState(reference, saved, mode, rocks, ttl, before, append);
       }
-      try (var stock = new GroupAggregateStockTestFixture(mode, rocks, ttl, before);
+      try (var stock =
+              new GroupAggregateStockTestFixture(mode, rocks, ttl, before, append, integerKey);
           var nativeHarness = nativeHarness(stock, rocks)) {
         var receiver = nativeFirst ? nativeHarness : stock.harness;
         receiver.initializeState(saved);
@@ -130,12 +170,17 @@ class CanonicalGroupArithmeticInitializationTest {
           assertEquals(
               expected,
               nativeFirst
-                  ? nativeStep(nativeHarness, steps.get(i), now(i), reference.outputType)
+                  ? nativeStep(
+                      nativeHarness,
+                      steps.get(i),
+                      now(i),
+                      reference.outputType,
+                      reference.inputType)
                   : stockStep(stock, steps.get(i), now(i)),
               "suffix " + i);
-          if (i == 7) assertState(reference, snapshot(receiver), mode, rocks, ttl, before);
+          if (i == 7) assertState(reference, snapshot(receiver), mode, rocks, ttl, before, append);
         }
-        assertState(reference, snapshot(receiver), mode, rocks, ttl, before);
+        assertState(reference, snapshot(receiver), mode, rocks, ttl, before, append);
       }
     }
   }
@@ -198,8 +243,30 @@ class CanonicalGroupArithmeticInitializationTest {
       long ttl,
       boolean before)
       throws Exception {
+    assertState(reference, saved, mode, rocks, ttl, before, false);
+  }
+
+  static void assertState(
+      GroupAggregateStockTestFixture reference,
+      OperatorSubtaskState saved,
+      String mode,
+      boolean rocks,
+      long ttl,
+      boolean before,
+      boolean append)
+      throws Exception {
     var expected = reference.rawStateBytes();
-    try (var restored = new GroupAggregateStockTestFixture(mode, rocks, ttl, before)) {
+    try (var restored =
+        new GroupAggregateStockTestFixture(
+            mode,
+            rocks,
+            ttl,
+            before,
+            append,
+            reference
+                .inputType
+                .getTypeAt(0)
+                .is(org.apache.flink.table.types.logical.LogicalTypeRoot.INTEGER))) {
       restored.harness.initializeState(saved);
       restored.harness.open();
       assertEquals(
@@ -233,7 +300,8 @@ class CanonicalGroupArithmeticInitializationTest {
     fixture.harness.setProcessingTime(time);
     fixture.harness.setStateTtlProcessingTime(time);
     fixture.harness.getOutput().clear();
-    fixture.harness.processElement(new StreamRecord<>(new RowDataSerializer(INPUT).copy(row)));
+    fixture.harness.processElement(
+        new StreamRecord<>(new RowDataSerializer(fixture.inputType).copy(row)));
     return bytes(fixture.harness.extractOutputValues(), fixture.outputType);
   }
 
@@ -243,12 +311,22 @@ class CanonicalGroupArithmeticInitializationTest {
       long time,
       RowType output)
       throws Exception {
+    return nativeStep(harness, row, time, output, INPUT);
+  }
+
+  static List<String> nativeStep(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness,
+      RowData row,
+      long time,
+      RowType output,
+      RowType input)
+      throws Exception {
     harness.setProcessingTime(time);
     harness.setStateTtlProcessingTime(time);
     harness.processElement(
         new StreamRecord<>(
             new ArrowBatch(
-                RowDataArrowConverter.write(List.of(row), INPUT, NativeAllocator.SHARED, true))));
+                RowDataArrowConverter.write(List.of(row), input, NativeAllocator.SHARED, true))));
     harness.prepareSnapshotPreBarrier(0);
     var rows = new ArrayList<RowData>();
     var serializer = new RowDataSerializer(output);

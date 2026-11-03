@@ -20,7 +20,13 @@ fn seed(owner: &mut GroupAggregator, id: i64, records: i64, stamp: i64) {
 fn frame(owner: &GroupAggregator) -> RecordBatch {
     let mut entries = owner.store.iter().collect::<Vec<_>>();
     entries.sort_by(|(a, _), (b, _)| a.0.cmp(&b.0));
-    transfer_batch(&owner.kinds, owner.ttl_ms > 0, &entries).unwrap()
+    transfer_batch(
+        &owner.kinds,
+        owner.ttl_ms > 0,
+        owner.stock_append_only == Some(true),
+        &entries,
+    )
+    .unwrap()
 }
 
 fn replace(batch: &RecordBatch, index: usize, array: ArrayRef) -> RecordBatch {
@@ -138,10 +144,16 @@ fn bounded_chunks_preserve_zero_negative_and_maximum_counts_and_reject_prior_chu
         seed(&mut source, id as i64, [0, -3, i64::MAX][id % 3], 1000);
     }
     let mut batches = Vec::new();
-    visit(&source.kinds, true, source.store.iter(), |batch| {
-        batches.push(batch);
-        Ok(())
-    })
+    visit(
+        &source.kinds,
+        true,
+        source.stock_append_only == Some(true),
+        source.store.iter(),
+        |batch| {
+            batches.push(batch);
+            Ok(())
+        },
+    )
     .unwrap();
     assert_eq!(
         batches
@@ -323,4 +335,153 @@ fn restored_integer_average_wraps_the_signed_division_boundary() {
             .value(0),
         i64::MIN
     );
+}
+
+#[test]
+fn append_presence_is_independent_of_zero_and_wrapped_aggregate_counts() {
+    for kind in [3, 4] {
+        for initial in [-1, i64::MAX] {
+            let mut source = owner(vec![kind], 0);
+            source.configure_arithmetic(&[kind], true).unwrap();
+            seed(&mut source, 1, 1, 0);
+            let GroupAggState::Running { agg, non_null } =
+                &mut source.store.get_mut(&key(1).0).unwrap().aggs[0]
+            else {
+                unreachable!()
+            };
+            agg.restore_value(&ScalarValue::Int64(Some(if kind == 3 {
+                initial
+            } else {
+                1
+            })));
+            *non_null = initial;
+            let mut restored = owner(vec![kind], 0);
+            restored.configure_arithmetic(&[kind], true).unwrap();
+            restored
+                .transfer_arithmetic(&frame(&source), false)
+                .unwrap();
+            restored.update(&input(Some(0), 0), 0).unwrap();
+            let state = restored.store.get(&key(1).0).unwrap();
+            assert_eq!(state.records, 1);
+            let expected = if kind == 3 {
+                Some(initial.wrapping_add(1))
+            } else if initial == -1 {
+                None
+            } else {
+                Some(0)
+            };
+            assert_eq!(
+                state.aggs[0].emit(&DataType::Int64),
+                ScalarValue::Int64(expected)
+            );
+            let mut returned = owner(vec![kind], 0);
+            returned.configure_arithmetic(&[kind], true).unwrap();
+            returned
+                .transfer_arithmetic(&frame(&restored), false)
+                .unwrap();
+            assert_eq!(frame(&returned), frame(&restored));
+        }
+    }
+}
+
+#[test]
+fn append_nullable_sum_retains_initialization_without_a_physical_non_null_count() {
+    let mut state = owner(vec![0], 0);
+    state.configure_arithmetic(&[0], true).unwrap();
+    for (value, expected) in [
+        (None, None),
+        (Some(7), Some(7)),
+        (Some(4), Some(11)),
+        (Some(-11), Some(0)),
+        (None, Some(0)),
+        (Some(0), Some(0)),
+        (Some(i64::MIN), Some(i64::MIN)),
+        (Some(-1), Some(i64::MAX)),
+    ] {
+        state.update(&input(value, 0), 0).unwrap();
+        let record = state.store.get(&key(1).0).unwrap();
+        assert_eq!(record.records, 1);
+        assert_eq!(
+            record.aggs[0].emit(&DataType::Int64),
+            ScalarValue::Int64(expected)
+        );
+        let mut next = owner(vec![0], 0);
+        next.configure_arithmetic(&[0], true).unwrap();
+        next.transfer_arithmetic(&frame(&state), false).unwrap();
+        assert_eq!(frame(&next), frame(&state));
+        state = next;
+    }
+}
+
+#[test]
+fn append_contract_rejects_bad_presence_and_whole_retracting_batches_before_mutation() {
+    let mut source = owner(vec![0], 0);
+    source.configure_arithmetic(&[0], true).unwrap();
+    source.update(&input(Some(7), 0), 0).unwrap();
+    let good = frame(&source);
+    for (index, value) in [(1, 0), (1, -1), (4, 0)] {
+        let bad = replace(&good, index, Arc::new(Int64Array::from(vec![value])));
+        let mut target = owner(vec![0], 0);
+        target.configure_arithmetic(&[0], true).unwrap();
+        assert!(target.transfer_arithmetic(&bad, false).is_err());
+        assert!(target.store.iter().next().is_none());
+    }
+    for kind in [Some(1), Some(3), Some(9), None] {
+        let batch = RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(vec![1, 1])) as ArrayRef),
+            ("v", Arc::new(Int64Array::from(vec![Some(4), Some(7)]))),
+            (
+                ROW_KIND_COLUMN,
+                Arc::new(Int8Array::from(vec![Some(0), kind])),
+            ),
+        ])
+        .unwrap();
+        assert!(source.update(&batch, 0).is_err());
+        assert_eq!(frame(&source), good);
+    }
+}
+
+#[test]
+fn append_configuration_preserves_kind_checks_and_cannot_reinterpret_a_bound_mode() {
+    let mut state = owner(vec![0], 0);
+    assert!(state.configure_arithmetic(&[3], true).is_err());
+    assert_eq!(state.stock_append_only, None);
+    state.configure_arithmetic(&[0], true).unwrap();
+    state.configure_arithmetic(&[0], true).unwrap();
+    assert!(state.configure_arithmetic(&[0], false).is_err());
+    assert_eq!(state.stock_append_only, Some(true));
+    let mut mini = owner(vec![0], 0).with_mini_batch();
+    assert!(mini.configure_arithmetic(&[0], true).is_err());
+    assert_eq!(mini.stock_append_only, None);
+}
+
+#[test]
+fn native_checkpoint_restore_rebinds_append_liveness_without_changing_the_state_format() {
+    let kinds = vec![0, 3, 4];
+    let mut source = owner(kinds.clone(), 0);
+    source.configure_arithmetic(&kinds, true).unwrap();
+    for value in [None, Some(7), Some(4), Some(-11)] {
+        source.update(&input(value, 0), 0).unwrap();
+    }
+    let before = frame(&source);
+    let saved = source.snapshot();
+    let mut restored = GroupAggregator::restore(
+        kinds.clone(),
+        vec![0; 3],
+        vec![1; 3],
+        vec![0],
+        true,
+        &saved,
+        0,
+    );
+    assert_eq!(restored.stock_append_only, None);
+    restored.configure_arithmetic(&kinds, true).unwrap();
+    assert_eq!(frame(&restored), before);
+    for value in [None, Some(0), Some(5)] {
+        assert_eq!(
+            source.update(&input(value, 0), 0).unwrap(),
+            restored.update(&input(value, 0), 0).unwrap()
+        );
+        assert_eq!(frame(&source), frame(&restored));
+    }
 }

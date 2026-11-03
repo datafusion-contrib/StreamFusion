@@ -58,14 +58,7 @@ class CanonicalGroupArithmeticJobTest {
       else if (cells[0].equals("-D") || cells[0].equals("-U")) materialized.remove(cells[1]);
       else fail("Unknown stock row kind: " + row);
     }
-    if (mode.equals("rescale")) {
-      var expected = new java.util.HashMap<String, String>();
-      for (int key = 0; key < 64; key++)
-        expected.put(key == 0 ? "null" : Integer.toString(key), "33|5");
-      assertEquals(expected, materialized);
-    } else {
-      assertEquals(java.util.Map.of("null", "null|null", "2", "11|11", "3", "11|5"), materialized);
-    }
+    assertEquals(expectedTable(mode), materialized);
     if (ordinary) {
       for (String stage : List.of("prefix", "middle", "suffix"))
         assertTrue(Files.exists(switched.resolve(stage + "-ordinary-sql-verified")));
@@ -77,7 +70,17 @@ class CanonicalGroupArithmeticJobTest {
     }
   }
 
-  private Path prepare(String name, String mode, boolean ordinary) throws Exception {
+  java.util.Map<String, String> expectedTable(String mode) {
+    if (mode.equals("rescale")) {
+      var expected = new java.util.HashMap<String, String>();
+      for (int key = 0; key < 64; key++)
+        expected.put(key == 0 ? "null" : Integer.toString(key), "33|5");
+      return expected;
+    }
+    return java.util.Map.of("null", "null|null", "2", "11|11", "3", "11|5");
+  }
+
+  Path prepare(String name, String mode, boolean ordinary) throws Exception {
     Path root = directory.resolve(name);
     Files.createDirectories(root);
     if (ordinary) Files.createFile(root.resolve("ordinary-sql"));
