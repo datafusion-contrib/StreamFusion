@@ -8149,3 +8149,92 @@ encoder, `IntegralExpressionBenchmarkFunctions`, `sf.integral.previous=true`,
 `sf.integral.fallbackControl=true` and the exact fallback reason. Complete jobs use
 `IntegralExpressionPipelineBenchmark` with `sf.integral.booleanInput=true` and the same
 expression/previous settings; all resources and data otherwise match.
+
+
+## Integer-to-BOOLEAN TRY_CAST
+
+TRY_CAST of verified TINYINT/SMALLINT/INT/BIGINT inputs and failure-free arithmetic,
+widening/rounding producers uses the existing native comparison with a zero of the
+input's resolved width. Nonzero values, including signed minima, become TRUE; zero is
+FALSE and NULL stays NULL in both modes. This mirrors Flink's NumericToBoolean rule.
+Comet also treats integer-to-BOOLEAN as a DataFusion-compatible conversion; using the
+existing comparison avoids a new cast target/opcode, JNI entry point or Rust kernel.
+Ordinary CAST already lowers to this comparison through released planning. Failing,
+stateful or unverified producers keep their previous route. Character formatting of
+the new boolean TRY_CAST result remains generated under its separate producer proof.
+
+The [record](results/integer-boolean-try-cast-2026-11-03.json) retains 48 cells and
+[4,800 raw trials](results/integer-boolean-try-cast-2026-11-03.csv.gz), including warmups/checksums/ranges.
+Released Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc
+artifacts are used. Equal prepared GenericRowData/BinaryRowData and Arrow include all
+four signed integer source widths, nullable/NOT NULL, extrema and zero. Computed controls
+use `v+CAST(1 AS source)`. Each trial consumes 131,072 rows, with 16 warmups and nine
+measurements. The native timer runs inside Rust after import and before export, retaining
+production Calc and equivalent output consumption. Stock uses prepared Java RowData.
+Setup and perimeter conversions are outside only the small-function gate; intrinsic costs
+remain. The actual previous encoder from `49f269d9` rejects each exact integer-to-BOOLEAN
+TRY_CAST and its control executes released generated Java without synthetic native costs.
+Current and previous inputs/resources match. The release runtime is unchanged and verified
+by hash, including mimalloc malloc aliases.
+
+| Scope | Cells | Paired stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk (1,024 rows) | 40 | 2.658-20.095x | 2.656-6.831x | 2.645-6.790x |
+| Tiny (16 rows) | 8 | 0.259-0.272x | 0.257-0.277x | 0.255-0.274x |
+
+The largest paired ratio comes from the Flink 1.18.1 NOT NULL GenericRowData INT cell:
+paired stock is 12.271 ns/row (3.524-17.732), versus independent stock 2.088 ns/row.
+A [diagnostic replay](results/integer-boolean-try-cast-2026-11-03-stock-drift-replay.csv.gz) with 64 warmups/nine
+measurements gives stock/native 3.524x
+and previous/native 3.352x.
+This retains all 292 replay samples separately and does not overwrite the primary data or
+prove the cause of the stock drift. The original 20x ratio is not a stable speedup claim.
+
+All bulk cells beat stock and actual previous fallback. Tiny controls retain
+8 stock losses and 8 previous losses.
+Small batches are not called accelerated when they lose.
+
+Eight complete million-row jobs cover direct/computed INT/BIGINT inputs. They retain the
+bounded row source, blackhole output, startup, JNI and both transposes. Two warmups/five
+measurements alternate order. Candidate requires consumed NativeCalc work and empty JVM
+evaluator descriptors. Actual previous controls require exact fallback, zero substitutions
+and zero native operators. Seconds, median:
+
+| Flink / source / shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-BOOLEAN | 0.162491 | 0.166682 | 0.147023 | 0.148354 |
+| 2.2.1 / INT-BOOLEAN-computed | 0.155750 | 0.167884 | 0.149599 | 0.156696 |
+| 2.2.1 / BIGINT-BOOLEAN | 0.158948 | 0.167414 | 0.155004 | 0.155063 |
+| 2.2.1 / BIGINT-BOOLEAN-computed | 0.161442 | 0.179230 | 0.147702 | 0.153635 |
+| 1.18.1 / INT-BOOLEAN | 0.167345 | 0.173842 | 0.144691 | 0.145597 |
+| 1.18.1 / INT-BOOLEAN-computed | 0.163659 | 0.167112 | 0.141206 | 0.142495 |
+| 1.18.1 / BIGINT-BOOLEAN | 0.169389 | 0.180325 | 0.161704 | 0.161217 |
+| 1.18.1 / BIGINT-BOOLEAN-computed | 0.169641 | 0.184478 | 0.152336 | 0.159917 |
+
+Native/stock elapsed spans **1.021-1.110**; native/previous spans
+**1.071-1.194**. 8 of eight complete jobs lose to paired
+stock; 8 lose to independently measured actual previous fallback.
+All slower results remain. Prepared-function gains do not establish universal complete-job
+acceleration.
+
+All **528 focused JVM invocations** pass without skips across both released Flink lines
+and JDK 11/17, targeting Java release 11. The new complete 5,003-row maps/schema cover
+four integer widths, modern/legacy modes, NULLs, signed extrema and zero, arithmetic,
+widening, rounding, logic, CASE and empty filtered batches. Real filters and failing/lazy
+producer controls pass; character consumers explicitly retain their generated route.
+Related integer/BOOLEAN TRY_CAST, temporal parsing and BOOLEAN CASE regressions also pass.
+Admitted pure claims require consumed NativeCalc work and empty evaluators. Sixty-four
+actual previous positive cases compare full maps/schema before the expected fallback
+assertion; their empty/character follow-ups are not reached. Eight control methods stop
+at the positive filter route assertion before their later negative checks. Four unchanged
+released CastRules oracle runs pass **12 original integer-to-BOOLEAN assertions each**.
+No Rust production code changes; the previously qualified accepted runtime's 904-test
+result retains its historical provenance. Other producers/types/character consumers remain
+in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+Reproduce with release `integral_expression`, matching integer type/nullability/row-layout/
+batch arguments and `SF_INTEGRAL_EXPRESSION=TRY_CAST(v AS BOOLEAN)`. Previous uses its
+frozen encoder, `IntegralExpressionBenchmarkFunctions`, `sf.integral.previous=true`,
+`sf.integral.fallbackControl=true` and the exact fallback reason. Complete jobs use
+`IntegralExpressionPipelineBenchmark`, `sf.integral.bigintInput=true` for BIGINT, the same
+expression and previous settings, preserving resources/data and perimeter costs.

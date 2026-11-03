@@ -1295,8 +1295,23 @@ CASE tree and needs no new admission.
 
 Division and other unverified/failing/stateful BOOLEAN producers retain fallback, including
 their operand failures, lazy branches and empty filtered batches. Other target families
-and reverse TRY_CAST conversions retain their separate preceding coverage.
+and reverse TRY_CAST conversions are covered separately below.
 The [release qualification](../benchmarks/scalar-functions.md#boolean-to-integer-try_cast)
+retains actual preceding fallback, independent stock, tiny controls and complete jobs.
+
+### Integer-to-BOOLEAN TRY_CAST
+
+TRY_CAST from verified TINYINT/SMALLINT/INT/BIGINT input, arithmetic, widening and rounding
+trees to BOOLEAN uses a native comparison against a zero of the input's resolved width.
+Every nonzero integer, including signed minima, becomes TRUE; zero becomes FALSE and NULL
+stays NULL in both cast modes. This follows Flink's NumericToBoolean rule; ordinary CAST
+already lowers to this comparison through released planning. Conversion cannot fail.
+
+Division and other unverified/failing/stateful producers keep the preceding fallback,
+including operand failures, lazy branches and all-filtered batches. Character formatting
+of a new TRY_CAST BOOLEAN result retains its separate generated route; other source
+families also retain their preceding coverage.
+The [release qualification](../benchmarks/scalar-functions.md#integer-to-boolean-try_cast)
 retains actual preceding fallback, independent stock, tiny controls and complete jobs.
 
 ### Integer/string casts
