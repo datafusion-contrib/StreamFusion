@@ -56,16 +56,15 @@ public final class NativePaimonSplitReader
   private long skip;
   private RecordReader<InternalRow> rows;
   private RecordReader.RecordIterator<InternalRow> rowBatch;
-  private Queue<DataFileMeta> files;
-  private NativePaimonFileReader decoder;
   private NativePaimonSnapshotReader snapshot;
+  private PaimonRustReader rust;
   private boolean nativeSnapshotsEnabled = true;
   private int nativeSnapshots;
   private volatile boolean wakeup;
   private int nativeFiles;
 
   public int nativeFilesRead() {
-    return nativeFiles;
+    return nativeFiles + (rust == null ? 0 : rust.filesOpened());
   }
 
   public int nativeSnapshotsRead() {
@@ -121,7 +120,8 @@ public final class NativePaimonSplitReader
       position = current.recordsToSkip();
       skip = position;
       if (canDecode(current)) {
-        files = new ArrayDeque<>(((DataSplit) current.split()).dataFiles());
+        rust =
+            new PaimonRustReader(table, (DataSplit) current.split(), outputType, batchRows, true);
       } else {
         if (nativeSnapshotsEnabled && current.split() instanceof DataSplit) {
           snapshot =
@@ -137,7 +137,7 @@ public final class NativePaimonSplitReader
     }
     while (true) {
       VectorSchemaRoot root =
-          snapshot != null ? snapshot.next() : files != null ? nativeBatch() : javaBatch();
+          rust != null ? rust.next() : snapshot != null ? snapshot.next() : javaBatch();
       if (root == null) {
         if (skip > 0) {
           throw new IOException(
@@ -196,8 +196,7 @@ public final class NativePaimonSplitReader
             && data.dataFiles().stream()
                 .allMatch(
                     f ->
-                        f.schemaId() == table.schema().id()
-                            && PaimonCodecs.available(f.fileFormat()));
+                        f.schemaId() == table.schema().id() && PaimonRustReader.supports(table, f));
     if (!eligible) return false;
     for (DataFileMeta file : data.dataFiles()) {
       if (file.fileFormat().equals("orc")) {
@@ -207,26 +206,6 @@ public final class NativePaimonSplitReader
       }
     }
     return true;
-  }
-
-  private VectorSchemaRoot nativeBatch() throws IOException {
-    while (true) {
-      if (decoder == null) {
-        DataFileMeta file = files.poll();
-        if (file == null) {
-          return null;
-        }
-        DataSplit split = (DataSplit) current.split();
-        nativeFiles++;
-        decoder = openFile(file, split);
-      }
-      VectorSchemaRoot root = decoder.next();
-      if (root != null) {
-        return root;
-      }
-      decoder.close();
-      decoder = null;
-    }
   }
 
   private NativePaimonFileReader openFile(DataFileMeta file, DataSplit split) throws IOException {
@@ -275,6 +254,14 @@ public final class NativePaimonSplitReader
 
   private void closeCurrent() throws IOException {
     try {
+      if (rust != null) {
+        nativeFiles += rust.filesOpened();
+        try {
+          rust.close();
+        } finally {
+          rust = null;
+        }
+      }
       if (rowBatch != null) {
         rowBatch.releaseBatch();
       }
@@ -287,20 +274,12 @@ public final class NativePaimonSplitReader
       } finally {
         rows = null;
         try {
-          if (decoder != null) {
-            decoder.close();
+          if (snapshot != null) {
+            snapshot.close();
           }
         } finally {
-          try {
-            if (snapshot != null) {
-              snapshot.close();
-            }
-          } finally {
-            snapshot = null;
-            decoder = null;
-            files = null;
-            current = null;
-          }
+          snapshot = null;
+          current = null;
         }
       }
     }

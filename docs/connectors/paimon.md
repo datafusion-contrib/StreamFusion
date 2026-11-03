@@ -31,7 +31,7 @@ checkpoint serialization. A task-side reader emits Arrow batches into the native
 | Read phase | Implementation |
 |---|---|
 | Append snapshot and subsequent committed data | Native Parquet/ORC decoding into Arrow |
-| Primary-key initial snapshot | Native Parquet/ORC for raw-convertible files; native sorted-run merge for admitted deduplication/first-row splits; Java merge-to-Arrow for other splits |
+| Primary-key initial snapshot | Native Parquet/ORC for raw-convertible files; released paimon-rust merge for admitted deduplication/first-row/partial-update splits; Java merge-to-Arrow for other splits |
 | Primary-key changelog tailing | Native Parquet/ORC decoding of value columns and the stored row-kind byte |
 
 Native readers use Flink's single-thread fetcher lifecycle and its configured bounded handover
@@ -52,8 +52,17 @@ is tracked in [#53](https://github.com/datafusion-contrib/StreamFusion/issues/53
 [snapshot-merge design](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/research/paimon-native-snapshot-merge-design.md)
 records the Java planning and Arrow batch interface.
 
-The native decoder calls Paimon's seekable `FileIO` through a reusable 64 KiB transfer buffer.
-parquet-rs or orc-rust reads the projected columns and decodes batches of up to 4,096 rows. It does not
+Both source adapters use the canonical crates.io `paimon = 0.4.0` public reader. Java passes its
+already resolved schema, selected file metadata and projection to `Table::from_resolved_schema`,
+`DataSplit` and `ReadBuilder`; Rust performs no catalog or manifest discovery. The small descriptor
+bridges different Java split serialization versions; it does not implement a second schema or
+metadata planner. Historical schemas and deletion vectors still retain Java.
+
+`FileIOBuilder::with_provider` connects the reader to Paimon's existing seekable Java `FileIO`
+through a reusable 64 KiB transfer buffer. The provider binds each original URI directly to Java,
+using an opaque OpenDAL key so URI normalization cannot change the configured filesystem path.
+No Rust storage client or separate credentials are configured. paimon-rust delegates projected
+file decoding to parquet-rs or orc-rust and returns Arrow batches of up to 4,096 rows. It does not
 load an entire file into Java memory. Arrow C Data exports transfer ownership to the source batch;
 closing the reader releases the native decoder and Java input stream. Memory includes compressed
 column chunks, decoder working buffers, and the source's bounded fetch queue; the batch row count
@@ -68,19 +77,27 @@ including positions within a new batch size. Prefetched rows do not advance the 
 identity when restoring savepoints after job graph changes.
 
 The reader deliberately retains Java decoding and row-to-Arrow conversion for splits requiring
-schema evolution, deletion-vector selection, or historical files without an installed native codec, and for specialized
-split representations. This preserves those files' Java read semantics within an admitted source.
+schema evolution, deletion-vector selection, ORC schemas containing CHAR (including nested CHAR), unsafe/unknown ORC timestamp bounds,
+or files without an installed native codec, and for specialized
+split representations. External paths must end in the metadata's physical format suffix;
+query/fragment suffixes or a different extension retain Java because released Rust dispatches by
+that suffix. The adapter never rewrites such storage paths. This preserves those files' Java read semantics within an admitted source.
 Primary-key snapshot splits needing unsupported merge semantics retain Java, including its merge
 engine and delete handling.
 
 ### Native initial snapshot merge
 
-Java Paimon's released `IntervalPartition` groups each snapshot split into disjoint key sections
-and sorted runs. Native code merges the runs in a section while opening each run's files in order.
-The optional Paimon native library adapts paimon-rust's Arrow key comparison, cell selection and
-batch output gathering. Its loser tree ports released Java Paimon's traversal and grouping rules. It requests Arrow batches from the separate Parquet or ORC library through a Java
-callback that forwards C Data addresses. No Java row or Java Arrow vector is materialized between
-decoding and merging. Java still owns file access, schemas, discovery and checkpoints.
+The released paimon-rust reader owns interval partitioning, sorted runs, decoding and merge
+functions. StreamFusion no longer carries a copied loser tree, cursor merger or partial-update
+reducer. Java's `IntervalPartition` remains a conservative admission check for fan-in and footer
+memory; it does not drive the Rust merge loop.
+
+`AuditLogRead` exposes the winning stored row kind for materialized snapshots. A columnar Arrow
+selection drops winning retracts, then translates the small row-kind column into Flink's byte
+sidecar. This preserves Java's INSERT/UPDATE_AFTER distinction, which ordinary
+`to_arrow_with_row_kind` intentionally normalizes to INSERT for snapshots. Streaming splits use
+that ordinary method to preserve all four physical change kinds without merging. Payload values
+stay in Arrow throughout. Snapshot selection, comparison and field reduction remain upstream.
 
 The native merger admits fixed and dynamic hash buckets with `deduplicate`, `first-row`, or basic `partial-update`,
 the default loser-tree sort engine, and nonempty stored scalar keys: `BOOLEAN`, `TINYINT` through
@@ -96,19 +113,26 @@ Deduplication compares optional `sequence.field` columns in the configured
 Sequence columns use the comparable types above and are decoded even when projected away.
 First-row selects the earliest stored sequence. Both engines honor `ignore-delete`; otherwise
 first-row requires every file to report zero retracts, leaving Java to handle unsupported input.
-Exact stored-sequence ties and overlapping file sequence intervals use Java's loser-tree leaf
-states, reverse initialization and equal-key traversal. Each group consumes one current record per
-run before any run advances, including at batch boundaries. Deduplication and first-row retain one
-winning row reference per key.
+Potential stored-sequence ties retain Java: file sequence ranges within a section must be
+non-overlapping, and a file must have at least as many sequence positions as physical rows.
+This conservative metadata gate avoids the released readers' different equal-sequence traversal
+without implementing a custom tie breaker. It can decline files whose actual keys never tie.
 
 Basic `partial-update` selects the latest non-null cell for each column. It supports `ignore-delete`
 and `partial-update.remove-record-on-delete`, including stored historical retracts and later
-reinsertion. Without either delete policy, files must have a known zero delete count. Multi-record
+reinsertion for the remove-record policy. Partial updates with `ignore-delete=true` retain Java
+when any file has stored or unknown retracts: released Java can initialize cells from the first
+retract, whereas the Rust reader skips it. Ordinary add-only partial-update files remain native. Without either delete policy, files must have a known zero delete count. Multi-record
 partial reductions emit inserts or remove the key; singleton groups preserve their original row
 kind, matching Java's reducer wrapper. Nested values are selected as whole cells, preserving their
-internal nulls. Cell references are gathered into an output Arrow batch without Java rows or a
-one-row Arrow allocation per key. Sequence groups and configured field aggregates retain Java.
+internal nulls. The upstream reader returns Arrow batches without Java payload rows; its internal allocation
+strategy remains upstream. Sequence groups and configured field aggregates retain Java.
 
+ORC timestamps need known top-level bounds within ±9,000,000,000,000 epoch milliseconds,
+or a known all-null column. Nested timestamp columns and missing/out-of-range bounds retain Java:
+the released orc-rust 0.8 decoder first materializes nanoseconds, which cannot represent Paimon's
+full year range. The bound is deliberately inside that nanosecond range. This gate also applies to
+raw append/changelog files, preventing a decode failure after entering the native path.
 ORC retains Java for fractional timestamp key bounds that can lose sorted order through its
 last-negative-second alias, and for non-leading fractional timestamp keys; see the
 [ORC timestamp restrictions](orc.md#configuration-and-types). These snapshot combinations retain Java:
@@ -117,25 +141,29 @@ last-negative-second alias, and for non-leading fractional timestamp keys; see t
   field aggregates; postpone and cross-partition key-dynamic buckets; unsupported key/sequence
   types; and specialized split representations.
 - First-row files with nonzero or unknown delete counts when `ignore-delete` is false, and basic
-  partial-update files with those counts when neither supported delete policy is enabled.
-- Sections exceeding `sort-spill-threshold`, or the encoded row-group admission budget below.
+  partial-update files with those counts when neither supported delete policy is enabled; stored/unknown retracts also retain Java for
+  partial updates with `ignore-delete=true`.
+- Potential sequence ties; ORC schemas containing CHAR because released padding differs from Java.
+- Sections exceeding the smaller of 256 runs and `sort-spill-threshold`, or the encoded row-group admission budget below.
 
 For raw-convertible primary-key snapshot splits with known delete counts and no deletion vectors,
 the source follows Java's raw reader: native decoded values emit insert rows. This path does not
 need a merge. Selection merges drop winning retracts and retain the winning add kind;
 partial-update reductions follow the row-kind rules above. Changelog tailing continues to preserve all stored changes.
 
-`sort-spill-buffer-size` supplies the snapshot merger's retained-buffer budget. Before emission,
-the reader inspects file footers and requires the sum of each run's largest compressed-plus-
-uncompressed row-group size (Parquet), or its conservative stripe/dictionary estimate (ORC), to fit half that budget. Larger splits retain Java's spill-capable
-reader. Native merging accounts for retained Arrow inputs, encoded keys, the current winner and
-pending output references; exceeding the budget fails the read. Output flushes by bytes as well
-as rows, and completed batches are reclaimed even during long stretches of deleted keys.
+`sort-spill-buffer-size` supplies the read resource budget. Before emission, the existing footer
+check requires the sum of each run's largest compressed-plus-uncompressed row group (Parquet),
+or conservative stripe/dictionary estimate (ORC), to fit half that budget. Larger splits retain
+Java's spill-capable reader. paimon-rust's `ResourceContext` charges projected Parquet row groups;
+it does not bound all merge state, ORC allocations or output. `peakRetainedBytes()` reports that
+upstream reservation, not the previous copied merger's total retained-buffer estimate.
 
-These are encoded-data admission and retained-buffer limits, not a strict total-process or Flink
-managed-memory reservation. Transient decoder/output allocations, selection-index vectors, an individual wide record,
-Java stream buffers and the source handover queue add memory. A resource or storage failure after
-emission fails the attempt; it never silently switches readers in the middle of a split.
+There is no native merge spill or strict total-process/Flink managed-memory reservation. Decoder
+and output allocations, wide records, Java stream buffers and the handover queue add memory.
+A resource or storage failure after emission fails the attempt; it never silently switches
+readers in the middle of a split. Closing the reader releases every Java stream; already exported
+Arrow batches remain valid until their consumer releases them. JNI preserves the original Java
+storage exception, and interrupted reads fail at batch and I/O boundaries.
 
 Recovery still checkpoints emitted logical rows after merging and delete removal. Replaying the
 same split and skipping that prefix supports changes in batch size and Java/native restoration
@@ -151,25 +179,18 @@ projections and restoration in both Java/native directions. Nanosecond keys exer
 even when projected away. `PaimonSnapshotModesTest` compares fixed/dynamic buckets, first-row,
 stored retracts with ignore-delete, ascending/descending compound sequences, nulls, floating edge
 cases and scalar sequence types against Java, including projections and restoration in both directions.
-`PaimonSnapshotMergeOracleTest` compares the same records directly with released Java's merge reader
-across 378 combinations of merge/delete policies, user sequences, 1–16 runs and batch sizes, including
-exact ties, empty runs and repeated keys within one run. `PaimonSnapshotPartialUpdateTest` covers
-actual Parquet/ORC files with tied stored sequences, different payloads, all supported scalar and
-nested value types, fixed/dynamic buckets, projections and restoration in both directions.
-`PaimonSourceSqlTest` follows scalar keys, first-row, partial updates, user sequences and dynamic buckets from
-snapshot into subsequent commits for both formats. Lookup changelog fixtures allow compaction
-and supply Java's temporary IO manager, as normal Flink writers do.
-`PaimonSourceRecoveryTest` restores the asynchronous reader before and after emission for
-snapshot and tail splits, including first-row, partial updates and user sequences. `PaimonSnapshotCallbackTest`
-checks partial C Data export cleanup and preservation of the original storage exception.
-The Rust tests cover keys spanning input batches, 100,000-version and delete-only inputs (including
-partial-update groups),
-byte-triggered output flushes, and budget/storage failures. The SQL harness requires a marker
-proving that a native snapshot merger emitted a batch.
+`PaimonSnapshotMergeOracleTest` writes files with the released Java writer and compares projected
+reads across merge/delete policies, ascending/descending sequences, missing keys, 1–16 runs and
+batch sizes. Tied files, including repeated keys within a run, explicitly require Java fallback.
+`PaimonSnapshotPartialUpdateTest` checks actual Parquet/ORC sequence ties and all supported value
+types, fixed/dynamic buckets, projection and cross-reader restoration. `PaimonSourceSqlTest`
+follows snapshots into subsequent commits; `PaimonSourceRecoveryTest` restores before and after
+emission. `PaimonRustReaderTest` checks original storage exceptions, stream cleanup, original URI
+handling and Arrow batch ownership after reader close. The SQL harness requires a marker proving
+that the native snapshot reader emitted a batch. Upstream SQL assertions remain unchanged.
 
-This extension passes 653 Paimon regression cases, including the added Parquet/ORC value and
-restore cases, plus eight unchanged upstream continuous-reader, partial-update and read/write SQL
-cases with required native snapshot and sink markers. The complete Paimon 2.0.0 SQL harness
+The previous copied-merger implementation passed 653 regression cases and eight unchanged upstream
+continuous-reader, partial-update and read/write SQL cases with required native markers. The complete Paimon 2.0.0 SQL harness
 previously passed all 265 result, plan and recovery cases with the
 complete-plan native hook, including the unchanged source-reuse assertion. A focused subset is
 shown below. Include the continuous-reader cases when checking the harness's required native
@@ -194,6 +215,9 @@ Partial-update cases alternate null string and array columns so output combines 
 with default, ignore-delete and whole-record-delete policies. The sequence case orders by this
 payload so earlier commits can win; first-row ignores input retracts, and the dynamic case uses two explicitly assigned buckets. Counts and checksums must
 match, and every native run must exercise the merger.
+
+The following historical results describe the previous copied merger. The released-reader
+comparison below supersedes them for the current implementation.
 
 | Parquet case | Commits | Java merge to Arrow | Native merge to Arrow | Throughput ratio |
 |---|---:|---:|---:|---:|
@@ -242,6 +266,66 @@ case names (for example `partial-update,partial-delete,partial-ignore` for the n
 exceeds the default footer admission budget; the ORC measurements use `256 mb`. Native defaults
 and fallback gates are unchanged; the eight-run ORC control still falls back at `256 mb`.
 A benchmark fails if its native run falls back to Java.
+
+### Released-reader migration diagnostic
+
+The 2026-11-03 comparison uses an Apple M4 (16 GiB), JDK 17, Rust 1.95.0 release with mimalloc,
+one test JVM, the default 8 GiB heap and visible CPU count, and the existing production byte-range
+JNI/FileIO and Arrow import. The previous implementation is canonical main `5d628b6a`; the candidate
+uses canonical paimon-rust 0.4.0. Both run the same fixture/harness, writer settings, values,
+projection and resources, outside concurrent builds/tests. Files are written before timing.
+One warmup and three measured observations rotate reader order. Cells are median [minimum, maximum]
+in milliseconds; [raw observations](../benchmarks/paimon-rust-reader-2026-11-03.csv) include warmup,
+row counts, checksums and native merge evidence. Every required native measurement performed native work.
+
+File reads use 262,144 rows and four projected columns, including a nested array. Stock rows
+checksum the id directly; Java-to-Arrow additionally pays the production fallback's copy/conversion.
+The latter matches the native pipeline's Arrow output boundary. These are local diagnostics,
+not whole-job or remote-storage gains.
+
+| Format / read | Stock Java rows | Java to Arrow | Previous native | Released reader |
+|---|---:|---:|---:|---:|
+| parquet / append | 23.79 [23.46, 25.58] | 65.02 [62.49, 90.65] | 15.30 [15.21, 15.86] | 13.62 [13.61, 13.88] |
+| parquet / changelog | 22.74 [22.23, 23.74] | 78.20 [64.90, 78.36] | 11.14 [11.12, 11.28] | 9.52 [9.51, 9.57] |
+| orc / append | 17.55 [16.48, 25.43] | 81.95 [73.30, 88.55] | 17.46 [17.25, 17.74] | 17.91 [17.67, 18.50] |
+| orc / changelog | 13.23 [12.93, 13.98] | 54.91 [52.32, 67.37] | 9.98 [9.98, 10.10] | 11.45 [10.82, 11.47] |
+
+Snapshots use 65,536 keys, strings and nested arrays. Both paths output Arrow and checksum the same
+integer payload. Budgets are 64 MiB for Parquet and 256 MiB for ORC, unchanged between implementations.
+Java controls below are the candidate run's stock merge plus production conversion to Arrow.
+
+| Format / merge / commits | Java to Arrow | Previous native | Released reader |
+|---|---:|---:|---:|
+| parquet / int / 1 | 25.09 [23.29, 28.34] | 11.00 [9.01, 12.66] | 14.13 [12.57, 14.66] |
+| parquet / int / 4 | 46.61 [46.55, 48.25] | 25.81 [25.29, 26.20] | 24.84 [24.32, 24.92] |
+| parquet / int / 8 | 79.23 [78.70, 81.12] | 49.24 [48.97, 49.77] | 44.48 [44.39, 45.29] |
+| parquet / first-row / 4 | 45.49 [45.47, 50.81] | 23.84 [23.67, 24.27] | 21.92 [21.64, 22.96] |
+| parquet / sequence / 4 | 51.23 [50.87, 55.11] | 23.99 [23.91, 24.63] | 24.84 [24.05, 25.75] |
+| parquet / partial-update / 4 | 49.40 [47.66, 54.55] | 25.42 [24.36, 25.71] | 41.00 [40.72, 41.46] |
+| parquet / partial-delete / 4 | 47.10 [45.77, 49.61] | 24.05 [23.98, 24.43] | 39.55 [38.75, 40.11] |
+| parquet / partial-ignore / 4 | 47.29 [46.44, 47.60] | 24.37 [24.21, 24.67] | 40.33 [39.81, 41.69] |
+| orc / first-row / 4 | 41.13 [38.79, 44.62] | 22.78 [22.59, 22.88] | 25.80 [24.55, 27.08] |
+| orc / sequence / 4 | 40.51 [40.13, 43.08] | 20.92 [20.31, 21.05] | 25.90 [24.98, 25.94] |
+| orc / partial-update / 4 | 42.45 [41.13, 44.22] | 20.13 [19.86, 20.17] | 41.04 [40.87, 41.75] |
+| orc / partial-delete / 4 | 41.45 [40.93, 41.69] | 19.78 [19.59, 20.01] | 39.28 [39.09, 40.71] |
+| orc / partial-ignore / 4 | 41.92 [41.65, 42.12] | 19.82 [19.73, 20.37] | 39.92 [39.21, 40.72] |
+
+Public reader reuse improves the Parquet raw-read medians and keeps multi-run deduplication/first-row
+competitive. The one-commit Parquet snapshot and ORC cases regress against the previous native code.
+Partial updates regress substantially against our removed custom gatherer: upstream materializes
+per-key reductions before assembling batches. Their measured benefit over Java-to-Arrow is about
+1.2× for Parquet and only 1.03–1.06× for ORC. ORC append does not beat the Java row-only checksum;
+it does beat Java-to-Arrow. This change prioritizes released reader reuse and deleting local algorithms;
+it is not a blanket throughput improvement. Writer behavior and writer benchmarks are unchanged.
+The old in-memory Criterion merger probe was removed with its implementation; use the production
+file-reader diagnostics above for this boundary.
+
+The existing benchmark commands reproduce this comparison. Each now logs individual `*_SAMPLE`
+observations; iteration 0 is warmup. Set `SF_PAIMON_SNAPSHOT_CASES` to
+`int,first-row,sequence,partial-update,partial-delete,partial-ignore` for Parquet, omit `int` for
+ORC, and set `SF_PAIMON_SNAPSHOT_BUDGET='256 mb'` for ORC. Keep the same harness on the previous
+revision. Explicit native assertions fail if a selected fixture falls back.
+
 
 ### At-least-once consumer retention
 
@@ -452,7 +536,8 @@ operators. The [ORC reader comparison](orc.md#reading-into-arrow-rs) ends the pr
 an arrow-rs `RecordBatch` consumed in Rust.
 This is a local file-reader diagnostic, not an end-to-end Flink or remote-storage benchmark.
 
-Local Apple Silicon measurements with release libraries and mimalloc:
+Historical Apple Silicon measurements for the previous file reader, with release libraries and mimalloc
+(the current released-reader comparison is above):
 
 | Format | Path | Java rows | Java to Arrow | Native to Arrow | Native / Java-to-Arrow throughput |
 |---|---|---:|---:|---:|---:|
@@ -1216,8 +1301,8 @@ adapter, alongside `paimon-flink-1.18-1.0.0.jar` and the selected StreamFusion
 Parquet/ORC modules. Keep the same `01-streamfusion-paimon.jar` classpath ordering.
 The two adapters must not be installed together.
 
-The adapter shares native codecs, Arrow batch routing, and merge kernels with the
-2.0 integration. Its build stages shared Java sources and overlays the classes whose
+The adapter shares the released paimon-rust source reader, Java FileIO bridge, native writer
+codecs and Arrow batch routing with the 2.0 integration. Its build stages shared Java sources and overlays the classes whose
 released APIs changed. The artifacts deliberately use the same package names: choose
 one at deployment rather than mixing incompatible Paimon APIs in one classloader. Java uses the 1.0 append topology, writer memory pools, file
 metadata, hash indexes, commit messages, and checkpoint lifecycle. Streaming
