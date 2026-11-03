@@ -24,7 +24,6 @@ class BinaryCharacterCastEncodingTest {
             types.createSqlType(SqlTypeName.CHAR, 1), types.createSqlType(SqlTypeName.VARCHAR, 1))) {
           boolean bounded = !legacy && target.getPrecision() != Integer.MAX_VALUE;
           for (var operator : List.of(FlinkSqlOperatorTable.CAST, FlinkSqlOperatorTable.TRY_CAST)) {
-            if (bounded && operator == FlinkSqlOperatorTable.TRY_CAST) continue;
             RexNode call = rex.makeCall(target, operator, List.of(rex.makeInputRef(source, 0)));
             var encoded = encode(call, legacy);
             assertEquals(237, encoded.payload()[0]);

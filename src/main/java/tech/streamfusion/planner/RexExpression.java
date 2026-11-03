@@ -6569,9 +6569,9 @@ final class RexExpression {
 
   private boolean modernBoundedBinaryCharacterCast(RexCall call) {
     RelDataType type = call.getType();
-    return call.getKind() == SqlKind.CAST
-        && call.getOperator()
-            != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST
+    return (call.getKind() == SqlKind.CAST
+            || call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST)
         && Boolean.FALSE.equals(legacyCastBehaviour)
         && call.getOperands().size() == 1
         && SqlTypeFamily.BINARY.contains(call.getOperands().get(0).getType())

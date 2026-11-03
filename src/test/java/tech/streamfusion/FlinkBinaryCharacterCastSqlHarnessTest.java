@@ -83,17 +83,17 @@ class FlinkBinaryCharacterCastSqlHarnessTest {
         "SELECT CAST(CASE WHEN id>=0 THEN b ELSE " + failed + " END AS STRING) FROM src");
     BuiltinFunctionParity.assertParity(() -> environment(legacy),
         "SELECT CAST(CASE WHEN id>=0 THEN b ELSE " + failed + " END AS VARCHAR(1)), "
-            + "CAST(CASE WHEN id>=0 THEN b ELSE " + failed + " END AS CHAR(3)) FROM src");
+            + "TRY_CAST(CASE WHEN id>=0 THEN b ELSE " + failed + " END AS CHAR(3)) FROM src");
     BuiltinFunctionParity.assertParity(() -> environment(legacy),
         "SELECT TRY_CAST(" + failed + " AS STRING) FROM src WHERE id<0");
     BuiltinFunctionParity.assertParity(() -> environment(legacy),
-        "SELECT CAST(" + failed + " AS CHAR(2)), CAST(" + failed
+        "SELECT CAST(" + failed + " AS CHAR(2)), TRY_CAST(" + failed
             + " AS VARCHAR(1)) FROM src WHERE id<0");
   }
 
   @Test
   void tryCastDoesNotCatchOperandEvaluationFailures() {
-    for (String target : List.of("STRING")) {
+    for (String target : List.of("STRING", "CHAR(2)", "VARCHAR(1)")) {
       var comparison = NativeFailureParity.run(() -> environment(false),
           "SELECT TRY_CAST(ENCODE(CAST(1/(id-id) AS STRING),'UTF-8') AS " + target + ") FROM src");
       assertEquals(NativeFailureParity.Route.NATIVE, comparison.nativeRun().route());
@@ -110,8 +110,8 @@ class FlinkBinaryCharacterCastSqlHarnessTest {
   void boundedTargetsKeepUtf16TruncationAndPaddingWhileLegacyIgnoresLength(boolean legacy)
       throws Exception {
     BuiltinFunctionParity.assertParity(() -> environment(legacy),
-        "SELECT id, CAST(b AS CHAR(1)), CAST(b AS VARCHAR(1)), CAST(b AS CHAR(8)), "
-            + "CAST(b AS VARCHAR(2)), CAST(b AS VARCHAR(5)), "
+        "SELECT id, CAST(b AS CHAR(1)), CAST(b AS VARCHAR(1)), TRY_CAST(b AS CHAR(8)), "
+            + "CAST(b AS VARCHAR(2)), TRY_CAST(b AS VARCHAR(5)), "
             + "CAST(CAST(b AS BINARY(3)) AS CHAR(2)) FROM src");
   }
 
@@ -155,7 +155,7 @@ class FlinkBinaryCharacterCastSqlHarnessTest {
           org.apache.flink.table.api.Schema.newBuilder().fromRowDataType(inputType).build());
       var scan = NativePlanner.install(table);
       String sql = "SELECT CAST(b AS STRING),TRY_CAST(b AS STRING),"
-          + "CAST(b AS VARCHAR(1)),CAST(b AS CHAR(3)) FROM src";
+          + "CAST(b AS VARCHAR(1)),TRY_CAST(b AS CHAR(3)) FROM src";
       assertTrue(table.explainSql(sql).contains("NativeCalc"));
       assertFalse(scan.functionExecutions().isEmpty());
       assertTrue(scan.functionExecutions().stream().allMatch(route -> route.contains("jvm=[]")),

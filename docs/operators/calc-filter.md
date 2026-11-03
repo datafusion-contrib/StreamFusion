@@ -1338,7 +1338,7 @@ from raw `FROM_BASE64` STRING transport and never exposes malformed Arrow Utf8.
 
 The unbounded conversion has the same decoding behavior in modern and legacy cast modes.
 Legacy bounded CHAR/VARCHAR casts also use this kernel because the released rule ignores
-their length. Modern bounded CAST targets apply Flink's rule to the decoded text in the same
+their length. Modern bounded targets apply Flink's rule to the decoded text in the same
 kernel: VARCHAR(n) keeps at most n UTF-16 units and CHAR(n) also pads with spaces. This is
 not truncation by Unicode code points; a cut through a surrogate pair writes `?`, the UTF-8
 that Flink produces for the isolated high surrogate. Rows whose UTF-8 length already fits
@@ -1346,9 +1346,9 @@ VARCHAR(n), and ASCII rows of exactly n bytes for CHAR(n), share the decoded Arr
 Inside a Calc, consumers of a modern bounded result, such as LIKE, comparisons, CASE or
 another cast, would observe the original Java String; they keep the generated Flink
 expression around the cast, which recomputes the conversion itself.
-Modern bounded TRY_CAST targets retain their preceding route.
 TRY_CAST catches conversion failures, not failures while computing its operand; binary UTF-8
-decoding itself replaces malformed input instead of throwing. CASE remains lazy and an
+decoding itself replaces malformed input instead of throwing, so bounded TRY_CAST uses the
+same native conversion without catching operand errors. CASE remains lazy and an
 empty filtered batch never evaluates the cast.
 
 Admitted value-only consumers such as length, HEX, equality, LIKE and re-encoding compose

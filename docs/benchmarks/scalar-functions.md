@@ -4330,7 +4330,7 @@ Use the `flink-1.18` Maven profile for the other released line. Complete jobs us
 
 ### Modern bounded CHAR/VARCHAR targets
 
-Modern `CAST(binary AS VARCHAR(n)/CHAR(n))` extends the same kernel with
+Modern `CAST`/`TRY_CAST(binary AS VARCHAR(n)/CHAR(n))` extends the same kernel with
 Flink's UTF-16 truncation and CHAR padding. The preceding encoder at `c0d1a509` rejects
 these targets, so its control verifies that rejection and measures released Flink's
 generated fallback. The prepared comparison uses released Flink 1.18.1/2.2.1 on JDK
