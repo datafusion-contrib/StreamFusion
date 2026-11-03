@@ -39,6 +39,15 @@ nonempty work from successful jobs.
 The agent records the JVM aggregate and table-function operators after successful Arrow-batch
 consumption, using the same consumed-row recorder as the other columnar operators.
 
+The unchanged Table API `OverAggregateITCase` methods covering scalar JVM aggregates,
+constants, DISTINCT, managed DataViews and bounded/unbounded time frames now require
+consumed `NativeColumnarJvmOverOperator` input. Their original source failures, positive
+retention settings and assertions remain upstream's. Both backend invocations are retained
+in the runtime-route scopes. Flink 1.18's observed changelog-state setting still selects the
+existing explicit full fallback. Timer, ownership, scalar-type, late-row and repeated
+checkpoint/rescaling tests supplement these upstream witnesses; plan labels alone cannot
+satisfy the execution contract.
+
 Focused MAP/MULTISET collection-aggregate fixtures additionally require released values,
 resolved types, per-key ordered changes and consumed JVM group work, including two
 nonempty checkpoint recoveries on heap/native RocksDB. They reuse the recursive

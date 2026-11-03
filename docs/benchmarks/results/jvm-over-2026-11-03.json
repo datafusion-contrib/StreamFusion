@@ -1,0 +1,4167 @@
+{
+  "method": "Complete executeSql().await() jobs; symmetric full explain before timing; two warmups and five alternating measured trials per engine. Serial workloads; release Rust+mimalloc; row source, blackhole row sink, Arrow IPC, both perimeter conversions, and managed frame state retained.",
+  "date": "2026-11-03",
+  "previous_revision": "5d628b6a053442ed2d186d882eff57a7093c1b3e",
+  "platform": {
+    "os": "Darwin",
+    "architecture": "arm64",
+    "jdk": "Temurin 17",
+    "max_heap_gib": 2,
+    "parallelism": 1,
+    "batch_rows": 1024,
+    "timezone": "UTC",
+    "null_every": 31
+  },
+  "cases": [
+    {
+      "flink_line": "2.2",
+      "configuration": {
+        "type": "BIGINT",
+        "order": "pt",
+        "frame": "ROWS UNBOUNDED PRECEDING",
+        "rows": 131072,
+        "keys": 16
+      },
+      "stock": {
+        "median": 0.098179,
+        "minimum": 0.093743,
+        "maximum": 0.11299,
+        "samples": [
+          0.106026,
+          0.094323,
+          0.098179,
+          0.093743,
+          0.11299
+        ]
+      },
+      "candidate": {
+        "median": 0.119208,
+        "minimum": 0.116578,
+        "maximum": 0.132663,
+        "samples": [
+          0.116578,
+          0.132663,
+          0.119208,
+          0.116883,
+          0.119536
+        ]
+      },
+      "previous": {
+        "median": 0.113611,
+        "minimum": 0.09702,
+        "maximum": 0.162133,
+        "samples": [
+          0.162133,
+          0.09702,
+          0.113611,
+          0.120692,
+          0.098709
+        ]
+      },
+      "previous_paired_stock": {
+        "median": 0.106433,
+        "minimum": 0.094949,
+        "maximum": 0.156996,
+        "samples": [
+          0.106433,
+          0.156996,
+          0.104774,
+          0.094949,
+          0.109918
+        ]
+      },
+      "candidate_trials": [
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.407596
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.316666
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.143992
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.104858
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.106026
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.116578
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.132663
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.094323
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.098179
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.119208
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.116883
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.093743
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.11299
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.119536
+        }
+      ],
+      "previous_trials": [
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.512242
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.213845
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.215162
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.174717
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.106433
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.162133
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.09702
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.156996
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.104774
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.113611
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.120692
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.094949
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.109918
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.098709
+        }
+      ],
+      "command": [
+        "mvn",
+        "-q",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Dtest=JvmOverBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+        "-Djvmover.rows=131072",
+        "-Djvmover.keys=16",
+        "-Djvmover.order=pt",
+        "-Djvmover.frame=ROWS UNBOUNDED PRECEDING",
+        "-Djvmover.type=BIGINT",
+        "-Djvmover.expectNative=true",
+        "-Djvmover.warmup=2",
+        "-Djvmover.runs=5"
+      ],
+      "consumed_jvm_over_assertion_passed": true,
+      "previous_full_island_fallback_assertion_passed": true
+    },
+    {
+      "flink_line": "2.2",
+      "configuration": {
+        "type": "DECIMAL(38,18)",
+        "order": "rt",
+        "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+        "rows": 262144,
+        "keys": 1024
+      },
+      "stock": {
+        "median": 0.94452,
+        "minimum": 0.914322,
+        "maximum": 0.989662,
+        "samples": [
+          0.989662,
+          0.944323,
+          0.94452,
+          0.914322,
+          0.96906
+        ]
+      },
+      "candidate": {
+        "median": 8.227749,
+        "minimum": 8.082322,
+        "maximum": 8.27135,
+        "samples": [
+          8.192211,
+          8.27135,
+          8.230764,
+          8.082322,
+          8.227749
+        ]
+      },
+      "previous": {
+        "median": 1.231894,
+        "minimum": 1.209404,
+        "maximum": 1.270177,
+        "samples": [
+          1.266173,
+          1.231894,
+          1.209404,
+          1.270177,
+          1.228052
+        ]
+      },
+      "previous_paired_stock": {
+        "median": 1.156001,
+        "minimum": 1.111443,
+        "maximum": 1.228553,
+        "samples": [
+          1.228553,
+          1.156029,
+          1.111443,
+          1.156001,
+          1.153129
+        ]
+      },
+      "candidate_trials": [
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.478495
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 8.509813
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 8.211687
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.956294
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.989662
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 8.192211
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 8.27135
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.944323
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.94452
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 8.230764
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 8.082322
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.914322
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.96906
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 8.227749
+        }
+      ],
+      "previous_trials": [
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.813927
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.330339
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.242589
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.1452
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.228553
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.266173
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.231894
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.156029
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.111443
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.209404
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.270177
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.156001
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.153129
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.228052
+        }
+      ],
+      "command": [
+        "mvn",
+        "-q",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Dtest=JvmOverBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+        "-Djvmover.rows=262144",
+        "-Djvmover.keys=1024",
+        "-Djvmover.order=rt",
+        "-Djvmover.frame=ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+        "-Djvmover.type=DECIMAL(38,18)",
+        "-Djvmover.expectNative=true",
+        "-Djvmover.warmup=2",
+        "-Djvmover.runs=5"
+      ],
+      "consumed_jvm_over_assertion_passed": true,
+      "previous_full_island_fallback_assertion_passed": true
+    },
+    {
+      "flink_line": "2.2",
+      "configuration": {
+        "type": "STRING",
+        "order": "rt",
+        "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+        "rows": 131072,
+        "keys": 64
+      },
+      "stock": {
+        "median": 1.199331,
+        "minimum": 1.148352,
+        "maximum": 1.529404,
+        "samples": [
+          1.175575,
+          1.148352,
+          1.199331,
+          1.523995,
+          1.529404
+        ]
+      },
+      "candidate": {
+        "median": 5.174724,
+        "minimum": 5.112168,
+        "maximum": 6.066907,
+        "samples": [
+          5.174724,
+          5.133694,
+          5.112168,
+          5.717664,
+          6.066907
+        ]
+      },
+      "previous": {
+        "median": 2.204225,
+        "minimum": 1.902608,
+        "maximum": 2.454035,
+        "samples": [
+          1.902608,
+          2.204225,
+          2.454035,
+          2.118176,
+          2.43804
+        ]
+      },
+      "previous_paired_stock": {
+        "median": 2.258066,
+        "minimum": 2.171443,
+        "maximum": 2.443224,
+        "samples": [
+          2.171443,
+          2.192449,
+          2.326583,
+          2.258066,
+          2.443224
+        ]
+      },
+      "candidate_trials": [
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.071007
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 5.235381
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 5.158661
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.218858
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.175575
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 5.174724
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 5.133694
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.148352
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.199331
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 5.112168
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 5.717664
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.523995
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.529404
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 6.066907
+        }
+      ],
+      "previous_trials": [
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.532536
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.487637
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.690246
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.516652
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.171443
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.902608
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.204225
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.192449
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.326583
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.454035
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 2.118176
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 2.258066
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 2.443224
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 2.43804
+        }
+      ],
+      "command": [
+        "mvn",
+        "-q",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Dtest=JvmOverBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+        "-Djvmover.rows=131072",
+        "-Djvmover.keys=64",
+        "-Djvmover.order=rt",
+        "-Djvmover.frame=RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+        "-Djvmover.type=STRING",
+        "-Djvmover.expectNative=true",
+        "-Djvmover.warmup=2",
+        "-Djvmover.runs=5"
+      ],
+      "consumed_jvm_over_assertion_passed": true,
+      "previous_full_island_fallback_assertion_passed": true
+    },
+    {
+      "flink_line": "1.18",
+      "configuration": {
+        "type": "BIGINT",
+        "order": "pt",
+        "frame": "ROWS UNBOUNDED PRECEDING",
+        "rows": 131072,
+        "keys": 16
+      },
+      "stock": {
+        "median": 0.106658,
+        "minimum": 0.103233,
+        "maximum": 0.127905,
+        "samples": [
+          0.103686,
+          0.116969,
+          0.106658,
+          0.103233,
+          0.127905
+        ]
+      },
+      "candidate": {
+        "median": 0.125055,
+        "minimum": 0.112891,
+        "maximum": 0.144668,
+        "samples": [
+          0.144668,
+          0.125055,
+          0.14328,
+          0.122904,
+          0.112891
+        ]
+      },
+      "previous": {
+        "median": 0.094614,
+        "minimum": 0.092585,
+        "maximum": 0.100018,
+        "samples": [
+          0.100018,
+          0.098471,
+          0.093599,
+          0.094614,
+          0.092585
+        ]
+      },
+      "previous_paired_stock": {
+        "median": 0.093923,
+        "minimum": 0.089493,
+        "maximum": 0.101545,
+        "samples": [
+          0.089493,
+          0.101545,
+          0.093923,
+          0.091318,
+          0.094865
+        ]
+      },
+      "candidate_trials": [
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.500759
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.355895
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.244609
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.134397
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.103686
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.144668
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.125055
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.116969
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.106658
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.14328
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.122904
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.103233
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.127905
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.112891
+        }
+      ],
+      "previous_trials": [
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.383626
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.180031
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.128402
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.103443
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.089493
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.100018
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.098471
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.101545
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.093923
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.093599
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.094614
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.091318
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.094865
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.092585
+        }
+      ],
+      "command": [
+        "mvn",
+        "-q",
+        "-Pbench,flink-1.18",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Dtest=JvmOverBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+        "-Djvmover.rows=131072",
+        "-Djvmover.keys=16",
+        "-Djvmover.order=pt",
+        "-Djvmover.frame=ROWS UNBOUNDED PRECEDING",
+        "-Djvmover.type=BIGINT",
+        "-Djvmover.expectNative=true",
+        "-Djvmover.warmup=2",
+        "-Djvmover.runs=5"
+      ],
+      "consumed_jvm_over_assertion_passed": true,
+      "previous_full_island_fallback_assertion_passed": true
+    },
+    {
+      "flink_line": "1.18",
+      "configuration": {
+        "type": "DECIMAL(38,18)",
+        "order": "rt",
+        "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+        "rows": 262144,
+        "keys": 1024
+      },
+      "stock": {
+        "median": 1.079758,
+        "minimum": 1.042027,
+        "maximum": 1.15615,
+        "samples": [
+          1.15615,
+          1.042027,
+          1.047884,
+          1.150577,
+          1.079758
+        ]
+      },
+      "candidate": {
+        "median": 8.625252,
+        "minimum": 8.49485,
+        "maximum": 8.791705,
+        "samples": [
+          8.549956,
+          8.49485,
+          8.625252,
+          8.735836,
+          8.791705
+        ]
+      },
+      "previous": {
+        "median": 1.076277,
+        "minimum": 1.041948,
+        "maximum": 1.162781,
+        "samples": [
+          1.145847,
+          1.162781,
+          1.076277,
+          1.051935,
+          1.041948
+        ]
+      },
+      "previous_paired_stock": {
+        "median": 1.044737,
+        "minimum": 1.007917,
+        "maximum": 1.110329,
+        "samples": [
+          1.01285,
+          1.044737,
+          1.007917,
+          1.110329,
+          1.048311
+        ]
+      },
+      "candidate_trials": [
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.924937
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 9.604591
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 8.4056
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.116433
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.15615
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 8.549956
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 8.49485
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.042027
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.047884
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 8.625252
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 8.735836
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.150577
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.079758
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 8.791705
+        }
+      ],
+      "previous_trials": [
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.529017
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.33716
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.134213
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.038446
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.01285
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.145847
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.162781
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.044737
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.007917
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.076277
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.051935
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.110329
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.048311
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.041948
+        }
+      ],
+      "command": [
+        "mvn",
+        "-q",
+        "-Pbench,flink-1.18",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Dtest=JvmOverBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+        "-Djvmover.rows=262144",
+        "-Djvmover.keys=1024",
+        "-Djvmover.order=rt",
+        "-Djvmover.frame=ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+        "-Djvmover.type=DECIMAL(38,18)",
+        "-Djvmover.expectNative=true",
+        "-Djvmover.warmup=2",
+        "-Djvmover.runs=5"
+      ],
+      "consumed_jvm_over_assertion_passed": true,
+      "previous_full_island_fallback_assertion_passed": true
+    },
+    {
+      "flink_line": "1.18",
+      "configuration": {
+        "type": "STRING",
+        "order": "rt",
+        "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+        "rows": 131072,
+        "keys": 64
+      },
+      "stock": {
+        "median": 0.915653,
+        "minimum": 0.875858,
+        "maximum": 0.952113,
+        "samples": [
+          0.875858,
+          0.915653,
+          0.952113,
+          0.922952,
+          0.893765
+        ]
+      },
+      "candidate": {
+        "median": 4.821458,
+        "minimum": 4.712807,
+        "maximum": 4.859423,
+        "samples": [
+          4.821996,
+          4.712807,
+          4.767166,
+          4.821458,
+          4.859423
+        ]
+      },
+      "previous": {
+        "median": 1.179873,
+        "minimum": 1.146237,
+        "maximum": 1.236207,
+        "samples": [
+          1.165921,
+          1.179873,
+          1.236207,
+          1.146237,
+          1.232792
+        ]
+      },
+      "previous_paired_stock": {
+        "median": 1.15663,
+        "minimum": 1.083144,
+        "maximum": 1.220751,
+        "samples": [
+          1.15663,
+          1.137093,
+          1.187686,
+          1.083144,
+          1.220751
+        ]
+      },
+      "candidate_trials": [
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.530593
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 5.094469
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 4.824166
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.971188
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.875858
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 4.821996
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 4.712807
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.915653
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.952113
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 4.767166
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 4.821458
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.922952
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.893765
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 4.859423
+        }
+      ],
+      "previous_trials": [
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.50325
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.046601
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.294184
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.215796
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.15663
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.165921
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.179873
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.137093
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.187686
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.236207
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.146237
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.083144
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.220751
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.232792
+        }
+      ],
+      "command": [
+        "mvn",
+        "-q",
+        "-Pbench,flink-1.18",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Dtest=JvmOverBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+        "-Djvmover.rows=131072",
+        "-Djvmover.keys=64",
+        "-Djvmover.order=rt",
+        "-Djvmover.frame=RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+        "-Djvmover.type=STRING",
+        "-Djvmover.expectNative=true",
+        "-Djvmover.warmup=2",
+        "-Djvmover.runs=5"
+      ],
+      "consumed_jvm_over_assertion_passed": true,
+      "previous_full_island_fallback_assertion_passed": true
+    }
+  ],
+  "tests": {
+    "2.2": {
+      "tech.streamfusion.FlinkJvmOverBoundarySqlHarnessTest": {
+        "tests": 14,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.FlinkJvmOverRecoveryTest": {
+        "tests": 33,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+        "tests": 181,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.FlinkOverAggregateSqlHarnessTest": {
+        "tests": 20,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.StatefulSqlRescaleTest": {
+        "tests": 31,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2
+      },
+      "tech.streamfusion.operator.NativeJvmOverTimerTest": {
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "1.18": {
+      "tech.streamfusion.FlinkJvmOverBoundarySqlHarnessTest": {
+        "tests": 14,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.FlinkJvmOverRecoveryTest": {
+        "tests": 33,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+        "tests": 181,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2
+      },
+      "tech.streamfusion.FlinkOverAggregateSqlHarnessTest": {
+        "tests": 20,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1
+      },
+      "tech.streamfusion.StatefulSqlRescaleTest": {
+        "tests": 31,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2
+      },
+      "tech.streamfusion.operator.NativeJvmOverTimerTest": {
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "sources": {
+    "src/main/java/tech/streamfusion/planner/NativeJvmOverExecNode.java": "2b158a313405fa637d6195554182af14a9fc7aff4266be7368d8ec74c2bfe87d",
+    "src/main/java/tech/streamfusion/planner/JvmOverAggregateMatcher.java": "2c9d48c64d5daa8a448f46beda19c9a7c086c2e482167d635fd455456249618e",
+    "src/main/java/tech/streamfusion/planner/StreamPhysicalNativeJvmOver.java": "50aa46ba4eb6f47c37cfda72bb2a9a33973401eae684608af6e2cc3e82637537",
+    "src/main/java/tech/streamfusion/operator/NativeColumnarJvmOverOperator.java": "024fe9d5e422792a3dfda6c0834961cef8dfb23124da8b69ae8a87f8985b2759",
+    "src/test/java/tech/streamfusion/JvmOverBenchmark.java": "2f97aaab3aab9895054b6660bca37754e6d1867cbb52530fac9e6c41e80e968d",
+    "src/test/java/tech/streamfusion/FlinkTypedJvmAggregateSqlHarnessTest.java": "05e1dd615ce1b44b0d2284c6c3df0905791bace0d88d2aef2fa66010eba44451",
+    "src/test/java/tech/streamfusion/FlinkTypedTableFunctionSqlHarnessTest.java": "ad7652b795dcb0e42a1293dcedb63232ce46e9641f4c6c96463d993ecba9f113",
+    "src/main/java-flink1.18/tech/streamfusion/compat/JvmAggregateCompat.java": "2297106318b3d84df75ba20a4d53f95d693caf923ae7eeba70e65866fec79f99",
+    "src/main/java-flink2.2/tech/streamfusion/compat/JvmAggregateCompat.java": "41230c57188db16e0315a633e59415aefc9be0790d60ec7a7ff4591c1f05cc70"
+  },
+  "excluded_preliminary": [
+    {
+      "label": "1.18/candidate/0.log",
+      "reason": "Superseded asymmetric full-explain preflight; initial-overlapped-validation additionally overlapped compilation/validation. Includes completed trials from an interrupted 1.18 diagnostic.",
+      "trials": [
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.758235
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.283269
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.143703
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.125761
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.114505
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.118503
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.122365
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.110429
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.110669
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.122684
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.116753
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.112072
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.115772
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.114029
+        }
+      ]
+    },
+    {
+      "label": "1.18/candidate/1.log",
+      "reason": "Superseded asymmetric full-explain preflight; initial-overlapped-validation additionally overlapped compilation/validation. Includes completed trials from an interrupted 1.18 diagnostic.",
+      "trials": [
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.976169
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 8.816192
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 8.496082
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.117267
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.07658
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 8.206977
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 8.41069
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.035918
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.066036
+        }
+      ]
+    },
+    {
+      "label": "2.2/candidate/0.log",
+      "reason": "Superseded asymmetric full-explain preflight; initial-overlapped-validation additionally overlapped compilation/validation. Includes completed trials from an interrupted 1.18 diagnostic.",
+      "trials": [
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.869059
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.296492
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.144145
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.124362
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.119738
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.131282
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.108986
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.117418
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.106852
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.122674
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.115805
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.114256
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.122781
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.117167
+        }
+      ]
+    },
+    {
+      "label": "2.2/candidate/1.log",
+      "reason": "Superseded asymmetric full-explain preflight; initial-overlapped-validation additionally overlapped compilation/validation. Includes completed trials from an interrupted 1.18 diagnostic.",
+      "trials": [
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.925643
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 8.215589
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 8.257824
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.125816
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.160661
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 8.094322
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 8.340006
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.168052
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.159139
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 8.17595
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 8.298847
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.164534
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.08548
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 8.253358
+        }
+      ]
+    },
+    {
+      "label": "2.2/candidate/2.log",
+      "reason": "Superseded asymmetric full-explain preflight; initial-overlapped-validation additionally overlapped compilation/validation. Includes completed trials from an interrupted 1.18 diagnostic.",
+      "trials": [
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.086691
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 5.130415
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 5.135911
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.199482
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.148375
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 4.995671
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 5.005414
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.17816
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.174681
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 5.102601
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 5.031506
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.201102
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.177588
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 4.962547
+        }
+      ]
+    },
+    {
+      "label": "2.2/initial-overlapped-validation/0.log",
+      "reason": "Superseded asymmetric full-explain preflight; initial-overlapped-validation additionally overlapped compilation/validation. Includes completed trials from an interrupted 1.18 diagnostic.",
+      "trials": [
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.986232
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.201597
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.208394
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.164522
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.139279
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.116674
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.183148
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.145592
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.119389
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.118176
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.102916
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.16291
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.146884
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.174122
+        }
+      ]
+    },
+    {
+      "label": "2.2/initial-overlapped-validation/1.log",
+      "reason": "Superseded asymmetric full-explain preflight; initial-overlapped-validation additionally overlapped compilation/validation. Includes completed trials from an interrupted 1.18 diagnostic.",
+      "trials": [
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 3.077338
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.413724
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.110623
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.265603
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.200984
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.121551
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.066255
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.932698
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.933848
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.908253
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.887424
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.92794
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.881729
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.887486
+        }
+      ]
+    },
+    {
+      "label": "2.2/initial-overlapped-validation/2.log",
+      "reason": "Superseded asymmetric full-explain preflight; initial-overlapped-validation additionally overlapped compilation/validation. Includes completed trials from an interrupted 1.18 diagnostic.",
+      "trials": [
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.192308
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.121835
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.400338
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.175047
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.109538
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.16156
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.114244
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.112861
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.12998
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.111715
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.173715
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.188812
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.199371
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.094905
+        }
+      ]
+    },
+    {
+      "label": "2.2/previous/0.log",
+      "reason": "Superseded asymmetric full-explain preflight; initial-overlapped-validation additionally overlapped compilation/validation. Includes completed trials from an interrupted 1.18 diagnostic.",
+      "trials": [
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.863295
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.186374
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.110618
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.152835
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.112909
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.097286
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.091126
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.13393
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.106857
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.090349
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.092873
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.109917
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.10986
+        },
+        {
+          "type": "BIGINT",
+          "order": "pt",
+          "frame": "ROWS UNBOUNDED PRECEDING",
+          "rows": 131072,
+          "keys": 16,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.102991
+        }
+      ]
+    },
+    {
+      "label": "2.2/previous/1.log",
+      "reason": "Superseded asymmetric full-explain preflight; initial-overlapped-validation additionally overlapped compilation/validation. Includes completed trials from an interrupted 1.18 diagnostic.",
+      "trials": [
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.943845
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.144777
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.043832
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.984055
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.955998
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.90934
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.911938
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.874853
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.981676
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.918129
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.976294
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.925981
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.870137
+        },
+        {
+          "type": "DECIMAL(38,18)",
+          "order": "rt",
+          "frame": "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW",
+          "rows": 262144,
+          "keys": 1024,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.976645
+        }
+      ]
+    },
+    {
+      "label": "2.2/previous/2.log",
+      "reason": "Superseded asymmetric full-explain preflight; initial-overlapped-validation additionally overlapped compilation/validation. Includes completed trials from an interrupted 1.18 diagnostic.",
+      "trials": [
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.97151
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.226151
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.229252
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.241407
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.126299
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.140036
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.109467
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.186245
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.191338
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.141763
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.127446
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.17956
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.184257
+        },
+        {
+          "type": "STRING",
+          "order": "rt",
+          "frame": "RANGE BETWEEN INTERVAL '0.3' SECOND PRECEDING AND CURRENT ROW",
+          "rows": 131072,
+          "keys": 64,
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.195751
+        }
+      ]
+    }
+  ],
+  "release_library_sha256": "168e7f61e97a7bcec14933a24b65b4c6e6039e5999b78b3eea1f95b5519af9b5",
+  "completed_reported_jobs": 168
+}

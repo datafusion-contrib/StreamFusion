@@ -46,6 +46,30 @@ class ExecutionScopeTest(unittest.TestCase):
                         declared = cases[display]
                         self.assertEqual(expected, declared.get('route', declared.get('route_by_contract_variant', {}).get(selector)))
 
+    def test_jvm_over_preserves_both_backend_routes_and_requires_its_own_work(self):
+        root = Path(__file__).parent
+        prefix = 'org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#'
+        for line, suffix in [('1.18', '-flink1.18'), ('2.2', '')]:
+            contracts = execution_contracts(root / 'agent/src/main/resources' / ('native-execution' + suffix + '.tsv'))
+            scope = json.loads((root / ('runtime-route-scope-' + line + '.json')).read_text())
+            tests = {test: variants for test, variants in contracts.items() if test.startswith(prefix)}
+            self.assertEqual(11, len(tests))
+            for test, variants in tests.items():
+                cases = [case for case in scope['cases'] if case['test'] == test]
+                self.assertEqual(2, len(cases))
+                for case in cases:
+                    for selector, required in variants.items():
+                        fallback = selector == 'changelog=true'
+                        self.assertEqual(fallback, required.startswith('!'))
+                        if not fallback:
+                            self.assertEqual('NativeColumnarJvmOverOperator', required)
+                        declared = case.get('route', case.get('route_by_contract_variant', {}).get(selector))
+                        self.assertEqual('full_fallback' if fallback else 'native', declared)
+            if line == '1.18':
+                state = execution_contracts(root / 'agent/src/main/resources/native-execution-flink1.18-state.tsv')
+                for test, variants in tests.items():
+                    self.assertEqual(variants, state[test])
+
     def test_pinned_vintage_fixture_names_use_the_selected_method(self):
         scope = json.loads(Path(__file__).with_name('runtime-route-scope-1.18.json').read_text())
         for case in scope['cases']:

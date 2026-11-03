@@ -13,6 +13,8 @@ on:
       - 'src/main/java/tech/streamfusion/planner/*Jvm*'
       - 'src/main/java-flink*/tech/streamfusion/compat/JvmAggregateCompat.java'
       - 'src/test/java/tech/streamfusion/*JvmAggregate*'
+      - 'src/test/java/tech/streamfusion/*JvmOver*'
+      - 'src/test/java/tech/streamfusion/operator/NativeJvmOverTimerTest.java'
       - 'src/test/java/tech/streamfusion/StatefulSqlRescaleTest.java'
       - 'src/test/java/tech/streamfusion/PortableSqlRecovery.java'
       - 'src/test/java/tech/streamfusion/operator/JvmStringKeyProbeTest.java'
@@ -101,6 +103,14 @@ jobs:
               "-Dsf.extraJvmArgs=-Dstreamfusion.experimental.jvmGroupAggregates=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=$capacity -Dstreamfusion.experimental.borrowedStringExit=true" \
               surefire:test@default-test
           done
+      - name: Validate scalar JVM OVER frames and recovery
+        run: >-
+          mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime
+          -Dnative.build.skip=true
+          '-Dtest=FlinkJvmOverSqlHarnessTest,FlinkJvmOverBoundarySqlHarnessTest,FlinkJvmOverRecoveryTest,NativeJvmOverTimerTest'
+          -Dsf.testForks=1
+          '-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false'
+          surefire:test@default-test
       - name: Install pinned released profiler
         run: |
           curl --fail --location --retry 3 \

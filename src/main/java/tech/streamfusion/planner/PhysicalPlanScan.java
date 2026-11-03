@@ -683,6 +683,15 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             .reason(NonTimeRowNumberMatcher::unsupportedReason)
             .changelogSafe());
 
+    entries.add(
+        Substitution.of(
+                StreamPhysicalOverAggregate.class, "jvmOver", JvmOverAggregateMatcher::substitute)
+            .shaped(JvmOverAggregateMatcher::enabled)
+            .matching(JvmOverAggregateMatcher::matches)
+            .reason(JvmOverAggregateMatcher::unsupportedReason)
+            .keyedState()
+            .changelogSafe());
+
     // OVER preserves an append-only input, but Flink's packaged planner reports bounded OVER nodes
     // as updating even though their input and emitted rows are append-only. Gate on the input
     // explicitly and offer the node before the output-changelog guard so source and packaged

@@ -106,3 +106,16 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoG
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy	aggMode=OFF&enableAsyncState=false	NativeColumnarJvmGroupOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy	aggMode=ON&enableAsyncState=false	NativeColumnarJvmLocalGroupOperator+NativeColumnarJvmGlobalGroupOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy	enableAsyncState=true	!GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG with verified collection elements, non-character scalar coresults and synchronous scalar single-phase mini-batching or ordinary execution without specialization, approximate or ordered calls
+
+# Released scalar JVM OVER frames, constants, DISTINCT, managed DataViews and recovery.
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeUnBoundedPartitionedRowOver	*	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testOverWindowWithConstant	*	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	*	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver	*	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver	*	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver	*	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver	*	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOver	*	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOverWithJavaAPI	*	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRowOver	*	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRangeOver	*	NativeColumnarJvmOverOperator

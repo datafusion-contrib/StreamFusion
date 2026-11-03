@@ -25,6 +25,119 @@ Event-time parity fixtures keep the watermark behind the entire input timestamp 
 end of input, so file enumeration order cannot introduce accidental late rows. Late-row tests
 control the input order separately.
 
+## Scalar JVM aggregates
+
+Synchronous JVM `AggregateFunction` calls run behind Arrow input/output boundaries on
+released Flink 2.2.1 and 1.18.1. This includes event-time unbounded ROWS/RANGE, bounded
+ROWS and bounded RANGE, plus processing-time unbounded ROWS/RANGE and bounded ROWS,
+all ending at CURRENT ROW. One ascending time order and one window group are required.
+Partition keys, input fields and results use the verified scalar JVM function types:
+integer widths, FLOAT/DOUBLE, BOOLEAN, CHAR/VARCHAR, binary, DECIMAL, DATE, TIME,
+TIMESTAMP/LTZ and day-time/year-month intervals. Accumulators may contain managed
+ListView/MapView state; they are serialized by Flink rather than carried through Arrow.
+
+The released planner generates the aggregate handler and chooses the released frame
+function, including the configured 2.2 unbounded event-time implementation. The Arrow
+wrapper retains that unopened function, its key selector, managed state and timers. The
+temporary row transformation used to obtain them is discarded and never becomes a runtime
+edge. The runtime graph uses the native columnar exchange and transposes at island edges.
+Owned BinaryRow input copies preserve Flink's compact timestamp layout and let heap frame
+state outlive the input Arrow batch. Output is copied immediately, with Java string-cache
+sidecars retaining UDF-produced UTF-16 values before UTF-8 materialization.
+
+Released handler generation retains DISTINCT membership, constants, multiple arguments,
+shared function instances, accumulate/retract/reset ordering, lifecycle and errors. Frame
+functions retain peer ordering, late-row decisions, watermark timers and applicable idle
+retention. Checkpoint barriers flush pending Arrow output without prematurely evaluating
+buffered frames. Managed state and timers support same-line, same-plan checkpoint restore
+and canonical-savepoint rescaling. This does not establish state migration between stock
+and native plans, Flink versions, or changed queries.
+
+The `jvmOverRows`, `jvmOverEventTimers` and `jvmOverProcessingTimers` counters distinguish
+consumed input and fired timer domains. Opening a handler or seeing a plan label alone is
+not execution evidence. Focused checks cover all 19 scalar input/result and partition types,
+all seven frames, NULLs, owned mutable output, shared calls, DISTINCT, constants, lifecycle
+and callback failures, controlled clocks, positive TTL, late input, repeated heap/native
+RocksDB recovery, and 1→3→2-task checkpoint/savepoint restoration with pending event-time
+frames. Unchanged upstream Table API OVER methods separately require consumed JVM OVER
+work and their original result assertions on both backend routes.
+
+JVM OVER keeps stock fallback for asynchronous state, non-insert-only input, general nested
+operator fields/results, specialized or Python definitions, custom legacy wrappers,
+unverified companion functions, ordinary non-time ordering, multiple groups/orders,
+other bounds and bounded processing-time RANGE. Released Flink validation failures remain
+failures. SQL FILTER support remains subject to the released OVER validator. A mixed JVM
+frame may also contain released scalar SUM/SUM0/MIN/MAX/COUNT/AVG/FIRST_VALUE/LAST_VALUE
+or ranking calls; builtin-only frames retain the Rust matcher's coverage below.
+`streamfusion.operator.jvmOver.enabled=false` disables this substitution;
+`streamfusion.operator.over.enabled=false` disables both time-based OVER implementations.
+The grouped-aggregate experimental switch does not control OVER. Remaining JVM definition
+and operator-boundary contracts are tracked in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
+
+This is functionality under the accepted UDF performance exception. It preserves the JVM
+callback and state ABI and does not imply a Rust aggregate speedup. See the
+[JVM aggregate architecture decision](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/48-jvm-aggregate-managed-state.md).
+
+### Measured whole-job costs
+
+Release+mimalloc measurements use JDK 17, parallelism one, a 2 GiB heap, UTC, 1,024-row Arrow
+batches and NULL every 31st row. BIGINT uses processing-time unbounded ROWS (131,072 rows,
+16 keys); DECIMAL(38,18) uses event-time `3 PRECEDING .. CURRENT ROW` (262,144 rows, 1,024 keys);
+STRING uses event-time 0.3-second PRECEDING RANGE (131,072 rows, 64 keys). Two warmups and
+five measured runs alternate engines, with symmetric full-explain preflight before timing.
+Medians and full measured ranges below are seconds; the previous revision is actual
+`5d628b6a`, with the identical test fixture overlaid and its fallback asserted.
+
+| Flink | Argument / frame | Stock median (range), s | Candidate median (range), s | Previous SF median (range), s |
+| --- | --- | ---: | ---: | ---: |
+| 2.2 | BIGINT / running ROWS | 0.098 (0.094–0.113) | 0.119 (0.117–0.133) | 0.114 (0.097–0.162) |
+| 2.2 | DECIMAL(38,18) / bounded ROWS | 0.945 (0.914–0.990) | 8.228 (8.082–8.271) | 1.232 (1.209–1.270) |
+| 2.2 | STRING / bounded RANGE | 1.199 (1.148–1.529) | 5.175 (5.112–6.067) | 2.204 (1.903–2.454) |
+| 1.18 | BIGINT / running ROWS | 0.107 (0.103–0.128) | 0.125 (0.113–0.145) | 0.095 (0.093–0.100) |
+| 1.18 | DECIMAL(38,18) / bounded ROWS | 1.080 (1.042–1.156) | 8.625 (8.495–8.792) | 1.076 (1.042–1.163) |
+| 1.18 | STRING / bounded RANGE | 0.916 (0.876–0.952) | 4.821 (4.713–4.859) | 1.180 (1.146–1.236) |
+
+These are functionality diagnostics under the accepted UDF exception, not an acceleration
+claim. The short running case is startup-sensitive. Event-time profiles retain inputs until
+the final watermark, so their totals include the watermark-driven drain. Each event timer
+currently flushes its Arrow result batch; many callbacks in these profiles produce one row.
+Owned input copies, managed state, JVM handlers and those small output allocations remain
+inside timing. These complete-job measurements do not isolate their individual contributions.
+
+The [168-job artifact](../benchmarks/results/jvm-over-2026-11-03.json) retains every reported
+warmup/trial, ranges, portable commands, source/library hashes and paired stock controls
+from the preceding-revision JVMs. Cross-JVM stock medians drift; previous/candidate differences
+are descriptive, not isolated attribution. Earlier asymmetric-preflight diagnostics, including
+one run overlapping compilation and a partially interrupted 1.18 run, remain in the artifact
+as excluded preliminary data. No operator optimization pass or speedup is claimed.
+
+### Reproducing JVM OVER measurements
+
+`JvmOverBenchmark` retains the runtime row source, blackhole row sink, managed frame state
+and both perimeter conversions. Stock and native perform the same full explain before
+timing; each complete `executeSql(...).await()` remains timed. Execution order alternates,
+with two warmups and five measured trials per engine. `bench` selects release Rust with
+mimalloc and production Arrow IPC exchange. For example:
+
+```sh
+mvn -Pbench -pl streamfusion-runtime -am -DskipTests test
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime \
+  -Dtest=JvmOverBenchmark -Dnative.build.skip=true -Dsf.testForks=1 \
+  '-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC' \
+  '-Djvmover.type=DECIMAL(38,18)' -Djvmover.rows=262144 -Djvmover.keys=1024 \
+  -Djvmover.order=rt '-Djvmover.frame=ROWS BETWEEN 3 PRECEDING AND CURRENT ROW' \
+  surefire:test@default-test
+```
+
+Add `flink-1.18` to the Maven profiles for 1.18.1. `jvmover.type` also accepts BIGINT and
+STRING; `jvmover.order` selects `rt` or `pt`, and `jvmover.frame` supplies the bounds.
+For the actual preceding-production control, use a clean checkout of `5d628b6a`, overlay
+only the identical benchmark fixture, build its release payload, and set
+`-Djvmover.expectNative=false`. That control requires the preceding full-island fallback;
+the candidate requires consumed input in JVM OVER itself. Both retain their paired stock
+runs. The release diagnostics workflow runs the new frame/type/ownership/recovery checks
+on both Flink lines in addition to ordinary CI and unchanged upstream contracts.
+
 ## Ordinary ROW_NUMBER (Flink 2.2)
 
 An unfiltered `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY v ASC)` also runs over an ordinary
@@ -341,7 +454,7 @@ per-batch timestamp, a wall-clock-interval frame has no meaningful definition.
 
 ## Gaps
 
-The matcher declines:
+The builtin-only Rust matcher declines:
 
 - Direct `AVG` outside DECIMAL. Flink can lower some other AVG forms to SUM/COUNT aggregates.
 - A non-numeric value column outside DECIMAL, CHAR/VARCHAR, DATE, TIME, BOOLEAN, TIMESTAMP
