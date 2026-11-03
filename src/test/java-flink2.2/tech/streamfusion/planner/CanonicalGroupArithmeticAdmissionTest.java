@@ -24,7 +24,7 @@ class CanonicalGroupArithmeticAdmissionTest {
         "filter",
         "mini",
         "two-phase",
-        "keyless",
+        "empty",
         "composite",
         "floating",
         "integer"
@@ -41,8 +41,8 @@ class CanonicalGroupArithmeticAdmissionTest {
     if (mode.equals("two-phase"))
       table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
     String query;
-    if (mode.equals("keyless"))
-      query = "SELECT CAST(0 AS BIGINT),SUM(v),AVG(v) FROM fixture.db.input_table";
+    if (mode.equals("empty"))
+      query = "SELECT k,CAST(0 AS BIGINT),CAST(0 AS BIGINT) FROM fixture.db.input_table GROUP BY k";
     else if (mode.equals("composite"))
       query = "SELECT k,v,COUNT(*) FROM fixture.db.input_table GROUP BY k,v";
     else

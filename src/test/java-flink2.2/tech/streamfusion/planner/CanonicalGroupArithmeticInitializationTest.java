@@ -24,7 +24,6 @@ import org.apache.flink.types.RowKind;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import tech.streamfusion.Native;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchSerializer;
 import tech.streamfusion.operator.NativeAllocator;
@@ -100,12 +99,27 @@ class CanonicalGroupArithmeticInitializationTest {
       boolean integerKey,
       List<? extends RowData> steps)
       throws Exception {
+    assertLifecycle(mode, rocks, ttl, nativeFirst, before, append, integerKey, false, steps);
+  }
+
+  static void assertLifecycle(
+      String mode,
+      boolean rocks,
+      long ttl,
+      boolean nativeFirst,
+      boolean before,
+      boolean append,
+      boolean integerKey,
+      boolean global,
+      List<? extends RowData> steps)
+      throws Exception {
     try (var reference =
-        new GroupAggregateStockTestFixture(mode, rocks, ttl, before, append, integerKey)) {
+        new GroupAggregateStockTestFixture(mode, rocks, ttl, before, append, integerKey, global)) {
       reference.harness.open();
       OperatorSubtaskState saved;
       try (var stock =
-              new GroupAggregateStockTestFixture(mode, rocks, ttl, before, append, integerKey);
+              new GroupAggregateStockTestFixture(
+                  mode, rocks, ttl, before, append, integerKey, global);
           var nativeHarness = nativeHarness(stock, rocks)) {
         if (nativeFirst) nativeHarness.open();
         else stock.harness.open();
@@ -127,7 +141,8 @@ class CanonicalGroupArithmeticInitializationTest {
         assertState(reference, saved, mode, rocks, ttl, before, append);
       }
       try (var stock =
-              new GroupAggregateStockTestFixture(mode, rocks, ttl, before, append, integerKey);
+              new GroupAggregateStockTestFixture(
+                  mode, rocks, ttl, before, append, integerKey, global);
           var nativeHarness = nativeHarness(stock, rocks)) {
         var receiver = nativeFirst ? stock.harness : nativeHarness;
         receiver.initializeState(saved);
@@ -137,7 +152,8 @@ class CanonicalGroupArithmeticInitializationTest {
         assertState(reference, saved, mode, rocks, ttl, before, append);
       }
       try (var stock =
-              new GroupAggregateStockTestFixture(mode, rocks, ttl, before, append, integerKey);
+              new GroupAggregateStockTestFixture(
+                  mode, rocks, ttl, before, append, integerKey, global);
           var nativeHarness = nativeHarness(stock, rocks)) {
         var receiver = nativeFirst ? stock.harness : nativeHarness;
         receiver.initializeState(saved);
@@ -160,7 +176,8 @@ class CanonicalGroupArithmeticInitializationTest {
         assertState(reference, saved, mode, rocks, ttl, before, append);
       }
       try (var stock =
-              new GroupAggregateStockTestFixture(mode, rocks, ttl, before, append, integerKey);
+              new GroupAggregateStockTestFixture(
+                  mode, rocks, ttl, before, append, integerKey, global);
           var nativeHarness = nativeHarness(stock, rocks)) {
         var receiver = nativeFirst ? nativeHarness : stock.harness;
         receiver.initializeState(saved);
@@ -266,7 +283,9 @@ class CanonicalGroupArithmeticInitializationTest {
             reference
                 .inputType
                 .getTypeAt(0)
-                .is(org.apache.flink.table.types.logical.LogicalTypeRoot.INTEGER))) {
+                .is(org.apache.flink.table.types.logical.LogicalTypeRoot.INTEGER),
+            ((RowType) reference.selector.getProducedType().toLogicalType()).getFieldCount()
+                == 0)) {
       restored.harness.initializeState(saved);
       restored.harness.open();
       assertEquals(
@@ -357,7 +376,7 @@ class CanonicalGroupArithmeticInitializationTest {
     operator.setStockStateContract(contract);
     var harness =
         new KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>(
-            operator, batch -> 0, Types.INT, 128, 1, 0);
+            operator, batch -> 0, Types.INT, fixture.maximum, 1, 0);
     var config = new Configuration();
     if (rocks)
       config.setString(
@@ -387,7 +406,7 @@ class CanonicalGroupArithmeticInitializationTest {
           fixture.kinds,
           new int[fixture.kinds.length],
           fixture.valueColumns,
-          new int[] {0},
+          fixture.keyColumns,
           new int[0],
           new int[0],
           new int[0],
@@ -396,8 +415,8 @@ class CanonicalGroupArithmeticInitializationTest {
           false,
           -1,
           fixture.ttl,
-          new int[] {Native.STOCK_KEY_PROJECTION, -1},
-          128);
+          FlinkKeyGroupUtils.stockKeyDescriptor(fixture.inputType, fixture.keyColumns),
+          fixture.maximum);
       this.persistent = persistent;
     }
 

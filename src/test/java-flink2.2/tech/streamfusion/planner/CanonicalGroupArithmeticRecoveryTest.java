@@ -28,17 +28,25 @@ class CanonicalGroupArithmeticRecoveryTest {
 
   static void assertNativeRecovery(String mode, boolean rocks, long ttl, boolean append)
       throws Exception {
-    try (var reference = new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append)) {
+    assertNativeRecovery(mode, rocks, ttl, append, false);
+  }
+
+  static void assertNativeRecovery(
+      String mode, boolean rocks, long ttl, boolean append, boolean global) throws Exception {
+    try (var reference =
+        new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append, false, global)) {
       reference.harness.open();
       OperatorSubtaskState checkpoint;
-      try (var fixture = new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append);
+      try (var fixture =
+              new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append, false, global);
           var source = nativeHarness(fixture, rocks)) {
         source.open();
         for (int i = 0; i < 3; i++) {
-          var input = row(1L, i == 0 ? null : i == 1 ? 7L : 4L, 0);
+          var input = input(global, i == 0 ? null : i == 1 ? 7L : 4L, 0);
           assertEquals(
               stockStep(reference, input, 1000 + 100L * i),
-              nativeStep(source, input, 1000 + 100L * i, reference.outputType));
+              nativeStep(
+                  source, input, 1000 + 100L * i, reference.outputType, reference.inputType));
         }
         var owner = (DirectGroup) source.getOperator();
         owner.checkpoint = true;
@@ -51,7 +59,8 @@ class CanonicalGroupArithmeticRecoveryTest {
       }
       OperatorSubtaskState canonical;
       long resumed = ttl == 0 ? 5000 : 1500;
-      try (var fixture = new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append);
+      try (var fixture =
+              new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append, false, global);
           var restored = nativeHarness(fixture, rocks)) {
         restored.setProcessingTime(resumed);
         restored.setStateTtlProcessingTime(resumed);
@@ -60,19 +69,31 @@ class CanonicalGroupArithmeticRecoveryTest {
         // Verify ages immediately after raw restoration, including TTL-off migration clocks.
         assertState(reference, snapshot(restored), mode, rocks, ttl, true, append);
         assertEquals(
-            stockStep(reference, row(1L, 3L, 0), resumed + 50),
-            nativeStep(restored, row(1L, 3L, 0), resumed + 50, reference.outputType));
+            stockStep(reference, input(global, 3L, 0), resumed + 50),
+            nativeStep(
+                restored,
+                input(global, 3L, 0),
+                resumed + 50,
+                reference.outputType,
+                reference.inputType));
         canonical = snapshot(restored);
         assertState(reference, canonical, mode, rocks, ttl, true, append);
       }
-      try (var returned = new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append)) {
+      try (var returned =
+          new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append, false, global)) {
         returned.harness.initializeState(canonical);
         returned.harness.open();
         assertEquals(
-            stockStep(reference, row(1L, 7L, append ? 0 : 3), resumed + 100),
-            stockStep(returned, row(1L, 7L, append ? 0 : 3), resumed + 100));
+            stockStep(reference, input(global, 7L, append ? 0 : 3), resumed + 100),
+            stockStep(returned, input(global, 7L, append ? 0 : 3), resumed + 100));
         assertEquals(reference.rawStateBytes(), returned.rawStateBytes());
       }
     }
+  }
+
+  private static org.apache.flink.table.data.RowData input(boolean global, Long value, int kind) {
+    var row = global ? org.apache.flink.table.data.GenericRowData.of(value) : row(1L, value, kind);
+    row.setRowKind(org.apache.flink.types.RowKind.fromByteValue((byte) kind));
+    return row;
   }
 }

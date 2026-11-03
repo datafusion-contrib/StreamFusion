@@ -1228,18 +1228,24 @@ transfer semantics. Whole-source validation precedes mutation, and a failed reso
 retains the source for a fresh target. Receiver failures preserve native state for another export.
 
 The qualified single-phase BIGINT arithmetic contract binds append-only and retracting input
-automatically in ordinary SQL and portable compiled plans with one INT/BIGINT grouping key, using
-the original generated accumulator layout, key serializer, identity, TTL and maximum parallelism.
+automatically in ordinary SQL and portable compiled plans with one INT/BIGINT grouping key or a
+keyless global group, using the original generated accumulator layout, key serializer, identity,
+TTL and maximum parallelism. Global operators keep the released zero-field RowData key serializer,
+eight-byte empty BinaryRow key and singleton parallelism/maximum parallelism of one.
 The native graph remains a private runtime projection; the compiled plan stays portable stock
 Flink. Append-only state without an input counter retains existence and nullable SUM initialization
 through private presence markers, without adding fields to the stock accumulator. Aggregate counts
 retain their original values even when zero or wrapped. Initialization reapplies the captured
 append liveness policy after ordinary native checkpoints; the private snapshot format is unchanged.
-Additional aggregate schemas/phases/views and global/composite keys remain outside this binding.
+Additional aggregate schemas/phases/views and composite keys remain outside this binding. Compiled
+grouping without any actual aggregate calls retains its stock owner.
 Unqualified upstream grouped owners in the rank-template path remain stock-owned. Qualified isolated
 arithmetic jobs verify custom source and committing-sink state, both transposes, immediate re-export,
 native checkpoint recovery and rescaling through one, three and two tasks. They compare full
 committed changelogs against stock controls and exclude StreamFusion from stock worker classpaths.
+Global source state rescales through one, three and two tasks while the aggregate and committing
+sink remain singleton. Each worker verifies the actual topology; the sink stays at one task for
+ordered changelog materialization. Broader sink-rescale and connector matrices remain open.
 See [arithmetic aggregate scope and pending coverage](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial).
 All 15 families and the complete acceptance matrix remain partial/open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.

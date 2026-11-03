@@ -428,6 +428,47 @@ public final class CanonicalJobWorker {
             root.resolve(stage + "-ordinary-sql-verified"),
             Files.readString(root.resolve("query.sql")));
       }
+      if (Files.exists(root.resolve("global-aggregate"))) {
+        var execution = cluster.getExecutionGraph(job.getJobID()).get(5, TimeUnit.SECONDS);
+        var owners =
+            execution.getAllVertices().values().stream()
+                .filter(vertex -> vertex.getName().contains("GroupAgg"))
+                .collect(java.util.stream.Collectors.toList());
+        var sources =
+            execution.getAllVertices().values().stream()
+                .filter(vertex -> vertex.getName().startsWith("Source:"))
+                .collect(java.util.stream.Collectors.toList());
+        var sinks =
+            execution.getAllVertices().values().stream()
+                .filter(
+                    vertex ->
+                        vertex.getName().contains("Sink:")
+                            || vertex.getName().contains("output_table")
+                                && (vertex.getName().contains(": Writer")
+                                    || vertex.getName().contains(": Committer")))
+                .collect(java.util.stream.Collectors.toList());
+        if (owners.size() != 1
+            || owners.get(0).getParallelism() != 1
+            || owners.get(0).getMaxParallelism() != 1
+            || sources.size() != 1
+            || sources.get(0).getParallelism() != parallelism
+            || sinks.isEmpty()
+            || sinks.stream().anyMatch(vertex -> vertex.getParallelism() != 1))
+          throw new AssertionError(
+              "Global fixture topology mismatch: "
+                  + execution.getAllVertices().values().stream()
+                      .map(
+                          vertex ->
+                              vertex.getName()
+                                  + "="
+                                  + vertex.getParallelism()
+                                  + "/"
+                                  + vertex.getMaxParallelism())
+                      .collect(java.util.stream.Collectors.toList()));
+        Files.writeString(
+            root.resolve(stage + "-global-singleton-verified"),
+            "aggregate=1/1,source=" + parallelism + ",sink=1");
+      }
       if (nativeRun
           && limit > restoredLimit
           && !Files.exists(witness)
@@ -466,10 +507,14 @@ public final class CanonicalJobWorker {
                   .flatMap(entry -> entry.getValue().stream())
                   .filter(counter -> counter.getCount() > 0)
                   .count();
-          if (activeTasks != parallelism)
+          int expectedTasks =
+              Files.exists(root.resolve("global-aggregate")) && family.equals("GroupAgg")
+                  ? 1
+                  : parallelism;
+          if (activeTasks != expectedTasks)
             throw new AssertionError(
                 "Expected "
-                    + parallelism
+                    + expectedTasks
                     + " active native "
                     + family
                     + " tasks, observed "
@@ -588,7 +633,9 @@ public final class CanonicalJobWorker {
       int limit,
       String parallelism)
       throws IOException {
-    if (Files.exists(root.resolve("rescale-materializer"))) parallelism = "";
+    if (Files.exists(root.resolve("rescale-materializer"))
+        || Files.exists(root.resolve("global-aggregate")) && Files.exists(root.resolve("rescale")))
+      parallelism = "";
     Path columnsFile = root.resolve(name + "-columns.sql");
     if (!Files.exists(columnsFile)) columnsFile = root.resolve("input-columns.sql");
     String columns =

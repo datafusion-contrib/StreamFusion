@@ -24,7 +24,8 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
   final Object function;
   final RowDataKeySelector selector;
   final RowType accumulatorType, outputType, inputType;
-  final int[] kinds, scalarFields, countFields, valueColumns;
+  final int[] kinds, scalarFields, countFields, valueColumns, keyColumns;
+  final int maximum;
   final boolean before;
   final long ttl;
 
@@ -54,14 +55,35 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
       boolean append,
       boolean integerKey)
       throws Exception {
+    this(mode, rocks, ttl, beforePolicy, append, integerKey, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  GroupAggregateStockTestFixture(
+      String mode,
+      boolean rocks,
+      long ttl,
+      Boolean beforePolicy,
+      boolean append,
+      boolean integerKey,
+      boolean global)
+      throws Exception {
     this.ttl = ttl;
+    keyColumns = global ? new int[0] : new int[] {0};
+    maximum = global ? 1 : 128;
     String keyType = integerKey ? "INT" : "BIGINT";
     inputType =
-        RowType.of(
-            integerKey
-                ? new org.apache.flink.table.types.logical.IntType()
-                : new org.apache.flink.table.types.logical.BigIntType(),
-            new org.apache.flink.table.types.logical.BigIntType());
+        global
+            ? (mode.equals("star")
+                ? RowType.of(
+                    new org.apache.flink.table.types.logical.BigIntType(),
+                    new org.apache.flink.table.types.logical.BigIntType())
+                : RowType.of(new org.apache.flink.table.types.logical.BigIntType()))
+            : RowType.of(
+                integerKey
+                    ? new org.apache.flink.table.types.logical.IntType()
+                    : new org.apache.flink.table.types.logical.BigIntType(),
+                new org.apache.flink.table.types.logical.BigIntType());
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "false");
     var table = NativePlannerTestEnvironment.create(config);
@@ -92,9 +114,8 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
                 ? "SUM(v) AS c,AVG(v) AS d"
                 : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
     table.executeSql(
-        "CREATE TABLE output_table(k "
-            + keyType
-            + ","
+        "CREATE TABLE output_table("
+            + (global ? "" : "k " + keyType + ",")
             + (mode.equals("arithmetic")
                 ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
                 : mode.equals("hidden") ? "c BIGINT,d BIGINT" : "a BIGINT")
@@ -103,9 +124,11 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
     var transforms =
         CanonicalRegularJoinPlanTest.translate(
             planner,
-            "INSERT INTO output_table SELECT k,"
+            "INSERT INTO output_table SELECT "
+                + (global ? "" : "k,")
                 + fields
-                + " FROM fixture.db.input_table GROUP BY k");
+                + " FROM fixture.db.input_table"
+                + (global ? "" : " GROUP BY k"));
     var graph = CanonicalRegularJoinPlanTest.graph(planner, table, transforms);
     var node =
         graph.getStreamNodes().stream()
@@ -121,6 +144,16 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
                             instanceof GroupAggFunction)
             .findFirst()
             .orElseThrow(() -> new AssertionError(graph.getStreamingPlanAsJSON()));
+    if (global) {
+      var actualInput = (LogicalType[]) field(node.getTypeSerializersIn()[0], "types");
+      if (!java.util.Arrays.equals(
+          actualInput, inputType.getChildren().toArray(new LogicalType[0])))
+        throw new AssertionError(
+            "Global physical input mismatch: " + java.util.Arrays.toString(actualInput));
+      if (node.getParallelism() != 1 || node.getMaxParallelism() != 1)
+        throw new AssertionError(
+            "Stock global owner must be singleton with maximum parallelism one");
+    }
     var operator =
         (KeyedProcessOperator<RowData, RowData, RowData>)
             ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator();
@@ -154,19 +187,19 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
         kinds = new int[] {3, 3, 22};
         scalarFields = new int[] {0, 1, 2};
         countFields = new int[] {-1, -1, -1};
-        valueColumns = new int[] {-1, 1, 1};
+        valueColumns = new int[] {-1, global ? 0 : 1, global ? 0 : 1};
         break;
       case "hidden":
         kinds = new int[] {0, 4};
         scalarFields = append ? new int[] {0, 1} : new int[] {0, 2};
         countFields = append ? new int[] {-1, 2} : new int[] {1, 3};
-        valueColumns = new int[] {1, 1};
+        valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1};
         break;
       case "count":
         kinds = new int[] {3};
         scalarFields = new int[] {0};
         countFields = new int[] {-1};
-        valueColumns = new int[] {1};
+        valueColumns = new int[] {global ? 0 : 1};
         break;
       case "star":
         kinds = new int[] {3};
@@ -179,7 +212,7 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
     }
     harness =
         new KeyedOneInputStreamOperatorTestHarness<>(
-            operator, selector, selector.getProducedType(), 128, 1, 0);
+            operator, selector, selector.getProducedType(), maximum, 1, 0);
     harness.setStateBackend(rocks ? new EmbeddedRocksDBStateBackend() : new HashMapStateBackend());
     harness.setup((TypeSerializer<RowData>) node.getTypeSerializerOut());
   }

@@ -37,7 +37,10 @@ replace aggregate counts: a zero COUNT/AVG count cannot delete an append group. 
 contract reinstalls this policy after native checkpoint restoration without a state-format flag.
 
 This is the single-phase BIGINT arithmetic contract for append-only and retracting input, with
-one INT/BIGINT grouping key. Additional schemas/keys/phases,
+one INT/BIGINT grouping key or a global group. Global state keeps Flink's eight-byte empty BinaryRow
+key, zero-field RowData key serializer and singleton parallelism/maximum parallelism. The adapter
+does not invent a grouping key or an initial accumulator/result. Compiled grouping without actual
+aggregate calls retains its stock owner. Additional schemas/keys/phases,
 state-backed data views and full version/connector/failure/delivery coverage
 remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is
 explicitly deferred by the maintainer.

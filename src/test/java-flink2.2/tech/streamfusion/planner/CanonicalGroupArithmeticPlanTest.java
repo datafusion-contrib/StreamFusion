@@ -70,6 +70,18 @@ class CanonicalGroupArithmeticPlanTest {
   void normalSubmissionCapturesPhysicalStateAndOriginalIdentity(
       String mode, boolean compiled, long ttl, String uids, boolean append, boolean integerKey)
       throws Exception {
+    assertPlan(mode, compiled, ttl, uids, append, integerKey, false);
+  }
+
+  void assertPlan(
+      String mode,
+      boolean compiled,
+      long ttl,
+      String uids,
+      boolean append,
+      boolean integerKey,
+      boolean global)
+      throws Exception {
     String keyType = integerKey ? "INT" : "BIGINT";
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
@@ -104,15 +116,18 @@ class CanonicalGroupArithmeticPlanTest {
                 ? "SUM(v) AS c,AVG(v) AS d"
                 : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
     table.executeSql(
-        "CREATE TABLE output_table(k "
-            + keyType
-            + ","
+        "CREATE TABLE output_table("
+            + (global ? "" : "k " + keyType + ",")
             + (mode.equals("arithmetic")
                 ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
                 : mode.equals("hidden") ? "c BIGINT,d BIGINT" : "a BIGINT")
             + ") WITH ('connector'='blackhole')");
     String query =
-        "INSERT INTO output_table SELECT k," + fields + " FROM fixture.db.input_table GROUP BY k";
+        "INSERT INTO output_table SELECT "
+            + (global ? "" : "k,")
+            + fields
+            + " FROM fixture.db.input_table"
+            + (global ? "" : " GROUP BY k");
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var plan = compiled ? table.compilePlanSql(query) : null;
     String portable = plan == null ? "" : plan.asJsonString();
@@ -132,14 +147,19 @@ class CanonicalGroupArithmeticPlanTest {
             .collect(java.util.stream.Collectors.toList());
     assertEquals(1, owners.size(), graph.getStreamingPlanAsJSON());
     var owner = owners.get(0);
-    assertEquals(257, owner.getMaxParallelism());
-    assertEquals(2, owner.getParallelism());
+    assertEquals(global ? 1 : 257, owner.getMaxParallelism());
+    assertEquals(global ? 1 : 2, owner.getParallelism());
     assertEquals(uids.equals("DISABLED"), owner.getTransformationUID() == null);
     var operator = ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();
     var contract =
         assertInstanceOf(
             StockGroupArithmeticStateContract.class,
             GroupAggregateStockTestFixture.field(operator, "stockStateContract"));
+    assertEquals(
+        global ? 0 : 1,
+        ((org.apache.flink.table.types.logical.RowType)
+                GroupAggregateStockTestFixture.field(contract, "keyType"))
+            .getFieldCount());
     int[] kinds =
         mode.equals("arithmetic")
             ? new int[] {3, 3, 22}
@@ -163,7 +183,9 @@ class CanonicalGroupArithmeticPlanTest {
     assertEquals(ttl, GroupAggregateStockTestFixture.field(operator, "stateTtlMillis"));
     assertFalse((boolean) GroupAggregateStockTestFixture.field(operator, "miniBatch"));
     assertArrayEquals(
-        new int[] {Native.STOCK_KEY_PROJECTION, -1},
+        global
+            ? new int[] {Native.STOCK_KEY_PROJECTION}
+            : new int[] {Native.STOCK_KEY_PROJECTION, -1},
         (int[]) GroupAggregateStockTestFixture.field(operator, "keyTimestampPrecisions"));
     Map<?, ?> registrations =
         InstantiationUtil.deserializeObject(

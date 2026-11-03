@@ -35,9 +35,16 @@ class CanonicalGroupArithmeticEmptyStateTest {
   @MethodSource("cases")
   void repeatedEmptyHandoffsDoNotCreateAnAccumulator(
       String mode, boolean rocks, long ttl, boolean append, boolean integer) throws Exception {
-    try (var source = new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append, integer);
+    assertEmpty(mode, rocks, ttl, append, integer, false);
+  }
+
+  static void assertEmpty(
+      String mode, boolean rocks, long ttl, boolean append, boolean integer, boolean global)
+      throws Exception {
+    try (var source =
+            new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append, integer, global);
         var reference =
-            new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append, integer)) {
+            new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append, integer, global)) {
       source.harness.open();
       reference.harness.open();
       assertTrue(source.rawStateBytes().isEmpty());
@@ -53,7 +60,10 @@ class CanonicalGroupArithmeticEmptyStateTest {
         }
         Object key = integer ? (Object) Integer.MIN_VALUE : Long.MIN_VALUE;
         for (Long value : new Long[] {null, 7L}) {
-          var row = GenericRowData.of(key, value);
+          var row =
+              global && source.inputType.getFieldCount() == 1
+                  ? GenericRowData.of(value)
+                  : GenericRowData.of(key, value);
           assertEquals(
               stockStep(reference, row, 1000),
               nativeStep(target, row, 1000, source.outputType, source.inputType));
@@ -62,10 +72,13 @@ class CanonicalGroupArithmeticEmptyStateTest {
         }
       }
       try (var returned =
-          new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append, integer)) {
+          new GroupAggregateStockTestFixture(mode, rocks, ttl, true, append, integer, global)) {
         returned.harness.initializeState(saved);
         returned.harness.open();
-        var row = GenericRowData.of(null, 5L);
+        var row =
+            global && returned.inputType.getFieldCount() == 1
+                ? GenericRowData.of(5L)
+                : GenericRowData.of(null, 5L);
         assertEquals(stockStep(reference, row, 1100), stockStep(returned, row, 1100));
         assertEquals(reference.rawStateBytes(), returned.rawStateBytes());
       }

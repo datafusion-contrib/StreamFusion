@@ -22,6 +22,11 @@ class CanonicalGroupArithmeticAppendJobTest extends CanonicalGroupArithmeticJobT
   @Override
   Path prepare(String name, String mode, boolean ordinary) throws Exception {
     var root = super.prepare(name, mode, ordinary);
+    writeAppendInput(root, mode);
+    return root;
+  }
+
+  static void writeAppendInput(Path root, String mode) throws Exception {
     Files.createFile(root.resolve("input_table-insert-only"));
     if (!mode.equals("rescale"))
       Files.write(
@@ -47,7 +52,6 @@ class CanonicalGroupArithmeticAppendJobTest extends CanonicalGroupArithmeticJobT
               "INSERT,1,3",
               "INSERT,2,null",
               "INSERT,4,null"));
-    return root;
   }
 
   @Override

@@ -612,14 +612,16 @@ final class StockCompiledPlanLowering {
     ExecNode<?> input = stock.getInputEdges().get(0).getSource();
     RowType inputType = (RowType) input.getOutputType();
     RowType outputType = (RowType) stock.getOutputType();
-    if (keys.length != 1) return stock;
-    var keyRoot = inputType.getTypeAt(keys[0]).getTypeRoot();
-    if (!(keyRoot == LogicalTypeRoot.BIGINT || keyRoot == LogicalTypeRoot.INTEGER)
+    if (keys.length > 1) return stock;
+    boolean global = keys.length == 0;
+    var keyRoot = global ? null : inputType.getTypeAt(keys[0]).getTypeRoot();
+    if (!global && !(keyRoot == LogicalTypeRoot.BIGINT || keyRoot == LogicalTypeRoot.INTEGER)
         || java.util.stream.IntStream.range(0, inputType.getFieldCount())
-            .anyMatch(i -> i != keys[0] && !inputType.getTypeAt(i).is(LogicalTypeRoot.BIGINT))
-        || outputType.getTypeAt(0).getTypeRoot() != keyRoot
+            .anyMatch(
+                i -> (global || i != keys[0]) && !inputType.getTypeAt(i).is(LogicalTypeRoot.BIGINT))
+        || !global && outputType.getTypeAt(0).getTypeRoot() != keyRoot
         || outputType.getChildren().stream()
-            .skip(1)
+            .skip(keys.length)
             .anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT))
         || !(original.getStateKeySelector()
             instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector)) return stock;
@@ -662,6 +664,7 @@ final class StockCompiledPlanLowering {
         || Arrays.stream(accumulatorTypes).anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT)))
       return stock;
     int size = infos.getActualAggregateInfos().length;
+    if (size == 0) return stock;
     int[] kinds = new int[size],
         columns = new int[size],
         scalars = new int[size],
