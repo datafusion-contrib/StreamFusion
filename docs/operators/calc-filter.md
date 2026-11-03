@@ -1665,7 +1665,7 @@ failures, and negative positions allocate values
 while sharing sliced validity. The input remains unchanged.
 
 The kernel follows Comet's native-width/widened integer split, with Flink's HALF_UP and
-wrapping contract. It does not use floating point. Runtime positions, literals outside -38..38,
+wrapping contract. It does not use floating point. Unverified runtime positions, literals outside -38..38,
 division, remainder, narrowing and other unverified producers retain generated evaluation. In particular,
 released Flink throws for nonzero `ROUND(value, 2147483647)` while zero returns zero;
 the ordinary nonnegative-position identity must not erase that behavior. CASE and empty
@@ -1676,6 +1676,25 @@ include both Flink lines, the actual previous scalar callback, slower small-batc
 and a complete job retaining both transposes.
 The [computed-operand controls](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
 cover wrapping arithmetic, literal positions, NULL folding and complete jobs with position -1.
+
+### Integer ROUND with a bounded runtime position
+
+`ROUND(value, CASE WHEN condition THEN position ELSE position END)` also runs in Rust
+when every result is an INT literal in -38..38 or NULL, including nested CASE results.
+Conditions must consist of direct/literal BOOLEAN values, logical/null predicates or
+comparisons of recursively verified integer operands. The value uses the same verified
+integer producer tree as literal-position ROUND. Each row retains its original integer
+width, HALF_UP ties, wrapping overflow and selected NULL position.
+
+The planner proves every condition and result failure-free before emitting a typed position
+selector. It picks the first TRUE condition in one Arrow pass; NULL conditions behave as
+false. ROUND consumes that INT column without the generic CASE filter/scatter machinery
+or a JVM evaluator. Empty filtered batches remain empty. No configuration switch or JNI
+contract changes are needed. Arbitrary position columns, out-of-range results,
+division/remainder, narrowing, stateful or other unverified conditions/producers retain the
+complete generated expression. TRUNCATE retains its separate literal-position scope below.
+The [runtime-position measurements](../benchmarks/scalar-functions.md#integer-round-with-a-bounded-runtime-position)
+retain the initial slower prototype, batch qualification and conversion-inclusive jobs.
 
 ### Single-argument integer TRUNCATE
 

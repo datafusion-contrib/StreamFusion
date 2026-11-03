@@ -2920,8 +2920,11 @@ final class RexExpression {
       if (nativeIntegralRounding(call)) return emit(call.getOperands().get(0));
       if (nativeIntegralRoundPosition(call) || nativeIntegralTruncatePosition(call)) {
         // The operand proof excludes failures, so a NULL position needs no intermediate arrays.
-        if (((RexLiteral) call.getOperands().get(1)).isNull()) return emitTypedNull(call.getType());
-        return emitBuiltinCall(call, "ROUND".equals(functionName) ? 230 : 231);
+        if (call.getOperands().get(1) instanceof RexLiteral
+            && ((RexLiteral) call.getOperands().get(1)).isNull()) return emitTypedNull(call.getType());
+        add(KIND_CALL, "ROUND".equals(functionName) ? 230 : 231, 2);
+        return emit(call.getOperands().get(0))
+            && emitBoundedIntegralPosition(call.getOperands().get(1));
       }
       if (!call.getOperands().isEmpty()
           && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DECIMAL) {
@@ -4728,7 +4731,7 @@ final class RexExpression {
   private static boolean nativeIntegralRoundPosition(RexCall call) {
     return call.getOperator()
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND
-        && nativeIntegralRoundingPosition(call);
+        && nativeIntegralRoundingPosition(call, true);
   }
 
   private static boolean nativeIntegralTruncatePosition(RexCall call) {
@@ -4736,19 +4739,47 @@ final class RexExpression {
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE
         && (call.getType().getSqlTypeName() == SqlTypeName.INTEGER
             || call.getType().getSqlTypeName() == SqlTypeName.BIGINT)
-        && nativeIntegralRoundingPosition(call);
+        && nativeIntegralRoundingPosition(call, false);
   }
 
-  private static boolean nativeIntegralRoundingPosition(RexCall call) {
+  private static boolean nativeIntegralRoundingPosition(RexCall call, boolean computedPosition) {
     if (call.getOperands().size() != 2
         || !SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
         || call.getType().getSqlTypeName() != call.getOperands().get(0).getType().getSqlTypeName()
-        || !(call.getOperands().get(1) instanceof RexLiteral)
         || call.getOperands().get(1).getType().getSqlTypeName() != SqlTypeName.INTEGER
         || !nativeIntegralRoundingOperand(call.getOperands().get(0))) return false;
-    var position = (RexLiteral) call.getOperands().get(1);
-    Integer value = position.getValueAs(Integer.class);
-    return position.isNull() || value != null && value >= -38 && value <= 38;
+    RexNode position = call.getOperands().get(1);
+    return (computedPosition || position instanceof RexLiteral)
+        && nativeBoundedIntegralPosition(position);
+  }
+
+  private static boolean nativeBoundedIntegralPosition(RexNode node) {
+    if (node.getType().getSqlTypeName() != SqlTypeName.INTEGER) return false;
+    if (node instanceof RexLiteral) {
+      var position = (RexLiteral) node;
+      Integer value = position.getValueAs(Integer.class);
+      return position.isNull() || value != null && value >= -38 && value <= 38;
+    }
+    if (!(node instanceof RexCall)) return false;
+    var call = (RexCall) node;
+    if (call.getKind() != SqlKind.CASE || call.getOperands().size() < 3
+        || call.getOperands().size() % 2 != 1) return false;
+    for (int i = 0; i < call.getOperands().size() - 1; i += 2) {
+      if (!nativeBooleanFormattingOperand(call.getOperands().get(i))
+          || !nativeBoundedIntegralPosition(call.getOperands().get(i + 1))) return false;
+    }
+    return nativeBoundedIntegralPosition(call.getOperands().get(call.getOperands().size() - 1));
+  }
+
+  private boolean emitBoundedIntegralPosition(RexNode node) {
+    if (node instanceof RexLiteral) return emit(node);
+    var call = (RexCall) node;
+    add(KIND_CALL, 247, call.getOperands().size());
+    for (int i = 0; i < call.getOperands().size() - 1; i += 2) {
+      if (!emit(call.getOperands().get(i))
+          || !emitBoundedIntegralPosition(call.getOperands().get(i + 1))) return false;
+    }
+    return emitBoundedIntegralPosition(call.getOperands().get(call.getOperands().size() - 1));
   }
 
   private static boolean nativeIntegralRoundingOperand(RexNode node) {

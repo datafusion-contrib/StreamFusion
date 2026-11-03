@@ -86,6 +86,7 @@ mod negate;
 pub(crate) mod numeric;
 pub(crate) mod numeric_cast;
 mod numeric_classification;
+mod round_position;
 mod row_constructor;
 mod scalar;
 pub(crate) mod sha2_runtime;
@@ -312,6 +313,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         237 => binary_character::function(),
         245 => unnest_temporal::function(unnest_temporal::Operation::EpochSeconds),
         246 => temporal_round::utc_ltz_ceil(),
+        247 => round_position::function(),
         _ => return None,
     })
 }

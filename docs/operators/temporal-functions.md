@@ -91,8 +91,11 @@ records bulk function gains alongside slower tiny batches and complete jobs.
 
 Ordinary Calc also accepts verified integer trees as the first operand of
 `TO_TIMESTAMP_LTZ(...,0)` or `(...,3)`: integer addition/subtraction/multiplication,
-lossless widening, identity FLOOR/CEIL/ROUND and the existing verified ROUND/TRUNCATE
-literal-position subset (-38 through 38 or NULL). Every child must satisfy the same
+lossless widening, identity FLOOR/CEIL/ROUND, verified literal-position ROUND/TRUNCATE
+(-38 through 38 or NULL), and bounded runtime-position ROUND. The latter accepts only
+failure-free CASE conditions and literal/CASE results proven in that same range or NULL;
+see [the integer ROUND contract](calc-filter.md#integer-round-with-a-bounded-runtime-position).
+Every child must satisfy the same
 recursive proof. Division, remainder, narrowing, unknown/stateful producers and other
 signatures keep their existing correct evaluator. UNNEST admission is unchanged.
 
@@ -104,8 +107,8 @@ kernels retain their parent validity, range checks and timestamp schema. Session
 do not affect the numeric conversion; a recurring-DST extraction consumer may still
 require generated evaluation independently of this epoch conversion.
 
-This reuses the existing verified integer proof and native kernels without a new
-switch, JNI bridge, transport or Rust implementation. The
+Epoch conversion itself reuses the existing kernels and verified integer proof without
+a new switch, JNI bridge or transport. The
 [computed-epoch qualification](../benchmarks/scalar-functions.md#computed-integer-epoch-conversion)
 retains prepared stock/actual-previous/native controls and conversion-inclusive jobs.
 

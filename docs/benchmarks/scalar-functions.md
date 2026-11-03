@@ -7617,3 +7617,98 @@ released `TemporalTypesTest` oracle invocations pass separately, providing stock
 not native-runtime evidence. No Rust implementation changes from the preceding CEIL commit,
 which passed 896 release core tests without ignores. Hosted CI remains separate. Broader
 parsing/conversion work stays in [#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
+
+
+## Integer ROUND with a bounded runtime position
+
+The planner proves an INT CASE position always returns -38..38 or NULL, with only
+failure-free BOOLEAN/logical/integer-comparison conditions. A typed selector chooses the
+first TRUE branch in one Arrow pass, retaining NULL conditions and selected NULLs. Integer
+ROUND consumes that position array, preserves resolved widths, signed overflow and HALF_UP
+ties, and uses no JVM evaluator. Nested bounded CASE and verified integer value producers
+are covered. Arbitrary position columns, extreme results and failing/stateful/unverified
+producers remain generated; TRUNCATE is still literal-position only.
+
+The [2026-11-03 record](results/bounded-runtime-round-2026-11-03.json) retains released
+Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc-linked
+artifacts. Equal prepared GenericRowData, BinaryRowData and Arrow contain nullable/NOT NULL
+TINYINT/SMALLINT/INT/BIGINT, extrema and NULLs. Each trial consumes 131,072 rows, with
+16 warmups and nine measurements. Rust times production operation and equivalent output
+consumption after input import and before export. Prior intrinsic JVM callbacks remain
+timed. Initial JNI/import/export and perimeter transposes are excluded only from this
+small-function gate. Complete jobs retain those costs.
+
+The short shape selects -2/-1; the wide-null shape selects -38/NULL/0; extra computed
+INT/BIGINT controls add one in the resolved input width before rounding. The secondary
+position-condition input is INT. Actual preceding encoder `7c8ffe00` is independently
+compiled against the shared current runtime, fixture and allocator. This isolates encoder
+and kernel changes, not a whole historical DSO replay. The independent prior-stock control
+remains separate from the candidate's paired stock control.
+
+| Flink | Bulk cells | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 36 | 1.417-3.557x | 3.872-10.091x |
+| 1.18.1 | 36 | 1.020-4.796x | 3.963-8.528x |
+
+All 72 bulk cells beat paired stock and the previous generated route.
+Independent prior-stock/native spans **0.928-3.531x**;
+2 bulk cells have a lower independent stock median than native. These
+separate-process stock controls are retained rather than normalized to the paired controls.
+The smallest paired gain is modest and measurement ranges can overlap.
+Sixteen 16-row controls retain stock/native **0.126-0.291x**;
+these small-function results do not establish complete-job acceleration.
+The [8,800 raw trials](results/bounded-runtime-round-2026-11-03.csv.gz) retain warmups,
+checksums and independent stock measurements.
+
+Two failed/intermediate implementations remain public: the initial generic CASE pilot
+loses on every nullable wide-null width, and the selector-only partial matrix still loses
+on nullable INT/short GenericRowData (9.433 stock versus 10.452 native ns/row). The selector
+removes generic filtering/scattering; precomputed signed-64-bit powers then remove per-row
+i128 exponentiation/remainder, retaining an exact separate 10^19 wrapping case. Initial
+and intermediate artifacts/classes are hashed. Raw
+[initial pilot](results/bounded-runtime-round-2026-11-03-initial-pilot.csv.gz),
+[selector pilot](results/bounded-runtime-round-2026-11-03-selector-pilot.csv.gz),
+[partial selector qualification](results/bounded-runtime-round-2026-11-03-selector-partial.csv.gz),
+[final pilot](results/bounded-runtime-round-2026-11-03-final-pilot.csv.gz) and
+[retained literal controls](results/bounded-runtime-round-2026-11-03-literal-controls.csv.gz)
+prevent replacing failed measurements with only favorable final numbers. The literal
+controls replay the saved preceding executable/DSO independently; their variation is retained.
+
+Eight complete million-row INT/BIGINT jobs use the bounded row source and blackhole sink,
+two warmups, five measurements and alternating engine order. They retain startup, JNI and
+both transposes. Candidate requires consumed NativeCalc and empty evaluator descriptors;
+the actual preceding encoder requires the ROUND evaluator. Seconds, median:
+
+| Flink / type / position shape | Paired stock | Native | Independent stock | Previous evaluator |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-short | 0.182302 | 0.195996 | 0.183552 | 0.228636 |
+| 2.2.1 / INT-wide-null | 0.188430 | 0.200061 | 0.186238 | 0.227620 |
+| 2.2.1 / BIGINT-short | 0.196292 | 0.213548 | 0.193110 | 0.231555 |
+| 2.2.1 / BIGINT-wide-null | 0.197680 | 0.201215 | 0.186568 | 0.231936 |
+| 1.18.1 / INT-short | 0.188607 | 0.198215 | 0.195201 | 0.228789 |
+| 1.18.1 / INT-wide-null | 0.187114 | 0.203781 | 0.183182 | 0.229998 |
+| 1.18.1 / BIGINT-short | 0.216962 | 0.223382 | 0.197413 | 0.237526 |
+| 1.18.1 / BIGINT-wide-null | 0.196454 | 0.207811 | 0.195804 | 0.249493 |
+
+Native/stock elapsed spans **1.018-1.089**; native/previous spans
+**0.833-0.940**. Every trial and full range remains in the
+record. No universal job speedup is claimed.
+
+All **268 focused JVM invocations** pass without skips across both releases and JDK 11/17,
+targeting Java release 11. Complete 5,003-row maps compare values, schema, NULLs, IDs and
+cardinality for every integer width, arithmetic/widening/nesting, NULL/negative/extreme
+positions, consumers and all-filtered batches. Admitted routes require actual NativeCalc
+consumption and empty evaluators. Unverified positions, out-of-range branches and failing
+conditions retain generated controls. The actual before encoder matches complete values
+and schema, then fails eight new pure-route assertions; its retained control passes.
+Four fresh unchanged released `ScalarFunctionsTest.testRound` stock-oracle invocations pass
+separately. All **900 release Rust core tests** pass without ignores, including dynamic
+positions, 10^19 ties, slices, ownership, scalar broadcasts and empty/rejected inputs.
+Hosted CI is separate. Broader runtime/extreme numeric work remains in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+Reproduce prepared measurements with the release `integral_expression` example,
+`SF_INTEGRAL_SECONDARY_TYPE=INT` and expressions from the record; supply the independently
+compiled preceding encoder for `SF_INTEGRAL_PREVIOUS=true`. Complete-job controls use
+`IntegralExpressionPipelineBenchmark`, `sf.integral.secondaryType=INT`, the matching
+`sf.integral.expression`, and `sf.integral.bigintInput=true` for BIGINT.
