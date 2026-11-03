@@ -94,7 +94,7 @@ class PaimonSnapshotPartialUpdateTest {
       rows.add(GenericRow.ofKind(RowKind.UPDATE_AFTER, 100 + run, null, null, null));
       runs.add(rows);
     }
-    var split = writeRuns(table, runs);
+    var split = writeRuns(table, runs, true);
     if (mode.equals("partial-ignore")) {
       assertNull(
           NativePaimonSnapshotReader.create(
@@ -114,7 +114,7 @@ class PaimonSnapshotPartialUpdateTest {
       assertFalse(expected.isEmpty());
       var all = collect(table, read, split, true, 3, 0, Integer.MAX_VALUE);
       assertEquals(expected, all.rows());
-      assertTrue(all.merged() > 0, "Must enter native snapshot merge");
+      assertEquals(0, all.merged(), "Exact sequence ties retain released Java ordering");
       for (boolean initialNative : new boolean[] {false, true}) {
         var prefix = collect(table, read, split, initialNative, 2, 0, 5);
         var suffix =
@@ -201,18 +201,31 @@ class PaimonSnapshotPartialUpdateTest {
     var split = writeRuns(table, runs);
     var read = table.newReadBuilder().withProjection(new int[] {2, 1, 0});
     var actual = collect(table, read, split, true, 2, 0, Integer.MAX_VALUE);
-    assertTrue(actual.merged() > 0);
+    assertEquals(
+        format.equals("orc") && hasChar(LogicalTypeConversion.toLogicalType(valueType)) ? 0 : 1,
+        actual.merged());
     assertEquals(stock(read, split), actual.rows());
     assertEquals("", NativePaimon.liveNativeHandles());
   }
 
   static DataSplit writeRuns(FileStoreTable table, List<List<InternalRow>> runs) throws Exception {
+    return writeRuns(table, runs, false);
+  }
+
+  private static boolean hasChar(org.apache.flink.table.types.logical.LogicalType type) {
+    return type.getTypeRoot() == org.apache.flink.table.types.logical.LogicalTypeRoot.CHAR
+        || type.getChildren().stream().anyMatch(PaimonSnapshotPartialUpdateTest::hasChar);
+  }
+
+  private static DataSplit writeRuns(
+      FileStoreTable table, List<List<InternalRow>> runs, boolean tied) throws Exception {
     var partition =
         new RowPartitionKeyExtractor(table.schema()).partition(runs.get(0).get(0)).copy();
     var layout = PaimonKeyValueLayout.of(table);
     var type = LogicalTypeConversion.toLogicalType(table.rowType());
     var files = new ArrayList<DataFileMeta>();
     try (var allocator = new RootAllocator()) {
+      long sequence = 0;
       for (var run : runs) {
         try (var buffer =
             new KeyedUpsertBuffer(
@@ -221,7 +234,8 @@ class PaimonSnapshotPartialUpdateTest {
               run.stream()
                   .map(row -> (RowData) new org.apache.paimon.flink.FlinkRowData(row))
                   .collect(ListCollectors.toList());
-          buffer.push(RowDataArrowConverter.write(rows, type, allocator, true), 0);
+          buffer.push(RowDataArrowConverter.write(rows, type, allocator, true), sequence);
+          if (!tied) sequence += rows.size();
           files.addAll(
               new NativePaimonKeyValueFileWriter(table, layout)
                   .write(partition, 0, buffer.flush())

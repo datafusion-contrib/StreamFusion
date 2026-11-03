@@ -251,9 +251,13 @@ class PaimonSnapshotKeyTypesTest {
               && precision > 0
               && keys.stream().anyMatch(k -> ((Timestamp) k).getMillisecond() < 0);
       assertEquals(
-          orderingRisk ? 0 : 2,
+          orderingRisk
+                  || (format.equals("orc")
+                      && keyType.getTypeRoot() == org.apache.paimon.types.DataTypeRoot.CHAR)
+              ? 0
+              : 2,
           merged,
-          "Native merging requires ordered decoded keys; ORC's last negative second retains Java");
+          "ORC CHAR normalization and the last negative timestamp second retain Java");
     }
     assertEquals("", NativePaimon.liveNativeHandles());
     assertEquals("", NativeParquet.liveNativeHandles());

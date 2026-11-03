@@ -221,6 +221,17 @@ class PaimonSourceBenchmark {
             }
           }
           double seconds = (System.nanoTime() - start) / 1e9;
+          System.out.printf(
+              "PAIMON_SOURCE_SAMPLE format=%s table=%s rows=%d iteration=%d mode=%s seconds=%.6f"
+                  + " count=%d checksum=%d%n",
+              format,
+              primaryKey ? "changelog" : "append",
+              rows,
+              run,
+              mode,
+              seconds,
+              count,
+              checksum);
           if (run > 0) {
             best[mode.ordinal()] = Math.min(best[mode.ordinal()], seconds);
           }
