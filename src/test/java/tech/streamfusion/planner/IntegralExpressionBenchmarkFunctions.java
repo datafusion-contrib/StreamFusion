@@ -30,6 +30,7 @@ public final class IntegralExpressionBenchmarkFunctions {
   private static RowData[] rows;
   private static String type;
   private static boolean booleanOutput;
+  private static boolean longOutput;
   private static boolean stringOutput;
   private static volatile long consumed;
   private static final long[] TIMESTAMP_EPOCHS = {Long.MIN_VALUE, Long.MAX_VALUE,
@@ -74,6 +75,7 @@ public final class IntegralExpressionBenchmarkFunctions {
         : new LogicalType[] {inputType, LogicalTypeParser.parse(secondaryDeclaration, getLoader())};
     LogicalType outputType = FlinkTypeFactory.toLogicalType(project.getProjects().get(0).getType());
     booleanOutput = outputType.getTypeRoot() == LogicalTypeRoot.BOOLEAN;
+    longOutput = outputType.getTypeRoot() == LogicalTypeRoot.BIGINT;
     stringOutput = outputType.getTypeRoot() == LogicalTypeRoot.VARCHAR
         || outputType.getTypeRoot() == LogicalTypeRoot.CHAR;
     boolean configuredCast = stringOutput || type.equals("BOOLEAN") || type.startsWith("DECIMAL(")
@@ -138,7 +140,8 @@ public final class IntegralExpressionBenchmarkFunctions {
         "kinds", encoded.kinds(), "payload", encoded.payload(),
         "child_counts", encoded.childCounts(), "longs", constants,
         "doubles", encoded.doubles(), "strings", encoded.strings(),
-        "boolean_output", booleanOutput, "string_output", stringOutput));
+        "boolean_output", booleanOutput, "string_output", stringOutput,
+        "long_output", longOutput));
   }
 
   /** A rejected native signature runs in Java on RowData in the actual preceding implementation. */
@@ -241,6 +244,7 @@ public final class IntegralExpressionBenchmarkFunctions {
         RowData result = (RowData) stock.evalRow(input);
         if (result.isNullAt(0)) sum--;
         else if (booleanOutput) sum += result.getBoolean(0) ? 1 : 0;
+        else if (longOutput) sum += result.getLong(0);
         else if (stringOutput) {
           var value = (BinaryStringData) result.getString(0);
           int length = value.getSizeInBytes();

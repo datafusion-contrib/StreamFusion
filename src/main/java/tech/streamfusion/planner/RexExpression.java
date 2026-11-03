@@ -2212,9 +2212,13 @@ final class RexExpression {
     int epochTimestamp = nativeEpochTimestamp(call);
     if (epochTimestamp != 0
         && (epochTimestamp == 173 && unnestOperand
+                && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.BIGINT
             || call.getOperands().get(0) instanceof RexInputRef
             || call.getOperands().get(0) instanceof RexLiteral)) {
       add(KIND_CALL, epochTimestamp, 1);
+      if (call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.BIGINT) {
+        add(KIND_CAST, CAST_BIGINT, 1);
+      }
       return emit(call.getOperands().get(0));
     }
     if (unnestOperand && isNativeUnnestTemporalCast(call)) return emitCast(call);
@@ -4437,7 +4441,7 @@ final class RexExpression {
   private static int nativeEpochTimestamp(RexCall call) {
     if (!"TO_TIMESTAMP_LTZ".equals(call.getOperator().getName())
         || call.getOperands().size() != 2
-        || call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.BIGINT
+        || !SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
         || !(call.getOperands().get(1) instanceof RexLiteral)) return 0;
     BigDecimal precision = ((RexLiteral) call.getOperands().get(1)).getValueAs(BigDecimal.class);
     if (precision == null) return 0;

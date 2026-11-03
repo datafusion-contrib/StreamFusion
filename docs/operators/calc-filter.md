@@ -3117,7 +3117,10 @@ this test-only setting empty and retains normal JVM exception optimization.
 `TO_DATE`, `TO_TIMESTAMP`, all `TO_TIMESTAMP_LTZ` overloads, calendar fields, and temporal
 `FLOOR`/`CEIL` now have expression implementations. Formatted parsing and recurring-DST LTZ
 calendar fields use Flink's own generated code. Timestamp results retain the complete millisecond/fraction pair and run
-by default. See the complete [temporal function inventory](temporal-functions.md).
+by default. Direct integer epoch inputs to `TO_TIMESTAMP_LTZ` with literal precision
+0 or 3 execute in Rust; TINYINT/SMALLINT/INT widen losslessly before the existing
+BIGINT kernel. Computed numeric and string/formatted signatures keep their existing
+routes. See the complete [temporal function inventory](temporal-functions.md).
 
 ### LTRIM
 

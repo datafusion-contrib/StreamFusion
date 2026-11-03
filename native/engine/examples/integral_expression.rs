@@ -25,6 +25,8 @@ struct EncodedProgram {
     boolean_output: bool,
     #[serde(default)]
     string_output: bool,
+    #[serde(default)]
+    long_output: bool,
 }
 
 macro_rules! java {
@@ -324,6 +326,8 @@ fn main() {
             &DataType::Utf8
         } else if program.boolean_output {
             &DataType::Boolean
+        } else if program.long_output {
+            &DataType::Int64
         } else {
             batch.column(0).data_type()
         }

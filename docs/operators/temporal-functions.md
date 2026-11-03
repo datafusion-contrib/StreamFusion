@@ -13,7 +13,7 @@ unsupported `MATCH_RECOGNIZE` operator.
 | `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. DATE/plain-TIMESTAMP calendar fields and HOUR/MINUTE/SECOND over DATE, plain TIMESTAMP and TIME execute in Rust, preserving Java signed arithmetic. Direct LTZ extraction uses the planning JDK's serialized fixed/finite offset history; recurring-DST zones retain Flink. Interval fields and unverified wrappers remain generated. |
 | `TO_DATE(text)`, `TO_DATE(text, format)` | The one-argument parser stays in Rust; formatted parsing uses Flink. Dynamic formats, NULL behavior and invalid-input failures follow Flink. |
 | `TO_TIMESTAMP(text[, format])` | Flink parsing, including dynamic formats and full-range timestamp results. |
-| `TO_TIMESTAMP_LTZ` | Direct/literal BIGINT epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. Ordinary Calc computed inputs, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
+| `TO_TIMESTAMP_LTZ` | Direct/literal integer epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. TINYINT/SMALLINT/INT widen losslessly to BIGINT first. Ordinary Calc computed inputs, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
 | `DATE_FORMAT`, `UNIX_TIMESTAMP(text[, format])`, `CONVERT_TZ` | Flink evaluation supports dynamic patterns and zones. The existing literal numeric-pattern DATE_FORMAT fast path for plain timestamps remains in Rust. |
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
@@ -59,7 +59,7 @@ zero nanoseconds and keeps combined input/range validity on the parent. Non-null
 children remain consistent with the existing schema, including sliced inputs and empty
 batches. No input bytes are modified and the output owns its retained Arrow buffer reference.
 This removes temporary value vectors and their copies without changing JNI or timestamp
-transport. Computed ordinary-Calc operands, other numeric types and runtime/other
+transport. Computed ordinary-Calc operands, non-integer numeric types and runtime/other
 precisions keep their existing routes. No production switch is added.
 
 The [qualification](../benchmarks/scalar-functions.md#bigint-epoch-millisecond-conversion)
@@ -74,6 +74,16 @@ when multiplied by 1000. It uses the same parent validity/two-component represen
 with a new immutable millisecond buffer and zero sub-millisecond nanos. Session zones do
 not affect the numeric conversion. The admission does not extend computed UNNEST inputs,
 numeric precision or the string/format overloads.
+
+Direct TINYINT/SMALLINT/INT columns and literals also use these kernels for precision
+0 and 3. A lossless signed Arrow cast supplies the existing BIGINT input contract;
+there is no narrowing or floating conversion, and all such values fit both released
+epoch ranges. Output remains TIMESTAMP_LTZ(3), with input NULLs retained. Both Flink
+lines widen these inputs before applying their long-based timestamp conversion.
+Computed ordinary-Calc/UNNEST inputs do not gain admission through this extension.
+The BIGINT buffer-sharing and overflow-bound rules above remain unchanged.
+The [narrow-integer qualification](../benchmarks/scalar-functions.md#narrow-integer-epoch-conversion)
+records bulk function gains alongside slower tiny batches and complete jobs.
 
 ## Native UTC LTZ calendar rounding
 

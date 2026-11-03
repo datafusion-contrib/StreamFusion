@@ -7324,3 +7324,72 @@ The original 1.18 NULL regression is not stable in the final control, but the fi
 pilot is still 6.7% slower than retained native, also with nonoverlapping ranges. The other
 controls overlap. These isolated short probes do not establish a universal unchanged-path
 speedup or absence of regressions; remaining small-operation overhead stays visible.
+
+## Narrow integer epoch conversion
+
+Direct TINYINT/SMALLINT/INT `TO_TIMESTAMP_LTZ(v,0/3)` widens signed input losslessly
+with the existing Arrow integer cast, then reuses the qualified BIGINT epoch kernel.
+The two released Flink lines use the same long-based conversion. Computed inputs,
+non-integer signatures and existing UNNEST restrictions retain their preceding routes.
+No production Rust implementation, JNI contract, timestamp schema or switch changes.
+
+The [2026-11-03 record](results/integral-epoch-2026-11-03.json) compares released
+Flink 1.18.1/2.2.1 on JDK 17.0.12, Apple M4 Pro, one thread, and release/mimalloc-linked
+artifacts. Allocator symbols are checked for both executable and JNI DSO. Stock uses
+prepared BinaryRowData; Rust uses the same signed values in prepared Arrow, with and
+without NULLs, over all three input widths, precision 0/3 and YEAR/IS NULL consumers.
+Each engine processes 131,072 rows per trial, with 16 warmups and nine measurements.
+The Rust timer includes widening, allocation, result consumption and intrinsic callbacks;
+perimeter import/export is excluded only for this prepared function comparison.
+
+The actual preceding encoder `490f458a` is compiled against the same current runtime,
+fixture and allocator. It retains a JVM evaluator. Both its independent stock control
+and the candidate's paired stock control are retained separately, avoiding an overwritten
+stock baseline. This does not replay an entire historical native library.
+
+| Flink | Bulk cells | Stock / native median | Previous / native median |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 24 | 2.313-4.193x | 6.536-61.804x |
+| 1.18.1 | 24 | 1.682-3.062x | 6.133-44.228x |
+
+All 48 1,024-row cells improve against both controls. All twelve 16-row controls
+lose to stock, with stock/native ratios 0.246-0.277x. Keep these small-batch limits:
+replacement of a JVM callback alone is not evidence of a stock-Flink speedup.
+[All trials](results/integral-epoch-2026-11-03.csv.gz) include warmups, checksums,
+paired/independent stock and prior evaluator measurements.
+
+Complete jobs use the existing INT row source and blackhole sink, one million rows,
+UTC, two warmups and five measurements per engine with alternating order. Planning,
+startup, production JNI and both transposes remain timed. Candidates require consumed
+NativeCalc input and empty evaluators; previous controls require the generated route.
+Seconds, median, for the same YEAR/IS NULL consumers:
+
+| Flink | Unit / consumer | Paired stock | Native | Independent stock | Previous evaluator |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | 0 / YEAR | 0.168406 | 0.174265 | 0.182519 | 0.217596 |
+| 2.2.1 | 0 / NULL | 0.180299 | 0.192963 | 0.177445 | 0.218229 |
+| 2.2.1 | 3 / YEAR | 0.169664 | 0.175953 | 0.171438 | 0.206674 |
+| 2.2.1 | 3 / NULL | 0.184774 | 0.197030 | 0.183020 | 0.227416 |
+| 1.18.1 | 0 / YEAR | 0.169060 | 0.178559 | 0.177995 | 0.204989 |
+| 1.18.1 | 0 / NULL | 0.168649 | 0.190953 | 0.168474 | 0.216864 |
+| 1.18.1 | 3 / YEAR | 0.172733 | 0.180505 | 0.166589 | 0.205832 |
+| 1.18.1 | 3 / NULL | 0.173585 | 0.194221 | 0.173924 | 0.223086 |
+
+All eight complete native medians remain slower than stock (native/stock elapsed
+1.035-1.132), while improving over prior generated execution (native/prior elapsed
+0.801-0.884). The JSON retains every trial and range. These measurements qualify the
+bulk function path; they do not establish complete-job acceleration or timestamp
+serialization throughput.
+
+A before-change runtime control matches values but fails six narrow-integer pure-route
+assertions with `jvm=[TO_TIMESTAMP_LTZ]`; BIGINT and computed controls pass. The final
+44 focused JVM invocations pass on both releases and JDK 11/17, targeting Java release
+11, with no skips. Full 5,003-row maps compare values, schema, NULLs and unique IDs;
+UTC/regional sessions, signed extrema, both precisions, CASE and all-filtered batches
+have runtime work/empty-evaluator assertions. Computed operands retain explicit
+generated-route controls. The 892-test Rust core result uses the unchanged production
+Rust implementation; the new example metadata checks actual BIGINT result types even
+when input is narrow. Full hosted CI is separate.
+Sixteen freshly executed, unchanged released `TemporalTypesTest` stock-oracle
+invocations pass separately across both Flink lines and JDKs. They confirm released
+behavior and do not count as native-runtime coverage.
