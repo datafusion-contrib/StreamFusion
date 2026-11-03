@@ -82,27 +82,49 @@ class FlinkBinaryCharacterCastSqlHarnessTest {
     BuiltinFunctionParity.assertParity(() -> environment(legacy),
         "SELECT CAST(CASE WHEN id>=0 THEN b ELSE " + failed + " END AS STRING) FROM src");
     BuiltinFunctionParity.assertParity(() -> environment(legacy),
+        "SELECT CAST(CASE WHEN id>=0 THEN b ELSE " + failed + " END AS VARCHAR(1)), "
+            + "CAST(CASE WHEN id>=0 THEN b ELSE " + failed + " END AS CHAR(3)) FROM src");
+    BuiltinFunctionParity.assertParity(() -> environment(legacy),
         "SELECT TRY_CAST(" + failed + " AS STRING) FROM src WHERE id<0");
+    BuiltinFunctionParity.assertParity(() -> environment(legacy),
+        "SELECT CAST(" + failed + " AS CHAR(2)), CAST(" + failed
+            + " AS VARCHAR(1)) FROM src WHERE id<0");
   }
 
   @Test
   void tryCastDoesNotCatchOperandEvaluationFailures() {
-    var comparison = NativeFailureParity.run(() -> environment(false),
-        "SELECT TRY_CAST(ENCODE(CAST(1/(id-id) AS STRING),'UTF-8') AS STRING) FROM src");
-    assertEquals(NativeFailureParity.Route.NATIVE, comparison.nativeRun().route());
-    for (var result : List.of(comparison.host(), comparison.nativeRun())) {
-      assertEquals(NativeFailureParity.Phase.ROW_EVALUATION, result.phase());
-      assertTrue(result.rootCause().getMessage().toLowerCase(java.util.Locale.ROOT).contains("zero"),
-          result.toString());
+    for (String target : List.of("STRING")) {
+      var comparison = NativeFailureParity.run(() -> environment(false),
+          "SELECT TRY_CAST(ENCODE(CAST(1/(id-id) AS STRING),'UTF-8') AS " + target + ") FROM src");
+      assertEquals(NativeFailureParity.Route.NATIVE, comparison.nativeRun().route());
+      for (var result : List.of(comparison.host(), comparison.nativeRun())) {
+        assertEquals(NativeFailureParity.Phase.ROW_EVALUATION, result.phase());
+        assertTrue(result.rootCause().getMessage().toLowerCase(java.util.Locale.ROOT).contains("zero"),
+            result.toString());
+      }
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void boundedTargetsKeepUtf16TruncationAndPaddingWhileLegacyIgnoresLength(boolean legacy)
+      throws Exception {
+    BuiltinFunctionParity.assertParity(() -> environment(legacy),
+        "SELECT id, CAST(b AS CHAR(1)), CAST(b AS VARCHAR(1)), CAST(b AS CHAR(8)), "
+            + "CAST(b AS VARCHAR(2)), CAST(b AS VARCHAR(5)), "
+            + "CAST(CAST(b AS BINARY(3)) AS CHAR(2)) FROM src");
+  }
+
   @Test
-  void modernBoundedTargetsKeepUtf16TruncationWhileLegacyIgnoresLength() throws Exception {
+  void boundedConsumersObserveTheOriginalJavaString() throws Exception {
+    // A split pair is still a lone surrogate to LIKE, comparisons and nested casts.
+    BuiltinFunctionParity.assertParity(() -> environment(false),
+        "SELECT id, CHAR_LENGTH(CAST(b AS VARCHAR(1))), CAST(b AS CHAR(1)) LIKE '%?%', "
+            + "CAST(CAST(b AS VARCHAR(1)) AS STRING), "
+            + "CASE WHEN id > 3 THEN CAST(b AS CHAR(3)) ELSE 'x' END FROM src "
+            + "WHERE CAST(b AS VARCHAR(1)) <> '?'");
     NativeParity.assertFallback(() -> environment(false),
-        "SELECT CAST(b AS CHAR(1)), CAST(b AS VARCHAR(1)), TRY_CAST(b AS CHAR(8)) FROM src");
-    BuiltinFunctionParity.assertParity(() -> environment(true),
-        "SELECT CAST(b AS CHAR(1)), CAST(b AS VARCHAR(1)), TRY_CAST(b AS CHAR(8)) FROM src");
+        "SELECT CAST(b AS VARCHAR(1)) FROM src UNION ALL SELECT CAST(b AS VARCHAR(1)) FROM src");
   }
 
   @Test
@@ -132,7 +154,8 @@ class FlinkBinaryCharacterCastSqlHarnessTest {
           input, ExternalTypeInfo.<Row>of(inputType)),
           org.apache.flink.table.api.Schema.newBuilder().fromRowDataType(inputType).build());
       var scan = NativePlanner.install(table);
-      String sql = "SELECT CAST(b AS STRING),TRY_CAST(b AS STRING) FROM src";
+      String sql = "SELECT CAST(b AS STRING),TRY_CAST(b AS STRING),"
+          + "CAST(b AS VARCHAR(1)),CAST(b AS CHAR(3)) FROM src";
       assertTrue(table.explainSql(sql).contains("NativeCalc"));
       assertFalse(scan.functionExecutions().isEmpty());
       assertTrue(scan.functionExecutions().stream().allMatch(route -> route.contains("jvm=[]")),
@@ -142,12 +165,21 @@ class FlinkBinaryCharacterCastSqlHarnessTest {
         while (output.hasNext()) {
           byte[] b = (byte[]) input.get(count++).getField(1);
           String expected = b == null ? null : new String(b, StandardCharsets.UTF_8);
-          assertEquals(Row.of(expected, expected), output.next());
+          assertEquals(Row.of(expected, expected, bounded(expected, 1, false),
+              bounded(expected, 3, true)), output.next());
         }
       }
       assertEquals(input.size(), count);
       assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
       RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
     }
+  }
+
+  private static String bounded(String value, int length, boolean pad) {
+    if (value == null) return null;
+    String text = value.length() > length ? value.substring(0, length) : value;
+    if (pad) text = String.format("%-" + length + "s", text);
+    // The native result is the UTF-8 representation Flink writes for the Java String.
+    return new String(text.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
   }
 }

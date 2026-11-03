@@ -15,10 +15,18 @@ bounded stack buffer, reducing three-byte builder writes. Decoding writes into
 the final Arrow value buffer, avoiding a temporary String and a second copy.
 Other charsets retain their existing conversion paths.
 
+Modern bounded binary-to-character casts also reuse decoded buffers when every row
+already satisfies the target width. Otherwise they write final values and offsets
+directly, keeping the input validity. VARCHAR truncation checks only the required
+ASCII prefix before falling back to UTF-16 unit counting; CHAR additionally pads
+with spaces. A cut through a supplementary pair writes the JDK's `?` replacement
+for the remaining high surrogate. Consumers that need the original Java String
+keep the generated expression, as documented on the Calc coverage page.
+
 This follows Comet's valid-UTF-8 borrowing, explicit JDK replacement rules and
 direct Arrow-builder writing structure. Flink's released results define the
 contract. No JNI interface, dependency or inter-operator string representation
-changes. The Calc coverage page documents retained bounded-cast and STRING
+changes. The Calc coverage page documents retained STRING
 identity restrictions in [issue #493](https://github.com/datafusion-contrib/StreamFusion/issues/493).
 
 Correctness checks compare complete output against released generated casts,

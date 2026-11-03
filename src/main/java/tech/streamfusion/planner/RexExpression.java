@@ -1943,7 +1943,8 @@ final class RexExpression {
             operand ->
                 containsDecimalUdf(operand)
                     || JsonStringIdentity.containsSensitiveString(operand)
-                    || containsCacheSensitiveString(operand))) {
+                    || containsCacheSensitiveString(operand)
+                    || containsModernBoundedBinaryCharacterCast(operand))) {
       return emitHostExpression(call, true);
     }
     if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null) {
@@ -3916,6 +3917,15 @@ final class RexExpression {
       // Released Flink decodes with new String(bytes, UTF_8), including JDK error grouping.
       return emitBuiltinCall(call, 237);
     }
+    if (modernBoundedBinaryCharacterCast(call)) {
+      // UTF-16 truncation can split a pair; consumers of that Java String stay in Flink.
+      add(KIND_CALL, 237, 2);
+      if (!emit(call.getOperands().get(0))) return false;
+      add(KIND_LIT_INT, longs.size(), 0);
+      longs.add((long) (targetType == SqlTypeName.CHAR
+          ? -resultType.getPrecision() : resultType.getPrecision()));
+      return true;
+    }
     if (source == SqlTypeName.DECIMAL
         && SqlTypeFamily.CHARACTER.contains(resultType)
         && (targetType == SqlTypeName.VARCHAR && resultType.getPrecision() == Integer.MAX_VALUE
@@ -5270,7 +5280,9 @@ final class RexExpression {
     }
     boolean originalStrings =
         fuseConsumers
-            && (containsCacheSensitiveString(call) || JsonStringIdentity.containsSensitiveString(call))
+            && (containsCacheSensitiveString(call)
+                || JsonStringIdentity.containsSensitiveString(call)
+                || containsModernBoundedBinaryCharacterCast(call))
             && codes.contains(tech.streamfusion.operator.NativeUdf.TYPE_STRING);
     if (originalStrings) {
       codes.replaceAll(
@@ -6553,6 +6565,30 @@ final class RexExpression {
     }
     add(KIND_CALL, op, 1);
     return emit(call.getOperands().get(0));
+  }
+
+  private boolean modernBoundedBinaryCharacterCast(RexCall call) {
+    RelDataType type = call.getType();
+    return call.getKind() == SqlKind.CAST
+        && call.getOperator()
+            != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST
+        && Boolean.FALSE.equals(legacyCastBehaviour)
+        && call.getOperands().size() == 1
+        && SqlTypeFamily.BINARY.contains(call.getOperands().get(0).getType())
+        && (type.getSqlTypeName() == SqlTypeName.CHAR
+            || type.getSqlTypeName() == SqlTypeName.VARCHAR
+                && type.getPrecision() != Integer.MAX_VALUE);
+  }
+
+  private boolean containsModernBoundedBinaryCharacterCast(RexNode node) {
+    if (node instanceof RexFieldAccess) {
+      return containsModernBoundedBinaryCharacterCast(
+          ((RexFieldAccess) node).getReferenceExpr());
+    }
+    return node instanceof RexCall
+        && (modernBoundedBinaryCharacterCast((RexCall) node)
+            || ((RexCall) node).getOperands().stream()
+                .anyMatch(this::containsModernBoundedBinaryCharacterCast));
   }
 
   private static boolean containsCacheSensitiveString(RexNode node) {

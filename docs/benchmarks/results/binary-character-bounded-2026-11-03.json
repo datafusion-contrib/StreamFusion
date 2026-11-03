@@ -1,0 +1,1340 @@
+{
+  "date": "2026-11-03",
+  "base": "5d628b6a053442ed2d186d882eff57a7093c1b3e",
+  "prior_encoder": "5d628b6a053442ed2d186d882eff57a7093c1b3e",
+  "comparison": "Actual preceding encoder compiled independently on the same current runtime, fixture and allocator; not a full historical DSO replay.",
+  "build": "release --no-default-features --features mimalloc",
+  "allocators": {
+    "prepared_executable": "mimalloc, Mach-O malloc aliases confirmed",
+    "jni_library": "mimalloc, Mach-O malloc aliases confirmed"
+  },
+  "jdk": "17.0.12",
+  "platform": "Apple M4 Pro, macOS arm64, one thread",
+  "method": {
+    "rows_per_trial": 131072,
+    "warmups": 16,
+    "trials": 9,
+    "timer": "Rust on prepared Arrow after import and before export; stock on equivalent prepared RowData; result consumption included",
+    "pipeline": "One million row source to blackhole; JNI, planning, startup and both transposes timed; two warmups, five measured trials, alternating engine order"
+  },
+  "prepared_summary": {
+    "22-16": {
+      "cells": 4,
+      "ratios": {
+        "flink": [
+          0.7047754453458225,
+          1.4630946473258015
+        ],
+        "previous": [
+          0.6492013046750857,
+          1.4744889479527354
+        ]
+      },
+      "slower_than_stock": 2
+    },
+    "22-1024": {
+      "cells": 12,
+      "ratios": {
+        "flink": [
+          1.1072082341049174,
+          5.305567631892107
+        ],
+        "previous": [
+          1.1113949361087805,
+          4.949889726299087
+        ]
+      },
+      "slower_than_stock": 0
+    },
+    "118-16": {
+      "cells": 4,
+      "ratios": {
+        "flink": [
+          0.742164075813173,
+          1.3255748307148854
+        ],
+        "previous": [
+          0.6456172598515553,
+          1.6014442739190453
+        ]
+      },
+      "slower_than_stock": 2
+    },
+    "118-1024": {
+      "cells": 12,
+      "ratios": {
+        "flink": [
+          1.1053810963798407,
+          6.428611398963731
+        ],
+        "previous": [
+          1.1944985518779552,
+          5.524321243523316
+        ]
+      },
+      "slower_than_stock": 0
+    }
+  },
+  "prepared_cells": {
+    "22-0": {
+      "config": [
+        "VARCHAR(4)",
+        8,
+        0,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 5.000114440917969,
+          "min": 4.8243255615234375,
+          "max": 5.347572326660156
+        },
+        "flink": {
+          "median": 17.22748565673828,
+          "min": 16.37109375,
+          "max": 41.76616668701172
+        },
+        "previous": {
+          "median": 18.14588165283203,
+          "min": 16.881301879882812,
+          "max": 34.603118896484375
+        }
+      }
+    },
+    "22-1": {
+      "config": [
+        "VARCHAR(4)",
+        64,
+        0,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 5.3653717041015625,
+          "min": 4.9908905029296875,
+          "max": 5.7834014892578125
+        },
+        "flink": {
+          "median": 22.59986114501953,
+          "min": 20.93950653076172,
+          "max": 35.63880920410156
+        },
+        "previous": {
+          "median": 20.381607055664062,
+          "min": 19.81798553466797,
+          "max": 34.659706115722656
+        }
+      }
+    },
+    "22-2": {
+      "config": [
+        "VARCHAR(4)",
+        64,
+        1,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 29.464080810546875,
+          "min": 26.935264587402344,
+          "max": 31.62225341796875
+        },
+        "flink": {
+          "median": 60.01409149169922,
+          "min": 56.804656982421875,
+          "max": 74.64281463623047
+        },
+        "previous": {
+          "median": 47.04761505126953,
+          "min": 46.193763732910156,
+          "max": 64.06307220458984
+        }
+      }
+    },
+    "22-3": {
+      "config": [
+        "VARCHAR(4)",
+        64,
+        4,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 62.56993103027344,
+          "min": 60.22357940673828,
+          "max": 63.72865295410156
+        },
+        "flink": {
+          "median": 75.8810043334961,
+          "min": 72.93065643310547,
+          "max": 91.14742279052734
+        },
+        "previous": {
+          "median": 79.05801391601562,
+          "min": 76.38263702392578,
+          "max": 93.23851776123047
+        }
+      }
+    },
+    "22-4": {
+      "config": [
+        "VARCHAR(64)",
+        8,
+        0,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 2.4042129516601562,
+          "min": 2.2487640380859375,
+          "max": 2.4871826171875
+        },
+        "flink": {
+          "median": 12.755714416503906,
+          "min": 11.441864013671875,
+          "max": 17.282806396484375
+        },
+        "previous": {
+          "median": 11.900588989257812,
+          "min": 11.335685729980469,
+          "max": 14.430999755859375
+        }
+      }
+    },
+    "22-5": {
+      "config": [
+        "VARCHAR(64)",
+        64,
+        1,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 20.97765350341797,
+          "min": 20.152725219726562,
+          "max": 21.766342163085938
+        },
+        "flink": {
+          "median": 43.48150634765625,
+          "min": 42.244590759277344,
+          "max": 59.26513671875
+        },
+        "previous": {
+          "median": 52.43682861328125,
+          "min": 49.703277587890625,
+          "max": 68.80696105957031
+        }
+      }
+    },
+    "22-6": {
+      "config": [
+        "VARCHAR(64)",
+        64,
+        2,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 20.61144256591797,
+          "min": 18.705047607421875,
+          "max": 21.3743896484375
+        },
+        "flink": {
+          "median": 81.14305877685547,
+          "min": 70.45110321044922,
+          "max": 90.76055145263672
+        },
+        "previous": {
+          "median": 71.81867218017578,
+          "min": 71.1997299194336,
+          "max": 87.0072021484375
+        }
+      }
+    },
+    "22-7": {
+      "config": [
+        "CHAR(16)",
+        8,
+        0,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 7.979072570800781,
+          "min": 7.6869354248046875,
+          "max": 8.516632080078125
+        },
+        "flink": {
+          "median": 23.36089324951172,
+          "min": 23.003578186035156,
+          "max": 37.74738311767578
+        },
+        "previous": {
+          "median": 25.251388549804688,
+          "min": 23.493133544921875,
+          "max": 38.193382263183594
+        }
+      }
+    },
+    "22-8": {
+      "config": [
+        "CHAR(16)",
+        64,
+        0,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 5.901969909667969,
+          "min": 5.799293518066406,
+          "max": 6.653785705566406
+        },
+        "flink": {
+          "median": 22.63800048828125,
+          "min": 22.00031280517578,
+          "max": 48.83003234863281
+        },
+        "previous": {
+          "median": 23.185096740722656,
+          "min": 22.4320068359375,
+          "max": 39.101600646972656
+        }
+      }
+    },
+    "22-9": {
+      "config": [
+        "CHAR(16)",
+        64,
+        1,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 38.849510192871094,
+          "min": 33.86274719238281,
+          "max": 39.89601135253906
+        },
+        "flink": {
+          "median": 57.82286834716797,
+          "min": 55.73240661621094,
+          "max": 74.73023986816406
+        },
+        "previous": {
+          "median": 54.91606903076172,
+          "min": 54.073333740234375,
+          "max": 78.22164154052734
+        }
+      }
+    },
+    "22-10": {
+      "config": [
+        "CHAR(16)",
+        64,
+        4,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 71.06939697265625,
+          "min": 67.5516128540039,
+          "max": 72.05549621582031
+        },
+        "flink": {
+          "median": 78.6886215209961,
+          "min": 77.94634246826172,
+          "max": 95.81216430664062
+        },
+        "previous": {
+          "median": 78.98616790771484,
+          "min": 74.4002685546875,
+          "max": 95.16525268554688
+        }
+      }
+    },
+    "22-11": {
+      "config": [
+        "CHAR(16)",
+        16,
+        0,
+        true,
+        false,
+        false,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 3.3038406372070312,
+          "min": 3.13250732421875,
+          "max": 3.8057937622070312
+        },
+        "flink": {
+          "median": 5.9582366943359375,
+          "min": 5.806602478027344,
+          "max": 31.33106231689453
+        },
+        "previous": {
+          "median": 6.492927551269531,
+          "min": 6.411231994628906,
+          "max": 6.6051483154296875
+        }
+      }
+    },
+    "22-12": {
+      "config": [
+        "VARCHAR(4)",
+        8,
+        0,
+        false,
+        true,
+        true,
+        16
+      ],
+      "engines": {
+        "native": {
+          "median": 22.806167602539062,
+          "min": 22.139549255371094,
+          "max": 23.01343536376953
+        },
+        "flink": {
+          "median": 16.073226928710938,
+          "min": 15.308380126953125,
+          "max": 42.153358459472656
+        },
+        "previous": {
+          "median": 14.805793762207031,
+          "min": 14.310523986816406,
+          "max": 31.555809020996094
+        }
+      }
+    },
+    "22-13": {
+      "config": [
+        "VARCHAR(4)",
+        64,
+        1,
+        false,
+        true,
+        true,
+        16
+      ],
+      "engines": {
+        "native": {
+          "median": 47.72822570800781,
+          "min": 44.652618408203125,
+          "max": 52.51439666748047
+        },
+        "flink": {
+          "median": 56.33958435058594,
+          "min": 53.290367126464844,
+          "max": 70.87071990966797
+        },
+        "previous": {
+          "median": 43.31398010253906,
+          "min": 42.99799346923828,
+          "max": 67.75792694091797
+        }
+      }
+    },
+    "22-14": {
+      "config": [
+        "VARCHAR(64)",
+        64,
+        2,
+        false,
+        true,
+        true,
+        16
+      ],
+      "engines": {
+        "native": {
+          "median": 45.30779266357422,
+          "min": 44.93681335449219,
+          "max": 46.637535095214844
+        },
+        "flink": {
+          "median": 66.28958892822266,
+          "min": 65.06475067138672,
+          "max": 80.8426513671875
+        },
+        "previous": {
+          "median": 66.80583953857422,
+          "min": 66.06165313720703,
+          "max": 80.9348373413086
+        }
+      }
+    },
+    "22-15": {
+      "config": [
+        "CHAR(16)",
+        8,
+        0,
+        false,
+        true,
+        true,
+        16
+      ],
+      "engines": {
+        "native": {
+          "median": 26.60401153564453,
+          "min": 25.373138427734375,
+          "max": 26.77440643310547
+        },
+        "flink": {
+          "median": 20.95317840576172,
+          "min": 20.576156616210938,
+          "max": 35.831764221191406
+        },
+        "previous": {
+          "median": 20.80535888671875,
+          "min": 20.63909912109375,
+          "max": 36.638893127441406
+        }
+      }
+    },
+    "118-0": {
+      "config": [
+        "VARCHAR(4)",
+        8,
+        0,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 4.919685363769531,
+          "min": 4.476226806640625,
+          "max": 5.998298645019531
+        },
+        "flink": {
+          "median": 17.609596252441406,
+          "min": 16.928672790527344,
+          "max": 36.9583740234375
+        },
+        "previous": {
+          "median": 17.86041259765625,
+          "min": 16.91595458984375,
+          "max": 35.20933532714844
+        }
+      }
+    },
+    "118-1": {
+      "config": [
+        "VARCHAR(4)",
+        64,
+        0,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 5.892433166503906,
+          "min": 5.5974273681640625,
+          "max": 6.002105712890625
+        },
+        "flink": {
+          "median": 22.367156982421875,
+          "min": 20.85399627685547,
+          "max": 26.69969940185547
+        },
+        "previous": {
+          "median": 21.11339569091797,
+          "min": 20.002044677734375,
+          "max": 38.636207580566406
+        }
+      }
+    },
+    "118-2": {
+      "config": [
+        "VARCHAR(4)",
+        64,
+        1,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 28.800643920898438,
+          "min": 28.034210205078125,
+          "max": 29.531478881835938
+        },
+        "flink": {
+          "median": 55.00602722167969,
+          "min": 54.10480499267578,
+          "max": 71.8698501586914
+        },
+        "previous": {
+          "median": 56.08113098144531,
+          "min": 55.00920867919922,
+          "max": 74.85675811767578
+        }
+      }
+    },
+    "118-3": {
+      "config": [
+        "VARCHAR(4)",
+        64,
+        4,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 64.02301788330078,
+          "min": 61.65122985839844,
+          "max": 66.66532897949219
+        },
+        "flink": {
+          "median": 80.57022094726562,
+          "min": 78.46832275390625,
+          "max": 97.25729370117188
+        },
+        "previous": {
+          "median": 83.01766204833984,
+          "min": 79.46205139160156,
+          "max": 99.6983871459961
+        }
+      }
+    },
+    "118-4": {
+      "config": [
+        "VARCHAR(64)",
+        8,
+        0,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 2.208709716796875,
+          "min": 2.1292343139648438,
+          "max": 2.3800582885742188
+        },
+        "flink": {
+          "median": 14.198936462402344,
+          "min": 13.741813659667969,
+          "max": 18.361412048339844
+        },
+        "previous": {
+          "median": 12.201622009277344,
+          "min": 11.665977478027344,
+          "max": 14.603294372558594
+        }
+      }
+    },
+    "118-5": {
+      "config": [
+        "VARCHAR(64)",
+        64,
+        1,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 21.972015380859375,
+          "min": 21.315574645996094,
+          "max": 22.831283569335938
+        },
+        "flink": {
+          "median": 51.774658203125,
+          "min": 50.34510040283203,
+          "max": 70.82621002197266
+        },
+        "previous": {
+          "median": 45.08622741699219,
+          "min": 43.34895324707031,
+          "max": 69.43225860595703
+        }
+      }
+    },
+    "118-6": {
+      "config": [
+        "VARCHAR(64)",
+        64,
+        2,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 20.09105682373047,
+          "min": 19.392967224121094,
+          "max": 21.383285522460938
+        },
+        "flink": {
+          "median": 74.14627075195312,
+          "min": 72.79364776611328,
+          "max": 90.09487915039062
+        },
+        "previous": {
+          "median": 73.70471954345703,
+          "min": 71.27984619140625,
+          "max": 88.56519317626953
+        }
+      }
+    },
+    "118-7": {
+      "config": [
+        "CHAR(16)",
+        8,
+        0,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 8.225120544433594,
+          "min": 8.12530517578125,
+          "max": 8.534431457519531
+        },
+        "flink": {
+          "median": 23.517608642578125,
+          "min": 23.20384979248047,
+          "max": 39.79078674316406
+        },
+        "previous": {
+          "median": 25.63445281982422,
+          "min": 23.715972900390625,
+          "max": 49.06940460205078
+        }
+      }
+    },
+    "118-8": {
+      "config": [
+        "CHAR(16)",
+        64,
+        0,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 6.291389465332031,
+          "min": 5.8460235595703125,
+          "max": 6.449378967285156
+        },
+        "flink": {
+          "median": 25.956466674804688,
+          "min": 22.91901397705078,
+          "max": 41.67779541015625
+        },
+        "previous": {
+          "median": 26.199020385742188,
+          "min": 24.31646728515625,
+          "max": 42.787872314453125
+        }
+      }
+    },
+    "118-9": {
+      "config": [
+        "CHAR(16)",
+        64,
+        1,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 37.134803771972656,
+          "min": 36.63285827636719,
+          "max": 40.28002166748047
+        },
+        "flink": {
+          "median": 70.34174346923828,
+          "min": 54.69799041748047,
+          "max": 74.27120208740234
+        },
+        "previous": {
+          "median": 71.32276153564453,
+          "min": 56.261695861816406,
+          "max": 88.56233215332031
+        }
+      }
+    },
+    "118-10": {
+      "config": [
+        "CHAR(16)",
+        64,
+        4,
+        false,
+        true,
+        true,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 70.6001968383789,
+          "min": 67.98839569091797,
+          "max": 74.1697998046875
+        },
+        "flink": {
+          "median": 78.04012298583984,
+          "min": 74.43428039550781,
+          "max": 93.70294952392578
+        },
+        "previous": {
+          "median": 84.33183288574219,
+          "min": 77.80933380126953,
+          "max": 94.91443634033203
+        }
+      }
+    },
+    "118-11": {
+      "config": [
+        "CHAR(16)",
+        16,
+        0,
+        true,
+        false,
+        false,
+        1024
+      ],
+      "engines": {
+        "native": {
+          "median": 3.1890869140625,
+          "min": 2.9064788818359375,
+          "max": 3.3597946166992188
+        },
+        "flink": {
+          "median": 6.1794891357421875,
+          "min": 6.0100555419921875,
+          "max": 7.727935791015625
+        },
+        "previous": {
+          "median": 6.1969757080078125,
+          "min": 6.119728088378906,
+          "max": 30.666351318359375
+        }
+      }
+    },
+    "118-12": {
+      "config": [
+        "VARCHAR(4)",
+        8,
+        0,
+        false,
+        true,
+        true,
+        16
+      ],
+      "engines": {
+        "native": {
+          "median": 23.50934600830078,
+          "min": 22.394821166992188,
+          "max": 23.774147033691406
+        },
+        "flink": {
+          "median": 17.447792053222656,
+          "min": 15.816047668457031,
+          "max": 46.535491943359375
+        },
+        "previous": {
+          "median": 15.17803955078125,
+          "min": 14.711692810058594,
+          "max": 39.32508087158203
+        }
+      }
+    },
+    "118-13": {
+      "config": [
+        "VARCHAR(4)",
+        64,
+        1,
+        false,
+        true,
+        true,
+        16
+      ],
+      "engines": {
+        "native": {
+          "median": 47.397613525390625,
+          "min": 45.909881591796875,
+          "max": 47.77082061767578
+        },
+        "flink": {
+          "median": 53.72587585449219,
+          "min": 51.824249267578125,
+          "max": 72.10890197753906
+        },
+        "previous": {
+          "median": 54.04344940185547,
+          "min": 50.52947998046875,
+          "max": 87.0676040649414
+        }
+      }
+    },
+    "118-14": {
+      "config": [
+        "VARCHAR(64)",
+        64,
+        2,
+        false,
+        true,
+        true,
+        16
+      ],
+      "engines": {
+        "native": {
+          "median": 46.271636962890625,
+          "min": 45.57323455810547,
+          "max": 47.158241271972656
+        },
+        "flink": {
+          "median": 61.336517333984375,
+          "min": 58.785118103027344,
+          "max": 76.70084381103516
+        },
+        "previous": {
+          "median": 74.10144805908203,
+          "min": 67.71087646484375,
+          "max": 85.5706558227539
+        }
+      }
+    },
+    "118-15": {
+      "config": [
+        "CHAR(16)",
+        8,
+        0,
+        false,
+        true,
+        true,
+        16
+      ],
+      "engines": {
+        "native": {
+          "median": 26.311874389648438,
+          "min": 25.838851928710938,
+          "max": 27.00933074951172
+        },
+        "flink": {
+          "median": 21.503448486328125,
+          "min": 21.14232635498047,
+          "max": 36.604248046875
+        },
+        "previous": {
+          "median": 21.907806396484375,
+          "min": 21.272979736328125,
+          "max": 37.548065185546875
+        }
+      }
+    }
+  },
+  "pipeline": {
+    "22-VARCHAR(16)-False": {
+      "trials": {
+        "stock": [
+          0.236396833,
+          0.238669417,
+          0.234476292,
+          0.220823875,
+          0.230469292
+        ],
+        "native": [
+          0.2090635,
+          0.214827417,
+          0.208441833,
+          0.212556917,
+          0.211839375
+        ]
+      },
+      "medians": {
+        "stock": 0.234476292,
+        "native": 0.211839375
+      }
+    },
+    "22-VARCHAR(16)-True": {
+      "trials": {
+        "stock": [
+          0.20932075,
+          0.211961458,
+          0.214316959,
+          0.211336458,
+          0.205932958
+        ],
+        "previous": [
+          0.2404455,
+          0.213189542,
+          0.211555875,
+          0.214947375,
+          0.203979042
+        ]
+      },
+      "medians": {
+        "stock": 0.211336458,
+        "previous": 0.213189542
+      }
+    },
+    "22-CHAR(16)-False": {
+      "trials": {
+        "stock": [
+          0.235537833,
+          0.22752725,
+          0.246738333,
+          0.226280583,
+          0.231993875
+        ],
+        "native": [
+          0.211826625,
+          0.209201958,
+          0.206719875,
+          0.208188625,
+          0.210512167
+        ]
+      },
+      "medians": {
+        "stock": 0.231993875,
+        "native": 0.209201958
+      }
+    },
+    "22-CHAR(16)-True": {
+      "trials": {
+        "stock": [
+          0.239623791,
+          0.211136083,
+          0.258005334,
+          0.216905583,
+          0.21520375
+        ],
+        "previous": [
+          0.213609958,
+          0.214071208,
+          0.213282708,
+          0.21891425,
+          0.214052708
+        ]
+      },
+      "medians": {
+        "stock": 0.216905583,
+        "previous": 0.214052708
+      }
+    },
+    "118-VARCHAR(16)-False": {
+      "trials": {
+        "stock": [
+          0.266499709,
+          0.292407125,
+          0.240883666,
+          0.247201792,
+          0.243918708
+        ],
+        "native": [
+          0.210752375,
+          0.214127625,
+          0.207490375,
+          0.20946675,
+          0.217114292
+        ]
+      },
+      "medians": {
+        "stock": 0.247201792,
+        "native": 0.210752375
+      }
+    },
+    "118-VARCHAR(16)-True": {
+      "trials": {
+        "stock": [
+          0.221145917,
+          0.211955166,
+          0.20131875,
+          0.211415,
+          0.222237125
+        ],
+        "previous": [
+          0.20926,
+          0.207582208,
+          0.211970708,
+          0.217575125,
+          0.197877042
+        ]
+      },
+      "medians": {
+        "stock": 0.211955166,
+        "previous": 0.20926
+      }
+    },
+    "118-CHAR(16)-False": {
+      "trials": {
+        "stock": [
+          0.237489083,
+          0.227014,
+          0.233628709,
+          0.246525917,
+          0.232729958
+        ],
+        "native": [
+          0.208224834,
+          0.207525625,
+          0.208820875,
+          0.210097833,
+          0.208618667
+        ]
+      },
+      "medians": {
+        "stock": 0.233628709,
+        "native": 0.208618667
+      }
+    },
+    "118-CHAR(16)-True": {
+      "trials": {
+        "stock": [
+          0.222015542,
+          0.20372175,
+          0.205847542,
+          0.2021005,
+          0.207579125
+        ],
+        "previous": [
+          0.209841292,
+          0.212531334,
+          0.214542125,
+          0.196681,
+          0.208889958
+        ]
+      },
+      "medians": {
+        "stock": 0.205847542,
+        "previous": 0.209841292
+      }
+    }
+  },
+  "validation": {
+    "22-11": {
+      "exit": 0,
+      "results": [
+        "RESULT found=76 succeeded=76 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "22-17": {
+      "exit": 0,
+      "results": [
+        "RESULT found=76 succeeded=76 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-11": {
+      "exit": 0,
+      "results": [
+        "RESULT found=76 succeeded=70 aborted=6 skipped=0 failed=0"
+      ]
+    },
+    "118-17": {
+      "exit": 0,
+      "results": [
+        "RESULT found=76 succeeded=70 aborted=6 skipped=0 failed=0"
+      ]
+    }
+  },
+  "oracle": {
+    "22-11-STRING": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "2f100358b7f466760c9ede2d948052039f429d6fc1c12c8678fb2e7f5fecfb6d",
+      "rows": 90404
+    },
+    "22-11-VARCHAR(1)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "0a015ef0c4e3fc363b28b6becc73e8275c8726208f4cb2eca46e7f6430d938e5",
+      "rows": 90404
+    },
+    "22-11-VARCHAR(2)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "6024ca8161453881523515038ddf3277dd85c6b499719695def396f8866258f5",
+      "rows": 90404
+    },
+    "22-11-VARCHAR(5)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "ad1324953598e25eb2f18a5b0a325bdb8635706b9dd55ddc0877524ab40cc238",
+      "rows": 90404
+    },
+    "22-11-CHAR(1)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "a0aeaa7a8ba3b72013ec43e82c3315341276f49ffe80ce7a7cf975b48c52e6d4",
+      "rows": 90404
+    },
+    "22-11-CHAR(3)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "5e8d2ca083a276cb36d7e2bd05a44883ebe45e87e148ffa357a7eec4c1fbf56f",
+      "rows": 90404
+    },
+    "22-11-CHAR(8)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "66dc17ebd29be6d7c84246f9ca04e46eee641afb73139af000c30a1cb33a835c",
+      "rows": 90404
+    },
+    "22-17-STRING": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "2f100358b7f466760c9ede2d948052039f429d6fc1c12c8678fb2e7f5fecfb6d",
+      "rows": 90404
+    },
+    "22-17-VARCHAR(1)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "0a015ef0c4e3fc363b28b6becc73e8275c8726208f4cb2eca46e7f6430d938e5",
+      "rows": 90404
+    },
+    "22-17-VARCHAR(2)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "6024ca8161453881523515038ddf3277dd85c6b499719695def396f8866258f5",
+      "rows": 90404
+    },
+    "22-17-VARCHAR(5)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "ad1324953598e25eb2f18a5b0a325bdb8635706b9dd55ddc0877524ab40cc238",
+      "rows": 90404
+    },
+    "22-17-CHAR(1)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "a0aeaa7a8ba3b72013ec43e82c3315341276f49ffe80ce7a7cf975b48c52e6d4",
+      "rows": 90404
+    },
+    "22-17-CHAR(3)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "5e8d2ca083a276cb36d7e2bd05a44883ebe45e87e148ffa357a7eec4c1fbf56f",
+      "rows": 90404
+    },
+    "22-17-CHAR(8)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "66dc17ebd29be6d7c84246f9ca04e46eee641afb73139af000c30a1cb33a835c",
+      "rows": 90404
+    },
+    "118-11-STRING": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "2f100358b7f466760c9ede2d948052039f429d6fc1c12c8678fb2e7f5fecfb6d",
+      "rows": 90404
+    },
+    "118-11-VARCHAR(1)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "0a015ef0c4e3fc363b28b6becc73e8275c8726208f4cb2eca46e7f6430d938e5",
+      "rows": 90404
+    },
+    "118-11-VARCHAR(2)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "6024ca8161453881523515038ddf3277dd85c6b499719695def396f8866258f5",
+      "rows": 90404
+    },
+    "118-11-VARCHAR(5)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "ad1324953598e25eb2f18a5b0a325bdb8635706b9dd55ddc0877524ab40cc238",
+      "rows": 90404
+    },
+    "118-11-CHAR(1)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "a0aeaa7a8ba3b72013ec43e82c3315341276f49ffe80ce7a7cf975b48c52e6d4",
+      "rows": 90404
+    },
+    "118-11-CHAR(3)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "5e8d2ca083a276cb36d7e2bd05a44883ebe45e87e148ffa357a7eec4c1fbf56f",
+      "rows": 90404
+    },
+    "118-11-CHAR(8)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "66dc17ebd29be6d7c84246f9ca04e46eee641afb73139af000c30a1cb33a835c",
+      "rows": 90404
+    },
+    "118-17-STRING": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "2f100358b7f466760c9ede2d948052039f429d6fc1c12c8678fb2e7f5fecfb6d",
+      "rows": 90404
+    },
+    "118-17-VARCHAR(1)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "0a015ef0c4e3fc363b28b6becc73e8275c8726208f4cb2eca46e7f6430d938e5",
+      "rows": 90404
+    },
+    "118-17-VARCHAR(2)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "6024ca8161453881523515038ddf3277dd85c6b499719695def396f8866258f5",
+      "rows": 90404
+    },
+    "118-17-VARCHAR(5)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "ad1324953598e25eb2f18a5b0a325bdb8635706b9dd55ddc0877524ab40cc238",
+      "rows": 90404
+    },
+    "118-17-CHAR(1)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "a0aeaa7a8ba3b72013ec43e82c3315341276f49ffe80ce7a7cf975b48c52e6d4",
+      "rows": 90404
+    },
+    "118-17-CHAR(3)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "5e8d2ca083a276cb36d7e2bd05a44883ebe45e87e148ffa357a7eec4c1fbf56f",
+      "rows": 90404
+    },
+    "118-17-CHAR(8)": {
+      "result": "binary_character oracle: 90404 values matched",
+      "sha256": "66dc17ebd29be6d7c84246f9ca04e46eee641afb73139af000c30a1cb33a835c",
+      "rows": 90404
+    }
+  },
+  "rust_tests": "892 passed, zero failures/ignores, no-default-features",
+  "limitations": [
+    "Twelve pre-existing fixed-BINARY test invocations abort under released Flink 1.18, six per JDK; all new bounded-cast tests execute.",
+    "Four of eight tiny controls lose to stock.",
+    "Complete jobs beat paired stock but previous controls drift, overlap and sometimes beat native. No universal end-to-end speedup is established."
+  ],
+  "native_sha256": "70139e93d73d665bda004faa875b30acf957de672259e1ab3f88ed614ae59afa",
+  "executable_sha256": "1164cfa683cf1d1aa9edce40df693639871a3980e824ff90b34c7f447fe52685",
+  "candidate_java_sources_sha256": {
+    "src/main/java/tech/streamfusion/planner/RexExpression.java": "1fa5b89209881a7b997b2a7c8eb22c68bfabcda35e9df06d31dcdd7ba4a002ea",
+    "src/test/java/tech/streamfusion/planner/BinaryCharacterCastEncodingTest.java": "a6b1d700a4c620afe3d7690b9633b479d7ebdbfa9bf17e3a6d904199e0849f34",
+    "src/test/java/tech/streamfusion/FlinkBinaryCharacterCastSqlHarnessTest.java": "6ef99cc7804e401bb1824054136f5965fc944144b85321ce11765744116143dd"
+  },
+  "rust_sources_sha256": {
+    "native/engine/src/flink_functions/binary_character.rs": "baccea9a6b573e61ba118e1775f1f3a5f00ba294e36cfe56b572c71bb8793d63",
+    "native/engine/src/flink_functions/lpad.rs": "6f4fe86d4792852604ce3cbbe091320f5dda3bd40344e1f0c2a62e4ce154b4a1",
+    "native/engine/examples/binary_character.rs": "1100b75f06a4d4890edae4a1d041216eb54031da59d79049c1235e7d44c3f4b4"
+  }
+}

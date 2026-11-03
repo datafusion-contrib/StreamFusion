@@ -4328,6 +4328,112 @@ Use the `flink-1.18` Maven profile for the other released line. Complete jobs us
 `BinaryCharacterPipelineBenchmark`, `SF_BENCHMARK=true` and the matching
 `sf.binary.character.previous` property/classpath pair.
 
+### Modern bounded CHAR/VARCHAR targets
+
+Modern `CAST(binary AS VARCHAR(n)/CHAR(n))` extends the same kernel with
+Flink's UTF-16 truncation and CHAR padding. The preceding encoder at `c0d1a509` rejects
+these targets, so its control verifies that rejection and measures released Flink's
+generated fallback. The prepared comparison uses released Flink 1.18.1/2.2.1 on JDK
+17.0.12, Apple M4 Pro, one thread and a release/mimalloc build, with the binary-character
+harness above: nullable inputs, GenericRowData/BinaryRowData, 16/1,024-row batches,
+131,072 rows per trial, 16 warmups and nine measurements per engine. Targets are
+VARCHAR(4), VARCHAR(64) and CHAR(16) over 8/64-byte ASCII, supplementary+CJK and
+malformed-tail content, plus 16-byte fixed BINARY. The stock consumer maps the lone
+high surrogate of a split pair to `?`, the character Flink writes for it.
+
+Selected variable-width nullable BinaryRowData inputs at 1,024 rows, ns/row median:
+
+| Flink | Target | Bytes / content | Stock | Previous fallback | Native |
+| --- | --- | --- | ---: | ---: | ---: |
+| 2.2.1 | VARCHAR(4) | 8 / ASCII | 18.42 | 18.56 | 5.10 |
+| 2.2.1 | VARCHAR(4) | 64 / supplementary+CJK | 58.09 | 62.03 | 29.79 |
+| 2.2.1 | VARCHAR(64) | 64 / ASCII | 15.02 | 14.09 | 3.48 |
+| 2.2.1 | CHAR(16) | 8 / ASCII | 23.91 | 24.79 | 8.69 |
+| 2.2.1 | CHAR(16) | 64 / supplementary+CJK | 59.35 | 57.26 | 38.37 |
+| 1.18.1 | VARCHAR(4) | 8 / supplementary+CJK | 27.20 | 27.09 | 11.94 |
+| 1.18.1 | CHAR(16) | 64 / ASCII | 25.19 | 23.85 | 5.96 |
+| 1.18.1 | CHAR(16) | 64 / supplementary+CJK | 50.34 | 56.44 | 37.36 |
+
+Across all 42 1,024-row configurations per line, stock/native median ratios are
+1.357-8.168x on Flink 2.2.1 and 1.331-6.179x on 1.18.1; previous/native ratios are
+1.370-8.457x and 1.198-7.167x. Supplementary and CJK text gains least. Sixteen-row
+batches remain a limit: 30 of 36 such configurations on Flink 2.2.1 and 32 of 36 on
+1.18.1 are slower than stock, with stock/native ratios down to 0.404x and 0.394x.
+These results do not establish acceleration for small batches.
+
+An [initial Flink 2.2.1 matrix](results/binary-character-bounded-before-opt-2026-11-02.csv.gz)
+built every bounded row through a string builder and scanned whole rows for ASCII. Seven
+of its 42 1,024-row configurations lost to stock (down to 0.818x), all truncating short
+ASCII outputs. The measured version writes values and offsets directly, reuses input
+validity and checks only the truncated prefix for ASCII. [All final trials](results/binary-character-bounded-2026-11-02.csv.gz)
+retain warmups, checksums and the target column. Before timing, the generated-expression
+oracle matches all 90,404 inputs on both lines for STRING, VARCHAR(1), VARCHAR(2),
+VARCHAR(5), CHAR(1), CHAR(3) and CHAR(8).
+
+Complete one-million-row jobs reuse the row-source pipeline above, with a bounded
+blackhole column of the same type. Candidate runs require both transposes, consumed
+NativeCalc work and no evaluator or fallback. Two warmups and five measured jobs
+alternate engine order in one JVM per target. Seconds, median [minimum-maximum]:
+
+| Flink | Target | Stock | Native |
+| --- | --- | ---: | ---: |
+| 2.2.1 | VARCHAR(16) | 0.231831 [0.229030-0.237508] | 0.207224 [0.200973-0.220357] |
+| 2.2.1 | CHAR(16) | 0.239948 [0.232398-0.260705] | 0.212151 [0.203249-0.215048] |
+| 1.18.1 | VARCHAR(16) | 0.235405 [0.223152-0.248219] | 0.211334 [0.201674-0.211897] |
+| 1.18.1 | CHAR(16) | 0.237634 [0.235295-0.243123] | 0.202265 [0.198970-0.212588] |
+
+Native medians are 10.2-14.9% lower. The previous encoder falls back to the same
+generated stock path, so these jobs have no separate previous column. They are short and
+use one stock control per target, so they do not establish sustained connector
+throughput.
+
+Reproduce with the commands above, setting `SF_BINARY_CHARACTER_TARGET`, for example
+`VARCHAR(4)` or `CHAR(16)`, for the prepared runs and oracle. The Java oracle also reads
+`-Dsf.binary.character.target`. Complete jobs pass the target with
+`-Dsf.extraJvmArgs="-Dsf.binary.character.target=CHAR(16) -Xmx2g"`.
+
+### Latest-main bounded-cast requalification (2026-11-03)
+
+The [fresh record](results/binary-character-bounded-2026-11-03.json) repeats the
+prepared comparison on canonical main `5d628b6a` with the same final kernel and
+released lines, using release/mimalloc for both the executable and JNI DSO
+(verified from their allocator symbols). The actual preceding main encoder is
+compiled independently against the current runtime and fixture. This isolates
+admission/kernel changes, not an entire historical library replay.
+
+Twelve 1,024-row configurations per line cover VARCHAR(4), VARCHAR(64), CHAR(16),
+ASCII, supplementary/CJK, malformed tails, dense arbitrary bytes, NULLs and a
+non-null fixed-BINARY GenericRowData control. Stock/native median ratios are
+1.107-5.306x on 2.2 and 1.105-6.429x on 1.18; previous/native ratios are
+1.111-4.950x and 1.194-5.524x. All 24 bulk cells improve against both controls.
+Four of eight 16-row controls lose to stock; the lowest stock/native ratio is
+0.705x. [All trials](results/binary-character-bounded-2026-11-03.csv.gz) retain
+warmups, checksums and those slower cells.
+
+Complete-job stock/native medians, seconds, with five measured jobs per engine:
+
+| Flink | Target | Paired stock | Native | Independent stock | Previous fallback |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | VARCHAR(16) | 0.234476 | 0.211839 | 0.211336 | 0.213190 |
+| 2.2.1 | CHAR(16) | 0.231994 | 0.209202 | 0.216906 | 0.214053 |
+| 1.18.1 | VARCHAR(16) | 0.247202 | 0.210752 | 0.211955 | 0.209260 |
+| 1.18.1 | CHAR(16) | 0.233629 | 0.208619 | 0.205848 | 0.209841 |
+
+All four candidate medians beat paired stock, but independent stock/fallback
+controls drift. One native median loses to previous fallback and measured ranges
+overlap. These short jobs do not establish a reliable full-job throughput win.
+The linked JSON retains all complete-job trials and configuration ranges.
+
+Fresh validation passes 292 focused JVM invocations across Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java release 11. Twelve existing fixed-BINARY controls
+abort on Flink 1.18 under their version assumptions; the bounded-cast tests all
+execute. Twenty-eight generated-expression oracle runs each match 90,404 complete
+outputs, covering seven targets across all four release/JDK pairs. The Rust core
+suite passes 892 tests without ignores. Runtime witnesses consume 5,003 rows and
+require empty evaluator descriptors plus consumed NativeCalc work; lazy branches,
+all-filtered failures, operand exceptions and represented consumers have explicit
+SQL regressions. Full hosted CI remains a separate check.
+
 ## DECIMAL to STRING TRY_CAST
 
 Direct-input `TRY_CAST(d AS STRING)` reuses the qualified native formatter above. Its

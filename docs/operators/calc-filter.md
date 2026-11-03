@@ -1338,8 +1338,15 @@ from raw `FROM_BASE64` STRING transport and never exposes malformed Arrow Utf8.
 
 The unbounded conversion has the same decoding behavior in modern and legacy cast modes.
 Legacy bounded CHAR/VARCHAR casts also use this kernel because the released rule ignores
-their length. Modern bounded targets retain fallback: their UTF-16 truncation/padding can
-produce an isolated surrogate and is not equivalent to truncating Unicode code points.
+their length. Modern bounded CAST targets apply Flink's rule to the decoded text in the same
+kernel: VARCHAR(n) keeps at most n UTF-16 units and CHAR(n) also pads with spaces. This is
+not truncation by Unicode code points; a cut through a surrogate pair writes `?`, the UTF-8
+that Flink produces for the isolated high surrogate. Rows whose UTF-8 length already fits
+VARCHAR(n), and ASCII rows of exactly n bytes for CHAR(n), share the decoded Arrow buffers.
+Inside a Calc, consumers of a modern bounded result, such as LIKE, comparisons, CASE or
+another cast, would observe the original Java String; they keep the generated Flink
+expression around the cast, which recomputes the conversion itself.
+Modern bounded TRY_CAST targets retain their preceding route.
 TRY_CAST catches conversion failures, not failures while computing its operand; binary UTF-8
 decoding itself replaces malformed input instead of throwing. CASE remains lazy and an
 empty filtered batch never evaluates the cast.
@@ -1349,8 +1356,10 @@ with the native conversion. Existing string-ordering and representation-sensitiv
 rules remain in force. A decoded STRING feeding another relational operator retains
 fallback so its original Java-backed representation cannot be lost before a comparator
 observes it; a CAST delayed until the final projection by the released optimizer does not
-cross that boundary. The remaining bounded/boundary scope is tracked in
-[#493](https://github.com/datafusion-contrib/StreamFusion/issues/493).
+cross that boundary. The remaining relational-boundary scope is tracked in
+[#493](https://github.com/datafusion-contrib/StreamFusion/issues/493). Bounded-target
+measurements, including slower 16-row batches, are in the
+[scalar benchmark record](../benchmarks/scalar-functions.md#modern-bounded-charvarchar-targets).
 
 CAST and TRY_CAST from STRING/VARCHAR/CHAR or BINARY/VARBINARY to BINARY/VARBINARY
 use a native byte-copy kernel when their operands do not require Flink's rowwise error handling.
