@@ -39,6 +39,32 @@ nonempty work from successful jobs.
 The agent records the JVM aggregate and table-function operators after successful Arrow-batch
 consumption, using the same consumed-row recorder as the other columnar operators.
 
+The unchanged Table API `OverAggregateITCase` methods containing admitted scalar JVM
+aggregates require consumed `NativeColumnarJvmOverOperator` input. Constants, shared
+instances, managed DataViews, original source failures and retention settings remain
+upstream's. Scalar-only SQL `testRowTimeUnBoundedPartitionedRowsOver` and
+`testRowTimeUnBoundedPartitionedRangeOver` additionally require consumed JVM OVER work,
+including both 2.2 unbounded implementations. Both backend invocations remain in the scopes.
+Flink 1.18's observed changelog-state setting keeps its existing explicit full fallback.
+
+The four Table API DISTINCT methods contain builtin aggregates and a direct FLOAT AVG;
+they retain the precise existing OVER fallback contract. The Table API unbounded event-time
+RANGE fixture also produces an ARRAY above its UDAFs. It retains the existing collection
+boundary: `collection value representation requires a final projection or fused consumer`
+on 1.18, regardless of changelog state, and `Calc: collection input representation is unverified
+for this columnar producer` on 2.2. The scalar-only SQL witnesses qualify the same unbounded
+frames without expanding those collection contracts. Their upstream queries are unchanged. Timer, ownership,
+scalar-type, late-row and repeated checkpoint/rescaling tests supplement these witnesses;
+plan labels alone cannot satisfy the execution contract.
+
+The event-time fixtures retain upstream's host `TimeAssigner` before the SQL input boundary,
+so their complete-job route is explicitly `mixed`, with consumed JVM OVER work mandatory.
+The route classifier continues to expose that source helper. Their scope additionally uses
+`forbidden_operators_on_native_routes` to reject a stock `KeyedProcessOperator` in admitted
+runtime graphs, proving the temporary unopened OVER transformation never becomes an edge.
+This optional graph check applies to declared native/mixed routes; explicit fallback variants
+retain their released host operator. Missing graph evidence cannot satisfy the guard.
+
 Focused MAP/MULTISET collection-aggregate fixtures additionally require released values,
 resolved types, per-key ordered changes and consumed JVM group work, including two
 nonempty checkpoint recoveries on heap/native RocksDB. They reuse the recursive

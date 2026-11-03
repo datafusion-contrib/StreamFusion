@@ -50,7 +50,7 @@ ordinary grouped function's different close behavior.
 This is correctness-verified UDF coverage under the accepted performance exception, without
 a speedup requirement. Failed cache designs and dispersed timing trials remain
 diagnostic evidence; see [GROUP BY](../docs/operators/group-by.md#jvm-aggregate-investigation).
-OVER and additional function/type contracts remain pending.
+Additional function/type contracts remain in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237); scalar time-based OVER is described below.
 
 The exact released legacy Table API aggregate wrapper is admitted alongside the bridging wrapper.
 It reaches the same generated handler, managed POJO/DataView state and grouped runtime; only
@@ -102,3 +102,33 @@ Public inputs/results stay within the verified scalar boundary. Original local/g
 monotonicity-based retraction elision and partial layouts. Logical count-bundle triggers,
 barrier/watermark drains, generated BinaryRow key layout, TTL and released lifecycle remain
 Flink-owned. Persistent state and supported migration boundaries are unchanged.
+
+## Scalar time-based OVER
+
+Arroyo's `arroyo-planner/src/plan/window_fn.rs` and
+`arroyo-worker/src/arrow/window_fn.rs` finalize timestamp-bucketed Arrow windows on
+watermarks, and its UDAF ABI evaluates collected vectors. Those boundaries cannot preserve
+Flink's incremental synchronous JVM aggregate ABI, bounded retraction, per-key DataViews,
+processing-time frames and released retention behavior. We therefore reuse each released
+Flink 2.2.1/1.18.1 OVER frame function and generated handler, with Arrow batch boundaries
+and the native columnar exchange. We read the exact released planner/runtime source jars,
+not the newer sibling checkout, before choosing this boundary.
+
+The released execution node selects and generates the function. A temporary transformation
+provides its unopened function and key selector; only our Arrow transformation enters the
+runtime graph. This avoids copying private code generation or version-specific frame
+selection. We adapt the ordinary keyed process contexts and internal timer service, keeping
+released state descriptors and managed DataViews. There is no Rust encoding of JVM objects.
+
+Comet's JNI UDF bridge and Arrow batch reader establish the ownership precedent: retained
+values must survive the borrowed batch. Released heap OVER frames retain entire input rows
+and read compact event-time slots with `getLong`. Each input therefore becomes an owned
+BinaryRow copy before the Arrow batch closes. A GenericRow copy would violate that physical
+contract. Callback output is copied immediately into Arrow, including optional original Java
+string-cache columns, before shared or mutable UDF output can change. Checkpoint preparation
+flushes output only; it does not force watermarks or empty buffered frames.
+
+This remains covered by the accepted UDF performance exception. Whole-job diagnostics retain
+both perimeter conversions and production managed state, and compare stock, previous
+production and candidate revisions. See [OVER](../docs/operators/over.md#scalar-jvm-aggregates)
+for exact admission, restoration boundaries, exclusions and measurements.

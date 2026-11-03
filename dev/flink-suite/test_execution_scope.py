@@ -46,6 +46,91 @@ class ExecutionScopeTest(unittest.TestCase):
                         declared = cases[display]
                         self.assertEqual(expected, declared.get('route', declared.get('route_by_contract_variant', {}).get(selector)))
 
+    def test_jvm_over_preserves_both_backend_routes_and_requires_its_own_work(self):
+        root = Path(__file__).parent
+        prefix = 'org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#'
+        for line, suffix in [('1.18', '-flink1.18'), ('2.2', '')]:
+            contracts = execution_contracts(root / 'agent/src/main/resources' / ('native-execution' + suffix + '.tsv'))
+            scope = json.loads((root / ('runtime-route-scope-' + line + '.json')).read_text())
+            tests = {test: variants for test, variants in contracts.items() if test.startswith(prefix)}
+            self.assertEqual(11, len(tests))
+            for test, variants in tests.items():
+                cases = [case for case in scope['cases'] if case['test'] == test]
+                self.assertEqual(2, len(cases))
+                for case in cases:
+                    for selector, required in variants.items():
+                        builtin_only = 'DistinctPartitioned' in test
+                        array_context = test.endswith('#testRowTimeUnBoundedPartitionedRangeOver')
+                        fallback = builtin_only or array_context or selector == 'changelog=true'
+                        self.assertEqual(fallback, required.startswith('!'))
+                        if not fallback:
+                            self.assertEqual('NativeColumnarJvmOverOperator', required)
+                        elif builtin_only:
+                            self.assertEqual('!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL', required)
+                        elif array_context:
+                            self.assertEqual('!collection value representation requires a final projection or fused consumer' if line == '1.18'
+                                             else '!Calc: collection input representation is unverified for this columnar producer', required)
+                        declared = case.get('route', case.get('route_by_contract_variant', {}).get(selector))
+                        self.assertEqual('full_fallback' if fallback else 'mixed' if '#testRowTime' in test else 'native', declared)
+                        if not fallback and '#testRowTime' in test:
+                            self.assertEqual(['org.apache.flink.streaming.api.operators.KeyedProcessOperator'],
+                                             case['forbidden_operators_on_native_routes'])
+            if line == '1.18':
+                state = execution_contracts(root / 'agent/src/main/resources/native-execution-flink1.18-state.tsv')
+                for test, variants in tests.items():
+                    self.assertEqual(variants, state[test])
+
+    def test_scalar_sql_over_requires_each_unbounded_event_time_implementation(self):
+        root = Path(__file__).parent
+        prefix = 'org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#'
+        for line, suffix in [('1.18', '-flink1.18'), ('2.2', '')]:
+            contracts = execution_contracts(root / 'agent/src/main/resources' / ('native-execution' + suffix + '.tsv'))
+            scope = json.loads((root / ('runtime-route-scope-' + line + '.json')).read_text())
+            for method in ['testRowTimeUnBoundedPartitionedRangeOver', 'testRowTimeUnBoundedPartitionedRowsOver']:
+                test = prefix + method
+                cases = [case for case in scope['cases'] if case['test'] == test]
+                self.assertEqual(4 if line == '2.2' else 2, len(cases))
+                for selector, required in contracts[test].items():
+                    fallback = selector == 'changelog=true'
+                    self.assertEqual(fallback, required.startswith('!'))
+                    if not fallback:
+                        self.assertEqual('NativeColumnarJvmOverOperator', required)
+                    for case in cases:
+                        declared = case.get('route', case.get('route_by_contract_variant', {}).get(selector))
+                        self.assertEqual('full_fallback' if fallback else 'mixed', declared)
+                        if not fallback:
+                            self.assertEqual(['org.apache.flink.streaming.api.operators.KeyedProcessOperator'],
+                                             case['forbidden_operators_on_native_routes'])
+
+    def test_mixed_source_helper_cannot_hide_the_discarded_host_over_operator(self):
+        self.scope['schema_version'] = 2
+        forbidden = 'org.apache.flink.streaming.api.operators.KeyedProcessOperator'
+        self.requirement.update(route='mixed', forbidden_operators_on_native_routes=[forbidden])
+        self.case.update(runtime_route='mixed', jobs={'job': dict(graph=dict(nodes=[
+            dict(operator_class='org.apache.flink.table.planner.runtime.utils.TimeTestUtil$EventTimeProcessOperator'),
+            dict(operator_class='tech.streamfusion.operator.NativeColumnarJvmOverOperator')]))})
+        self.assertEqual([], self.check())
+        self.case['jobs']['job']['graph']['nodes'].append(dict(operator_class=forbidden))
+        self.assertTrue(any('forbidden operators' in problem for problem in self.check()))
+        self.case.pop('jobs')
+        self.assertTrue(any('missing operator graphs' in problem for problem in self.check()))
+
+    def test_forbidden_native_route_operators_preserve_conditional_stock_fallback(self):
+        forbidden = 'org.apache.flink.streaming.api.operators.KeyedProcessOperator'
+        self.scope['schema_version'] = 2
+        self.requirement.pop('route')
+        self.requirement.update(route_by_contract_variant={'changelog=true': 'full_fallback', 'changelog=false': 'mixed'},
+                                forbidden_operators_on_native_routes=[forbidden])
+        self.case.update(execution_contract_variant='changelog=true', runtime_route='full_fallback',
+                         jobs={'job': dict(graph=dict(nodes=[dict(operator_class=forbidden)]))})
+        self.assertEqual([], self.check())
+        self.case.update(execution_contract_variant='changelog=false', runtime_route='mixed')
+        self.assertTrue(any('forbidden operators' in problem for problem in self.check()))
+        for invalid in ['operator', [1], [''], [forbidden, forbidden]]:
+            self.requirement['forbidden_operators_on_native_routes'] = invalid
+            with self.assertRaisesRegex(ValueError, 'Invalid forbidden runtime operators'):
+                self.check()
+
     def test_pinned_vintage_fixture_names_use_the_selected_method(self):
         scope = json.loads(Path(__file__).with_name('runtime-route-scope-1.18.json').read_text())
         for case in scope['cases']:

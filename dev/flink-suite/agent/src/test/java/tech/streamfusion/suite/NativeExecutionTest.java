@@ -293,6 +293,29 @@ class NativeExecutionTest {
     NativeExecution.finish(second);
   }
 
+  @Test
+  void overRequiresConsumedInputInItsOwnJvmFrame() {
+    class Fixture {
+      private final FakeScalaEnvironment env = new FakeScalaEnvironment(false);
+    }
+    for (String test :
+        java.util.List.of(
+            "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testOverWindowWithConstant",
+            "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+            "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver")) {
+      var first = NativeExecution.begin(test, new Fixture());
+      Object group = new NativeColumnarJvmGroupOperator();
+      NativeExecution.opened(group);
+      NativeExecution.completed(group, 12);
+      assertThrows(AssertionError.class, () -> NativeExecution.finish(first));
+      var second = NativeExecution.begin(test, new Fixture());
+      Object over = new NativeColumnarJvmOverOperator();
+      NativeExecution.opened(over);
+      NativeExecution.completed(over, 12);
+      NativeExecution.finish(second);
+    }
+  }
+
   public static final class FakeJavaEnvironment {
     private final boolean enabled;
 
@@ -310,6 +333,8 @@ class NativeExecutionTest {
   private static class NativeColumnarGroupAggregateOperator {}
 
   private static class NativeColumnarJvmGroupOperator {}
+
+  private static class NativeColumnarJvmOverOperator {}
 
   private static class NativeColumnarTopNOperator {}
 

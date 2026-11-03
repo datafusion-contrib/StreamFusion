@@ -44,7 +44,7 @@ class RuntimeRoutesTest(unittest.TestCase):
                 self.assertEqual(expected, self.classify({'job': self.job(classes, work)}))
 
     def test_jvm_function_work_requires_the_matching_completed_operator(self):
-        for name in ('NativeColumnarJvmGroupOperator', 'NativeColumnarTableFunctionOperator'):
+        for name in ('NativeColumnarJvmGroupOperator', 'NativeColumnarTableFunctionOperator', 'NativeColumnarJvmOverOperator'):
             classes = [self.SOURCE, 'tech.streamfusion.operator.RowDataToArrowOperator',
                        'tech.streamfusion.operator.' + name,
                        'tech.streamfusion.operator.ArrowToRowDataOperator', self.SINK]
@@ -53,6 +53,16 @@ class RuntimeRoutesTest(unittest.TestCase):
                 self.assertEqual('unclassified', self.classify({'job': self.job(classes, {})}))
                 self.assertEqual('unclassified', self.classify(
                     {'job': self.job(classes, {'NativeCalcOperator': 3})}))
+
+    def test_event_time_source_helper_remains_visible_in_the_jvm_over_route(self):
+        name = 'NativeColumnarJvmOverOperator'
+        classes = [self.SOURCE,
+                   'org.apache.flink.table.planner.runtime.utils.TimeTestUtil$EventTimeProcessOperator',
+                   'tech.streamfusion.operator.RowDataToArrowOperator',
+                   'tech.streamfusion.operator.' + name,
+                   'tech.streamfusion.operator.ArrowToRowDataOperator', self.SINK]
+        self.assertEqual('mixed', self.classify({'job': self.job(classes, {name: 14})}))
+        self.assertEqual('unclassified', self.classify({'job': self.job(classes, {})}))
 
     def test_split_aggregate_requires_work_from_both_native_halves(self):
         local = 'tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator'
