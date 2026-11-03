@@ -598,37 +598,58 @@ Stock TTL restoration can retain nonconsecutive inner ranks; this TTL-disabled a
 rather than silently renumbering them. Older unbound native checkpoint upgrades remain unqualified.
 Benchmarking remains deferred.
 
-## Retracting state foundation (in progress)
+## Retracting canonical state (partial)
 
-The compatibility implementation has a separate per-record retracting state model. Flink retains
-three independent structures: sort-key lists of actual rows, a sorted map of sort-key counts, and
-an optional first-observed variable bound. List ages, the count-map age and the bound age are
-independent. A present empty count map still owns its partition key. Counts cannot be reconstructed
-from retained rows: unmatched retractions and heap OFFSET row-kind mutation can leave rows whose
-sort key is absent from the count map, even without TTL.
+The direct Flink 2.2.1 adapter preserves three independent structures: `data-state` MAP sort-key
+lists of actual rows, `sorted-map` VALUE counts, and optional `rankEnd` VALUE. Presence, list order,
+retained row kinds and all three write ages survive. Empty count maps, empty data lists, orphan
+rows, count-only/bound-only keys and counters differing from list lengths are preserved. Counts
+cannot be reconstructed from rows: unmatched retractions and heap OFFSET row-kind mutations can
+leave retained rows whose sort key is absent from the count map, even without TTL.
 
-The native foundation preserves these structures, retained row kinds and backend-specific value
-copying through Arrow execution and native memory/RocksDB checkpoints. Snapshot clones freeze
-mutable row-kind headers while sharing immutable payload bytes. Its versioned checkpoint envelope
-is distinct from the existing flat buffers; enabling the new model over legacy rows is rejected
-because those buffers cannot prove the original independent map contents.
+Export scans live memory or raw RocksDB state, decodes at most one persistent partition at a time,
+and sends at most 1,024 Arrow rows per callback. Sort keys have their own typed fields because a
+counter may have no corresponding data row. The writer uses released row/list/map serializers and
+the actual stock serializable comparator. It writes no intermediate native snapshot. TTL-disabled
+export emits zero ages after a native checkpoint's enable-TTL migration, without changing native
+clocks. Transient decoded state and Arrow batches reserve the task's memory budget.
 
-Released Flink 2.2.1 reference tests generate 28 immutable traces for OFFSET, unmatched/matched
-retractions, count-only keys, independent TTL and changing first bounds, with hidden/projected
-rank and both backends. The native tests compare each record's exact changelog and retained state,
-then repeat with recovery after every record. RocksDB may reclaim fully expired values during
-reads or compaction; cross-engine state comparisons exclude expired garbage while native checkpoint
-round trips still require exact preservation of all stored rows, counts, kinds, ages and bounds.
-The qualification is BIGINT payloads and one ascending BIGINT sort field. It is groundwork, with
-no new SQL admission or stock canonical interoperability claim.
+Import checks the full descriptor inventory, an empty target, declared non-null fields, partition
+and sort selectors, retained values and all metadata before copying state. Source owner keys are
+the union of all three descriptors. A full validation pass precedes insertion; native frames also
+check existing earlier chunks. Successful import consumes the projected source. A denied target
+must be closed; source state remains available for a fresh target. Receiver failure preserves the
+original Java exception and leaves native state available for another export.
 
-Production JNI/operator checks pass 56 scenarios against those released traces, restoring at the
-critical boundary or after every record, then checkpointing and restoring again with no new input.
-Another 24 stock reference checks pass. All 484 shared rank/planner/processing controls pass on the
-same native library; the complete native suite passes 1,256 tests with two existing ignores.
-These are state-model and native recovery checks, not stock canonical qualification.
+The explicit compatibility state mode mirrors released per-record processing, including heap
+aliases versus serialized-backend value copies. Native memory/RocksDB checkpoints preserve its
+independent maps and immutable captures freeze mutable row kinds while sharing payload bytes.
+Older flat buffers cannot prove their original independent state and are not promoted implicitly.
+Existing ordinary SQL admission is unchanged; this adapter is not yet bound automatically.
 
-Direct stock descriptor transfer, full validation/failure handling, planner binding, broader types,
-complete-process switching/rescaling and connector/transposition coverage for general retracting
-rank remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
-Benchmarking remains deferred.
+Tests use 28 immutable traces generated by released stock Flink for OFFSET, matched/unmatched
+retractions, count-only keys, independent TTL and changing bounds, hidden/projected rank and both
+stores. All 84 direct scenarios pass: stock/native-first handoffs, no-input canonical re-export,
+exact complete-state checks and native-checkpoint-to-canonical restoration into either store,
+followed by actual stock execution and exact continued changelogs. Sixteen further controls cover
+multi-chunk ties/all four kinds, empty descriptors and owner-key union, zero/negative/maximum
+counts, late corruption/repair, foreign state, nonempty count-only targets, non-null primitive
+validation, memory denial and receiver failure. The counter serializer restores with StreamFusion
+classes denied. The complete native suite passes 1,261 tests with two existing ignores.
+
+Another 56 cases exercise actual operator initialization and two successive stock/native switches
+in both orders, retaining exact continued changes under OFFSET, TTL and variable bounds. All 484
+shared ranking regressions pass on the same library. Shared Flink 1.18 compilation and 25 native
+operator regressions pass; this does not establish Flink 1.18 canonical interchange. The native
+library also checks successfully without RocksDB.
+
+The qualified direct-transfer schema is BIGINT retained fields and one ascending BIGINT sort.
+RocksDB may reclaim fully expired values during reads or compaction: cross-engine comparisons
+exclude expired garbage, while native raw checkpoint round trips still require exact preservation
+of all stored rows/counts/kinds/ages/bounds. This is not a stock-worker classpath qualification for
+complete jobs.
+
+Automatic planner binding, wider types/sort layouts and before-image policies, full-process
+switching/rescaling, unchanged upstream restore fixtures, connector/transposition and broader
+version/failure/delivery coverage remain open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.

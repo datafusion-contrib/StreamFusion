@@ -385,7 +385,7 @@ class RetractingRankStockStateTest {
   }
 
   @SuppressWarnings("unchecked")
-  private static java.util.Map<String, Object> timedStateView(
+  static java.util.Map<String, Object> timedStateView(
       CheckpointableKeyedStateBackend<RowData> backend, boolean ttl, boolean variable)
       throws Exception {
     backend.setCurrentKey(key(1));
@@ -518,7 +518,7 @@ class RetractingRankStockStateTest {
     return result;
   }
 
-  private static ComparableRecordComparator comparator() {
+  static ComparableRecordComparator comparator() {
     var generated =
         ComparatorCodeGenerator.gen(
             new Configuration(),
@@ -535,12 +535,12 @@ class RetractingRankStockStateTest {
   }
 
   @SuppressWarnings("unchecked")
-  private static TypeSerializer<Object> wrapped(TypeSerializer<?> serializer, boolean ttl) {
+  static TypeSerializer<Object> wrapped(TypeSerializer<?> serializer, boolean ttl) {
     return (TypeSerializer<Object>)
         (ttl ? new TtlSerializer<>(LongSerializer.INSTANCE, serializer) : serializer);
   }
 
-  private static MapState<RowData, Object> data(
+  static MapState<RowData, Object> data(
       CheckpointableKeyedStateBackend<RowData> backend, boolean ttl) throws Exception {
     return backend.getPartitionedState(
         VoidNamespace.INSTANCE,
@@ -551,8 +551,8 @@ class RetractingRankStockStateTest {
             wrapped(new ListSerializer<>(new RowDataSerializer(INPUT)), ttl)));
   }
 
-  private static ValueState<Object> counts(
-      CheckpointableKeyedStateBackend<RowData> backend, boolean ttl) throws Exception {
+  static ValueState<Object> counts(CheckpointableKeyedStateBackend<RowData> backend, boolean ttl)
+      throws Exception {
     return backend.getPartitionedState(
         VoidNamespace.INSTANCE,
         VoidNamespaceSerializer.INSTANCE,
@@ -564,17 +564,17 @@ class RetractingRankStockStateTest {
                 ttl)));
   }
 
-  private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
+  static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
       boolean actual, boolean rocks, boolean rank, long ttl) throws Exception {
     return harness(actual, rocks, rank, ttl, 1);
   }
 
-  private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
+  static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
       boolean actual, boolean rocks, boolean rank, long ttl, long start) throws Exception {
     return harness(actual, rocks, rank, ttl, start, false);
   }
 
-  private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
+  static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
       boolean actual, boolean rocks, boolean rank, long ttl, long start, boolean variable)
       throws Exception {
     OneInputStreamOperator<RowData, RowData> operator = new Projection();
@@ -616,13 +616,13 @@ class RetractingRankStockStateTest {
     return harness;
   }
 
-  private static void push(
+  static void push(
       KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness, RowData row)
       throws Exception {
     harness.processElement(new StreamRecord<>(new RowDataSerializer(INPUT).copy(row)));
   }
 
-  private static void time(KeyedOneInputStreamOperatorTestHarness<?, ?, ?> harness, long now)
+  static void time(KeyedOneInputStreamOperatorTestHarness<?, ?, ?> harness, long now)
       throws Exception {
     harness.setProcessingTime(now);
     harness.setStateTtlProcessingTime(now);
@@ -633,14 +633,14 @@ class RetractingRankStockStateTest {
   }
 
   @SuppressWarnings("unchecked")
-  private static CheckpointableKeyedStateBackend<RowData> backend(
+  static CheckpointableKeyedStateBackend<RowData> backend(
       KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness) {
     return (CheckpointableKeyedStateBackend<RowData>)
         harness.getOperator().<RowData>getKeyedStateBackend();
   }
 
-  private static OperatorSubtaskState snapshot(
-      KeyedOneInputStreamOperatorTestHarness<?, ?, ?> harness) throws Exception {
+  static OperatorSubtaskState snapshot(KeyedOneInputStreamOperatorTestHarness<?, ?, ?> harness)
+      throws Exception {
     harness.prepareSnapshotPreBarrier(1);
     return harness
         .snapshotWithLocalState(

@@ -3030,6 +3030,15 @@ public final class Native {
   /** Selects independent retracting data lists, counters and TTL clocks before state transfer. */
   public static native void enableStockRetractingTopNState(long handle, boolean persistent);
 
+  public static native void exportRetractingTopNCanonical(
+      long handle, boolean persistent, long rowSchemaAddress, BatchReceiver receiver);
+
+  public static native void importRetractingTopNCanonical(
+      long handle, boolean persistent, long arrayAddress, long schemaAddress);
+
+  public static native void validateRetractingTopNCanonical(
+      long handle, boolean persistent, long arrayAddress, long schemaAddress);
+
   public static native void exportUpdatingTopNCanonical(
       long handle, boolean persistent, long rowSchemaAddress, BatchReceiver receiver);
 
