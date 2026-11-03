@@ -1005,8 +1005,8 @@ manual mapping or conversion command is required. The runtime explicitly selects
 that is the selected stock function. Buffered rowtime-first has a separate candidate/timer contract;
 processing-time last-row with both emission flags off has no retained stock rows. Its empty-state
 projection keeps the released row schema while omitting unused native rows, and rejects unexpected
-saved rows before native insertion. Buffered rowtime-first remains on stock until its candidate/timer
-contract is implemented.
+saved rows before native insertion. Buffered rowtime-first uses the distinct candidate/timer
+contract described below.
 
 The frozen eager binding at `1ec00607` passes all 374 checks, including 152 complete-job scenarios
 (76 per submission form) and 222 direct/plan/processing controls. Twelve continuation variants
@@ -1026,7 +1026,7 @@ cohort. Shared 1.18 processing/checkpoint controls pass 32 checks without a cano
 
 After the empty-state/helper changes below, sixteen eager-switch regressions also pass with the
 new default-preserving connector fixture. These overlapping cohorts are not cumulative counts.
-Buffered rowtime-first state, remaining emission/type variants, old graph/backend/version upgrades
+Remaining buffered qualification, emission/type variants, old graph/backend/version upgrades
 and the full connector/failure matrix remain required by
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
 
@@ -1058,7 +1058,7 @@ positive/negative definition cases, and all eight original bare-update plans pas
 The original four ordinary-plan errors and sixteen ordinary-job failures are retained as evidence;
 inputs and assertions were not weakened. All 132 focused controls pass after the fix.
 
-Buffered state, wider types, backend/version upgrades and the full connector/failure matrix remain
+Remaining buffered qualification, wider types, backend/version upgrades and the full connector/failure matrix remain
 required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
 
 
@@ -1068,3 +1068,70 @@ loading session's insert-sensitivity option also leaves all eight bare-update pl
 the persisted plan and actual released function determine emission behavior. The selected eight
 released first-N/normalizer/eager programs pass again per engine; each eager program still proves
 two imported rows and four new native rows, with strict route contracts intact.
+
+
+## Buffered event-time first-row state
+
+Flink 2.2.1 watermark-buffered keep-first has three separate durable components: full rows in
+`waiting-to-emit-on-timer`, true Boolean markers in `already-emitted-state-boolean`, and one
+`event_user-timers` callback per waiting key. The pending row has no TTL. Only emitted markers
+carry the original processing-time write age. Processing-time timer queues must be empty.
+Ordinary SQL and portable compiled plans select this contract from the actual released
+`RowTimeDeduplicateKeepFirstRowFunction`, retaining its keys, serializers, identity, maximum
+parallelism and persisted TTL. An ascending comparator alone does not select this representation.
+
+Memory and typed RocksDB export the live candidate/marker view directly in bounded chunks into
+stock state. The canonical Flink writer persists those stock values and timer serializers; no
+native snapshot or replay is used as an intermediate. Restore requires an empty native target.
+A complete validation pass checks key/payload agreement, nullability, row kinds, timer ownership,
+missing/orphan/duplicate callbacks and disjoint pending/marker domains before importing any row.
+Consumed stock values and callbacks clear only after successful import. Pending rows preserve
+compact/component timestamps, and emitted markers need no non-key payload placeholders.
+
+Input transport row-kind and Java string-cache companions never become durable payload fields.
+The same insert-only normalization applies before ordinary memory/RocksDB processing and after
+canonical import. Invalid changelog kinds fail before state mutation. Keyless markers retain their
+one-row cardinality in raw, legacy memory and backend-independent native partitions, including
+when their key schema has zero columns and TTL is disabled.
+
+Thirty direct matrix cases cover both stores, TTL on/off, nullable/NOT NULL/keyless keys, actual
+Flink timestamp payloads, and raw-partition or SST recovery. Twenty-five further controls include
+original marker ages/expiry, late corruption after more than 1,024 valid rows, timer consistency
+and rejection without partial insertion. Twelve submission checks cover both ordinary and
+compiled forms with persisted TTL and stock identities.
+
+Across retained qualification cohorts, 96 isolated-process buffered jobs cover both submission
+forms, stores and switch orders: 48 continued-input cases, 16 empty-state cases, 16 repeated
+no-input cases, eight native-checkpoint recovery cases and eight rescaling cases. The latter
+preserve maxP128 through 1→3→2 tasks, with connectors fixed at one task and chaining disabled from
+the initial graph. Custom source offsets, transactional sink effects, both transposes and clean
+stock classpaths/metadata are checked. Stage output and final effects match an independent
+watermark/winner oracle and uninterrupted stock. Retained-winner cases additionally cover late
+records and equality at the watermark. Their final eight cases retain an original winning row
+in a partial transpose batch at the barrier; newer arrivals must lose after both switches.
+Long-TTL process cases do not establish downtime expiry;
+direct clocked controls verify original ages and exact expiry.
+
+The first 335-check cohort passes 319 checks; its sixteen empty-job errors were missing output
+directories in the test fixture before any row was emitted. Corrected targeted cases represent
+that empty output explicitly and continue all handoffs. The subsequent 24-job/48-type cohort
+passes in full. Sixteen eager-switch jobs and all 231 direct/planner/processing controls also pass
+on the corrected runtime. Counts across these cohorts overlap; no failing invocation is credited.
+A separate initial compiled-job failure exposed transport companions entering buffered state;
+its unchanged inputs pass after normalization. A stale isolated planner build was rejected by
+native-execution assertions and receives no coverage credit.
+
+Remaining schema/backend/version/connector/failure coverage continues under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+A further 48 actual-operator controls cover twelve scalar, nested and composite key shapes,
+including non-compact DECIMAL, compact/high-precision timestamps, nullable ROW/ARRAY keys and
+out-of-order non-leading root key columns. Payloads contain nested rows, arrays, non-compact
+decimals, UTF-16 string cases and nanosecond timestamps. Both TTL settings match stock future
+serialized output byte for byte in both directions. An original pending NULL-key candidate must
+survive both switches and beat newer arrivals; this supplies preservation evidence beyond
+replacing every pending candidate with new input. These nested schemas exercise memory and the
+existing RocksDB snapshot-backed native path, not direct typed RocksDB. Canonical exports are
+guarded against calling any native snapshot/checkpoint entry point. The current full native
+suite passes 1,230 tests with two existing ignores. These are separate, overlapping cohorts.

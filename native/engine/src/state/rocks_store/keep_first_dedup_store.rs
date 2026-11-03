@@ -162,7 +162,11 @@ impl RocksKeepFirstDedupStore {
             db: opened.db,
             _cache: opened.cache,
             max_parallelism: config.max_parallelism,
-            key_converter: converter(&key_types)?,
+            key_converter: if key_types.is_empty() {
+                converter(&[DataType::Boolean])?
+            } else {
+                converter(&key_types)?
+            },
             key_types,
             payload_converter: converter(&row_types)?,
             schema,
@@ -200,10 +204,7 @@ impl RocksKeepFirstDedupStore {
             .iter()
             .map(|&column| batch.column(column).clone())
             .collect();
-        let key_rows = self
-            .key_converter
-            .convert_columns(&key_arrays)
-            .expect("encode keep-first dedup keys");
+        let key_rows = encode_group_keys(&self.key_converter, &key_arrays, batch.num_rows());
         (0..batch.num_rows())
             .map(|row| {
                 let key_group = flink_key_group(encoder.hash(row), self.max_parallelism) as i32;
@@ -331,6 +332,69 @@ impl RocksKeepFirstDedupStore {
         writes.finish()?;
         ready.sort_unstable_by_key(|candidate| candidate.seq);
         Ok(ready)
+    }
+
+    pub(crate) fn visit_canonical_candidates(
+        &self,
+        chunk_rows: usize,
+        mut visitor: impl FnMut(&[StoredCandidate]) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        let mut chunk = Vec::with_capacity(chunk_rows);
+        for entry in self.db.iterator(IteratorMode::Start) {
+            let (key, value) = entry.map_err(re)?;
+            if key.len() < KEY_PREFIX_LEN || key[4] != PENDING_TABLE {
+                continue;
+            }
+            if value.len() < PENDING_VALUE_PREFIX_LEN {
+                return Err(DataFusionError::Execution(
+                    "truncated buffered dedup candidate".into(),
+                ));
+            }
+            chunk.push(StoredCandidate {
+                key: Self::store_key(&key),
+                seq: u64::from_be_bytes(value[8..16].try_into().unwrap()),
+                rowtime: i64::from_le_bytes(value[..8].try_into().unwrap()),
+                row: value[PENDING_VALUE_PREFIX_LEN..].into(),
+            });
+            if chunk.len() == chunk_rows {
+                visitor(&chunk)?;
+                chunk.clear();
+            }
+        }
+        if !chunk.is_empty() {
+            visitor(&chunk)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn visit_canonical_markers(
+        &self,
+        chunk_rows: usize,
+        mut visitor: impl FnMut(&[(ByteKey, Option<i64>)]) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        let mut chunk = Vec::with_capacity(chunk_rows);
+        for entry in self.db.iterator(IteratorMode::Start) {
+            let (key, value) = entry.map_err(re)?;
+            if key.len() < KEY_PREFIX_LEN || key[4] != EMITTED_TABLE {
+                continue;
+            }
+            if !value.is_empty() && value.len() != 8 {
+                return Err(DataFusionError::Execution(
+                    "invalid buffered dedup marker stamp".into(),
+                ));
+            }
+            let stamp =
+                (value.len() == 8).then(|| i64::from_le_bytes(value[..8].try_into().unwrap()));
+            chunk.push((Self::store_key(&key), stamp));
+            if chunk.len() == chunk_rows {
+                visitor(&chunk)?;
+                chunk.clear();
+            }
+        }
+        if !chunk.is_empty() {
+            visitor(&chunk)?;
+        }
+        Ok(())
     }
 
     /// Every pending candidate, keys in store order, for canonical savepoints.

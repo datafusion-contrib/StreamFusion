@@ -586,6 +586,52 @@ class CanonicalRestoreExecutionTest {
     assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
   }
 
+  @Test
+  void bufferedImportAdviceCountsMutationsButCannotSatisfyTheLegacyEagerFixture() throws Exception {
+    var scope =
+        NativeExecution.beginRestore(
+            "org.apache.flink.table.planner.plan.nodes.exec.stream.DeduplicationRestoreTest",
+            new Object(),
+            "deduplicate-asc");
+    StreamFusionSuiteAgent.RecordCanonicalBufferedDedupImport.exit(
+        java.util.List.of(1, 2, 3), true);
+    StreamFusionSuiteAgent.RecordCanonicalBufferedDedupImport.exit(java.util.List.of(1, 2), false);
+    var operator = new NativeColumnarDeduplicateOperator();
+    NativeExecution.opened(operator);
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+    try (var files = java.nio.file.Files.list(reports)) {
+      var fields =
+          java.nio.file.Files.readString(files.findFirst().orElseThrow())
+              .stripTrailing()
+              .split("\\t", -1);
+      assertEquals("", fields[2]);
+      assertEquals("NativeColumnarDeduplicateOperator=2", fields[4]);
+    }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"empty", "openOnly", "importOnly", "bufferedFamily"})
+  void legacyEagerDedupCannotPassFromUnrelatedOrMissingInput(String mode) {
+    var scope =
+        NativeExecution.beginRestore(
+            "org.apache.flink.table.planner.plan.nodes.exec.stream.DeduplicationRestoreTest",
+            new Object(),
+            "deduplicate-asc");
+    if (mode.equals("bufferedFamily")) {
+      var operator = new NativeColumnarDeduplicateOperator();
+      NativeExecution.opened(operator);
+      NativeExecution.completed(operator, 4);
+    } else if (!mode.equals("empty")) {
+      NativeExecution.opened(new NativeColumnarKeepLastDeduplicateOperator());
+      if (mode.equals("importOnly"))
+        StreamFusionSuiteAgent.RecordCanonicalBufferedDedupImport.exit(java.util.List.of(1), false);
+    }
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  private static final class NativeColumnarDeduplicateOperator {}
+
   private static final class NativeColumnarKeepLastDeduplicateOperator {}
 
   @Test

@@ -38,6 +38,6 @@ Equivalent stock sink constraint helpers may have different ordinary-SQL display
 serialized immutable executor for the exact released class; labels omit settings such as ERROR
 versus DROP. Preserve topology/class/uniqueness checks and reject changed definitions.
 
-Buffered/timed state, remaining mini-batch/emission
+Remaining buffered qualification, mini-batch/emission
 variants and the full schema/backend/version/connector/failure matrix remain part of
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

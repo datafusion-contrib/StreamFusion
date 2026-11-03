@@ -1603,8 +1603,9 @@ does not qualify unrelated aggregate/dedup/rank adapters or replace complete-job
 `tech.streamfusion.canonical.EagerDedupRestoreTest` subclasses the released `DeduplicationRestoreTest`
 and selects its `deduplicate-asc-proctime` and `deduplicate-desc` programs. Inputs, compiled plans,
 savepoint fixtures, inherited restoration and original assertions remain unchanged. The original
-full deduplication class and its native-route contract remain intact; the buffered ascending
-rowtime program is still required work, not qualified by this selection.
+full deduplication class remains unchanged. Its historical ascending-rowtime fixture was
+compiled on Flink 1.19 and omits `outputInsertOnly`; released Flink 2.2.1 therefore selects the
+eager `RowTimeDeduplicateFunction`. It does not exercise the newer watermark-buffered function.
 
 Run it with
 `CANONICAL_UPSTREAM_TESTS=tech.streamfusion.canonical.EagerDedupRestoreTest#testRestore bin/canonical-savepoints.sh sql`.
@@ -1614,3 +1615,14 @@ excludes StreamFusion runtime classes. Six new audit controls reject missing/unr
 ensure validation does not inflate imported-row counts. Together with the selected first-N and
 five normalizer programs, this cohort passes eight programs per engine. These are overlapping
 cohorts, not cumulative coverage counts, and do not qualify the full deduplication family.
+
+
+The full released deduplication class now passes all three programs on stock and native
+classpaths. The ascending-rowtime program also imports two rows and consumes four new rows in
+the eager native owner. Alongside first-N and five normalizer programs, all nine programs pass per
+engine: seven actual native owners and two expected normalizer filter fallbacks. Original inputs,
+historical compiled plans and assertions remain unchanged. Each dedup program explicitly requires
+the eager family in the execution audit. The buffered import hook counts only mutating passes;
+99 audit controls include cases proving that buffered import/input cannot satisfy the historical
+eager contract. These upstream results do not qualify current buffered-rowtime SQL jobs; those
+have separate direct, planner and process tests. Reports overlap earlier selections.

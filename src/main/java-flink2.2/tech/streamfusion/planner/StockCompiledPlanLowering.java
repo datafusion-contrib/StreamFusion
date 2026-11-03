@@ -590,6 +590,7 @@ final class StockCompiledPlanLowering {
     boolean rowtime;
     boolean keepLast;
     boolean compact = false;
+    boolean buffered = false;
     switch (name) {
       case "ProcTimeDeduplicateKeepFirstRowFunction":
       case "ProcTimeMiniBatchDeduplicateKeepFirstRowFunction":
@@ -603,6 +604,11 @@ final class StockCompiledPlanLowering {
         rowtime = false;
         keepLast = true;
         break;
+      case "RowTimeDeduplicateKeepFirstRowFunction":
+        rowtime = true;
+        keepLast = false;
+        buffered = true;
+        break;
       case "RowTimeMiniBatchLatestChangeDeduplicateFunction":
         compact = true;
       // The compact and full-chain bundles retain the same winning row in keyed state.
@@ -612,13 +618,13 @@ final class StockCompiledPlanLowering {
         keepLast = (Boolean) releasedField(function, "keepLastRow");
         break;
       default:
-        // Buffered keep-first also owns candidates and timers; it needs a distinct contract.
         return stock;
     }
     boolean presenceOnly = !rowtime && !keepLast;
-    boolean generateInsert = presenceOnly || (Boolean) releasedField(function, "generateInsert");
+    boolean generateInsert =
+        buffered || presenceOnly || (Boolean) releasedField(function, "generateInsert");
     boolean generateUpdateBefore =
-        !presenceOnly && (Boolean) releasedField(function, "generateUpdateBefore");
+        !buffered && !presenceOnly && (Boolean) releasedField(function, "generateUpdateBefore");
     boolean stateless = !rowtime && keepLast && !generateInsert && !generateUpdateBefore;
     long retention =
         (Long) releasedField(function, miniBatch ? "minRetentionTime" : "stateRetentionTime");
@@ -651,11 +657,21 @@ final class StockCompiledPlanLowering {
     RowType keyType =
         RowType.of(Arrays.stream(keys).mapToObj(inputType::getTypeAt).toArray(LogicalType[]::new));
     StockStateContract contract =
-        stateless
-            ? new tech.streamfusion.state.StockEmptyDedupStateContract(
-                serializer, keyType, inputType, retention)
-            : new tech.streamfusion.state.StockDedupStateContract(
-                serializer, keyType, inputType, presenceOnly, rowtimeColumn, retention);
+        buffered
+            ? new tech.streamfusion.state.StockBufferedDedupStateContract(
+                serializer,
+                (org.apache.flink.table.runtime.keyselector.RowDataKeySelector)
+                    original.getStateKeySelector(),
+                keyType,
+                inputType,
+                keys,
+                rowtimeColumn,
+                retention)
+            : stateless
+                ? new tech.streamfusion.state.StockEmptyDedupStateContract(
+                    serializer, keyType, inputType, retention)
+                : new tech.streamfusion.state.StockDedupStateContract(
+                    serializer, keyType, inputType, presenceOnly, rowtimeColumn, retention);
     int maximum = stockMaximum(original);
     var exchange =
         (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
@@ -672,8 +688,9 @@ final class StockCompiledPlanLowering {
                 generateUpdateBefore,
                 !rowtime,
                 FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys))
-            .withStockEagerState()
             .withStateMaxParallelism(maximum);
+    if (buffered) dedup.withStockBufferedState();
+    else dedup.withStockEagerState();
     connect(exchange, dedup);
     bindings.put(dedup, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
     columnar.add(dedup);

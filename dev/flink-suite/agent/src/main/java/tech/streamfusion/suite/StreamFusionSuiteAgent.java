@@ -217,6 +217,14 @@ public final class StreamFusionSuiteAgent {
                     ? builder.visit(
                         Advice.to(RecordCanonicalNormalizerImport.class).on(named("importBatch")))
                     : builder)
+        .type(named("tech.streamfusion.state.StockBufferedDedupStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalBufferedDedupImport.class)
+                            .on(named("importBatch")))
+                    : builder)
         .type(named("tech.streamfusion.state.StockDedupStateContract"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -555,6 +563,14 @@ public final class StreamFusionSuiteAgent {
         @Advice.Argument(2) java.util.List<?> rows, @Advice.Argument(3) boolean validateOnly) {
       if (!validateOnly)
         NativeExecution.restored("NativeColumnarChangelogNormalizeOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalBufferedDedupImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(3) java.util.List<?> rows, @Advice.Argument(4) boolean validateOnly) {
+      if (!validateOnly) NativeExecution.restored("NativeColumnarDeduplicateOperator", rows.size());
     }
   }
 

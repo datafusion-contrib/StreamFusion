@@ -115,6 +115,8 @@ public final class CanonicalJobWorker {
     if (Files.exists(root.resolve("disable-chaining"))) environment.disableOperatorChaining();
     if (Files.exists(root.resolve("eager-watermarks")))
       environment.getConfig().setAutoWatermarkInterval(1);
+    if (Files.exists(root.resolve("source-watermarks")))
+      environment.getConfig().setAutoWatermarkInterval(0);
     if (nativeCheckpoint) environment.enableCheckpointing(TimeUnit.HOURS.toMillis(1));
     ClassLoader original = Thread.currentThread().getContextClassLoader();
     ClassLoader loader = nativeRun ? nativePlannerLoader(original, root) : original;

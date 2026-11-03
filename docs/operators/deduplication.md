@@ -106,7 +106,7 @@ operator identity and resolved maximum parallelism. Eager versus watermark-buffe
 selected from the stock function; Boolean presence is used only for processing-time first-row state.
 Processing-time bare-update mode registers Flink's row-state schema but exports no retained rows:
 its outputs do not depend on previous rows. Restore rejects unexpected saved rows before native
-insertion. Buffered rowtime-first still needs its distinct candidate/timer contract.
+insertion. Buffered rowtime-first uses its distinct candidate/timer contract described below.
 
 Qualification includes 28 eager plan checks and 152 isolated-process job scenarios (76 per
 submission form) on frozen binding commit `1ec00607`. They cover both native stores and switch
@@ -121,7 +121,7 @@ runtime types. The two released eager programs each import two rows and consume 
 rows. All 374 checks in the frozen cohort pass. Sixteen eager-switch cases also pass after the
 subsequent empty-state/sink-helper changes; overlapping counts are not cumulative.
 
-Buffered candidates/timers, remaining emission/type variants, old graph/backend/version upgrades
+Remaining buffered qualification, emission/type variants, old graph/backend/version upgrades
 and the complete connector/failure matrix remain open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
 
@@ -134,4 +134,33 @@ commit exactly one `+U` per input, including identical duplicates; bundled jobs 
 per-key upsert effects across savepoint flushes. Both forms check stock metadata/classpaths,
 connector state and both transposes. The same process cohort passes 16 eager-switch regressions
 and 32 existing processing/checkpoint controls. These overlapping counts do not qualify the full
-schema/backend/version/failure matrix or buffered rowtime-first.
+schema/backend/version/failure matrix or the separate buffered rowtime-first path.
+
+
+### Buffered event-time first-row conversion
+
+Ordinary SQL and stock compiled plans bind Flink 2.2.1 waiting rows, emitted Boolean markers and
+per-key event timers directly. Pending rows remain exempt from TTL; markers keep their original
+write ages. Memory/RocksDB conversion uses live state, without a native snapshot or input replay.
+Whole-view validation rejects inconsistent timers, keys, values and overlapping states before
+insertion; imported stock entries clear only after success. Arrow transport companions are
+validated and removed before buffering, and keyless markers survive native checkpoint recovery.
+
+Buffered qualification includes 30 continued-state/recovery cases, 25 direct corruption/age
+controls, 12 ordinary/compiled binding checks and 96 complete jobs across partitioned cohorts.
+Both submission forms/stores/orders cover continued input, long TTL, nullable/NOT NULL/keyless
+keys, empty state, repeated no-input returns, native checkpoints and fixed-maximum rescaling.
+Custom connectors, transactional effects, both transposes, clean stock dependencies and independent
+watermark/winner results are checked. Retained-winner cases prove partial transpose flushing and
+state preservation across both switches, plus late/equal-watermark handling. Fixture/build failures remain archived and receive no
+qualification credit; corrected affected cases pass. Wider version, variant, connector and failure
+coverage remains open; consult [buffered canonical coverage](../backends/canonical-state.md#buffered-event-time-first-row-state).
+Benchmarking remains deferred.
+
+
+Forty-eight actual-operator controls additionally retain nested payloads across twelve scalar,
+ROW, ARRAY and composite key layouts, including non-leading root key columns. Both TTL settings
+preserve an original pending winner through both switches and reject newer replacements.
+Continued serialized output matches stock byte for byte. These schemas test memory and
+RocksDB's snapshot-backed native state; they do not claim direct typed RocksDB coverage for
+nested payloads. Canonical conversion is guarded against intermediate native snapshots.

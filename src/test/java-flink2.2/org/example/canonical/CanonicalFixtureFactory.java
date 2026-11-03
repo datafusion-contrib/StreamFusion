@@ -94,7 +94,8 @@ public final class CanonicalFixtureFactory
         Integer.parseInt(options.getOrDefault("limit", Integer.toString(Integer.MAX_VALUE))),
         Boolean.parseBoolean(options.getOrDefault("insert-only", "false")),
         Boolean.parseBoolean(options.getOrDefault("upsert", "false")),
-        options.containsKey("parallelism") ? Integer.valueOf(options.get("parallelism")) : null);
+        options.containsKey("parallelism") ? Integer.valueOf(options.get("parallelism")) : null,
+        (RowType) context.getPhysicalRowDataType().getLogicalType());
   }
 
   @Override
@@ -108,13 +109,17 @@ public final class CanonicalFixtureFactory
         Boolean.parseBoolean(options.getOrDefault("upsert", "false")));
   }
 
-  public static final class TableSource implements ScanTableSource {
+  public static final class TableSource
+      implements ScanTableSource,
+          org.apache.flink.table.connector.source.abilities.SupportsSourceWatermark {
     private final String input;
     private final String ready;
     private final int limit;
     private final boolean insertOnly;
     private final boolean upsert;
     private final Integer parallelism;
+    private final RowType type;
+    private boolean sourceWatermarks;
 
     TableSource(
         String input,
@@ -122,13 +127,20 @@ public final class CanonicalFixtureFactory
         int limit,
         boolean insertOnly,
         boolean upsert,
-        Integer parallelism) {
+        Integer parallelism,
+        RowType type) {
       this.parallelism = parallelism;
       this.input = input;
       this.ready = ready;
       this.limit = limit;
       this.insertOnly = insertOnly;
       this.upsert = upsert;
+      this.type = type;
+    }
+
+    @Override
+    public void applySourceWatermark() {
+      sourceWatermarks = true;
     }
 
     @Override
@@ -146,7 +158,7 @@ public final class CanonicalFixtureFactory
     @Override
     public ScanRuntimeProvider getScanRuntimeProvider(ScanContext context) {
       return parallelism == null
-          ? SourceProvider.of(new RowsSource(input, ready, limit))
+          ? SourceProvider.of(new RowsSource(input, ready, limit, type, sourceWatermarks))
           : new FixedSourceProvider();
     }
 
@@ -164,12 +176,10 @@ public final class CanonicalFixtureFactory
         var stream =
             environment
                 .fromSource(
-                    new RowsSource(input, ready, limit),
+                    new RowsSource(input, ready, limit, type, sourceWatermarks),
                     org.apache.flink.api.common.eventtime.WatermarkStrategy.noWatermarks(),
                     "CanonicalFixtureSource",
-                    org.apache.flink.table.runtime.typeutils.InternalTypeInfo.ofFields(
-                        new org.apache.flink.table.types.logical.BigIntType(),
-                        new org.apache.flink.table.types.logical.BigIntType()))
+                    org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(type))
                 .setParallelism(parallelism);
         provider.generateUid("source").ifPresent(stream::uid);
         return stream;
@@ -178,7 +188,9 @@ public final class CanonicalFixtureFactory
 
     @Override
     public DynamicTableSource copy() {
-      return new TableSource(input, ready, limit, insertOnly, upsert, parallelism);
+      var copy = new TableSource(input, ready, limit, insertOnly, upsert, parallelism, type);
+      copy.sourceWatermarks = sourceWatermarks;
+      return copy;
     }
 
     @Override
@@ -303,11 +315,15 @@ public final class CanonicalFixtureFactory
     private final String input;
     private final String ready;
     private final int limit;
+    private final RowType type;
+    private final boolean sourceWatermarks;
 
-    RowsSource(String input, String ready, int limit) {
+    RowsSource(String input, String ready, int limit, RowType type, boolean sourceWatermarks) {
       this.input = input;
       this.ready = ready;
       this.limit = limit;
+      this.type = type;
+      this.sourceWatermarks = sourceWatermarks;
     }
 
     @Override
@@ -318,7 +334,8 @@ public final class CanonicalFixtureFactory
     @Override
     public SourceReader<RowData, OffsetSplit> createReader(SourceReaderContext context)
         throws Exception {
-      return new RowsReader(context, Files.readAllLines(Path.of(input)), ready, limit);
+      return new RowsReader(
+          context, Files.readAllLines(Path.of(input)), ready, limit, type, sourceWatermarks);
     }
 
     @Override
@@ -393,16 +410,28 @@ public final class CanonicalFixtureFactory
     private final List<String> rows;
     private final String ready;
     private final int limit;
+    private final RowType type;
+    private final boolean sourceWatermarks;
+    private final RowDataSerializer serializer;
     private OffsetSplit split;
     private boolean noMoreSplits;
     private boolean markedReady;
     private CompletableFuture<Void> available = new CompletableFuture<>();
 
-    RowsReader(SourceReaderContext context, List<String> rows, String ready, int limit) {
+    RowsReader(
+        SourceReaderContext context,
+        List<String> rows,
+        String ready,
+        int limit,
+        RowType type,
+        boolean sourceWatermarks) {
       this.context = context;
       this.rows = rows;
       this.ready = ready;
       this.limit = limit;
+      this.type = type;
+      this.sourceWatermarks = sourceWatermarks;
+      this.serializer = new RowDataSerializer(type);
     }
 
     @Override
@@ -422,11 +451,31 @@ public final class CanonicalFixtureFactory
         return InputStatus.NOTHING_AVAILABLE;
       }
       String[] fields = rows.get(split.offset).split(",", -1);
-      output.collect(
-          GenericRowData.ofKind(
-              RowKind.valueOf(fields[0]),
-              fields[1].equals("null") ? null : Long.parseLong(fields[1]),
-              fields[2].equals("null") ? null : Long.parseLong(fields[2])));
+      if (fields[0].equals("WATERMARK")) {
+        if (!sourceWatermarks || fields.length != 2)
+          throw new IOException("source watermark was not requested or is malformed");
+        output.emitWatermark(
+            new org.apache.flink.api.common.eventtime.Watermark(Long.parseLong(fields[1])));
+      } else {
+        if (fields.length != type.getFieldCount() + 1)
+          throw new IOException("source row does not match its physical schema");
+        var row = new GenericRowData(RowKind.valueOf(fields[0]), type.getFieldCount());
+        for (int i = 0; i < type.getFieldCount(); i++) {
+          String value = fields[i + 1];
+          row.setField(
+              i,
+              value.equals("null")
+                  ? null
+                  : type.getTypeAt(i)
+                          .is(
+                              org.apache.flink.table.types.logical.LogicalTypeRoot
+                                  .TIMESTAMP_WITHOUT_TIME_ZONE)
+                      ? org.apache.flink.table.data.TimestampData.fromEpochMillis(
+                          Long.parseLong(value))
+                      : Long.parseLong(value));
+        }
+        output.collect(serializer.toBinaryRow(row).copy());
+      }
       split = new OffsetSplit(split.offset + 1);
       if (split.offset == limit && limit < rows.size()) markReady();
       return split.offset < Math.min(limit, rows.size())

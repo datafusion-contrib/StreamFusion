@@ -416,7 +416,7 @@ Stock Flink needs only its normal connector/user dependencies. The qualified pro
 covers marker/row state, mini-batch full-chain/compact modes, empty/keyless state, no-input returns,
 native checkpoint recovery and fixed-maximum rescaling with both native stores and switch orders;
 see [eager dedup coverage](backends/canonical-state.md#automatic-eager-dedup-binding) for the remaining
-buffered state, emission/type variants and delivery/version work. Benchmarking is deferred.
+buffered qualification, emission/type variants and delivery/version work. Benchmarking is deferred.
 
 
 Proctime bare-update deduplication also follows this workflow with its empty stock-state projection,
@@ -425,3 +425,12 @@ from their actual definitions even when Flink assigns different display IDs. See
 [bare-update and helper coverage](backends/canonical-state.md#bare-update-state-and-sink-helper-identities)
 for the verified cases and remaining limits. Stock workers still require only normal Flink,
 connector and user-code dependencies.
+
+
+Buffered event-time first-row deduplication now installs its separate Flink 2.2.1 waiting-row,
+emitted-marker and event-timer contract through the same submission workflow. It preserves
+pending timers and original marker TTL ages. Qualified ordinary/compiled jobs cover both native
+stores and switch orders, empty/keyless state, no-input returns, native checkpoint recovery and
+fixed-maximum rescaling with custom connectors and both transposes. Broader qualification remains
+open; see
+[buffered canonical coverage](backends/canonical-state.md#buffered-event-time-first-row-state).

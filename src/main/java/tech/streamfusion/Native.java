@@ -1411,6 +1411,16 @@ public final class Native {
   public static native void validateEagerDeduplicatorCanonical(
       long handle, boolean persistent, long array, long schema);
 
+  public static native void exportBufferedDeduplicatorCanonical(
+      long handle, long rowSchema, boolean markers, BatchReceiver receiver);
+
+  public static native void importBufferedDeduplicatorCanonical(
+      long handle, long rowSchema, boolean markers, long array, long schema);
+
+  public static native void validateBufferedDeduplicatorCanonical(
+      long handle, long rowSchema, boolean markers, long array, long schema);
+
+
   /** Releases the deduplicator and its per-key state. */
   public static native void closeKeepLastDeduplicator(long handle);
 

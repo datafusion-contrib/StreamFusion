@@ -38,6 +38,7 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] keyTimestampPrecisions;
   private Integer stateMaxParallelism;
   private boolean stockEagerState;
+  private boolean stockBufferedState;
 
   public NativeDeduplicateExecNode withStateMaxParallelism(int maximum) {
     org.apache.flink.util.Preconditions.checkArgument(maximum > 0);
@@ -47,6 +48,13 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
 
   public NativeDeduplicateExecNode withStockEagerState() {
     stockEagerState = true;
+    stockBufferedState = false;
+    return this;
+  }
+
+  public NativeDeduplicateExecNode withStockBufferedState() {
+    stockBufferedState = true;
+    stockEagerState = false;
     return this;
   }
 
@@ -89,11 +97,12 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
     // its bundled retracting function — keep-first merely flips the comparator — so that shape
     // routes to the eager operator too.
     boolean eager =
-        stockEagerState
-            || proctime
-            || keepLast
-            || miniBatchEnabled
-            || tech.streamfusion.compat.FlinkCompat.EAGER_ROWTIME_KEEP_FIRST;
+        !stockBufferedState
+            && (stockEagerState
+                || proctime
+                || keepLast
+                || miniBatchEnabled
+                || tech.streamfusion.compat.FlinkCompat.EAGER_ROWTIME_KEEP_FIRST);
     int maxParallelism =
         stateMaxParallelism != null
             ? stateMaxParallelism
