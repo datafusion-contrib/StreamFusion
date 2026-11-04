@@ -13,7 +13,8 @@ bounded; other maintenance uses Paimon.
 Measured on 2026-11-04, Apple M4 (10 CPUs), 16 GiB RAM, JDK 17.0.17, Flink 2.2.1, Java Paimon
 2.1.0 and crates.io paimon 0.4.0. All native libraries use release/mimalloc builds. The JVM has
 an 8 GiB maximum heap; each table has one bucket, a 256 MiB write buffer, a 256 MiB sort-spill
-buffer, 4 MiB Parquet row groups, default compression and 4,096-row reads. Limits and input files
+buffer, 4 MiB Parquet row groups, default compression and 1,024-row reads. Native output is handed
+to the shared rolling writer in chunks of at most 4,096 rows. Limits and input files
 are identical across engines. These runs do not measure per-engine peak RSS and make no memory
 efficiency claim.
 

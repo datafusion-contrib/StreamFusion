@@ -42,6 +42,7 @@ class PaimonCompactionProviderTest {
                 .option("bucket", "1")
                 .option("num-levels", "3")
                 .option("file.format", "parquet")
+                .option("file.compression", "snappy")
                 .option("num-sorted-run.compaction-trigger", "100")
                 .build());
     var table = FileStoreTableFactory.create(io, path);
