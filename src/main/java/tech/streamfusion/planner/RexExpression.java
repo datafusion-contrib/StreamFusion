@@ -4977,8 +4977,6 @@ final class RexExpression {
         || !nativeIntegralRoundingOperand(call.getOperands().get(0))) return false;
     RexNode position = call.getOperands().get(1);
     if (nativeBoundedIntegralPosition(position)) return true;
-    if (call.getOperator()
-        != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND) return false;
     IntegralPositionRange range = integralPositionRange(position);
     return range != null && (range.isNullOnly() || range.lower >= -38 && range.upper <= 38);
   }

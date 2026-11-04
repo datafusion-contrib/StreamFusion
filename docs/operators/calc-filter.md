@@ -1885,9 +1885,10 @@ add computed operands, bounded positions and failure-safe NULL folding.
 
 INT/BIGINT `TRUNCATE(value, position)` reuses the
 [bounded CASE proof](#integer-round-with-a-bounded-runtime-position), typed position selector
-and exact integer kernel. Every position result must be a literal in -38..38 or NULL,
-including nested CASE; every condition and value producer must satisfy the failure-free
-proof. Negative positions truncate toward zero without a DECIMAL(38,18) JVM intermediate.
+and exact integer kernel. On the literal-branch CASE path, every position result is a
+literal in -38..38 or NULL, including nested CASE; every condition and value producer
+must satisfy the failure-free proof. Negative positions truncate toward zero without a
+DECIMAL(38,18) JVM intermediate.
 The selected NULL, input NULL, resolved width, integer overflow in verified producers,
 STRING/epoch consumers and empty-batch contracts remain exact.
 
@@ -1898,6 +1899,16 @@ No Rust implementation, opcode, JNI, transport or switch is added by this extens
 The [TRUNCATE qualification](../benchmarks/scalar-functions.md#integer-truncate-with-a-bounded-runtime-position)
 compares both releases with stock and the actual preceding encoder, retaining tiny and
 conversion-inclusive complete-job controls.
+
+INT/BIGINT TRUNCATE also accepts positions conservatively bounded through built-in
+GREATEST/LEAST and CASE, for example `TRUNCATE(value, GREATEST(-38, LEAST(position, 38)))`.
+It reuses ROUND's interval/totality proof and existing extrema/selection kernels; the
+rounding kernel retains its toward-zero branch. NULL-only branches and independent value/
+position NULLs preserve their existing behavior. One-sided/unbounded/out-of-range positions,
+failing/unverified producers and same-name catalog functions keep their preceding routes.
+Direct TINYINT/SMALLINT signatures retain their released failure. The
+[clamped TRUNCATE qualification](../benchmarks/scalar-functions.md#integer-truncate-with-clamped-runtime-positions)
+uses its own actual preceding encoder, stock/native measurements and complete-job controls.
 
 ### Exact unary and integral functions
 

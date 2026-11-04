@@ -1390,6 +1390,14 @@ execute nontrivial rounding rather than only saturated zero/identity paths. Twel
 sixteen tiny controls and three of eight complete jobs still lose to stock. Complete-job
 native/stock elapsed is 0.878-1.057; no universal full-job gain is claimed.
 
+INT/BIGINT TRUNCATE reuses that clamped-position proof with its existing toward-zero
+kernel. The [independent qualification](../benchmarks/scalar-functions.md#integer-truncate-with-clamped-runtime-positions)
+compares its actual preceding ROUND-only encoder on byte-identical runtime artifacts.
+All 32 bulk cells beat paired stock by 6.593-28.118x and previous by 11.913-36.111x.
+Three of eight tiny controls still lose to stock. All eight measured complete jobs
+beat stock (native/stock elapsed 0.765-0.888) and previous (0.687-0.777); ranges and
+independent stock controls remain in the record. No universal job gain is inferred.
+
 
 ## Reuse the primitive formatter's literal and conversion buffers
 
