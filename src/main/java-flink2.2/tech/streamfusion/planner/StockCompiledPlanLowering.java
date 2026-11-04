@@ -203,6 +203,13 @@ final class StockCompiledPlanLowering {
     for (ExecNode<?> root : runtimeGraph.getRootNodes()) {
       collectIdentities(root, stock, runtime, anchors, transposes, visited);
     }
+    for (var node : runtime.getStreamNodes()) {
+      if (node.getOperatorFactory() != null
+          && CanonicalGraphIdentities.isExtensionStatelessOperator(
+              node.getOperatorFactory()
+                  .getStreamOperatorClass(planner.getFlinkContext().getClassLoader()),
+              planner.getFlinkContext().getClassLoader())) transposes.add(node.getId());
+    }
     var identities =
         CanonicalGraphIdentities.bind(
             stock, runtime, anchors, transposes, planner.getFlinkContext().getClassLoader());
@@ -317,6 +324,12 @@ final class StockCompiledPlanLowering {
           && ServiceLoader.load(NativePlannerExtension.class, loader).stream()
               .map(ServiceLoader.Provider::get)
               .anyMatch(extension -> extension.preservesStockSourceState(node))) continue;
+      if (graph.originals.get(node)
+              instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink
+          && node.getInputEdges().size() == 1
+          && ServiceLoader.load(NativePlannerExtension.class, loader).stream()
+              .map(ServiceLoader.Provider::get)
+              .anyMatch(extension -> extension.preservesStockSinkState(node))) continue;
       if (node.getClass().getName().startsWith("tech.streamfusion.")
           && !(node instanceof NativeDeduplicateExecNode
               || node instanceof NativeChangelogNormalizeExecNode
@@ -588,6 +601,8 @@ final class StockCompiledPlanLowering {
     ExecNode<?> result = node;
     if (node instanceof StreamExecTableSourceScan)
       result = lowerSource((StreamExecTableSourceScan) node);
+    else if (node instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink)
+      result = lowerSink(node);
     else if (node instanceof StreamExecCalc && NativeConfig.operatorEnabled("calc"))
       result = lowerCalc((StreamExecCalc) node);
     else if (node
@@ -2885,6 +2900,58 @@ final class StockCompiledPlanLowering {
         ttl);
   }
 
+  private ExecNode<?> lowerSink(ExecNode<?> stock) throws IOException {
+    JsonNode definition = definitions.get(stock.getId());
+    var spec =
+        reader
+            .forType(org.apache.flink.table.planner.plan.nodes.exec.spec.DynamicTableSinkSpec.class)
+            .<org.apache.flink.table.planner.plan.nodes.exec.spec.DynamicTableSinkSpec>readValue(
+                definition.path("dynamicTableSink"));
+    var mode =
+        reader
+            .forType(org.apache.flink.table.connector.ChangelogMode.class)
+            .<org.apache.flink.table.connector.ChangelogMode>readValue(
+                definition.path("inputChangelogMode"));
+    ExecNode<?> input = stock.getInputEdges().get(0).getSource();
+    RowType inputType = (RowType) input.getOutputType();
+    var cluster =
+        FlinkRelOptClusterFactory.create(
+            new VolcanoPlanner(RelOptCostImpl.FACTORY, planner.getFlinkContext()),
+            new RexBuilder(planner.getTypeFactory()));
+    // This schema-only input is used for admission; execution retains the actual lowered edge.
+    var physical =
+        new org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink(
+            cluster,
+            cluster.traitSet(),
+            LogicalValues.createEmpty(
+                cluster, planner.getTypeFactory().createFieldTypeFromLogicalType(inputType)),
+            List.of(),
+            spec.getContextResolvedTable(),
+            spec.getTableSink(planner.getFlinkContext()),
+            spec.getTargetColumns(),
+            spec.getSinkAbilities() == null
+                ? new org.apache.flink.table.planner.plan.abilities.sink.SinkAbilitySpec[0]
+                : spec.getSinkAbilities()
+                    .toArray(
+                        new org.apache.flink.table.planner.plan.abilities.sink.SinkAbilitySpec[0]),
+            definition.path("requireUpsertMaterialize").asBoolean());
+    Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
+    ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
+    for (var extension :
+        ServiceLoader.load(
+            NativePlannerExtension.class, planner.getFlinkContext().getClassLoader())) {
+      var sink = extension.lowerCompiledSink(physical, config, mode);
+      if (sink == null) continue;
+      connect(
+          arrowInput(
+              input, config, inputType, !mode.containsOnly(org.apache.flink.types.RowKind.INSERT)),
+          sink);
+      bindings.put(sink, new StockBinding(stock.getId(), stockUids.get(stock.getId()), null));
+      return sink;
+    }
+    return stock;
+  }
+
   private ExecNode<?> lowerSource(StreamExecTableSourceScan stock) throws IOException {
     var spec =
         reader
@@ -3468,7 +3535,12 @@ final class StockCompiledPlanLowering {
     bindings.forEach(
         (node, binding) -> {
           Transformation<?> transformation = ((ExecNodeBase<?>) node).getTransformation();
-          if (node instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink)
+          if (node instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink
+              || ServiceLoader.load(
+                      NativePlannerExtension.class, planner.getFlinkContext().getClassLoader())
+                  .stream()
+                  .map(ServiceLoader.Provider::get)
+                  .anyMatch(extension -> extension.preservesStockSinkState(node)))
             transformation.setName(stockTransformations.get(binding.originalId).getName());
           if (binding.uid != null) transformation.setUid(binding.uid);
           if (binding.contract != null)

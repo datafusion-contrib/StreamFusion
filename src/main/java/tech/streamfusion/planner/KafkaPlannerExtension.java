@@ -41,6 +41,40 @@ public final class KafkaPlannerExtension implements NativePlannerExtension {
   }
 
   @Override
+  public boolean preservesStockSinkState(
+      org.apache.flink.table.planner.plan.nodes.exec.ExecNode<?> sink) {
+    return sink instanceof NativeKafkaSinkExecNode;
+  }
+
+  @Override
+  public java.util.Set<Class<?>> canonicalStatelessOperators() {
+    return java.util.Set.of(tech.streamfusion.kafka.NativeKafkaSerializationOperator.class);
+  }
+
+  @Override
+  public org.apache.flink.table.planner.plan.nodes.exec.ExecNode<?> lowerCompiledSink(
+      StreamPhysicalSink sink,
+      org.apache.flink.configuration.ReadableConfig config,
+      org.apache.flink.table.connector.ChangelogMode inputMode) {
+    if (!NativeConfig.operatorEnabled("kafkaSink") || !KafkaSinkMatcher.appliesTo(sink))
+      return null;
+    var planned = KafkaSinkMatcher.plan(sink);
+    if (planned.fallbackReason != null
+        || KafkaSinkMatcher.inputFallback(
+                planned, inputMode.containsOnly(org.apache.flink.types.RowKind.INSERT))
+            != null) return null;
+    return new NativeKafkaSinkExecNode(
+        config,
+        org.apache.flink.table.planner.plan.nodes.exec.InputProperty.DEFAULT,
+        org.apache.flink.table.planner.calcite.FlinkTypeFactory$.MODULE$.toLogicalRowType(
+            sink.getRowType()),
+        "NativeKafkaSink(table=["
+            + sink.contextResolvedTable().getIdentifier().asSummaryString()
+            + "])",
+        planned);
+  }
+
+  @Override
   public org.apache.flink.table.planner.plan.nodes.exec.ExecNode<
           tech.streamfusion.operator.ArrowBatch>
       lowerCompiledSource(

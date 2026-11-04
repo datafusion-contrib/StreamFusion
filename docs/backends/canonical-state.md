@@ -1430,3 +1430,16 @@ actual native output and isolated stock worker classpaths. This is not Kafka sin
 complete connector delivery qualification. Ordinary native checkpoints retain their existing graph
 identities, and canonical metadata exports the stock identities. Wider operator/connector/failure/
 version work and all ten full acceptance criteria remain open in #569; benchmarking is deferred.
+
+
+## Stock-owned Kafka sink state (partial)
+
+A native Kafka encoder feeds the unchanged released Flink writer and committer. Their original
+identities and transaction state survive canonical handoff, while the synchronous encoder is an
+explicitly declared empty helper. Export rejects helpers that unexpectedly own durable state.
+Portable plans reuse the same connector and constraint admission policy as ordinary SQL and
+retain their stock JSON. The 36-case custom-source/sink matrix checks actual submitted native execution, saved transaction
+ownership, no-input/checkpoint returns and writer redistribution. The [Kafka sink coverage](../connectors/kafka.md#canonical-sink-handoffs-partial)
+separates that broker continuation evidence from planner checks and unfinished transaction,
+rescaling, failure, schema and version combinations. Native checkpoints retain their ordinary
+recovery path. The full #569 acceptance criteria remain open; benchmarking is deferred.

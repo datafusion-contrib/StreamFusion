@@ -191,3 +191,54 @@ SF_KAFKA_INTEGRATION=true mvn -Pcanonical-kafka -pl streamfusion-runtime -am tes
 
 For a targeted checkpoint fixture run, add `-Dsf.canonical.kafka.mode=checkpoint`; omit it for the
 complete matrix. This is a correctness lane, independent of the benchmark environment flag.
+
+
+## Canonical sink handoffs (partial)
+
+Native Kafka serialization is synchronous and owns no durable state. Its unchanged Flink Kafka
+writer and committer retain their released state codecs and transaction ownership. Canonical
+identity binding treats the encoder as an explicitly declared stateless representation stage and
+retains the original source/writer/committer identities. Optional sink extensions must opt into
+that contract; unsupported implementations receive no inferred compatibility claim. A helper that
+actually owns state still fails canonical export rather than silently losing it.
+
+Portable stock plans now use the same sink admission checks as ordinary SQL, including type/format,
+constraint enforcement, sink abilities, changelog mode, materialization and repartitioning rules.
+The submission artifact stays stock JSON; native encoding is installed only in the runtime graph.
+The compiled-plan adapter supplies the original input schema to admission without executing a
+synthetic input. Runtime records continue over the actual restored source edge.
+
+The consolidated 36-case real-broker sink matrix passes: eight continued-input, eight no-input,
+four native-job checkpoint recovery, eight writer-rescale cases with generated hashes and chaining
+disabled, and eight writer-rescale cases with automatic UID generation and normal chaining. Both
+SQL/compiled submissions, initial engine orders where applicable, and incrementing/pooling names
+are covered. The source stays singleton while writer parallelism changes 1→3→2 at fixed maximum
+parallelism. The query has three nullable BIGINT fields, a custom source and an exactly-once Kafka
+sink. Source offsets, transaction prefixes/ownership/precommitted transactions, native encoded
+row counts (including partial barrier batches), clean stock classpaths and exact `read_committed`
+records are checked after each switch. Native execution is witnessed by the actual submitted job
+graph and row counters. The separate 875-check cohort includes fourteen Kafka source jobs and
+sixty-six sink admission/graph controls; its cases overlap earlier cohorts. Twenty-two shared
+Flink 1.18 checks establish processing regressions only.
+
+Changing parallelism with generated hashes can change chaining and therefore stock identities.
+Both unchanged stock-to-stock SQL/compiled controls reproduce the same unmatched source ID.
+Disable chaining consistently for that policy, or retain stable UIDs. The qualified automatic-UID
+ordinary SQL cases submit once per worker. Extra planner previews consume execution-node IDs and
+can change the subsequent ordinary-SQL UID namespace differently between engines; portability for
+that planning history remains unfinished in #569. A portable compiled plan retains its original
+UID namespace. No failed restore enables unmatched-state acceptance or drops source/writer state.
+
+Both-native Kafka endpoints have separate continued-input and unchained rescale evidence, but their
+full qualification is unfinished. Startup testing exposed an Arrow allocation made before task
+budget initialization and released afterward against an uncharged owner. The fix and complete
+both-endpoint matrix are being qualified separately; the custom-source sink matrix above does not
+establish that broader startup/delivery guarantee.
+
+Broker/coordinator failures, failures around external commits, further formats/schemas/security,
+upsert/CDC delivery, source partition discovery and both-native source/sink handoffs remain open
+under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Canonical interchange
+is qualified only on the released Flink/connector versions stated above. Benchmarking is deferred.
+
+Use the source handoff command above with `-Dtest=CanonicalKafkaSinkJobTest` for the sink lane.
+`-Dsf.canonical.kafka.sink.mode=checkpoint` selects checkpoint recovery; omit it for all cases.

@@ -36,7 +36,8 @@ final class CanonicalGraphIdentities {
       if (operator != RowDataToArrowOperator.class
           && operator != ArrowToRowDataOperator.class
           && operator != SplitByKeyGroupOperator.class
-          && operator != NativeColumnarShareOperator.class) {
+          && operator != NativeColumnarShareOperator.class
+          && !isExtensionStatelessOperator(operator, loader)) {
         throw new IllegalArgumentException(
             "Only stateless representation and exchange operators may be omitted: " + operator);
       }
@@ -108,6 +109,12 @@ final class CanonicalGraphIdentities {
                 StringUtils.byteToHexString(nativeHashes.get(nativeId)),
                 StringUtils.byteToHexString(stockHashes.get(stockId))));
     return Map.copyOf(identities);
+  }
+
+  static boolean isExtensionStatelessOperator(Class<?> operator, ClassLoader loader) {
+    return java.util.ServiceLoader.load(NativePlannerExtension.class, loader).stream()
+        .map(java.util.ServiceLoader.Provider::get)
+        .anyMatch(extension -> extension.canonicalStatelessOperators().contains(operator));
   }
 
   private static Map<Integer, StreamNode> nodes(StreamGraph graph, Set<Integer> omitted) {

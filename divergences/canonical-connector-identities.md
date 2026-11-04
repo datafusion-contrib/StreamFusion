@@ -19,6 +19,20 @@ identities; their state can be restored without StreamFusion on the stock classp
 snapshot intermediate is introduced.
 
 The real-broker source subset and remaining transaction/failure/format/version limits are tracked
-on [the Kafka coverage page](../docs/connectors/kafka.md). Sink state and both-native pipelines
+on [the Kafka coverage page](../docs/connectors/kafka.md). Broader sink variants and both-native pipelines
 still require independent qualification under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred by the maintainer.
+
+
+The sink follows the same explicit extension contract. The native Kafka serializer immediately
+produces stock Kafka record bytes and holds no input across callbacks or barriers. Its extra
+physical node may therefore be contracted during logical graph matching, with the existing
+metadata projection still rejecting any durable helper state. Stock writer and committer roles
+retain their original identities; no Kafka transaction state converter is introduced.
+
+For portable plans, released Flink 2.2.1 dynamic sink specifications supply the table, abilities,
+input schema and changelog mode. A schema-only relational input lets the existing ordinary sink
+admission and constraint gate inspect exactly that contract. It is never translated or executed;
+the native sink receives the actual lowered input edge. Existing materialization, metadata,
+constraints and changelog repartitioning exclusions continue to apply. The core planner uses the
+optional extension API and does not depend on Kafka classes.
