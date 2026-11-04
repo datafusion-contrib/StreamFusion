@@ -2412,6 +2412,17 @@ their preceding route, including the running JDK's index-zero behavior.
 Signed widths and two's-complement formatting remain exact. All child producers must be
 failure-free even when the format does not use an argument.
 
+Unbounded STRING CAST/TRY_CAST of those verified total integer producers can also feed
+this path. The planner validates the format against the logical STRING argument before
+eliding its intermediate text: `%s`/`%S` and `%b`/`%B` have the same result when the
+underlying integer is formatted directly. Numeric conversions such as `%d`/`%x` remain
+invalid for the STRING argument, including index/reuse rules and NULL-specific formatter
+behavior on the preceding route. Bounded CHAR/VARCHAR, BOOLEAN/DECIMAL text casts and
+unverified or failing producers retain their existing paths. In particular, casting BOOLEAN
+false to STRING would make `%b` true; that cast is not elided. The resulting ASCII proof
+also applies to the direct length/comparison consumers below. See the
+[integer-text qualification](../benchmarks/scalar-functions.md#integer-text-producers-for-printf).
+
 The same verified BOOLEAN producer proof used by character casts also applies to PRINTF:
 integer-to-BOOLEAN TRY_CAST over total integer producers, direct DECIMAL-to-BOOLEAN TRY_CAST,
 direct DECIMAL comparisons with matching precision/scale, and their verified logical/NULL
@@ -2427,8 +2438,8 @@ retains the slower shared-loop prototypes, final old-native integer and certifie
 allocation diagnostics and complete jobs with both transposes.
 
 This path borrows the literal format and reuses row/conversion buffers, appending each
-result to Arrow directly. It binds no JVM evaluator. Dynamic/non-ASCII formats, STRING/
-DECIMAL/other argument types, other conversions, larger widths/precision and unverified
+result to Arrow directly. It binds no JVM evaluator. Dynamic/non-ASCII formats, unverified
+STRING/DECIMAL/other arguments, other conversions, larger widths/precision and unverified
 producers retain their existing paths. Direct built-in CHAR_LENGTH and CHARACTER_LENGTH over
 this verified primitive formatter also bind no JVM evaluator: its ASCII result has identical
 byte, character and UTF-16 length. The producer proof includes the numeric BOOLEAN subset above.

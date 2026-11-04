@@ -1391,6 +1391,18 @@ retains the first slower shared-loop version, the intermediate specialization an
 reversed numeric controls, final allocation probes and complete jobs. Earlier measurements
 above retain their original source/runtime provenance.
 
+An unbounded STRING CAST/TRY_CAST of a verified total integer producer can be elided
+inside the primitive formatter. Format validation still observes the logical STRING type,
+so numeric conversions remain invalid. Its general string/Boolean conversions consume the
+underlying integer directly, avoiding intermediate text and a generated evaluator. Bounded
+text, BOOLEAN/DECIMAL text and unverified/failing producers retain their previous paths.
+The [integer-text qualification](../benchmarks/scalar-functions.md#integer-text-producers-for-printf)
+replays the actual preceding encoder/helper and byte-identical runtime: all 28 bulk cells
+beat stock **2.059-7.947x** and previous **3.023-8.367x**; seven tiny controls also improve.
+Four complete million-row jobs keep both transposes with native/stock elapsed **0.342-0.844**.
+The record preserves independent controls and variability; this does not resolve the earlier
+small-batch comparison loss or establish universal gains.
+
 General certified batches whose formats are equal and non-NULL also borrow the format once
 and reuse these buffers. The complete-batch ASCII/cache identity checks still run first;
 invalid formats reject the entire certificate, and varying/NULL formats keep row handling.

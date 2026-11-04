@@ -9059,3 +9059,76 @@ previous controls run `IntegralExpressionBenchmarkFunctions` with `sf.integral.p
 use `IntegralExpressionPipelineBenchmark` with matching inputs and expressions. Remaining
 scope stays in [#497](https://github.com/datafusion-contrib/StreamFusion/issues/497) and
 [#508](https://github.com/datafusion-contrib/StreamFusion/issues/508).
+
+## Integer text producers for PRINTF
+
+On 2026-11-04, unbounded STRING CAST/TRY_CAST of a proven total integer producer can
+feed the primitive formatter without materializing intermediate text. The planner first
+validates conversions against the logical STRING argument. Only then does it emit the
+underlying integer: `%s`/`%S` and `%b`/`%B` have the same result for its decimal text,
+including NULLs, precision, padding and indexing. Numeric conversions remain invalid for
+STRING; their NULL-specific released behavior stays on the preceding route. Bounded
+character targets, BOOLEAN/DECIMAL text and unverified/failing producers are excluded.
+In particular, BOOLEAN false formatted with `%b` differs from its non-NULL text `false`.
+
+This Java-only elision reuses the byte-identical native runtime and its buffered formatter.
+Existing direct length/comparison consumers reuse the same ASCII proof; it does not widen
+general STRING/representation admission. The [record](results/integer-text-printf-2026-11-04.json)
+retains all configurations, hashes, allocation diagnostics and [3,500 raw trials](results/integer-text-printf-2026-11-04.csv.gz).
+Apple M4 Pro, macOS arm64, one thread, JDK 17.0.12, released Flink 2.2.1, Java release 11,
+release/mimalloc. Actual preceding encoder/helper `5e18ac8d` runs on its saved whole
+DSO/executable, including its generated evaluator; measured and validated bytecode match.
+
+Prepared stock starts on GenericRowData/BinaryRowData and native starts inside Rust on
+equal prebuilt Arrow. Each cell has 131,072 logical rows, 16 warmups and nine alternating
+measurements. Production Calc, output consumption, allocation, intrinsic conversions and
+callbacks remain inside the Rust timer after import and before export. Initial JNI/import/
+export and perimeter transposes are outside this small-function timer only. Four signed
+integer widths, both NULL modes/layouts, computed wrapping, mixed BOOLEAN/integer arguments,
+general string/Boolean formats, indexing, precision and padding are covered; all digests match.
+
+| Scope | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk, 1,024 rows | 28 | 2.059-7.947x | 3.023-8.367x | 2.102-8.084x |
+| Tiny, 16 rows | 7 | 1.184-5.362x | 8.791-12.787x | 1.138-5.676x |
+
+Four complete million-row jobs use bounded external Row sources and blackhole sinks,
+retaining job submission/startup, JNI and both transposes. Each engine has two warmups and
+five alternating measured jobs; surrounding JVM startup and setup are outside timing.
+Candidate and preceding native operators must consume work; only the new route requires
+empty evaluators. Median seconds:
+
+| Shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| int-text | 0.267157 | 0.225393 | 0.268707 | 0.292513 |
+| bigint-text | 0.691436 | 0.250366 | 0.622890 | 0.655572 |
+| boolean-and-text | 0.816311 | 0.279250 | 0.753133 | 0.738243 |
+| computed-text | 0.668061 | 0.249539 | 0.682569 | 0.675910 |
+
+Native/stock elapsed spans **0.342-0.844** and native/previous **0.369-0.771**.
+All measured cells improve, with raw variability and independent stock controls retained.
+These gains qualify this bounded feature, not universal job acceleration or the earlier
+16-row comparison regression, which remains in its own record.
+
+All **172 final focused JVM invocations** pass without skips across released Flink
+1.18.1/2.2.1 and JDK 11/17, targeting Java 11. Full 5,003-row maps/schema cover CAST and
+TRY_CAST, signed extrema/NULLs, modern/legacy modes, arithmetic wrapping, mixed BOOLEAN,
+length/comparison consumers, all-filtered batches, invalid STRING numeric conversions,
+bounded/BOOLEAN/DECIMAL exclusions and failing/lazy/unused arguments. Admitted paths
+require consumed NativeCalc work, no fallback and empty evaluators. On each JDK the actual
+previous encoder compares eight first-query maps/schema, then fails the intended route
+assertions; later legacy/empty queries in those invocations are not counted. Those broad
+queries include ordered consumers and encounter the preceding internal-RowData whole-Calc
+fallback. Its residual dynamic control passes; prepared direct-PRINTF controls independently
+verify and time its generated native Calc route.
+
+The unchanged DSO/executable retain their earlier 912-core-test and released PRINTF stock-
+oracle qualification; these are not new Rust/oracle runs. Flink 1.18's lack of PRINTF remains
+an absence control, not a native gap. Hosted suites must qualify the exact pushed head.
+
+Reproduce prepared measurements with release `integral_expression` and the record's
+type/expression, secondary type, NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`.
+Previous controls set `SF_INTEGRAL_PREVIOUS=true` with the actual saved encoder/helper/runtime.
+Complete jobs use `IntegralExpressionPipelineBenchmark`, matching boolean/BIGINT input,
+secondary type and expression properties. Remaining direct STRING/DECIMAL arguments,
+formats and consumers stay in [#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).

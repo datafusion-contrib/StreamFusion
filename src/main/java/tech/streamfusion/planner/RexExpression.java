@@ -2224,7 +2224,14 @@ final class RexExpression {
       return true;
     }
     int printf = nativePrintf(call);
-    if (printf != 0) return emitBuiltinCall(call, printf);
+    if (printf != 0) {
+      add(KIND_CALL, printf, call.getOperands().size());
+      for (RexNode operand : call.getOperands()) {
+        RexNode integerText = nativePrintfIntegerText(operand);
+        if (!emit(integerText == null ? operand : integerText)) return false;
+      }
+      return true;
+    }
     int certifiedBuiltin = certifiedBuiltin(call);
     if (certifiedBuiltin != 0) return emitCertifiedBuiltin(call, certifiedBuiltin);
     int epochTimestamp = nativeEpochTimestamp(call);
@@ -4723,6 +4730,7 @@ final class RexExpression {
     var format = (RexLiteral) call.getOperands().get(0);
     if (!isCharacter(format) || format.isNull()) return 0;
     boolean[] booleanArguments = new boolean[call.getOperands().size() - 1];
+    boolean[] stringArguments = new boolean[booleanArguments.length];
     boolean hasBoolean = false;
     for (int i = 1; i < call.getOperands().size(); i++) {
       RexNode operand = call.getOperands().get(i);
@@ -4730,12 +4738,30 @@ final class RexExpression {
         if (!nativeBooleanTextOperand(operand)) return 0;
         booleanArguments[i - 1] = true;
         hasBoolean = true;
+      } else if (nativePrintfIntegerText(operand) != null) {
+        stringArguments[i - 1] = true;
       } else if (!SqlTypeFamily.INTEGER.contains(operand.getType())
           || !nativeIntegralRoundingOperand(operand)) return 0;
     }
     String pattern = format.getValueAs(String.class);
-    if (hasBoolean) return IntegerPrintfFormat.supports(pattern, booleanArguments) ? 250 : 0;
-    return IntegerPrintfFormat.supports(pattern, booleanArguments.length) ? 248 : 0;
+    return IntegerPrintfFormat.supports(pattern, booleanArguments, stringArguments)
+        ? (hasBoolean ? 250 : 248) : 0;
+  }
+
+  private static RexNode nativePrintfIntegerText(RexNode operand) {
+    if (!(operand instanceof RexCall)) return null;
+    var call = (RexCall) operand;
+    if (!(call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CAST
+            || call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST)
+        || call.getOperands().size() != 1
+        || call.getType().getSqlTypeName() != SqlTypeName.VARCHAR
+        || call.getType().getPrecision() != Integer.MAX_VALUE
+        || !SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
+        || !nativeIntegralRoundingOperand(call.getOperands().get(0))) return null;
+    // General conversions of integer text match boxed integers; numeric conversions stay invalid.
+    return call.getOperands().get(0);
   }
 
   private static boolean nativePrimitivePrintfComparison(RexCall call) {

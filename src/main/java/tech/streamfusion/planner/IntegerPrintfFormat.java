@@ -14,14 +14,19 @@ final class IntegerPrintfFormat {
   private IntegerPrintfFormat() {}
 
   static boolean supports(String format, int arguments) {
-    return supports(format, arguments, null);
+    return supports(format, arguments, null, null);
   }
 
   static boolean supports(String format, boolean[] booleanArguments) {
-    return supports(format, booleanArguments.length, booleanArguments);
+    return supports(format, booleanArguments.length, booleanArguments, null);
   }
 
-  private static boolean supports(String format, int arguments, boolean[] booleanArguments) {
+  static boolean supports(String format, boolean[] booleanArguments, boolean[] stringArguments) {
+    return supports(format, booleanArguments.length, booleanArguments, stringArguments);
+  }
+
+  private static boolean supports(String format, int arguments, boolean[] booleanArguments,
+      boolean[] stringArguments) {
     if (format.length() > 512 || format.chars().anyMatch(c -> c > 127)) return false;
     var matcher = CONVERSION.matcher(format);
     for (int offset = 0; offset < format.length(); ) {
@@ -52,6 +57,11 @@ final class IntegerPrintfFormat {
     if (booleanArguments != null) {
       for (int i = 0; i < arguments; i++) {
         if (booleanArguments[i]) zeros[i] = Boolean.FALSE;
+      }
+    }
+    if (stringArguments != null) {
+      for (int i = 0; i < arguments; i++) {
+        if (stringArguments[i]) zeros[i] = "";
       }
     }
     try (var formatter = new Formatter(Locale.US)) {

@@ -38,4 +38,20 @@ class IntegerPrintfFormatTest {
     }
     assertTrue(IntegerPrintfFormat.supports("%1$B/%2$s/%<b", new boolean[] {true, true}));
   }
+
+  @Test
+  void integerTextKeepsTheStringArgumentConversionContract() {
+    boolean[] bool = {false, false};
+    boolean[] text = {true, false};
+    for (String format : List.of("%s/%d", "%1$12.3S/%1$b/%2$08x", "%2$s/%<d/%s")) {
+      assertTrue(IntegerPrintfFormat.supports(format, bool, text), format);
+    }
+    for (String format : List.of("%1$d", "%1$x", "%1$o", "%1$s/%<d", "%0$s")) {
+      assertFalse(IntegerPrintfFormat.supports(format, bool, text), format);
+    }
+    assertTrue(IntegerPrintfFormat.supports("%1$s/%2$b/%1$B",
+        new boolean[] {false, true}, text));
+    assertFalse(IntegerPrintfFormat.supports("%1$s/%2$d",
+        new boolean[] {false, true}, text));
+  }
 }
