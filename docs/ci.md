@@ -230,7 +230,14 @@ does not activate this profile.
 
 The three classes producing the required portable, recovery and rescale SQL audit JSON files
 stay in shard 1, whose upload still fails if those files are absent. A regression checks that
-the artifact producers match this pinned set. Each job also uploads its selected classes and
+the artifact producers match this pinned set. The recursive scalar, mixed scalar/container,
+recursive table-function and nested table-function bridge matrices also stay in shard 1.
+On the first recursive-scalar CI run, these four suites took 17.4 minutes together on
+Flink 2.2/JDK 11 in shard 2. That shard completed its 10,341 runtime cases without failures,
+then reached the 150-minute job limit during the later connector tests, while shard 1
+finished in about 115 minutes. Moving the four complete classes gives both shards room for
+the remaining reactor modules without reducing their test selection or raising the timeout.
+Each job also uploads its selected classes and
 complete-inventory digest as a runtime-partition artifact; failure diagnostics have unique
 shard names. The aggregate gate requires all eight Java jobs across both Flink lines and JDKs.
 

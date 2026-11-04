@@ -23,12 +23,12 @@ def plain(element):
 
 
 class RuntimeTestShardsTest(unittest.TestCase):
-    def test_default_names_are_complete_disjoint_stable_and_audits_stay_together(self):
+    def test_default_names_are_complete_disjoint_stable_and_pinned_suites_stay_together(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             names = {"TestPrefix", "SuffixTest", "SuffixTests", "SuffixTestCase"}
             names.update(f"Case{index}Test" for index in range(20))
-            names.update(name.rsplit("/", 1)[-1] for name in shards.AUDIT_CLASSES)
+            names.update(name.rsplit("/", 1)[-1] for name in shards.FIRST_SHARD_CLASSES)
             for name in names | {"Helper", "Outer$NestedTest", "ExampleITCase"}:
                 path = root / "tech/streamfusion" / (name + ".class")
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -38,7 +38,7 @@ class RuntimeTestShardsTest(unittest.TestCase):
             self.assertEqual({"tech/streamfusion/" + name for name in names},
                              set(plan[0]) | set(plan[1]))
             self.assertFalse(set(plan[0]) & set(plan[1]))
-            self.assertTrue(shards.AUDIT_CLASSES <= set(plan[0]))
+            self.assertTrue(shards.FIRST_SHARD_CLASSES <= set(plan[0]))
 
     def test_invalid_or_empty_selection_cannot_restore_default_tests(self):
         with tempfile.TemporaryDirectory() as directory:

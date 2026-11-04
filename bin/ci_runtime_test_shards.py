@@ -13,6 +13,12 @@ AUDIT_CLASSES = {
     "tech/streamfusion/StatefulRecoveryMatrixTest",
     "tech/streamfusion/StatefulSqlRescaleTest",
 }
+FIRST_SHARD_CLASSES = AUDIT_CLASSES | {
+    "tech/streamfusion/FlinkRecursiveScalarSqlHarnessTest",
+    "tech/streamfusion/FlinkMixedRecursiveScalarSqlHarnessTest",
+    "tech/streamfusion/FlinkRecursiveTableFunctionSqlHarnessTest",
+    "tech/streamfusion/FlinkNestedBridgeTableFunctionSqlHarnessTest",
+}
 
 
 def partition(classes, count):
@@ -28,8 +34,8 @@ def partition(classes, count):
         raise ValueError("No compiled Surefire test candidates found")
     shards = [[] for _ in range(count)]
     for name in candidates:
-        # Keep the three required SQL audit artifacts together in the first shard.
-        index = 0 if name in AUDIT_CLASSES else int.from_bytes(
+        # Keep audit artifacts together and balance the recursive conversion matrices.
+        index = 0 if name in FIRST_SHARD_CLASSES else int.from_bytes(
             hashlib.sha256(name.encode("utf-8")).digest(), "big") % count
         shards[index].append(name)
     if any(not shard for shard in shards):
