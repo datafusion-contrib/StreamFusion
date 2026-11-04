@@ -3455,10 +3455,20 @@ case directly. Formatter output uses the existing Arrow case kernel.
 The built-in operator identity is checked, NULLs
 and empty batches are retained, and there is no bound JVM evaluator for these calls.
 Bounded character casts, failing/unverified producers, ordinary STRING inputs, other
-formatting contracts and dependent consumers retain their existing paths. This is a
+formatting contracts and unverified dependent consumers retain their existing paths. This is a
 producer-specific proof, not general Unicode casing support. See the
 [UPPER](../benchmarks/scalar-functions.md#primitive-text-upper) and
 [LOWER](../benchmarks/scalar-functions.md#primitive-text-lower) qualifications and complete-job limits.
+
+Built-in CHAR_LENGTH and CHARACTER_LENGTH also consume these qualified UPPER/LOWER results
+directly in Rust. The same producer/locale proof guarantees ASCII, so UTF-8 codepoint and
+Java UTF-16 lengths agree. This includes proven integer/BOOLEAN text, direct DECIMAL truth/
+predicate BOOLEAN text, and qualified Flink 2.2 PRINTF compositions. Signed integer case
+conversion still reuses its CAST result; the length consumer adds no JVM evaluator or
+transport change. Bounded casts, general Unicode, locale-sensitive formats, fallible
+producers and further dependent expressions retain their existing routes. The
+[case-length qualification](../benchmarks/scalar-functions.md#length-of-proven-primitive-case-results)
+retains separate stock, actual-prior and native controls.
 
 **Default compatibility path.** Other `UPPER`/`LOWER` calls use Flink-generated scalar
 expressions through the columnar JVM bridge. Original Java UTF-16 caches are passed beside the UTF-8 arguments;

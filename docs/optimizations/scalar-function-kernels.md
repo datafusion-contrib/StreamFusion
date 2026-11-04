@@ -50,6 +50,17 @@ to previous with overlapping ranges. The [separate LOWER record](../benchmarks/s
 retains all 7,000 trials and revalidates both functions, including DECIMAL truth/predicate
 producers. These bounded proofs do not replace general Java Unicode/locale semantics.
 
+Direct CHAR_LENGTH/CHARACTER_LENGTH now compose with that same ASCII producer proof,
+keeping verified UPPER/LOWER text in Arrow through the length kernel. Integer casing
+still reuses its CAST buffer, and BOOLEAN writes its final case. General Unicode,
+unverified producers and further dependent expressions keep Flink generation. The
+[length-consumer qualification](../benchmarks/scalar-functions.md#length-of-proven-primitive-case-results)
+uses the actual preceding encoder on the same release runtime and production TableConfig.
+All 72 bulk cells beat stock by 1.437-16.236x and previous by 2.626-21.935x. Fifteen of
+eighteen tiny controls lose to stock. Twelve measured complete jobs have native/stock
+elapsed 0.329-0.998, but near-parity ranges overlap and two independent stock medians
+beat native. Those controls remain; no stable full-job gain is claimed for them.
+
 ## DECIMAL formatting
 
 Direct DECIMAL-to-STRING casts format the unscaled integer into reusable stack buffers, insert

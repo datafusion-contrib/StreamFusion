@@ -1952,8 +1952,9 @@ final class RexExpression {
                 == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CHARACTER_LENGTH)
         && call.getOperands().size() == 1
         && call.getOperands().get(0) instanceof RexCall
-        && nativePrintf((RexCall) call.getOperands().get(0)) != 0) {
-      // The qualified primitive formatter produces ASCII, so no UTF-16 identity is lost.
+        && (nativePrintf((RexCall) call.getOperands().get(0)) != 0
+            || nativePrimitiveCase((RexCall) call.getOperands().get(0)) != 0)) {
+      // Qualified primitive formatting/casing produces ASCII, so no UTF-16 identity is lost.
       return emitBuiltinCall(call, 52);
     }
     boolean primitivePrintfComparison = nativePrimitivePrintfComparison(call);

@@ -80,8 +80,6 @@ public final class IntegralExpressionBenchmarkFunctions {
     longOutput = outputType.getTypeRoot() == LogicalTypeRoot.BIGINT;
     stringOutput = outputType.getTypeRoot() == LogicalTypeRoot.VARCHAR
         || outputType.getTypeRoot() == LogicalTypeRoot.CHAR;
-    boolean configuredCast = stringOutput || type.equals("BOOLEAN") || type.startsWith("DECIMAL(")
-        || timestampInput;
     stock = FlinkExpressionGenerator.generate(project.getProjects(), null,
         inputTypes, RowType.of(outputType), table.getConfig(), getLoader());
     var context = new FunctionContext(null) {
@@ -93,9 +91,9 @@ public final class IntegralExpressionBenchmarkFunctions {
     if (fallbackControl && !previous)
       throw new IllegalStateException("A fallback control requires the preceding encoder");
     String fallbackReason = null;
-    var encoded = configuredCast || fallbackControl ? null
-        : RexExpression.encodeProjections(project.getProjects(), List.of("v"));
-    if (configuredCast || fallbackControl) {
+    var encoded = fallbackControl ? null
+        : RexExpression.encode(project.getProjects().get(0), project);
+    if (fallbackControl) {
       var constructor = RexExpression.class.getDeclaredConstructor();
       constructor.setAccessible(true);
       encoded = constructor.newInstance();
@@ -105,8 +103,6 @@ public final class IntegralExpressionBenchmarkFunctions {
       var emit = RexExpression.class.getDeclaredMethod("emit", org.apache.calcite.rex.RexNode.class);
       emit.setAccessible(true);
       if (!(Boolean) emit.invoke(encoded, project.getProjects().get(0))) {
-        if (!fallbackControl)
-          throw new IllegalStateException("Expected an admitted configured expression");
         var reason = RexExpression.class.getDeclaredField("reason");
         reason.setAccessible(true);
         fallbackReason = (String) reason.get(encoded);
@@ -116,7 +112,7 @@ public final class IntegralExpressionBenchmarkFunctions {
             : !fallbackReason.equals(expectedReason)))
           throw new IllegalStateException("Unexpected preceding fallback: " + fallbackReason);
         encoded = null;
-      } else if (fallbackControl) {
+      } else {
         throw new IllegalStateException("Expected the preceding encoder to reject this signature");
       }
     }
