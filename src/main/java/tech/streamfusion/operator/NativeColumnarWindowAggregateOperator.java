@@ -68,9 +68,22 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
       int[] keyTimestampPrecisions,
       int maxParallelism) {
     this(
-        cumulative, windowMillis, slideMillis, timeColumn, valueColumns, keyColumns, keyTypes,
-        valueTypes, aggregateKinds, timeZoneId, !"UTC".equals(timeZoneId), timeZoneId, outputType,
-        proctime, keyTimestampPrecisions, maxParallelism);
+        cumulative,
+        windowMillis,
+        slideMillis,
+        timeColumn,
+        valueColumns,
+        keyColumns,
+        keyTypes,
+        valueTypes,
+        aggregateKinds,
+        timeZoneId,
+        !"UTC".equals(timeZoneId),
+        timeZoneId,
+        outputType,
+        proctime,
+        keyTimestampPrecisions,
+        maxParallelism);
   }
 
   public NativeColumnarWindowAggregateOperator(
@@ -198,7 +211,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
     super.open();
     registeredTimer = Long.MIN_VALUE;
     maxOpenEnd = restoredProcessingTimeTimerDeadline();
-    if (proctime && usesLocalWindowBounds()) {
+    if (proctime && usesStateTimer()) {
       emitClosedWindows(Long.MIN_VALUE);
       long next = Native.fixedWindowNextTimerDeadline(handle);
       long now = getProcessingTimeService().getCurrentProcessingTime();
@@ -276,7 +289,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
         reportLateRecords(Native.tumblingAggregatorLateDrops(handle));
       } else if (proctime) {
         long now = getProcessingTimeService().getCurrentProcessingTime();
-        updateColumnarProctime(in, now, valueColumns, keyColumns, keyTypes);
+        updateColumnarProctime(in, now, valueColumns, filterColumns, keyColumns, keyTypes);
         emitClosedWindows(now); // emit windows the clock has already passed
         if (!usesLocalWindowBounds()) maxOpenEnd = Math.max(maxOpenEnd, latestWindowEnd(now));
         scheduleNextTimer(now);
@@ -298,7 +311,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
 
   @Override
   protected long processingTimeTimerDeadlineForSnapshot() {
-    return proctime ? (usesLocalWindowBounds() ? registeredTimer : maxOpenEnd) : Long.MIN_VALUE;
+    return proctime ? (usesStateTimer() ? registeredTimer : maxOpenEnd) : Long.MIN_VALUE;
   }
 
   /**
@@ -308,8 +321,12 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
    * slide multiple minus one millisecond. Processing time only advances, so the latest scheduled
    * boundary never needs revisiting.
    */
+  private boolean usesStateTimer() {
+    return usesLocalWindowBounds() || hasStockStateContract();
+  }
+
   private void scheduleNextTimer(long now) {
-    if (usesLocalWindowBounds()) {
+    if (usesStateTimer()) {
       long next = Native.fixedWindowNextTimerDeadline(handle);
       if (next != Long.MIN_VALUE && next != registeredTimer)
         getProcessingTimeService().registerTimer(next, this);

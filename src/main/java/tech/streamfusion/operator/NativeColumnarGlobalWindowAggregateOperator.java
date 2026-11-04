@@ -24,6 +24,30 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
 
   private final int[] keyTypes;
   private final boolean cumulative;
+  private boolean stockPartialBuffer;
+  private transient long bufferProgress;
+  private transient long nextBufferProgress;
+
+  public void useStockGlobalBuffering() {
+    if (handle != 0)
+      throw new IllegalStateException("Buffer mode must be bound before initialization");
+    stockPartialBuffer = true;
+  }
+
+  @Override
+  protected void configureStateHandle() {
+    super.configureStateHandle();
+    Native.setStockWindowPartialBuffer(handle, stockPartialBuffer);
+  }
+
+  @Override
+  public void open() throws Exception {
+    super.open();
+    bufferProgress = canonicalWatermark();
+    nextBufferProgress = Long.MIN_VALUE;
+  }
+
+
 
   public NativeColumnarGlobalWindowAggregateOperator(
       long windowMillis,
@@ -135,7 +159,31 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
 
   @Override
   protected void flushPending() {
-    // Each partial batch is folded into the aggregator as it arrives; nothing is buffered here.
+    if (stockPartialBuffer) Native.flushStockWindowPartials(handle, Long.MIN_VALUE, true);
+  }
+
+  @Override
+  public void prepareSnapshotPreBarrier(long checkpointId) throws Exception {
+    flushPending();
+    super.prepareSnapshotPreBarrier(checkpointId);
+  }
+
+  @Override
+  protected void flushBeforeWatermark(long watermark) {
+    if (!stockPartialBuffer) {
+      super.flushBeforeWatermark(watermark);
+      return;
+    }
+    if (watermark <= bufferProgress) return;
+    bufferProgress = watermark;
+    if (watermark < nextBufferProgress) return;
+    Native.flushStockWindowPartials(handle, watermark, false);
+    nextBufferProgress =
+        org.apache.flink.table.runtime.util.TimeWindowUtil.getNextTriggerWatermark(
+            watermark,
+            slideMillis,
+            windowShiftZone(),
+            java.util.TimeZone.getTimeZone(windowShiftZone()).useDaylightTime());
   }
 
   @Override

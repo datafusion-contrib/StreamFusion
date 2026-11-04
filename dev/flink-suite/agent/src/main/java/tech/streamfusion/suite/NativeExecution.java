@@ -208,8 +208,34 @@ public final class NativeExecution {
     SqlInventory.opened(operator);
     if (active != null) {
       OPERATORS.putIfAbsent(operator, active);
-      active.opened.add(operator.getClass().getSimpleName());
+      String kind = operator.getClass().getSimpleName();
+      active.opened.add(kind);
+      if (!active.windowImports.isEmpty()
+          && (kind.equals("NativeColumnarWindowAggregateOperator")
+              || kind.equals("NativeColumnarSessionWindowAggregateOperator")
+              || kind.equals("NativeColumnarGlobalWindowAggregateOperator"))) {
+        Long rows = active.windowImports.remove(((Number) field(operator, "handle")).longValue());
+        if (rows != null) {
+          active.importedRows.merge(kind, rows, Long::sum);
+          if (kind.equals("NativeColumnarGlobalWindowAggregateOperator")) {
+            try {
+              boolean finalWindow =
+                  (Boolean) operator.getClass().getMethod("isFinalWindow").invoke(operator);
+              String role = kind + (finalWindow ? "_Final" : "_Slice");
+              active.opened.add(role);
+              active.importedRows.merge(role, rows, Long::sum);
+            } catch (ReflectiveOperationException failure) {
+              throw new AssertionError("Cannot identify imported global window state", failure);
+            }
+          }
+        }
+      }
     }
+  }
+
+  public static synchronized void restoredWindow(long handle, int rows) {
+    if (active != null && handle > 0 && rows > 0)
+      active.windowImports.merge(handle, (long) rows, Long::sum);
   }
 
   public static synchronized void restored(String operator, int rows) {
@@ -508,6 +534,7 @@ public final class NativeExecution {
     private final String variant;
     private final Map<String, Long> rows = new TreeMap<>();
     private final Map<String, Long> importedRows = new TreeMap<>();
+    private final Map<Long, Long> windowImports = new TreeMap<>();
     private final Map<String, Long> stockRows = new TreeMap<>();
     private final Map<String, Map<String, Object>> submittedGraphs = new LinkedHashMap<>();
     private final Set<String> opened = new LinkedHashSet<>();

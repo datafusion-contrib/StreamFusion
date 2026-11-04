@@ -7,11 +7,13 @@ import java.util.function.Consumer;
 import java.util.stream.Stream;
 import org.apache.calcite.plan.RelOptCostImpl;
 import org.apache.calcite.plan.volcano.VolcanoPlanner;
+import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.logical.LogicalCalc;
 import org.apache.calcite.rel.logical.LogicalValues;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexProgram;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.flink.FlinkVersion;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.dag.Transformation;
@@ -36,15 +38,26 @@ import org.apache.flink.table.planner.plan.nodes.exec.spec.DynamicTableSourceSpe
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecCalc;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecExchange;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecTableSourceScan;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWindowAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
 import org.apache.flink.table.planner.plan.schema.TableSourceTable;
 import org.apache.flink.table.planner.plan.stats.FlinkStatistic;
+import org.apache.flink.table.planner.plan.utils.AggregateUtil;
+import org.apache.flink.table.planner.utils.JavaScalaConversionUtil;
+import org.apache.flink.table.runtime.groupwindow.NamedWindowProperty;
+import org.apache.flink.table.runtime.groupwindow.RowtimeAttribute;
+import org.apache.flink.table.runtime.groupwindow.WindowEnd;
+import org.apache.flink.table.runtime.groupwindow.WindowStart;
+import org.apache.flink.table.runtime.operators.window.tvf.common.WindowAggOperator;
+import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.*;
 import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
+import tech.streamfusion.compat.FlinkCompat;
 import tech.streamfusion.operator.AbstractNativeStatefulOperator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 import tech.streamfusion.state.CanonicalStateBackend;
 import tech.streamfusion.state.OperatorIdentityProjection;
+import tech.streamfusion.state.StockSlicingWindowStateContract;
 import tech.streamfusion.state.StockStateContract;
 
 /** Lowers a private runtime graph while retaining a portable stock compiled plan. */
@@ -57,6 +70,7 @@ final class StockCompiledPlanLowering {
   private final Map<Integer, JsonNode> definitions = new HashMap<>();
   private final Map<Integer, String> stockUids = new HashMap<>();
   private final Map<Integer, ExecNode<?>> stockNodes = new HashMap<>();
+  private final Map<Integer, Integer> consumerCounts = new HashMap<>();
   private final Map<Integer, Transformation<?>> stockTransformations = new HashMap<>();
   private final Map<ExecNode<?>, ExecNode<?>> lowered = new IdentityHashMap<>();
   private final Map<ExecNode<?>, StockBinding> bindings = new IdentityHashMap<>();
@@ -254,6 +268,8 @@ final class StockCompiledPlanLowering {
     for (ExecNode<?> node : nodes) {
       if (stockUids.containsKey(node.getId())) continue;
       stockNodes.put(node.getId(), node);
+      for (ExecEdge edge : node.getInputEdges())
+        consumerCounts.merge(edge.getSource().getId(), 1, Integer::sum);
       stockUids.put(node.getId(), ((ExecNodeBase<?>) node).getTransformation().getUid());
       stockTransformations.put(node.getId(), ((ExecNodeBase<?>) node).getTransformation());
       if (node.getInputEdges().stream()
@@ -272,7 +288,10 @@ final class StockCompiledPlanLowering {
     return nodes.stream()
         .anyMatch(
             node -> {
-              if (node instanceof NativeTemporalSortExecNode) return true;
+              if (node instanceof NativeTemporalSortExecNode
+                  || node instanceof NativeColumnarWindowAggExecNode
+                  || node instanceof NativeColumnarSessionWindowAggExecNode
+                  || node instanceof NativeColumnarGlobalWindowAggExecNode) return true;
               if (node instanceof NativeWindowRankExecNode)
                 return !((NativeWindowRankExecNode) node).isProcessingTime();
               if (node instanceof NativeColumnarTopNExecNode)
@@ -605,6 +624,15 @@ final class StockCompiledPlanLowering {
             instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecTemporalSort
         && nativeKeyedState
         && NativeConfig.operatorEnabled("temporalSort")) result = lowerTemporalSort(node);
+    else if (node instanceof StreamExecWindowAggregate
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("windowAggregate"))
+      result = lowerWindow((StreamExecWindowAggregate) node);
+    else if (node
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGlobalWindowAggregate
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("windowAggregate")) result = lowerGlobalWindow(node);
     else if (node
             instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecOverAggregate
         && nativeKeyedState
@@ -619,6 +647,450 @@ final class StockCompiledPlanLowering {
         && NativeConfig.operatorEnabled("topN")) result = lowerRank(node);
     lowered.put(node, result);
     return result;
+  }
+
+  private ExecNode<?> lowerGlobalWindow(ExecNode<?> stock) throws IOException {
+    var exchange = stock.getInputEdges().get(0).getSource();
+    if (!(exchange instanceof StreamExecExchange)
+        || consumerCounts.getOrDefault(exchange.getId(), 0) != 1)
+      return windowFallback(stock, "global window requires a dedicated local exchange");
+    var local = exchange.getInputEdges().get(0).getSource();
+    if (!(local
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecLocalWindowAggregate)
+        || consumerCounts.getOrDefault(local.getId(), 0) != 1)
+      return windowFallback(stock, "global window requires a dedicated local aggregate identity");
+    var globalStrategy =
+        reader
+            .forType(WindowingStrategy.class)
+            .<WindowingStrategy>readValue(definitions.get(stock.getId()).path("windowing"));
+    var localStrategy =
+        reader
+            .forType(WindowingStrategy.class)
+            .<WindowingStrategy>readValue(definitions.get(local.getId()).path("windowing"));
+    boolean sliced =
+        globalStrategy
+                instanceof
+                org.apache.flink.table.planner.plan.logical.SliceAttachedWindowingStrategy
+            && localStrategy instanceof TimeAttributeWindowingStrategy;
+    boolean finalWindows =
+        globalStrategy
+                instanceof
+                org.apache.flink.table.planner.plan.logical.WindowAttachedWindowingStrategy
+            && localStrategy
+                instanceof
+                org.apache.flink.table.planner.plan.logical.WindowAttachedWindowingStrategy;
+    if ((!sliced && !finalWindows) || !globalStrategy.getWindow().equals(localStrategy.getWindow()))
+      return windowFallback(stock, "global/local attached window contract is not bound");
+    return lowerWindow(stock, local);
+  }
+
+  private ExecNode<?> lowerWindow(StreamExecWindowAggregate stock) throws IOException {
+    return lowerWindow(stock, null);
+  }
+
+  private ExecNode<?> lowerWindow(ExecNode<?> stock, ExecNode<?> local) throws IOException {
+    JsonNode definition = definitions.get(stock.getId());
+    JsonNode assignment = local == null ? definition : definitions.get(local.getId());
+    var windowing =
+        reader
+            .forType(WindowingStrategy.class)
+            .<WindowingStrategy>readValue(assignment.path("windowing"));
+    boolean finalWindows =
+        local != null
+            && windowing
+                instanceof
+                org.apache.flink.table.planner.plan.logical.WindowAttachedWindowingStrategy;
+    if (!(windowing instanceof TimeAttributeWindowingStrategy) && !finalWindows)
+      return windowFallback(stock, "attached window state contract is not bound");
+    int windowStartColumn = -1, windowEndColumn = -1;
+    if (finalWindows) {
+      var attached =
+          (org.apache.flink.table.planner.plan.logical.WindowAttachedWindowingStrategy) windowing;
+      windowStartColumn = attached.getWindowStart();
+      windowEndColumn = attached.getWindowEnd();
+      if (windowStartColumn < 0 || windowEndColumn < 0)
+        return windowFallback(stock, "attached local bounds are not available");
+    }
+    boolean processingTime = windowing.isProctime();
+    if (processingTime && local != null)
+      return windowFallback(stock, "processing-time partial boundaries are not bound");
+    if (definition.path("needRetraction").asBoolean())
+      return windowFallback(stock, "retracting state contract is not bound");
+    var spec = windowing.getWindow();
+    boolean session = FlinkCompat.isSessionWindow(spec);
+    if (session && local != null)
+      return windowFallback(stock, "SESSION partial boundaries are not bound");
+    Duration offset;
+    if (spec instanceof TumblingWindowSpec) {
+      offset = ((TumblingWindowSpec) spec).getOffset();
+    } else if (spec instanceof HoppingWindowSpec) {
+      offset = ((HoppingWindowSpec) spec).getOffset();
+    } else if (spec instanceof CumulativeWindowSpec) {
+      offset = ((CumulativeWindowSpec) spec).getOffset();
+    } else if (session) {
+      offset = Duration.ZERO;
+    } else {
+      return windowFallback(stock, "window namespace family is not bound");
+    }
+    if (processingTime && offset != null && !offset.isZero())
+      return windowFallback(stock, "processing-time offset assignment is not bound");
+    long size =
+        session
+            ? WindowAggregateMatcher.gapMillis(windowing)
+            : WindowAggregateMatcher.windowSize(windowing);
+    long slide = session ? size : WindowAggregateMatcher.windowSlide(windowing);
+    if (slide <= 0 || size <= 0 || size % slide != 0)
+      return windowFallback(stock, "window size is not a positive multiple of its slice");
+    boolean shared = !session && !finalWindows && !(spec instanceof TumblingWindowSpec);
+    var raw = stockTransformations.get(stock.getId());
+    if (!(raw instanceof OneInputTransformation))
+      return windowFallback(stock, "state owner is not unary");
+    var transformation = (OneInputTransformation<?, ?>) raw;
+    if (!(transformation.getOperatorFactory() instanceof SimpleOperatorFactory)) return stock;
+    var stockOperator =
+        ((SimpleOperatorFactory<?>) transformation.getOperatorFactory()).getOperator();
+    int maximumParallelism = stockMaximum(transformation);
+    if (stockOperator.getClass() != WindowAggOperator.class)
+      return windowFallback(stock, "stock state owner is not synchronous window aggregation");
+    var processor = releasedField(stockOperator, "windowProcessor");
+    if (!(processor
+        instanceof
+        org.apache.flink.table.runtime.operators.aggregate.window.processors
+            .AbstractSyncStateWindowAggProcessor)) return stock;
+    if ((boolean) releasedField(processor, "isEventTime") == processingTime) return stock;
+    var properties =
+        reader
+            .forType(NamedWindowProperty[].class)
+            .<NamedWindowProperty[]>readValue(definition.path("namedWindowProperties"));
+    if (properties.length != 0 && properties.length != 2 && properties.length != 3)
+      return windowFallback(stock, "window properties have an unsupported arity");
+    if (properties.length >= 2
+        && (!(properties[0].getProperty() instanceof WindowStart)
+            || !(properties[1].getProperty() instanceof WindowEnd)))
+      return windowFallback(stock, "window properties have an unsupported order");
+    if (properties.length == 3 && !(properties[2].getProperty() instanceof RowtimeAttribute))
+      return windowFallback(stock, "window-time property is not rowtime");
+    int[] keys = reader.forType(int[].class).readValue(assignment.path("grouping"));
+    AggregateCall[] calls =
+        reader.forType(AggregateCall[].class).readValue(definition.path("aggCalls"));
+    if (session && Arrays.stream(calls).anyMatch(call -> call.filterArg >= 0))
+      return windowFallback(stock, "SESSION filtered state contract is not bound");
+    if (Arrays.stream(calls)
+        .anyMatch(
+            call ->
+                call.isApproximate()
+                    || call.isDistinct() && call.getAggregation().getKind() != SqlKind.COUNT))
+      return windowFallback(
+          stock, "aggregate requires an unbound approximate or data-view contract");
+    var input = (local == null ? stock : local).getInputEdges().get(0).getSource();
+    RowType inputType = (RowType) input.getOutputType();
+    RowType outputType = (RowType) stock.getOutputType();
+    var sequence = JavaScalaConversionUtil.toScala(Arrays.asList(calls));
+    var relationalType = planner.getTypeFactory().buildRelNodeRowType(inputType);
+    if (!RowDataArrowConverter.supports(inputType)
+        || !RowDataArrowConverter.supports(outputType)
+        || !WindowAggregateMatcher.supportedTimeAttribute(windowing)
+        || !WindowAggregateMatcher.supportedAggregates(keys, sequence, relationalType))
+      return windowFallback(
+          stock, "input, output, grouping, time attribute or aggregate type is not admitted");
+    var information =
+        AggregateUtil.deriveStreamWindowAggregateInfoList(
+            planner.getTypeFactory(), inputType, sequence, false, windowing.getWindow(), true);
+    boolean hiddenCount = information.countStarInserted();
+    if (information.aggInfos().length != calls.length + (hiddenCount ? 1 : 0))
+      return windowFallback(stock, "stock accumulator count differs from its aggregate calls");
+    int countStar = -1;
+    List<Integer> averages = new ArrayList<>();
+    int width = 0;
+    for (int i = 0; i < information.aggInfos().length; i++) {
+      var info = information.aggInfos()[i];
+      int expectedWidth = i < calls.length ? WindowAggregateMatcher.partialWidth(calls[i]) : 1;
+      if (info.viewSpecs().length != 0 || info.externalAccTypes().length != expectedWidth)
+        return windowFallback(
+            stock,
+            "stock accumulator layout differs at aggregate "
+                + i
+                + ": "
+                + info.externalAccTypes().length
+                + " fields, "
+                + info.viewSpecs().length
+                + " views");
+      if (width == information.getIndexOfCountStar()) countStar = i;
+      if (i < calls.length && calls[i].getAggregation().getKind() == SqlKind.AVG)
+        averages.add(width);
+      width += info.externalAccTypes().length;
+    }
+    int[] kinds = WindowAggregateMatcher.kinds(sequence);
+    int[] values = WindowAggregateMatcher.valueColumns(sequence);
+    int[] types = WindowAggregateMatcher.valueTypeCodes(sequence, relationalType);
+    int[] filters = Arrays.stream(calls).mapToInt(call -> call.filterArg).toArray();
+    if (hiddenCount) {
+      kinds = Arrays.copyOf(kinds, kinds.length + 1);
+      kinds[kinds.length - 1] =
+          tech.streamfusion.operator.NativeWindowOperatorCore.KIND_HIDDEN_LIVE_COUNT;
+      values = Arrays.copyOf(values, values.length + 1);
+      values[values.length - 1] = -1;
+      types = Arrays.copyOf(types, types.length + 1);
+      filters = Arrays.copyOf(filters, filters.length + 1);
+      filters[filters.length - 1] = -1;
+    }
+    RowType accumulatorType =
+        RowType.of(
+            Arrays.stream(information.getAccTypes())
+                .map(DataType::getLogicalType)
+                .toArray(LogicalType[]::new));
+    if (!new org.apache.flink.table.runtime.typeutils.RowDataSerializer(accumulatorType)
+        .equals(releasedField(processor, "accSerializer")))
+      return windowFallback(
+          stock, "generated accumulator serializer differs from the original owner");
+    var distinctViews = new ArrayList<tech.streamfusion.state.StockWindowDistinctView>();
+    for (var distinct : information.distinctInfos()) {
+      if (distinct.excludeAcc() || distinct.dataViewSpec().isEmpty())
+        return windowFallback(stock, "distinct accumulator is excluded or has no state view");
+      var view = distinct.dataViewSpec().get();
+      int[] slots = new int[distinct.aggIndexes().size()];
+      for (int i = 0; i < slots.length; i++) {
+        slots[i] = (Integer) distinct.aggIndexes().apply(i);
+        if (slots[i] >= calls.length || !calls[slots[i]].isDistinct() || kinds[slots[i]] != 7)
+          return windowFallback(
+              stock,
+              "distinct slot "
+                  + slots[i]
+                  + " is not bound to a distinct call: "
+                  + Arrays.toString(kinds));
+        if (session && types[slots[i]] == 100)
+          return windowFallback(stock, "SESSION DISTINCT value schema is not bound");
+        if (distinct.consumeRetraction())
+          kinds[slots[i]] =
+              tech.streamfusion.operator.NativeWindowOperatorCore.KIND_COUNT_DISTINCT_WITH_COUNTS;
+      }
+      distinctViews.add(
+          new tech.streamfusion.state.StockWindowDistinctView(
+              view.getStateId(),
+              distinct.keyType().getLogicalType(),
+              org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(view.getKeyDataType()),
+              org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                  view.getValueDataType()),
+              slots,
+              distinct.consumeRetraction()));
+    }
+    @SuppressWarnings("unchecked")
+    TypeSerializer<RowData> serializer =
+        (TypeSerializer<RowData>)
+            transformation
+                .getStateKeyType()
+                .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
+    RowType keyType =
+        RowType.of(Arrays.stream(keys).mapToObj(inputType::getTypeAt).toArray(LogicalType[]::new));
+    Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
+    ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
+    if (Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false"))
+        || Boolean.parseBoolean(
+            config.getString("execution.checkpointing.unaligned.enabled", "false"))) return stock;
+    String sessionTimeZoneId =
+        org.apache.flink.table.planner.utils.TableConfigUtils.getLocalTimeZone(config).getId();
+    String zone = ((java.time.ZoneId) releasedField(processor, "shiftTimeZone")).getId();
+    if (!(WindowAggregateMatcher.isLtz(windowing)
+            ? java.time.ZoneId.of(sessionTimeZoneId)
+            : java.time.ZoneId.of("UTC"))
+        .equals(java.time.ZoneId.of(zone))) return stock;
+    StockSlicingWindowStateContract.WindowStart finalWindowStart = null;
+    if (finalWindows) {
+      var zoneId = java.time.ZoneId.of(zone);
+      Duration windowOffset = offset == null ? Duration.ZERO : offset;
+      org.apache.flink.table.runtime.operators.window.tvf.slicing.SliceAssigner assigner;
+      if (spec instanceof CumulativeWindowSpec)
+        assigner =
+            org.apache.flink.table.runtime.operators.window.tvf.slicing.SliceAssigners.cumulative(
+                    Integer.MAX_VALUE, zoneId, Duration.ofMillis(size), Duration.ofMillis(slide))
+                .withOffset(windowOffset);
+      else if (spec instanceof HoppingWindowSpec)
+        assigner =
+            org.apache.flink.table.runtime.operators.window.tvf.slicing.SliceAssigners.hopping(
+                    Integer.MAX_VALUE, zoneId, Duration.ofMillis(size), Duration.ofMillis(slide))
+                .withOffset(windowOffset);
+      else
+        assigner =
+            org.apache.flink.table.runtime.operators.window.tvf.slicing.SliceAssigners.tumbling(
+                    Integer.MAX_VALUE, zoneId, Duration.ofMillis(size))
+                .withOffset(windowOffset);
+      finalWindowStart = assigner::getWindowStart;
+    }
+    StockStateContract contract =
+        session
+            ? new tech.streamfusion.state.StockSessionWindowStateContract(
+                serializer,
+                keyType,
+                accumulatorType,
+                size,
+                zone,
+                averages.stream().mapToInt(Integer::intValue).toArray(),
+                distinctViews,
+                width,
+                processingTime)
+            : new StockSlicingWindowStateContract(
+                serializer,
+                keyType,
+                accumulatorType,
+                size,
+                slide,
+                shared,
+                countStar,
+                zone,
+                averages.stream().mapToInt(Integer::intValue).toArray(),
+                distinctViews,
+                width,
+                finalWindowStart,
+                processingTime);
+    ExecNode<?> rows =
+        input instanceof StreamExecExchange ? input.getInputEdges().get(0).getSource() : input;
+    ExecNode<?> entry = arrowInput(rows, config, inputType, false);
+    RowType exchangeType = inputType;
+    int[] exchangeKeys = keys;
+    if (local != null) {
+      var fields = new ArrayList<RowType.RowField>();
+      for (int i = 0; i < keys.length; i++)
+        fields.add(new RowType.RowField("key" + i, inputType.getTypeAt(keys[i])));
+      var partials = new ArrayList<LogicalType>();
+      for (int i = 0; i < kinds.length; i++) {
+        if (i < calls.length && calls[i].isDistinct()) {
+          partials.add(
+              new org.apache.flink.table.types.logical.ArrayType(inputType.getTypeAt(values[i])));
+          if (kinds[i]
+              == tech.streamfusion.operator.NativeWindowOperatorCore
+                  .KIND_COUNT_DISTINCT_WITH_COUNTS) {
+            partials.add(
+                new org.apache.flink.table.types.logical.ArrayType(
+                    new org.apache.flink.table.types.logical.BigIntType(false)));
+            partials.add(new org.apache.flink.table.types.logical.BigIntType(false));
+          }
+        } else {
+          for (var type : information.aggInfos()[i].externalAccTypes())
+            partials.add(type.getLogicalType());
+        }
+      }
+      for (int i = 0; i < partials.size(); i++)
+        fields.add(new RowType.RowField("partial" + i, partials.get(i)));
+      fields.add(
+          new RowType.RowField(
+              "slice_end", new org.apache.flink.table.types.logical.BigIntType(false)));
+      exchangeType = new RowType(fields);
+      exchangeKeys = java.util.stream.IntStream.range(0, keys.length).toArray();
+      var partial =
+          new NativeColumnarLocalWindowAggExecNode(
+              config,
+              InputProperty.DEFAULT,
+              exchangeType,
+              "NativeColumnarLocalWindowAggregate",
+              slide,
+              finalWindows ? -1 : WindowAggregateMatcher.timeColumn(windowing),
+              windowStartColumn,
+              windowEndColumn,
+              values,
+              filters,
+              keys,
+              types,
+              kinds,
+              WindowAggregateMatcher.isLtz(windowing),
+              FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys));
+      partial.withStockLocalState(
+          stockMaximum(stockTransformations.get(local.getId())),
+          sessionTimeZoneId,
+          offset == null ? 0 : offset.toMillis());
+      connect(entry, partial);
+      bindings.put(partial, new StockBinding(local.getId(), stockUids.get(local.getId()), null));
+      columnar.add(partial);
+      lowered.put(local, partial);
+      entry = partial;
+    }
+    var exchange =
+        new NativeColumnarExchangeExecNode(
+            config,
+            InputProperty.DEFAULT,
+            exchangeType,
+            "NativeColumnarExchange",
+            exchangeKeys,
+            FlinkKeyGroupUtils.stockKeyDescriptor(exchangeType, exchangeKeys),
+            keys.length == 0);
+    exchange.withStateMaxParallelism(maximumParallelism);
+    connect(entry, exchange);
+    ExecNode<?> aggregate;
+    if (session) {
+      aggregate =
+          new NativeColumnarSessionWindowAggExecNode(
+                  config,
+                  InputProperty.DEFAULT,
+                  outputType,
+                  "NativeColumnarSessionWindowAggregate",
+                  size,
+                  WindowAggregateMatcher.timeColumn(windowing),
+                  values,
+                  keys,
+                  types,
+                  kinds,
+                  processingTime,
+                  WindowAggregateMatcher.isLtz(windowing),
+                  FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys))
+              .withStockState(maximumParallelism, sessionTimeZoneId);
+    } else if (local != null) {
+      var global =
+          new NativeColumnarGlobalWindowAggExecNode(
+                  config,
+                  InputProperty.DEFAULT,
+                  outputType,
+                  finalWindows
+                      ? "NativeColumnarGlobalWindowAggregateFinal"
+                      : "NativeColumnarGlobalWindowAggregateSlice",
+                  size,
+                  slide,
+                  WindowAggregateMatcher.isCumulative(windowing),
+                  exchangeKeys,
+                  types,
+                  kinds,
+                  WindowAggregateMatcher.isLtz(windowing),
+                  FlinkKeyGroupUtils.stockKeyDescriptor(exchangeType, exchangeKeys))
+              .withStockState(
+                  maximumParallelism, sessionTimeZoneId, offset == null ? 0 : offset.toMillis());
+      if (finalWindows) global.withFinalWindows();
+      aggregate = global;
+    } else {
+      var single =
+          new NativeColumnarWindowAggExecNode(
+              config,
+              InputProperty.DEFAULT,
+              outputType,
+              "NativeColumnarWindowAggregate",
+              WindowAggregateMatcher.isCumulative(windowing),
+              size,
+              slide,
+              WindowAggregateMatcher.timeColumn(windowing),
+              values,
+              filters,
+              keys,
+              types,
+              kinds,
+              processingTime,
+              WindowAggregateMatcher.isLtz(windowing),
+              FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys));
+      single.withStateMaxParallelism(maximumParallelism);
+      single.withStateTimeZone(sessionTimeZoneId);
+      single.withWindowOffset(offset == null ? 0 : offset.toMillis());
+      aggregate = single;
+    }
+    connect(exchange, aggregate);
+    bindings.put(
+        aggregate, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
+    columnar.add(aggregate);
+    var exit =
+        new ArrowToRowDataExecNode(config, InputProperty.DEFAULT, outputType, "ArrowToRowData");
+    connect(aggregate, exit);
+    return exit;
+  }
+
+  private ExecNode<?> windowFallback(ExecNode<?> stock, String reason) {
+    recordFallback("window aggregate: " + reason);
+    return stock;
   }
 
   private ExecNode<?> lowerWindowRank(ExecNode<?> stock, boolean deduplicate) throws IOException {

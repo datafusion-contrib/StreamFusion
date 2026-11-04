@@ -4,6 +4,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.LongPredicate;
 import java.util.function.LongUnaryOperator;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -63,20 +64,59 @@ public final class StockWindowDistinctView implements Serializable {
     this.counted = counted;
   }
 
+  interface Namespaces<N> {
+    TypeSerializer<N> serializer();
+
+    N stock(long end, RowData key) throws Exception;
+
+    long nativeEnd(N namespace, RowData key) throws Exception;
+
+    boolean live(N namespace);
+  }
+
+  private static Namespaces<Long> fixedNamespaces(
+      LongUnaryOperator toStock, LongUnaryOperator toNative, LongPredicate live) {
+    return new Namespaces<Long>() {
+      public TypeSerializer<Long> serializer() {
+        return LongSerializer.INSTANCE;
+      }
+
+      public Long stock(long end, RowData key) {
+        return toStock.applyAsLong(end);
+      }
+
+      public long nativeEnd(Long namespace, RowData key) {
+        return toNative.applyAsLong(namespace);
+      }
+
+      public boolean live(Long namespace) {
+        return live.test(namespace);
+      }
+    };
+  }
+
   void configure(long handle) {
-    for (int aggregate : aggregates) Native.bindWindowCanonicalDistinct(handle, aggregate);
+    configure(handle, false);
+  }
+
+  void configure(long handle, boolean session) {
+    for (int aggregate : aggregates) {
+      if (session) Native.bindSessionCanonicalDistinct(handle, aggregate);
+      else Native.bindWindowCanonicalDistinct(handle, aggregate);
+    }
   }
 
   Map<String, StateDescriptor.Type> stateDescriptors() {
     return Map.of(name, StateDescriptor.Type.MAP, name + "_null_state", StateDescriptor.Type.VALUE);
   }
 
-  private MapState<Object, Object> state(CheckpointableKeyedStateBackend<RowData> backend, long end)
+  private <N> MapState<Object, Object> state(
+      CheckpointableKeyedStateBackend<RowData> backend, N namespace, TypeSerializer<N> serializer)
       throws Exception {
     backend.getPartitionedState(
-        end, LongSerializer.INSTANCE, new ValueStateDescriptor<>(name + "_null_state", counters));
+        namespace, serializer, new ValueStateDescriptor<>(name + "_null_state", counters));
     return backend.getPartitionedState(
-        end, LongSerializer.INSTANCE, new MapStateDescriptor<>(name, valueKeys, counters));
+        namespace, serializer, new MapStateDescriptor<>(name, valueKeys, counters));
   }
 
   private RowType bridgeType(RowType keys) {
@@ -90,10 +130,18 @@ public final class StockWindowDistinctView implements Serializable {
   }
 
   void clear(CheckpointableKeyedStateBackend<RowData> backend, RowType keyType) throws Exception {
+    clear(backend, keyType, LongSerializer.INSTANCE);
+  }
+
+  <N> void clear(
+      CheckpointableKeyedStateBackend<RowData> backend,
+      RowType keyType,
+      TypeSerializer<N> namespaces)
+      throws Exception {
     var serializer = new RowDataSerializer(keyType);
     for (String stateName : stateDescriptors().keySet()) {
-      var entries = new ArrayList<org.apache.flink.api.java.tuple.Tuple2<RowData, Long>>();
-      try (var stream = backend.<Long>getKeysAndNamespaces(stateName)) {
+      var entries = new ArrayList<org.apache.flink.api.java.tuple.Tuple2<RowData, N>>();
+      try (var stream = backend.<N>getKeysAndNamespaces(stateName)) {
         stream.forEach(
             entry ->
                 entries.add(
@@ -102,13 +150,11 @@ public final class StockWindowDistinctView implements Serializable {
       }
       for (var entry : entries) {
         backend.setCurrentKey(entry.f0);
-        if (stateName.equals(name)) state(backend, entry.f1).clear();
+        if (stateName.equals(name)) state(backend, entry.f1, namespaces).clear();
         else
           backend
               .getPartitionedState(
-                  entry.f1,
-                  LongSerializer.INSTANCE,
-                  new ValueStateDescriptor<>(stateName, counters))
+                  entry.f1, namespaces, new ValueStateDescriptor<>(stateName, counters))
               .clear();
       }
     }
@@ -120,6 +166,17 @@ public final class StockWindowDistinctView implements Serializable {
       long handle,
       LongUnaryOperator namespace)
       throws Exception {
+    exportState(
+        backend, keyType, handle, fixedNamespaces(namespace, value -> value, value -> true), false);
+  }
+
+  <N> void exportState(
+      CheckpointableKeyedStateBackend<RowData> backend,
+      RowType keyType,
+      long handle,
+      Namespaces<N> namespaces,
+      boolean session)
+      throws Exception {
     var type = bridgeType(keyType);
     var keyRows = new StockKeyProjection(keyType);
     var keyGetters = new RowData.FieldGetter[keyType.getFieldCount()];
@@ -128,9 +185,7 @@ public final class StockWindowDistinctView implements Serializable {
     var valueGetter = RowData.createFieldGetter(valueType, keyGetters.length + 1);
     for (int slot = 0; slot < aggregates.length; slot++) {
       final int position = slot;
-      Native.exportWindowCanonicalDistinct(
-          handle,
-          aggregates[slot],
+      Native.BatchReceiver receiver =
           (arrayAddress, schemaAddress) -> {
             try (var array = ArrowArray.wrap(arrayAddress);
                 var schema = ArrowSchema.wrap(schemaAddress);
@@ -147,7 +202,9 @@ public final class StockWindowDistinctView implements Serializable {
                 for (int i = 0; i < keyGetters.length; i++)
                   key.setField(i, keyGetters[i].getFieldOrNull(input));
                 backend.setCurrentKey(keyRows.project(key));
-                var view = state(backend, namespace.applyAsLong(input.getLong(0)));
+                var view =
+                    state(
+                        backend, namespaces.stock(input.getLong(0), key), namespaces.serializer());
                 Object value = valueGetter.getFieldOrNull(input);
                 if (value == null)
                   throw new IllegalStateException("NULL window DISTINCT membership");
@@ -176,7 +233,9 @@ public final class StockWindowDistinctView implements Serializable {
               throw new IllegalStateException(
                   "Cannot export window DISTINCT view " + name, failure);
             }
-          });
+          };
+      if (session) Native.exportSessionCanonicalDistinct(handle, aggregates[slot], receiver);
+      else Native.exportWindowCanonicalDistinct(handle, aggregates[slot], receiver);
     }
   }
 
@@ -213,18 +272,21 @@ public final class StockWindowDistinctView implements Serializable {
       ValueStateDescriptor<RowData> main,
       LongUnaryOperator namespace)
       throws Exception {
-    var type = bridgeType(keyType);
-    var keyRows = new RowDataSerializer(keyType);
-    var getters = new RowData.FieldGetter[keyType.getFieldCount()];
-    for (int i = 0; i < getters.length; i++)
-      getters[i] = RowData.createFieldGetter(keyType.getTypeAt(i), i);
+    importState(backend, keyType, handle, main, namespace, ignored -> true);
+  }
+
+  <N> void validateState(
+      CheckpointableKeyedStateBackend<RowData> backend,
+      ValueStateDescriptor<RowData> main,
+      Namespaces<N> namespaces)
+      throws Exception {
     for (String stateName : stateDescriptors().keySet()) {
-      try (var stream = backend.<Long>getKeysAndNamespaces(stateName)) {
+      try (var stream = backend.<N>getKeysAndNamespaces(stateName)) {
         var iterator = stream.iterator();
         while (iterator.hasNext()) {
           var entry = iterator.next();
           backend.setCurrentKey(entry.f0);
-          if (backend.getPartitionedState(entry.f1, LongSerializer.INSTANCE, main).value() == null)
+          if (backend.getPartitionedState(entry.f1, namespaces.serializer(), main).value() == null)
             throw new IllegalStateException("Window DISTINCT view has no scalar accumulator");
           if (!stateName.equals(name)) {
             // COUNT ignores NULL in both bit-flag and multiplicity layouts. Bind the marker's
@@ -232,52 +294,103 @@ public final class StockWindowDistinctView implements Serializable {
             backend
                 .getPartitionedState(
                     entry.f1,
-                    LongSerializer.INSTANCE,
+                    namespaces.serializer(),
                     new ValueStateDescriptor<>(stateName, counters))
                 .value();
           }
         }
       }
     }
+    try (var stream = backend.<N>getKeysAndNamespaces(name)) {
+      var iterator = stream.iterator();
+      while (iterator.hasNext()) {
+        var entry = iterator.next();
+        backend.setCurrentKey(entry.f0);
+        for (var member : state(backend, entry.f1, namespaces.serializer()).entries()) {
+          if (member.getKey() == null)
+            throw new IllegalStateException("NULL in window DISTINCT map");
+          for (int slot = 0; slot < aggregates.length; slot++) membership(member.getValue(), slot);
+        }
+      }
+    }
+  }
+
+  void importState(
+      CheckpointableKeyedStateBackend<RowData> backend,
+      RowType keyType,
+      long handle,
+      ValueStateDescriptor<RowData> main,
+      LongUnaryOperator namespace,
+      LongPredicate liveWindow)
+      throws Exception {
+    importState(
+        backend,
+        keyType,
+        handle,
+        main,
+        fixedNamespaces(value -> value, namespace, liveWindow),
+        false);
+  }
+
+  <N> void importState(
+      CheckpointableKeyedStateBackend<RowData> backend,
+      RowType keyType,
+      long handle,
+      ValueStateDescriptor<RowData> main,
+      Namespaces<N> namespaces,
+      boolean session)
+      throws Exception {
+    validateState(backend, main, namespaces);
+    var type = bridgeType(keyType);
+    var keyRows = new RowDataSerializer(keyType);
+    var getters = new RowData.FieldGetter[keyType.getFieldCount()];
+    for (int i = 0; i < getters.length; i++)
+      getters[i] = RowData.createFieldGetter(keyType.getTypeAt(i), i);
     for (int slot = 0; slot < aggregates.length; slot++) {
       var rows = new ArrayList<RowData>(CHUNK_ROWS);
-      try (var stream = backend.<Long>getKeysAndNamespaces(name)) {
+      try (var stream = backend.<N>getKeysAndNamespaces(name)) {
         var iterator = stream.iterator();
         while (iterator.hasNext()) {
           var entry = iterator.next();
+          boolean live = namespaces.live(entry.f1);
           RowData key = keyRows.toBinaryRow(entry.f0).copy();
           backend.setCurrentKey(key);
-          for (var member : state(backend, entry.f1).entries()) {
+          for (var member : state(backend, entry.f1, namespaces.serializer()).entries()) {
             if (member.getKey() == null)
               throw new IllegalStateException("NULL in window DISTINCT map");
             long count = membership(member.getValue(), slot);
-            if (count == 0) continue;
+            if (!live || count == 0) continue;
             var row = new GenericRowData(type.getFieldCount());
-            row.setField(0, namespace.applyAsLong(entry.f1));
+            row.setField(0, namespaces.nativeEnd(entry.f1, key));
             for (int i = 0; i < getters.length; i++)
               row.setField(1 + i, getters[i].getFieldOrNull(key));
             row.setField(1 + getters.length, valueKeys.copy(member.getKey()));
             if (counted) row.setField(2 + getters.length, count);
             rows.add(row);
             if (rows.size() == CHUNK_ROWS) {
-              importBatch(rows, type, handle, aggregates[slot]);
+              importBatch(rows, type, handle, aggregates[slot], session);
               rows.clear();
             }
           }
         }
       }
-      if (!rows.isEmpty()) importBatch(rows, type, handle, aggregates[slot]);
+      if (!rows.isEmpty()) importBatch(rows, type, handle, aggregates[slot], session);
     }
   }
 
-  private static void importBatch(List<RowData> rows, RowType type, long handle, int aggregate) {
+  private static void importBatch(
+      List<RowData> rows, RowType type, long handle, int aggregate, boolean session) {
     try (var root = RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED);
         var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
         var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportVectorSchemaRoot(
           NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array, schema);
-      Native.importWindowCanonicalDistinct(
-          handle, aggregate, array.memoryAddress(), schema.memoryAddress());
+      if (session)
+        Native.importSessionCanonicalDistinct(
+            handle, aggregate, array.memoryAddress(), schema.memoryAddress());
+      else
+        Native.importWindowCanonicalDistinct(
+            handle, aggregate, array.memoryAddress(), schema.memoryAddress());
     }
   }
 }

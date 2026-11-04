@@ -2560,6 +2560,46 @@ fn window_key_data_type(code: i64) -> DataType {
     }
 }
 
+fn window_key_data_types(codes: Vec<i64>, key_descriptor: &[i32]) -> Vec<DataType> {
+    let stock_projection = key_descriptor.first() == Some(&i32::MIN);
+    codes
+        .into_iter()
+        .map(|code| {
+            if stock_projection && code == 2 {
+                DataType::Int32
+            } else {
+                window_key_data_type(code)
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod window_key_schema_tests {
+    use super::*;
+
+    #[test]
+    fn stock_window_keys_preserve_int_width_without_changing_legacy_state() {
+        let codes = vec![2, 0, 12, 8, 1003];
+        let legacy = vec![
+            DataType::Int64,
+            DataType::Int64,
+            DataType::Int32,
+            DataType::Date32,
+            streamfusion_bridge::timestamp::timestamp_type(),
+        ];
+        assert_eq!(window_key_data_types(codes.clone(), &[]), legacy);
+        assert_eq!(window_key_data_types(codes.clone(), &[-1; 5]), legacy);
+        let mut stock = legacy;
+        stock[0] = DataType::Int32;
+        assert_eq!(
+            window_key_data_types(codes, &[i32::MIN, -1, -1, -1, -1, 3]),
+            stock
+        );
+        assert!(window_key_data_types(vec![], &[i32::MIN]).is_empty());
+    }
+}
+
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_rocksdbWindowAggregatorSupported<'local>(
     env: JNIEnv<'local>,
@@ -2647,10 +2687,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowAggregat
     crate::bridge::jni_guard(env, move |mut env| {
         let kinds = read_int_array(&env, &aggregate_kinds);
         let value_types = read_int_array(&env, &value_types);
-        let key_types: Vec<DataType> = read_int_array(&env, &key_types)
-            .into_iter()
-            .map(window_key_data_type)
-            .collect();
+        let key_descriptor = read_i32_array(&env, &key_timestamp_precisions);
+        let key_types = window_key_data_types(read_int_array(&env, &key_types), &key_descriptor);
         let state_types = window_state_types(&kinds, &value_types);
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
@@ -2683,7 +2721,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowAggregat
                 value_types,
                 kinds,
             )
-            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
+            .with_key_timestamp_precisions(key_descriptor)
             .with_store(store, key_types)
             .with_read_through_budget(memory_budget_bytes)?;
             let restored = read_restored_partitions(&mut env, &restored_partitions);
@@ -2907,10 +2945,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSessionAggrega
     crate::bridge::jni_guard(env, move |mut env| {
         let kinds = read_int_array(&env, &aggregate_kinds);
         let value_types = read_int_array(&env, &value_types);
-        let key_types: Vec<DataType> = read_int_array(&env, &key_types)
-            .into_iter()
-            .map(window_key_data_type)
-            .collect();
+        let key_descriptor = read_i32_array(&env, &key_timestamp_precisions);
+        let key_types = window_key_data_types(read_int_array(&env, &key_types), &key_descriptor);
         let state_types = window_state_types(&kinds, &value_types);
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
@@ -2937,7 +2973,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSessionAggrega
         };
         let aggregator = store.and_then(|store| {
             let mut aggregator = SessionAggregator::new(gap_millis, value_types, kinds)
-                .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
+                .with_key_timestamp_precisions(key_descriptor)
                 .with_store(store, key_types)
                 .with_read_through_budget(memory_budget_bytes)?;
             let restored = read_restored_partitions(&mut env, &restored_partitions);

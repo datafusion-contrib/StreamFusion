@@ -1,9 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchTypeInformation;
-import tech.streamfusion.operator.NativeColumnarSessionWindowAggregateOperator;
-import tech.streamfusion.operator.NativeWindowOperatorCore;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -17,10 +13,14 @@ import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTransl
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeColumnarSessionWindowAggregateOperator;
+import tech.streamfusion.operator.NativeWindowOperatorCore;
 
 /**
- * Execution node for the columnar session-window aggregate: it consumes Arrow batches from a columnar
- * exchange and emits the window-result batches (Arrow), wrapping {@link
+ * Execution node for the columnar session-window aggregate: it consumes Arrow batches from a
+ * columnar exchange and emits the window-result batches (Arrow), wrapping {@link
  * NativeColumnarSessionWindowAggregateOperator}. The row-fed twin is {@link
  * NativeSessionWindowAggExecNode}.
  */
@@ -38,6 +38,15 @@ public class NativeColumnarSessionWindowAggExecNode extends ExecNodeBase<ArrowBa
   private final boolean proctime;
   private final boolean timestampLtz;
   private final int[] keyTimestampPrecisions;
+  private int stateMaxParallelism = -1;
+  private String stateSessionTimeZoneId;
+
+  public NativeColumnarSessionWindowAggExecNode withStockState(
+      int maxParallelism, String timeZoneId) {
+    stateMaxParallelism = maxParallelism;
+    stateSessionTimeZoneId = timeZoneId;
+    return this;
+  }
 
   public NativeColumnarSessionWindowAggExecNode(
       ReadableConfig tableConfig,
@@ -77,11 +86,16 @@ public class NativeColumnarSessionWindowAggExecNode extends ExecNodeBase<ArrowBa
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
-    String timeZoneId =
-        timestampLtz ? planner.getTableConfig().getLocalTimeZone().getId() : "UTC";
+    String sessionTimeZoneId =
+        stateSessionTimeZoneId == null
+            ? planner.getTableConfig().getLocalTimeZone().getId()
+            : stateSessionTimeZoneId;
+    String timeZoneId = timestampLtz ? sessionTimeZoneId : "UTC";
     RowType outputType = (RowType) getOutputType();
     int maxParallelism =
-        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+        stateMaxParallelism > 0
+            ? stateMaxParallelism
+            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
@@ -96,7 +110,7 @@ public class NativeColumnarSessionWindowAggExecNode extends ExecNodeBase<ArrowBa
                 aggregateKinds,
                 timeZoneId,
                 timestampLtz,
-                planner.getTableConfig().getLocalTimeZone().getId(),
+                sessionTimeZoneId,
                 outputType,
                 proctime,
                 keyTimestampPrecisions,

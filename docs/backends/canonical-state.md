@@ -6,15 +6,15 @@ schema. Their qualified scope is documented below. Unbound operators retain rese
 state containing StreamFusion's logical representation, which still requires StreamFusion on restore.
 Flink owns state metadata, key-group indexes, stream handles, redistribution and integrity checks.
 
-Representative canonical conversion paths now exist in all **15 operator families**, including
-tested draft adapters awaiting consolidation. Every family remains partial; this count excludes
-connector protocols and is not a percentage of overall completion or individual state variants.
+Automatic representative canonical conversion paths now exist in all **15 operator families**.
+Every family remains partial; this count excludes connector protocols and is not a percentage of
+overall completion or individual state variants.
 
 ## Operator coverage inventory
 
 Every row below remains partial. A qualified subset has actual stock/native continuation evidence;
-that does not qualify all variants of its family. Draft integration evidence also needs consolidation
-into the current automatic workflow. Detailed scopes and exclusions belong to the linked operator
+that does not qualify all variants of its family. The remaining schemas, algorithm variants and
+connector/failure combinations still require qualification. Detailed scopes and exclusions belong to the linked operator
 pages. Historical cohorts are not silently requalified against each newer library.
 
 | Family | Current stock-interchange scope | Main remaining work |
@@ -23,8 +23,8 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
-| [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Representative draft interchange; namespaced and DISTINCT-state groundwork | Planner/test consolidation and complete phase/type/view matrix |
-| [Sessions](../operators/window-aggregate.md) | Representative draft state and continuation evidence | Consolidation and wider merging/timer/recovery matrix |
+| [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Automatic binding, namespaced/DISTINCT state and selected complete-job handoffs | Complete phase/type/view and failure matrix |
+| [Sessions](../operators/window-aggregate.md) | Automatic partitioned-session binding, operator recovery and selected complete-job handoffs | Unpartitioned aggregation and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
 | [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
 | [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic and processing-time unbounded scalar contracts with automatic binding | Wider job/type matrix, event-time unbounded/views and event-ROWS cleanup |
