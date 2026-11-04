@@ -9219,3 +9219,87 @@ NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`. Legacy controls also s
 encoder/helper/runtime. Complete jobs use `IntegralExpressionPipelineBenchmark` with
 matching input, expression and `sf.integral.legacy` properties. General Unicode casing
 and other residual contracts remain in [#494](https://github.com/datafusion-contrib/StreamFusion/issues/494).
+
+## Primitive text LOWER
+
+On 2026-11-04, LOWER reuses the primitive producer proof and native text writers qualified
+for UPPER. Total integer/BOOLEAN casts to unbounded STRING are admitted on both released
+lines. Qualified primitive ASCII PRINTF participates on Flink 2.2 when its literal contains
+no uppercase `I`: cached Java strings otherwise lowercase it differently in Turkish/Azeri
+locales. Primitive conversions cannot introduce `I`. Integer text reuses its existing
+native CAST result, BOOLEAN writes lowercase directly, and formatted text uses the
+existing Arrow case kernel. General STRING/Unicode and consumers keep their exact paths.
+
+The [record](results/primitive-lower-2026-11-04.json) and
+[7,000 raw trials](results/primitive-lower-2026-11-04.csv.gz) retain all cells, allocation
+diagnostics, variability and actual source/artifact hashes. Apple M4 Pro, macOS arm64,
+one thread, JDK 17.0.12, released Flink 1.18.1/2.2.1, Java release 11, release/mimalloc.
+Actual preceding encoder/helper `60d1e655` includes native UPPER but retains generated
+LOWER evaluation. Both whole runtimes are byte-identical; measured and validated scalar
+bytecode match. No new configuration or transport contract is introduced.
+
+Prepared stock starts on GenericRowData/BinaryRowData and native starts inside Rust on
+equal Arrow. Each cell processes 131,072 logical rows, sixteen warmups and nine alternating
+measurements. Production Calc, result consumption, allocation and intrinsic conversions/
+callbacks remain inside timing; initial JNI/import/export and perimeter transposes are
+outside this small-function gate only. Four integer widths, both NULL modes/layouts,
+modern/legacy BOOLEAN text and padded/indexed formats are covered; all digests match.
+
+| Flink | Batch rows | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2.2 | 1,024 | 32 | 1.514-16.338x | 2.959-28.997x | 1.687-14.814x |
+| 1.18 | 1,024 | 24 | 1.508-21.269x | 3.020-30.765x | 1.638-15.777x |
+| 2.2 | 16 | 8 | 0.514-4.932x | 10.132-26.523x | 0.525-4.992x |
+| 1.18 | 16 | 6 | 0.498-1.158x | 12.343-24.451x | 0.543-1.212x |
+
+All 56 bulk medians beat stock and previous; nine of fourteen tiny controls still lose
+to stock. This extension already uses the integer identity and final-case BOOLEAN writer
+profiled in the UPPER qualification. Remaining small-batch Calc/CAST costs, independent
+stock drift and the slightly slower legacy BOOLEAN tiny control are retained.
+
+Eight complete million-row configurations use bounded external Row sources and blackhole
+sinks, retaining job submission/startup, JNI and both transposes. Each engine has two
+warmups and five alternating measured jobs. Both candidate/previous require consumed
+native work; only the candidate requires empty evaluators. Median seconds:
+
+| Flink/shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 22-int-text | 0.240047 | 0.201903 | 0.231463 | 0.261967 |
+| 22-boolean-text | 0.210758 | 0.208022 | 0.212839 | 0.264560 |
+| 22-int-format | 0.645009 | 0.263799 | 0.631092 | 0.650668 |
+| 22-boolean-format | 0.645045 | 0.286106 | 0.661133 | 0.700037 |
+| 22-boolean-legacy | 0.230676 | 0.244194 | 0.211327 | 0.241696 |
+| 118-int-text | 0.233692 | 0.214742 | 0.234665 | 0.260876 |
+| 118-boolean-text | 0.233153 | 0.247825 | 0.218829 | 0.265762 |
+| 118-boolean-legacy | 0.229295 | 0.238191 | 0.212077 | 0.288261 |
+
+Native/stock elapsed spans **0.409-1.063**, native/previous **0.405-1.010**.
+Three complete-job medians lose to stock; 2.2 legacy BOOLEAN also loses 1.0% to previous,
+with overlapping ranges. These losses remain and are distinct from the bulk gate.
+
+All **196 fresh focused JVM invocations** pass without skips on released Flink
+1.18.1/2.2.1 and JDK 11/17, compiling with Java release 11: 164 shared case/existing-function
+invocations plus 32 DECIMAL-truth/predicate composition invocations. The shared tests
+revalidate UPPER and LOWER over full 5,003-row maps/schema, signed extrema/NULLs, total
+wrapping, modern/legacy casts, empty batches, locale-sensitive/Unicode exclusions,
+retained consumers, failing/lazy producers and same-name catalog UDFs. Additional compact
+DECIMAL(4,2) and noncompact DECIMAL(38,18) controls feed both case functions through
+verified truth/predicate text. Admitted routes require consumed NativeCalc work, no fallback
+and empty evaluator descriptors. Four unchanged released `testLowerCase` stock oracles
+pass separately. The earlier 132-invocation BOOLEAN CAST qualification is retained in
+the UPPER record, not relabeled as a new test run.
+
+Per JDK, preceding LOWER controls compare thirteen first-query maps/schema on 2.2 and
+ten on 1.18, plus the first locale query, before expected evaluator-route failures.
+Later modes/queries in those failing invocations are not counted. Its residual/catalog
+controls pass. In the additional DECIMAL matrix, all four preceding UPPER controls pass;
+four preceding LOWER controls compare results and then fail the intended route assertion.
+The unchanged native artifacts retain the archived 912-core-test qualification; these
+are not new Rust runs. Hosted suites must qualify the exact pushed head.
+
+Reproduce prepared cells with release `integral_expression`, the record's type/expression,
+NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`; legacy cells also set
+`SF_INTEGRAL_LEGACY=true`. Previous controls set `SF_INTEGRAL_PREVIOUS=true` on the saved
+encoder/helper/runtime. Complete jobs use `IntegralExpressionPipelineBenchmark` with
+matching inputs, expression and `sf.integral.legacy`. Remaining general Unicode casing
+and other signatures stay in [#494](https://github.com/datafusion-contrib/StreamFusion/issues/494).

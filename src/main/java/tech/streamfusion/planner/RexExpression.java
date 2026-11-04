@@ -1938,12 +1938,13 @@ final class RexExpression {
         && containsExactScalarFunction(call)) {
       return emitHostExpression(call, true);
     }
-    if (nativePrimitiveUpper(call)) {
+    int primitiveCase = nativePrimitiveCase(call);
+    if (primitiveCase != 0) {
       var input = (RexCall) call.getOperands().get(0);
       // Signed integer text contains no letters, so casing needs no second scan or output buffer.
       if (nativePrintfIntegerText(input) != null) return emit(input);
-      if (nativeBooleanCharacterCast(input)) return emitBooleanCharacterCast(input, false);
-      return emitBuiltinCall(call, 50);
+      if (nativeBooleanCharacterCast(input)) return emitBooleanCharacterCast(input, primitiveCase == 51);
+      return emitBuiltinCall(call, primitiveCase);
     }
     if ((call.getOperator()
                 == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CHAR_LENGTH
@@ -4775,23 +4776,26 @@ final class RexExpression {
     return call.getOperands().get(0);
   }
 
-  private static boolean nativePrimitiveUpper(RexCall call) {
-    if (call.getOperator()
-            != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UPPER
-        || call.getOperands().size() != 1
-        || !(call.getOperands().get(0) instanceof RexCall)) return false;
+  private static int nativePrimitiveCase(RexCall call) {
+    int op = call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UPPER ? 50
+        : call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.LOWER ? 51 : 0;
+    if (op == 0 || call.getOperands().size() != 1
+        || !(call.getOperands().get(0) instanceof RexCall)) return 0;
     var input = (RexCall) call.getOperands().get(0);
-    if (nativePrintfIntegerText(input) != null) return true;
+    if (nativePrintfIntegerText(input) != null) return op;
     if ((input.getOperator()
                 == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CAST
             || input.getOperator()
                 == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST)
         && input.getType().getSqlTypeName() == SqlTypeName.VARCHAR
         && input.getType().getPrecision() == Integer.MAX_VALUE
-        && nativeBooleanCharacterCast(input)) return true;
-    // Primitive conversions cannot write i. Exclude literals that can observe Turkish/Azeri casing.
+        && nativeBooleanCharacterCast(input)) return op;
+    // Primitive conversions cannot write i/I. Exclude literals that observe Turkish/Azeri casing.
     return nativePrintf(input) != 0
-        && ((RexLiteral) input.getOperands().get(0)).getValueAs(String.class).indexOf('i') < 0;
+        && ((RexLiteral) input.getOperands().get(0)).getValueAs(String.class)
+            .indexOf(op == 50 ? 'i' : 'I') < 0 ? op : 0;
   }
 
   private static boolean nativePrimitivePrintfComparison(RexCall call) {

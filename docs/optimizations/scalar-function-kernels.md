@@ -26,11 +26,11 @@ remain admitted. See [current Calc coverage](../operators/calc-filter.md).
 
 ## Proven primitive case conversion
 
-UPPER proves a bounded primitive text producer before using the existing native kernels.
+UPPER/LOWER prove a bounded primitive text producer before using the existing native kernels.
 Signed integer CAST/TRY_CAST to unbounded STRING contains no letters, so its existing
-native result is reused. BOOLEAN text writes its final uppercase form directly through
+native result is reused. BOOLEAN text writes its final case directly through
 the existing BOOLEAN text writer. Qualified primitive ASCII PRINTF uses the Arrow case
-kernel only when no literal lowercase `i` can observe Turkish/Azeri locale behavior;
+kernel only when no literal lowercase `i` (UPPER) or uppercase `I` (LOWER) can observe Turkish/Azeri locale behavior;
 primitive conversions cannot introduce that character. General STRING/Unicode and
 representation-sensitive consumers retain Flink generation.
 
@@ -42,6 +42,13 @@ the original tiny BOOLEAN control from 0.824x to 1.205x stock. All 56 final bulk
 beat stock and previous, but seven of fourteen tiny controls remain slower than stock.
 Three of eight complete jobs lose to stock, and one loses 2.4% to previous with overlapping
 ranges. See the [full qualification, initial attempts and raw timings](../benchmarks/scalar-functions.md#primitive-text-upper).
+
+LOWER reuses those identity/final-case optimizations. Its independent 56 bulk controls
+beat stock by 1.508-21.269x and previous by 2.959-30.765x. Nine of fourteen tiny controls
+and three of eight complete jobs still lose to stock; one complete median loses 1.0%
+to previous with overlapping ranges. The [separate LOWER record](../benchmarks/scalar-functions.md#primitive-text-lower)
+retains all 7,000 trials and revalidates both functions, including DECIMAL truth/predicate
+producers. These bounded proofs do not replace general Java Unicode/locale semantics.
 
 ## DECIMAL formatting
 
