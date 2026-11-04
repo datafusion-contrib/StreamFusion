@@ -3033,8 +3033,8 @@ their existing verified representation contract.
 
 ## Stock arithmetic accumulator projection (partial)
 
-A direct Flink 2.2.1 adapter now projects the qualified generated arithmetic `accState` value.
-It copies COUNT, SUM0, nullable SUM and raw AVG sums/counts, the independent input-record counter
+A direct Flink 2.2.1 adapter now projects the qualified generated scalar `accState` value.
+It copies COUNT, SUM0, nullable SUM, append-only BIGINT MIN/MAX and raw AVG sums/counts, the independent input-record counter
 and the original TTL write age. It does not infer an accumulator from its displayed result.
 A NULL SUM accumulator differs from a non-null zero after cancellation, even when both display
 NULL. The existing native nullable accumulator already preserves this distinction; its state
@@ -3056,15 +3056,15 @@ and output buffers reserve the task's memory budget. TTL-disabled export emits n
 when native checkpoint restoration has installed a migration clock. Canonical snapshot guards
 and actual operator restore tests distinguish direct projection from the native snapshot path.
 
-The current qualification is single-phase, per-record BIGINT arithmetic with one nullable INT or
-BIGINT grouping key, or a keyless global group. It covers COUNT(*), COUNT(v), SUM/AVG with hidden counts, shared COUNT/SUM0
+The current qualification is single-phase, per-record BIGINT scalar aggregation with one nullable INT or
+BIGINT grouping key, or a keyless global group. It covers COUNT(*), COUNT(v), SUM/AVG with hidden counts, append-only MIN/MAX, shared COUNT/SUM0
 layouts, both before-image policies, both native stores and both initial engine orders. Native
 checkpoints and canonical savepoints remain distinct paths. Broader state types, composite
 keys, filters, mini-batch/two-phase contracts and data views still require their own qualification
 under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
 Automatic binding covers released single-phase `GroupAggFunction` arithmetic for append-only and
-retracting input. Other physical input fields and aggregate outputs remain BIGINT; SUM/AVG
+retracting input, plus append-only BIGINT MIN/MAX. Other physical input fields and aggregate outputs remain BIGINT; SUM/AVG/MIN/MAX
 arguments must be BIGINT. The captured key serializer and native stock-key encoding retain each
 key type, including NULL and signed INT extremes. Ordinary SQL and portable compiled plans capture
 the original physical aggregate calls, accumulator types, field offsets, hidden counter, key
@@ -3082,13 +3082,22 @@ receive Flink's projected value column; COUNT(*) can retain both unused source c
 physical layout, rather than an assumed projection, determines the operator contract. Re-exporting
 an initially empty global savepoint creates neither an accumulator nor a SQL result.
 
-Append-only accumulators can omit both the input-row counter and SUM's non-null counter. Native
-execution retains group existence and SUM initialization as presence markers; it never fabricates
+Append-only accumulators can omit both the input-row counter and SUM's non-null counter. MIN/MAX
+each retain one nullable BIGINT scalar. Native execution retains group existence and nullable
+SUM/MIN/MAX initialization as presence markers; it never fabricates
 an exact input count. These markers are absent from the exported Flink row. Actual COUNT and AVG
 counts remain independent and wrap like Java, including through zero. A live append group with a
 zero aggregate count remains present. The append contract rejects retraction batches before
 mutation. Native checkpoints keep their format and initialization reapplies the captured liveness
 mode on fresh, raw-checkpoint and canonical restores.
+
+Append-only MIN/MAX can share a generated row with COUNT(*), COUNT(v), SUM and AVG. The projection
+preserves the optimizer's actual shared COUNT/SUM0 slots and nullable extrema independently.
+An all-NULL group remains present with NULL extrema. The scalar contract rejects retracting
+MIN/MAX: released Flink uses structured cache/map-size accumulators and separate `MapView` state
+there. A view's TTL lifetime can outlast its accumulator, including after a late retraction clears
+an expired accumulator. Those independent values and clocks require a separate adapter; rebuilding
+them from a selected minimum or maximum would lose reachable stock state.
 
 The state/lifecycle qualification covers 420 Flink 2.2.1 cases: 32 independent generated-layout
 controls; 72 retracting, 92 append-only and 128 INT-key lifecycle/overflow/recovery cases; twenty
@@ -3097,7 +3106,7 @@ cases; four retracting AVG signed-division boundaries; and 64 initially-empty ha
 complete stock accumulator bytes and write ages, retain the source on failed imports, and guard
 canonical export against intermediate native snapshots. Another 66 existing Java aggregate
 processing/SQL checks pass, including two-phase aggregation. The complete native suite passes
-1,274 tests with two pre-existing ignores. Another 176 global state cases cover 128 repeated
+1,277 tests with two pre-existing ignores. Another 176 global state cases cover 128 repeated
 handoff combinations, 32 initially-empty states and sixteen native-checkpoint recovery combinations,
 with the actual generated input schemas and empty stock key.
 
@@ -3119,7 +3128,25 @@ rescales through one, three and two tasks, with the actual execution topology ch
 stock and native stage. Keeping the sink at one task preserves the order used to materialize the
 committed changelog. Sink rescaling remains in the broader connector matrix.
 
+The append-only BIGINT MIN/MAX addition has 136 state/lifecycle cases covering BIGINT/INT/global
+keys, NULL initialization, signed extremes, repeated switches, initially-empty states and native
+checkpoint recovery. Sixteen independent released-layout controls pin both scalar extrema and
+shared COUNT/SUM0/MIN/MAX rows. Twenty-two additional controls cover whole-source validation beyond
+a transfer chunk, foreign descriptors, invalid row kinds, memory denial with a fresh retry,
+receiver failures and original write ages. Another 48 planner cases cover both submission forms,
+all three key shapes, TTL settings and UID policies.
+
+Fifty-six additional isolated append-only MIN/MAX jobs cover 28 grouped and 28 global scenarios:
+both submission forms, stores and initial engine orders; no-input return; native checkpoint
+recovery; and rescaling through one, three and two tasks. They retain custom source/committer state
+and both transposes, compare every committed changelog and the final table, and keep StreamFusion
+off stock worker classpaths and out of exported metadata. Global operators and the committing sink
+remain singleton while their source rescales. A single 1,315-case run passes all these new cases
+alongside the existing state, planner, rank/identity and aggregate SQL controls, without failures,
+errors, skips or smoke filters. The earlier 120 arithmetic job scenarios remain separately
+qualified and are excluded from this run's count.
+
 The nine unchanged released Flink `GroupAggregateRestoreTest` programs also pass as stock-only
-controls. Their mixed schemas, filtered AVG, MIN and data-view/UDF variants remain outside this
+controls. Their mixed schemas, filtered AVG, retracting/typed MIN and data-view/UDF variants remain outside this
 native canonical binding; no native pass is claimed for those programs. Broader complete-job,
 connector/delivery and cross-version matrices remain open. Benchmarking is explicitly deferred.

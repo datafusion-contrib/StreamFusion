@@ -152,7 +152,7 @@ class CanonicalGroupArithmeticValidationTest {
     assertEquals(handles, Native.liveNativeHandles());
   }
 
-  private long create(
+  long create(
       GroupAggregateStockTestFixture fixture, boolean persistent, long budget, String name) {
     int[] empty = new int[0],
         key = new int[] {0},
@@ -201,7 +201,7 @@ class CanonicalGroupArithmeticValidationTest {
         new byte[0][]);
   }
 
-  private static void close(long handle, boolean persistent) {
+  static void close(long handle, boolean persistent) {
     if (persistent) Native.closeRocksDBGroupAggregator(handle);
     else Native.closeGroupAggregator(handle);
   }

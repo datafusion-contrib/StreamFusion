@@ -30,13 +30,22 @@ original serializer, TTL policy, identity and maximum parallelism. Unsupported c
 the stock owner in compiled lowering and the existing ordinary graph behavior elsewhere.
 
 Flink's append-only RecordCounter tests whether an accumulator exists, rather than reading an
-input count. Append-only SUM likewise has a nullable sum with no physical non-null count, while
+input count. Append-only SUM, MIN and MAX each retain a nullable scalar without a physical non-null count, while
 AVG retains its actual sum/count pair. Native execution uses existence/initialization markers for
 those absent fields and projects only actual generated fields into Flink state. Markers do not
 replace aggregate counts: a zero COUNT/AVG count cannot delete an append group. The captured
 contract reinstalls this policy after native checkpoint restoration without a state-format flag.
 
-This is the single-phase BIGINT arithmetic contract for append-only and retracting input, with
+Released append-only BIGINT MIN/MAX reuse this scalar adapter and initialization marker, including
+when their generated row shares COUNT/SUM0 slots with SUM/AVG. Retracting MIN/MAX cannot use that
+mapping: released Flink stores structured cached selections/map sizes and separate MapViews. Stock
+TTL can remove the accumulator while retaining expired view entries after a late retraction.
+Their independent lifetimes, clocks and negative frequencies must survive conversion; deriving a
+view from a cached result or deleting it with the header would lose stock state. This remains
+pending work rather than an implicit conversion through the scalar contract.
+
+This is the single-phase BIGINT arithmetic contract for append-only and retracting input, plus
+append-only BIGINT MIN/MAX, with
 one INT/BIGINT grouping key or a global group. Global state keeps Flink's eight-byte empty BinaryRow
 key, zero-field RowData key serializer and singleton parallelism/maximum parallelism. The adapter
 does not invent a grouping key or an initial accumulator/result. Compiled grouping without actual

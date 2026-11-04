@@ -28,7 +28,7 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
-/** Projects actual generated arithmetic accumulator slots, including hidden record counts. */
+/** Projects actual generated BIGINT scalar accumulator slots, including hidden record counts. */
 public final class StockGroupArithmeticStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
   private static final int CHUNK_ROWS = 1024;
@@ -61,7 +61,7 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
         || kinds.length != countFields.length)
       throw new IllegalArgumentException("Invalid aggregate field mapping");
     if (accumulatorType.getChildren().stream().anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT)))
-      throw new IllegalArgumentException("Arithmetic state requires BIGINT accumulator fields");
+      throw new IllegalArgumentException("Scalar state requires BIGINT accumulator fields");
     boolean[] covered = new boolean[accumulatorType.getFieldCount()];
     if (recordCountField >= 0) cover(covered, recordCountField);
     else if (recordCountField != -1)
@@ -71,18 +71,29 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
     fields.add(new BigIntType(false));
     fields.add(new BigIntType(false));
     for (int i = 0; i < kinds.length; i++) {
-      if (kinds[i] != 0 && kinds[i] != 3 && kinds[i] != 4 && kinds[i] != 22)
-        throw new IllegalArgumentException("Unsupported arithmetic aggregate kind");
+      if (kinds[i] != 0
+          && kinds[i] != 3
+          && kinds[i] != 4
+          && kinds[i] != 10
+          && kinds[i] != 11
+          && kinds[i] != 22)
+        throw new IllegalArgumentException("Unsupported scalar aggregate kind");
+      if ((kinds[i] == 10 || kinds[i] == 11) && recordCountField >= 0)
+        throw new IllegalArgumentException("Scalar MIN/MAX requires append-only input");
       cover(covered, scalarFields[i]);
       if (kinds[i] == 4 || kinds[i] == 0 && recordCountField >= 0) cover(covered, countFields[i]);
       else if (countFields[i] != -1)
         throw new IllegalArgumentException("Aggregate has no separate physical count");
-      fields.add(new BigIntType(kinds[i] == 0));
+      fields.add(new BigIntType(nullableScalar(kinds[i])));
       fields.add(new BigIntType(false));
     }
     for (boolean present : covered)
       if (!present) throw new IllegalArgumentException("Unmapped physical accumulator field");
     bridgeType = RowType.of(fields.toArray(new LogicalType[0]));
+  }
+
+  private static boolean nullableScalar(int kind) {
+    return kind == 0 || kind == 10 || kind == 11;
   }
 
   private static void cover(boolean[] fields, int index) {
@@ -196,7 +207,7 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
     if (recordCountField >= 0 && row.isNullAt(recordCountField))
       throw new IllegalStateException("NULL group record count");
     for (int i = 0; i < kinds.length; i++) {
-      if (kinds[i] != 0 && row.isNullAt(scalarFields[i]))
+      if (!nullableScalar(kinds[i]) && row.isNullAt(scalarFields[i]))
         throw new IllegalStateException("NULL in a required accumulator scalar");
       if (countFields[i] >= 0 && row.isNullAt(countFields[i]))
         throw new IllegalStateException("NULL in a required accumulator count");
@@ -262,7 +273,7 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
               4 + 2 * i,
               countFields[i] >= 0
                   ? accumulator.getLong(countFields[i])
-                  : kinds[i] == 0
+                  : nullableScalar(kinds[i])
                       ? (accumulator.isNullAt(scalarFields[i]) ? 0L : 1L)
                       : kinds[i] == 3 ? accumulator.getLong(scalarFields[i]) : 0L);
         }

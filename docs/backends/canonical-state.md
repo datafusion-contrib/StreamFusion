@@ -1219,7 +1219,7 @@ full cross-version/failure/connector/delivery coverage remain in
 
 The Flink 2.2.1 grouped-arithmetic adapter writes the released generated `accState` row directly
 with its actual RowData serializer, key serializer and TTL envelope. Physical slot maps preserve
-raw SUM/AVG accumulators, nullable SUM initialization, shared COUNT/SUM0 fields, hidden input-row
+raw SUM/AVG accumulators, nullable SUM and append-only BIGINT MIN/MAX initialization, shared COUNT/SUM0 fields, hidden input-row
 counts and write ages. Continued integer AVG uses Java's wrapping division at
 `Long.MIN_VALUE / -1`, including for restored negative counts; the canonical accumulator stays raw.
 The native protocol visits live state through bounded Arrow batches; it
@@ -1227,18 +1227,24 @@ does not encode and reread a native snapshot. Both memory and raw native RocksDB
 transfer semantics. Whole-source validation precedes mutation, and a failed resource allocation
 retains the source for a fresh target. Receiver failures preserve native state for another export.
 
-The qualified single-phase BIGINT arithmetic contract binds append-only and retracting input
+The qualified single-phase BIGINT arithmetic contract binds append-only and retracting input,
+and the same scalar projection binds append-only BIGINT MIN/MAX,
 automatically in ordinary SQL and portable compiled plans with one INT/BIGINT grouping key or a
 keyless global group, using the original generated accumulator layout, key serializer, identity,
 TTL and maximum parallelism. Global operators keep the released zero-field RowData key serializer,
 eight-byte empty BinaryRow key and singleton parallelism/maximum parallelism of one.
 The native graph remains a private runtime projection; the compiled plan stays portable stock
 Flink. Append-only state without an input counter retains existence and nullable SUM initialization
-through private presence markers, without adding fields to the stock accumulator. Aggregate counts
+through private presence markers, without adding fields to the stock accumulator. Nullable MIN/MAX
+use the same initialization policy and may share a physical row with COUNT/SUM/AVG. Aggregate counts
 retain their original values even when zero or wrapped. Initialization reapplies the captured
 append liveness policy after ordinary native checkpoints; the private snapshot format is unchanged.
 Additional aggregate schemas/phases/views and composite keys remain outside this binding. Compiled
 grouping without any actual aggregate calls retains its stock owner.
+Retracting MIN/MAX remain outside the scalar binding: they require structured cache/map-size
+headers and independently retained map entries with their own TTL clocks. Stock can retain expired
+view entries even after clearing an expired accumulator, so losing the header cannot discard those
+entries during conversion.
 Unqualified upstream grouped owners in the rank-template path remain stock-owned. Qualified isolated
 arithmetic jobs verify custom source and committing-sink state, both transposes, immediate re-export,
 native checkpoint recovery and rescaling through one, three and two tasks. They compare full

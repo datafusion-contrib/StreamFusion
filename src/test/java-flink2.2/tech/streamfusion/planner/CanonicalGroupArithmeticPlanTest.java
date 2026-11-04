@@ -110,17 +110,25 @@ class CanonicalGroupArithmeticPlanTest {
             + "')");
     table.useCatalog("default_catalog");
     String fields =
-        mode.equals("arithmetic")
-            ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d"
-            : mode.equals("hidden")
-                ? "SUM(v) AS c,AVG(v) AS d"
-                : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
+        mode.equals("extrema")
+            ? "MIN(v) AS a,MAX(v) AS b"
+            : mode.equals("mixed-extrema")
+                ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d,MIN(v) AS e,MAX(v) AS f"
+                : mode.equals("arithmetic")
+                    ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d"
+                    : mode.equals("hidden")
+                        ? "SUM(v) AS c,AVG(v) AS d"
+                        : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
     table.executeSql(
         "CREATE TABLE output_table("
             + (global ? "" : "k " + keyType + ",")
-            + (mode.equals("arithmetic")
-                ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
-                : mode.equals("hidden") ? "c BIGINT,d BIGINT" : "a BIGINT")
+            + (mode.equals("extrema")
+                ? "a BIGINT,b BIGINT"
+                : mode.equals("mixed-extrema")
+                    ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT,e BIGINT,f BIGINT"
+                    : mode.equals("arithmetic")
+                        ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
+                        : mode.equals("hidden") ? "c BIGINT,d BIGINT" : "a BIGINT")
             + ") WITH ('connector'='blackhole')");
     String query =
         "INSERT INTO output_table SELECT "
@@ -161,21 +169,33 @@ class CanonicalGroupArithmeticPlanTest {
                 GroupAggregateStockTestFixture.field(contract, "keyType"))
             .getFieldCount());
     int[] kinds =
-        mode.equals("arithmetic")
-            ? new int[] {3, 3, 22}
-            : mode.equals("hidden") ? new int[] {0, 4} : new int[] {3};
+        mode.equals("extrema")
+            ? new int[] {10, 11}
+            : mode.equals("mixed-extrema")
+                ? new int[] {3, 3, 22, 10, 11}
+                : mode.equals("arithmetic")
+                    ? new int[] {3, 3, 22}
+                    : mode.equals("hidden") ? new int[] {0, 4} : new int[] {3};
     assertArrayEquals(kinds, (int[]) GroupAggregateStockTestFixture.field(contract, "kinds"));
     assertArrayEquals(
-        mode.equals("arithmetic")
-            ? new int[] {0, 1, 2}
-            : mode.equals("hidden")
-                ? (append ? new int[] {0, 1} : new int[] {0, 2})
-                : new int[] {0},
+        mode.equals("extrema")
+            ? new int[] {0, 1}
+            : mode.equals("mixed-extrema")
+                ? new int[] {0, 1, 2, 3, 4}
+                : mode.equals("arithmetic")
+                    ? new int[] {0, 1, 2}
+                    : mode.equals("hidden")
+                        ? (append ? new int[] {0, 1} : new int[] {0, 2})
+                        : new int[] {0},
         (int[]) GroupAggregateStockTestFixture.field(contract, "scalarFields"));
     assertArrayEquals(
-        mode.equals("hidden")
-            ? (append ? new int[] {-1, 2} : new int[] {1, 3})
-            : mode.equals("arithmetic") ? new int[] {-1, -1, -1} : new int[] {-1},
+        mode.equals("extrema")
+            ? new int[] {-1, -1}
+            : mode.equals("mixed-extrema")
+                ? new int[] {-1, -1, -1, -1, -1}
+                : mode.equals("hidden")
+                    ? (append ? new int[] {-1, 2} : new int[] {1, 3})
+                    : mode.equals("arithmetic") ? new int[] {-1, -1, -1} : new int[] {-1},
         (int[]) GroupAggregateStockTestFixture.field(contract, "countFields"));
     assertEquals(
         append ? -1 : mode.equals("hidden") ? 4 : mode.equals("count") ? 1 : 0,

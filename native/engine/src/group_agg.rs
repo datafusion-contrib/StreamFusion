@@ -1030,11 +1030,11 @@ impl GroupKeyState {
         self.records = 1;
         for state in &mut self.aggs {
             if let GroupAggState::Running {
-                agg: RunningAgg::SumI64(sum),
+                agg: RunningAgg::SumI64(value) | RunningAgg::MinI64(value) | RunningAgg::MaxI64(value),
                 non_null,
             } = state
             {
-                let present = i64::from(sum.is_some());
+                let present = i64::from(value.is_some());
                 if *non_null == 0 && present != 0 {
                     self.last_output = None;
                     self.last_output_bytes = 0;

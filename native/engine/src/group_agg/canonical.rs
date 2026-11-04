@@ -13,7 +13,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         kinds: &[i64],
         append_only: bool,
     ) -> Result<(), DataFusionError> {
-        self.arithmetic_contract()?;
+        self.arithmetic_shape()?;
+        if !append_only && self.kinds.iter().any(|kind| matches!(kind, 10 | 11)) {
+            return Err(invalid("scalar MIN/MAX requires append-only input"));
+        }
         if self.kinds != kinds {
             return Err(invalid("aggregate kinds differ from stock contract"));
         }
@@ -33,18 +36,28 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     }
 
     fn arithmetic_contract(&self) -> Result<(), DataFusionError> {
+        self.arithmetic_shape()?;
+        if self.kinds.iter().any(|kind| matches!(kind, 10 | 11))
+            && self.stock_append_only != Some(true)
+        {
+            return Err(invalid("scalar MIN/MAX requires the append-only stock contract"));
+        }
+        Ok(())
+    }
+
+    fn arithmetic_shape(&self) -> Result<(), DataFusionError> {
         if self.kinds.is_empty()
             || self
                 .kinds
                 .iter()
-                .any(|kind| !matches!(kind, 0 | 3 | 4 | 22))
+                .any(|kind| !matches!(kind, 0 | 3 | 4 | 10 | 11 | 22))
             || self.state_types.iter().any(|ty| *ty != DataType::Int64)
             || self.record_count_column >= 0
             || self.count_columns.iter().any(|column| *column >= 0)
             || self.distinct_view_columns.iter().any(|column| *column >= 0)
         {
             return Err(invalid(
-                "requires qualified single-phase BIGINT arithmetic state",
+                "requires qualified single-phase BIGINT scalar state",
             ));
         }
         if self.staged_keys() != 0 || !self.deferred_batches.is_empty() {
@@ -93,16 +106,16 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 return Err(invalid("malformed or duplicate group metadata"));
             }
             for (i, kind) in self.kinds.iter().enumerate() {
-                if values[3 + 2 * i].is_null(row) || (*kind != 0 && values[2 + 2 * i].is_null(row))
+                if values[3 + 2 * i].is_null(row) || (!matches!(kind, 0 | 10 | 11) && values[2 + 2 * i].is_null(row))
                 {
                     return Err(invalid("NULL in a required accumulator field"));
                 }
                 if self.stock_append_only == Some(true)
-                    && *kind == 0
+                    && matches!(kind, 0 | 10 | 11)
                     && values[3 + 2 * i].value(row) != i64::from(!values[2 + 2 * i].is_null(row))
                 {
                     return Err(invalid(
-                        "append-only SUM must retain initialization presence",
+                        "append-only nullable scalar must retain initialization presence",
                     ));
                 }
             }
@@ -201,11 +214,11 @@ fn transfer_batch(
             let ScalarValue::Int64(value) = agg.emit() else {
                 return Err(invalid("unexpected raw accumulator type"));
             };
-            if *kind != 0 && value.is_none() {
+            if !matches!(kind, 0 | 10 | 11) && value.is_none() {
                 return Err(invalid("NULL in a required retained accumulator"));
             }
             values.push(value);
-            counts.push(if append_only && *kind == 0 {
+            counts.push(if append_only && matches!(kind, 0 | 10 | 11) {
                 i64::from(value.is_some())
             } else {
                 *non_null

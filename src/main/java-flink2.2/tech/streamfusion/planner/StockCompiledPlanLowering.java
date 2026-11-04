@@ -704,6 +704,18 @@ final class StockCompiledPlanLowering {
                   .LongSumAggFunction.class) {
         kind = 0;
         fields = 1;
+      } else if (!retract
+          && type
+              == org.apache.flink.table.planner.functions.aggfunctions.MinAggFunction
+                  .LongMinAggFunction.class) {
+        kind = 10;
+        fields = 1;
+      } else if (!retract
+          && type
+              == org.apache.flink.table.planner.functions.aggfunctions.MaxAggFunction
+                  .LongMaxAggFunction.class) {
+        kind = 11;
+        fields = 1;
       } else if (retract
           && type
               == org.apache.flink.table.planner.functions.aggfunctions.SumWithRetractAggFunction

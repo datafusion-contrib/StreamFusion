@@ -485,3 +485,104 @@ fn native_checkpoint_restore_rebinds_append_liveness_without_changing_the_state_
         assert_eq!(frame(&source), frame(&restored));
     }
 }
+
+
+#[test]
+fn append_min_max_preserve_null_initialization_and_signed_extrema_across_switches() {
+    let kinds = vec![10, 11];
+    for ttl in [0, 1000] {
+        let mut state = owner(kinds.clone(), ttl);
+        state.configure_arithmetic(&kinds, true).unwrap();
+        for (index, (value, min, max)) in [
+            (None, None, None),
+            (Some(7), Some(7), Some(7)),
+            (Some(-11), Some(-11), Some(7)),
+            (None, Some(-11), Some(7)),
+            (Some(i64::MIN), Some(i64::MIN), Some(7)),
+            (Some(i64::MAX), Some(i64::MIN), Some(i64::MAX)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            state.update(&input(value, 0), 1000 + index as i64).unwrap();
+            let row = state.store.get(&key(1).0).unwrap();
+            assert_eq!(row.records, 1);
+            for (aggregate, expected) in [(0, min), (1, max)] {
+                assert_eq!(
+                    row.aggs[aggregate].emit(&DataType::Int64),
+                    ScalarValue::Int64(expected)
+                );
+            }
+            let mut next = owner(kinds.clone(), ttl);
+            next.configure_arithmetic(&kinds, true).unwrap();
+            next.transfer_arithmetic(&frame(&state), true).unwrap();
+            next.transfer_arithmetic(&frame(&state), false).unwrap();
+            assert_eq!(frame(&state), frame(&next));
+            state = next;
+        }
+    }
+}
+
+#[test]
+fn min_max_scalar_contract_rejects_retracting_or_inconsistent_initialization() {
+    for kind in [10, 11] {
+        let mut state = owner(vec![kind], 0);
+        assert!(state.configure_arithmetic(&[kind], false).is_err());
+        assert_eq!(state.stock_append_only, None);
+        assert!(state.arithmetic_contract().is_err());
+        state.configure_arithmetic(&[kind], true).unwrap();
+        state.update(&input(Some(7), 0), 0).unwrap();
+        let good = frame(&state);
+        for (column, value) in [(1, 0), (4, 0), (4, -1)] {
+            let bad = replace(&good, column, Arc::new(Int64Array::from(vec![value])));
+            let mut target = owner(vec![kind], 0);
+            target.configure_arithmetic(&[kind], true).unwrap();
+            assert!(target.transfer_arithmetic(&bad, false).is_err());
+            assert!(target.store.iter().next().is_none());
+        }
+        for row_kind in [1, 3] {
+            assert!(state.update(&input(Some(7), row_kind), 0).is_err());
+            assert_eq!(good, frame(&state));
+        }
+    }
+}
+
+#[test]
+fn min_max_native_checkpoint_rebinds_initialization_before_cached_before_images() {
+    let kinds = vec![10, 11];
+    let mut source = owner(kinds.clone(), 0);
+    source.update(&input(Some(7), 0), 0).unwrap();
+    source.update(&input(Some(-11), 0), 0).unwrap();
+    for state in &mut source.store.get_mut(&key(1).0).unwrap().aggs {
+        let GroupAggState::Running { non_null, .. } = state else {
+            unreachable!()
+        };
+        *non_null = 0;
+    }
+    let saved = source.snapshot();
+    let mut restored = GroupAggregator::restore(
+        kinds.clone(),
+        vec![0; 2],
+        vec![1; 2],
+        vec![0],
+        true,
+        &saved,
+        0,
+    );
+    restored.configure_arithmetic(&kinds, true).unwrap();
+    let output = restored.update(&input(None, 0), 0).unwrap();
+    assert_eq!(
+        output.num_rows(),
+        0,
+        "normalizing private counters must not emit a false update"
+    );
+    let state = restored.store.get(&key(1).0).unwrap();
+    assert_eq!(
+        state.aggs[0].emit(&DataType::Int64),
+        ScalarValue::Int64(Some(-11))
+    );
+    assert_eq!(
+        state.aggs[1].emit(&DataType::Int64),
+        ScalarValue::Int64(Some(7))
+    );
+}

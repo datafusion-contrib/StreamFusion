@@ -112,13 +112,24 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
             ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d"
             : mode.equals("hidden")
                 ? "SUM(v) AS c,AVG(v) AS d"
-                : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
+                : mode.equals("extrema")
+                    ? "MIN(v) AS a,MAX(v) AS b"
+                    : mode.equals("mixed-extrema")
+                        ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d,MIN(v) AS e,MAX(v)"
+                              + " AS f"
+                        : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
     table.executeSql(
         "CREATE TABLE output_table("
             + (global ? "" : "k " + keyType + ",")
             + (mode.equals("arithmetic")
                 ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
-                : mode.equals("hidden") ? "c BIGINT,d BIGINT" : "a BIGINT")
+                : mode.equals("hidden")
+                    ? "c BIGINT,d BIGINT"
+                    : mode.equals("extrema")
+                        ? "a BIGINT,b BIGINT"
+                        : mode.equals("mixed-extrema")
+                            ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT,e BIGINT,f BIGINT"
+                            : "a BIGINT")
             + ") WITH ('connector'='blackhole')");
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var transforms =
@@ -194,6 +205,23 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
         scalarFields = append ? new int[] {0, 1} : new int[] {0, 2};
         countFields = append ? new int[] {-1, 2} : new int[] {1, 3};
         valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1};
+        break;
+      case "extrema":
+        if (!append)
+          throw new IllegalArgumentException("Extrema scalar fixture requires append input");
+        kinds = new int[] {10, 11};
+        scalarFields = new int[] {0, 1};
+        countFields = new int[] {-1, -1};
+        valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1};
+        break;
+      case "mixed-extrema":
+        if (!append)
+          throw new IllegalArgumentException("Extrema scalar fixture requires append input");
+        kinds = new int[] {3, 3, 22, 10, 11};
+        scalarFields = new int[] {0, 1, 2, 3, 4};
+        countFields = new int[] {-1, -1, -1, -1, -1};
+        valueColumns =
+            new int[] {-1, global ? 0 : 1, global ? 0 : 1, global ? 0 : 1, global ? 0 : 1};
         break;
       case "count":
         kinds = new int[] {3};
