@@ -8975,3 +8975,87 @@ NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`. Previous controls set
 Complete jobs use `IntegralExpressionPipelineBenchmark` with matching input and expression
 properties. Remaining consumers/representations stay in
 [#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).
+
+## Comparisons of primitive ASCII PRINTF
+
+On 2026-11-04, direct built-in `=`, `<>`, `<`, `<=`, `>`, `>=` comparisons use native
+kernels when both sides are qualified primitive ASCII formatter results or ASCII/NULL
+character literals, with at least one formatter. Cached Java UTF-16 and serialized UTF-8
+have identical order on this proven subset. Native filters can consume the predicates.
+This Java-only admission proof preserves built-in identity and the complete existing
+formatter producer proof. Arbitrary STRING inputs, non-ASCII literals, unknown/invalid
+formats, other consumers and relational representation guards retain their prior paths.
+
+The [record](results/primitive-printf-comparison-2026-11-04.json) retains every cell, source/
+artifact hashes, variability, route evidence and [3,000 raw trials](results/primitive-printf-comparison-2026-11-04.csv.gz).
+Apple M4 Pro, macOS arm64, one thread, JDK 17.0.12, released Flink 2.2.1, Java release 11,
+release/mimalloc. The DSO and prepared executable are byte-identical to the qualified
+preceding runtime; the actual previous encoder/helper is `40f26521`.
+
+Prepared stock starts on equal GenericRowData/BinaryRowData and native starts inside Rust
+on prebuilt Arrow. Each cell has 131,072 logical rows, 16 warmups and nine alternating
+measurements. The Rust timer retains production Calc, consumption, allocation, intrinsic
+conversions and callbacks after import and before export. Only initial JNI/import/export
+and perimeter transposes are outside this small-function timer. Signed INT/BIGINT extrema,
+BOOLEAN/mixed INT, compact/wide DECIMAL truth/comparisons, both NULL modes and row layouts
+are covered; all engine digests match.
+
+The previous route is verified per shape. Equality/inequality retain a native Calc with
+the generated evaluator on the saved whole runtime. Ordered prepared controls verify
+the actual previous whole-Calc stock fallback and exact representation reason, then time
+the released generated evaluator on prepared RowData using the existing fallback fixture.
+They do not substitute a hypothetical native callback for a rejected signature.
+
+| Scope | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk, 1,024 rows | 24 | 1.420-6.704x | 2.192-7.800x | 1.464-7.000x |
+| Tiny, 16 rows | 6 | 0.774-4.163x | 3.509-9.424x | 0.627-4.129x |
+
+All bulk cells pass the prepared bulk-function gate. The 16-row INT equality control
+loses to stock; its timing and independent stock control remain in the record. The other
+five tiny controls improve. No universal small-batch improvement is claimed.
+
+Four complete million-row jobs retain job submission/startup, JNI and both transposes,
+using bounded external Row sources and blackhole sinks. The external source proves
+Java-backed inputs to the preceding planner, so its ordered complete-job controls retain
+the actual native Calc with generated evaluation. This differs from the conservative
+prepared/internal-RowData fallback. Both runtimes must consume native work, while the new
+route additionally requires empty evaluators. Each engine has two warmups and five
+alternating measured jobs; surrounding JVM startup and setup are outside timing. Median seconds:
+
+| Shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| int-order | 0.218030 | 0.197722 | 0.202463 | 0.232047 |
+| boolean-mixed-order | 0.795598 | 0.299646 | 0.748803 | 0.744022 |
+| decimal-truth | 0.567530 | 0.232338 | 0.595066 | 0.585824 |
+| decimal-comparison-order | 0.707602 | 0.300004 | 0.710702 | 0.776674 |
+
+Native/stock elapsed spans **0.377-0.907**, native/previous **0.386-0.852**.
+All four measured complete-job medians improve; independent controls and variability
+remain, and the bounded qualification does not imply every job will improve.
+
+All **148 final focused JVM invocations** pass, zero skips, on released Flink
+1.18.1/2.2.1 and JDK 11/17. Complete 5,003-row maps/schema cover all six comparisons,
+operand reversal, two formatter operands, all integer widths, BOOLEAN, DECIMAL truth,
+NULLs, padding, empty filtered batches and the retained Unicode/format/failing/lazy paths.
+An executed filter compares every surviving ID/value with stock. Admitted paths require
+consumed NativeCalc work, no fallback and empty evaluators. The previous encoder compares
+fourteen complete first-query projection maps/schema plus the filter result per JDK before
+fifteen expected route failures. Later queries/modes in those failing invocations are not
+counted. The unverified-path control passes with its explicit fallback/generated expectations.
+An initial residual test expected generated Calc where the existing guard correctly used
+whole-Calc fallback; only that test expectation changed.
+
+Four unchanged released stock-oracle invocations each pass `ScalarOperatorsTest.testCompareOperator`
+and `testMoreEqualAndNonEqual`, separately from native qualification. The unchanged native
+artifacts keep their earlier 912-core-test/PRINTF-oracle qualification; those are not new
+Rust/PRINTF runs. Hosted suites must qualify the exact pushed head separately.
+
+Reproduce prepared cells with release `integral_expression` and the record's type/expression,
+NULL/layout/batch/secondary type and `SF_INTEGRAL_CORPUS=decimal-truth`. Previous generated
+controls set `SF_INTEGRAL_PREVIOUS=true` on the saved encoder/helper/runtime. Ordered
+previous controls run `IntegralExpressionBenchmarkFunctions` with `sf.integral.previous=true`,
+`sf.integral.fallbackControl=true` and the recorded exact fallback reason. Complete jobs
+use `IntegralExpressionPipelineBenchmark` with matching inputs and expressions. Remaining
+scope stays in [#497](https://github.com/datafusion-contrib/StreamFusion/issues/497) and
+[#508](https://github.com/datafusion-contrib/StreamFusion/issues/508).

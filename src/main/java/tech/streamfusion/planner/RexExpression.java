@@ -1948,11 +1948,12 @@ final class RexExpression {
       // The qualified primitive formatter produces ASCII, so no UTF-16 identity is lost.
       return emitBuiltinCall(call, 52);
     }
+    boolean primitivePrintfComparison = nativePrimitivePrintfComparison(call);
     if (call.getOperands().stream()
         .anyMatch(
             operand ->
                 containsDecimalUdf(operand)
-                    || JsonStringIdentity.containsSensitiveString(operand)
+                    || (!primitivePrintfComparison && JsonStringIdentity.containsSensitiveString(operand))
                     || containsCacheSensitiveString(operand)
                     || containsModernBoundedBinaryCharacterCast(operand))) {
       return emitHostExpression(call, true);
@@ -2115,7 +2116,7 @@ final class RexExpression {
           switchResult0 = false;
           break;
       }
-      if (switchResult0) {
+      if (switchResult0 && !primitivePrintfComparison) {
         return reject("Flink string ordering depends on its Java or serialized representation");
       }
     }
@@ -4735,6 +4736,26 @@ final class RexExpression {
     String pattern = format.getValueAs(String.class);
     if (hasBoolean) return IntegerPrintfFormat.supports(pattern, booleanArguments) ? 250 : 0;
     return IntegerPrintfFormat.supports(pattern, booleanArguments.length) ? 248 : 0;
+  }
+
+  private static boolean nativePrimitivePrintfComparison(RexCall call) {
+    var operator = call.getOperator();
+    if (call.getOperands().size() != 2
+        || !(operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.EQUALS
+            || operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.NOT_EQUALS
+            || operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.LESS_THAN
+            || operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.LESS_THAN_OR_EQUAL
+            || operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.GREATER_THAN
+            || operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.GREATER_THAN_OR_EQUAL))
+      return false;
+    boolean formatted = false;
+    for (RexNode operand : call.getOperands()) {
+      if (!isCharacter(operand)) return false;
+      if (operand instanceof RexLiteral && isAsciiLiteralResult(operand)) continue;
+      if (!(operand instanceof RexCall) || nativePrintf((RexCall) operand) == 0) return false;
+      formatted = true;
+    }
+    return formatted;
   }
 
   private static boolean nativeIntegralBooleanTryCast(RexCall call) {

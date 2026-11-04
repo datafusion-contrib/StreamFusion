@@ -832,13 +832,19 @@ overwrite a shared recording filename after the benchmark completes.
 
 ## String ordering
 
-Relational character-string comparisons (`<`, `<=`, `>`, `>=`) fall back, including
-inside filters, CASE, and casts. Flink compares retained Java strings by UTF-16 code units,
+General relational character-string comparisons (`<`, `<=`, `>`, `>=`) fall back, including
+inside CASE and casts. One direct comparison is proven representation-independent: both
+operands are qualified primitive ASCII PRINTF results or ASCII/NULL character literals, with
+at least one formatter. The six built-in `=`, `<>`, `<`, `<=`, `>`, `>=` comparisons then use
+native kernels, including native filters; arbitrary STRING inputs and composed consumers
+retain their existing guards. Built-in operator identity is required.
+
+Flink compares retained Java strings by UTF-16 code units,
 but serialized strings by UTF-8 bytes. These orders disagree for some supplementary Unicode
 characters. Arrow retains the UTF-8 value without the Java-representation information needed
 to select Flink's order, so admission cannot safely depend on the column's SQL type alone.
-The gate also applies to ASCII/BMP inputs and serialized sources because the planner cannot
-prove the representation and character range of every runtime operand. Equality and inequality
+Outside the proven formatter subset, the gate also applies to ASCII/BMP inputs and serialized
+sources because the planner cannot prove every runtime operand's representation and range. Equality and inequality
 (`=`, `<>`) remain native; this gate does not change Top-N's serialized sort order.
 
 ## String concatenation and hashes
@@ -2427,11 +2433,19 @@ producers retain their existing paths. Direct built-in CHAR_LENGTH and CHARACTER
 this verified primitive formatter also bind no JVM evaluator: its ASCII result has identical
 byte, character and UTF-16 length. The producer proof includes the numeric BOOLEAN subset above.
 This does not bypass a catalog UDF with the same name. Dynamic/non-ASCII/invalid formats,
-character conversions, unverified producers, other consumers and relational boundaries retain
+character conversions, unverified producers and relational boundaries retain
 their existing representation guards. The
 [length-consumer qualification](../benchmarks/scalar-functions.md#length-of-primitive-ascii-printf)
 records stock, actual-previous and native controls. Flink 1.18 still rejects PRINTF,
 which that release does not provide.
+
+Direct six-way built-in comparisons of qualified primitive formatter results against another
+such result or ASCII/NULL character literals also bind no JVM evaluator. ASCII compares
+identically under Flink's cached Java UTF-16 and serialized UTF-8 representations. At least
+one operand must be the formatter; arbitrary character inputs, non-ASCII literals, unverified
+formatters/producers and enclosing consumers retain their preceding paths. This includes
+native predicates filtering formatted values, without widening the general string ordering
+gate. See the [comparison qualification](../benchmarks/scalar-functions.md#comparisons-of-primitive-ascii-printf).
 The [integer-format qualification](../benchmarks/scalar-functions.md#integer-printf-with-a-literal-format)
 retains both release controls, stock/actual-previous/native measurements and the initial
 prototype that did not improve over every existing certified path.

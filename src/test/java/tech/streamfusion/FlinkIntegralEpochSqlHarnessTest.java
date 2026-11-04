@@ -47,6 +47,11 @@ class FlinkIntegralEpochSqlHarnessTest {
 
   static void verify(String name, boolean nullable, String zone, String sql, boolean pure,
       boolean legacy) throws Exception {
+    verify(name, nullable, zone, sql, pure, legacy, null);
+  }
+
+  static void verify(String name, boolean nullable, String zone, String sql, boolean pure,
+      boolean legacy, String fallback) throws Exception {
     DataType number;
     switch (name) {
       case "BOOLEAN": number = BOOLEAN(); break;
@@ -85,6 +90,13 @@ class FlinkIntegralEpochSqlHarnessTest {
         assertEquals(sql.contains("WHERE id<0") ? 0 : 5003, actual.size());
         if (nativeRun) {
           assertEquals(expected, actual, name + " " + sql);
+          if (fallback != null) {
+            assertEquals(0, scan.substitutions(), scan.explainSummary());
+            assertTrue(scan.fallbackReasons().stream().anyMatch(s -> s.contains(fallback)),
+                scan.explainSummary());
+            assertTrue(metrics.nativeOperators().isEmpty(), metrics.nativeOperators().toString());
+            continue;
+          }
           assertTrue(scan.fallbackReasons().isEmpty(), scan.explainSummary());
           assertFalse(scan.functionExecutions().isEmpty(), scan.explainSummary());
           assertEquals(pure, scan.functionExecutions().stream().allMatch(s -> s.contains("jvm=[]")),
