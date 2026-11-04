@@ -19,12 +19,12 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Automatic arithmetic and BIGINT append/retract MIN/MAX handoffs | Wider types/keys, DISTINCT/UDF views and other aggregation phases |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Automatic arithmetic, BIGINT append/retract MIN/MAX and typed scalar/shared COUNT DISTINCT handoffs | Wider types/keys, other views/phases and failure coverage |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
 | [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Automatic binding, namespaced/DISTINCT state and selected complete-job handoffs | Complete phase/type/view and failure matrix |
-| [Sessions](../operators/window-aggregate.md) | Automatic partitioned-session binding, operator recovery and selected complete-job handoffs | Unpartitioned aggregation and wider merging/timer/recovery matrix |
+| [Sessions](../operators/window-aggregate.md) | Automatic partitioned-session binding, operator recovery and selected complete-job handoffs | Native unpartitioned session assignment and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
 | [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
 | [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic and processing-time unbounded scalar contracts with automatic binding | Wider job/type matrix, event-time unbounded/views and event-ROWS cleanup |
@@ -1389,7 +1389,28 @@ All fifteen families remain partial and all ten full acceptance criteria remain 
 The separate 56-job window rank/dedup cohort passes both submission forms, stores and engine orders
 for keyed TUMBLE general rank/first-row dedup. It covers 16 continued-input, 16 no-input, eight
 native-checkpoint and sixteen 64-key owner-rescale cases; source/sink remain singleton. The combined
-2,374-check regression selection also passes. This establishes representative automatic job
-handoffs in thirteen of fifteen families; fixed-window aggregates and sessions remain drafts.
-It does not qualify all variants in those thirteen families. Native processing-time window rank
+2,374-check regression selection also passes. Together with the separate fixed-window/session jobs, this establishes representative automatic
+handoffs in all fifteen families. Every family remains partial; the count does not qualify all variants. Native processing-time window rank
 and dedup have no released stock counterpart and receive no stock canonical qualification.
+
+
+## Typed grouped scalar and shared DISTINCT projection (partial)
+
+The additional Flink 2.2.1 binding captures actual generated numeric accumulator types, composite
+BinaryRow keys and shared filtered COUNT DISTINCT view serializers. Bounded live header/companion
+transfer supports memory and typed RocksDB without an intermediate native snapshot. It preserves
+signed membership counters, the independent visible scalar, separate NULL markers, and the
+non-null generated RAW placeholder. Native checkpoint recovery preserves the scalar independently
+and restores NULL counters before continued updates.
+
+The corrected source passes 1,345 grouped-state regressions, including 170 typed state/lifecycle/
+planner controls; the complete native suite passes 1,313 tests with two existing ignores. A separate corrected-source 28-process cohort
+qualifies its narrower nonempty-state query, including no-input returns, native checkpoints and
+rescaling. Another 372 global/processing/SQL checks pass on Flink 2.2.1. See the
+[typed GROUP BY scope and remaining gaps](../operators/group-by.md#typed-scalar-and-shared-distinct-canonical-binding-partial).
+The unchanged released window suite passes all 24 programs on each engine on the corrected build.
+Twenty programs prove native state import with new input. Three newly passing unpartitioned
+SESSION programs execute native GROUP BY after stock session assignment, but restore empty grouped
+state and receive no grouped-state import credit. Split-phase Final import remains unproven where
+only Slice state was populated. Wider operator/connector/failure/version qualification and all ten
+full acceptance criteria remain open; benchmarking is deferred.

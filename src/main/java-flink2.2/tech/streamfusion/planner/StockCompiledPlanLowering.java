@@ -1626,6 +1626,288 @@ final class StockCompiledPlanLowering {
   }
 
   private ExecNode<?> lowerGroupAggregate(ExecNode<?> stock) throws IOException {
+    var arithmetic = lowerArithmeticGroupAggregate(stock);
+    return arithmetic == stock ? lowerTypedGroupAggregate(stock) : arithmetic;
+  }
+
+  private static boolean typedGroupArrowType(LogicalType type) {
+    return type.getTypeRoot() != LogicalTypeRoot.RAW
+        && ArrowRowTypeSupport.supports(type)
+        && type.getChildren().stream().allMatch(StockCompiledPlanLowering::typedGroupArrowType);
+  }
+
+  private static int typedGroupValueCode(LogicalType type) {
+    switch (type.getTypeRoot()) {
+      case BIGINT:
+        return 0;
+      case DOUBLE:
+        return 1;
+      case INTEGER:
+        return 2;
+      case CHAR:
+      case VARCHAR:
+        return 3;
+      case SMALLINT:
+        return 4;
+      case TINYINT:
+        return 5;
+      case FLOAT:
+        return 6;
+      case DATE:
+        return 8;
+      case TIME_WITHOUT_TIME_ZONE:
+        return 9;
+      case BOOLEAN:
+        return 10;
+      case TIMESTAMP_WITHOUT_TIME_ZONE:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        return 1000
+            + org.apache.flink.table.types.logical.utils.LogicalTypeChecks.getPrecision(type);
+      case DECIMAL:
+        return 2000
+            + 100 * org.apache.flink.table.types.logical.utils.LogicalTypeChecks.getPrecision(type)
+            + org.apache.flink.table.types.logical.utils.LogicalTypeChecks.getScale(type);
+      default:
+        return -1;
+    }
+  }
+
+  private ExecNode<?> lowerTypedGroupAggregate(ExecNode<?> stock) throws IOException {
+    var transformation = stockTransformations.get(stock.getId());
+    if (!(transformation instanceof OneInputTransformation)) return stock;
+    var original = (OneInputTransformation<?, ?>) transformation;
+    if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)) return stock;
+    var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
+    if (!(operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator))
+      return stock;
+    var function =
+        ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
+            .getUserFunction();
+    if (function.getClass()
+        != org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.class) return stock;
+    if (!(original.getStateKeySelector()
+        instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector)) return stock;
+    JsonNode definition = definitions.get(stock.getId());
+    int[] keys = reader.forType(int[].class).readValue(definition.path("grouping"));
+    ExecNode<?> input = stock.getInputEdges().get(0).getSource();
+    RowType inputType = (RowType) input.getOutputType();
+    RowType outputType = (RowType) stock.getOutputType();
+    if (!typedGroupArrowType(inputType) || !typedGroupArrowType(outputType)) return stock;
+    for (int i = 0; i < keys.length; i++)
+      if (!inputType.getTypeAt(keys[i]).equals(outputType.getTypeAt(i))) return stock;
+    Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
+    ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
+    if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
+        || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
+      return stock;
+    boolean retract = definition.path("needRetraction").asBoolean();
+    var calls =
+        reader
+            .forType(org.apache.calcite.rel.core.AggregateCall[].class)
+            .<org.apache.calcite.rel.core.AggregateCall[]>readValue(definition.path("aggCalls"));
+    boolean[] retractions =
+        reader.forType(boolean[].class).readValue(definition.path("aggCallNeedRetractions"));
+    var infos =
+        org.apache.flink.table.planner.plan.utils.AggregateUtil.transformToStreamAggregateInfoList(
+            planner.getTypeFactory(),
+            inputType,
+            org.apache.flink.table.planner.utils.JavaScalaConversionUtil.toScala(
+                Arrays.asList(calls)),
+            retractions,
+            retract,
+            true,
+            true);
+    LogicalType[] actualTypes = (LogicalType[]) releasedField(function, "accTypes");
+    LogicalType[] derivedTypes =
+        Arrays.stream(infos.getAccTypes())
+            .map(org.apache.flink.table.types.DataType::getLogicalType)
+            .toArray(LogicalType[]::new);
+    int recordCount = infos.getIndexOfCountStar();
+    var counter = releasedField(function, "recordCounter");
+    if (!Arrays.equals(actualTypes, derivedTypes)
+        || retract && recordCount < 0
+        || counter.getClass()
+            != org.apache.flink.table.runtime.operators.aggregate.RecordCounter.of(recordCount)
+                .getClass()
+        || recordCount >= 0 && recordCount != (Integer) releasedField(counter, "indexOfCountStar"))
+      return stock;
+    int size = infos.getActualAggregateInfos().length;
+    if (size == 0) return stock;
+    int[] kinds = new int[size],
+        types = new int[size],
+        columns = new int[size],
+        scalars = new int[size],
+        counts = new int[size],
+        filters = new int[size];
+    Arrays.fill(counts, -1);
+    var nativeIndices = new java.util.HashMap<Integer, Integer>();
+    int position = 0, actual = 0;
+    for (var info : infos.aggInfos()) {
+      int width = info.externalAccTypes().length;
+      if (infos.countStarInserted()
+          && info.aggIndex() == ((Number) infos.indexOfCountStar().get()).intValue()) {
+        position += width;
+        continue;
+      }
+      var call = info.aggIndex() < calls.length ? calls[info.aggIndex()] : info.agg();
+      if (call.isApproximate()
+          || !call.getCollation().getFieldCollations().isEmpty()
+          || info.argIndexes().length > 1
+          || info.viewSpecs().length != 0) return stock;
+      Class<?> type = info.function().getClass();
+      boolean countAll =
+          type == org.apache.flink.table.planner.functions.aggfunctions.Count1AggFunction.class;
+      boolean count =
+          countAll
+              || type
+                  == org.apache.flink.table.planner.functions.aggfunctions.CountAggFunction.class
+              || type
+                  == org.apache.flink.table.planner.functions.aggfunctions.Sum0AggFunction
+                      .LongSum0AggFunction.class;
+      int kind, expected;
+      if (call.isDistinct()) {
+        if (!count
+            || call.getAggregation().getKind() != SqlKind.COUNT
+            || info.argIndexes().length != 1) return stock;
+        kind = 7;
+        expected = 1;
+      } else if (count) {
+        kind =
+            type
+                    == org.apache.flink.table.planner.functions.aggfunctions.Sum0AggFunction
+                        .LongSum0AggFunction.class
+                ? 22
+                : 3;
+        expected = 1;
+      } else if (!retract
+          && type.getEnclosingClass()
+              == org.apache.flink.table.planner.functions.aggfunctions.SumAggFunction.class) {
+        kind = 0;
+        expected = 1;
+      } else if (retract
+          && type.getEnclosingClass()
+              == org.apache.flink.table.planner.functions.aggfunctions.SumWithRetractAggFunction
+                  .class) {
+        kind = 0;
+        expected = 2;
+      } else if (type.getEnclosingClass()
+          == org.apache.flink.table.planner.functions.aggfunctions.AvgAggFunction.class) {
+        kind = 4;
+        expected = 2;
+      } else if (!retract
+          && type.getEnclosingClass()
+              == org.apache.flink.table.planner.functions.aggfunctions.MinAggFunction.class) {
+        kind = 10;
+        expected = 1;
+      } else if (!retract
+          && type.getEnclosingClass()
+              == org.apache.flink.table.planner.functions.aggfunctions.MaxAggFunction.class) {
+        kind = 11;
+        expected = 1;
+      } else return stock;
+      if (width != expected) return stock;
+      int value =
+          kind == 7
+              ? call.getArgList().get(0)
+              : countAll || info.argIndexes().length == 0 ? -1 : info.argIndexes()[0];
+      int valueType = value < 0 ? 0 : typedGroupValueCode(inputType.getTypeAt(value));
+      if (valueType < 0) return stock;
+      if (call.filterArg >= 0 && !inputType.getTypeAt(call.filterArg).is(LogicalTypeRoot.BOOLEAN))
+        return stock;
+      kinds[actual] = kind;
+      types[actual] = valueType;
+      columns[actual] = value;
+      scalars[actual] = position;
+      if (width == 2) counts[actual] = position + 1;
+      filters[actual] = call.filterArg;
+      nativeIndices.put(info.aggIndex(), actual);
+      actual++;
+      position += width;
+    }
+    if (actual != size || position + infos.distinctInfos().length != actualTypes.length)
+      return stock;
+    var views = new ArrayList<tech.streamfusion.state.StockGroupDistinctView>();
+    for (var distinct : infos.distinctInfos()) {
+      if (distinct.excludeAcc() || distinct.dataViewSpec().isEmpty()) return stock;
+      var view = distinct.dataViewSpec().get();
+      int[] slots = new int[distinct.aggIndexes().size()];
+      for (int i = 0; i < slots.length; i++) {
+        Integer index = nativeIndices.get((Integer) distinct.aggIndexes().apply(i));
+        if (index == null || kinds[index] != 7) return stock;
+        slots[i] = index;
+      }
+      views.add(
+          new tech.streamfusion.state.StockGroupDistinctView(
+              view.getStateId(),
+              distinct.keyType().getLogicalType(),
+              org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(view.getKeyDataType()),
+              org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                  view.getValueDataType()),
+              slots,
+              distinct.consumeRetraction()));
+    }
+    var ttl =
+        (org.apache.flink.api.common.state.StateTtlConfig) releasedField(function, "ttlConfig");
+    long retention = ttl.isEnabled() ? ttl.getTimeToLive().toMillis() : 0;
+    config.setString("table.exec.state.ttl", retention + " ms");
+    config.setString("table.exec.mini-batch.enabled", "false");
+    @SuppressWarnings("unchecked")
+    TypeSerializer<RowData> serializer =
+        (TypeSerializer<RowData>)
+            original
+                .getStateKeyType()
+                .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
+    var selector =
+        (org.apache.flink.table.runtime.keyselector.RowDataKeySelector)
+            original.getStateKeySelector();
+    tech.streamfusion.state.StockStateContract contract;
+    try {
+      contract =
+          new tech.streamfusion.state.StockGroupTypedStateContract(
+              serializer,
+              (RowType) selector.getProducedType().toLogicalType(),
+              RowType.of(actualTypes),
+              kinds,
+              scalars,
+              counts,
+              recordCount,
+              ttl.isEnabled(),
+              views);
+    } catch (IllegalArgumentException unsupported) {
+      return stock;
+    }
+    int maximum = stockMaximum(original);
+    var exchange =
+        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
+    exchange.withStateMaxParallelism(maximum);
+    var owner =
+        new NativeColumnarGroupAggExecNode(
+                config,
+                InputProperty.DEFAULT,
+                outputType,
+                "NativeColumnarGroupAggregate",
+                kinds,
+                types,
+                columns,
+                keys,
+                filters,
+                new int[0],
+                new int[0],
+                -1,
+                (Boolean) releasedField(function, "generateUpdateBefore"),
+                retention,
+                FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys))
+            .withStateMaxParallelism(maximum);
+    connect(exchange, owner);
+    bindings.put(owner, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
+    columnar.add(owner);
+    var exit =
+        new ArrowToRowDataExecNode(config, InputProperty.DEFAULT, outputType, "ArrowToRowData");
+    connect(owner, exit);
+    return exit;
+  }
+
+  private ExecNode<?> lowerArithmeticGroupAggregate(ExecNode<?> stock) throws IOException {
     var transformation = stockTransformations.get(stock.getId());
     if (!(transformation instanceof OneInputTransformation)) return stock;
     var original = (OneInputTransformation<?, ?>) transformation;

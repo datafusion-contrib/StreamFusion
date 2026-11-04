@@ -1590,6 +1590,15 @@ public final class Native {
       long outArrayAddress,
       long outSchemaAddress);
 
+  public static native void configureGroupTypedCanonical(
+      long handle, boolean persistent, int[] kinds, boolean appendOnly);
+
+  public static native void exportGroupTypedCanonical(
+      long handle, boolean persistent, int slot, BatchReceiver receiver);
+
+  public static native void transferGroupTypedCanonical(
+      long handle, boolean persistent, int slot, long array, long schema, boolean validating);
+
   public static native void configureGroupArithmeticCanonical(
       long handle, boolean persistent, int[] aggregateKinds);
 

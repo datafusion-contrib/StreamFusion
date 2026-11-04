@@ -3187,3 +3187,57 @@ and initial engine orders. They compare full committed changelogs and final tabl
 custom source/committer state and both transposes. The 56 extrema-only jobs and these sixteen
 mixed-layout jobs are separate passing cohorts; checkpoint/rescaling claims for the 56-case matrix
 do not extend to the additional mixed-layout jobs.
+
+
+## Typed scalar and shared DISTINCT canonical binding (partial)
+
+A second Flink 2.2.1 binding extends the preceding BIGINT contract. Normal SQL and portable stock
+compiled plans capture the actual generated single-phase accumulator, original aggregate calls,
+key serializer, operator identities and maximum parallelism. Composite and variable-width keys
+retain their stock BinaryRow encoding. Derived physical calls can remove DISTINCT/filter flags;
+policy therefore comes from the original call while physical offsets/types come from the generated
+aggregate information. COUNT DISTINCT on a NOT NULL argument still reads that argument even when
+the generated inner count uses Count1.
+
+The scalar projection accepts TINYINT, SMALLINT, INT, BIGINT, FLOAT and DOUBLE accumulator fields
+for the supported built-in COUNT/SUM0/SUM/AVG and append-only MIN/MAX layouts. Input-record and
+intermediate counts must be BIGINT. Retraction-capable MIN/MAX continue to use the preceding
+structured BIGINT adapter. Decimal accumulator rows, UDF views, other DISTINCT aggregates,
+mini-batch/two-phase owners, asynchronous/unaligned state and DISTINCT with entry TTL are outside
+this new binding. An unsupported stock contract retains its stock owner.
+
+Shared COUNT DISTINCT views preserve the original state IDs and actual key/counter serializers.
+Append-only views retain shared membership bits; retracting views retain independent signed long
+counters, including zero and overflowed values. Stock transitions increment the visible count only
+on a counter becoming one and decrement it only on becoming zero. The visible scalar is independent
+of membership and survives native checkpoints without recomputation. NULL members retain the
+released separate null-marker state without contributing to COUNT. Generated RAW view placeholders
+retain the non-null one-byte NullSerializer payload.
+
+Memory and typed RocksDB transfer headers and companion entries directly through bounded frames.
+Canonical export does not first write a native snapshot. All scalar, view and null-marker validation
+precedes installation; malformed shared counters, orphan views/markers and missing append-only
+membership fail without consuming source entries. Source state is cleared only after successful
+import. Persistent input probes include COUNT DISTINCT null markers so a restored counter continues
+from its saved value rather than from zero.
+
+Qualification remains partial under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+The corrected-source 28-process cohort covers nonempty INT SUM/STRING COUNT DISTINCT handoffs,
+no-input returns, native checkpoints and 64-key rescaling through one, three and two tasks. It
+retains both submission forms, stores and switch orders, transposes, custom stock source/committer
+state, clean stock classpaths and independent committed-effect checks. Its split is eight continued-input,
+eight no-input, four native-checkpoint and eight rescale cases. Source and sink remain singleton;
+this matrix does not qualify every admitted type or connector protocol.
+The corrected source passes 170 checks: 48 repeated-switch lifecycle cases, 24 native-checkpoint
+recoveries, 34 whole-source validation cases and 64 automatic planner bindings. The lifecycle
+matrix covers all six numeric types, nullable independent STRING/TIMESTAMP keys, shared filtered
+views, both stores and initial engine orders, exact raw stock state and per-record output bytes.
+The full native suite passes 1,313 tests with two existing ignores. Shared Flink 1.18 processing,
+checkpoint and SQL regressions pass 130 cases with two existing STATE_TTL-hint capability skips;
+these do not establish canonical interchange on 1.18. Another 372 Flink 2.2.1 global-state/planner
+and shared processing/SQL checks pass. The complete 1,345-check grouped-state regression selection
+also passes with zero failures, errors or skips, including the 170 controls above. Its admission
+checks require typed stock contracts for the newly supported layouts and retain stock owners for
+unsupported layouts. These cohorts overlap and are not cumulative coverage.
+The existing wider connector, failure, version, type and aggregation-phase matrices remain open;
+benchmarking remains deferred.

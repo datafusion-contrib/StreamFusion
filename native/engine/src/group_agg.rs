@@ -1,8 +1,9 @@
 use crate::aggregates::{RAW_SUM_PARTIAL, RETRACTING_DECIMAL_SUM};
 use crate::*;
 
-mod collection_agg;
 mod canonical;
+mod collection_agg;
+mod stock_typed;
 use collection_agg::{is_collection, CollectionState};
 mod decimal_map_order;
 mod distinct;
@@ -1033,7 +1034,8 @@ impl GroupKeyState {
         self.records = 1;
         for state in &mut self.aggs {
             if let GroupAggState::Running {
-                agg: RunningAgg::SumI64(value) | RunningAgg::MinI64(value) | RunningAgg::MaxI64(value),
+                agg:
+                    RunningAgg::SumI64(value) | RunningAgg::MinI64(value) | RunningAgg::MaxI64(value),
                 non_null,
             } = state
             {
@@ -1123,6 +1125,9 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
             .iter()
             .map(|&agg| (1 + agg as u8, self.element_type(agg)))
             .collect()
+    }
+    fn multiset_null_is_value(&self, table: usize) -> bool {
+        self.kinds[self.multiset_aggs[table]] == 7
     }
     fn arm_multisets(&self, state: &mut GroupKeyState) {
         for &agg in &self.multiset_aggs {
@@ -1491,6 +1496,7 @@ pub(crate) struct GroupAggregator<S: KeyedStateStore<GroupKeyState> = MemoryGrou
     record_count_column: i64,
     stock_append_only: Option<bool>,
     stock_extrema: bool,
+    stock_distinct_counters: bool,
     key_columns: Vec<usize>,
     key_timestamp_precisions: Vec<i32>,
     generate_update_before: bool,
@@ -1703,6 +1709,7 @@ impl GroupAggregator {
             record_count_column: -1,
             stock_append_only: None,
             stock_extrema: false,
+            stock_distinct_counters: false,
             memory: OperatorMemory::unaccounted(),
         }
     }
@@ -1742,6 +1749,7 @@ impl GroupAggregator {
             record_count_column: self.record_count_column,
             stock_append_only: self.stock_append_only,
             stock_extrema: self.stock_extrema,
+            stock_distinct_counters: self.stock_distinct_counters,
             key_columns: self.key_columns,
             key_timestamp_precisions: self.key_timestamp_precisions,
             generate_update_before: self.generate_update_before,
@@ -1874,7 +1882,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let types = &self.accumulator_types;
         self.store.retain_live(&mut |key, state| {
             if state.accumulator_present && ttl.expired(state.last_write_ms) {
-                let before = if track { group_key_state_bytes(state) } else { 0 };
+                let before = if track {
+                    group_key_state_bytes(state)
+                } else {
+                    0
+                };
                 let retained = preserve_views && state.expire_stock_accumulator(kinds, types);
                 if track {
                     reclaimed += if retained {
@@ -1967,9 +1979,16 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         let stock_append_only = self.stock_append_only == Some(true);
-        let stock_extrema_inputs: Vec<_> = self.kinds.iter().enumerate().map(|(i, kind)| {
-            (self.stock_extrema && matches!(kind, 38 | 39)).then(|| batch.column(self.value_columns[i] as usize))
-        }).collect();
+        let stock_distinct_counters = self.stock_distinct_counters;
+        let stock_extrema_inputs: Vec<_> = self
+            .kinds
+            .iter()
+            .enumerate()
+            .map(|(i, kind)| {
+                (self.stock_extrema && matches!(kind, 38 | 39))
+                    .then(|| batch.column(self.value_columns[i] as usize))
+            })
+            .collect();
         self.snapshot_cache = None;
         self.last_input_ms = now_ms;
         if self.mini_batch && self.ttl_ms > 0 && !self.draining_deferred {
@@ -2410,10 +2429,16 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             let mut expired_bytes = 0isize;
             let exists = if ttl.enabled() {
                 match self.store.get(key) {
-                    Some(state) if state.accumulator_present && ttl.expired(state.last_write_ms) => {
+                    Some(state)
+                        if state.accumulator_present && ttl.expired(state.last_write_ms) =>
+                    {
                         let before = group_key_state_bytes(state);
-                        let retained = self.stock_extrema && self.store.get_mut(key).unwrap()
-                            .expire_stock_accumulator(&self.kinds, &self.accumulator_types);
+                        let retained = self.stock_extrema
+                            && self
+                                .store
+                                .get_mut(key)
+                                .unwrap()
+                                .expire_stock_accumulator(&self.kinds, &self.accumulator_types);
                         expired_bytes = if retained {
                             (before - group_key_state_bytes(self.store.get(key).unwrap())) as isize
                         } else {
@@ -2425,7 +2450,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     present => present.is_some_and(|state| state.accumulator_present),
                 }
             } else {
-                self.store.get(key).is_some_and(|state| state.accumulator_present)
+                self.store
+                    .get(key)
+                    .is_some_and(|state| state.accumulator_present)
             };
             if track && expired_bytes != 0 {
                 self.memory.record(-expired_bytes);
@@ -2756,7 +2783,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         if let Some(input) = stock_extrema_inputs[i] {
                             mapped.update_at(
                                 ScalarValue::try_from_array(input, row)?,
-                                retract, ttl, state.last_write_ms,
+                                retract,
+                                ttl,
+                                state.last_write_ms,
                             );
                         }
                         continue;
@@ -2910,7 +2939,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     // COUNT(DISTINCT x) (kind 7) folds the value itself, not a Num — read its scalar
                     // (skipping nulls, which DISTINCT ignores) and add/remove it from the value set.
                     if let Some(column) = &distinct_columns[i] {
-                        result_changed[i] = if preserved_states[i] {
+                        result_changed[i] = if stock_distinct_counters {
+                            column.update_stock(&mut state.aggs[i], row, retract, stock_append_only)
+                        } else if preserved_states[i] {
                             column.merge_delta(
                                 &mut state.aggs[i],
                                 row,
@@ -3717,11 +3748,19 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 .unwrap(),
             );
         }
-        let absent: Vec<_> = selected.iter().filter(|key| !self.store.get(&key.0).unwrap().accumulator_present)
-            .map(|key| key.0.as_ref()).collect();
+        let absent: Vec<_> = selected
+            .iter()
+            .filter(|key| !self.store.get(&key.0).unwrap().accumulator_present)
+            .map(|key| key.0.as_ref())
+            .collect();
         if !absent.is_empty() {
-            batches.push(RecordBatch::try_from_iter(vec![(STOCK_ABSENT_ACCUMULATOR,
-                Arc::new(BinaryArray::from_iter_values(absent)) as ArrayRef)]).unwrap());
+            batches.push(
+                RecordBatch::try_from_iter(vec![(
+                    STOCK_ABSENT_ACCUMULATOR,
+                    Arc::new(BinaryArray::from_iter_values(absent)) as ArrayRef,
+                )])
+                .unwrap(),
+            );
         }
         write_framed(&batches)
     }
@@ -4034,10 +4073,21 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         }
         for retained in &batches[frame..] {
             if retained.schema().field(0).name() == STOCK_ABSENT_ACCUMULATOR {
-                assert_eq!(retained.num_columns(), 1, "absent stock accumulator extension");
-                let keys = retained.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
+                assert_eq!(
+                    retained.num_columns(),
+                    1,
+                    "absent stock accumulator extension"
+                );
+                let keys = retained
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<BinaryArray>()
+                    .unwrap();
                 for key in keys.iter() {
-                    let state = self.store.get_mut(key.expect("absent accumulator key")).expect("orphan group");
+                    let state = self
+                        .store
+                        .get_mut(key.expect("absent accumulator key"))
+                        .expect("orphan group");
                     assert_eq!(state.records, 0, "absent stock accumulator record count");
                     state.accumulator_present = false;
                 }

@@ -82,15 +82,16 @@ including after native-checkpoint recovery. Empty selections retain their window
 produce the corresponding empty aggregate result. Independent MIN/MAX and DISTINCT recovery
 controls cover false and NULL masks on both state paths.
 
-Qualification remains partial. The released event-time restore suite currently passes 21 of 24
-native programs, including fixed-window DISTINCT splitting and SQL offsets. Twenty programs show
-positive state import and new native input; the remaining passing CDC program is an explicit stock
-window control. Eight single-owner contracts require both witnesses. Two-stage imports belong to
+Qualification remains partial. The released event-time restore suite passes all 24 programs on
+each engine, including fixed-window DISTINCT splitting and SQL offsets. Twenty programs show
+positive state import and new native input; one CDC program is an explicit stock window control. Eight single-owner contracts require both witnesses. Two-stage imports belong to
 the slice owner; six DISTINCT-split final owners receive processing credit only from these released
 fixtures, because their saved final state is empty. Separate agent controls verify handle, owner,
 phase and invocation association; open-only or unrelated work cannot stand in for import.
-Three unpartitioned SESSION programs still require native GROUP BY state binding; native Calc execution alone receives
-no aggregation credit. Partitioned sessions use the separate window contract. Retracting window inputs, asynchronous state,
+Three unpartitioned SESSION programs now execute typed native GROUP BY after the stock session
+table function. Their grouped savepoint state is empty, so they receive processing credit only;
+separate nonempty GROUP BY jobs establish that adapter's interchange scope. Native unpartitioned
+session assignment remains unqualified. Partitioned sessions use the separate window contract. Retracting window inputs, asynchronous state,
 unaligned checkpoints, unsupported aggregate/view schemas, session FILTER and processing-time
 partial-window plans retain stock owners. Wider schemas, filtered/value-type combinations,
 connector transactions, writer rescaling and failure/version matrices remain tracked in

@@ -49,6 +49,7 @@ pub(crate) trait KeyedStateStore<V> {
 
     /// Makes actual savepoint keys resident before merging another transfer chunk. This reads
     /// raw state without expiring or refreshing it while the canonical import is in progress.
+    /// Companion tables remain separate; their canonical import must follow the main rows.
     fn prepare_canonical_import(&mut self, _keys: &BinaryArray) -> Result<(), DataFusionError> {
         Ok(())
     }

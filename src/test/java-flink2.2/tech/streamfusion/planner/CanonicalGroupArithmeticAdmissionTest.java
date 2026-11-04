@@ -29,8 +29,7 @@ class CanonicalGroupArithmeticAdmissionTest {
         "floating",
         "integer"
       })
-  void compiledContractsOutsideTheQualifiedStateLayoutKeepStockAggregation(String mode)
-      throws Exception {
+  void compiledContractsSelectTheVerifiedScalarOrTypedStateLayout(String mode) throws Exception {
     var table = environment(mode);
     boolean mini = mode.equals("mini") || mode.equals("two-phase");
     table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(mini));
@@ -63,18 +62,42 @@ class CanonicalGroupArithmeticAdmissionTest {
             table,
             planner.translatePlan(
                 planner.loadPlan(PlanReference.fromJsonString(plan.asJsonString()))));
-    assertFalse(
+    var nativeOwners =
         graph.getStreamNodes().stream()
-            .anyMatch(
-                node ->
-                    node.getOperatorFactory() instanceof SimpleOperatorFactory
-                        && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
-                            instanceof NativeColumnarGroupAggregateOperator),
-        graph.getStreamingPlanAsJSON());
-    assertTrue(
-        graph.getStreamNodes().stream()
-            .anyMatch(node -> node.getOperatorName().contains("GroupAggregate")),
-        graph.getStreamingPlanAsJSON());
+            .filter(node -> node.getOperatorFactory() instanceof SimpleOperatorFactory)
+            .map(node -> ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator())
+            .filter(NativeColumnarGroupAggregateOperator.class::isInstance)
+            .collect(java.util.stream.Collectors.toList());
+    if (java.util.Set.of("distinct", "filter", "composite", "floating", "integer").contains(mode)) {
+      assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
+      var operator = nativeOwners.get(0);
+      var contract =
+          assertInstanceOf(
+              tech.streamfusion.state.StockGroupTypedStateContract.class,
+              GroupAggregateStockTestFixture.field(operator, "stockStateContract"));
+      assertEquals(
+          mode.equals("composite") ? 2 : 1,
+          ((org.apache.flink.table.types.logical.RowType)
+                  GroupAggregateStockTestFixture.field(contract, "keyType"))
+              .getFieldCount());
+      var views = (java.util.List<?>) GroupAggregateStockTestFixture.field(contract, "views");
+      assertEquals(mode.equals("distinct") ? 1 : 0, views.size());
+      if (mode.equals("filter"))
+        assertTrue(
+            java.util.Arrays.stream(
+                    (int[]) GroupAggregateStockTestFixture.field(operator, "filterColumns"))
+                .anyMatch(column -> column >= 0));
+      if (mode.equals("floating") || mode.equals("integer"))
+        assertEquals(
+            mode.equals("floating") ? 1 : 2,
+            ((int[]) GroupAggregateStockTestFixture.field(operator, "valueTypes"))[1]);
+    } else {
+      assertTrue(nativeOwners.isEmpty(), graph.getStreamingPlanAsJSON());
+      assertTrue(
+          graph.getStreamNodes().stream()
+              .anyMatch(node -> node.getOperatorName().contains("GroupAggregate")),
+          graph.getStreamingPlanAsJSON());
+    }
     assertFalse(plan.asJsonString().contains("tech.streamfusion"));
   }
 

@@ -9,6 +9,7 @@
 
 #[cfg(test)]
 mod canonical_import_tests;
+mod canonical_transfer;
 mod decoded_cache;
 mod raw_store;
 pub(crate) use raw_store::RocksRawStore;
@@ -132,6 +133,10 @@ pub(crate) trait RocksStateCodec {
     /// their lifetime follows the main row.
     fn multiset_tables(&self) -> Vec<(u8, DataType)> {
         Vec::new()
+    }
+    /// Stock COUNT DISTINCT retains a NULL marker independently of its non-null scalar.
+    fn multiset_null_is_value(&self, _table: usize) -> bool {
+        false
     }
     fn arm_multisets(&self, _value: &mut Self::Value) {}
     fn restore_multiset_entry(
@@ -828,7 +833,9 @@ impl<C: RocksStateCodec> RocksStore<C> {
             let mut probe_keys: Vec<Vec<u8>> = Vec::new();
             let mut probe_meta: Vec<(usize, ByteKey)> = Vec::new();
             for (index, &row) in rows.iter().enumerate() {
-                if row == u32::MAX || elements.is_null(index) {
+                if row == u32::MAX
+                    || elements.is_null(index) && !self.codec.multiset_null_is_value(position)
+                {
                     continue;
                 }
                 let key = encoder.encode(row as usize);
@@ -1114,51 +1121,19 @@ impl<C: RocksStateCodec> RocksStore<C> {
     pub(crate) fn for_each_canonical_batch(
         &mut self,
         chunk_rows: usize,
-        mut consume: impl FnMut(&[(ByteKey, C::Value)]) -> Result<(), DataFusionError>,
+        consume: impl FnMut(&[(ByteKey, C::Value)]) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         if chunk_rows == 0 || !self.multisets.is_empty() {
             return Err(DataFusionError::Execution(
                 "bounded canonical scan requires positive chunks and self-contained rows".into(),
             ));
         }
-        self.checkpoint("")?;
-        let prefix = self.key_prefix_len();
-        let mut batch = Vec::with_capacity(chunk_rows);
-        for entry in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = entry.map_err(re)?;
-            if key.len() < prefix
-                || key.as_ref() == SNAPSHOT_TIMER_KEY
-                || self.table.is_some_and(|table| key[4] != table)
-                || i32::from_be_bytes(key[..4].try_into().unwrap()) < 0
-            {
-                continue;
-            }
-            if let Some(value) = self
-                .decode_values_with_visibility(&[value.as_ref()], false)?
-                .pop()
-                .flatten()
-            {
-                batch.push((ByteKey::from(&key[prefix..]), value));
-            }
-            if batch.len() == chunk_rows {
-                consume(&batch)?;
-                batch.clear();
-            }
-        }
-        if !batch.is_empty() {
-            consume(&batch)?;
-        }
-        Ok(())
+        self.for_each_canonical_header_batch(chunk_rows, consume)
     }
 }
 
 impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
     fn prepare_canonical_import(&mut self, keys: &BinaryArray) -> Result<(), DataFusionError> {
-        if !self.multisets.is_empty() {
-            return Err(DataFusionError::Execution(
-                "canonical import hydration requires self-contained state rows".into(),
-            ));
-        }
         let mut missing = Vec::new();
         let mut seen = ahash::HashSet::default();
         for bytes in keys.iter().flatten() {
