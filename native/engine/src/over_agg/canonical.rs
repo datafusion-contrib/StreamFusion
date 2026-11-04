@@ -104,6 +104,18 @@ impl OverWindowAggregator {
     }
 
     fn import_canonical_folds(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        self.transfer_canonical_folds(batch, false)
+    }
+
+    fn validate_canonical_folds(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        self.transfer_canonical_folds(batch, true)
+    }
+
+    fn transfer_canonical_folds(
+        &mut self,
+        batch: &RecordBatch,
+        validating: bool,
+    ) -> Result<(), DataFusionError> {
         let inner = self.canonical_fold()?;
         let types = inner.state_types();
         let arity = self.key_columns.len();
@@ -206,12 +218,19 @@ impl OverWindowAggregator {
             let columns = (arity..arity + types.len())
                 .map(|index| batch.column(index).clone())
                 .collect::<Vec<_>>();
-            store.write_folds(&entries, &columns)?;
-        } else {
+            if !validating {
+                store.write_folds(&entries, &columns)?;
+            }
+        } else if !validating {
             self.install_memory_folds(&encoded, &states, &key_types);
         }
         #[cfg(not(feature = "rocksdb-state"))]
-        self.install_memory_folds(&encoded, &states, &key_types);
+        if !validating {
+            self.install_memory_folds(&encoded, &states, &key_types);
+        }
+        if validating {
+            return Ok(());
+        }
         for row in 0..batch.num_rows() {
             let key = ByteKey::from(encoded.row(row).data());
             if self.value_ttl_on() {
@@ -292,6 +311,28 @@ pub extern "system" fn Java_tech_streamfusion_Native_importOverFoldCanonical<'lo
         let result = {
             let batch = import_record_batch(array, schema);
             operator.import_canonical_folds(&batch)
+        };
+        if let Err(error) = result {
+            report(&mut env, error);
+        }
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_validateOverFoldCanonical<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    array: jlong,
+    schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let result = {
+            let batch = import_record_batch(array, schema);
+            match unsafe { (handle as *mut OverWindowAggregator).as_mut() } {
+                Some(operator) => operator.validate_canonical_folds(&batch),
+                None => Err(invalid("missing target operator")),
+            }
         };
         if let Err(error) = result {
             report(&mut env, error);

@@ -428,11 +428,17 @@ public final class CanonicalJobWorker {
             root.resolve(stage + "-ordinary-sql-verified"),
             Files.readString(root.resolve("query.sql")));
       }
-      if (Files.exists(root.resolve("global-aggregate"))) {
+      if (Files.exists(root.resolve("global-aggregate"))
+          || Files.exists(root.resolve("global-over"))) {
         var execution = cluster.getExecutionGraph(job.getJobID()).get(5, TimeUnit.SECONDS);
         var owners =
             execution.getAllVertices().values().stream()
-                .filter(vertex -> vertex.getName().contains("GroupAgg"))
+                .filter(
+                    vertex ->
+                        vertex
+                            .getName()
+                            .contains(
+                                Files.exists(root.resolve("global-over")) ? "OverAgg" : "GroupAgg"))
                 .collect(java.util.stream.Collectors.toList());
         var sources =
             execution.getAllVertices().values().stream()
@@ -508,7 +514,8 @@ public final class CanonicalJobWorker {
                   .filter(counter -> counter.getCount() > 0)
                   .count();
           int expectedTasks =
-              Files.exists(root.resolve("global-aggregate")) && family.equals("GroupAgg")
+              (Files.exists(root.resolve("global-aggregate")) && family.equals("GroupAgg")
+                      || Files.exists(root.resolve("global-over")) && family.equals("OverAgg"))
                   ? 1
                   : parallelism;
           if (activeTasks != expectedTasks)
@@ -634,8 +641,9 @@ public final class CanonicalJobWorker {
       String parallelism)
       throws IOException {
     if (Files.exists(root.resolve("rescale-materializer"))
-        || Files.exists(root.resolve("global-aggregate")) && Files.exists(root.resolve("rescale")))
-      parallelism = "";
+        || (Files.exists(root.resolve("global-aggregate"))
+                || Files.exists(root.resolve("global-over")))
+            && Files.exists(root.resolve("rescale"))) parallelism = "";
     Path columnsFile = root.resolve(name + "-columns.sql");
     if (!Files.exists(columnsFile)) columnsFile = root.resolve("input-columns.sql");
     String columns =

@@ -276,7 +276,7 @@ final class StockCompiledPlanLowering {
                 return ((NativeColumnarTopNExecNode) node).hasUniqueRowKeyState()
                     || ((NativeColumnarTopNExecNode) node).hasRetractingState();
               return node instanceof NativeOverAggExecNode
-                  && ((NativeOverAggExecNode) node).hasStockBoundedArithmeticState();
+                  && ((NativeOverAggExecNode) node).hasStockArithmeticState();
             });
   }
 
@@ -285,7 +285,7 @@ final class StockCompiledPlanLowering {
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
     for (ExecNode<?> node : nodes) {
       if (node instanceof NativeOverAggExecNode
-          && ((NativeOverAggExecNode) node).hasStockBoundedArithmeticState()) return false;
+          && ((NativeOverAggExecNode) node).hasStockArithmeticState()) return false;
       if (ordinaryHelper(node)) continue;
       if (!graph.originals.containsKey(node)) return false;
       if (node.getClass().getName().startsWith("tech.streamfusion.")
@@ -590,7 +590,7 @@ final class StockCompiledPlanLowering {
     else if (node
             instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecOverAggregate
         && nativeKeyedState
-        && NativeConfig.operatorEnabled("over")) result = lowerBoundedOver(node);
+        && NativeConfig.operatorEnabled("over")) result = lowerOver(node);
     else if (node
             instanceof
             org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGroupAggregate
@@ -603,7 +603,7 @@ final class StockCompiledPlanLowering {
     return result;
   }
 
-  private ExecNode<?> lowerBoundedOver(ExecNode<?> stock) throws IOException {
+  private ExecNode<?> lowerOver(ExecNode<?> stock) throws IOException {
     var transformation = stockTransformations.get(stock.getId());
     if (!(transformation instanceof OneInputTransformation)) return stock;
     var original = (OneInputTransformation<?, ?>) transformation;
@@ -626,14 +626,14 @@ final class StockCompiledPlanLowering {
     var input = stock.getInputEdges().get(0).getSource();
     var inputType = (RowType) input.getOutputType();
     int[] keys = spec.getPartition().getFieldIndices(), order = group.getSort().getFieldIndices();
+    boolean bounded = !group.getLowerBound().isUnbounded();
     if (keys.length > 1
         || keys.length == 1 && !inputType.getTypeAt(keys[0]).is(LogicalTypeRoot.BIGINT)
         || order.length != 1
         || !group.getSort().getAscendingOrders()[0]
         || !(LogicalTypeChecks.isProctimeAttribute(inputType.getTypeAt(order[0]))
             || LogicalTypeChecks.isRowtimeAttribute(inputType.getTypeAt(order[0])))
-        || group.getLowerBound().isUnbounded()
-        || !(group.getLowerBound().isPreceding() || group.getLowerBound().isCurrentRow())
+        || bounded && !(group.getLowerBound().isPreceding() || group.getLowerBound().isCurrentRow())
         || !group.getUpperBound().isCurrentRow()) return stock;
     if (inputType.getChildren().stream()
         .anyMatch(
@@ -643,23 +643,28 @@ final class StockCompiledPlanLowering {
                             || type.is(LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE))
                         && LogicalTypeChecks.getPrecision(type) <= 3))) return stock;
     boolean processing = LogicalTypeChecks.isProctimeAttribute(inputType.getTypeAt(order[0]));
-    if (processing && !group.isRows()) return stock;
-    var bound =
-        org.apache.flink.table.planner.plan.utils.OverAggregateUtil.getBoundary(
-            spec, group.getLowerBound());
-    if (!(bound instanceof Long) || (long) bound > 0 || (long) bound == Long.MIN_VALUE)
-      return stock;
-    long offset = -(long) bound;
-    if (group.isRows() && offset == Long.MAX_VALUE) return stock;
+    if (bounded && processing && !group.isRows() || !bounded && !processing) return stock;
+    long offset = 0;
+    if (bounded) {
+      var bound =
+          org.apache.flink.table.planner.plan.utils.OverAggregateUtil.getBoundary(
+              spec, group.getLowerBound());
+      if (!(bound instanceof Long) || (long) bound > 0 || (long) bound == Long.MIN_VALUE)
+        return stock;
+      offset = -(long) bound;
+      if (group.isRows() && offset == Long.MAX_VALUE) return stock;
+    }
     Class<?> expected =
-        processing
-            ? org.apache.flink.table.runtime.operators.over.ProcTimeRowsBoundedPrecedingFunction
-                .class
-            : group.isRows()
-                ? org.apache.flink.table.runtime.operators.over.RowTimeRowsBoundedPrecedingFunction
+        !bounded
+            ? org.apache.flink.table.runtime.operators.over.ProcTimeUnboundedPrecedingFunction.class
+            : processing
+                ? org.apache.flink.table.runtime.operators.over.ProcTimeRowsBoundedPrecedingFunction
                     .class
-                : org.apache.flink.table.runtime.operators.over.RowTimeRangeBoundedPrecedingFunction
-                    .class;
+                : group.isRows()
+                    ? org.apache.flink.table.runtime.operators.over
+                        .RowTimeRowsBoundedPrecedingFunction.class
+                    : org.apache.flink.table.runtime.operators.over
+                        .RowTimeRangeBoundedPrecedingFunction.class;
     if (function.getClass() != expected) return stock;
     var config = new Configuration(planner.getTableConfig().getConfiguration());
     ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
@@ -670,7 +675,13 @@ final class StockCompiledPlanLowering {
         config
             .get(org.apache.flink.table.api.config.ExecutionConfigOptions.IDLE_STATE_RETENTION)
             .toMillis();
-    if (!processing && group.isRows() && retention > 1) return stock;
+    if (!bounded) {
+      var ttl =
+          (org.apache.flink.api.common.state.StateTtlConfig) releasedField(function, "ttlConfig");
+      retention = ttl.isEnabled() ? ttl.getTimeToLive().toMillis() : 0;
+      config.setString("table.exec.state.ttl", retention + " ms");
+    }
+    if (bounded && !processing && group.isRows() && retention > 1) return stock;
     var calls = group.getAggCalls();
     if (calls.isEmpty()) return stock;
     boolean countStar =
@@ -721,20 +732,21 @@ final class StockCompiledPlanLowering {
               : call.getArgList().get(0);
       if (columns[i] < 0 || columns[i] >= argumentType.getFieldCount()) return stock;
       var type = argumentType.getTypeAt(columns[i]);
-      if (!NativeOverAggExecNode.stockArithmeticValueType(type)) return stock;
+      if (!NativeOverAggExecNode.stockArithmeticValueType(type)
+          || !bounded && type.is(LogicalTypeRoot.DECIMAL)) return stock;
       types[i] =
           WindowAggregateMatcher.windowValueTypeCode(
               planner.getTypeFactory().createFieldTypeFromLogicalType(type));
     }
     boolean[] retract = new boolean[calls.size()];
-    Arrays.fill(retract, true);
+    Arrays.fill(retract, bounded);
     var infos =
         org.apache.flink.table.planner.plan.utils.AggregateUtil.transformToStreamAggregateInfoList(
             planner.getTypeFactory(),
             argumentType,
             org.apache.flink.table.planner.utils.JavaScalaConversionUtil.toScala(calls),
             retract,
-            true,
+            bounded,
             true,
             true);
     if (infos.distinctInfos().length != 0
@@ -765,23 +777,11 @@ final class StockCompiledPlanLowering {
     try {
       int hiddenCount = infos.countStarInserted() ? infos.getIndexOfCountStar() : -1;
       contract =
-          processing
-              ? new tech.streamfusion.state.StockOverProcessingRowsStateContract(
-                  serializer,
-                  keyType,
-                  inputType,
-                  RowType.of(generated),
-                  keys,
-                  order[0],
-                  kinds,
-                  widths,
-                  hiddenCount,
-                  constants.get().type(),
-                  constants.get().encodedValues(),
-                  offset + 1,
-                  retention > 1)
-              : group.isRows()
-                  ? new tech.streamfusion.state.StockOverEventRowsStateContract(
+          !bounded
+              ? new tech.streamfusion.state.StockOverFoldStateContract(
+                  serializer, keyType, RowType.of(generated), kinds, widths, retention > 0)
+              : processing
+                  ? new tech.streamfusion.state.StockOverProcessingRowsStateContract(
                       serializer,
                       keyType,
                       inputType,
@@ -793,19 +793,34 @@ final class StockCompiledPlanLowering {
                       hiddenCount,
                       constants.get().type(),
                       constants.get().encodedValues(),
-                      offset + 1)
-                  : new tech.streamfusion.state.StockOverRangeStateContract(
-                      serializer,
-                      keyType,
-                      inputType,
-                      RowType.of(generated),
-                      keys,
-                      order[0],
-                      kinds,
-                      widths,
-                      hiddenCount,
-                      constants.get().type(),
-                      constants.get().encodedValues());
+                      offset + 1,
+                      retention > 1)
+                  : group.isRows()
+                      ? new tech.streamfusion.state.StockOverEventRowsStateContract(
+                          serializer,
+                          keyType,
+                          inputType,
+                          RowType.of(generated),
+                          keys,
+                          order[0],
+                          kinds,
+                          widths,
+                          hiddenCount,
+                          constants.get().type(),
+                          constants.get().encodedValues(),
+                          offset + 1)
+                      : new tech.streamfusion.state.StockOverRangeStateContract(
+                          serializer,
+                          keyType,
+                          inputType,
+                          RowType.of(generated),
+                          keys,
+                          order[0],
+                          kinds,
+                          widths,
+                          hiddenCount,
+                          constants.get().type(),
+                          constants.get().encodedValues());
     } catch (IllegalArgumentException unsupported) {
       return stock;
     }
@@ -824,7 +839,7 @@ final class StockCompiledPlanLowering {
                 keys,
                 types,
                 kinds,
-                group.isRows() ? 1 : 2,
+                bounded ? group.isRows() ? 1 : 2 : group.isRows() ? 3 : 0,
                 offset,
                 processing,
                 FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys))

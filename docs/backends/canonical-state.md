@@ -27,7 +27,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Sessions](../operators/window-aggregate.md) | Representative draft state and continuation evidence | Consolidation and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md) | Representative draft interchange evidence | Consolidation and wider bounds/type/timer variants |
 | [Window deduplication](../operators/deduplication.md) | Representative draft interchange evidence | Consolidation and wider winner/timer/type variants |
-| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic contracts and automatic binding; older unbounded draft evidence | Wider job/type matrix, unbounded/view consolidation and event-ROWS cleanup |
+| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic and processing-time unbounded scalar contracts with automatic binding | Wider job/type matrix, event-time unbounded/views and event-ROWS cleanup |
 | [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs | Legacy proctime variant, wider schemas and commit-failure matrix |
@@ -1311,8 +1311,8 @@ physical rewrite can introduce multiple constant helpers for one original OVER r
 
 The initial numeric, key, retention and state-layout limits are listed with the
 [bounded OVER coverage](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial).
-Unsupported compiled contracts keep stock owners. This binding does not qualify unbounded OVER,
-other views, complete connector delivery/failure guarantees or cross-version migration.
+Unsupported compiled contracts keep stock owners. Additional unbounded modes,
+other views, complete connector delivery/failure guarantees and cross-version migration remain open.
 Benchmarking remains deferred under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
 
@@ -1321,3 +1321,30 @@ handoff/recovery/rescale cohort on Flink 2.2.1. See the operator page for the ex
 scenario split; earlier overlapping cohorts are not cumulative coverage. Original released OVER
 restore programs remain stock controls where their UDF/key layouts are outside this binding.
 The shared 1.18 processing tests do not establish stock-compatible canonical restore there.
+
+
+## Unbounded processing-time OVER binding (partial)
+
+The released ROWS and RANGE unbounded processing-time scalar functions now bind automatically
+for the exact numeric and key layouts in [unbounded OVER coverage](../operators/over.md#automatic-unbounded-processing-time-scalar-binding-partial).
+Their durable stock state is the raw generated accumulator and its optional TTL envelope.
+Canonical export visits live native folds directly; it does not reconstruct an accumulator from
+SQL output or retained inputs and does not first serialize a native snapshot. Whole-source import
+validation precedes installation, and all source entries remain available until import succeeds.
+Native checkpoints remain a separate recovery path. A subsequent canonical savepoint performs
+backend or engine changes. Wider unbounded contracts and connector delivery guarantees remain
+unfinished under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+The consolidated unbounded/bounded regression cohort passes 2,377 checks, including direct raw
+accumulator/age comparisons, whole-source corruption and resource failures, empty returns,
+native-checkpoint recovery before canonical backend changes, and automatic planner admission.
+The operator page separates that evidence from complete-job qualification and remaining gaps.
+
+
+Separate complete-job cohorts pass 112 unbounded arithmetic cases and sixteen COUNT(*)/literal
+cases, retaining custom stock source/committer state, both transposes, clean stock workers and
+external committed effects. The arithmetic matrix includes immediate returns, native-checkpoint
+recovery and keyed/global rescaling with the original singleton/global constraints. Another
+32 harness-regression jobs pass. These are separate cohorts, and their exact type/mode limits
+remain on the operator page; none establishes complete connector or cross-version coverage.

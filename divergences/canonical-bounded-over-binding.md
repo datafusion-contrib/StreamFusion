@@ -21,6 +21,7 @@ original SQL or compiled stock submission artifact remains the user's restore in
 
 The first binding is deliberately limited to existing qualified processing-time ROWS, event-time
 RANGE and event-time ROWS without processing cleanup contracts, known numeric schemas and keys.
-Additional types, unbounded modes, state-backed views and the full connector/version/failure matrix
+Additional types, unbounded modes beyond the [processing-time scalar contract](canonical-unbounded-over-binding.md),
+state-backed views and the full connector/version/failure matrix
 remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is
 explicitly deferred while functionality and correctness qualification continue.

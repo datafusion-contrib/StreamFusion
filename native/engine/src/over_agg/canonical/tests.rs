@@ -252,6 +252,10 @@ fn malformed_raw_accumulators_and_duplicate_partitions_fail_before_installation(
             RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
         };
         let mut target = memory(false, true, 1000);
+        assert!(
+            target.validate_canonical_folds(&malformed).is_err(),
+            "{mode}"
+        );
         assert!(target.import_canonical_folds(&malformed).is_err(), "{mode}");
         let mut rows = 0;
         target
@@ -307,4 +311,168 @@ fn imported_count_continues_with_the_hosts_wrapping_long_arithmetic() {
             .value(0),
         i64::MIN
     );
+}
+
+#[test]
+fn whole_source_fold_validation_does_not_install_keys_types_counters_or_ttl_ages() {
+    for keyless in [false, true] {
+        for rows in [false, true] {
+            for ttl in [0, 1000] {
+                let mut source = memory(keyless, rows, ttl);
+                let keys = (0..2050).map(Some).collect::<Vec<_>>();
+                source
+                    .push_proctime(batch(&keys, &vec![Some(2.0); keys.len()]), 100)
+                    .unwrap();
+                let mut target = memory(keyless, rows, ttl);
+                let before = target.memory.state_bytes;
+                let mut frames = Vec::new();
+                source
+                    .visit_canonical_folds(|frame| {
+                        frames.push(frame);
+                        Ok(())
+                    })
+                    .unwrap();
+                for frame in &frames {
+                    target.validate_canonical_folds(frame).unwrap();
+                    assert_eq!(target.memory.state_bytes, before);
+                    assert!(target.last_write_ms.is_empty());
+                    assert!(target.cleanup_state.is_empty());
+                    assert!(target.canonical_fold().unwrap().key_types.is_empty());
+                    assert!(target.canonical_fold().unwrap().keys.is_empty());
+                }
+                for frame in &frames {
+                    target.import_canonical_folds(frame).unwrap();
+                }
+                let mut restored = Vec::new();
+                target
+                    .visit_canonical_folds(|frame| {
+                        restored.push(frame);
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(rows_of(&frames), rows_of(&restored));
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn persistent_fold_validation_leaves_store_and_retention_state_empty_until_apply() {
+    for keyless in [false, true] {
+        for ttl in [0, 1000] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut source = memory(keyless, true, ttl);
+            let keys = (0..2050).map(Some).collect::<Vec<_>>();
+            source
+                .push_proctime(batch(&keys, &vec![Some(2.0); keys.len()]), 100)
+                .unwrap();
+            let mut frames = Vec::new();
+            source
+                .visit_canonical_folds(|frame| {
+                    frames.push(frame);
+                    Ok(())
+                })
+                .unwrap();
+            let mut target = operator(keyless, true, ttl, true, directory.path());
+            let before = target.memory.state_bytes;
+            for frame in &frames {
+                target.validate_canonical_folds(frame).unwrap();
+                assert_eq!(target.memory.state_bytes, before);
+                assert!(target.last_write_ms.is_empty());
+                let mut count = 0;
+                target
+                    .visit_canonical_folds(|batch| {
+                        count += batch.num_rows();
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(count, 0);
+            }
+            for frame in &frames {
+                target.import_canonical_folds(frame).unwrap();
+            }
+            let mut restored = Vec::new();
+            target
+                .visit_canonical_folds(|frame| {
+                    restored.push(frame);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(rows_of(&frames), rows_of(&restored));
+        }
+    }
+}
+
+#[test]
+fn malformed_later_fold_chunk_leaves_a_validated_target_empty_and_source_retryable() {
+    let mut source = memory(false, true, 1000);
+    let keys = (0..1025).map(Some).collect::<Vec<_>>();
+    source
+        .push_proctime(batch(&keys, &vec![Some(2.0); keys.len()]), 100)
+        .unwrap();
+    let mut frames = Vec::new();
+    source
+        .visit_canonical_folds(|frame| {
+            frames.push(frame);
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(frames.len(), 2);
+    let mut target = memory(false, true, 1000);
+    target.validate_canonical_folds(&frames[0]).unwrap();
+    let mut columns = frames[1].columns().to_vec();
+    columns[2] = Arc::new(Int64Array::from(vec![None]));
+    let invalid = RecordBatch::try_new(frames[1].schema(), columns).unwrap();
+    assert!(target.validate_canonical_folds(&invalid).is_err());
+    assert!(target.canonical_fold().unwrap().keys.is_empty());
+    assert!(target.last_write_ms.is_empty());
+    let mut retained = Vec::new();
+    source
+        .visit_canonical_folds(|frame| {
+            retained.push(frame);
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(rows_of(&frames), rows_of(&retained));
+    for frame in &frames {
+        target.validate_canonical_folds(frame).unwrap();
+    }
+    for frame in &frames {
+        target.import_canonical_folds(frame).unwrap();
+    }
+    assert_eq!(
+        source
+            .push_proctime(batch(&[Some(1)], &[Some(3.0)]), 200)
+            .unwrap(),
+        target
+            .push_proctime(batch(&[Some(1)], &[Some(3.0)]), 200)
+            .unwrap()
+    );
+}
+
+#[test]
+fn fold_validation_rejects_duplicate_targets_without_changing_retained_state() {
+    let mut source = memory(false, true, 1000);
+    source
+        .push_proctime(batch(&[Some(1)], &[Some(2.0)]), 100)
+        .unwrap();
+    let mut frames = Vec::new();
+    source
+        .visit_canonical_folds(|frame| {
+            frames.push(frame);
+            Ok(())
+        })
+        .unwrap();
+    let mut target = memory(false, true, 1000);
+    target.import_canonical_folds(&frames[0]).unwrap();
+    assert!(target.validate_canonical_folds(&frames[0]).is_err());
+    let mut retained = Vec::new();
+    target
+        .visit_canonical_folds(|frame| {
+            retained.push(frame);
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(rows_of(&frames), rows_of(&retained));
 }

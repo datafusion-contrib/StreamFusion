@@ -47,6 +47,9 @@ public final class Native {
   public static native void importOverFoldCanonical(
       long handle, long arrayAddress, long schemaAddress);
 
+  public static native void validateOverFoldCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
 
   public static native void bindOverCanonicalDistinct(long handle, int aggregate);
 

@@ -68,9 +68,10 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
-  public boolean hasStockBoundedArithmeticState() {
-    if ((frameKind != 1 && frameKind != 2)
-        || proctime && frameKind == 2
+  public boolean hasStockArithmeticState() {
+    boolean bounded = frameKind == 1 || frameKind == 2;
+    if (!bounded && (frameKind != 0 && frameKind != 3 || !proctime)
+        || bounded && proctime && frameKind == 2
         || keyColumns.length > 1
         || java.util.Arrays.stream(aggregateKinds)
             .anyMatch(kind -> kind != 0 && kind != 3 && kind != 4 && kind != 22)
@@ -90,7 +91,9 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
     for (int column : valueColumns) {
       if (column < 0 || column >= input.getFieldCount()) return false;
       var type = input.getTypeAt(column);
-      if (!stockArithmeticValueType(type)) return false;
+      if (!stockArithmeticValueType(type)
+          || !bounded && type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.DECIMAL))
+        return false;
     }
     return true;
   }

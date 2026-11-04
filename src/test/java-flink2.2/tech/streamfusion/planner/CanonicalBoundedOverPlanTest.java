@@ -81,7 +81,7 @@ class CanonicalBoundedOverPlanTest {
     assertPlan(mode, "BIGINT", keyless, compiled, uids, 0, true);
   }
 
-  private void assertPlan(
+  void assertPlan(
       String mode,
       String type,
       boolean keyless,
@@ -110,7 +110,8 @@ class CanonicalBoundedOverPlanTest {
             + ",c BIGINT,a "
             + type
             + ") WITH ('connector'='blackhole')");
-    boolean processing = mode.equals("processing-rows"), rows = !mode.equals("event-range");
+    boolean unbounded = mode.startsWith("processing-unbounded");
+    boolean processing = mode.startsWith("processing"), rows = !mode.endsWith("range");
     String query =
         "INSERT INTO over_output SELECT k,v,rt,"
             + (starAndLiteral
@@ -120,12 +121,14 @@ class CanonicalBoundedOverPlanTest {
             + (keyless ? "" : "PARTITION BY k ")
             + "ORDER BY "
             + (processing ? "pt" : "rt")
-            + (starAndLiteral
-                ? (rows ? " ROWS BETWEEN 0" : " RANGE BETWEEN INTERVAL '0' SECOND")
-                    + " PRECEDING AND CURRENT ROW)"
-                : rows
-                    ? " ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)"
-                    : " RANGE BETWEEN INTERVAL '0.032' SECOND PRECEDING AND CURRENT ROW)");
+            + (unbounded
+                ? (rows ? " ROWS" : " RANGE") + " BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
+                : starAndLiteral
+                    ? (rows ? " ROWS BETWEEN 0" : " RANGE BETWEEN INTERVAL '0' SECOND")
+                        + " PRECEDING AND CURRENT ROW)"
+                    : rows
+                        ? " ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)"
+                        : " RANGE BETWEEN INTERVAL '0.032' SECOND PRECEDING AND CURRENT ROW)");
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var plan = compiled ? table.compilePlanSql(query) : null;
     String portable = plan == null ? "" : plan.asJsonString();
@@ -148,12 +151,14 @@ class CanonicalBoundedOverPlanTest {
     var operator = ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();
     var contract = GroupAggregateStockTestFixture.field(operator, "stockStateContract");
     assertNotNull(contract);
-    if (starAndLiteral)
+    if (starAndLiteral && !unbounded)
       assertEquals(-1, GroupAggregateStockTestFixture.field(contract, "hiddenCount"));
     assertEquals(
-        processing
-            ? StockOverProcessingRowsStateContract.class
-            : rows ? StockOverEventRowsStateContract.class : StockOverRangeStateContract.class,
+        unbounded
+            ? tech.streamfusion.state.StockOverFoldStateContract.class
+            : processing
+                ? StockOverProcessingRowsStateContract.class
+                : rows ? StockOverEventRowsStateContract.class : StockOverRangeStateContract.class,
         contract.getClass());
     assertEquals(keyless ? 1 : 257, owner.getMaxParallelism());
     assertEquals(keyless ? 1 : 2, owner.getParallelism());

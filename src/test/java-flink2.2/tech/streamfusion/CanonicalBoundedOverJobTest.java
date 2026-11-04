@@ -75,14 +75,7 @@ class CanonicalBoundedOverJobTest {
       assertEquals("+I", cells[0]);
       materialized.put(cells[1], cells[2] + "|" + cells[3]);
     }
-    boolean range = kind.equals("event-range");
-    Map<String, String> expected;
-    if (mode.equals("rescale")) {
-      expected = new HashMap<>();
-      for (int key = 0; key < 64; key++)
-        expected.put(key == 0 ? "null" : Integer.toString(key), range ? "33|5" : "16|5");
-    } else expected = Map.of("1", range ? "37|9" : "26|13", "2", "13|6", "null", "8|4");
-    assertEquals(expected, materialized);
+    assertEquals(expectedTable(kind, mode), materialized);
     if (ordinary) {
       for (String stage : List.of("prefix", "middle", "suffix"))
         assertTrue(Files.exists(switched.resolve(stage + "-ordinary-sql-verified")));
@@ -91,7 +84,18 @@ class CanonicalBoundedOverJobTest {
       assertFalse(Files.readString(switched.resolve("plan.json")).contains("tech.streamfusion"));
   }
 
-  private Path prepare(String name, String kind, String mode, boolean ordinary) throws Exception {
+  Map<String, String> expectedTable(String kind, String mode) {
+    boolean range = kind.equals("event-range");
+    Map<String, String> expected;
+    if (mode.equals("rescale")) {
+      expected = new HashMap<>();
+      for (int key = 0; key < 64; key++)
+        expected.put(key == 0 ? "null" : Integer.toString(key), range ? "33|5" : "16|5");
+    } else expected = Map.of("1", range ? "37|9" : "26|13", "2", "13|6", "null", "8|4");
+    return expected;
+  }
+
+  Path prepare(String name, String kind, String mode, boolean ordinary) throws Exception {
     Path root = directory.resolve(name);
     Files.createDirectories(root);
     if (ordinary) Files.createFile(root.resolve("ordinary-sql"));

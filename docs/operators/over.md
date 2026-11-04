@@ -1450,8 +1450,8 @@ A bounded ordinary plan can add constant projection helpers that share the origi
 Its state binding therefore starts from the original stock template, like the qualified rank
 bindings, and supplies constants through the native operator's internal constant columns.
 The displayed and serialized submission plan stays stock Flink; runtime transposes remain ordinary
-boundaries. Unsupported unbounded, selection, DISTINCT/view, wider key/type and event-time ROWS
-cleanup contracts are outside this binding. Unaligned checkpoints and asynchronous state are
+boundaries. Unbounded contracts outside the processing-time scalar mode below, selection, DISTINCT/view,
+wider key/type and event-time ROWS cleanup contracts are outside this binding. Unaligned checkpoints and asynchronous state are
 also excluded. The general native OVER processing coverage above does not establish stock
 canonical interchange for those additional contracts.
 
@@ -1486,3 +1486,64 @@ claim. This binding changes Java planning only and uses the previously qualified
 it adds no native snapshot intermediate or ordinary-checkpoint conversion. Earlier cohorts overlap
 these final runs and are not added cumulatively. All fifteen families and the complete acceptance
 matrix remain partial/open under #569.
+
+
+### Automatic unbounded processing-time scalar binding (partial)
+
+Normal SQL and portable stock compiled plans also capture the released
+`ProcTimeUnboundedPrecedingFunction` contract for ROWS and RANGE unbounded preceding. This path
+supports SUM, SUM0, COUNT and AVG on BIGINT, FLOAT and DOUBLE, with one BIGINT partition key or
+an empty global key. It captures the actual generated physical accumulator fields and widths,
+original key serializer, resolved retention, constants, stock identity and maximum parallelism.
+The scalar contract has no retained-input maps, data views or timers. COUNT(*) and literal
+arguments keep the generated physical calls and internal constant columns.
+
+Canonical export streams the live native folds directly into Flink's stock `accState` schema.
+Import reads the raw released TTL envelopes and preserves each original write timestamp. It
+validates the complete descriptor inventory and every source chunk before applying any chunk;
+validation does not install folds, clocks or key types in the target. A populated target is an
+error. Source entries are cleared only after the complete import succeeds. Memory-budget failures
+leave the source available for a fresh target retry. Arrow callbacks retain the original Java
+exception and release their imported buffers on both success and failure.
+
+Unbounded DECIMAL, DISTINCT, selection/UDF/view accumulators, wider keys and event-time unbounded
+contracts remain outside this stock binding. They require their own exact accumulator and timer
+contracts; the bounded DECIMAL qualification does not extend to this path. Native checkpoint
+recovery is checked before a canonical savepoint performs any backend change. Broader connector
+transactions, sink-writer rescaling, failure combinations and cross-version interoperability
+remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+
+The consolidated Flink 2.2.1 regression run passes 2,377 checks in 25 classes with no failures,
+errors or skips. It retains the earlier 1,834 bounded/regression checks and adds 344 unbounded
+state controls (96 raw handoff/age cases, 72 validation/failure cases, 128 checkpoint/empty-state
+cases and 48 numeric-edge cases), 150 unbounded planner controls and 49 existing native fold
+transfer controls. The numeric cases retain integer wraparound, signed zero, subnormals,
+infinities and NaNs. Corrupt entries beyond the first 1,024-row chunk must leave the native target
+empty and every source byte unchanged; allocation denial permits a fresh-target retry without
+consuming source entries. Receiver failures are checked before and after Arrow import.
+
+The native suite passes 1,299 tests with two existing ignores; the no-RocksDB build also passes.
+A clean released Flink 1.18 build passes seventy shared OVER processing/checkpoint controls,
+including the updated common planner API. This is not Flink 1.18 canonical qualification.
+These cohorts overlap earlier evidence and are not cumulative completion counts.
+
+
+Complete-job qualification passes a separate 112-case arithmetic cohort: 56 keyed and 56 global
+jobs across ROWS/RANGE, ordinary SQL/portable plans, both native stores and both initial engine
+orders. It includes 32 continuation switches, 32 no-input round trips, sixteen native-checkpoint
+recoveries and 32 rescalings. Keyed OVER tasks scale 1→3→2 at maximum parallelism 128; global
+OVER remains one task with maximum parallelism one while the custom source scales 1→3→2. The
+committing sink stays singleton. Each native leg requires actual OVER input and the requested
+storage, both transposes execute, stock workers exclude StreamFusion, and metadata contains no
+StreamFusion types. Complete committed changes and independent SUM/AVG tables match stock.
+These job cases use BIGINT values; FLOAT/DOUBLE qualification remains at operator/planner level.
+
+Sixteen additional COUNT(*)/literal jobs pass for keyed/global state, both frame/submission forms
+and both stores. Their native-first round trips exercise both conversion directions and prove
+that NULL-valued input still increments COUNT(*) and the literal sum. These sixteen cases do not
+claim constant-query checkpoint/no-input/rescaling qualification. A separate 32-job harness
+regression passes 24 bounded OVER continuations and eight global GROUP BY rescalings.
+Native connector transactions, sink-writer rescaling and the wider failure/version matrix remain
+unfinished; the custom fixtures establish their stock connector protocols only.
