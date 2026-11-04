@@ -8701,3 +8701,122 @@ encoder and SF_INTEGRAL_PREVIOUS=true on the same final native runtime. Complete
 IntegralExpressionPipelineBenchmark with matching expression and INT/BIGINT input settings.
 Remaining signatures and timezone/parser work stay in
 [#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
+
+
+## Boolean-object and mixed integer PRINTF
+
+On released Flink 2.2.1, verified total BOOLEAN producers and mixed signed-integer/BOOLEAN
+arguments use the evaluator-free literal ASCII formatter. BOOLEAN `%b` observes true/false;
+NULL is false. BOOLEAN `%s` uses true/false words and null for NULL. A non-NULL integer,
+including zero, still formats as true with `%b`. Argument indices/reuse, uppercasing,
+width, precision, NULLs and invalid-format routes retain Java Formatter semantics.
+The running JDK validates each actual argument type at planning time. Explicit index zero
+stays on the preceding route because JDK 11 and 17 disagree. Bounds remain 512 ASCII format
+characters and width/precision at most 256. Other types/formats, unverified/failing/stateful
+producers and representation-sensitive consumers keep their previous routes. Flink 1.18
+has no PRINTF and retains released SQL rejection.
+
+The [record](results/boolean-object-printf-2026-11-04.json) includes all final cells, initial slower versions,
+source/artifact hashes and [16,000 raw trials](results/boolean-object-printf-2026-11-04.csv.gz).
+Apple M4 Pro, macOS arm64, one thread, Oracle JDK 17.0.12, released Flink 2.2.1 and
+release/mimalloc-linked DSO/executable with verified malloc aliases. Equal prepared
+GenericRowData/BinaryRowData and Arrow cover true/false, nullable/NOT NULL and mixed
+INT/BIGINT signed extrema/NULLs. Each trial consumes 131,072 rows, with 16 warmups and
+nine measurements. Native timing starts/stops inside Rust after import and before export,
+retaining production Calc, output consumption and intrinsic costs. Initial JNI/import/export
+and perimeter transposes are excluded only from this small-function timer. Stock starts
+on matching prepared RowData.
+
+The actual preceding encoder/helper `1346ed57` runs with its saved **whole DSO/executable**
+and the identical final fixture/JDK/data. It does not receive the new certified formatter.
+New BOOLEAN controls retain their preceding evaluator; eight existing integer native controls
+require empty evaluators on both versions. A retained descriptor alone does not prove a
+Java callback on every batch. Independent stock measurements remain separate.
+
+Shapes are `PRINTF('%b/%1$B',v)`, `PRINTF('%1$8.2S:%1$-8.3b',v)` and
+`PRINTF('%1$+08d:%2$8.2B:%1$x:%2$s',n,v)` with INT or BIGINT n. Both row layouts and
+NULL modes are retained, plus 16-row controls.
+
+| Scope | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| New bulk, 1,024 rows | 16 | 4.930-7.627x | 5.632-8.099x | 4.849-7.460x |
+| New tiny, 16 rows | 4 | 3.382-5.248x | 10.339-12.905x | 3.367-5.101x |
+
+All new bulk cells beat paired stock and the actual preceding implementation. Retain
+0 tiny stock losses and
+0 tiny previous losses.
+Eight retained nullable INT/BIGINT `%d`/`%+08d:%1$x` native controls have previous/current
+median ratios **1.285-1.440x**, with all ranges and checksums retained.
+Eight additional unchanged certified DECIMAL(4,2)/DECIMAL(38,18) short/padded controls retain
+their evaluators on both whole runtimes; previous/current spans
+**1.103-1.214x**. Their matching output digests and allocation probes are
+retained separately. The new pure scope does not include these DECIMAL arguments.
+
+The first shared-loop implementation passes correctness but adds a stable BIGINT-simple
+slowdown in the recorded order (previous/current 0.931x with nonoverlapping ranges).
+CPU samples locate format parsing and integer conversion/allocation; inclusive counts overlap
+and do not attribute wall time to a source branch. Separately compiling Boolean-capable and
+integer-only loops recovers that simple-format probe, but padded BIGINT retains lower preceding
+medians in both orders. The final implementation also reuses one conversion String across
+rows/conversions and writes decimal integer digits through the existing `itoa` buffer.
+Boolean/NULL words and hexadecimal/octal/character output append into this buffer. General
+certified DECIMAL formatting retains its owned result without an additional copy. Parsing
+is still rowwise. The intermediate buffered version also enables Boolean dispatch in general certified
+formatting; DECIMAL controls expose previous/current as low as 0.927x. The final general
+formatter uses its preceding non-Boolean specialization, with Boolean-object evaluation
+retained outside the planner-verified literal path. An ownership-only experiment also
+retains slower padded medians and is discarded. When every format in a certified batch
+is equal and non-NULL, the final evaluator borrows it once and reuses the Arrow builder/
+row/conversion buffers. This removes per-row output String materialization; varying/NULL
+formats retain row handling. Existing complete-batch ASCII/cache checks still precede
+formatting, and a failed formatter still rejects the whole certificate. All slower stages
+and reverse-order numeric probes remain recorded.
+For the nullable GenericRowData BIGINT padded control, one warmed 1,024-row operation
+drops from **2,489 allocation requests / 80,164 requested bytes** on the actual preceding
+whole runtime to **29 / 48,687**; output buffer bytes remain 35,159. Allocation traffic
+is diagnostic, not peak memory or proof of a complete-job gain.
+
+Four million-row jobs retain the bounded row source, blackhole sink, startup, JNI and
+both transposes. Two warmups and five measurements alternate stock/native. New paths require
+consumed NativeCalc work and empty evaluators; previous retains its original evaluator.
+Median seconds:
+
+| Shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| truth | 0.449773 | 0.287959 | 0.459998 | 0.460954 |
+| padded | 0.709251 | 0.303006 | 0.704850 | 0.753436 |
+| mixed-int | 1.046717 | 0.340149 | 1.021757 | 1.049034 |
+| mixed-bigint | 1.065773 | 0.329840 | 1.059488 | 1.135357 |
+
+Native/stock elapsed spans **0.309-0.640**;
+native/previous spans **0.291-0.625**. All trials and
+variability remain, including any losses; prepared gains do not establish universal
+complete-job acceleration.
+
+All **112 final focused JVM invocations** pass without skips across released Flink
+1.18.1/2.2.1 and JDK 11/17, targeting Java 11: 24 new BOOLEAN/absence-control invocations,
+20 existing integer-PRINTF/absence controls, 12 format-helper invocations, 36 preceding
+epoch invocations and 20 existing PRINTF/shared-certificate invocations on Flink 2.2.
+Complete 5,003-row maps/schema cover true/false/NULL, all signed widths, logical/comparison
+producers, mixed independently nullable arguments, literals, padding/index/reuse/precision,
+empty filtered batches and explicit invalid/dynamic/failing/lazy/protected-consumer controls.
+Pure-route witnesses require consumed native work, no fallback and empty evaluator descriptors.
+The actual preceding Flink 2.2 controls each compare ten complete first-query maps/schema
+before failing the intended pure-route assertions; subsequent empty-query checks in those
+failing invocations are not reached. Retained routes and both 1.18 absence controls pass.
+
+All **912 release Rust core tests** pass without ignores, including Boolean/NULL/signed-width
+formatting, independently sliced/empty arrays, rejected contracts and input ownership.
+Two unchanged released `StringFunctionsITCase.printfTestCases` stock-oracle runs each pass
+all **47 original assertions**. These stock oracles are separate from the native SQL and
+execution witnesses. Earlier decimal/epoch commit timing records retain their own runtime
+provenance; this rebuilt DSO is not substituted into historical measurements. Hosted CI
+remains separate.
+
+Reproduce with release `integral_expression`, the exact expression/type/secondary-type/
+NULL/layout/batch from the record and the saved previous encoder/helper plus whole runtime.
+New preceding routes set `SF_INTEGRAL_PREVIOUS=true`; retained old-native integer controls
+leave it false. Certified DECIMAL controls set it true on both runtimes. Complete jobs use
+`IntegralExpressionPipelineBenchmark`, `sf.integral.booleanInput=true`, matching expression
+and secondary type. Remaining scope stays in
+[#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).

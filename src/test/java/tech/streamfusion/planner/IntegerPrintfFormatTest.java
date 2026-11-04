@@ -26,4 +26,16 @@ class IntegerPrintfFormatTest {
     }
     assertFalse(IntegerPrintfFormat.supports("%d", 0));
   }
+
+  @Test
+  void booleanArgumentTypesAreValidatedAtTheirActualIndices() {
+    boolean[] mixed = {true, false};
+    for (String format : List.of("%s/%2$+08d/%1$B/%<s", "%2$b/%1$8.2S/%2$x", "%%", "%.0b")) {
+      assertTrue(IntegerPrintfFormat.supports(format, mixed), format);
+    }
+    for (String format : List.of("%d", "%1$x", "%2$d/%<s/%d", "%0$b", "%+b", "%3$b")) {
+      assertFalse(IntegerPrintfFormat.supports(format, mixed), format);
+    }
+    assertTrue(IntegerPrintfFormat.supports("%1$B/%2$s/%<b", new boolean[] {true, true}));
+  }
 }

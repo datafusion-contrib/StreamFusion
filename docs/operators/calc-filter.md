@@ -2389,20 +2389,27 @@ retain their existing exact route.
 
 On Flink 2.2, ASCII literal formats of at most 512 characters have a JVM-free path when
 all arguments are verified integer inputs/literals, arithmetic, lossless widening or
-admitted integer rounding trees. Supported conversions are `%s`/`%S`, `%d`, `%x`/`%X`,
+admitted integer rounding trees, or BOOLEAN inputs/literals and verified logical/integer-comparison
+trees. Integer and BOOLEAN arguments may be mixed. Supported conversions are `%s`/`%S`, `%d`, `%x`/`%X`,
 `%o`, `%b`/`%B` and `%%`, including argument indices/reuse, alignment, sign/zero padding and string
 precision. Width and precision are bounded at 256. The planner checks the running JDK's
-flags/indexing rules during planning with `Locale.US`; data rows execute only the Arrow formatter.
+flags/indexing and argument-type rules during planning with `Locale.US`; data rows execute only the Arrow formatter.
 Explicit index zero retains its preceding route because JDK 11 accepts it while JDK 17 rejects it.
 NULL arguments retain their formatted `null`/`NULL` text, including precision and padding.
 For `%b`/`%B`, every non-NULL integer, including zero, formats as `true`/`TRUE`;
 NULL formats as `false`/`FALSE`. Precision and space padding apply to those words.
-Boolean-object arguments retain their separate preceding route; integer formatting does
-not interpret zero as SQL FALSE. Invalid boolean-format flags still retain Flink's NULL result.
+BOOLEAN objects instead format their actual true/false value with `%b`/`%B`; NULL also
+formats as false/FALSE. Their `%s`/`%S` conversion uses true/false words, with null/NULL for
+NULL inputs. Integer formatting does not interpret zero as SQL FALSE. Boolean arguments
+at numeric conversions or invalid boolean-format flags retain Flink's NULL result through
+their preceding route, including the running JDK's index-zero behavior.
 Signed widths and two's-complement formatting remain exact. All child producers must be
 failure-free even when the format does not use an argument.
+The [BOOLEAN/mixed-integer qualification](../benchmarks/scalar-functions.md#boolean-object-and-mixed-integer-printf)
+retains the slower shared-loop prototypes, final old-native integer and certified DECIMAL controls,
+allocation diagnostics and complete jobs with both transposes.
 
-This path borrows the literal format and reuses an output scratch buffer, appending each
+This path borrows the literal format and reuses row/conversion buffers, appending each
 result to Arrow directly. It binds no JVM evaluator. Dynamic/non-ASCII formats, STRING/
 DECIMAL/other argument types, other conversions, larger widths/precision and unverified
 producers retain their existing paths. Composed string consumers such as CHAR_LENGTH still
@@ -2420,6 +2427,7 @@ STRING/integer/DECIMAL `%s`, signed integer `%d`, two's-complement `%x`/`%X`/`%o
 `%c`/`%C` over TINYINT/SMALLINT/INT, integer `%b`/`%B`, `%%`, argument indices/reuse, width, string precision,
 alignment and sign/zero padding. BIGINT character conversions retain the formatter, which
 rejects non-NULL Long arguments.
+BOOLEAN-object arguments outside the verified literal-format path retain their released evaluator.
 DECIMAL string conversion preserves scale and Java scientific notation. The released SQL
 evaluator passes internal `DecimalData`, so DECIMAL `%f` retains Flink's NULL result rather
 than introducing BigDecimal formatting. Non-ASCII, temporal/hash/floating formats and unverified

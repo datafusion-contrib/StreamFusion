@@ -2212,7 +2212,8 @@ final class RexExpression {
       longs.add(call.getKind() == SqlKind.MINUS ? 1L : 0L);
       return true;
     }
-    if (nativeIntegerPrintf(call)) return emitBuiltinCall(call, 248);
+    int printf = nativePrintf(call);
+    if (printf != 0) return emitBuiltinCall(call, printf);
     int certifiedBuiltin = certifiedBuiltin(call);
     if (certifiedBuiltin != 0) return emitCertifiedBuiltin(call, certifiedBuiltin);
     int epochTimestamp = nativeEpochTimestamp(call);
@@ -4643,7 +4644,7 @@ final class RexExpression {
       case "PARSE_URL":
         return true;
       case "PRINTF":
-        return !nativeIntegerPrintf(call);
+        return nativePrintf(call) == 0;
       case "STARTSWITH":
       case "ENDSWITH":
         return false;
@@ -4694,22 +4695,32 @@ final class RexExpression {
                 || nativeDirectDecimalPredicate(producer));
   }
 
-  private static boolean nativeIntegerPrintf(RexCall call) {
+  private static int nativePrintf(RexCall call) {
     if (!(call.getOperator()
-        instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction)) return false;
+        instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction)) return 0;
     var definition = ((org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction)
         call.getOperator()).getDefinition();
     if (!(definition instanceof org.apache.flink.table.functions.BuiltInFunctionDefinition)
         || !"PRINTF".equalsIgnoreCase(((org.apache.flink.table.functions.BuiltInFunctionDefinition)
             definition).getName())
         || call.getOperands().isEmpty()
-        || !(call.getOperands().get(0) instanceof RexLiteral)) return false;
+        || !(call.getOperands().get(0) instanceof RexLiteral)) return 0;
     var format = (RexLiteral) call.getOperands().get(0);
-    if (!isCharacter(format) || format.isNull()
-        || call.getOperands().stream().skip(1).anyMatch(operand ->
-            !SqlTypeFamily.INTEGER.contains(operand.getType())
-                || !nativeIntegralRoundingOperand(operand))) return false;
-    return IntegerPrintfFormat.supports(format.getValueAs(String.class), call.getOperands().size() - 1);
+    if (!isCharacter(format) || format.isNull()) return 0;
+    boolean[] booleanArguments = new boolean[call.getOperands().size() - 1];
+    boolean hasBoolean = false;
+    for (int i = 1; i < call.getOperands().size(); i++) {
+      RexNode operand = call.getOperands().get(i);
+      if (operand.getType().getSqlTypeName() == SqlTypeName.BOOLEAN) {
+        if (!nativeBooleanFormattingOperand(operand)) return 0;
+        booleanArguments[i - 1] = true;
+        hasBoolean = true;
+      } else if (!SqlTypeFamily.INTEGER.contains(operand.getType())
+          || !nativeIntegralRoundingOperand(operand)) return 0;
+    }
+    String pattern = format.getValueAs(String.class);
+    if (hasBoolean) return IntegerPrintfFormat.supports(pattern, booleanArguments) ? 250 : 0;
+    return IntegerPrintfFormat.supports(pattern, booleanArguments.length) ? 248 : 0;
   }
 
   private static boolean nativeIntegralBooleanTryCast(RexCall call) {

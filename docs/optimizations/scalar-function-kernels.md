@@ -1352,16 +1352,19 @@ still lose to stock. All eight measured complete jobs retain both transposes and
 over stock (native/stock elapsed 0.764-0.928); this does not imply a universal job gain.
 
 
-## Reuse the integer formatter's literal and output buffers
+## Reuse the primitive formatter's literal and conversion buffers
 
 A verified literal integer PRINTF binds no JVM evaluator and borrows its format once per
-batch. A reusable scratch String writes each formatted row into one Arrow StringBuilder;
+batch. Reusable row and conversion Strings write each formatted row into one Arrow StringBuilder;
 there is no repeated-format StringArray or separate output String per row. Shared Java
 Formatter-compatible parsing preserves signed widths, NULL text, padding, precision and
 indexing. The planner uses the running JDK to validate formats during planning, with conservative
 bounds and an explicit index-zero exclusion for JDK 11/17 differences. Other formats and
-representation-sensitive consumers retain their previous routes. Parsing and individual
-conversion strings remain rowwise; this is not yet a compiled-format-token engine.
+representation-sensitive consumers retain their previous routes. Integer decimal digits use
+the existing `itoa` buffer; numeric signs, hexadecimal/octal digits, ASCII characters and
+Boolean/NULL words append into the reusable conversion String. General certified DECIMAL
+string conversion retains its owned result without a redundant copy. Parsing remains
+rowwise; this is not yet a compiled-format-token engine.
 
 The initial evaluator-free prototype did not consistently beat the existing certified Rust
 path (previous/native 0.968-1.033x), so buffer reuse is part of the final implementation.
@@ -1377,6 +1380,28 @@ Integer `%b`/`%B` also reuses this path: non-NULL objects, including zero, produ
 NULL produces false. Width, precision, case and indexing remain the Formatter contract.
 Its [separate qualification](../benchmarks/scalar-functions.md#integer-boolean-printf-formats)
 replays the original encoder/DSO and retains shared numeric-format controls.
+
+Verified BOOLEAN objects and mixed integer/BOOLEAN arguments use the same buffers with
+argument-specific Java Formatter validation at planning time. Integer-only and
+Boolean-capable loops are compiled separately and selected once per batch, keeping new
+Boolean dispatch out of the existing integer loop. `%b` observes actual BOOLEAN values,
+while any non-NULL integer object remains true. The
+[BOOLEAN-object qualification](../benchmarks/scalar-functions.md#boolean-object-and-mixed-integer-printf)
+retains the first slower shared-loop version, the intermediate specialization and
+reversed numeric controls, final allocation probes and complete jobs. Earlier measurements
+above retain their original source/runtime provenance.
+
+General certified batches whose formats are equal and non-NULL also borrow the format once
+and reuse these buffers. The complete-batch ASCII/cache identity checks still run first;
+invalid formats reject the entire certificate, and varying/NULL formats keep row handling.
+This removes per-row output String materialization without admitting new argument families
+or removing the general evaluator. All eight measured DECIMAL controls improve over the
+actual preceding whole runtime by **1.103-1.214x**. Existing integer controls improve by
+**1.285-1.440x**; the nullable BIGINT padded 1,024-row allocation probe drops from 2,489
+requests / 80,164 requested bytes to 29 / 48,687. These are allocation traffic, not peak
+memory. New BOOLEAN/mixed bulk controls beat stock **4.930-7.627x**, and four complete
+million-row jobs retain both transposes with native/stock elapsed **0.309-0.640**. The
+qualification retains full variability, previous runtimes, tiny controls and slower prototypes.
 
 
 ## Map primitive integer casts without widening

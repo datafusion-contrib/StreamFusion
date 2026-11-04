@@ -6,7 +6,7 @@ import java.util.IllegalFormatException;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-/** Literal formats whose output depends only on exact integer formatting and ASCII. */
+/** Literal formats whose output depends only on verified primitive formatting and ASCII. */
 final class IntegerPrintfFormat {
   private static final Pattern CONVERSION =
       Pattern.compile("%(?:([0-9]+)\\$)?([-0+ <]*)([0-9]+)?(?:\\.([0-9]+))?([sSdxXobB])");
@@ -14,6 +14,14 @@ final class IntegerPrintfFormat {
   private IntegerPrintfFormat() {}
 
   static boolean supports(String format, int arguments) {
+    return supports(format, arguments, null);
+  }
+
+  static boolean supports(String format, boolean[] booleanArguments) {
+    return supports(format, booleanArguments.length, booleanArguments);
+  }
+
+  private static boolean supports(String format, int arguments, boolean[] booleanArguments) {
     if (format.length() > 512 || format.chars().anyMatch(c -> c > 127)) return false;
     var matcher = CONVERSION.matcher(format);
     for (int offset = 0; offset < format.length(); ) {
@@ -41,6 +49,11 @@ final class IntegerPrintfFormat {
     // Validate the running JDK's flags/indexing during planning, never per input row.
     Object[] zeros = new Object[arguments];
     Arrays.fill(zeros, 0);
+    if (booleanArguments != null) {
+      for (int i = 0; i < arguments; i++) {
+        if (booleanArguments[i]) zeros[i] = Boolean.FALSE;
+      }
+    }
     try (var formatter = new Formatter(Locale.US)) {
       formatter.format(format, zeros);
       return true;
