@@ -353,6 +353,13 @@ else
   mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${AGENT_ROOT}/pom.xml" "-Dsuite.agent.output=${AGENT_OUTPUT}" package || exit $?
 
   echo "Building the pinned Flink planner and its reactor dependencies..."
+  (
+    cd "${FLINK_ROOT}" &&
+      MAVEN_USER_HOME="${SUITE_MAVEN_USER_HOME}" python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
+        --maven "${FLINK_ROOT}/mvnw" --pom "${FLINK_ROOT}/pom.xml" \
+        --repository "${SUITE_MAVEN_REPO}" --profile "${FLINK_TARGET_PROFILE}" \
+        --projects flink-table/flink-table-planner --also-make --model-only
+  ) || exit $?
   flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
     -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
     -T "${FLINK_SUITE_BUILD_THREADS:-1}" \
@@ -472,6 +479,7 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
     --artifact "org.apache.maven.surefire:surefire-junit-platform:${test_runtime_surefire_version}"
     --artifact "org.junit.platform:junit-platform-launcher:${test_runtime_platform_version}"
     --artifact "org.apache.httpcomponents:httpclient:4.4.1"
+    --artifact "org.apache.paimon:paimon-vfs-hadoop:${PAIMON_VERSION}"
   )
   if [[ "${FLINK_LINE}" == "2.2" ]]; then
     test_runtime_artifacts+=(

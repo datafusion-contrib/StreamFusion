@@ -132,6 +132,7 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                  "CALLS": str(calls), "DOWNLOAD_STATUS": str(status),
                                  "PROBE_STATUS": str(probe_status), "MAVEN_SETTINGS": "settings",
                                  "SUITE_MODE": "prepare", "FLINK_LINE": line, "FLINK_VERSION": "test",
+                                 "PAIMON_VERSION": "2.0.0",
                                  "FLINK_TARGET_PROFILE": "java11-target" if line == "2.2" else "",
                                  "REPO_ROOT": str(RUNNER.parents[1]), "SUITE_ROOT": str(suite),
                                  "SUITE_MAVEN_REPO": str(suite / "m2"),
@@ -153,7 +154,8 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                     ("3.0.0-M5" if line == "1.18" else "3.2.2"),
                                     "org.junit.platform:junit-platform-launcher:" +
                                     ("1.9.1" if line == "1.18" else "1.11.4"),
-                                    "org.apache.httpcomponents:httpclient:4.4.1"]
+                                    "org.apache.httpcomponents:httpclient:4.4.1",
+                                    "org.apache.paimon:paimon-vfs-hadoop:2.0.0"]
                         if line == "2.2":
                             expected.extend(["org.apache.maven.surefire:surefire-junit-platform:3.2.5",
                                              "org.junit.platform:junit-platform-launcher:1.13.3"])

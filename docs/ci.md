@@ -151,6 +151,12 @@ test job separately compiles its test harnesses and checks every tagged native p
 isolation once, preserving the checks for dependencies accidentally supplied by the workspace.
 The native build retains Cargo's `--timings` report as a separate diagnostic artifact.
 
+The Rust test job runs the same 30 GiB free-space preflight as the shared native build,
+before restoring Cargo caches. The post-merge run for #595 exhausted its runner's disk
+while compiling tests; the runner itself crashed before it could upload a test result.
+The preflight removes only unused hosted-runner toolchains and fails early if it cannot
+provide enough initial capacity.
+
 Optimized image builds and the separately prepared upstream
 Flink suite keep their own build configurations. The debug artifact is scoped to its current
 workflow run and commit; it is not a release payload or a cache of test outcomes. This replaces
@@ -385,6 +391,35 @@ that failed during a previous attempt. Persistent download failures, invalid dep
 timeouts remain blocking. Once resolution succeeds, the existing build and test commands run
 once with their original assertions and failure handling. Tests are never retried by this helper;
 their commands still use normal Maven resolution for any other artifacts requested dynamically by plugins.
+
+The download stage sets a 60-second HTTP read inactivity timeout and five transport retries
+for [Resolver 1.9](https://maven.apache.org/resolver-archives/resolver-1.9.24/configuration.html),
+[Resolver 2](https://maven.apache.org/resolver/configuration.html) and the older
+[Wagon transport](https://maven.apache.org/wagon/wagon-providers/wagon-http/).
+Both Resolver property families are supplied: older Maven ignores the newer names, while
+the newer hosted Maven ignores the older names. Each version uses its supported settings.
+This bounds stalled requests within the existing ten-minute setup attempt, while allowing
+connection resets to recover before restarting the dependency goal. These options apply only
+to dependency setup, not to test execution.
+Resolver also retries HTTP 429/500/502/503/504 responses at that request boundary. A local
+HTTP fixture verifies five 502 responses with Resolver and five dropped connections with
+Wagon, requiring recovery in a single setup invocation rather than using the outer retries.
+
+Before compiling the pinned upstream Flink reactor, the suite invokes the helper with
+`--model-only`. It runs the fixed Maven Help `evaluate` goal for `project.id`, preserving the
+wrapper, profile, selected projects and isolated repository. This resolves parent POMs and
+build extensions with the same bounded setup retries without trying to download unbuilt
+reactor artifacts or invoking a build/test lifecycle. The post-merge Flink 2.2 preparation
+for #595 failed loading a build extension's JUnit POM, before its build could reach the
+existing runtime dependency preparation.
+
+Upstream preparation also fetches the released `paimon-vfs-hadoop` provider's original
+transitive graph at the selected Paimon version. This covers Hadoop client artifacts needed
+when compiling Paimon's unchanged connector tests after restoring the shared build. A
+validation run for #596 failed in that skipped-test compilation on a Central HTTP 502 for
+`hadoop-mapreduce-client-jobclient:3.3.4`; the provider graph includes that artifact. Resolving
+the published provider independently avoids running `go-offline` across upstream report and
+legacy test-plugin graphs that request obsolete JDK `tools.jar` artifacts on JDK 17.
 
 The Java matrix also prefetches the original transitive graphs of the JUnit Platform providers
 used by runtime Surefire 3.2.5 and the separate evidence agent's Surefire 3.5.3. These downloads
