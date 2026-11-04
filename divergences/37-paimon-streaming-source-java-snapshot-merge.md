@@ -33,7 +33,7 @@ with default features disabled. Consequently the optional Paimon reader DSO now 
 formats. This is an explicit exception to independent connector/format native code packaging,
 chosen to reuse the supported public reader without a fork or copied internals. Generic format
 artifacts remain independent, source admission still requires the selected installed format,
-and the writer path is unchanged. No engine/DataFusion or other StreamFusion cdylib is linked
+and encoding still uses the independent format artifacts. No engine/DataFusion or other StreamFusion cdylib is linked
 into this DSO. A future upstream format feature split can remove the duplicate decoder footprint.
 
 The source's native file path is restricted to the current schema without deletion-vector
@@ -59,8 +59,12 @@ custom loser tree and reducers, following the maintainer's simplicity-first scop
 partial-update sequence groups and field aggregates retain Java. ResourceContext charges projected
 Parquet row groups, not all merge/output memory; the existing encoded-row-group preflight remains.
 Recovery replays emitted logical rows and supports Java/native restoration in either direction.
-Current exact coverage, limits and measurements are in the connector page. Native compaction can
-reuse this boundary later under [#592](https://github.com/datafusion-contrib/StreamFusion/issues/592).
+Current exact coverage, limits and measurements are in the connector page. Modern compaction now
+reuses this public reader boundary through Java Paimon 2.1's released rewriter factory. The audit
+reader retains stored sequence numbers and winning row kinds; Java's supplied `dropDelete` policy
+controls an Arrow selection before writing physical key-value files. Java still plans sections,
+rolls files, constructs metadata and owns commit/recovery. The source and compaction share footer
+budget checks; neither maintains a local run-merging algorithm.
 
 Finite-file completion flushes the split's final bounded watermark before releasing its Flink
 source output. Flink 2.2.1 removes a split's periodic generator in `releaseOutputForSplit`; an

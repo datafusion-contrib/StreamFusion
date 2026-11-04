@@ -43,6 +43,7 @@ public final class SqlInventory {
     active.data.put("translation_details", active.translationDetails);
     active.data.put("operation_failures", active.failures);
     active.data.put("native_work", active.nativeWork);
+    active.data.put("compactions", active.compactions);
     active.data.put("execution_contracts", active.contracts);
     active.data.put("jobs", active.jobs);
     active.data.put("unattributed_native_work", active.unattributedWork);
@@ -59,9 +60,7 @@ public final class SqlInventory {
     snapshotJobs(active);
     active.data.put("junit_status", call(result, "getStatus").toString());
     active.data.put("junit_failure", call(result, "getThrowable").toString());
-    Files.createDirectories(directory());
-    Files.writeString(
-        directory().resolve(active.id + ".json"), json(active.data) + "\n", StandardCharsets.UTF_8);
+    write(active);
     System.out.println(MARKER + active.id);
     FINISHED_JOBS.addAll(active.jobs.keySet());
     FINISHED_JOBS.addAll(active.workByJob.keySet());
@@ -72,6 +71,26 @@ public final class SqlInventory {
 
   public static synchronized Object submitting() {
     return submitting(new Object[0]);
+  }
+
+  public static synchronized String activeTestSource() {
+    return active == null ? "" : active.data.get("source").toString();
+  }
+
+  public static synchronized Object compactionScope() {
+    return active;
+  }
+
+  public static synchronized void compaction(Object owner, Map<String, Object> work) throws Exception {
+    if (!(owner instanceof Scope scope))
+      throw new AssertionError("Compaction outside an upstream test invocation");
+    scope.compactions.add(work);
+    if (scope != active) write(scope);
+  }
+
+  private static void write(Scope scope) throws Exception {
+    Files.createDirectories(directory());
+    Files.writeString(directory().resolve(scope.id + ".json"), json(scope.data) + "\n", StandardCharsets.UTF_8);
   }
 
   public static synchronized Object submitting(Object[] arguments) {
@@ -550,6 +569,7 @@ public final class SqlInventory {
     final IdentityHashMap<Object, List<Translation>> transformations = new IdentityHashMap<>();
     final IdentityHashMap<Object, Map<String, Object>> pipelines = new IdentityHashMap<>();
     final List<Object> failures = new ArrayList<>();
+    final List<Object> compactions = new ArrayList<>();
     final Map<String, Long> nativeWork = new java.util.TreeMap<>();
     final Map<String, Long> unattributedWork = new java.util.TreeMap<>();
     final Map<String, Map<String, Long>> workByJob = new java.util.TreeMap<>();

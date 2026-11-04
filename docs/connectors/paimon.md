@@ -1067,9 +1067,68 @@ Each of these declines at planning time with a reason visible in `NativePlanner.
   multithreaded zstd, and any per-column (`parquet.*#column`) or unrecognised writer key.
 - The selected format identifier resolving to Paimon's own factory (see deployment below).
 
-Compaction rewrites (in-job or from a dedicated compaction job) still use Paimon's stock Parquet
-writer. Append buffer spilling retains native encoding as described above. Primary-key buckets
-use their existing native buffers, which flush by size into level-0 files.
+## Compaction
+
+The modern adapter uses released Java Paimon 2.1's compaction rewriter factory on Flink 2.2.
+Java retains file selection, scheduling, output levels, delete retention, writer settings,
+metadata, commit messages, checkpoints and recovery. For admitted rewrites, the released
+paimon-rust 0.4 reader decodes and deduplicates Java's selected sections and the existing native
+Parquet writer encodes the result. Payloads stay columnar. Only file-boundary metadata keys,
+stored sequence bounds and delete counts are assembled in Java.
+
+In-job maintenance installs the rewriter before bucket creation or restoration, including after
+a table refresh. Dedicated full and minor compaction jobs can adapt the stock worker after building
+the graph and before execution:
+
+```java
+// Build the ordinary Paimon CompactorSourceBuilder / CompactorSinkBuilder graph first.
+NativePaimonMaintenance.accelerate(env);
+env.execute();
+```
+
+The return value counts adapted workers, not successful native rewrites. The adapter preserves
+sources, coordinators, committers, transformation identities, partition filters and parallelism.
+An unadapted SQL `CALL sys.compact` uses the stock implementation. Modern Flink 1.18 and the
+legacy Paimon 1.0 module retain stock maintenance.
+
+The initial scope is primary-key `deduplicate` tables with `none` or `input` changelog production,
+fixed or existing dynamic buckets, ordinary stored sequence numbers, current-schema Parquet input,
+and Parquet output. Both thin and full physical layouts are supported. Native Parquet settings,
+per-level compression and statistics, target file size and asynchronous output retain their
+existing meanings. Compaction rolls across Arrow batches by file size; the write-time
+`target-file-row-num` limit does not apply, matching Java Paimon.
+
+A complete rewrite delegates to the original Java rewriter before opening output for:
+
+- Other merge engines or changelog producers; user sequence fields, ignored deletes, snapshot
+  sequence ordering, or another sort engine.
+- Deletion vectors, record expiry, row tracking, data evolution, blob fields, or file indexes.
+- Unsupported key/value types or native Parquet writer settings; another input/default/output format;
+  historical schemas, index/sidecar files or specialized row metadata.
+- Overlapping or ambiguous stored sequence ranges, more than the smaller of 256 and the host
+  sort-spill threshold in one section, or projected row-group decode memory exceeding half of
+  `sort-spill-buffer-size`. The last check sums each sorted run's largest row-group estimate;
+  it is a decode preflight, not a bound on all merge and output allocations.
+
+Metadata-only level upgrades always use Java. Providers for lookup, materialization, blobs or
+scheduled full-changelog maintenance keep their stock shape. Installation also retains stock
+when the Paimon and StreamFusion bridge classes do not share a runtime classloader.
+
+After native processing starts, a failure aborts all unpublished output and propagates; it does
+not retry the rewrite in Java. The stock rolling writer owns output creation and cleanup, and the
+original rewriter is closed once. Task counters `nativeRewriteGroups`, `stockRewriteGroups`,
+`nativeRewriteRows`, `nativeRewriteFiles`, `nativeRewriteBytes` and `nativeRewriteErrors` distinguish
+successful payload work from worker adaptation. Counters are shared across buckets and refreshes.
+Files and bytes count selected inputs; rows count written winners.
+Append buffer spilling and primary-key level-0 buffering retain their existing native paths.
+
+The [release comparison](../optimizations/paimon-compaction.md) covers 400k/2M input changes,
+unique and overlapping keys, nested values, file rolling and mixed levels. File-worker medians
+improved 1.39–1.94× versus stock Paimon; running-job publication-to-compacted-commit medians
+improved 1.13–1.43×. The report retains previous StreamFusion results, ranges and slower cold work.
+The [unchanged upstream compaction fixtures](../upstream-flink-suite.md#paimon-compaction-fixtures)
+separately require parity and explicit native/fallback evidence.
+
 
 ## Benchmark
 
@@ -1314,7 +1373,7 @@ Parquet/ORC modules. Keep the same `01-streamfusion-paimon.jar` classpath orderi
 The two adapters must not be installed together.
 
 The adapter shares the released paimon-rust source reader, Java FileIO bridge, native writer
-codecs and Arrow batch routing with the 2.0 integration. Its build stages shared Java sources and overlays the classes whose
+codecs and Arrow batch routing with the 2.1 integration. Its build stages shared Java sources and overlays the classes whose
 released APIs changed. The artifacts deliberately use the same package names: choose
 one at deployment rather than mixing incompatible Paimon APIs in one classloader. Java uses the 1.0 append topology, writer memory pools, file
 metadata, hash indexes, commit messages, and checkpoint lifecycle. Streaming
@@ -1322,7 +1381,7 @@ splits containing before-files retain Java's reverse-row-kind reader. Postpone
 buckets and newer coordinator/partition-routing modes do not exist in this release.
 External log systems retain the stock source and sink.
 Numeric aggregation preserves 1.0's wrapping integer arithmetic and empty-accumulator
-product retractions; the 2.0 adapter keeps its checked arithmetic. ORC timestamp
+product retractions; the modern 2.1 adapter follows that release's per-field overflow settings. ORC timestamp
 writes reproduce 1.0's historical `java.sql.Timestamp` calendar conversion for both
 TIMESTAMP and TIMESTAMP_LTZ, while retaining timestamp-instant physical storage for LTZ.
 Field defaults retain the stock source because Paimon 1.0 applies them on reads,

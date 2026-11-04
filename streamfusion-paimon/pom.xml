@@ -118,6 +118,20 @@
         <plugins>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>paimon-compaction-bridge</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration><sources>
+                            <source>${project.basedir}/src/main/java</source>
+                        </sources></configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
                 <artifactId>flatten-maven-plugin</artifactId>
                 <configuration><flattenMode>ossrh</flattenMode></configuration>
             </plugin>
@@ -139,6 +153,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration><includes>
+                    <include>org/apache/paimon/flink/sink/StreamFusionStoreSinkWrite.java</include>
                     <include>tech/streamfusion/paimon/**/*.java</include>
                     <include>tech/streamfusion/planner/Paimon*.java</include>
                     <include>tech/streamfusion/planner/NativePaimon*.java</include>
@@ -148,6 +163,127 @@
         </plugins>
     </build>
     <profiles>
+        <profile>
+            <id>upstream-paimon-compaction</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.paimon</groupId><artifactId>paimon-core</artifactId>
+                    <version>${paimon.version}</version><type>test-jar</type><scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.paimon</groupId><artifactId>paimon-common</artifactId>
+                    <version>${paimon.version}</version><type>test-jar</type><scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.paimon</groupId><artifactId>paimon-flink-common</artifactId>
+                    <version>${paimon.version}</version><type>test-jar</type><scope>test</scope>
+                    <exclusions>
+                        <exclusion><groupId>org.apache.paimon</groupId><artifactId>paimon-flink1-common</artifactId></exclusion>
+                        <exclusion><groupId>org.apache.flink</groupId><artifactId>*</artifactId></exclusion>
+                    </exclusions>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.paimon</groupId><artifactId>paimon-flink2-common</artifactId>
+                    <version>${paimon.version}</version><type>test-jar</type><scope>test</scope>
+                    <exclusions>
+                        <exclusion><groupId>org.apache.flink</groupId><artifactId>*</artifactId></exclusion>
+                    </exclusions>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.paimon</groupId><artifactId>paimon-test-utils</artifactId>
+                    <version>${paimon.version}</version><scope>test</scope>
+                    <exclusions>
+                        <exclusion><groupId>org.apache.flink</groupId><artifactId>*</artifactId></exclusion>
+                    </exclusions>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.paimon</groupId><artifactId>paimon-format</artifactId>
+                    <version>${paimon.version}</version><scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.paimon</groupId><artifactId>paimon-arrow</artifactId>
+                    <version>${paimon.version}</version><scope>test</scope>
+                    <exclusions>
+                        <exclusion><groupId>org.apache.arrow</groupId><artifactId>*</artifactId></exclusion>
+                    </exclusions>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.hadoop</groupId><artifactId>hadoop-mapreduce-client-core</artifactId>
+                    <version>3.3.4</version><scope>test</scope>
+                    <exclusions>
+                        <exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-reload4j</artifactId></exclusion>
+                        <exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-log4j12</artifactId></exclusion>
+                        <exclusion><groupId>ch.qos.reload4j</groupId><artifactId>reload4j</artifactId></exclusion>
+                        <exclusion><groupId>log4j</groupId><artifactId>log4j</artifactId></exclusion>
+                    </exclusions>
+                </dependency>
+                <dependency>
+                    <groupId>org.mockito</groupId><artifactId>mockito-inline</artifactId>
+                    <version>4.11.0</version><scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.flink</groupId><artifactId>flink-streaming-java</artifactId>
+                    <version>${flink.version}</version><type>test-jar</type><scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.flink</groupId><artifactId>flink-table-common</artifactId>
+                    <version>${flink.version}</version><type>test-jar</type><scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.flink</groupId><artifactId>flink-table-planner_${scala.binary.version}</artifactId>
+                    <version>${flink.version}</version><type>test-jar</type><scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.flink</groupId><artifactId>flink-sql-gateway</artifactId>
+                    <version>${flink.version}</version><scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.flink</groupId><artifactId>flink-sql-gateway</artifactId>
+                    <version>${flink.version}</version><type>test-jar</type><scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build><plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId>
+                    <executions><execution>
+                        <id>compaction-fixture-flink-line</id><goals><goal>enforce</goal></goals>
+                        <configuration><rules><requireProperty>
+                            <property>flink.line</property><regex>2\.2</regex>
+                            <message>The pinned Paimon compaction fixtures use Flink 2.2.</message>
+                        </requireProperty><requireProperty>
+                            <property>paimon.version</property><regex>2\.1\.0</regex>
+                            <message>The compaction fixture inventory is pinned to released Paimon 2.1.0.</message>
+                        </requireProperty></rules></configuration>
+                    </execution></executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+                    <configuration>
+                        <forkCount>1</forkCount><reuseForks>false</reuseForks><failIfNoTests>true</failIfNoTests>
+                        <dependenciesToScan>
+                            <dependency>org.apache.paimon:paimon-core:test-jar:tests</dependency>
+                            <dependency>org.apache.paimon:paimon-flink-common:test-jar:tests</dependency>
+                        </dependenciesToScan>
+                        <includes>
+                            <include>**/CompactRewriterFactoryTest.class</include>
+                            <include>**/TableWriteTest.class</include>
+                            <include>**/KeyValueFileStoreWriteTest.class</include>
+                            <include>**/MergeTreeCompactManagerFactoryTest.class</include>
+                            <include>**/MergeTreeCompactManagerTest.class</include>
+                            <include>**/UniversalCompactionTest.class</include>
+                            <include>**/ForceUpLevel0CompactionTest.class</include>
+                            <include>**/StoreCompactOperatorTest.class</include>
+                            <include>**/CompactRefresherTest.class</include>
+                            <include>**/CompactorSinkITCase.class</include>
+                            <include>**/CompactActionITCase.class</include>
+                            <include>**/MinorCompactActionITCase.class</include>
+                            <include>**/CompactProcedureITCase.class</include>
+                            <include>**/FullCompactionFileStoreITCase.class</include>
+                        </includes>
+                    </configuration>
+                </plugin>
+            </plugins></build>
+        </profile>
         <profile>
             <id>orc-writer-bench</id>
             <properties>

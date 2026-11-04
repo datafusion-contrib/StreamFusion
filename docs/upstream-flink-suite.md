@@ -766,6 +766,52 @@ All invocations' reports contribute to the result and native execution checks; a
 failure remains blocking, including a process timeout without a finished JUnit report.
 Explicit `FLINK_SUITE_TEST` selectors keep their requested grouping for diagnosis.
 
+## Paimon compaction fixtures
+
+The modern module also runs **112 unchanged compaction invocations** from the canonical released
+Paimon **2.1.0** test JARs on Flink **2.2.1**. This is a separate maintenance corpus, covering core
+selection/rewriter contracts, writer state recovery, dedicated workers, actions, refresh and SQL
+procedures. The [case manifest](https://github.com/datafusion-contrib/StreamFusion/blob/main/dev/flink-suite/paimon-compaction-cases.csv)
+pins every method and parameter invocation and states its expected native, stock-policy or
+selection/upgrade behavior. No upstream test body, assertion, option or scheduling decision is changed.
+
+```bash
+python3 bin/paimon-compaction-suite.py
+# With matching libraries already built:
+python3 bin/paimon-compaction-suite.py --skip-native-build
+# Use release libraries for a local diagnostic:
+python3 bin/paimon-compaction-suite.py --release --skip-native-build
+```
+
+The runner verifies these SHA-256 hashes before executing the published fixtures. They correspond
+to canonical `release-2.1.0`, commit `3a5ffe7870697e2c2605e63413fb5ac5800aae7e`:
+
+| Test JAR | SHA-256 |
+| --- | --- |
+| `paimon-core-2.1.0-tests.jar` | `3f9ef9505f84c837bd015fb6a494d0309bca1f35716d66e48f360b8e82b1e076` |
+| `paimon-flink-common-2.1.0-tests.jar` | `b7e83358fa1df5ce7c7a215f979fa91ecf8b904fd12a70689bb5d503babfe3b1` |
+
+Both stock and native runs must report the exact 112 invocations with zero failures, errors or
+skips. Reports under `streamfusion-paimon/target/upstream-compaction/{stock,native}` retain JUnit
+XML, per-invocation JSON and a result CSV. Native records include selected input files/bytes,
+output rows, output level, delete retention and explicit fallback reasons. Required payload cases
+must complete real native groups with positive input files and bytes; selection-only and metadata
+upgrade cases do not count as native coverage. The unchanged randomized restore fixture may
+interrupt an attempt; successful selected rewrites must remain native, and other failures fail
+validation. Late callbacks retain their originating invocation.
+
+The test agent installs the production decorator through the public core writer factory and
+invokes the production graph adapter before a dedicated graph executes. Test-only reflection
+constructs a resolved table view from the pinned core fixture's existing FileIO, schema and
+catalog environment. Fixtures that install their own factory retain it, preserving their exact
+stock-delegate and ownership assertions. Unadapted `CompactProcedureITCase` calls remain stock
+and bypass both adapters. The stock mode resolves canonical format factories and retains Java
+planning; benchmark `previous` mode retains the prior StreamFusion format shim and stock compaction.
+These modes exist only in the test agent, with no production performance switch.
+
+The Flink 2.2/JDK 17 Paimon Parquet CI job runs both modes and retains the reports. This validation
+is independent of the general upstream SQL corpus and of release performance measurements.
+
 ## Shared builds and runtime shards
 
 CI prepares one common build for each pinned Flink line. It builds the untouched Flink planner,

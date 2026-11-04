@@ -39,6 +39,7 @@ Those measurements describe CI job counts and elapsed time, not SQL execution th
 - [Top-1 winner state](top1-winner-state.md): conditional winner updates and bounded clean decoded RocksDB state.
 - [Retire dead Delta checkpoint buffers](delta-live-buffer-retirement.md): release fully superseded Arrow batches and metadata.
 - [Preserve Paimon partition pruning](paimon-partition-pruning.md): carry retained partition equalities into released split planning.
+- [Columnar Paimon compaction](paimon-compaction.md): reuse released Rust file processing inside Java's selected maintenance work.
 - [Indexed pending rowtime deduplication](pending-dedup-index.md): incoming-key probes over bounded Arrow chunks.
 - [Optional Linux RocksDB io_uring reads](rocksdb-io-uring.md): configurable concurrent SST batch reads, with full before/after trial data.
 - [Fluss Arrow transport](fluss-arrow-transport.md): retained receive buffers, exactly sized serialization and bounded acknowledgement pipelining.

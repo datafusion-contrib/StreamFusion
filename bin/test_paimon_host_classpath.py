@@ -32,7 +32,7 @@ class PaimonHostClasspathTest(unittest.TestCase):
                     for d in selected)
                 fragments = (fragments.replace("${flink.version}", version)
                              .replace("${flink.line}", line)
-                             .replace("${paimon.version}", "2.0.0"))
+                             .replace("${paimon.version}", "2.1.0"))
                 (directory / "pom.xml").write_text(
                     '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>'
                     '<groupId>test</groupId><artifactId>host-api-probe</artifactId><version>1</version>'
@@ -44,14 +44,14 @@ class PaimonHostClasspathTest(unittest.TestCase):
                 # Compile the same shared row view that failed in the universal image reactor.
                 projector = ROOT / "src/main/java/tech/streamfusion/operator/PrunedRowData.java"
                 compatibility = ROOT / f"src/main/java-flink{line}/tech/streamfusion/compat/ProjectedRowDataCompat.java"
-                subprocess.run(["javac", "-cp", cp, "-d", str(directory),
+                subprocess.run(["javac", "-encoding", "UTF-8", "-cp", cp, "-d", str(directory),
                                 str(compatibility), str(projector)], check=True)
                 if line == "1.18":
                     # Reproduce the original failure by letting the fat connector shadow the host.
                     entries = cp.split(os.pathsep)
-                    connector = next(entry for entry in entries if entry.endswith("paimon-flink-1.18-2.0.0.jar"))
+                    connector = next(entry for entry in entries if entry.endswith("paimon-flink-1.18-2.1.0.jar"))
                     wrong_cp = os.pathsep.join([connector] + [entry for entry in entries if entry != connector])
-                    wrong = subprocess.run(["javac", "-cp", wrong_cp, "-d", str(directory),
+                    wrong = subprocess.run(["javac", "-encoding", "UTF-8", "-cp", wrong_cp, "-d", str(directory),
                                             str(compatibility), str(projector)], text=True,
                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                     self.assertNotEqual(0, wrong.returncode)
@@ -71,7 +71,7 @@ public class HostProbe {
   }
 }
 ''')
-                subprocess.run(["javac", "-cp", cp, str(source)], check=True)
+                subprocess.run(["javac", "-encoding", "UTF-8", "-cp", cp, str(source)], check=True)
                 subprocess.run(["java", "-Xverify:all", "-cp", str(directory) + os.pathsep + cp,
                                 "HostProbe", version], check=True)
 

@@ -157,6 +157,9 @@
                                         <exclude>tech/streamfusion/paimon/NativePaimonAppendSink.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonBucketAssigner.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonBucketSink.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/NativePaimonCompactRewriter.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonCompactionProvider.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/NativePaimonMaintenance.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonCoordinatorCommitOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonDynamicPartitionOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonKeyValueFileWriter.java</exclude>

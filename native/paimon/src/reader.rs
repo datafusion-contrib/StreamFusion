@@ -7,8 +7,8 @@ use paimon::catalog::Identifier;
 use paimon::io::FileIO;
 use paimon::resource::ResourceContext;
 use paimon::spec::{
-    BinaryRow, DataField, DataFileMeta, DataType, TableSchema, VarCharType, ROW_KIND_FIELD_ID,
-    ROW_KIND_FIELD_NAME,
+    BigIntType, BinaryRow, DataField, DataFileMeta, DataType, TableSchema, VarCharType,
+    ROW_KIND_FIELD_ID, ROW_KIND_FIELD_NAME, SEQUENCE_NUMBER_FIELD_ID, SEQUENCE_NUMBER_FIELD_NAME,
 };
 use paimon::table::{ArrowRecordBatchStream, AuditLogRead, DataSplit, Table};
 use serde::Deserialize;
@@ -28,6 +28,14 @@ pub(crate) struct Task {
     streaming: bool,
     raw: bool,
     files: Vec<File>,
+    physical: Option<Physical>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Physical {
+    keys: Vec<usize>,
+    drop_delete: bool,
 }
 
 #[derive(Deserialize)]
@@ -82,6 +90,7 @@ pub(crate) struct Reader {
     output: SchemaRef,
     kinds: bool,
     filter_deletes: bool,
+    physical: Option<Physical>,
     resources: ResourceContext,
 }
 
@@ -95,7 +104,13 @@ impl Reader {
         kinds: bool,
     ) -> Self {
         let task: Task = serde_json::from_str(json).expect("Paimon read descriptor");
-        let filter_deletes = kinds && !task.raw && !task.streaming;
+        let physical = task.physical;
+        let filter_deletes = physical
+            .as_ref()
+            .map_or(kinds && !task.raw && !task.streaming, |physical| {
+                physical.drop_delete
+            });
+        let audit = physical.is_some() || filter_deletes;
         let mut resources = ResourceContext::builder();
         if !task.raw {
             resources = resources.memory_limit(budget);
@@ -108,6 +123,9 @@ impl Reader {
         let stream = runtime.block_on(async {
             let mut options = task.schema.options().clone();
             options.insert("read.batch-size".into(), rows.to_string());
+            if physical.is_some() {
+                options.insert("table-read.sequence-number.enabled".into(), "true".into());
+            }
             let schema = task.schema.copy_with_options(options);
             let table = Table::from_resolved_schema(
                 io,
@@ -132,7 +150,17 @@ impl Reader {
                 .expect("Paimon data split");
             let mut builder = table.new_read_builder();
             let mut projection = task.projection;
-            if filter_deletes {
+            if physical.is_some() {
+                projection.insert(
+                    0,
+                    DataField::new(
+                        SEQUENCE_NUMBER_FIELD_ID,
+                        SEQUENCE_NUMBER_FIELD_NAME.into(),
+                        DataType::BigInt(BigIntType::new()),
+                    ),
+                );
+            }
+            if audit {
                 projection.insert(
                     0,
                     DataField::new(
@@ -146,7 +174,7 @@ impl Reader {
                 .with_read_type(projection)
                 .with_resources(resources.clone());
             let read = builder.new_read().expect("Paimon table reader");
-            if filter_deletes {
+            if audit {
                 AuditLogRead::new(read)
                     .expect("Paimon snapshot audit reader")
                     .to_arrow(&[split])
@@ -163,6 +191,7 @@ impl Reader {
             output,
             kinds,
             filter_deletes,
+            physical,
             resources,
         }
     }
@@ -189,20 +218,7 @@ impl Reader {
                 break batch;
             }
         };
-        let offset = usize::from(self.kinds);
-        let mut columns: Vec<ArrayRef> = self.output.fields()
-            [..self.output.fields().len() - offset]
-            .iter()
-            .enumerate()
-            .map(|(index, field)| {
-                streamfusion_bridge::timestamp::cast_array(
-                    batch.column(index + offset),
-                    field.data_type(),
-                )
-                .expect("Paimon output schema")
-            })
-            .collect();
-        if self.kinds {
+        let kind_column = if self.kinds {
             let values = batch
                 .column(0)
                 .as_any()
@@ -215,8 +231,42 @@ impl Reader {
                 Some("-D") => 3,
                 _ => panic!("Invalid Paimon row kind"),
             }));
-            columns.push(Arc::new(kinds));
-        }
+            Some(Arc::new(kinds) as ArrayRef)
+        } else {
+            None
+        };
+        let columns: Vec<ArrayRef> = if let Some(physical) = &self.physical {
+            // The public audit reader chooses winners. Only arrange their stored columns here.
+            physical
+                .keys
+                .iter()
+                .map(|key| batch.column(key + 2).clone())
+                .chain(std::iter::once(batch.column(1).clone()))
+                .chain(kind_column)
+                .chain(batch.columns()[2..].iter().cloned())
+                .zip(self.output.fields())
+                .map(|(column, field)| {
+                    streamfusion_bridge::timestamp::cast_array(&column, field.data_type())
+                        .expect("Paimon physical output schema")
+                })
+                .collect()
+        } else {
+            let offset = usize::from(self.kinds);
+            let mut columns: Vec<ArrayRef> = self.output.fields()
+                [..self.output.fields().len() - offset]
+                .iter()
+                .enumerate()
+                .map(|(index, field)| {
+                    streamfusion_bridge::timestamp::cast_array(
+                        batch.column(index + offset),
+                        field.data_type(),
+                    )
+                    .expect("Paimon output schema")
+                })
+                .collect();
+            columns.extend(kind_column);
+            columns
+        };
         Some(
             RecordBatch::try_new_with_options(
                 self.output.clone(),

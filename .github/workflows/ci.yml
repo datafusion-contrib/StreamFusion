@@ -326,6 +326,21 @@ jobs:
           mvn -B -ntp -P${{ matrix.profile }}
           -pl ${{ matrix.module }} -am test -Dsf.runtime.tests.skip=true -Dnative.build.skip=true
 
+      - name: Run unchanged Paimon compaction fixtures with stock and native work evidence
+        if: matrix.name == 'Paimon Parquet' && matrix.jdk == '17'
+        run: python3 bin/paimon-compaction-suite.py --skip-native-build
+
+      - name: Retain Paimon compaction results and invocation evidence
+        if: always() && matrix.name == 'Paimon Parquet' && matrix.jdk == '17'
+        uses: actions/upload-artifact@v4
+        with:
+          name: paimon-compaction-upstream
+          path: |
+            streamfusion-paimon/target/upstream-compaction/
+            streamfusion-paimon/target/surefire-reports/
+          if-no-files-found: error
+          retention-days: 7
+
   doris-tests:
     needs: native-build
     name: Doris connector and upstream SQL tests

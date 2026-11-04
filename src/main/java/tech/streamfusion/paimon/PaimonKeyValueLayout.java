@@ -48,7 +48,7 @@ public final class PaimonKeyValueLayout {
   final SimpleStatsConverter keyStatsConverter;
   final SimpleStatsConverter valueStatsConverter;
 
-  private PaimonKeyValueLayout(FileStoreTable table, boolean changelog) {
+  private PaimonKeyValueLayout(FileStoreTable table, int level, boolean changelog) {
     TableSchema schema = table.schema();
     CoreOptions options = table.coreOptions();
     this.keyType =
@@ -72,6 +72,7 @@ public final class PaimonKeyValueLayout {
             statsExtractor(
                     options,
                     fileType,
+                    level,
                     changelog,
                     thinMode ? keyType.getFieldNames() : Collections.emptyList())
                 .orElse(null));
@@ -80,11 +81,15 @@ public final class PaimonKeyValueLayout {
   }
 
   public static PaimonKeyValueLayout of(FileStoreTable table) {
-    return new PaimonKeyValueLayout(table, false);
+    return of(table, 0);
+  }
+
+  static PaimonKeyValueLayout of(FileStoreTable table, int level) {
+    return new PaimonKeyValueLayout(table, level, false);
   }
 
   static PaimonKeyValueLayout changelog(FileStoreTable table) {
-    return new PaimonKeyValueLayout(table, true);
+    return new PaimonKeyValueLayout(table, 0, true);
   }
 
   /** The number of key columns a key-value row starts with. */
@@ -162,11 +167,11 @@ public final class PaimonKeyValueLayout {
    * The footer statistics extractor Paimon's key-value writer factory builds for a Parquet file.
    */
   private static Optional<SimpleStatsExtractor> statsExtractor(
-      CoreOptions options, RowType writeType, boolean changelog, List<String> keyNames) {
+      CoreOptions options, RowType writeType, int level, boolean changelog, List<String> keyNames) {
     String statsMode =
         changelog && options.changelogFileStatsMode() != null
             ? options.changelogFileStatsMode()
-            : options.statsModePerLevel().getOrDefault(0, options.statsMode());
+            : options.statsModePerLevel().getOrDefault(level, options.statsMode());
     SimpleColStatsCollector.Factory[] factories =
         StatsCollectorFactories.createStatsFactories(
             statsMode, options, writeType.getFieldNames(), keyNames);
@@ -177,7 +182,9 @@ public final class PaimonKeyValueLayout {
     if (disabled) {
       return Optional.empty();
     }
-    return FileFormat.fromIdentifier(options.fileFormatString(), options.toConfiguration())
+    String format = options.fileFormatPerLevel().getOrDefault(level, options.fileFormatString());
+    if (changelog && options.changelogFileFormat() != null) format = options.changelogFileFormat();
+    return FileFormat.fromIdentifier(format, options.toConfiguration())
         .createStatsExtractor(writeType, factories);
   }
 }
