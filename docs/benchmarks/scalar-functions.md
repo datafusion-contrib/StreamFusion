@@ -8611,3 +8611,93 @@ runtime/fixture. Complete jobs use IntegralExpressionPipelineBenchmark with the 
 expression/precision/scale and `sf.integral.previous=true` for previous controls.
 Remaining type/producer/consumer gaps stay in
 [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+
+## Runtime integer epoch precision
+
+Ordinary Calc admits verified INT CASE precision trees with literal 0, 3 or NULL results
+for integer TO_TIMESTAMP_LTZ. The native kernel reads conditions/branches directly, checks
+original seconds/milliseconds before scaling, and writes one timestamp column. Literal
+millisecond-or-NULL branches share immutable input values and alter parent validity only.
+Nested branches reuse the total integer selector. Computed integer children retain their
+resolved widths before widening; unproven/failing/stateful inputs and UNNEST keep their routes.
+
+The [record](results/runtime-epoch-precision-2026-11-04.json) retains all 80 final configurations and
+[19,800 raw samples](results/runtime-epoch-precision-2026-11-04.csv.gz) across all development stages and the final matrix.
+Apple M4 Pro, macOS arm64, JDK 17.0.12, one thread, release/mimalloc, Flink 1.18.1/2.2.1.
+Matched prepared GenericRowData/BinaryRowData and Arrow cover all four integer widths,
+nullable/NOT NULL inputs, extrema and epoch bounds. Each trial consumes 131,072 rows;
+16 warmups/nine measurements alternate engines. Native timing starts inside Rust after
+import and stops before export, retaining production Calc/consumption and intrinsic costs.
+Stock starts on equivalent prepared RowData. Actual preceding encoder `a90183ec` retains
+its evaluator on the same current native runtime/fixture, with independent stock controls.
+
+The two measured shapes consume YEAR over seconds/milliseconds selected by the sign of v,
+or IS NULL over millisecond/NULL selection. SQL strings, all medians/ranges and artifacts
+are retained in the record. The timings do not qualify every nested composition.
+
+| Scope | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk, 1,024 rows | 64 | 1.145-4.399x | 6.227-38.014x | 1.372-5.028x |
+| Tiny, 16 rows | 16 | 0.042-0.197x | 10.826-17.692x | 0.044-0.161x |
+
+Retain 0 paired-stock bulk medians below 1x,
+0 independent-stock bulk medians below 1x and
+16 tiny paired-stock losses. These are measured diagnostics;
+native execution evidence alone does not establish a speedup.
+
+The first timestamp-CASE implementation loses despite correctness. CPU samples identify
+CASE batch partitioning and Struct timestamp merging, including child/null-buffer copies.
+A first fused kernel removes that merging but still materializes an INT precision column;
+another sample identifies selector/materialization work. Direct branch selection removes
+that intermediate, and millisecond-or-NULL buffer sharing removes the remaining value copy.
+The shared-buffer version still loses bulk cases. Packed Arrow condition/validity masks
+replace per-row selection for scalar precision leaves, retain first-true CASE selection and
+scale only selected in-range seconds. Final masks exclude NULL predicates. All development
+stages, actual source/artifact hashes and slower samples are retained rather
+than replaced by the final matrix. Inclusive sample counts overlap; they are not wall-time shares.
+
+Eight complete million-row configurations retain the bounded row source, blackhole sink,
+startup, JNI and both transposes. Two warmups/five measurements alternate stock/native;
+candidate requires consumed NativeCalc work and empty evaluators, previous keeps its evaluator.
+Median seconds:
+
+| Flink / input / shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-seconds-millis | 0.176752 | 0.177871 | 0.172852 | 0.212247 |
+| 2.2.1 / INT-millis-null | 0.177497 | 0.188569 | 0.183063 | 0.234874 |
+| 2.2.1 / BIGINT-seconds-millis | 0.169195 | 0.183573 | 0.162459 | 0.218152 |
+| 2.2.1 / BIGINT-millis-null | 0.181030 | 0.190784 | 0.182086 | 0.236146 |
+| 1.18.1 / INT-seconds-millis | 0.166785 | 0.178363 | 0.170580 | 0.206144 |
+| 1.18.1 / INT-millis-null | 0.178303 | 0.187838 | 0.175389 | 0.233447 |
+| 1.18.1 / BIGINT-seconds-millis | 0.159494 | 0.179954 | 0.165135 | 0.219383 |
+| 1.18.1 / BIGINT-millis-null | 0.179089 | 0.191463 | 0.177121 | 0.223125 |
+
+Native/stock elapsed ranges **1.006-1.128**, retaining
+8 stock losses; native/previous ranges
+**0.803-0.865**, retaining 0 previous losses.
+No universal complete-job gain is claimed.
+
+All **432 final JVM invocations** pass without skips across released Flink 1.18.1/2.2.1
+and JDK 11/17, Java release 11: 36 new precision invocations, 136 preceding epoch/rounding
+controls and 260 preceding decimal/integer-character controls. Complete 5,003-row maps/schema
+cover six precision trees, nested/NULL conditions, all integer widths, resolved overflow,
+original epoch bounds, UTC/New York and empty filtered batches. New pure routes require
+consumed native work, no fallback and empty evaluator descriptors. Fallible/unknown precision
+and epoch producers retain explicit generated controls. Recorded preceding-encoder controls compare all 32
+first-query maps/schema before the expected new route assertion fails; their subsequent
+empty-query comparisons are not reached. Four retained-route methods pass six controls each.
+
+All **910 release Rust core tests** pass without ignores. New tests cover original-unit
+bounds, pre-scaling overflow, independently sliced validity, scalar/array combinations,
+first-true/NULL conditions, independently sliced conditions across 64-bit boundaries, empty
+arrays, invalid internal signatures and immutable buffer
+ownership. Sixteen unchanged released TemporalTypesTest method invocations pass separately;
+these stock oracles do not replace the independent native SQL/evidence witnesses.
+
+Reproduce with release integral_expression, SF_INTEGRAL_CORPUS=epoch-millis and the exact
+expression/type/NULL/layout/batch from the record. Actual previous supplies the frozen
+encoder and SF_INTEGRAL_PREVIOUS=true on the same final native runtime. Complete jobs use
+IntegralExpressionPipelineBenchmark with matching expression and INT/BIGINT input settings.
+Remaining signatures and timezone/parser work stay in
+[#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).

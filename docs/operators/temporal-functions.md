@@ -13,7 +13,7 @@ unsupported `MATCH_RECOGNIZE` operator.
 | `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. DATE/plain-TIMESTAMP calendar fields and HOUR/MINUTE/SECOND over DATE, plain TIMESTAMP and TIME execute in Rust, preserving Java signed arithmetic. Direct LTZ extraction uses the planning JDK's serialized fixed/finite offset history; recurring-DST zones retain Flink. Interval fields and unverified wrappers remain generated. |
 | `TO_DATE(text)`, `TO_DATE(text, format)` | The one-argument parser stays in Rust; formatted parsing uses Flink. Dynamic formats, NULL behavior and invalid-input failures follow Flink. |
 | `TO_TIMESTAMP(text[, format])` | Flink parsing, including dynamic formats and full-range timestamp results. |
-| `TO_TIMESTAMP_LTZ` | Direct/literal integer epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. TINYINT/SMALLINT/INT widen losslessly to BIGINT first. Verified ordinary-Calc integer arithmetic, widening and rounding trees also execute in Rust; widening happens after the computed integer result. Unverified producers, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
+| `TO_TIMESTAMP_LTZ` | Direct/literal integer epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. Ordinary Calc also admits verified CASE precision trees whose results are 0, 3 or NULL. TINYINT/SMALLINT/INT widen losslessly to BIGINT first. Verified integer arithmetic, widening and rounding trees also execute in Rust; widening happens after the computed integer result. Unverified precision/epoch producers, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
 | `DATE_FORMAT`, `UNIX_TIMESTAMP(text[, format])`, `CONVERT_TZ` | Flink evaluation supports dynamic patterns and zones. The existing literal numeric-pattern DATE_FORMAT fast path for plain timestamps remains in Rust. |
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
@@ -112,6 +112,37 @@ Epoch conversion itself reuses the existing kernels and verified integer proof w
 a new switch, JNI bridge or transport. The
 [computed-epoch qualification](../benchmarks/scalar-functions.md#computed-integer-epoch-conversion)
 retains prepared stock/actual-previous/native controls and conversion-inclusive jobs.
+
+## Native bounded runtime epoch precision
+
+Ordinary Calc admits a runtime INT precision CASE when every result is a literal 0, 3 or
+NULL, recursively through nested CASE branches. Conditions use the verified total BOOLEAN
+proof: direct inputs/literals, logical/NULL wrappers and admitted integer comparisons.
+The epoch operand uses the same verified integer proof as constant-precision conversion.
+For example:
+
+```sql
+SELECT TO_TIMESTAMP_LTZ(n, CASE WHEN n < 0 THEN 0 ELSE 3 END) FROM src;
+```
+
+The native batch epoch kernel reads the verified CASE conditions and precision branches
+directly while constructing one timestamp column. Scalar precision leaves use packed Arrow
+masks, preserving the first true condition and treating NULL conditions as false. Nested
+precision branches use the existing integer selector; millisecond-or-NULL literal branches
+share the immutable millisecond buffer and change only parent validity. It preserves NULL precision,
+NULL epochs, inclusive original-unit bounds, resolved integer overflow and the released
+TIMESTAMP_LTZ(3) result. Conditions and epoch trees cannot fail or mutate state, so eager
+precision-branch evaluation introduces no observable operand-evaluation effects. Existing NULL-aware
+timestamp consumers retain parent validity and declared schemas. Numeric epoch conversion
+is independent of the session zone; its downstream extraction/formatting retains its own
+admission rules.
+
+Arbitrary precision columns, unverified/computed precision results, invalid literal leaves,
+fallible conditions or epoch operands, unknown/stateful functions and UNNEST keep their
+preceding routes. This bounded proof does not change the accepted ROUND/TRUNCATE position
+range. There is no new JNI contract or configuration switch.
+The [runtime-precision measurements](../benchmarks/scalar-functions.md#runtime-integer-epoch-precision)
+retain stock/actual-previous/native controls, development stages and complete jobs.
 
 ## Native UTC LTZ calendar rounding
 

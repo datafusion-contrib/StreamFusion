@@ -2228,6 +2228,20 @@ final class RexExpression {
       }
       return emit(call.getOperands().get(0));
     }
+    if (!unnestOperand && nativeRuntimeEpochTimestamp(call)) {
+      var precision = (RexCall) call.getOperands().get(1);
+      add(KIND_CALL, 249, 1 + precision.getOperands().size());
+      if (call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.BIGINT) {
+        add(KIND_CAST, CAST_BIGINT, 1);
+      }
+      if (!emit(call.getOperands().get(0))) return false;
+      for (int i = 0; i < precision.getOperands().size() - 1; i += 2) {
+        if (!emit(precision.getOperands().get(i))
+            || !emitBoundedIntegralPosition(precision.getOperands().get(i + 1))) return false;
+      }
+      return emitBoundedIntegralPosition(
+          precision.getOperands().get(precision.getOperands().size() - 1));
+    }
     if (unnestOperand && isNativeUnnestTemporalCast(call)) return emitCast(call);
     if (needsTemporalFunction(call) || needsExactPower(call) || needsExactScalarFunction(call)) {
       return emitHostExpression(call, false);
@@ -4482,6 +4496,15 @@ final class RexExpression {
     return precision.signum() == 0 ? 245 : 0;
   }
 
+  private static boolean nativeRuntimeEpochTimestamp(RexCall call) {
+    return "TO_TIMESTAMP_LTZ".equals(call.getOperator().getName())
+        && call.getOperands().size() == 2
+        && SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
+        && nativeIntegralRoundingOperand(call.getOperands().get(0))
+        && call.getOperands().get(1) instanceof RexCall
+        && nativeBoundedIntegralCase(call.getOperands().get(1), value -> value == 0 || value == 3);
+  }
+
   private boolean isNativeUnnestTemporalCast(RexCall call) {
     return call.getKind() == SqlKind.CAST
         && call.getOperator()
@@ -4850,11 +4873,16 @@ final class RexExpression {
   }
 
   private static boolean nativeBoundedIntegralPosition(RexNode node) {
+    return nativeBoundedIntegralCase(node, value -> value >= -38 && value <= 38);
+  }
+
+  private static boolean nativeBoundedIntegralCase(
+      RexNode node, java.util.function.IntPredicate admitted) {
     if (node.getType().getSqlTypeName() != SqlTypeName.INTEGER) return false;
     if (node instanceof RexLiteral) {
       var position = (RexLiteral) node;
       Integer value = position.getValueAs(Integer.class);
-      return position.isNull() || value != null && value >= -38 && value <= 38;
+      return position.isNull() || value != null && admitted.test(value);
     }
     if (!(node instanceof RexCall)) return false;
     var call = (RexCall) node;
@@ -4862,9 +4890,10 @@ final class RexExpression {
         || call.getOperands().size() % 2 != 1) return false;
     for (int i = 0; i < call.getOperands().size() - 1; i += 2) {
       if (!nativeBooleanFormattingOperand(call.getOperands().get(i))
-          || !nativeBoundedIntegralPosition(call.getOperands().get(i + 1))) return false;
+          || !nativeBoundedIntegralCase(call.getOperands().get(i + 1), admitted)) return false;
     }
-    return nativeBoundedIntegralPosition(call.getOperands().get(call.getOperands().size() - 1));
+    return nativeBoundedIntegralCase(
+        call.getOperands().get(call.getOperands().size() - 1), admitted);
   }
 
   private boolean emitBoundedIntegralPosition(RexNode node) {

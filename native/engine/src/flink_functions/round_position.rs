@@ -87,13 +87,13 @@ impl ScalarUDFImpl for RoundPosition {
     }
 }
 
-enum Predicate<'a> {
+pub(super) enum Predicate<'a> {
     Constant(bool),
     Column(&'a BooleanArray),
 }
 
 impl<'a> Predicate<'a> {
-    fn new(value: &'a ColumnarValue) -> Self {
+    pub(super) fn new(value: &'a ColumnarValue) -> Self {
         match value {
             ColumnarValue::Scalar(ScalarValue::Boolean(value)) => {
                 Self::Constant(*value == Some(true))
@@ -103,7 +103,7 @@ impl<'a> Predicate<'a> {
         }
     }
 
-    fn at(&self, row: usize) -> bool {
+    pub(super) fn at(&self, row: usize) -> bool {
         match self {
             Self::Constant(value) => *value,
             Self::Column(array) => !array.is_null(row) && array.value(row),
@@ -111,13 +111,13 @@ impl<'a> Predicate<'a> {
     }
 }
 
-enum Position<'a> {
+pub(super) enum Position<'a> {
     Constant(Option<i32>),
     Column(&'a Int32Array),
 }
 
 impl<'a> Position<'a> {
-    fn new(value: &'a ColumnarValue) -> Self {
+    pub(super) fn new(value: &'a ColumnarValue) -> Self {
         match value {
             ColumnarValue::Scalar(ScalarValue::Int32(value)) => Self::Constant(*value),
             ColumnarValue::Array(array) => Self::Column(array.as_any().downcast_ref().unwrap()),
@@ -125,7 +125,7 @@ impl<'a> Position<'a> {
         }
     }
 
-    fn at(&self, row: usize) -> Option<i32> {
+    pub(super) fn at(&self, row: usize) -> Option<i32> {
         match self {
             Self::Constant(value) => *value,
             Self::Column(array) => (!array.is_null(row)).then(|| array.value(row)),

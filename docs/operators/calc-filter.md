@@ -3321,7 +3321,10 @@ by default. Direct integer epoch inputs to `TO_TIMESTAMP_LTZ` with literal preci
 0 or 3 execute in Rust; TINYINT/SMALLINT/INT widen losslessly before the existing
 BIGINT kernel. Verified integer arithmetic, widening and rounding trees also use these
 kernels in ordinary Calc; the computed child retains its resolved integer width before
-widening. Division, narrowing, unknown producers and string/formatted signatures retain
+widening. Ordinary Calc also evaluates verified runtime INT precision CASE trees through
+a batch kernel selecting seconds/milliseconds when every result is 0, 3 or NULL and conditions
+are total admitted BOOLEAN/integer trees. Arbitrary precision columns, invalid/unverified
+leaves, fallible conditions, division, narrowing, unknown producers and string/formatted signatures retain
 their existing routes, as does UNNEST admission. See the complete [temporal function inventory](temporal-functions.md).
 Direct/literal LTZ FLOOR/CEIL in fixed-zero session zones also runs in Rust for DAY/HOUR
 on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The latter three forms retain
