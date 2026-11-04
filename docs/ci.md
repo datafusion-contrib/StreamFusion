@@ -393,8 +393,11 @@ once with their original assertions and failure handling. Tests are never retrie
 their commands still use normal Maven resolution for any other artifacts requested dynamically by plugins.
 
 The download stage sets a 60-second HTTP read inactivity timeout and five transport retries
-for both [Maven 3.9's Resolver](https://maven.apache.org/resolver-archives/resolver-1.9.24/configuration.html) and the older
+for [Resolver 1.9](https://maven.apache.org/resolver-archives/resolver-1.9.24/configuration.html),
+[Resolver 2](https://maven.apache.org/resolver/configuration.html) and the older
 [Wagon transport](https://maven.apache.org/wagon/wagon-providers/wagon-http/).
+Both Resolver property families are supplied: older Maven ignores the newer names, while
+the newer hosted Maven ignores the older names. Each version uses its supported settings.
 This bounds stalled requests within the existing ten-minute setup attempt, while allowing
 connection resets to recover before restarting the dependency goal. These options apply only
 to dependency setup, not to test execution.

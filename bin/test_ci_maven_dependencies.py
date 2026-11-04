@@ -5,6 +5,7 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 from pathlib import Path
+import re
 import shutil
 import socket
 import subprocess
@@ -90,6 +91,12 @@ class MavenDependenciesTest(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("mvn"), "Maven is required for the HTTP transport integration")
     def test_http_transports_recover_five_failed_requests_within_one_setup_attempt(self):
+        version = subprocess.check_output(["mvn", "--version"], text=True)
+        print(version, flush=True)
+        match = re.search(r"Apache Maven (\d+)\.(\d+)", version)
+        self.assertIsNotNone(match, version)
+        transports = (("native", "wagon") if tuple(map(int, match.groups())) >= (3, 9)
+                      else ("wagon",))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             options = self.options()
@@ -101,7 +108,7 @@ class MavenDependenciesTest(unittest.TestCase):
                                    '<artifactId>probe</artifactId><version>1</version></project>')
             # Populate only the fixed Help goal first; fault injection then needs no public downloads.
             self.assertEqual(0, PREPARE.resolve(options))
-            for transport in ("native", "wagon"):
+            for transport in transports:
                 with self.subTest(transport=transport):
                     parent = ('<project><modelVersion>4.0.0</modelVersion><groupId>test.transport</groupId>'
                               f'<artifactId>parent</artifactId><version>{transport}</version>'
@@ -145,7 +152,8 @@ class MavenDependenciesTest(unittest.TestCase):
                             f'<url>http://127.0.0.1:{server.server_port}</url></repository></repositories></project>')
                         transport_options = [*PREPARE.TRANSPORT_OPTIONS,
                                              "-Dmaven.resolver.transport=" + transport,
-                                             "-Daether.connector.http.retryHandler.interval=1"]
+                                             "-Daether.connector.http.retryHandler.interval=1",
+                                             "-Daether.transport.http.retryHandler.interval=1"]
                         with patch.object(PREPARE, "DELAYS", ()), \
                                 patch.object(PREPARE, "TIMEOUT_SECONDS", 120), \
                                 patch.object(PREPARE, "TRANSPORT_OPTIONS", transport_options):

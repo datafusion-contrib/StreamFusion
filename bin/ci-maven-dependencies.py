@@ -16,9 +16,13 @@ MODEL_GOAL = "org.apache.maven.plugins:maven-help-plugin:3.5.1:evaluate"
 DELAYS = (5, 15)
 TIMEOUT_SECONDS = 600
 TRANSPORT_OPTIONS = [
+    # Hosted Maven and upstream wrappers span both Resolver generations and Wagon.
     "-Daether.connector.requestTimeout=60000",
     "-Daether.connector.http.retryHandler.count=5",
     "-Daether.connector.http.retryHandler.serviceUnavailable=429,500,502,503,504",
+    "-Daether.transport.http.requestTimeout=60000",
+    "-Daether.transport.http.retryHandler.count=5",
+    "-Daether.transport.http.retryHandler.serviceUnavailable=429,500,502,503,504",
     "-Dmaven.wagon.rto=60000",
     "-Dmaven.wagon.http.retryHandler.count=5",
 ]
