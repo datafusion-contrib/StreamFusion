@@ -31,7 +31,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs | Legacy proctime variant, wider schemas and commit-failure matrix |
-| [Event-time sort](../operators/event-time-sort.md#stock-compatible-canonical-interchange) | Direct single ascending-key contract and historical complete jobs | Planner consolidation, secondary sorting and wider rescale/version matrix |
+| [Event-time sort](../operators/event-time-sort.md#stock-compatible-canonical-interchange) | Automatic single ascending-rowtime contract and complete-job handoffs | Secondary sorting and wider schema/connector/failure/version matrices |
 | [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | All five stock layouts; qualified BIGINT compiled-plan jobs | Ordinary SQL, accelerated connector binding, wider types and writer rescaling |
 | [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs | Wider schemas/residuals and additional exchange/rescale combinations |
 
@@ -1348,3 +1348,20 @@ external committed effects. The arithmetic matrix includes immediate returns, na
 recovery and keyed/global rescaling with the original singleton/global constraints. Another
 32 harness-regression jobs pass. These are separate cohorts, and their exact type/mode limits
 remain on the operator page; none establishes complete connector or cross-version coverage.
+
+
+## Event-time sort submission binding (partial)
+
+Normal SQL and portable stock plans bind the released single ascending-rowtime sort contract,
+retaining its actual empty-key serializer, row schema, emission cursor, timer membership and
+maximum parallelism. The raw native buffer remains singleton; source tasks can rescale while the
+sort owner keeps the stock maximum. Canonical export visits live rows directly, and import rejects
+a populated target before installation. Allocation failure retains source entries for retry with
+a fresh native target and preserves the original memory-limit exception.
+
+The consolidated 1,533-control and separate 28-job cohorts qualify the exact shapes described in
+[event-time sort coverage](../operators/event-time-sort.md#stock-compatible-canonical-interchange).
+Both boundaries and custom stock source/committer effects remain in the complete jobs, with
+strict global output order. Native connector transaction/writer failures and wider schema/version
+matrices remain unfinished. All fifteen operator families remain partial under #569; benchmarking
+is deferred.

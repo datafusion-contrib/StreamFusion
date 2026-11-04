@@ -51,7 +51,11 @@ class CanonicalTemporalSortInteropTest {
   void pendingRowsCutoffAndOrderedPeersContinueAcrossRepeatedEngineSwitches(
       String type, boolean stockStore, boolean nativeStore, int layout, int maximum)
       throws Exception {
-    var p = new Plan(type, maximum);
+    assertInterchange(new Plan(type, maximum), stockStore, nativeStore, layout);
+  }
+
+  void assertInterchange(Plan p, boolean stockStore, boolean nativeStore, int layout)
+      throws Exception {
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
     OperatorSubtaskState original;
     List<String> expected, expectedState;
@@ -338,6 +342,10 @@ class CanonicalTemporalSortInteropTest {
     }
 
     Plan(String type, int maximum) {
+      this(type, maximum, 3, true);
+    }
+
+    Plan(String type, int maximum, int precision, boolean localZoned) {
       this.maximum = maximum;
       this.type = type;
       LogicalType payload;
@@ -372,7 +380,11 @@ class CanonicalTemporalSortInteropTest {
       }
       input =
           RowType.of(
-              new LogicalType[] {new BigIntType(), payload, new LocalZonedTimestampType(3)},
+              new LogicalType[] {
+                new BigIntType(),
+                payload,
+                localZoned ? new LocalZonedTimestampType(precision) : new TimestampType(precision)
+              },
               new String[] {
                 "id",
                 type.equals("reserved") ? RowDataArrowConverter.ROW_KIND_COLUMN : "value",

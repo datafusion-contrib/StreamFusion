@@ -155,7 +155,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_importTemporalSortCanonical
         let sorter = unsafe { &mut *(handle as *mut TemporalSorter) };
         let result = sorter.import_canonical_rows(import_record_batch(array, schema));
         if let Err(error) = result {
-            let _ = env.throw_new("java/lang/IllegalArgumentException", error.to_string());
+            if matches!(error, DataFusionError::ResourcesExhausted(_)) {
+                throw_memory_limit(&mut env, &error.to_string());
+            } else {
+                let _ = env.throw_new("java/lang/IllegalArgumentException", error.to_string());
+            }
         }
     });
 }
@@ -291,5 +295,30 @@ mod tests {
             .is_err());
         assert_eq!(rows(&op), before);
         assert_eq!(op.flush(i64::MAX).unwrap().num_rows(), 3);
+    }
+
+    #[test]
+    fn denied_canonical_import_keeps_the_source_available_for_a_fresh_target() {
+        let mut source = TemporalSorter::new(1).with_memory_budget(1 << 24).unwrap();
+        source
+            .import_canonical_rows(batch((0..2050).map(|i| 100 + i % 7).collect()))
+            .unwrap();
+        let original = rows(&source);
+        let mut denied = TemporalSorter::new(1).with_memory_budget(64).unwrap();
+        assert!(matches!(
+            denied.import_canonical_rows(original[0].clone()),
+            Err(DataFusionError::ResourcesExhausted(_))
+        ));
+        drop(denied);
+        assert_eq!(rows(&source), original);
+        let mut retry = TemporalSorter::new(1).with_memory_budget(1 << 24).unwrap();
+        retry.import_canonical_cutoff(source.last_emitted).unwrap();
+        for chunk in original {
+            retry.import_canonical_rows(chunk).unwrap();
+        }
+        assert_eq!(
+            source.flush(i64::MAX).unwrap(),
+            retry.flush(i64::MAX).unwrap()
+        );
     }
 }

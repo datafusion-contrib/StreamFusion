@@ -272,6 +272,7 @@ final class StockCompiledPlanLowering {
     return nodes.stream()
         .anyMatch(
             node -> {
+              if (node instanceof NativeTemporalSortExecNode) return true;
               if (node instanceof NativeColumnarTopNExecNode)
                 return ((NativeColumnarTopNExecNode) node).hasUniqueRowKeyState()
                     || ((NativeColumnarTopNExecNode) node).hasRetractingState();
@@ -284,6 +285,7 @@ final class StockCompiledPlanLowering {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
     for (ExecNode<?> node : nodes) {
+      if (node instanceof NativeTemporalSortExecNode) return false;
       if (node instanceof NativeOverAggExecNode
           && ((NativeOverAggExecNode) node).hasStockArithmeticState()) return false;
       if (ordinaryHelper(node)) continue;
@@ -588,6 +590,10 @@ final class StockCompiledPlanLowering {
         && nativeKeyedState
         && NativeConfig.operatorEnabled("changelogNormalize")) result = lowerNormalize(node);
     else if (node
+            instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecTemporalSort
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("temporalSort")) result = lowerTemporalSort(node);
+    else if (node
             instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecOverAggregate
         && nativeKeyedState
         && NativeConfig.operatorEnabled("over")) result = lowerOver(node);
@@ -601,6 +607,70 @@ final class StockCompiledPlanLowering {
         && NativeConfig.operatorEnabled("topN")) result = lowerRank(node);
     lowered.put(node, result);
     return result;
+  }
+
+  private ExecNode<?> lowerTemporalSort(ExecNode<?> stock) throws IOException {
+    var transformation = stockTransformations.get(stock.getId());
+    if (!(transformation instanceof OneInputTransformation)) return stock;
+    var original = (OneInputTransformation<?, ?>) transformation;
+    if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)
+        || !(original.getStateKeySelector()
+            instanceof org.apache.flink.table.runtime.keyselector.EmptyRowDataKeySelector)
+        || original.getParallelism() != 1) return stock;
+    var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
+    if (operator.getClass()
+        != org.apache.flink.table.runtime.operators.sort.RowTimeSortOperator.class) return stock;
+    var spec =
+        reader
+            .forType(org.apache.flink.table.planner.plan.nodes.exec.spec.SortSpec.class)
+            .<org.apache.flink.table.planner.plan.nodes.exec.spec.SortSpec>readValue(
+                definitions.get(stock.getId()).path("orderBy"));
+    if (spec.getFieldSize() != 1 || !spec.getFieldSpec(0).getIsAscendingOrder()) return stock;
+    var input = stock.getInputEdges().get(0).getSource();
+    var inputType = (RowType) input.getOutputType();
+    int time = spec.getFieldSpec(0).getFieldIndex();
+    if (time < 0
+        || time >= inputType.getFieldCount()
+        || !LogicalTypeChecks.isRowtimeAttribute(inputType.getTypeAt(time))
+        || LogicalTypeChecks.getPrecision(inputType.getTypeAt(time)) > 3
+        || !RowDataArrowConverter.supports(inputType)
+        || !inputType.equals(stock.getOutputType())
+        || (int) releasedField(operator, "rowTimeIdx") != time
+        || releasedField(operator, "gComparator") != null) return stock;
+    var retained =
+        (org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>)
+            releasedField(operator, "inputRowType");
+    if (!inputType.equals(retained.toRowType())) return stock;
+    var config = new Configuration(planner.getTableConfig().getConfiguration());
+    ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
+    if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
+        || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
+      return stock;
+    @SuppressWarnings("unchecked")
+    TypeSerializer<RowData> serializer =
+        (TypeSerializer<RowData>)
+            original
+                .getStateKeyType()
+                .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
+    var contract =
+        new tech.streamfusion.state.StockTemporalSortStateContract(serializer, inputType, time);
+    int maximum = stockMaximum(original);
+    var sort =
+        new NativeTemporalSortExecNode(
+            config,
+            InputProperty.DEFAULT,
+            (RowType) stock.getOutputType(),
+            "NativeTemporalSort",
+            time,
+            maximum);
+    connect(arrowInput(input, config, inputType, false), sort);
+    bindings.put(sort, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
+    columnar.add(sort);
+    var exit =
+        new ArrowToRowDataExecNode(
+            config, InputProperty.DEFAULT, (RowType) stock.getOutputType(), "ArrowToRowData");
+    connect(sort, exit);
+    return exit;
   }
 
   private ExecNode<?> lowerOver(ExecNode<?> stock) throws IOException {

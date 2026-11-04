@@ -475,6 +475,38 @@ public final class CanonicalJobWorker {
             root.resolve(stage + "-global-singleton-verified"),
             "aggregate=1/1,source=" + parallelism + ",sink=1");
       }
+      if (Files.exists(root.resolve("singleton-owner"))) {
+        String family = Files.readString(root.resolve("singleton-owner")).trim();
+        var execution = cluster.getExecutionGraph(job.getJobID()).get(5, TimeUnit.SECONDS);
+        var owners =
+            execution.getAllVertices().values().stream()
+                .filter(vertex -> vertex.getName().contains(family))
+                .collect(java.util.stream.Collectors.toList());
+        var sources =
+            execution.getAllVertices().values().stream()
+                .filter(vertex -> vertex.getName().startsWith("Source:"))
+                .collect(java.util.stream.Collectors.toList());
+        var sinks =
+            execution.getAllVertices().values().stream()
+                .filter(
+                    vertex ->
+                        vertex.getName().contains("Sink:")
+                            || vertex.getName().contains("output_table")
+                                && (vertex.getName().contains(": Writer")
+                                    || vertex.getName().contains(": Committer")))
+                .collect(java.util.stream.Collectors.toList());
+        if (owners.size() != 1
+            || owners.get(0).getParallelism() != 1
+            || owners.get(0).getMaxParallelism() <= 0
+            || sources.size() != 1
+            || sources.get(0).getParallelism() != parallelism
+            || sinks.isEmpty()
+            || sinks.stream().anyMatch(vertex -> vertex.getParallelism() != 1))
+          throw new AssertionError("Singleton fixture topology mismatch: " + family);
+        Files.writeString(
+            root.resolve(stage + "-singleton-verified"),
+            Integer.toString(owners.get(0).getMaxParallelism()));
+      }
       if (nativeRun
           && limit > restoredLimit
           && !Files.exists(witness)
@@ -515,7 +547,10 @@ public final class CanonicalJobWorker {
                   .count();
           int expectedTasks =
               (Files.exists(root.resolve("global-aggregate")) && family.equals("GroupAgg")
-                      || Files.exists(root.resolve("global-over")) && family.equals("OverAgg"))
+                      || Files.exists(root.resolve("global-over")) && family.equals("OverAgg")
+                      || Files.exists(root.resolve("singleton-owner"))
+                          && family.equals(
+                              Files.readString(root.resolve("singleton-owner")).trim()))
                   ? 1
                   : parallelism;
           if (activeTasks != expectedTasks)
@@ -642,7 +677,8 @@ public final class CanonicalJobWorker {
       throws IOException {
     if (Files.exists(root.resolve("rescale-materializer"))
         || (Files.exists(root.resolve("global-aggregate"))
-                || Files.exists(root.resolve("global-over")))
+                || Files.exists(root.resolve("global-over"))
+                || Files.exists(root.resolve("singleton-owner")))
             && Files.exists(root.resolve("rescale"))) parallelism = "";
     Path columnsFile = root.resolve(name + "-columns.sql");
     if (!Files.exists(columnsFile)) columnsFile = root.resolve("input-columns.sql");

@@ -229,6 +229,20 @@ public final class StockTemporalSortStateContract implements StockStateContract 
     if (!armed.equals(saved.keySet()))
       throw new IllegalArgumentException(
           "Temporal sort pending timers disagree with input buckets");
+    if (Native.temporalSortCanonicalCutoff(handle).length != 0)
+      throw new IllegalStateException("Temporal sort import requires an empty target");
+    Native.exportTemporalSortCanonicalRows(
+        handle,
+        (arrayAddress, schemaAddress) -> {
+          try (var array = ArrowArray.wrap(arrayAddress);
+              var schema = ArrowSchema.wrap(schemaAddress);
+              var root =
+                  Data.importVectorSchemaRoot(
+                      NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
+            if (root.getRowCount() != 0)
+              throw new IllegalStateException("Temporal sort import requires an empty target");
+          }
+        });
     Native.importTemporalSortCanonicalCutoff(
         handle, cutoff == null ? new long[0] : new long[] {cutoff});
     var chunk = new ArrayList<RowData>(1024);
