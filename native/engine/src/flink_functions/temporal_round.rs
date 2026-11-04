@@ -1,12 +1,13 @@
 use arrow::array::{Array, ArrayRef, BooleanArray, Int64Array};
 use arrow::datatypes::DataType;
-use datafusion::common::{exec_err, Result};
+use datafusion::common::{exec_err, Result, ScalarValue};
 use datafusion::logical_expr::{
     ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
 };
 use std::sync::Arc;
 use streamfusion_bridge::timestamp::{
-    is_timestamp, timestamp_array, timestamp_type, TimestampColumn, TimestampValue,
+    is_timestamp, timestamp_array, timestamp_type, TimestampBuilder, TimestampColumn,
+    TimestampValue,
 };
 
 pub(crate) fn function() -> ScalarUDF {
@@ -92,7 +93,66 @@ impl ScalarUDFImpl for TemporalRound {
         Ok(timestamp_type())
     }
     fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        // Fixed SQL widths expose constant division without broadcasting two scalar columns.
+        if let [ColumnarValue::Array(values), ColumnarValue::Scalar(ScalarValue::Int64(Some(width))), ColumnarValue::Scalar(ScalarValue::Boolean(Some(ceiling)))] =
+            args.args.as_slice()
+        {
+            let result = match *width {
+                1 => Some(round_fixed::<1>(values, *ceiling)),
+                1_000 => Some(round_fixed::<1_000>(values, *ceiling)),
+                60_000 => Some(round_fixed::<60_000>(values, *ceiling)),
+                3_600_000 => Some(round_fixed::<3_600_000>(values, *ceiling)),
+                86_400_000 => Some(round_fixed::<86_400_000>(values, *ceiling)),
+                _ => None,
+            };
+            if let Some(result) = result {
+                return result.map(ColumnarValue::Array);
+            }
+        }
         datafusion::functions::utils::make_scalar_function(round, vec![])(&args.args)
+    }
+}
+
+fn round_fixed<const WIDTH: i64>(values: &ArrayRef, ceiling: bool) -> Result<ArrayRef> {
+    if ceiling {
+        round_fixed_values::<WIDTH, true>(values)
+    } else {
+        round_fixed_values::<WIDTH, false>(values)
+    }
+}
+
+fn round_fixed_values<const WIDTH: i64, const CEILING: bool>(
+    values: &ArrayRef,
+) -> Result<ArrayRef> {
+    let timestamps = TimestampColumn::try_new(values.as_ref())?;
+    let mut result = TimestampBuilder::with_capacity(timestamps.len());
+    for row in 0..timestamps.len() {
+        if timestamps.is_null(row) {
+            result.append_null();
+        } else {
+            result.append_value(TimestampValue::from_millis(rounded_millis(
+                timestamps.value(row)?,
+                WIDTH,
+                CEILING,
+            )));
+        }
+    }
+    Ok(Arc::new(result.finish()))
+}
+
+#[inline]
+fn rounded_millis(value: TimestampValue, width: i64, ceiling: bool) -> i64 {
+    let millis = value.millis();
+    if width == 1 {
+        millis.wrapping_add(i64::from(ceiling && value.nano_of_milli() != 0))
+    } else {
+        // Released plain TIMESTAMP CEIL adds before floor, with Java long overflow.
+        let value = if ceiling {
+            millis.wrapping_add(width - 1)
+        } else {
+            millis
+        };
+        value.wrapping_sub(value.rem_euclid(width))
     }
 }
 
@@ -100,10 +160,10 @@ fn round(arrays: &[ArrayRef]) -> Result<ArrayRef> {
     let timestamps = TimestampColumn::try_new(arrays[0].as_ref())?;
     let widths = arrays[1].as_any().downcast_ref::<Int64Array>().unwrap();
     let ceilings = arrays[2].as_any().downcast_ref::<BooleanArray>().unwrap();
-    let mut result = Vec::with_capacity(timestamps.len());
+    let mut result = TimestampBuilder::with_capacity(timestamps.len());
     for row in 0..timestamps.len() {
         if timestamps.is_null(row) || widths.is_null(row) || ceilings.is_null(row) {
-            result.push(None);
+            result.append_null();
             continue;
         }
         let value = timestamps.value(row)?;
@@ -111,23 +171,13 @@ fn round(arrays: &[ArrayRef]) -> Result<ArrayRef> {
         if width <= 0 {
             return exec_err!("Temporal rounding width must be positive");
         }
-        let millis = value.millis();
-        let ceiling = ceilings.value(row);
-        let rounded = if width == 1 {
-            millis.wrapping_add(i64::from(ceiling && value.nano_of_milli() != 0))
-        } else {
-            // SqlFunctionUtils.ceil(long, long) adds width - 1 before floor, with Java
-            // overflow. Fractions are ignored except when rounding to MILLISECOND itself.
-            let value = if ceiling {
-                millis.wrapping_add(width - 1)
-            } else {
-                millis
-            };
-            value.wrapping_sub(value.rem_euclid(width))
-        };
-        result.push(Some(TimestampValue::from_millis(rounded)));
+        result.append_value(TimestampValue::from_millis(rounded_millis(
+            value,
+            width,
+            ceilings.value(row),
+        )));
     }
-    Ok(Arc::new(timestamp_array(result)))
+    Ok(Arc::new(result.finish()))
 }
 
 #[cfg(test)]
@@ -135,6 +185,103 @@ mod tests {
     use super::*;
     use arrow::datatypes::Field;
     use datafusion::common::{config::ConfigOptions, ScalarValue};
+
+    #[test]
+    fn fixed_scalar_dispatch_matches_array_rounding_at_extrema_nulls_and_slices() {
+        let millis = [i64::MIN, i64::MAX, -1001, -1, 0, 1, 999, 1000, 1001];
+        let input: ArrayRef = Arc::new(timestamp_array((0..137).map(|i| {
+            (i % 7 != 0).then(|| TimestampValue::new(millis[i % millis.len()], 999_999).unwrap())
+        })));
+        for offset in [0, 1, 7, 65] {
+            for len in [0, 1, 65] {
+                let input = input.slice(offset, len);
+                for width in [
+                    None,
+                    Some(1),
+                    Some(1000),
+                    Some(60_000),
+                    Some(3_600_000),
+                    Some(86_400_000),
+                    Some(17),
+                ] {
+                    for ceiling in [None, Some(false), Some(true)] {
+                        let expected = round(&[
+                            input.clone(),
+                            Arc::new(Int64Array::from(vec![width; len])),
+                            Arc::new(BooleanArray::from(vec![ceiling; len])),
+                        ])
+                        .unwrap();
+                        let actual = function()
+                            .invoke_with_args(ScalarFunctionArgs {
+                                args: vec![
+                                    ColumnarValue::Array(input.clone()),
+                                    ColumnarValue::Scalar(ScalarValue::Int64(width)),
+                                    ColumnarValue::Scalar(ScalarValue::Boolean(ceiling)),
+                                ],
+                                number_rows: len,
+                                return_field: Arc::new(Field::new(
+                                    "result",
+                                    timestamp_type(),
+                                    true,
+                                )),
+                                arg_fields: vec![],
+                                config_options: Arc::new(ConfigOptions::default()),
+                            })
+                            .unwrap()
+                            .into_array(len)
+                            .unwrap();
+                        assert_eq!(actual.as_ref(), expected.as_ref());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fixed_round_builder_keeps_sliced_parent_nulls_and_fraction_rules() {
+        let millis = [-1, 0, 1, 999, 1000, 1001];
+        for ceiling in [false, true] {
+            for width in [1, 1000] {
+                let expected = match (ceiling, width) {
+                    (false, 1) => [-1, 0, 1, 999, 1000, 1001],
+                    (true, 1) => [0, 1, 2, 1000, 1001, 1002],
+                    (false, _) => [-1000, 0, 0, 0, 1000, 1000],
+                    (true, _) => [0, 0, 1000, 1000, 1000, 2000],
+                };
+                let input =
+                    timestamp_array((0..137).map(|i| {
+                        (i % 7 != 0).then(|| TimestampValue::new(millis[i % 6], 1).unwrap())
+                    }));
+                let widths =
+                    Int64Array::from_iter((0..137).map(|i| (i % 11 != 0).then_some(width)));
+                let ceilings =
+                    BooleanArray::from_iter((0..137).map(|i| (i % 13 != 0).then_some(ceiling)));
+                for offset in [0, 1, 7, 65] {
+                    for len in [0, 1, 65] {
+                        let result = round(&[
+                            Arc::new(input.slice(offset, len)),
+                            Arc::new(widths.slice(offset, len)),
+                            Arc::new(ceilings.slice(offset, len)),
+                        ])
+                        .unwrap();
+                        assert_eq!(result.data_type(), &timestamp_type());
+                        let result = TimestampColumn::try_new(result.as_ref()).unwrap();
+                        for row in 0..len {
+                            let i = row + offset;
+                            let null = i % 7 == 0 || i % 11 == 0 || i % 13 == 0;
+                            assert_eq!(result.is_null(row), null);
+                            if !null {
+                                assert_eq!(
+                                    result.value(row).unwrap(),
+                                    TimestampValue::from_millis(expected[i % 6])
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn utc_ltz_ceil_accepts_component_and_primitive_timestamp_inputs_without_coercion() {

@@ -18,6 +18,7 @@ import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.RowType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.Test;
 import tech.streamfusion.compat.FlinkCompat;
 import tech.streamfusion.planner.NativePlanner;
@@ -57,8 +58,29 @@ class FlinkUtcLtzFixedFloorSqlHarnessTest {
     return table;
   }
 
+  @ParameterizedTest
+  @ValueSource(ints = {0, 3, 9})
+  void plainTimestampScalarWidthsKeepFractionsOverflowAndNativeConsumption(int precision)
+      throws Exception {
+    var outputs = new ArrayList<String>();
+    for (String unit : List.of("DAY", "HOUR", "MINUTE", "SECOND", "MILLISECOND")) {
+      outputs.add("FLOOR(ts TO " + unit + ")");
+      outputs.add("CEIL(ts TO " + unit + ")");
+    }
+    String sql = "SELECT id," + String.join(",", outputs) + " FROM src";
+    for (String zone : List.of("UTC", "America/New_York")) {
+      verify(zone, precision, sql, true);
+      verify(zone, precision, sql + " WHERE id<0", true);
+    }
+  }
+
   private static void verify(String zone, int precision, String sql) throws Exception {
-    var type = ROW(FIELD("id", INT().notNull()), FIELD("ts", TIMESTAMP_LTZ(precision)));
+    verify(zone, precision, sql, false);
+  }
+
+  private static void verify(String zone, int precision, String sql, boolean plain) throws Exception {
+    var type = ROW(FIELD("id", INT().notNull()),
+        FIELD("ts", plain ? TIMESTAMP(precision) : TIMESTAMP_LTZ(precision)));
     long[] millis = {Long.MIN_VALUE, Long.MIN_VALUE + 1, Long.MIN_VALUE + 86400000,
         -62135596800000L, -12219292800000L, -2208988800000L,
         -86400001, -86400000, -86399999, -3600001, -3600000, -3599999,
@@ -96,7 +118,7 @@ class FlinkUtcLtzFixedFloorSqlHarnessTest {
           assertEquals(expected, actual, zone + " " + precision);
           assertTrue(scan.fallbackReasons().isEmpty(), scan.explainSummary());
           assertFalse(scan.functionExecutions().isEmpty(), scan.explainSummary());
-          boolean pure = ZoneId.of(zone).normalized().equals(java.time.ZoneOffset.UTC);
+          boolean pure = plain || ZoneId.of(zone).normalized().equals(java.time.ZoneOffset.UTC);
           assertEquals(pure, scan.functionExecutions().stream().allMatch(s -> s.contains("jvm=[]")),
               scan.explainSummary());
           RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");

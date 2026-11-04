@@ -18,7 +18,7 @@ unsupported `MATCH_RECOGNIZE` operator.
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
 | `TIMESTAMPADD`, `TIMESTAMPDIFF` | Planner rewrites can use native interval arithmetic and comparisons. Verified runtime MONTH/DAY addition, MONTH difference and LTZ SECOND difference have no generated children; other rewrites retain their existing expression admission. Month-end and precision rules follow Flink. |
-| `FLOOR(timepoint TO unit)`, `CEIL`, `CEILING` | DATE/plain-TIMESTAMP MONTH/YEAR and plain TIMESTAMP DAY/HOUR/MINUTE/SECOND/MILLISECOND use Rust kernels. Direct/literal LTZ FLOOR/CEIL to MONTH/YEAR also uses the existing kernel in fixed zero-offset zones. In the same zones, direct/literal LTZ FLOOR/CEIL uses Rust for DAY/HOUR on both releases and MINUTE/SECOND/MILLISECOND on 2.2; LTZ CEIL has its own remainder/overflow kernel. Released 1.18 cannot compile those three sub-hour LTZ forms; its failure stays intact. Nonzero/regional zones, computed inputs and other units retain their existing routes. Numeric FLOOR/CEIL admission is unchanged. |
+| `FLOOR(timepoint TO unit)`, `CEIL`, `CEILING` | DATE/plain-TIMESTAMP MONTH/YEAR and plain TIMESTAMP DAY/HOUR/MINUTE/SECOND/MILLISECOND use Rust kernels. Direct/literal LTZ FLOOR/CEIL to MONTH/YEAR also uses the existing kernel in fixed zero-offset zones. In the same zones, direct/literal LTZ FLOOR/CEIL uses Rust for DAY/HOUR on both releases and MINUTE/SECOND/MILLISECOND on 2.2; LTZ CEIL has its own remainder/overflow kernel. FLOOR also accepts the verified total integer epoch producers described below. Released 1.18 cannot compile those three sub-hour LTZ forms; its failure stays intact. Nonzero/regional zones, other computed inputs and other units retain their existing routes. Numeric FLOOR/CEIL admission is unchanged. |
 | Temporal `CAST`, date/time/timestamp/interval literals, interval arithmetic, temporal comparisons, `OVERLAPS` | Timestamp +/- day-time/year-month intervals, DATE +/- month intervals and verified day literals, and TIME +/- day-time intervals execute in Rust. Timestamp results preserve nanoseconds. Matching temporal GREATEST/LEAST operands use native null-propagating comparisons. OVERLAPS can rewrite to native comparisons, including the verified runtime plain-timestamp/day-time-interval form. Other casts, comparisons and interval computations retain their existing expression admission. |
 | `CURRENT_WATERMARK(time_attribute)` | Calc projections and predicates read the last watermark received by that operator; NULL before its first watermark. Join/UNNEST residuals without a Calc watermark context fall back. |
 | `SOURCE_WATERMARK()` | Source declaration, not a scalar calculation. Existing DataStream/source watermarks are forwarded into the native pipeline. Native connector scan admission is unchanged. |
@@ -93,7 +93,7 @@ Ordinary Calc also accepts verified integer trees as the first operand of
 `TO_TIMESTAMP_LTZ(...,0)` or `(...,3)`: integer addition/subtraction/multiplication,
 lossless widening, identity FLOOR/CEIL/ROUND, verified literal-position ROUND/TRUNCATE
 (-38 through 38 or NULL), and bounded runtime-position ROUND/TRUNCATE. The latter accepts only
-failure-free CASE conditions and literal/CASE results proven in that same range or NULL;
+total CASE and verified GREATEST/LEAST clamp trees proven in that same range or NULL;
 see the [ROUND contract](calc-filter.md#integer-round-with-a-bounded-runtime-position) and
 [INT/BIGINT TRUNCATE subset](calc-filter.md#integer-truncate-with-a-bounded-runtime-position).
 Every child must satisfy the same
@@ -153,7 +153,7 @@ does not qualify. Released Flink adds/subtracts no offset in these zones and use
 Julian-date arithmetic, including signed millisecond division, int overflow and the Gregorian
 cutover. Output fractions are zero and the declared SQL precision is retained.
 
-Computed inputs and nonzero/regional zones keep their existing paths; fixed-unit
+Computed inputs outside the verified FLOOR subset below and nonzero/regional zones keep their existing paths; fixed-unit
 rounding has the separate verified subsets below.
 In particular, fixed-unit LTZ CEIL has different submillisecond/overflow behavior from plain
 TIMESTAMP CEIL, so the plain kernel is not a blanket replacement. Calendar admission adds
@@ -175,7 +175,9 @@ With zero offset, Flink floors the signed millisecond field using Java remainder
 wrapping subtraction, and resets fractional nanoseconds to zero even for MILLISECOND.
 The existing Rust kernel has the same floor behavior, including full signed-long
 extrema; timestamp schema, declared precision and NULLs are unchanged. The extension
-changes no production Rust kernel, JNI contract or transport. Computed operands and
+adds no new SQL kernel, JNI contract or transport. The existing fixed-width kernel writes
+directly to capacity-sized timestamp component buffers instead of collecting and splitting
+a temporary result vector; arithmetic and validity semantics are unchanged. Computed operands outside the verified FLOOR subset below and
 nonzero/regional zones retain their preceding routes. LTZ CEIL ignores fractional nanos
 and uses different overflow arithmetic from plain TIMESTAMP CEIL; its separate kernel
 below preserves those rules.
@@ -204,6 +206,33 @@ use the existing timestamp helpers and return the normal component timestamp sch
 No JNI, transport, dependency or configuration switch changes.
 The [fixed-unit CEIL qualification](../benchmarks/scalar-functions.md#utc-ltz-fixed-unit-ceil)
 records bulk improvements and the slower tiny/complete-job controls.
+
+## Native UTC FLOOR over integer epochs
+
+In ordinary Calc, UTC LTZ FLOOR also accepts genuine built-in `TO_TIMESTAMP_LTZ` calls
+whose integer operand satisfies the existing total integer producer proof. Precision must
+be literal 0/3 or satisfy the separate runtime CASE proof for 0/3/NULL. Supported units
+are YEAR/MONTH/DAY/HOUR on both releases and MINUTE/SECOND/MILLISECOND on 2.2. For example:
+
+```sql
+SELECT FLOOR(TO_TIMESTAMP_LTZ(n, 3) TO DAY) FROM src;
+```
+
+The existing integer, epoch and rounding kernels compose without a JVM callback.
+Integer computation retains its resolved width before widening, epoch bounds are checked
+in the original unit, NULL epoch/precision produces NULL, and the result keeps the declared
+LTZ precision. Built-in identity is checked against each released planner API; a catalog
+UDF named TO_TIMESTAMP_LTZ cannot acquire this proof. The zero-offset zone restriction
+uses normalized rules, so a regional zone whose current offset happens to be zero is
+insufficient. Fixed-unit rounding uses the existing capacity-sized timestamp builder to
+avoid a temporary vector and repeated result-buffer growth. The arithmetic, JNI boundary,
+timestamp transport and configuration remain unchanged.
+
+Computed CEIL, nonzero/regional zones, arbitrary or invalid precision, narrowing,
+division/remainder, unknown/stateful producers and other computed timestamp expressions
+retain their preceding routes. Lazy failing branches and empty batches keep their
+existing semantics. The [qualification](../benchmarks/scalar-functions.md#utc-floor-over-integer-epochs)
+records stock/actual-previous/native results and conversion-inclusive complete jobs.
 
 ## Native FROM_UNIXTIME
 
@@ -279,8 +308,8 @@ both row/Arrow transposes, are on the [scalar benchmark page](../benchmarks/scal
 ## Remaining native boundaries
 
 [Issue #504](https://github.com/datafusion-contrib/StreamFusion/issues/504) still tracks
-LTZ rounding outside the direct/literal fixed-zero calendar/fixed-unit subsets above and
-recurring-DST LTZ extraction. Nonzero/regional zones, computed inputs and unverified units
+LTZ rounding outside the direct/literal and verified computed FLOOR fixed-zero subsets above and
+recurring-DST LTZ extraction. Nonzero/regional zones, other computed inputs and unverified units
 retain generated rounding; fixed-zero DAY/HOUR and release-supported sub-hour forms no
 longer require it. MONTH/YEAR rounding in nonzero/regional zones also retains it.
 America/New_York extraction retains it because the zone has recurring future DST transitions.

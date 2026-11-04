@@ -4496,11 +4496,7 @@ final class RexExpression {
     if (call.getOperands().size() != 2 || !(call.getOperands().get(1) instanceof RexLiteral))
       return false;
     SqlTypeName input = call.getOperands().get(0).getType().getSqlTypeName();
-    boolean utcLtz = input == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
-        && (call.getOperands().get(0) instanceof RexInputRef
-            || call.getOperands().get(0) instanceof RexLiteral)
-        && sessionZoneId != null
-        && java.time.ZoneId.of(sessionZoneId).normalized().equals(java.time.ZoneOffset.UTC);
+    boolean utcLtz = nativeUtcRoundOperand(call);
     return (input == SqlTypeName.DATE || input == SqlTypeName.TIMESTAMP || utcLtz)
         && java.util.Set.of("MONTH", "YEAR")
             .contains(String.valueOf(((RexLiteral) call.getOperands().get(1)).getValue()));
@@ -4524,6 +4520,26 @@ final class RexExpression {
         && nativeIntegralRoundingOperand(call.getOperands().get(0))
         && call.getOperands().get(1) instanceof RexCall
         && nativeBoundedIntegralCase(call.getOperands().get(1), value -> value == 0 || value == 3);
+  }
+
+  private boolean nativeUtcRoundOperand(RexCall call) {
+    RexNode operand = call.getOperands().get(0);
+    return operand.getType().getSqlTypeName() == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+        && sessionZoneId != null
+        && java.time.ZoneId.of(sessionZoneId).normalized().equals(java.time.ZoneOffset.UTC)
+        && (operand instanceof RexInputRef
+            || operand instanceof RexLiteral
+            || !unnestOperand && call.getKind() == SqlKind.FLOOR
+                && nativeTotalEpochTimestamp(operand));
+  }
+
+  private static boolean nativeTotalEpochTimestamp(RexNode node) {
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    return tech.streamfusion.compat.FlinkCompat.isBuiltinEpochTimestamp(call.getOperator())
+        && (nativeEpochTimestamp(call) != 0
+                && nativeIntegralRoundingOperand(call.getOperands().get(0))
+            || nativeRuntimeEpochTimestamp(call));
   }
 
   private boolean isNativeUnnestTemporalCast(RexCall call) {
@@ -5405,10 +5421,7 @@ final class RexExpression {
       return -1;
     }
     RexNode operand = call.getOperands().get(0);
-    boolean utcLtz = operand.getType().getSqlTypeName() == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
-        && (operand instanceof RexInputRef || operand instanceof RexLiteral)
-        && sessionZoneId != null
-        && java.time.ZoneId.of(sessionZoneId).normalized().equals(java.time.ZoneOffset.UTC);
+    boolean utcLtz = nativeUtcRoundOperand(call);
     if (operand.getType().getSqlTypeName() != SqlTypeName.TIMESTAMP && !utcLtz) return -1;
     RexLiteral unit = ((RexLiteral) unitCandidate);
     if (utcLtz && !tech.streamfusion.compat.FlinkCompat.supportsSubHourLtzRounding()

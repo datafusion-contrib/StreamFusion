@@ -135,6 +135,11 @@ public final class IntegralExpressionBenchmarkFunctions {
       throw new IllegalStateException("Unexpected encoder route: " + encoded.jvmFunctionCalls());
     if (!previous && encoded.nativeFunctionCalls().isEmpty())
       throw new IllegalStateException("Expected the intended native function before constant folding");
+    String requiredFunction = System.getenv("SF_INTEGRAL_REQUIRED_FUNCTION");
+    if (requiredFunction != null && !(previous ? encoded.jvmFunctionCalls()
+        : encoded.nativeFunctionCalls()).contains(requiredFunction))
+      throw new IllegalStateException("Missing intended function " + requiredFunction
+          + ": native=" + encoded.nativeFunctionCalls() + ", jvm=" + encoded.jvmFunctionCalls());
     binding = encoded.udfBinding();
     long[] constants = binding.bind(encoded.longs(), context);
     return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of(

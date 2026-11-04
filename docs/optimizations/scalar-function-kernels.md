@@ -1494,3 +1494,17 @@ wrapping, all six narrowing pairs, sliced/empty/shared NULL buffers, scalar mate
 input immutability and shared ARRAY casts. Initial losing controls, tiny batches, separate
 DECIMAL controls, independent previous stock fallback and conversion-inclusive jobs remain
 in the [full qualification](../benchmarks/scalar-functions.md#integer-try_cast).
+
+## Compose verified epoch rounding
+
+Verified UTC FLOOR also keeps the integer epoch conversion and timestamp round in
+Arrow instead of materializing the nested temporal result through a generated evaluator.
+A total producer/precision proof and released built-in identity allow the existing kernels
+to compose; fixed-unit results write directly to a capacity-sized Arrow timestamp builder,
+avoiding temporary Option vectors and repeated component-buffer growth. Specializing the
+five verified scalar widths avoids runtime division and scalar-column broadcasts;
+nonzero/regional zones and unverified inputs keep Flink. All 32 prepared
+bulk cells beat stock by 1.017-1.985x and previous by
+2.552-5.131x. All tiny controls and six complete jobs, including their
+remaining losses and both transposes, are retained in the
+[computed-epoch FLOOR qualification](../benchmarks/scalar-functions.md#utc-floor-over-integer-epochs).

@@ -9599,3 +9599,104 @@ Use the existing release `integral_expression` example with, for example,
 width/NULL/layout/batch and candidate or actual preceding encoder on its classpath.
 `IntegralExpressionPipelineBenchmark` uses the same expression through `sf.integral.expression`;
 previous controls set `sf.integral.previous=true`. Records retain exact hashes/settings.
+
+## UTC FLOOR over integer epochs
+
+`FLOOR(TO_TIMESTAMP_LTZ(n,p) TO unit)` composes the existing Rust integer, epoch
+and rounding kernels in fixed-zero session zones, after proving the genuine built-in
+conversion and total integer/precision producers. YEAR/MONTH/DAY/HOUR qualify on both
+released lines; smaller verified units remain 2.2-only. Other zones, fallible/unverified
+inputs and invalid precision keep their correct preceding routes. See the
+[coverage contract](../operators/temporal-functions.md#native-utc-floor-over-integer-epochs).
+The fixed-unit FLOOR kernel now writes directly to the existing capacity-sized timestamp
+builder. This removes a temporary result vector and repeated growth/splitting, while
+retaining Flink arithmetic and the existing JNI/transport/configuration contracts.
+
+The final matrix passes **348 fresh JVM invocations** with zero skips across
+released Flink 1.18.1/2.2.1 and JDK 11/17, targeting Java 11. Full 5,003-row maps/schema
+cover all signed integer widths, NULLs, epoch limits, wrapping arithmetic, runtime 0/3/NULL
+precision, YEAR/NULL consumers, three zero-zone aliases and all-filtered batches. Direct
+LTZ FLOOR/CEIL, nanoseconds and released unsupported sub-hour forms are revalidated.
+Catalog functions and fallible/unknown producers retain their existing contracts. Four
+unchanged released `testTemporalFloor` stock-oracle invocations pass separately.
+Actual preceding encoder `b6cccbf1` matches each positive invocation's
+first complete map/schema before the intended pure-route assertion fails. Subsequent
+queries in those failing invocations are not reached. Admitted SQL consumes NativeCalc
+with no fallback and empty evaluators.
+
+The rebuilt release runtime passes **914 fresh Rust core tests**, including sliced parent
+validity, independent NULL operands, empty results and fractional rounding in the new
+builder regression. The preceding runtime retains its separate archived 912-test qualification. Measured and validated encoder,
+build-selected compatibility and fixture hashes are recorded. Setup additionally requires
+FLOOR in candidate native descriptors and previous JVM descriptors, preventing the
+outer YEAR consumer from disguising a generated or removed round operation.
+
+Prepared timing starts stock on equal prebuilt GenericRowData/BinaryRowData and native
+inside Rust on equal Arrow batches. It retains production epoch, rounding and YEAR,
+NULL handling, result consumption, allocation and intrinsic conversions/callbacks; initial
+JNI/import/export and perimeter transposes remain outside this small-function timer.
+One thread, 131,072 rows/trial, 16 warmups and nine measurements, both NULL modes, batches
+1,024 and 16. Four shapes consume seconds/YEAR, milliseconds/MONTH, INT milliseconds/DAY,
+and runtime CASE precision/HOUR through YEAR. Epoch corpora include released range limits,
+invalid values and signed extrema; INT uses the identical signed-width generator in both
+runtimes. Candidate and actual preceding encoders use identical fixtures/TableConfig and
+their recorded release native artifacts; stock is independently measured in both JVMs.
+
+| Prepared controls | Cells | Stock/native throughput | Previous/native throughput |
+| --- | ---: | ---: | ---: |
+| 1,024 rows/batch | 32 | 1.017-1.985x | 2.552-5.131x |
+| 16 rows/batch | 8 | 0.112-0.321x | 8.137-11.642x |
+
+All 32 final bulk medians beat stock and previous. The two smallest paired gains are
+only about 2%, with overlapping ranges; they do not establish a stable speedup. **8/8
+tiny controls lose to stock**; they remain in the record. Independent stock medians and
+min/max ranges remain visible rather than being replaced with paired controls.
+
+Complete jobs use a bounded million-row source and blackhole sink, one thread, two
+warmups and five alternating measured trials. Submission/startup, JNI and both perimeter
+transposes stay inside the job timer; surrounding JVM startup is outside. Six configurations
+span the three BIGINT shapes on both releases. Values are median elapsed seconds:
+
+| Release-shape | Paired stock | Native | Independent stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 22-seconds-year | 0.174415 | 0.194423 | 0.174084 | 0.235397 |
+| 22-millis-month | 0.179176 | 0.188011 | 0.174567 | 0.222483 |
+| 22-runtime-hour | 0.171393 | 0.188866 | 0.168582 | 0.221171 |
+| 118-seconds-year | 0.181120 | 0.192063 | 0.178531 | 0.216032 |
+| 118-millis-month | 0.177334 | 0.194292 | 0.180732 | 0.225815 |
+| 118-runtime-hour | 0.174516 | 0.188233 | 0.173405 | 0.216282 |
+
+Native/stock elapsed is **1.049-1.115**,
+with 6/6 paired medians slower than stock; native/previous is
+**0.826-0.889**, with
+0/6 slower than previous. 6/6 independent
+stock medians also beat native. Overlapping ranges and slower complete jobs remain
+limitations; prepared bulk gains do not establish universal pipeline acceleration.
+
+The initial 32 bulk cells include one nullable runtime-precision/HOUR cell at **0.978x**
+stock. A five-second process sample locates `timestamp_array` and vector growth under
+TemporalRound (272 sampled inclusive frames); counts are not elapsed percentages. The
+capacity-sized builder follows the same Arrow construction pattern as Comet's temporal
+casts, reusing StreamFusion's existing two-component builder rather than Spark semantics.
+Builder-only reduces a representative allocation probe from 122/86,917 bytes to 99/48,253
+bytes, but still has slower bulk cells (0.871x on one 1.18 control). Disassembly identifies
+a runtime `sdiv` inside the per-row loop. The final scalar-width specialization makes the
+five supported widths constant to the compiler and avoids materializing width/direction
+arrays; arbitrary widths and NULL arguments retain the generic path. This retains all
+released signed-overflow and nanosecond rules.
+All five specialized implementations have no integer division instruction in the
+release binary. The same final allocation probe is 92 requests and 39,541 bytes.
+Both initial stages, their twelve complete jobs and source/artifact provenance remain in
+the record alongside the final optimization, including every slower result.
+
+All **12,000 prepared raw samples**, allocation probes, complete-job trials,
+independent controls, source/bytecode/artifact hashes and exact expressions are in the
+[portable JSON](results/epoch-ltz-floor-2026-11-04.json) and
+[compressed raw CSV](results/epoch-ltz-floor-2026-11-04.csv.gz). The existing prepared
+`integral_expression` fixture selects these shapes through `SF_INTEGRAL_EXPRESSION`,
+`SF_INTEGRAL_CORPUS=epoch-seconds|epoch-millis` and
+`SF_INTEGRAL_REQUIRED_FUNCTION=FLOOR`; the complete-job fixture uses its corresponding
+epoch input properties. The record identifies the actual preceding encoder; an arbitrary
+older main/runtime is not an equivalent previous control. Full hosted checks qualify the
+exact pushed head separately. Broad [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504)
+remains open for other producers/zones, units and recurring-DST extraction.

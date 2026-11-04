@@ -3405,7 +3405,10 @@ Direct/literal LTZ FLOOR/CEIL in fixed-zero session zones also runs in Rust for 
 on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The latter three forms retain
 released 1.18's code-generation failure. LTZ CEIL uses a dedicated signed-remainder
 kernel that discards fractional nanos; ordinary TIMESTAMP rounding stays unchanged.
-Computed operands and nonzero/regional zones retain their existing routes.
+UTC FLOOR also consumes verified total built-in integer epoch conversions, with literal
+0/3 or separately proven runtime CASE precision 0/3/NULL, using those same release-supported
+units and the existing Rust kernels. Computed CEIL, other computed timestamp producers and
+nonzero/regional zones retain their existing routes. See [computed UTC FLOOR](temporal-functions.md#native-utc-floor-over-integer-epochs).
 
 ### LTRIM
 
