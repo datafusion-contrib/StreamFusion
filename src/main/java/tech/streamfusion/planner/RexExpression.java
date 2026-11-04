@@ -1938,6 +1938,13 @@ final class RexExpression {
         && containsExactScalarFunction(call)) {
       return emitHostExpression(call, true);
     }
+    if (nativePrimitiveUpper(call)) {
+      var input = (RexCall) call.getOperands().get(0);
+      // Signed integer text contains no letters, so casing needs no second scan or output buffer.
+      if (nativePrintfIntegerText(input) != null) return emit(input);
+      if (nativeBooleanCharacterCast(input)) return emitBooleanCharacterCast(input, false);
+      return emitBuiltinCall(call, 50);
+    }
     if ((call.getOperator()
                 == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CHAR_LENGTH
             || call.getOperator()
@@ -3945,14 +3952,7 @@ final class RexExpression {
     int sourceInteger = numericRank(source);
     int targetInteger = numericRank(targetType);
     if (nativeBooleanCharacterCast(call) && legacyCastBehaviour != null) {
-      add(KIND_CALL, 244, 3);
-      if (!emit(call.getOperands().get(0))) return false;
-      add(KIND_LIT_BOOL, longs.size(), 0);
-      longs.add(legacyCastBehaviour ? 1L : 0L);
-      add(KIND_LIT_INT, longs.size(), 0);
-      longs.add((long) (targetType == SqlTypeName.CHAR
-          ? -resultType.getPrecision() : resultType.getPrecision()));
-      return true;
+      return emitBooleanCharacterCast(call, legacyCastBehaviour);
     }
     if (tryCast && source == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(resultType)) {
       return emitHostExpression(call, true);
@@ -4709,6 +4709,17 @@ final class RexExpression {
         && nativeBooleanTextOperand(call.getOperands().get(0));
   }
 
+  private boolean emitBooleanCharacterCast(RexCall call, boolean lowercase) {
+    add(KIND_CALL, 244, 3);
+    if (!emit(call.getOperands().get(0))) return false;
+    add(KIND_LIT_BOOL, longs.size(), 0);
+    longs.add(lowercase ? 1L : 0L);
+    add(KIND_LIT_INT, longs.size(), 0);
+    longs.add((long) (call.getType().getSqlTypeName() == SqlTypeName.CHAR
+        ? -call.getType().getPrecision() : call.getType().getPrecision()));
+    return true;
+  }
+
   private static boolean nativeBooleanTextOperand(RexNode operand) {
     return nativeBooleanFormattingOperand(
         operand,
@@ -4762,6 +4773,25 @@ final class RexExpression {
         || !nativeIntegralRoundingOperand(call.getOperands().get(0))) return null;
     // General conversions of integer text match boxed integers; numeric conversions stay invalid.
     return call.getOperands().get(0);
+  }
+
+  private static boolean nativePrimitiveUpper(RexCall call) {
+    if (call.getOperator()
+            != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UPPER
+        || call.getOperands().size() != 1
+        || !(call.getOperands().get(0) instanceof RexCall)) return false;
+    var input = (RexCall) call.getOperands().get(0);
+    if (nativePrintfIntegerText(input) != null) return true;
+    if ((input.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CAST
+            || input.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST)
+        && input.getType().getSqlTypeName() == SqlTypeName.VARCHAR
+        && input.getType().getPrecision() == Integer.MAX_VALUE
+        && nativeBooleanCharacterCast(input)) return true;
+    // Primitive conversions cannot write i. Exclude literals that can observe Turkish/Azeri casing.
+    return nativePrintf(input) != 0
+        && ((RexLiteral) input.getOperands().get(0)).getValueAs(String.class).indexOf('i') < 0;
   }
 
   private static boolean nativePrimitivePrintfComparison(RexCall call) {

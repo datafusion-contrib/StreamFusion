@@ -3418,8 +3418,23 @@ patterns within a batch. Non-ASCII batches and mismatching original UTF-16 cache
 REGEXP_EXTRACT_ALL and STR_TO_MAP remain generated collection expressions; see
 [issue #495](https://github.com/datafusion-contrib/StreamFusion/issues/495).
 
-**Default compatibility path.** `UPPER`/`LOWER` use Flink-generated scalar expressions through
-the columnar JVM bridge. Original Java UTF-16 caches are passed beside the UTF-8 arguments;
+**Verified primitive UPPER.** Both released lines execute `UPPER` directly in Rust for
+unbounded `CAST`/`TRY_CAST` to STRING of proven total integer or BOOLEAN expressions. On
+Flink 2.2 this also includes the qualified primitive ASCII `PRINTF` producer when its
+literal format contains no lowercase `i`. Primitive conversions themselves cannot write
+`i`; all admitted output therefore has the same uppercase result under every worker
+locale, with or without a Java cache. Signed integer text has no letters and reuses the
+native CAST result without a second scan or output buffer; BOOLEAN text writes its final
+uppercase form directly. Formatter output uses the existing Arrow case kernel.
+The built-in operator identity is checked, NULLs
+and empty batches are retained, and there is no bound JVM evaluator for these calls.
+Bounded character casts, failing/unverified producers, ordinary STRING inputs, other
+formatting contracts and dependent consumers retain their existing paths. This is a
+producer-specific proof, not general Unicode casing support. See the
+[qualification and complete-job limits](../benchmarks/scalar-functions.md#primitive-text-upper).
+
+**Default compatibility path.** Other `UPPER` calls and `LOWER` use Flink-generated scalar
+expressions through the columnar JVM bridge. Original Java UTF-16 caches are passed beside the UTF-8 arguments;
 an absent cache remains a binary-only string. This distinction matters even for ASCII:
 under a Turkish or Azerbaijani runtime JVM locale, Java-backed `LOWER('I')` produces dotless i,
 while Flink's cold binary ASCII path produces ordinary i. Dependent consumers remain in the

@@ -24,6 +24,25 @@ experiments; they do not imply that the direct STRING kernel is enabled. Boolean
 ARRAY_DISTINCT, fixed binary casts, and the scale-dependent exact DOUBLE TRUNCATE helper
 remain admitted. See [current Calc coverage](../operators/calc-filter.md).
 
+## Proven primitive case conversion
+
+UPPER proves a bounded primitive text producer before using the existing native kernels.
+Signed integer CAST/TRY_CAST to unbounded STRING contains no letters, so its existing
+native result is reused. BOOLEAN text writes its final uppercase form directly through
+the existing BOOLEAN text writer. Qualified primitive ASCII PRINTF uses the Arrow case
+kernel only when no literal lowercase `i` can observe Turkish/Azeri locale behavior;
+primitive conversions cannot introduce that character. General STRING/Unicode and
+representation-sensitive consumers retain Flink generation.
+
+An initial extra case scan/buffer lost five of seven 16-row controls on Flink 2.2. A
+native-only stack sample located generic scalar dispatch, casts and case conversion.
+Eliding integer case work cuts one representative INT/16-row batch from 38 allocations
+and 2,760 requested bytes to 33 and 2,208. Writing BOOLEAN text in its final case improves
+the original tiny BOOLEAN control from 0.824x to 1.205x stock. All 56 final bulk controls
+beat stock and previous, but seven of fourteen tiny controls remain slower than stock.
+Three of eight complete jobs lose to stock, and one loses 2.4% to previous with overlapping
+ranges. See the [full qualification, initial attempts and raw timings](../benchmarks/scalar-functions.md#primitive-text-upper).
+
 ## DECIMAL formatting
 
 Direct DECIMAL-to-STRING casts format the unscaled integer into reusable stack buffers, insert

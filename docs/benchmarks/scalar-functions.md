@@ -9132,3 +9132,90 @@ Previous controls set `SF_INTEGRAL_PREVIOUS=true` with the actual saved encoder/
 Complete jobs use `IntegralExpressionPipelineBenchmark`, matching boolean/BIGINT input,
 secondary type and expression properties. Remaining direct STRING/DECIMAL arguments,
 formats and consumers stay in [#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).
+
+## Primitive text UPPER
+
+On 2026-11-04, built-in UPPER executes in Rust for verified total integer/BOOLEAN casts
+to unbounded STRING on both released lines. Qualified primitive ASCII PRINTF also
+participates on Flink 2.2 when its literal contains no lowercase `i`. Primitive conversions
+cannot write `i`, so this domain has identical Java-backed/binary-only and worker-locale
+behavior. Integer text has no letters and reuses the native CAST result; BOOLEAN text
+writes uppercase directly. Only formatted text needs the existing Arrow case kernel.
+General STRING/Unicode, bounded casts, unverified/failing producers, dependent consumers
+and existing relational guards retain their previous routes.
+
+The [record](results/primitive-upper-2026-11-04.json) and
+[10,500 raw samples](results/primitive-upper-2026-11-04.csv.gz) retain 7,000 final trials
+and 3,500 trials from the initial redundant-case implementation. Apple M4 Pro, macOS arm64,
+one thread, JDK 17.0.12, released Flink 1.18.1/2.2.1, Java release 11, release/mimalloc.
+Actual preceding encoder/helper `534099a2` uses its saved whole runtime, including the
+generated evaluator. Native artifacts are byte-identical; measured/validated encoder
+bytecode and source/artifact hashes match.
+
+Prepared stock starts on equal GenericRowData/BinaryRowData and native starts inside
+Rust on equal Arrow. Each cell processes 131,072 logical rows with sixteen warmups and
+nine alternating measurements. Production Calc, output consumption, allocation and
+intrinsic conversions/callbacks remain inside timing; initial JNI/import/export and
+perimeter transposes are outside this small-function gate only. Four integer widths,
+NULL modes/layouts, modern/legacy BOOLEAN text and padded/indexed PRINTF are covered.
+
+| Flink | Batch rows | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2.2 | 1,024 | 32 | 1.569-18.254x | 2.964-27.255x | 1.592-15.203x |
+| 1.18 | 1,024 | 24 | 1.511-21.388x | 2.916-27.811x | 1.569-18.239x |
+| 2.2 | 16 | 8 | 0.489-4.960x | 10.057-26.178x | 0.471-5.085x |
+| 1.18 | 16 | 6 | 0.519-1.293x | 11.934-24.137x | 0.502-1.142x |
+
+All 56 bulk cells beat stock and previous. Seven of fourteen tiny controls remain slower
+than stock. A three-second native-only INT/16-row sample identifies scalar dispatch,
+casts and case conversion. Removing the redundant integer case scan/output reduces a
+representative batch from 38 allocations/2,760 requested bytes to 33/2,208. BOOLEAN text
+also writes its final case directly. The original 2.2 tiny BOOLEAN control improves from
+0.824x to 1.205x stock; simple small integers retain fixed Calc/CAST overhead and losses.
+All initial measurements and allocation diagnostics remain; bulk qualification does not
+establish universal small-batch acceleration.
+
+Eight complete million-row configurations use bounded external Row sources and blackhole
+sinks, retaining job submission/startup, JNI and both transposes. Each engine has two
+warmups and five alternating measured jobs. Candidate and previous must consume native
+work; only the candidate requires empty evaluators. Median seconds:
+
+| Flink/shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 22-int-text | 0.231095 | 0.215401 | 0.234017 | 0.257369 |
+| 22-boolean-text | 0.209379 | 0.250789 | 0.210564 | 0.259598 |
+| 22-int-format | 0.713247 | 0.257157 | 0.677347 | 0.699764 |
+| 22-boolean-format | 0.680982 | 0.297569 | 0.654967 | 0.707587 |
+| 22-boolean-legacy | 0.210135 | 0.197164 | 0.231739 | 0.299726 |
+| 118-int-text | 0.231382 | 0.204040 | 0.227603 | 0.253104 |
+| 118-boolean-text | 0.220297 | 0.247613 | 0.209224 | 0.241832 |
+| 118-boolean-legacy | 0.237388 | 0.257726 | 0.228105 | 0.289418 |
+
+Native/stock elapsed spans **0.361-1.198** and native/previous **0.367-1.024**.
+Three complete-job medians lose to stock. The 1.18 modern BOOLEAN median also loses
+2.4% to previous, with overlapping ranges. All losses, stock-process drift and raw
+variability remain; the prepared bulk gate is distinct from complete-job acceleration.
+
+All **238 final focused JVM invocations** pass without skips on released Flink
+1.18.1/2.2.1 and JDK 11/17, compiling with Java release 11: 106 case/existing-function
+invocations plus 132 BOOLEAN CAST regression invocations. Full 5,003-row maps/schema
+cover signed extrema, NULLs, total wrapping/BOOLEAN producers, modern/legacy modes,
+empty batches, invalid formats, bounded/DECIMAL exclusions, failing/lazy paths and
+same-name catalog UDFs. Four runtime locales and exhaustive single-byte ASCII validate
+both released string representations. Admitted paths require consumed NativeCalc work,
+no fallback and empty evaluators. Four unchanged released `testUpperCase` stock-oracle
+invocations pass separately.
+
+Per JDK, the previous encoder compares thirteen full first-query maps/schema on 2.2
+and ten on 1.18, plus the first locale query, before the intended evaluator-route
+failures. Later modes/queries in failing invocations are not counted. Its two residual/
+catalog controls per version/JDK pass. The unchanged native artifacts retain their
+archived 912-core-test qualification; these are not new Rust runs. Hosted suites must
+qualify the exact pushed head separately.
+
+Reproduce prepared cells with release `integral_expression`, the record's type/expression,
+NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`. Legacy controls also set
+`SF_INTEGRAL_LEGACY=true`. Previous controls set `SF_INTEGRAL_PREVIOUS=true` with the saved
+encoder/helper/runtime. Complete jobs use `IntegralExpressionPipelineBenchmark` with
+matching input, expression and `sf.integral.legacy` properties. General Unicode casing
+and other residual contracts remain in [#494](https://github.com/datafusion-contrib/StreamFusion/issues/494).
