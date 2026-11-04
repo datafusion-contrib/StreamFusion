@@ -26,7 +26,7 @@ class FlinkNestedBridgeGuardSqlHarnessTest {
         "map_internal",
         "array_row_primitive"
       })
-  void unverifiedNestedArrayListAndInternalBridgesRetainFallback(String shape) {
+  void externalNestedConversionsExecuteWhileInternalBridgesRetainFallback(String shape) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -38,13 +38,18 @@ class FlinkNestedBridgeGuardSqlHarnessTest {
                 return table;
               },
               "SELECT s.id,t.v,t.pos FROM src s,LATERAL TABLE(guarded_rows(s.id)) AS t(v,pos)");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+      boolean internal = shape.endsWith("internal");
+      runs.assertSuccess(
+          internal ? NativeFailureParity.Route.FALLBACK : NativeFailureParity.Route.NATIVE);
       assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
-      assertTrue(metrics.nativeOperators().isEmpty());
-      assertTrue(
-          runs.nativeRun().fallbackReasons().stream()
-              .anyMatch(reason -> reason.contains("verified external Java conversions")),
-          runs::toString);
+      if (internal) {
+        assertTrue(metrics.nativeOperators().isEmpty());
+        assertTrue(
+            runs.nativeRun().fallbackReasons().stream()
+                .anyMatch(reason -> reason.contains("verified external Java conversions")),
+            runs::toString);
+      } else
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
   }
 

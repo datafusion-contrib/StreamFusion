@@ -259,23 +259,10 @@ class FlinkDateIntArgumentTableFunctionSqlHarnessTest {
                 return table;
               },
               "SELECT s.x,s.p,t.v FROM src s,LATERAL TABLE(nested_days(s.x,s.p)) AS t(v)");
-      if (shape.equals("row")) {
-        runs.assertSuccess(NativeFailureParity.Route.NATIVE);
-        assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
-        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
-      } else {
-        runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-        assertUnverifiedConversion(runs);
-        assertTrue(metrics.nativeOperators().isEmpty());
-      }
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
-  }
-
-  private static void assertUnverifiedConversion(NativeFailureParity.Comparison runs) {
-    assertTrue(
-        runs.nativeRun().fallbackReasons().stream()
-            .anyMatch(reason -> reason.contains("verified external Java conversions")),
-        runs::toString);
   }
 
   private static String join(String function, boolean left) {

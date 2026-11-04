@@ -74,7 +74,8 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
         new JvmFunctionCodeGeneratorContext(
                 config,
                 planner.getFlinkContext().getClassLoader(),
-                "getRuntimeContext().getUserCodeClassLoader()")
+                "getRuntimeContext().getUserCodeClassLoader()",
+                true)
             .setOperatorBaseClass(TableStreamOperator.class);
     RexNode shifted =
         condition == null ? null : RexUtil.shift(condition, inputType.getFieldCount());
