@@ -36,27 +36,7 @@ class FlinkRecursiveTableFunctionSqlHarnessTest {
     String selected = System.getProperty("recursive.signatures");
     if (selected != null)
       return Stream.of(selected.split(";")).map(s -> Arguments.of((Object[]) s.split(":")));
-    var defaults =
-        Stream.of(
-            "BOOLEAN",
-            "TINYINT",
-            "SMALLINT",
-            "INT",
-            "BIGINT",
-            "FLOAT",
-            "DOUBLE",
-            "STRING",
-            "CHAR(4)",
-            "VARBINARY",
-            "BINARY(4)",
-            "DECIMAL(18,8)",
-            "DECIMAL(38,18)",
-            "DATE",
-            "TIME",
-            "TIMESTAMP(9)",
-            "TIMESTAMP_LTZ(9)",
-            "DAY_TIME",
-            "YEAR_MONTH");
+    var defaults = defaultScalars();
     var containers =
         defaults.flatMap(
             kind ->
@@ -111,6 +91,29 @@ class FlinkRecursiveTableFunctionSqlHarnessTest {
                                     .map(position -> Arguments.of(shape, bridge, position))));
     return Stream.of(containers, bridges, primitives, implementations, keys, temporalArrays)
         .flatMap(s -> s);
+  }
+
+  static Stream<String> defaultScalars() {
+    return Stream.of(
+        "BOOLEAN",
+        "TINYINT",
+        "SMALLINT",
+        "INT",
+        "BIGINT",
+        "FLOAT",
+        "DOUBLE",
+        "STRING",
+        "CHAR(4)",
+        "VARBINARY",
+        "BINARY(4)",
+        "DECIMAL(18,8)",
+        "DECIMAL(38,18)",
+        "DATE",
+        "TIME",
+        "TIMESTAMP(9)",
+        "TIMESTAMP_LTZ(9)",
+        "DAY_TIME",
+        "YEAR_MONTH");
   }
 
   @ParameterizedTest(name = "{0} {1} {2}")
@@ -390,7 +393,7 @@ class FlinkRecursiveTableFunctionSqlHarnessTest {
     }
   }
 
-  private static final class ResultValues {
+  static final class ResultValues {
     private final DataType type;
     private final ResultValues[] children;
     private final DataStructureConverter<Object, Object> source;

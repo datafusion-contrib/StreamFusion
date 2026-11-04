@@ -176,18 +176,22 @@ class FlinkArrayScalarUdfSqlHarnessTest {
   }
 
   @Test
-  void primitiveAndRowArrayResultsKeepExplicitFallback() {
+  void primitiveAndRowArrayResultsKeepReleasedValuesTypesAndNativeWork() {
     for (boolean primitive : new boolean[] {true, false}) {
-      var runs =
-          NativeFailureParity.run(
-              () -> {
-                var table = environment("int", 32, null);
-                table.createTemporarySystemFunction(
-                    "unverified_array", primitive ? new PrimitiveResult() : new RowResult());
-                return table;
-              },
-              "SELECT unverified_array(id) FROM src");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+      try (var metrics = new RecoveryExecutionMetrics()) {
+        var runs =
+            NativeFailureParity.run(
+                () -> {
+                  var table = environment("int", 32, metrics);
+                  table.createTemporarySystemFunction(
+                      "verified_array", primitive ? new PrimitiveResult() : new RowResult());
+                  return table;
+                },
+                "SELECT verified_array(id) FROM src");
+        runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+        assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+      }
     }
   }
 

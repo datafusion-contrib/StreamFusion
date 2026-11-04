@@ -70,7 +70,7 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
   }
 
   boolean returnsAliasedValues() {
-    return TableFunctionMatcher.returnsAliasedValues(invocation);
+    return JvmFunctionConversions.returnsAliasedValues(invocation);
   }
 
   @Override

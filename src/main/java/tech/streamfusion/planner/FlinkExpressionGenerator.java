@@ -565,7 +565,7 @@ final class FlinkExpressionGenerator {
         new java.util.LinkedHashMap<>();
 
     Context(ReadableConfig config, ClassLoader classLoader) {
-      super(config, classLoader, "context.getUserCodeClassLoader()");
+      super(config, classLoader, "context.getUserCodeClassLoader()", true);
     }
 
     @Override

@@ -194,6 +194,7 @@ final class RexExpression {
   private boolean rowFusion;
   private boolean unnestOperand;
   private boolean preserveCollections;
+  private boolean aliasedFunctionInput;
   private boolean skipMapKeyCaches;
   private boolean javaStringInputs;
   private String jvmExecutionReason;
@@ -260,6 +261,8 @@ final class RexExpression {
         org.apache.flink.table.planner.utils.ShortcutUtils.unwrapClassLoader(context);
     encoder.configure(
         org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(context));
+    encoder.aliasedFunctionInput =
+        context.getInputs().stream().anyMatch(JvmFunctionConversions::aliasedProducer);
     return encoder.emit(node) ? encoder : null;
   }
 
@@ -591,6 +594,7 @@ final class RexExpression {
     encoder.uniqueObjectConstruction=constructions[0]==1;
     encoder.watermarkAvailable = true;
     encoder.javaStringInputs = HostStringInputs.areJavaBacked(calc.getInput());
+    encoder.aliasedFunctionInput = JvmFunctionConversions.aliasedProducer(calc.getInput());
     return encoder;
   }
 
@@ -1037,7 +1041,19 @@ final class RexExpression {
 
   private static boolean isCollectionUdfType(RelDataType type) {
     return type.getSqlTypeName() == SqlTypeName.MAP
-        || type.getSqlTypeName() == SqlTypeName.ARRAY;
+        || type.getSqlTypeName() == SqlTypeName.ARRAY
+        || type.getSqlTypeName() == SqlTypeName.ROW
+            && (rowCalcTypeCode(type, false) < 0 || containsNonNullElementArray(type));
+  }
+
+  private static boolean containsNonNullElementArray(RelDataType type) {
+    return type.getSqlTypeName() == SqlTypeName.ARRAY && !type.getComponentType().isNullable()
+        || type.getComponentType() != null && containsNonNullElementArray(type.getComponentType())
+        || type.getKeyType() != null && containsNonNullElementArray(type.getKeyType())
+        || type.getValueType() != null && containsNonNullElementArray(type.getValueType())
+        || type.isStruct()
+            && type.getFieldList().stream()
+                .anyMatch(field -> containsNonNullElementArray(field.getType()));
   }
 
   private static boolean isNestedUdfType(RelDataType type) {
@@ -6287,6 +6303,9 @@ final class RexExpression {
     if (scalar == null) {
       return rejectUdfMethod("unsupported function/operator: " + call.getOperator().getName());
     }
+    if (!JvmFunctionConversions.preservesArguments(call, aliasedFunctionInput))
+      return rejectUdfMethod(
+          "UDF arguments may retain mutable aliases from an upstream JVM function");
     if (scalar instanceof org.apache.flink.table.functions.SpecializedFunction) {
       return rejectUdfMethod("UDF specialization requires Flink's code-generation context");
     }
@@ -6383,9 +6402,21 @@ final class RexExpression {
     RexCall call = ((RexCall) node);
 
     if (!validateHostStringInputs(call)) return false;
-    if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null
-        && checkedUdfMethod(call) == null) {
-      return false;
+    var scalar = tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator());
+    if (scalar != null) {
+      if (!JvmFunctionConversions.preservesArguments(call, aliasedFunctionInput))
+        return reject("UDF arguments may retain mutable aliases from an upstream JVM function");
+      boolean recursive =
+          rowFusion
+              && tech.streamfusion.arrow.ArrowConversion.nestedScalarUdfsEnabled()
+              && (isNestedUdfType(call.getType())
+                  || call.getOperands().stream().anyMatch(arg -> isNestedUdfType(arg.getType())));
+      if (recursive) {
+        if (scalar instanceof org.apache.flink.table.functions.SpecializedFunction)
+          return reject("UDF specialization requires Flink's code-generation context");
+        if (!JvmFunctionConversions.verifiedScalar(call))
+          return reject("nested UDF custom type inference requires unverified Java conversions");
+      } else if (checkedUdfMethod(call) == null) return false;
     }
     return call.getOperands().stream().allMatch(this::validateGeneratedExpression);
   }

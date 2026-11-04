@@ -1271,7 +1271,7 @@ query would execute. Reordered-projection failure controls retain the released e
 TIME/long[] and LTZ/int[]/long[] retain fallback in every position because their released
 primitive-array converters use incompatible internal backing. Their explicit controls retain
 the released ClassCastException.
-This adapter is enabled for table functions; scalar-function admission is unchanged.
+This adapter is shared with the [recursive scalar boundary](calc-filter.md#recursive-external-scalar-conversions).
 
 The existing preserving producer/consumer guards continue to apply. This extension does
 not admit internal `RowData`/`ArrayData`/`MapData`, MULTISET/STRUCTURED/RAW, specialized
@@ -1288,8 +1288,8 @@ intended table-function operator; stock runs are independent. Existing unchanged
 `CorrelateITCase.testRowType` contracts continue to require table-function consumption.
 
 
-Chaining retains an additional ownership guard. If an upstream table function can expose
-mutable Java-backed values and a later table-function argument converter can return such
+Chaining retains an additional ownership guard. If an upstream scalar or table function can expose
+mutable Java-backed values and a later JVM function argument converter can return such
 aliases, the complete query falls back. This includes primitive/boxed arrays passed directly
 or through ROW, BINARY/VARBINARY buffers, and identity-converted binary leaves in containers.
 Stock Flink can expose upstream mutations to a downstream function retaining that argument;
