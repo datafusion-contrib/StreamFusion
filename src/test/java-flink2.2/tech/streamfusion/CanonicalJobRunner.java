@@ -26,10 +26,17 @@ class CanonicalJobRunner {
   @TempDir(cleanup = org.junit.jupiter.api.io.CleanupMode.ON_SUCCESS)
   Path directory;
 
+  private Class<?> workerClass = CanonicalJobWorker.class;
+
   CanonicalJobRunner() {}
 
   CanonicalJobRunner(Path directory) {
     this.directory = directory;
+  }
+
+  CanonicalJobRunner(Path directory, Class<?> workerClass) {
+    this.directory = directory;
+    this.workerClass = workerClass;
   }
 
   void run(
@@ -67,7 +74,7 @@ class CanonicalJobRunner {
           entry.contains(File.separator + "tech" + File.separator + "streamfusion" + File.separator)
               || Path.of(entry).getFileName().toString().startsWith("streamfusion-")
               || Files.isDirectory(Path.of(entry))
-                  && Files.exists(Path.of(entry).resolve("tech/streamfusion/Native.class"));
+                  && Files.isDirectory(Path.of(entry).resolve("tech/streamfusion"));
       if (nativeRun || !streamfusion) classpath.add(entry);
     }
     List<String> command =
@@ -88,7 +95,7 @@ class CanonicalJobRunner {
                 "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
                 "-cp",
                 String.join(File.pathSeparator, classpath),
-                CanonicalJobWorker.class.getName(),
+                workerClass.getName(),
                 nativeRun ? "native" : "stock",
                 root.toString(),
                 Integer.toString(limit),
@@ -96,6 +103,7 @@ class CanonicalJobRunner {
                 stage,
                 Integer.toString(batchRows),
                 backend));
+    if (nativeRun) command.add(2, "-Djava.library.path=" + System.getProperty("java.library.path"));
     Path log = root.resolve(stage + ".log");
     Process process =
         new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
@@ -215,6 +223,7 @@ class CanonicalJobRunner {
       Set<Class<?>> classes = new java.util.LinkedHashSet<>();
       collect(CanonicalFixtureFactory.class, classes);
       collect(CanonicalJobWorker.class, classes);
+      collect(workerClass, classes);
       for (Class<?> type : classes) {
         String resource = type.getName().replace('.', '/') + ".class";
         output.putNextEntry(new JarEntry(resource));
@@ -233,7 +242,12 @@ class CanonicalJobRunner {
           new JarEntry(
               "META-INF/services/org.apache.flink.metrics.reporter.MetricReporterFactory"));
       output.write(
-          (CanonicalJobWorker.EvidenceReporterFactory.class.getName() + "\n")
+          (classes.stream()
+                  .filter(
+                      org.apache.flink.metrics.reporter.MetricReporterFactory.class
+                          ::isAssignableFrom)
+                  .map(Class::getName)
+                  .collect(java.util.stream.Collectors.joining("\n", "", "\n")))
               .getBytes(java.nio.charset.StandardCharsets.UTF_8));
       output.closeEntry();
     }

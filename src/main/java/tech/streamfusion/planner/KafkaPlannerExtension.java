@@ -35,6 +35,12 @@ public final class KafkaPlannerExtension implements NativePlannerExtension {
   }
 
   @Override
+  public boolean preservesStockSourceState(
+      org.apache.flink.table.planner.plan.nodes.exec.ExecNode<?> source) {
+    return source instanceof NativeKafkaDecodeExecNode;
+  }
+
+  @Override
   public org.apache.flink.table.planner.plan.nodes.exec.ExecNode<
           tech.streamfusion.operator.ArrowBatch>
       lowerCompiledSource(

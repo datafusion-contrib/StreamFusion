@@ -14,6 +14,14 @@ public interface NativePlannerExtension {
     return null;
   }
 
+  /**
+   * Whether a substituted source keeps the original connector's reader/coordinator state schema.
+   */
+  default boolean preservesStockSourceState(
+      org.apache.flink.table.planner.plan.nodes.exec.ExecNode<?> source) {
+    return false;
+  }
+
   /** Reuses this artifact's source admission policy when loading a portable stock plan. */
   default org.apache.flink.table.planner.plan.nodes.exec.ExecNode<
           tech.streamfusion.operator.ArrowBatch>

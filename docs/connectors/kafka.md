@@ -146,6 +146,48 @@ This releases staged off-heap memory without waiting for the abandoned-batch Cle
 The Flink 2.2 compiled-plan loader can ask the optional Kafka planner extension to apply its
 existing source whitelist to a stock table-source node. Admitted scans use the same native decode
 source and sharing behavior as ordinary planning; unsupported configurations keep the stock scan.
-This preserves planner behavior while the portable artifact remains stock JSON. It does not yet
-qualify cross-engine broker offsets, transactions, rescaling or fault recovery for
+The portable artifact remains stock JSON. The source handoff subset below has separate real-broker
+qualification; sink transactions and the wider failure/type/version matrix remain unfinished under
 [canonical handoff](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+## Canonical source handoffs (partial)
+
+The native Kafka source keeps Flink's reader split and enumerator state serializers. Canonical
+handoff therefore retains those stock bytes rather than translating them through a native snapshot.
+The ordinary SQL planner also binds the original source and host sink/helper identities: inserting
+a stateless Arrow boundary must not change the IDs of their durable state. Optional connector
+extensions must explicitly declare stock source-state preservation before participating in that
+binding; other native source implementations receive no inferred compatibility guarantee.
+
+Qualification passes fourteen real-broker scenarios on Flink 2.2.1 with released Kafka connector
+5.0.0-2.2: four continued-input, four no-input return, two native-checkpoint recovery and four
+source-rescale cases. Ordinary SQL and portable compiled plans cover both initial engine orders;
+native-checkpoint recovery starts on StreamFusion. Source parallelism changes 1→3→2 with fixed
+maximum parallelism. A three-partition JSON source produces three nullable BIGINT fields into a
+custom committing sink. Each stage checks exact external committed rows, actual native source
+output, portable metadata and stock worker classpaths without StreamFusion code. Metadata checks
+decode the saved partition offsets through the released source serializer and require all three
+splits, nonempty coordinator state and stable canonical operator identities. A separate 839-check
+planner/identity regression cohort also passes; it does not add connector delivery scenarios.
+The existing native checkpoints retain their native graph identities; canonical handoff artifacts
+use the stock identities. Eight existing grouped-aggregate INT-key rescale jobs also pass with
+the updated isolated runner. Twenty-two shared Flink 1.18 processing/connector checks pass; these
+do not establish canonical compatibility on 1.18.
+
+This does not qualify native Kafka sink transactions, writer rescaling, new partition discovery,
+topic patterns, security/schema/format variations, broker/coordinator failures or cross-version
+migration. Source rescaling keeps the custom sink singleton and disables chaining for that test.
+Both-native Kafka source/sink jobs without transpose boundaries require their own handoff evidence.
+Benchmarking remains deferred for #569.
+
+The functional lane uses a real optional JSON artifact and an isolated stock classpath. With Docker
+available and the native core, Kafka and JSON libraries built, run from the repository root:
+
+```sh
+SF_KAFKA_INTEGRATION=true mvn -Pcanonical-kafka -pl streamfusion-runtime -am test \
+  -Dtest=CanonicalKafkaSourceJobTest -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dsf.extraJvmArgs="-Djava.library.path=${PWD}/native/target/debug"
+```
+
+For a targeted checkpoint fixture run, add `-Dsf.canonical.kafka.mode=checkpoint`; omit it for the
+complete matrix. This is a correctness lane, independent of the benchmark environment flag.

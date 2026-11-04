@@ -186,6 +186,17 @@
 
     <profiles>
         <profile>
+            <id>canonical-kafka</id>
+            <dependencies>
+                <dependency>
+                    <groupId>tech.streamfusion</groupId>
+                    <artifactId>streamfusion-json${streamfusion.artifact.suffix}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>filter-orc-test-groups</id>
             <activation><property><name>groups</name></property></activation>
             <properties>

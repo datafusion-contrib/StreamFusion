@@ -113,7 +113,7 @@ final class NativeStreamPlanner extends StreamPlanner {
     if (!NativeConfig.nativeEnabled()) return graph;
     if (!StockCompiledPlanLowering.containsNativeNodes(graph))
       return runtimeGraph(new ExecNodeGraph(graph.getFlinkVersion(), graph.getRootNodes()));
-    if (!StockCompiledPlanLowering.canBindOrdinary(graph)) {
+    if (!StockCompiledPlanLowering.canBindOrdinary(graph, getFlinkContext().getClassLoader())) {
       // State contracts with internal helper roles bind from the original stock template.
       return StockCompiledPlanLowering.requiresStockTemplate(graph)
           ? runtimeGraph(graph.stock)

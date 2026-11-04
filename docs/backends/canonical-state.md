@@ -1414,3 +1414,19 @@ SESSION programs execute native GROUP BY after stock session assignment, but res
 state and receive no grouped-state import credit. Split-phase Final import remains unproven where
 only Slice state was populated. Wider operator/connector/failure/version qualification and all ten
 full acceptance criteria remain open; benchmarking is deferred.
+
+
+## Stock-owned Kafka source state (partial)
+
+An admitted native Kafka decoder delegates split and enumerator serialization to the released
+stock Kafka source. Its portable state needs original reader/coordinator and downstream host
+identities, rather than a native payload converter. The source-state-preserving extension contract
+allows ordinary SQL to install the same identity projection already used for portable stock plans.
+Unqualified optional source implementations remain outside that contract.
+
+The separate real-broker tests cover the source handoff subset documented on the
+[Kafka page](../connectors/kafka.md#canonical-source-handoffs-partial), with a custom committing sink,
+actual native output and isolated stock worker classpaths. This is not Kafka sink transaction or
+complete connector delivery qualification. Ordinary native checkpoints retain their existing graph
+identities, and canonical metadata exports the stock identities. Wider operator/connector/failure/
+version work and all ten full acceptance criteria remain open in #569; benchmarking is deferred.

@@ -626,10 +626,14 @@ public final class CanonicalFixtureFactory
     private long transaction;
     private boolean witnessed;
     private boolean outputWitnessed;
+    private long received;
+    private final boolean countEnabled;
 
     RowsWriter(RowType type, String witness, Collection<WriterState> restored) throws IOException {
       serializer = new RowDataSerializer(type);
       this.witness = witness;
+      countEnabled = Files.exists(Path.of(witness + "-count-enabled"));
+      if (countEnabled) Files.writeString(Path.of(witness + "-sink-count"), "0");
       for (WriterState state : restored) {
         transaction = Math.max(transaction, state.transaction);
         pending.addAll(state.rows);
@@ -642,6 +646,7 @@ public final class CanonicalFixtureFactory
       var encoded = new DataOutputSerializer(64);
       serializer.serialize(row, encoded);
       pending.add(encoded.getCopyOfBuffer());
+      if (countEnabled) Files.writeString(Path.of(witness + "-sink-count"), Long.toString(++received));
       if (!outputWitnessed) {
         Files.writeString(Path.of(witness + "-sink-output-ready"), "row received");
         outputWitnessed = true;

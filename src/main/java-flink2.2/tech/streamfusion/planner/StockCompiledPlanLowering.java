@@ -302,7 +302,7 @@ final class StockCompiledPlanLowering {
             });
   }
 
-  static boolean canBindOrdinary(SqlPlanOrigins.RuntimeGraph graph) {
+  static boolean canBindOrdinary(SqlPlanOrigins.RuntimeGraph graph, ClassLoader loader) {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
     for (ExecNode<?> node : nodes) {
@@ -312,6 +312,11 @@ final class StockCompiledPlanLowering {
           && ((NativeOverAggExecNode) node).hasStockArithmeticState()) return false;
       if (ordinaryHelper(node)) continue;
       if (!graph.originals.containsKey(node)) return false;
+      if (graph.originals.get(node) instanceof StreamExecTableSourceScan
+          && node.getInputEdges().isEmpty()
+          && ServiceLoader.load(NativePlannerExtension.class, loader).stream()
+              .map(ServiceLoader.Provider::get)
+              .anyMatch(extension -> extension.preservesStockSourceState(node))) continue;
       if (node.getClass().getName().startsWith("tech.streamfusion.")
           && !(node instanceof NativeDeduplicateExecNode
               || node instanceof NativeChangelogNormalizeExecNode

@@ -779,7 +779,7 @@ public final class CanonicalJobWorker {
         org.apache.flink.metrics.MetricGroup group) {}
   }
 
-  private static ClassLoader nativePlannerLoader(ClassLoader parent, Path directory)
+  static ClassLoader nativePlannerLoader(ClassLoader parent, Path directory)
       throws IOException {
     String service = "META-INF/services/org.apache.flink.table.factories.Factory";
     var providers = new LinkedHashSet<String>();
