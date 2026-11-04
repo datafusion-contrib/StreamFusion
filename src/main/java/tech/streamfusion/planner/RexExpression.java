@@ -4026,9 +4026,7 @@ final class RexExpression {
       longs.add(0L);
       return true;
     }
-    if (tryCast && source == SqlTypeName.DECIMAL && targetType == SqlTypeName.BOOLEAN
-        && (call.getOperands().get(0) instanceof RexInputRef
-            || call.getOperands().get(0) instanceof RexLiteral)) {
+    if (nativeDecimalBooleanTryCast(call)) {
       add(KIND_CALL, opCode(SqlKind.NOT_EQUALS), 2);
       if (!emit(call.getOperands().get(0))) return false;
       add(KIND_LIT_DECIMAL, strings.size(), 0);
@@ -4667,7 +4665,8 @@ final class RexExpression {
     return call.getOperands().size() == 1
         && SqlTypeFamily.CHARACTER.contains(call.getType())
         && nativeBooleanFormattingOperand(
-            call.getOperands().get(0), RexExpression::nativeIntegralBooleanTryCast);
+            call.getOperands().get(0),
+            producer -> nativeIntegralBooleanTryCast(producer) || nativeDecimalBooleanTryCast(producer));
   }
 
   private static boolean nativeIntegerPrintf(RexCall call) {
@@ -4695,6 +4694,16 @@ final class RexExpression {
         && call.getType().getSqlTypeName() == SqlTypeName.BOOLEAN
         && SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
         && nativeIntegralRoundingOperand(call.getOperands().get(0));
+  }
+
+  private static boolean nativeDecimalBooleanTryCast(RexCall call) {
+    return call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST
+        && call.getOperands().size() == 1
+        && call.getType().getSqlTypeName() == SqlTypeName.BOOLEAN
+        && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DECIMAL
+        && (call.getOperands().get(0) instanceof RexInputRef
+            || call.getOperands().get(0) instanceof RexLiteral);
   }
 
   private static boolean nativeBooleanFormattingOperand(RexNode node) {

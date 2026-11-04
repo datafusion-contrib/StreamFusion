@@ -8397,8 +8397,9 @@ All **456 focused JVM invocations** pass without skips on released Flink 1.18.1/
 and JDK 11/17, targeting Java release 11. Full 5,003-row maps/schema cover eleven
 precision/scale pairs from DECIMAL(1,0)/(1,1) to (38,38), nullable/NOT NULL, both cast
 modes, zero, signed extrema, logical/NULL/CASE consumers and all-filtered batches.
-Filters, retained character evaluators, computed/failing producers and lazy branches
-also pass. Admitted paths require actual consumed native work and empty evaluators.
+At this qualification revision, the character control retains its generated evaluator;
+the following qualification extends that proof. Filters, computed/failing producers and
+lazy branches also pass. Admitted paths require actual consumed native work and empty evaluators.
 The four ordinary DECIMAL(p,p) planning failures are separately verified in both modes.
 Adjacent integer/BOOLEAN casts and DECIMAL projection/default regressions pass.
 
@@ -8419,3 +8420,100 @@ with the same final Java fixture and explicit `sf.integral.fallbackControl=true`
 `IntegralExpressionPipelineBenchmark` and matching `sf.integral.decimalPrecision`/`decimalScale`;
 the preceding control must keep its fallback. Remaining producers, consumers and source/
 target families stay in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+
+## Character consumers of decimal truth
+
+CAST/TRY_CAST of verified direct DECIMAL-to-BOOLEAN TRY_CAST to STRING/VARCHAR/CHAR
+reuse the existing native BOOLEAN formatter. The producer proof permits verified logical
+and NULL wrappers around that conversion. Same-precision/scale decimal zero comparison,
+modern/legacy spelling, NULLs, VARCHAR truncation and CHAR padding remain unchanged.
+The structure follows Flink's NumericToBoolean/BooleanToString rules and Comet's
+same-type zero comparison. No native kernel, setting, dependency or JNI changes.
+Computed/failing/stateful/metadata-sensitive producers retain their preceding routes.
+Integer-target and bounded-position condition proofs remain separate. Ordinary DECIMAL
+CAST uses a different comparison tree and its character consumer remains generated;
+ordinary DECIMAL(p,p) CAST retains the released planning failure.
+
+The [record](results/decimal-truth-character-casts-2026-11-03.json) retains 100 prepared configurations and
+[10,000 raw samples](results/decimal-truth-character-casts-2026-11-03.csv.gz), including warmups, checksums and variability.
+Released Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc
+are used. Equal GenericRowData/BinaryRowData and Arrow contain DECIMAL(4,2), (18,2),
+(19,19), (38,18) and (38,38), nullable/NOT NULL, signed extrema, zero and both signs.
+`SF_INTEGRAL_CORPUS=decimal-truth` selects the same fixture. Shapes are outer CAST to
+STRING and outer TRY_CAST to CHAR(8), each over the direct inner TRY_CAST.
+
+Each trial consumes 131,072 rows, with 16 warmups/nine measurements. Rust times production
+Calc and equivalent consumption after import/before export; Flink starts on equal prepared
+RowData. Setup and perimeter costs alone are excluded from this function timer; intrinsic
+costs remain. Actual preceding encoder `8b42f7c1` retains its character evaluator and any
+production shortcuts on the exact same unchanged DSO/executable/fixture. A retained
+descriptor alone is not proof of a JVM callback on every row. Hashes/mimalloc aliases match.
+
+| Scope | Cells | Paired stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk (1,024 rows) | 80 | 2.109-13.089x | 11.307-18.114x | 1.854-11.668x |
+| Tiny (16 rows) | 20 | 0.211-1.308x | 13.644-15.236x | 0.204-1.244x |
+
+All bulk cells beat stock and actual previous behavior. Tiny cells retain
+14 stock losses and 0 previous losses.
+All independent measurements and unfavorable controls remain.
+
+Twenty complete million-row configurations cover five DECIMAL types and both shapes
+on both released Flink lines. They retain bounded row input, blackhole output, startup,
+JNI and both transposes. Two warmups/five measurements alternate order. Candidate controls
+require consumed NativeCalc work and empty evaluators; previous controls require consumed
+work and their retained evaluators. Seconds, median:
+
+| Flink / source / shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / DECIMAL(4,2)-short | 0.207693 | 0.205985 | 0.211752 | 0.238406 |
+| 2.2.1 / DECIMAL(4,2)-padded | 0.250289 | 0.213052 | 0.246135 | 0.267123 |
+| 2.2.1 / DECIMAL(18,2)-short | 0.210433 | 0.206001 | 0.201563 | 0.232634 |
+| 2.2.1 / DECIMAL(18,2)-padded | 0.240361 | 0.207615 | 0.244654 | 0.276751 |
+| 2.2.1 / DECIMAL(19,19)-short | 0.206595 | 0.201382 | 0.208084 | 0.237834 |
+| 2.2.1 / DECIMAL(19,19)-padded | 0.244125 | 0.222056 | 0.254456 | 0.282303 |
+| 2.2.1 / DECIMAL(38,18)-short | 0.208986 | 0.211712 | 0.208985 | 0.241863 |
+| 2.2.1 / DECIMAL(38,18)-padded | 0.242238 | 0.211111 | 0.249556 | 0.281209 |
+| 2.2.1 / DECIMAL(38,38)-short | 0.215642 | 0.211295 | 0.207752 | 0.243736 |
+| 2.2.1 / DECIMAL(38,38)-padded | 0.247046 | 0.217456 | 0.250570 | 0.282227 |
+| 1.18.1 / DECIMAL(4,2)-short | 0.207685 | 0.209153 | 0.210604 | 0.236102 |
+| 1.18.1 / DECIMAL(4,2)-padded | 0.250418 | 0.211956 | 0.243160 | 0.262985 |
+| 1.18.1 / DECIMAL(18,2)-short | 0.210772 | 0.206240 | 0.220348 | 0.247438 |
+| 1.18.1 / DECIMAL(18,2)-padded | 0.245597 | 0.208913 | 0.243005 | 0.266683 |
+| 1.18.1 / DECIMAL(19,19)-short | 0.207183 | 0.228833 | 0.210799 | 0.240593 |
+| 1.18.1 / DECIMAL(19,19)-padded | 0.249136 | 0.216391 | 0.240292 | 0.270399 |
+| 1.18.1 / DECIMAL(38,18)-short | 0.205375 | 0.216000 | 0.215327 | 0.232637 |
+| 1.18.1 / DECIMAL(38,18)-padded | 0.246364 | 0.232057 | 0.240270 | 0.273388 |
+| 1.18.1 / DECIMAL(38,38)-short | 0.218105 | 0.214802 | 0.216118 | 0.249770 |
+| 1.18.1 / DECIMAL(38,38)-padded | 0.246352 | 0.215345 | 0.241897 | 0.273894 |
+
+Native/stock elapsed spans **0.846-1.104**, retaining 4 stock losses;
+native/previous spans **0.750-0.951**, retaining 0 previous losses.
+Prepared function gains are distinct from complete-job gains; no slower control is removed.
+
+All **304 focused JVM invocations** pass without skips across released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java release 11. Complete 5,003-row maps/schema cover eleven
+precision/scale pairs from DECIMAL(1,0)/(1,1) to (38,38), both outer cast kinds, nullable/
+NOT NULL, modern/legacy modes, STRING/VARCHAR(1/3)/CHAR(4/8), signed extrema/zero, logical/
+NULL wrappers and empty filtered batches. Filter/length/CONCAT consumers, selected errors,
+untaken branches and explicitly retained integer targets pass. Related direct decimal,
+integer truth/character and BOOLEAN/integer regressions pass. Admitted claims require
+consumed NativeCalc work and empty evaluator descriptors.
+
+Actual-before runs compare 44 first NOT NULL/modern outer-CAST queries' complete maps/
+schema before the evaluator-free assertion; their subsequent modes/nullability/empty and
+outer TRY_CAST queries are not claimed as reached. All sixteen preceding compound/failing/
+empty/integer-target controls pass. Four fresh unchanged released CastRules oracles pass
+eight original BOOLEAN-to-character assertions each. No Rust source/artifact changes;
+the immediately preceding qualification's fresh 904-test Rust result remains historical.
+
+Reproduce with release `integral_expression`, matching DECIMAL input/nullability/row-layout/
+batch arguments, `SF_INTEGRAL_CORPUS=decimal-truth` and
+`SF_INTEGRAL_EXPRESSION=CAST(TRY_CAST(v AS BOOLEAN) AS STRING)` or
+`TRY_CAST(TRY_CAST(v AS BOOLEAN) AS CHAR(8))`. Actual previous supplies the frozen encoder
+and `SF_INTEGRAL_PREVIOUS=true` on the same runtime/fixture. Complete jobs use
+`IntegralExpressionPipelineBenchmark` with matching `sf.integral.decimalPrecision`/
+`decimalScale` and `sf.integral.previous=true` for previous. Other resources/data match.
+Remaining type/producer/consumer gaps stay in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).

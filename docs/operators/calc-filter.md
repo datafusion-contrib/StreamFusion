@@ -1145,10 +1145,11 @@ wrapping-arithmetic, lossless-widening and integral-rounding tree described belo
 the formatting evaluator without dropping comparison inputs. The same verified integer operands
 also admit IS NULL/IS NOT NULL, including the optimizer's expansion of nullable comparisons.
 For character targets, the same proof additionally admits integer-to-BOOLEAN TRY_CAST
-over those verified integer operands, including surrounding logical and NULL checks.
+over those verified integer operands and DECIMAL-to-BOOLEAN TRY_CAST over direct inputs
+or literals, including surrounding logical and NULL checks.
 This character-consumer extension does not change the separate BOOLEAN-to-integer proof.
 The formatting operation is total for these BOOLEAN values; TRY_CAST still preserves
-failures while evaluating unverified operands. DECIMAL, character, floating,
+failures while evaluating unverified operands. Other DECIMAL comparisons, character, floating,
 temporal, division, remainder and stateful comparison operands keep their existing routes.
 Modern mode emits uppercase `TRUE`/`FALSE`, truncates VARCHAR/CHAR
 and pads bounded CHAR with spaces. Legacy mode emits lowercase `true`/`false` and ignores
@@ -1336,7 +1337,8 @@ of the same precision and scale in Rust. Every nonzero value is TRUE, zero is FA
 NULL stays NULL in modern and legacy modes. This follows Flink's NumericToBoolean rule
 and Comet's same-type zero-comparison structure; no floating conversion or rescaling is
 needed. Logical/NULL checks, filters and nullable CASE consumers retain their native
-comparison path. Character formatting keeps its separate generated producer proof.
+comparison path. Verified character consumers are covered below; other BOOLEAN producer
+families keep their separate formatting proof.
 
 Computed DECIMAL producers retain their preceding routes, including arithmetic overflow,
 selected failures, lazy branches and all-filtered batches. Ordinary CAST already reduces
@@ -1345,6 +1347,22 @@ ordinary DECIMAL(p,p)-to-BOOLEAN CAST while constructing its zero literal; that 
 failure remains unchanged. TRY_CAST for that same source type is independently supported.
 The [release qualification](../benchmarks/scalar-functions.md#decimal-to-boolean-try_cast)
 retains actual preceding fallback, independent stock, tiny batches and complete jobs.
+
+### Character consumers of decimal truth
+
+CAST and TRY_CAST of a verified direct DECIMAL-to-BOOLEAN TRY_CAST result to
+STRING/VARCHAR(n)/CHAR(n) reuse the existing native BOOLEAN formatter. Surrounding
+verified logical/NULL checks are admitted inside these character casts. Modern/legacy
+spelling, VARCHAR truncation, CHAR padding, NULLs and resolved output types are unchanged.
+The same-type decimal zero comparison retains the source precision/scale.
+
+This extends only the character-consumer proof. Nested integer-target TRY_CAST,
+unverified DECIMAL arithmetic, failing/stateful producers and arbitrary DECIMAL comparison
+operands retain their preceding routes. In particular, ordinary DECIMAL-to-BOOLEAN CAST
+reduces to a DECIMAL comparison whose character consumer keeps its separate generated path.
+Released ordinary DECIMAL(p,p)-to-BOOLEAN CAST still fails during planning.
+The [release qualification](../benchmarks/scalar-functions.md#character-consumers-of-decimal-truth)
+retains actual preceding evaluation, independent stock, tiny controls and complete jobs.
 
 ### Integer/string casts
 

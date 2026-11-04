@@ -63,7 +63,7 @@ class FlinkDecimalBooleanTryCastSqlHarnessTest {
   @ValueSource(booleans = {false, true})
   void filtersAndUnverifiedConsumersKeepTheirContracts(boolean legacy) throws Exception {
     verify(18, 3, true, legacy,
-        "SELECT id,TRY_CAST(TRY_CAST(d AS BOOLEAN) AS CHAR(8)) FROM src", false);
+        "SELECT id,TRY_CAST(TRY_CAST(d AS BOOLEAN) AS CHAR(8)) FROM src", true);
     java.util.function.Supplier<TableEnvironment> factory = () -> {
       var table = BuiltinFunctionParity.environment(ROW(FIELD("id", INT().notNull()),
           FIELD("d", DECIMAL(18, 3))),
@@ -84,7 +84,7 @@ class FlinkDecimalBooleanTryCastSqlHarnessTest {
             NativeFailureParity.Route.FALLBACK);
   }
 
-  private static void verify(int precision, int scale, boolean nullable, boolean legacy,
+  static void verify(int precision, int scale, boolean nullable, boolean legacy,
       String sql, boolean pure) throws Exception {
     var decimal = DECIMAL(precision, scale);
     var type = ROW(FIELD("id", INT().notNull()), FIELD("d", nullable ? decimal : decimal.notNull()));
