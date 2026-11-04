@@ -399,6 +399,7 @@ class CanonicalGroupArithmeticInitializationTest {
 
   static final class DirectGroup extends NativeColumnarGroupAggregateOperator {
     private final boolean persistent;
+    private final boolean direct;
     boolean checkpoint;
 
     DirectGroup(GroupAggregateStockTestFixture fixture, boolean persistent) {
@@ -418,6 +419,8 @@ class CanonicalGroupArithmeticInitializationTest {
           FlinkKeyGroupUtils.stockKeyDescriptor(fixture.inputType, fixture.keyColumns),
           fixture.maximum);
       this.persistent = persistent;
+      this.direct = persistent && tech.streamfusion.Native.rocksdbGroupAggregatorSupported(
+          fixture.kinds, new int[fixture.kinds.length]);
     }
 
     long address() {
@@ -429,7 +432,8 @@ class CanonicalGroupArithmeticInitializationTest {
     }
 
     void assertStorage() {
-      assertEquals(persistent, directRocksDBState(), "actual native state backend");
+      assertEquals(persistent, rocksdbState(), "actual requested native storage");
+      assertEquals(direct, directRocksDBState(), "actual direct or raw-keyed state path");
     }
 
     @Override

@@ -660,8 +660,7 @@ final class StockCompiledPlanLowering {
         || counter.getClass()
             != org.apache.flink.table.runtime.operators.aggregate.RecordCounter.of(recordCount)
                 .getClass()
-        || recordCount >= 0 && recordCount != (Integer) releasedField(counter, "indexOfCountStar")
-        || Arrays.stream(accumulatorTypes).anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT)))
+        || recordCount >= 0 && recordCount != (Integer) releasedField(counter, "indexOfCountStar"))
       return stock;
     int size = infos.getActualAggregateInfos().length;
     if (size == 0) return stock;
@@ -669,6 +668,9 @@ final class StockCompiledPlanLowering {
         columns = new int[size],
         scalars = new int[size],
         counts = new int[size];
+    String[] mapNames = new String[size];
+    TypeSerializer<?>[] mapKeys = new TypeSerializer<?>[size],
+        mapValues = new TypeSerializer<?>[size];
     Arrays.fill(counts, -1);
     int slot = 0, actual = 0;
     for (var info : infos.aggInfos()) {
@@ -683,7 +685,6 @@ final class StockCompiledPlanLowering {
           || call.isApproximate()
           || call.filterArg >= 0
           || !call.getCollation().getFieldCollations().isEmpty()
-          || info.viewSpecs().length != 0
           || info.argIndexes().length > 1) return stock;
       Class<?> type = info.function().getClass();
       int kind, fields;
@@ -718,6 +719,18 @@ final class StockCompiledPlanLowering {
         fields = 1;
       } else if (retract
           && type
+              == org.apache.flink.table.runtime.functions.aggregate.MinWithRetractAggFunction
+                  .class) {
+        kind = 38;
+        fields = 1;
+      } else if (retract
+          && type
+              == org.apache.flink.table.runtime.functions.aggregate.MaxWithRetractAggFunction
+                  .class) {
+        kind = 39;
+        fields = 1;
+      } else if (retract
+          && type
               == org.apache.flink.table.planner.functions.aggfunctions.SumWithRetractAggFunction
                   .LongSumWithRetractAggFunction.class) {
         kind = 0;
@@ -733,6 +746,29 @@ final class StockCompiledPlanLowering {
               && (info.argIndexes().length != 1
                   || !inputType.getTypeAt(info.argIndexes()[0]).is(LogicalTypeRoot.BIGINT))))
         return stock;
+      if (kind == 38 || kind == 39) {
+        if (info.viewSpecs().length != 1
+            || !(info.viewSpecs()[0]
+                instanceof org.apache.flink.table.runtime.dataview.MapViewSpec)) return stock;
+        var view = (org.apache.flink.table.runtime.dataview.MapViewSpec) info.viewSpecs()[0];
+        if (view.getFieldIndex() != 2
+            || view.containsNullKey()
+            || !view.getKeyDataType().getLogicalType().is(LogicalTypeRoot.BIGINT)
+            || !view.getValueDataType().getLogicalType().is(LogicalTypeRoot.BIGINT)) return stock;
+        mapNames[actual] = view.getStateId();
+        mapKeys[actual] =
+            view.getKeySerializer()
+                .orElseGet(
+                    () ->
+                        org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                            view.getKeyDataType()));
+        mapValues[actual] =
+            view.getValueSerializer()
+                .orElseGet(
+                    () ->
+                        org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                            view.getValueDataType()));
+      } else if (info.viewSpecs().length != 0) return stock;
       kinds[actual] = kind;
       columns[actual] = countEveryRow || info.argIndexes().length == 0 ? -1 : info.argIndexes()[0];
       scalars[actual] = slot;
@@ -755,16 +791,34 @@ final class StockCompiledPlanLowering {
             original
                 .getStateKeyType()
                 .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
-    var contract =
-        new tech.streamfusion.state.StockGroupArithmeticStateContract(
-            serializer,
-            (RowType) selector.getProducedType().toLogicalType(),
-            RowType.of(accumulatorTypes),
-            kinds,
-            scalars,
-            counts,
-            recordCount,
-            ttl.isEnabled());
+    tech.streamfusion.state.StockStateContract contract;
+    try {
+      contract =
+          Arrays.stream(kinds).anyMatch(kind -> kind == 38 || kind == 39)
+              ? new tech.streamfusion.state.StockGroupExtremaStateContract(
+                  serializer,
+                  (RowType) selector.getProducedType().toLogicalType(),
+                  RowType.of(accumulatorTypes),
+                  kinds,
+                  scalars,
+                  counts,
+                  mapNames,
+                  mapKeys,
+                  mapValues,
+                  recordCount,
+                  ttl.isEnabled())
+              : new tech.streamfusion.state.StockGroupArithmeticStateContract(
+                  serializer,
+                  (RowType) selector.getProducedType().toLogicalType(),
+                  RowType.of(accumulatorTypes),
+                  kinds,
+                  scalars,
+                  counts,
+                  recordCount,
+                  ttl.isEnabled());
+    } catch (IllegalArgumentException unsupported) {
+      return stock;
+    }
     int maximum = stockMaximum(original);
     var exchange =
         (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);

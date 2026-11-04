@@ -19,7 +19,7 @@ class CanonicalGroupArithmeticAdmissionTest {
   @ParameterizedTest
   @ValueSource(
       strings = {
-        "min",
+        "min-integer",
         "distinct",
         "filter",
         "mini",
@@ -48,7 +48,7 @@ class CanonicalGroupArithmeticAdmissionTest {
     else
       query =
           "SELECT k,COUNT(*),"
-              + (mode.equals("min")
+              + (mode.equals("min-integer")
                   ? "MIN(v)"
                   : mode.equals("distinct")
                       ? "COUNT(DISTINCT v)"
@@ -137,7 +137,9 @@ class CanonicalGroupArithmeticAdmissionTest {
         });
     table.useCatalog("fixture");
     String valueType =
-        mode.equals("floating") ? "DOUBLE" : mode.equals("integer") ? "INT" : "BIGINT";
+        mode.equals("floating")
+            ? "DOUBLE"
+            : mode.equals("integer") || mode.equals("min-integer") ? "INT" : "BIGINT";
     table.executeSql(
         "CREATE TABLE input_table(k BIGINT,v "
             + valueType

@@ -41,15 +41,20 @@ when their generated row shares COUNT/SUM0 slots with SUM/AVG. Retracting MIN/MA
 mapping: released Flink stores structured cached selections/map sizes and separate MapViews. Stock
 TTL can remove the accumulator while retaining expired view entries after a late retraction.
 Their independent lifetimes, clocks and negative frequencies must survive conversion; deriving a
-view from a cached result or deleting it with the header would lose stock state. This remains
-pending work rather than an implicit conversion through the scalar contract.
+view from a cached result or deleting it with the header would lose stock state. A separate structured adapter now preserves those values directly. It follows Arroyo's separation
+of retained membership from accumulator state, while preserving Flink's independently expiring
+headers and view entries. An optional private native-checkpoint frame records absent headers;
+canonical export visits live state without an intermediate checkpoint. The generated RAW view
+placeholder retains its one-byte NullSerializer payload. Actual captured MapView serializers and
+their snapshots remain authoritative, including ExternalSerializer rather than an inferred long
+serializer. These differ in restore compatibility even when their value bytes match.
 
 This is the single-phase BIGINT arithmetic contract for append-only and retracting input, plus
-append-only BIGINT MIN/MAX, with
+append-only/retracting BIGINT MIN/MAX, with
 one INT/BIGINT grouping key or a global group. Global state keeps Flink's eight-byte empty BinaryRow
 key, zero-field RowData key serializer and singleton parallelism/maximum parallelism. The adapter
 does not invent a grouping key or an initial accumulator/result. Compiled grouping without actual
 aggregate calls retains its stock owner. Additional schemas/keys/phases,
-state-backed data views and full version/connector/failure/delivery coverage
+other state-backed data views and full version/connector/failure/delivery coverage
 remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is
 explicitly deferred by the maintainer.

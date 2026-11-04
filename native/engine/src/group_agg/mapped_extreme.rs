@@ -81,6 +81,148 @@ mod tests {
     }
 
     #[test]
+    fn per_record_ttl_matches_released_independent_cache_size_and_negative_views() {
+        for is_min in [false, true] {
+            let mut state = MappedExtreme::new(is_min);
+            let mut previous_write = 0;
+            for (step, (now, input, retract)) in [
+                (900, None, false),
+                (1000, Some(1), false),
+                (1500, Some(5), false),
+                (1900, None, false),
+                (2000, Some(1), true),
+                (2100, Some(5), true),
+                (2900, None, false),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                state.update_at(
+                    ScalarValue::Int64(input),
+                    retract,
+                    StateTtl::new(1000, now),
+                    previous_write,
+                );
+                let selected = match step {
+                    0 => None,
+                    1 => Some(1),
+                    2..=4 if !is_min => Some(5),
+                    _ => Some(1),
+                };
+                assert_eq!(
+                    state.selected(&DataType::Int64),
+                    ScalarValue::Int64(selected)
+                );
+                assert_eq!(state.map_size, [0, 1, 2, 2, 2, 1, 1][step]);
+                if step >= 4 {
+                    assert_eq!(state.counts.get(&MinMaxKey::I64(1)), Some(&-1));
+                    assert_eq!(
+                        state.written.as_ref().unwrap().get(&MinMaxKey::I64(1)),
+                        Some(&2000)
+                    );
+                }
+                let mut restored = MappedExtreme::new(is_min);
+                restored.restore(state.snapshot(&DataType::Int64));
+                assert_eq!(
+                    restored.snapshot(&DataType::Int64),
+                    state.snapshot(&DataType::Int64)
+                );
+                state = restored;
+                previous_write = now;
+            }
+            assert_eq!(previous_write, 2900);
+        }
+    }
+
+    #[test]
+    fn per_record_reseek_expires_view_entries_without_rebuilding_other_headers() {
+        for is_min in [false, true] {
+            let mut state = MappedExtreme::new(is_min);
+            state.update_at(value(1), false, StateTtl::new(1000, 1000), 0);
+            state.update_at(value(5), false, StateTtl::new(1000, 1500), 1000);
+            state.update_at(
+                ScalarValue::Int64(None),
+                false,
+                StateTtl::new(1000, 1900),
+                1500,
+            );
+            state.update_at(value(5), true, StateTtl::new(1000, 2100), 1900);
+            assert_eq!(state.map_size, i64::from(is_min));
+            assert_eq!(
+                state.selected(&DataType::Int64),
+                ScalarValue::Int64(is_min.then_some(1))
+            );
+            assert_eq!(state.counts.len(), usize::from(is_min));
+            if is_min {
+                assert_eq!(
+                    state.written.as_ref().unwrap().get(&MinMaxKey::I64(1)),
+                    Some(&1000)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn per_record_negative_frequency_cancellation_keeps_cached_selection_and_map_size() {
+        for is_min in [false, true] {
+            let mut state = MappedExtreme::new(is_min);
+            state.update_at(value(1), false, StateTtl::new(1000, 1000), 0);
+            state.update_at(
+                ScalarValue::Int64(None),
+                false,
+                StateTtl::new(1000, 1900),
+                1000,
+            );
+            for (now, retract, count, size) in [
+                (2000, true, Some(-1), 1),
+                (2100, false, None, 1),
+                (2200, true, Some(-1), 1),
+                (2300, false, None, 1),
+                (2400, false, Some(1), 2),
+            ] {
+                state.update_at(value(1), retract, StateTtl::new(1000, now), now - 100);
+                assert_eq!(state.counts.get(&MinMaxKey::I64(1)).copied(), count);
+                assert_eq!(state.map_size, size);
+                assert_eq!(state.selected(&DataType::Int64), value(1));
+                assert_eq!(
+                    state
+                        .written
+                        .as_ref()
+                        .unwrap()
+                        .get(&MinMaxKey::I64(1))
+                        .copied(),
+                    count.map(|_| now)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn per_record_old_snapshots_seed_view_clocks_before_null_header_refreshes() {
+        for is_min in [false, true] {
+            let mut state = MappedExtreme::new(is_min);
+            state.update(value(1), false);
+            assert!(state.written.is_none());
+            let mut restored = MappedExtreme::new(is_min);
+            restored.restore(state.snapshot(&DataType::Int64));
+            restored.update_at(
+                ScalarValue::Int64(None),
+                false,
+                StateTtl::new(1000, 1900),
+                1000,
+            );
+            assert_eq!(
+                restored.written.as_ref().unwrap().get(&MinMaxKey::I64(1)),
+                Some(&1000)
+            );
+            restored.update_at(value(1), true, StateTtl::new(1000, 2000), 1900);
+            assert_eq!(restored.counts.get(&MinMaxKey::I64(1)), Some(&-1));
+            assert_eq!(restored.map_size, 1);
+            assert_eq!(restored.selected(&DataType::Int64), value(1));
+        }
+    }
+
+    #[test]
     fn old_group_snapshots_seed_map_clocks_before_null_only_bundles_refresh_the_group() {
         let batch = |value: Option<i64>| {
             RecordBatch::try_from_iter(vec![
@@ -219,11 +361,24 @@ impl MappedExtreme {
     }
 
     pub(super) fn update(&mut self, value: ScalarValue, retract: bool) {
+        self.update_at(value, retract, StateTtl::new(0, 0), 0);
+    }
+
+    pub(super) fn update_at(
+        &mut self,
+        value: ScalarValue,
+        retract: bool,
+        ttl: StateTtl,
+        previous_write: i64,
+    ) {
+        if ttl.enabled() {
+            self.seed_clocks(previous_write);
+        }
         if value.is_null() {
             return;
         }
         let key = MinMaxKey::from_scalar(&value);
-        let old = self.counts.get(&key).copied().unwrap_or(0);
+        let old = self.read(&key, ttl);
         let count = old.wrapping_add(if retract { -1 } else { 1 });
         if !retract
             && (self.map_size == 0
@@ -234,13 +389,13 @@ impl MappedExtreme {
         {
             self.extreme = Some(key.clone());
         }
-        self.put(key.clone(), count, StateTtl::new(0, 0));
+        self.put(key.clone(), count, ttl);
         if retract && count == 0 {
             self.map_size = self.map_size.wrapping_sub(1);
             if self.map_size == 0 {
                 self.extreme = None;
             } else if self.extreme.as_ref() == Some(&key) {
-                self.reseek(StateTtl::new(0, 0));
+                self.reseek(ttl);
             }
         } else if !retract && count == 1 {
             self.map_size = self.map_size.wrapping_add(1);
@@ -282,6 +437,33 @@ impl MappedExtreme {
         self.extreme
             .as_ref()
             .map_or_else(|| null_scalar(ty), |key| key.scalar(ty))
+    }
+
+    pub(super) fn clear_header(&mut self) {
+        self.extreme = None;
+        self.map_size = 0;
+    }
+
+    pub(super) fn entry_written(&self, key: &MinMaxKey) -> Option<i64> {
+        self.written
+            .as_ref()
+            .and_then(|written| written.get(key))
+            .copied()
+    }
+
+    pub(super) fn restore_header(&mut self, selected: Option<i64>, size: i64) {
+        self.extreme = selected.map(MinMaxKey::I64);
+        self.map_size = size;
+    }
+
+    pub(super) fn import_entry(&mut self, value: i64, count: i64, written: Option<i64>) {
+        let key = MinMaxKey::I64(value);
+        self.counts.insert(key.clone(), count);
+        if let Some(written) = written {
+            self.written
+                .get_or_insert_with(BTreeMap::new)
+                .insert(key, written);
+        }
     }
 
     pub(super) fn emit(&self, ty: &DataType) -> ScalarValue {

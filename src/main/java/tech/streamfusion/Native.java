@@ -1602,6 +1602,18 @@ public final class Native {
   public static native void importGroupArithmeticCanonical(
       long handle, boolean persistent, long arrayAddress, long schemaAddress);
 
+  public static native void configureGroupExtremaCanonical(
+      long handle, boolean persistent, int[] aggregateKinds);
+
+  public static native void exportGroupExtremaCanonical(
+      long handle, boolean persistent, BatchReceiver headerReceiver, BatchReceiver entryReceiver);
+
+  public static native void validateGroupExtremaCanonical(
+      long handle, boolean persistent, boolean entries, long arrayAddress, long schemaAddress);
+
+  public static native void importGroupExtremaCanonical(
+      long handle, boolean persistent, boolean entries, long arrayAddress, long schemaAddress);
+
   /** Flushes the group changes staged across one logical mini-batch. */
   public static native void flushGroupAggregator(
       long handle, long nowMillis, long outArrayAddress, long outSchemaAddress);

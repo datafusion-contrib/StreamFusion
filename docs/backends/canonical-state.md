@@ -1228,7 +1228,8 @@ transfer semantics. Whole-source validation precedes mutation, and a failed reso
 retains the source for a fresh target. Receiver failures preserve native state for another export.
 
 The qualified single-phase BIGINT arithmetic contract binds append-only and retracting input,
-and the same scalar projection binds append-only BIGINT MIN/MAX,
+the same scalar projection binds append-only BIGINT MIN/MAX, and a structured adapter binds
+retracting BIGINT MIN/MAX,
 automatically in ordinary SQL and portable compiled plans with one INT/BIGINT grouping key or a
 keyless global group, using the original generated accumulator layout, key serializer, identity,
 TTL and maximum parallelism. Global operators keep the released zero-field RowData key serializer,
@@ -1239,12 +1240,19 @@ through private presence markers, without adding fields to the stock accumulator
 use the same initialization policy and may share a physical row with COUNT/SUM/AVG. Aggregate counts
 retain their original values even when zero or wrapped. Initialization reapplies the captured
 append liveness policy after ordinary native checkpoints; the private snapshot format is unchanged.
-Additional aggregate schemas/phases/views and composite keys remain outside this binding. Compiled
+Additional aggregate schemas/phases/other views and composite keys remain outside this binding. Compiled
 grouping without any actual aggregate calls retains its stock owner.
-Retracting MIN/MAX remain outside the scalar binding: they require structured cache/map-size
-headers and independently retained map entries with their own TTL clocks. Stock can retain expired
-view entries even after clearing an expired accumulator, so losing the header cannot discard those
-entries during conversion.
+Retracting MIN/MAX use a separate structured header and map-entry protocol. Each cached selection,
+map size, frequency count and original write age survives independently, including expired maps
+with no accumulator header and cached values hidden by zero map size. Generated RAW MapView
+placeholders remain present and carry Flink's one-byte NullSerializer payload. The binding captures
+actual MapView IDs and serializers, including ExternalSerializer snapshots; equivalent data bytes
+alone do not establish serializer compatibility. A fresh raw projection backend avoids TTL wrapper
+filtering or clock refresh during import. Header and map validation finish before any apply, and
+source entries are cleared only after success. Export visits live native state directly in bounded
+frames. Mapped extrema use memory aggregation with raw RocksDB snapshot backing when RocksDB is
+configured. Their ordinary native checkpoints add an optional absent-header frame only when
+orphaned views exist; the default and append-only formats are unchanged.
 Unqualified upstream grouped owners in the rank-template path remain stock-owned. Qualified isolated
 arithmetic jobs verify custom source and committing-sink state, both transposes, immediate re-export,
 native checkpoint recovery and rescaling through one, three and two tasks. They compare full

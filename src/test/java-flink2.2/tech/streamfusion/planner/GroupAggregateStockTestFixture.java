@@ -18,6 +18,8 @@ import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.NativePlannerTestEnvironment;
 import tech.streamfusion.state.StockGroupArithmeticStateContract;
+import tech.streamfusion.state.StockGroupExtremaStateContract;
+import tech.streamfusion.state.StockStateContract;
 
 final class GroupAggregateStockTestFixture implements AutoCloseable {
   final KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness;
@@ -108,28 +110,32 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
             + "')");
     table.useCatalog("default_catalog");
     String fields =
-        mode.equals("arithmetic")
-            ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d"
-            : mode.equals("hidden")
-                ? "SUM(v) AS c,AVG(v) AS d"
-                : mode.equals("extrema")
-                    ? "MIN(v) AS a,MAX(v) AS b"
-                    : mode.equals("mixed-extrema")
-                        ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d,MIN(v) AS e,MAX(v)"
-                              + " AS f"
-                        : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
+        mode.equals("hidden-extrema")
+            ? "SUM(v) AS c,AVG(v) AS d,MIN(v) AS e,MAX(v) AS f"
+            : mode.equals("arithmetic")
+                ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d"
+                : mode.equals("hidden")
+                    ? "SUM(v) AS c,AVG(v) AS d"
+                    : mode.equals("extrema")
+                        ? "MIN(v) AS a,MAX(v) AS b"
+                        : mode.equals("mixed-extrema")
+                            ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d,MIN(v) AS"
+                                  + " e,MAX(v) AS f"
+                            : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
     table.executeSql(
         "CREATE TABLE output_table("
             + (global ? "" : "k " + keyType + ",")
-            + (mode.equals("arithmetic")
-                ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
-                : mode.equals("hidden")
-                    ? "c BIGINT,d BIGINT"
-                    : mode.equals("extrema")
-                        ? "a BIGINT,b BIGINT"
-                        : mode.equals("mixed-extrema")
-                            ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT,e BIGINT,f BIGINT"
-                            : "a BIGINT")
+            + (mode.equals("hidden-extrema")
+                ? "c BIGINT,d BIGINT,e BIGINT,f BIGINT"
+                : mode.equals("arithmetic")
+                    ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
+                    : mode.equals("hidden")
+                        ? "c BIGINT,d BIGINT"
+                        : mode.equals("extrema")
+                            ? "a BIGINT,b BIGINT"
+                            : mode.equals("mixed-extrema")
+                                ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT,e BIGINT,f BIGINT"
+                                : "a BIGINT")
             + ") WITH ('connector'='blackhole')");
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var transforms =
@@ -206,18 +212,20 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
         countFields = append ? new int[] {-1, 2} : new int[] {1, 3};
         valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1};
         break;
+      case "hidden-extrema":
+        kinds = append ? new int[] {0, 4, 10, 11} : new int[] {0, 4, 38, 39};
+        scalarFields = append ? new int[] {0, 1, 3, 4} : new int[] {0, 2, 4, 5};
+        countFields = append ? new int[] {-1, 2, -1, -1} : new int[] {1, 3, -1, -1};
+        valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1, global ? 0 : 1, global ? 0 : 1};
+        break;
       case "extrema":
-        if (!append)
-          throw new IllegalArgumentException("Extrema scalar fixture requires append input");
-        kinds = new int[] {10, 11};
+        kinds = append ? new int[] {10, 11} : new int[] {38, 39};
         scalarFields = new int[] {0, 1};
         countFields = new int[] {-1, -1};
         valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1};
         break;
       case "mixed-extrema":
-        if (!append)
-          throw new IllegalArgumentException("Extrema scalar fixture requires append input");
-        kinds = new int[] {3, 3, 22, 10, 11};
+        kinds = append ? new int[] {3, 3, 22, 10, 11} : new int[] {3, 3, 22, 38, 39};
         scalarFields = new int[] {0, 1, 2, 3, 4};
         countFields = new int[] {-1, -1, -1, -1, -1};
         valueColumns =
@@ -245,7 +253,7 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
     harness.setup((TypeSerializer<RowData>) node.getTypeSerializerOut());
   }
 
-  StockGroupArithmeticStateContract contract() throws Exception {
+  StockStateContract contract() throws Exception {
     var keys =
         selector
             .getProducedType()
@@ -258,6 +266,33 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
                     .getClass()
             ? -1
             : (int) field(counter, "indexOfCountStar");
+    if (java.util.Arrays.stream(kinds).anyMatch(kind -> kind == 38 || kind == 39)) {
+      var maps = new String[kinds.length];
+      var mapKeys = new TypeSerializer<?>[kinds.length];
+      var mapValues = new TypeSerializer<?>[kinds.length];
+      for (int i = 0; i < kinds.length; i++)
+        if (kinds[i] == 38 || kinds[i] == 39) {
+          maps[i] = "agg" + i + "$map";
+          mapKeys[i] =
+              org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                  org.apache.flink.table.api.DataTypes.BIGINT().notNull());
+          mapValues[i] =
+              org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                  org.apache.flink.table.api.DataTypes.BIGINT());
+        }
+      return new StockGroupExtremaStateContract(
+          keys,
+          (RowType) selector.getProducedType().toLogicalType(),
+          accumulatorType,
+          kinds,
+          scalarFields,
+          countFields,
+          maps,
+          mapKeys,
+          mapValues,
+          recordCountField,
+          ttl > 0);
+    }
     return new StockGroupArithmeticStateContract(
         keys,
         (RowType) selector.getProducedType().toLogicalType(),
@@ -292,6 +327,24 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
     var backend =
         (org.apache.flink.runtime.state.CheckpointableKeyedStateBackend<RowData>)
             harness.getOperator().<RowData>getKeyedStateBackend();
+    if (java.util.Arrays.stream(kinds).anyMatch(kind -> kind == 38 || kind == 39)) {
+      var resources = backend.savepoint().getSnapshotResources();
+      try (AutoCloseable release = resources::release) {
+        var result = new java.util.TreeMap<String, String>();
+        var metadata = resources.getMetaInfoSnapshots();
+        try (var iterator = resources.createKVStateIterator()) {
+          while (iterator.isValid()) {
+            result.put(
+                metadata.get(iterator.kvStateId()).getName()
+                    + ":"
+                    + java.util.Base64.getEncoder().encodeToString(iterator.key()),
+                java.util.Base64.getEncoder().encodeToString(iterator.value()));
+            iterator.next();
+          }
+        }
+        return result;
+      }
+    }
     var result = new java.util.TreeMap<String, String>();
     var values = rawState();
     var serializer = new RowDataSerializer(accumulatorType);

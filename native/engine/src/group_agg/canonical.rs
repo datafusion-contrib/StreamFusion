@@ -155,6 +155,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     aggs.push(state);
                 }
                 let state = GroupKeyState {
+                    accumulator_present: true,
                     aggs,
                     records: values[0].value(row),
                     last_output: None,
@@ -178,7 +179,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     }
 }
 
-fn transfer_batch(
+pub(super) fn transfer_batch(
     kinds: &[i64],
     ttl: bool,
     append_only: bool,
@@ -208,20 +209,23 @@ fn transfer_batch(
         let mut values = Vec::with_capacity(entries.len());
         let mut counts = Vec::with_capacity(entries.len());
         for (_, state) in entries {
-            let GroupAggState::Running { agg, non_null } = &state.aggs[i] else {
-                return Err(invalid("unexpected non-arithmetic retained state"));
+            let (scalar, count) = match &state.aggs[i] {
+                GroupAggState::Running { agg, non_null } => (agg.emit(), *non_null),
+                GroupAggState::Mapped(mapped) if !append_only && matches!(kind, 38 | 39) =>
+                    (mapped.selected(&DataType::Int64), mapped.map_size),
+                _ => return Err(invalid("unexpected retained aggregate state")),
             };
-            let ScalarValue::Int64(value) = agg.emit() else {
+            let ScalarValue::Int64(value) = scalar else {
                 return Err(invalid("unexpected raw accumulator type"));
             };
-            if !matches!(kind, 0 | 10 | 11) && value.is_none() {
+            if !matches!(kind, 0 | 10 | 11 | 38 | 39) && value.is_none() {
                 return Err(invalid("NULL in a required retained accumulator"));
             }
             values.push(value);
             counts.push(if append_only && matches!(kind, 0 | 10 | 11) {
                 i64::from(value.is_some())
             } else {
-                *non_null
+                count
             });
         }
         fields.push(Field::new(format!("value{i}"), DataType::Int64, true));
@@ -256,7 +260,7 @@ fn visit<'a>(
     Ok(())
 }
 
-fn emit(
+pub(super) fn emit(
     env: &mut JNIEnv,
     receiver: &JObject,
     batch: RecordBatch,
@@ -272,7 +276,7 @@ fn emit(
     result.and(released)
 }
 
-fn throw_error(env: &mut JNIEnv, error: DataFusionError) {
+pub(super) fn throw_error(env: &mut JNIEnv, error: DataFusionError) {
     if env.exception_check().unwrap_or(true) {
         return;
     }

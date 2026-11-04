@@ -154,7 +154,10 @@ materialize the backend-independent [StreamFusion canonical state format](canoni
 use Flink's full-snapshot writer, producing `KeyGroupsSavepointStateHandle` state. They can restore
 onto either this backend or the memory backend. A direct store scans and decodes its logical rows
 for this operation, so canonical savepoints are intentionally full and more expensive than ordinary
-incremental checkpoints.
+incremental checkpoints. Qualified stock-interchange adapters instead project live state into
+Flink's original descriptors and serializers; see [canonical state](canonical-state.md). Retracting
+MIN/MAX currently use the raw snapshot fallback for their mapped state, including independent
+view-entry TTL ages, rather than the direct per-key aggregate store.
 
 Restoring a canonical savepoint (or legacy raw keyed state) onto this backend decodes the blob key
 groups once at open and bulk-writes them — rows, TTL stamps, watermarks, sequence high-water marks,

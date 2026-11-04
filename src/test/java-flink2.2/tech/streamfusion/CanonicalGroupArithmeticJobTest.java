@@ -47,6 +47,8 @@ class CanonicalGroupArithmeticJobTest {
     var runner = new CanonicalJobRunner(directory);
     var baseline = prepare("baseline", mode, ordinary);
     var switched = prepare("switched", mode, ordinary);
+    configureBackend(baseline, backend);
+    configureBackend(switched, backend);
     runner.verifyJoinSwitch(baseline, switched, nativeFirst, backend, mode, "GroupAgg");
     var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
     var rows = CanonicalFixtureFactory.committedRows(switched.resolve("committed"), type);
@@ -79,6 +81,8 @@ class CanonicalGroupArithmeticJobTest {
     }
     return java.util.Map.of("null", "null|null", "2", "11|11", "3", "11|5");
   }
+
+  void configureBackend(Path root, String backend) throws Exception {}
 
   Path prepare(String name, String mode, boolean ordinary) throws Exception {
     Path root = directory.resolve(name);
