@@ -2405,6 +2405,17 @@ at numeric conversions or invalid boolean-format flags retain Flink's NULL resul
 their preceding route, including the running JDK's index-zero behavior.
 Signed widths and two's-complement formatting remain exact. All child producers must be
 failure-free even when the format does not use an argument.
+
+The same verified BOOLEAN producer proof used by character casts also applies to PRINTF:
+integer-to-BOOLEAN TRY_CAST over total integer producers, direct DECIMAL-to-BOOLEAN TRY_CAST,
+direct DECIMAL comparisons with matching precision/scale, and their verified logical/NULL
+wrappers. Ordinary DECIMAL-to-BOOLEAN CAST benefits from its existing comparison rewrite
+where released Flink supports it; DECIMAL(p,p) retains its released planning failure.
+Computed/mixed DECIMAL predicates, failing/stateful producers, and protected string consumers
+keep their preceding routes. This shares the proof without widening integer-target or
+rounding-position admission.
+The [numeric BOOLEAN producer qualification](../benchmarks/scalar-functions.md#numeric-boolean-producers-for-printf)
+records exact previous-encoder controls, prepared trials and complete jobs.
 The [BOOLEAN/mixed-integer qualification](../benchmarks/scalar-functions.md#boolean-object-and-mixed-integer-printf)
 retains the slower shared-loop prototypes, final old-native integer and certified DECIMAL controls,
 allocation diagnostics and complete jobs with both transposes.

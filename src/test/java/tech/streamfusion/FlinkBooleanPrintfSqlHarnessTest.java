@@ -39,6 +39,7 @@ class FlinkBooleanPrintfSqlHarnessTest {
               + "PRINTF('%1$b/%2$b/%2$s',n,(" + condition + ") IS NOT TRUE),"
               + "PRINTF('%1$d/%2$b/%2$s',n,TRUE),"
               + "PRINTF('%1$d/%2$b/%2$s',n,CAST(NULL AS BOOLEAN)),"
+              + "PRINTF('%1$b/%2$b/%2$s',n,TRY_CAST(n AS BOOLEAN)),"
               + "PRINTF('%1$+08d/%2$B',n+CAST(1 AS " + type + "),n IS NOT NULL) FROM src";
           FlinkIntegralEpochSqlHarnessTest.verify(type, nullable, "UTC", sql, true);
           FlinkIntegralEpochSqlHarnessTest.verify(type, nullable, "UTC", sql + " WHERE id<0", true);

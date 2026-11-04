@@ -8820,3 +8820,89 @@ leave it false. Certified DECIMAL controls set it true on both runtimes. Complet
 `IntegralExpressionPipelineBenchmark`, `sf.integral.booleanInput=true`, matching expression
 and secondary type. Remaining scope stays in
 [#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).
+
+
+## Numeric Boolean producers for PRINTF
+
+The literal primitive formatter also accepts the exact numeric BOOLEAN producer proof
+already used by character CAST/TRY_CAST: integer truth TRY_CAST over total integer trees,
+direct DECIMAL truth TRY_CAST, same-precision/scale direct DECIMAL comparisons, and their
+verified logical/NULL wrappers. This keeps `PRINTF('%b',0)` as true while
+`PRINTF('%b',TRY_CAST(0 AS BOOLEAN))` is false. Ordinary DECIMAL-to-BOOLEAN CAST benefits
+from its released comparison rewrite where supported; DECIMAL(p,p) retains the released
+planning failure. Computed/mixed decimal predicates, failing/stateful inputs, protected
+consumers and integer-target/rounding-position proofs retain their preceding scopes.
+Only released Flink 2.2 has PRINTF; 1.18 retains its SQL rejection.
+
+This is a Java admission extension with **no native source/build change**. The exact preceding
+encoder/helper `46a1f487` and its saved whole runtime execute the same fixture/data/JDK.
+Candidate native artifacts are byte-identical. Final prepared and SQL-test encoder/context
+bytecode matches within Flink 2.2, and before-control bytecode matches the saved sources.
+The [record](results/exact-numeric-boolean-printf-2026-11-04.json) retains sources, hashes, all cells and
+[4,050 raw prepared trials](results/exact-numeric-boolean-printf-2026-11-04.csv.gz).
+
+Apple M4 Pro, macOS arm64, one thread, JDK 17.0.12, Flink 2.2.1 and the same verified
+release/mimalloc DSO/executable as the preceding BOOLEAN formatter qualification.
+Equal prepared GenericRowData/BinaryRowData and Arrow cover nullable/NOT NULL
+DECIMAL(4,2)/DECIMAL(38,18), extrema/zero, independently nullable mixed INT and signed
+INT/BIGINT truth controls. Each trial consumes 131,072 rows with 16 warmups and nine
+measurements. The production Calc/output-consumption timer starts/stops inside Rust after
+import and before export, retaining intrinsic allocation, conversions and callbacks.
+Only this prepared gate excludes initial JNI/import/export and perimeter transposes.
+Stock starts on matching prepared RowData. New paths require empty evaluators; actual
+preceding paths retain their original evaluator.
+
+| Scope | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk, 1,024 rows | 32 | 4.646-8.479x | 5.200-8.644x | 4.495-8.516x |
+| Tiny, 16 rows | 8 | 2.603-4.874x | 8.343-10.742x | 2.168-4.687x |
+
+All bulk cells beat paired stock and actual preceding behavior. Retain
+0 tiny stock losses and 0 tiny previous losses.
+The initial candidate run completed 50 paired stock/native samples with matching digests,
+but the local parser failed on the comma in the existing unquoted DECIMAL type field before
+launching its preceding control. Those samples remain a separate `parser-attempt` stage;
+they are not paired previous evidence. Normalizing that field before parsing and quoting
+public CSV preserves the engine outputs without an engine/runtime modification.
+
+Four million-row jobs retain the bounded row source, blackhole sink, job submission/startup,
+JNI and both perimeter transposes. Environment setup and surrounding JVM process startup
+are outside the job timer. Two warmups and five measurements alternate stock/native.
+NativeCalc must consume work and the new routes require empty evaluators; preceding routes
+keep their original evaluators. Median seconds:
+
+| Shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| truth-DECIMAL(4,2) | 0.707504 | 0.258533 | 0.698759 | 0.696531 |
+| mixed-DECIMAL(4,2) | 0.836147 | 0.324166 | 0.819374 | 0.819529 |
+| truth-DECIMAL(38,18) | 0.691274 | 0.258629 | 0.661155 | 0.712982 |
+| mixed-DECIMAL(38,18) | 0.835070 | 0.323816 | 0.816792 | 0.830866 |
+
+Native/stock elapsed spans **0.365-0.388**
+(0 stock losses); native/previous spans
+**0.363-0.396** (0 previous losses).
+All variability and independent stock measurements remain. These prepared and complete-job
+results do not establish universal job acceleration.
+
+All **76 fresh focused JVM invocations** pass without skips across released Flink
+1.18.1/2.2.1 and JDK 11/17, targeting Java 11. Complete 5,003-row maps/schema cover eight
+decimal precision/scale pairs, direct and comparison truth, independently nullable inputs,
+modern/legacy modes, string precision/padding, mixed integer arguments, all-filtered
+batches and retained invalid/failing/lazy/consumer controls. Signed-width cases also
+compare a boxed integer's `%b` with its explicit BOOLEAN truth conversion. Admitted paths
+require consumed NativeCalc work, no fallback and empty evaluator descriptors.
+
+Actual preceding controls on each JDK compare sixteen complete first-query maps/schema
+before the intended new pure-route assertion fails. Subsequent queries/modes/empty checks
+in those failing invocations are not counted. Four other dynamic tests per JDK pass,
+covering existing pure BOOLEAN routes and retained generated routes. The unchanged native
+artifacts retain the preceding **912 release Rust core tests** and two unchanged released
+PRINTF stock-oracle runs with **47 assertions** each; these are not new Rust/oracle runs.
+Focused current JVM verification is separate from full hosted CI on the exact pushed head.
+
+Reproduce with `integral_expression` using the record's expression/type, secondary type,
+NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`; previous controls set
+`SF_INTEGRAL_PREVIOUS=true` and use the saved actual encoder/helper and whole runtime.
+Complete jobs use `IntegralExpressionPipelineBenchmark`, matching decimal precision/scale,
+secondary type and expression. General STRING/DECIMAL printf arguments, remaining formats,
+producers and consumers remain in [#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).

@@ -4688,11 +4688,15 @@ final class RexExpression {
   private static boolean nativeBooleanCharacterCast(RexCall call) {
     return call.getOperands().size() == 1
         && SqlTypeFamily.CHARACTER.contains(call.getType())
-        && nativeBooleanFormattingOperand(
-            call.getOperands().get(0),
-            producer -> nativeIntegralBooleanTryCast(producer)
-                || nativeDecimalBooleanTryCast(producer)
-                || nativeDirectDecimalPredicate(producer));
+        && nativeBooleanTextOperand(call.getOperands().get(0));
+  }
+
+  private static boolean nativeBooleanTextOperand(RexNode operand) {
+    return nativeBooleanFormattingOperand(
+        operand,
+        producer -> nativeIntegralBooleanTryCast(producer)
+            || nativeDecimalBooleanTryCast(producer)
+            || nativeDirectDecimalPredicate(producer));
   }
 
   private static int nativePrintf(RexCall call) {
@@ -4712,7 +4716,7 @@ final class RexExpression {
     for (int i = 1; i < call.getOperands().size(); i++) {
       RexNode operand = call.getOperands().get(i);
       if (operand.getType().getSqlTypeName() == SqlTypeName.BOOLEAN) {
-        if (!nativeBooleanFormattingOperand(operand)) return 0;
+        if (!nativeBooleanTextOperand(operand)) return 0;
         booleanArguments[i - 1] = true;
         hasBoolean = true;
       } else if (!SqlTypeFamily.INTEGER.contains(operand.getType())
