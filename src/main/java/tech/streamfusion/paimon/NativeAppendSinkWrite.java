@@ -273,6 +273,11 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
   }
 
   @Override
+  public SinkRecord write(InternalRow row, int bucket, int numBuckets) {
+    return write(row);
+  }
+
+  @Override
   public void notifyNewFiles(
       long snapshotId, BinaryRow partition, int bucket, List<DataFileMeta> files) {
     delegate.notifyNewFiles(snapshotId, partition, bucket, files);

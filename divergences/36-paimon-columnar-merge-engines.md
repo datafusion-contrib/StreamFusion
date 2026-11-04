@@ -34,7 +34,9 @@ Several details intentionally follow the released writer rather than a simplifie
   Java. Retracts, empty groups, reversed field aggregation and delete resets follow that order.
 - Aggregate state resets per key. Removing a record resets the values, but retains stateful
   first-value aggregator initialization, matching Java.
-- Integer arithmetic checks overflow. Decimal sum preserves Java's compact-long fast path and
+- Integer arithmetic follows Paimon 2.1's per-field sum/product overflow setting: wrapping by
+  default, checked when requested. The 1.0 adapter retains its released arithmetic behavior.
+  Decimal sum preserves Java's compact-long fast path and
   its precision-checked BigDecimal fallback. Unsupported function/type combinations decline.
 
 The exact supported functions and remaining fallbacks are maintained in

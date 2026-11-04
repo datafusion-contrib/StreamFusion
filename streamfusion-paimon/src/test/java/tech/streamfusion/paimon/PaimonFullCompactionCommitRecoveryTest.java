@@ -15,7 +15,7 @@ import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.SeekableInputStream;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.schema.Schema;
-import org.apache.paimon.schema.SchemaManager;
+import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.types.DataTypes;
 import org.junit.jupiter.api.io.TempDir;
@@ -49,7 +49,7 @@ class PaimonFullCompactionCommitRecoveryTest {
       }
     }
     var io = new FailBetweenSnapshots();
-    new SchemaManager(io, root)
+    new FileSystemSchemaManager(io, root)
         .createTable(
             Schema.newBuilder()
                 .column("k", DataTypes.INT())

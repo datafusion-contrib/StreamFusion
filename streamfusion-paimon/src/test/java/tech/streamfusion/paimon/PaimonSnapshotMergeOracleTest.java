@@ -132,7 +132,7 @@ class PaimonSnapshotMergeOracleTest {
               assertEquals(
                   tied
                           || (partial
-                              && ignore
+                              && (ignore || remove)
                               && files.stream().anyMatch(f -> f.deleteRowCount().orElse(1L) != 0))
                       ? 0
                       : 1,

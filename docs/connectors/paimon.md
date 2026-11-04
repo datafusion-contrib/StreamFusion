@@ -2,7 +2,7 @@
 
 **Status:** experimental. The optional `streamfusion-paimon` module accelerates streaming
 `SELECT` reads and `INSERT INTO` jobs on Paimon **append-only tables** and **primary-key tables with fixed,
-dynamic, or postpone buckets** on the published Paimon `2.0.0` Flink 2.2 connector.
+dynamic, or postpone buckets** on the published Paimon `2.1.0` connector for Flink 2.2 and 1.18.
 The separate [Paimon 1.0.0 adapter](#paimon-100-on-flink-118) targets Flink 1.18.
 Paimon keeps every table-level responsibility:
 schema and catalog, bucket assignment rules, sequence numbering rules, file rolling, statistics,
@@ -118,11 +118,13 @@ non-overlapping, and a file must have at least as many sequence positions as phy
 This conservative metadata gate avoids the released readers' different equal-sequence traversal
 without implementing a custom tie breaker. It can decline files whose actual keys never tie.
 
-Basic `partial-update` selects the latest non-null cell for each column. It supports `ignore-delete`
-and `partial-update.remove-record-on-delete`, including stored historical retracts and later
-reinsertion for the remove-record policy. Partial updates with `ignore-delete=true` retain Java
-when any file has stored or unknown retracts: released Java can initialize cells from the first
-retract, whereas the Rust reader skips it. Ordinary add-only partial-update files remain native. Without either delete policy, files must have a known zero delete count. Multi-record
+Basic `partial-update` selects the latest non-null cell for each column. Partial updates with
+`ignore-delete=true` retain Java when any file has stored or unknown retracts: released Java can
+initialize cells from the first retract, whereas the Rust reader skips it. On Paimon 2.1,
+`partial-update.remove-record-on-delete=true` also retains Java for those files because the
+released public readers differ on retained delete state. The 1.0 adapter keeps its previously
+verified remove-record behavior. Ordinary add-only partial-update files remain native.
+Without either delete policy, files must have a known zero delete count. Multi-record
 partial reductions emit inserts or remove the key; singleton groups preserve their original row
 kind, matching Java's reducer wrapper. Nested values are selected as whole cells, preserving their
 internal nulls. The upstream reader returns Arrow batches without Java payload rows; its internal allocation
@@ -142,7 +144,7 @@ last-negative-second alias, and for non-leading fractional timestamp keys; see t
   types; and specialized split representations.
 - First-row files with nonzero or unknown delete counts when `ignore-delete` is false, and basic
   partial-update files with those counts when neither supported delete policy is enabled; stored/unknown retracts also retain Java for
-  partial updates with `ignore-delete=true`.
+  partial updates with `ignore-delete=true`, or with remove-record-on-delete on Paimon 2.1.
 - Potential sequence ties; ORC schemas containing CHAR because released padding differs from Java.
 - Sections exceeding the smaller of 256 runs and `sort-spill-threshold`, or the encoded row-group admission budget below.
 
@@ -753,6 +755,9 @@ SQL writes and reopened jobs, released Java buffer boundaries, and Arrow ownersh
   `first_non_null_value` (also `first_not_null_value`), and `last_non_null_value` on all supported
   value types, including nested columns. Paimon's default aggregate selection,
   `fields.<column>.ignore-retract`, and `aggregation.remove-record-on-delete` are preserved.
+  Paimon 2.1's integer `sum` and `product` wrap by default and honor each field's
+  `sum.fail-on-overflow` or `product.fail-on-overflow` setting. Partial-update delete state
+  survives older or unrelated sequence-group updates until an eligible add replaces it.
 - Specialized `collect`, `merge_map`, `merge_map_with_keytime`, `nested_update`,
   `nested_partial_update`, `hll_sketch`, `theta_sketch`, `rbm32`, and `rbm64` use the released Java
   field aggregators. Rust retains key grouping and ordinary field reductions, and passes each
@@ -997,7 +1002,7 @@ streaming planner; batch range clustering and separate clustering jobs remain st
 
 ### Writer and commit coordinators
 
-Both coordinator options retain Paimon 2.0.0's Java implementations while the data writer consumes
+Both coordinator options retain Paimon 2.1.0's Java implementations while the data writer consumes
 Arrow batches. No coordinator logic is implemented in Rust.
 
 `sink.writer-coordinator.enabled = true` selects Paimon's coordinated restore factory for fixed
@@ -1008,11 +1013,13 @@ As in stock Paimon, unaware append and postpone writers do not use the writer re
 
 `sink.coordinator-commit.enabled = true` selects Paimon's committing writer coordinator for
 bucket-unaware append tables. Its existing writer lifecycle owns pending committables, checkpoint
-events, watermark and idle status, replay, and the deliberate restart after recovering an
-uncommitted snapshot. The native subclass replaces only record ingestion with bundle ingestion.
+events, watermark and idle status, and replay. Released 2.1 continues after recovering an
+uncommitted snapshot; the 2.0 deliberate restart is no longer part of this lifecycle.
+The native subclass replaces only record ingestion with bundle ingestion.
 Paimon's sink builder removes the downstream global committer and retains its configuration checks:
 streaming checkpointing must be enabled, `write-only = true`, `precommit-compact = false`,
-`sink.savepoint.auto-tag = false`, and at most one checkpoint may run concurrently. This does
+and at most one checkpoint may run concurrently. Savepoint auto-tagging uses Paimon's
+released coordinator tagger when enabled. This does
 not add bounded end-input commit support beyond the released connector. The option is ignored by
 Paimon's fixed-bucket and primary-key sinks, and StreamFusion preserves that behavior.
 
@@ -1253,7 +1260,7 @@ The source and changelog diagnostics accept the same environment variable with `
 
 ## Deployment
 
-Install the published `paimon-flink-2.2-2.0.0.jar`, the selected `streamfusion-parquet` or `streamfusion-orc` module, and
+Install the published `paimon-flink-2.2-2.1.0.jar`, the selected `streamfusion-parquet` or `streamfusion-orc` module, and
 `streamfusion-paimon` in Flink's `lib/`. Paimon resolves a file format by taking the **first**
 `FileFormatFactory` on the classpath that claims the identifier, and Flink adds `lib/` JARs in
 sorted name order, so the StreamFusion JAR must sort before `paimon-flink-*`: name it
@@ -1275,8 +1282,8 @@ work beyond the small ports and released-kernel reuse chosen for this implementa
 
 [A Paimon bundle entry for the merge-tree writer](https://github.com/datafusion-contrib/StreamFusion/issues/49)
 would remove the compaction hand-off and the idle-writer rescan.
-Released Paimon 2.0.0 walks a bundle row by row before the format writer; a Paimon release that
-passes bundles through takes the same writer's direct path with no change here
+Released Paimon 2.1.0 passes bundles through its rolling and single-file writers to the
+format writer's direct entry. The separate 1.0 adapter retains its host's rowwise bundle walk
 ([#39](https://github.com/datafusion-contrib/StreamFusion/issues/39)). The jar-ordering requirement
 goes away once Paimon's format discovery gains a priority, which
 [#38](https://github.com/datafusion-contrib/StreamFusion/issues/38) proposes upstream. Remaining streaming
@@ -1301,7 +1308,7 @@ environment from that configuration.
 
 The `paimon1` profile builds a separate `streamfusion-paimon1-flink1.18` adapter
 against the released Paimon **1.0.0** connector. Build it together with `flink-1.18`;
-the build rejects other Flink lines. Install this adapter instead of the Paimon 2.0
+the build rejects other Flink lines. Install this adapter instead of the Paimon 2.1
 adapter, alongside `paimon-flink-1.18-1.0.0.jar` and the selected StreamFusion
 Parquet/ORC modules. Keep the same `01-streamfusion-paimon.jar` classpath ordering.
 The two adapters must not be installed together.

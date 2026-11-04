@@ -15,6 +15,9 @@ import org.apache.paimon.types.DataType;
 
 /** Released API differences used by the shared columnar reader and writer. */
 final class PaimonVersion {
+  static boolean partialUpdateDeleteRemovalNeedsJava() {
+    return false;
+  }
   private PaimonVersion() {}
 
   static boolean supportsPartitionPruningHandoff() {

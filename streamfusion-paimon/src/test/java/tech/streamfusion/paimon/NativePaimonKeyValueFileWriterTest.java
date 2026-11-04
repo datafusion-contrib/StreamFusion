@@ -363,7 +363,7 @@ class NativePaimonKeyValueFileWriterTest {
 
     org.apache.paimon.fs.Path path =
         new org.apache.paimon.fs.Path(Files.createTempDirectory("paimon-pk-double").toUri());
-    new org.apache.paimon.schema.SchemaManager(
+    new org.apache.paimon.schema.FileSystemSchemaManager(
             org.apache.paimon.fs.local.LocalFileIO.create(), path)
         .createTable(
             Schema.newBuilder()

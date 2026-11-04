@@ -745,7 +745,6 @@ class PaimonSinkParityTest {
         "checkpointing",
         "write-only",
         "precommit-compact",
-        "sink.savepoint.auto-tag",
         "execution.checkpointing.max-concurrent-checkpoints"
       })
   void coordinatorCommitKeepsPaimonsConfigurationChecks(String invalid) throws Exception {
@@ -766,7 +765,7 @@ class PaimonSinkParityTest {
               + "'bucket' = '-1', 'sink.coordinator-commit.enabled' = 'true', 'write-only' = '"
               + !invalid.equals("write-only")
               + "'"
-              + (invalid.equals("precommit-compact") || invalid.equals("sink.savepoint.auto-tag")
+              + (invalid.equals("precommit-compact")
                   ? ", '" + invalid + "' = 'true'"
                   : "")
               + ")");
@@ -788,6 +787,25 @@ class PaimonSinkParityTest {
       failures.add(cause.getMessage());
     }
     assertEquals(failures.get(0), failures.get(1));
+  }
+
+  @Test
+  void coordinatorCommitAcceptsPaimon21SavepointTagging() throws Exception {
+    for (boolean nativeWriter : new boolean[] {false, true}) {
+      var env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      env.enableCheckpointing(100);
+      var tableEnv = catalogEnvironment(env, Files.createTempDirectory("paimon-savepoint-tag"));
+      tableEnv.executeSql(
+          "CREATE TABLE tagged (id BIGINT, v BIGINT) WITH ("
+              + "'bucket'='-1','sink.coordinator-commit.enabled'='true',"
+              + "'write-only'='true','sink.savepoint.auto-tag'='true')");
+      var scan = nativeWriter ? NativePlanner.install(tableEnv) : null;
+      tableEnv.explainSql(
+          "INSERT INTO tagged SELECT CAST(1 AS BIGINT), CAST(2 AS BIGINT)",
+          ExplainDetail.JSON_EXECUTION_PLAN);
+      if (nativeWriter) assertAccelerated(scan);
+    }
   }
 
   @ParameterizedTest

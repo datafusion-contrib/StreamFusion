@@ -8,6 +8,7 @@ import org.apache.flink.streaming.api.operators.StreamOperator;
 import org.apache.flink.streaming.api.operators.StreamOperatorParameters;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.paimon.flink.FlinkConnectorOptions;
 import org.apache.paimon.flink.LogicalTypeConversion;
 import org.apache.paimon.flink.sink.Committable;
 import org.apache.paimon.flink.sink.Committer;
@@ -15,6 +16,7 @@ import org.apache.paimon.flink.sink.CoordinatorCommittingRowDataStoreWriteOperat
 import org.apache.paimon.flink.sink.StoreSinkWrite;
 import org.apache.paimon.flink.sink.TableWriteOperator;
 import org.apache.paimon.flink.sink.coordinator.CommittingWriteOperatorCoordinator;
+import org.apache.paimon.flink.sink.coordinator.SavepointTagger;
 import org.apache.paimon.manifest.ManifestCommittable;
 import org.apache.paimon.table.FileStoreTable;
 import tech.streamfusion.operator.BucketedArrowBatch;
@@ -32,9 +34,16 @@ public final class NativePaimonCoordinatorCommitOperator
       StoreSinkWrite.Provider provider,
       String commitUser,
       OperatorEventGateway gateway) {
-    super(parameters, table, provider, commitUser, gateway);
+    super(parameters, table, provider, commitUser, gateway, autoTagForSavepoint(table));
     partitionArity = table.partitionKeys().size();
     rowType = LogicalTypeConversion.toLogicalType(table.rowType());
+  }
+
+  private static boolean autoTagForSavepoint(FileStoreTable table) {
+    return table
+        .coreOptions()
+        .toConfiguration()
+        .get(FlinkConnectorOptions.SINK_AUTO_TAG_FOR_SAVEPOINT);
   }
 
   @Override
@@ -76,8 +85,20 @@ public final class NativePaimonCoordinatorCommitOperator
     @Override
     public OperatorCoordinator.Provider getCoordinatorProvider(
         String operatorName, OperatorID operatorID) {
+      FileStoreTable tagTable = table;
+      SavepointTagger.Factory tagger =
+          autoTagForSavepoint(tagTable)
+              ? user ->
+                  new SavepointTagger(
+                      tagTable.snapshotManager(),
+                      tagTable.tagManager(),
+                      tagTable.store().newTagDeletion(),
+                      tagTable.store().createTagCallbacks(tagTable),
+                      tagTable.coreOptions().tagDefaultTimeRetained(),
+                      user)
+              : null;
       return new CommittingWriteOperatorCoordinator.Provider(
-          operatorID, committerFactory, true, initialCommitUser, true);
+          operatorID, committerFactory, true, initialCommitUser, tagger);
     }
 
     @Override

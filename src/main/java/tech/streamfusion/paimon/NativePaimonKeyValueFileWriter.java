@@ -237,6 +237,7 @@ public final class NativePaimonKeyValueFileWriter {
         valueStats.getLeft(),
         paths.isExternalPath() ? file.path.toString() : null,
         null,
+        null,
         null);
   }
 

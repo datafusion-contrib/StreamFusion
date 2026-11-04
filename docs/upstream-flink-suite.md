@@ -191,8 +191,8 @@ must execute in a full run; a missing or skipped case fails the summary. This po
 does not include the separate `FlinkSqlIntTest`, which requires remote Databricks and Unity
 Catalog credentials.
 
-The runner clones Flink `release-2.2.1`, Kafka connector `v5.0.0`, and Paimon `2.0.0` (its
-`release-2.0.0-rc10` tag), plus Delta `v4.4.0` for its SQL tests, under `.flink-suite/2.2`, verifies that each checkout is clean, builds and
+The runner clones Flink `release-2.2.1`, Kafka connector `v5.0.0`, and Paimon `2.1.0` (its
+`release-2.1.0` tag, commit `3a5ffe7870697e2c2605e63413fb5ac5800aae7e`), plus Delta `v4.4.0` for its SQL tests, under `.flink-suite/2.2`, verifies that each checkout is clean, builds and
 installs StreamFusion and its supported format/connector modules, and builds the required upstream
 reactors with tests skipped. The suite runs on JDK 17 and selects Flink 2.2's released
 `java11-target` build profile so its isolated dependencies meet StreamFusion's Java 11

@@ -198,6 +198,11 @@ public final class PaimonMergeOptions {
       field.put("sequence_group", groups.getOrDefault(column, List.of()));
       field.put("delimiter", options.fieldListAggDelimiter(name));
       field.put("distinct", options.fieldCollectAggDistinct(name));
+      field.put(
+          "fail_on_overflow",
+          "sum".equals(function)
+              ? options.fieldSumAggFailOnOverflow(name)
+              : !"product".equals(function) || options.fieldProductAggFailOnOverflow(name));
       fields.add(field);
     }
     Map<String, Object> plan = new HashMap<>();
@@ -206,6 +211,7 @@ public final class PaimonMergeOptions {
     plan.put("sequence_ascending", options.sequenceFieldSortOrderIsAscending());
     plan.put("rowkind_column", options.rowkindField().map(names::indexOf).orElse(null));
     plan.put("ignore_update_before", options.ignoreUpdateBefore());
+    plan.put("retain_partial_delete", true);
     plan.put("fields", fields);
     plan.put(
         "remove_on_delete",

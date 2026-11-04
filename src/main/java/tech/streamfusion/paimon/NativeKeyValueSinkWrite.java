@@ -431,6 +431,11 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   }
 
   @Override
+  public SinkRecord write(InternalRow row, int bucket, int numBuckets) {
+    return write(row);
+  }
+
+  @Override
   public void compact(BinaryRow partition, int bucket, boolean fullCompaction) throws Exception {
     delegate.compact(partition, bucket, fullCompaction);
   }

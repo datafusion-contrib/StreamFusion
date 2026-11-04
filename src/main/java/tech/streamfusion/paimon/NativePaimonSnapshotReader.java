@@ -71,7 +71,10 @@ public final class NativePaimonSnapshotReader implements AutoCloseable {
                         || f.minSequenceNumber() < 0
                         || f.maxSequenceNumber() < f.minSequenceNumber()
                         || f.rowCount() - 1 > f.maxSequenceNumber() - f.minSequenceNumber()
-                        || (partial && options.ignoreDelete() && f.deleteRowCount().orElse(1L) != 0)
+                        || (partial
+                            && (options.ignoreDelete()
+                                || (removeOnDelete && PaimonVersion.partialUpdateDeleteRemovalNeedsJava()))
+                            && f.deleteRowCount().orElse(1L) != 0)
                         || ((options.mergeEngine() == CoreOptions.MergeEngine.FIRST_ROW
                                 || (partial && !removeOnDelete))
                             && !options.ignoreDelete()

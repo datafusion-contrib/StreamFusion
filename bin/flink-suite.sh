@@ -37,9 +37,8 @@ else
   KAFKA_CONNECTOR_TAG="v${KAFKA_CONNECTOR_VERSION}"
 fi
 readonly KAFKA_CONNECTOR_TAG
-readonly PAIMON_VERSION="${PAIMON_VERSION:-2.0.0}"
-# Paimon publishes its releases from the final release-candidate tag; 2.0.0 is release-2.0.0-rc10.
-readonly PAIMON_TAG="${PAIMON_TAG:-release-${PAIMON_VERSION}-rc10}"
+readonly PAIMON_VERSION="${PAIMON_VERSION:-2.1.0}"
+readonly PAIMON_TAG="${PAIMON_TAG:-release-${PAIMON_VERSION}}"
 readonly DELTA_VERSION="${DELTA_VERSION:-4.4.0}"
 readonly SUITE_BASE_ROOT="${FLINK_SUITE_ROOT:-${REPO_ROOT}/.flink-suite}"
 readonly SUITE_ROOT="${SUITE_BASE_ROOT}/${FLINK_LINE}"

@@ -20,7 +20,7 @@ import org.apache.paimon.flink.LogicalTypeConversion;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.schema.Schema;
-import org.apache.paimon.schema.SchemaManager;
+import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.types.DataField;
@@ -175,7 +175,7 @@ class PaimonSnapshotKeyTypesTest {
                 new DataField(3, "v", DataTypes.ARRAY(DataTypes.INT()))));
     var io = LocalFileIO.create();
     var path = new Path(Files.createTempDirectory("snapshot-key-types").toUri());
-    new SchemaManager(io, path)
+    new FileSystemSchemaManager(io, path)
         .createTable(
             new Schema(
                 fields.getFields(),
