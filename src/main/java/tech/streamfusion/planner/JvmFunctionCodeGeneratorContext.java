@@ -11,16 +11,43 @@ import org.apache.flink.table.types.logical.LogicalTypeRoot;
 class JvmFunctionCodeGeneratorContext extends CodeGeneratorContext {
   private final Map<DataType, String> arrayConverters = new HashMap<>();
   private final String defaultClassLoaderTerm;
+  private final boolean recursiveContainers;
 
   JvmFunctionCodeGeneratorContext(
       ReadableConfig config, ClassLoader classLoader, String defaultClassLoaderTerm) {
+    this(config, classLoader, defaultClassLoaderTerm, false);
+  }
+
+  JvmFunctionCodeGeneratorContext(
+      ReadableConfig config,
+      ClassLoader classLoader,
+      String defaultClassLoaderTerm,
+      boolean recursiveContainers) {
     super(config, classLoader);
     this.defaultClassLoaderTerm = defaultClassLoaderTerm;
+    this.recursiveContainers = recursiveContainers;
   }
 
   @Override
   public String addReusableConverter(
       org.apache.flink.table.types.DataType type, String classLoaderTerm) {
+    if (recursiveContainers && ExternalContainerConverter.containsArray(type)) {
+      return arrayConverters.computeIfAbsent(
+          type,
+          ignored -> {
+            String term =
+                addReusableObject(
+                    new ExternalContainerConverter(type),
+                    "containerConverter",
+                    ExternalContainerConverter.class.getCanonicalName());
+            addReusableOpenStatement(
+                term
+                    + ".open("
+                    + (classLoaderTerm == null ? defaultClassLoaderTerm : classLoaderTerm)
+                    + ");");
+            return term;
+          });
+    }
     if (type.getLogicalType().is(LogicalTypeRoot.ARRAY) && type.getConversionClass().isArray()) {
       return arrayConverters.computeIfAbsent(
           type,
