@@ -87,7 +87,8 @@ class FlinkDecimalBooleanTryCastSqlHarnessTest {
   static void verify(int precision, int scale, boolean nullable, boolean legacy,
       String sql, boolean pure) throws Exception {
     var decimal = DECIMAL(precision, scale);
-    var type = ROW(FIELD("id", INT().notNull()), FIELD("d", nullable ? decimal : decimal.notNull()));
+    var input = nullable ? decimal : decimal.notNull();
+    var type = ROW(FIELD("id", INT().notNull()), FIELD("d", input), FIELD("e", input));
     BigInteger maximum = BigInteger.TEN.pow(precision).subtract(BigInteger.ONE);
     BigInteger[] values = {maximum.negate(), maximum.negate().add(BigInteger.ONE),
         BigInteger.ONE.negate(), BigInteger.ZERO, BigInteger.ONE, maximum};
@@ -101,7 +102,9 @@ class FlinkDecimalBooleanTryCastSqlHarnessTest {
         table.createTemporaryView("src", env.fromSequence(0, 5002).map(index ->
             (RowData) GenericRowData.of(index.intValue(), nullable && index % 37 == 0 ? null
                 : DecimalData.fromBigDecimal(new BigDecimal(
-                    values[index.intValue() % values.length], scale), precision, scale)))
+                    values[index.intValue() % values.length], scale), precision, scale),
+                nullable && index % 41 == 0 ? null : DecimalData.fromBigDecimal(new BigDecimal(
+                    values[(index.intValue() / 3) % values.length], scale), precision, scale)))
             .returns(InternalTypeInfo.of((RowType) type.getLogicalType())));
         var scan = nativeRun ? NativePlanner.install(table) : null;
         var types = table.sqlQuery(sql).getResolvedSchema().getColumnDataTypes();

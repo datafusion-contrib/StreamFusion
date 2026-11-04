@@ -8431,9 +8431,10 @@ modern/legacy spelling, NULLs, VARCHAR truncation and CHAR padding remain unchan
 The structure follows Flink's NumericToBoolean/BooleanToString rules and Comet's
 same-type zero comparison. No native kernel, setting, dependency or JNI changes.
 Computed/failing/stateful/metadata-sensitive producers retain their preceding routes.
-Integer-target and bounded-position condition proofs remain separate. Ordinary DECIMAL
-CAST uses a different comparison tree and its character consumer remains generated;
-ordinary DECIMAL(p,p) CAST retains the released planning failure.
+Integer-target and bounded-position condition proofs remain separate. At this qualification
+revision ordinary DECIMAL CAST uses a different comparison tree and retains its character
+evaluator; the following qualification extends that direct-comparison proof. Ordinary
+DECIMAL(p,p) CAST retains the released planning failure.
 
 The [record](results/decimal-truth-character-casts-2026-11-03.json) retains 100 prepared configurations and
 [10,000 raw samples](results/decimal-truth-character-casts-2026-11-03.csv.gz), including warmups, checksums and variability.
@@ -8515,5 +8516,98 @@ batch arguments, `SF_INTEGRAL_CORPUS=decimal-truth` and
 and `SF_INTEGRAL_PREVIOUS=true` on the same runtime/fixture. Complete jobs use
 `IntegralExpressionPipelineBenchmark` with matching `sf.integral.decimalPrecision`/
 `decimalScale` and `sf.integral.previous=true` for previous. Other resources/data match.
+Remaining type/producer/consumer gaps stay in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+
+## Character consumers of direct decimal predicates
+
+CAST/TRY_CAST to STRING/VARCHAR/CHAR reuse the native BOOLEAN formatter for direct
+same-precision/scale DECIMAL comparisons, direct DECIMAL NULL checks and verified logical/
+NULL wrappers. The NULL proof also covers released nullable-comparison rewrites. The
+ordinary DECIMAL-to-BOOLEAN CAST rewrite consequently qualifies when precision exceeds
+scale; ordinary DECIMAL(p,p) retains released planning failure. Computed/failing/stateful/
+mixed-type operands, integer-target TRY_CAST and bounded-position proofs stay separate.
+No Rust kernel, setting, dependency or JNI/transport change is introduced by this extension.
+
+The [record](results/decimal-comparison-character-casts-2026-11-04.json) retains 60 prepared configurations and
+[6,000 raw samples](results/decimal-comparison-character-casts-2026-11-04.csv.gz), including warmups, checksums and variability.
+Released Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc
+are used. Equal GenericRowData/BinaryRowData and Arrow contain DECIMAL(4,2), (18,2),
+and (38,18), nullable/NOT NULL, signed extrema, periodic zero and both signs.
+Shapes are CAST(CAST(v AS BOOLEAN) AS STRING) and
+TRY_CAST(CAST(v AS BOOLEAN) AS CHAR(8)); the inner ordinary CAST produces a verified
+same-type zero comparison in released planning.
+
+Each trial consumes 131,072 rows, with 16 warmups/nine measurements. Rust times production
+Calc and equivalent consumption after import/before export; stock starts on equal prepared
+RowData. Setup/perimeter conversion alone is excluded; intrinsic costs remain timed.
+Actual preceding encoder `6305c6f9` retains its character evaluator and any production
+shortcuts on the exact same newly rebuilt DSO/executable/fixture. A descriptor alone is
+not proof of a Java callback on every row. Allocator aliases and artifact hashes match.
+
+| Scope | Cells | Paired stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk (1,024 rows) | 48 | 1.834-15.438x | 10.918-33.003x | 1.604-12.815x |
+| Tiny (16 rows) | 12 | 0.169-1.127x | 13.296-14.487x | 0.167-1.185x |
+
+All bulk cells beat paired stock and actual previous behavior. Tiny cells retain
+10 paired-stock losses and 0 previous losses;
+all independent measurements and unfavorable controls remain.
+
+Eight complete million-row configurations cover compact DECIMAL(18,2) and noncompact
+DECIMAL(38,18), both shapes and both released lines. Bounded row input, blackhole output,
+startup, JNI and both transposes remain. Two warmups/five measurements alternate order.
+Candidate needs consumed NativeCalc work and empty evaluators; preceding controls retain
+consumed work and their character evaluator. Seconds, median:
+
+| Flink / input / shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / DECIMAL(18,2)-short | 0.200580 | 0.192215 | 0.206523 | 0.233667 |
+| 2.2.1 / DECIMAL(18,2)-padded | 0.246108 | 0.208744 | 0.243367 | 0.260601 |
+| 2.2.1 / DECIMAL(38,18)-short | 0.201272 | 0.208937 | 0.205316 | 0.237216 |
+| 2.2.1 / DECIMAL(38,18)-padded | 0.246396 | 0.215287 | 0.245370 | 0.277956 |
+| 1.18.1 / DECIMAL(18,2)-short | 0.205336 | 0.203482 | 0.210707 | 0.244583 |
+| 1.18.1 / DECIMAL(18,2)-padded | 0.242385 | 0.207672 | 0.233590 | 0.251610 |
+| 1.18.1 / DECIMAL(38,18)-short | 0.203797 | 0.222972 | 0.194975 | 0.237246 |
+| 1.18.1 / DECIMAL(38,18)-padded | 0.238009 | 0.210415 | 0.246277 | 0.265138 |
+
+Native/stock elapsed spans **0.848-1.094**, retaining 2 stock losses;
+native/previous spans **0.775-0.940**, retaining 0 previous losses.
+Prepared function gains are distinct from complete-job gains; no slower control is removed.
+
+All **260 focused JVM invocations** pass without skips on released Flink 1.18.1/2.2.1 and
+JDK 11/17, targeting Java release 11. Complete 5,003-row maps/schema cover eleven precision/
+scale pairs through (38,38), all six comparisons, independently varying DECIMAL columns
+and NULL positions, NULL/logical wrappers, both outer cast kinds, STRING/VARCHAR(1/3)/
+CHAR(4/8), modern/legacy modes and empty filtered batches. Computed operands retain their
+generated controls; integer targets retain fallback. Filters/length, selected division
+failures and untaken branches pass. Ordinary DECIMAL(p,p) planning failures remain covered.
+Pure claims require consumed NativeCalc work and empty evaluator descriptors.
+
+Actual-before runs compare all 44 first NOT NULL/modern outer-CAST queries' maps/schema
+before failing the new evaluator-free assertion. Later modes/nullability/empty/outer-TRY_CAST
+queries are not claimed as reached by those invocations. All eight retained-route controls
+pass. Four fresh unchanged released DecimalTypeTest oracles each execute three original
+comparison methods with their setup/teardown and original assertions. These are stock
+oracles; the independent runtime-source SQL witnesses establish native parity and execution.
+
+After rebasing onto merged main `2bb52ca2`, fresh full runtime Maven compilations for both lines,
+**904 release Rust core tests** with no ignores and **304 preceding-character JVM controls**
+pass on the rebuilt artifacts. A separate 260 invocations separately qualify this
+comparison extension. Another **80 targeted metadata regressions** pass across the four
+release/JDK pairs for NOT NULL arithmetic, narrowing CAST overflow and noncompact SIGN
+character/default consumers. Eight fresh compact/noncompact direct-TRY_CAST character
+prepared replays also beat stock and the actual latest-main encoder on the rebuilt runtime;
+their raw samples are retained in the linked record. Earlier character measurements retain their original revision/DSO
+provenance; none is relabeled as a fresh measurement of this rebuilt runtime. The
+[800 fresh replay samples](results/decimal-truth-character-rebase-2026-11-04.csv.gz) are
+separate prepared controls; they do not relabel the earlier twenty complete-job measurements.
+
+Reproduce using release `integral_expression`, matching DECIMAL type/nullability/row layout/
+batch, `SF_INTEGRAL_CORPUS=decimal-truth` and `SF_INTEGRAL_EXPRESSION` set to either shape.
+Actual previous supplies the frozen encoder with `SF_INTEGRAL_PREVIOUS=true` on the same
+runtime/fixture. Complete jobs use IntegralExpressionPipelineBenchmark with the matching
+expression/precision/scale and `sf.integral.previous=true` for previous controls.
 Remaining type/producer/consumer gaps stay in
 [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).

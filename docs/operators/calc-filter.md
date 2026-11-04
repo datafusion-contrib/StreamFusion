@@ -1146,10 +1146,11 @@ the formatting evaluator without dropping comparison inputs. The same verified i
 also admit IS NULL/IS NOT NULL, including the optimizer's expansion of nullable comparisons.
 For character targets, the same proof additionally admits integer-to-BOOLEAN TRY_CAST
 over those verified integer operands and DECIMAL-to-BOOLEAN TRY_CAST over direct inputs
-or literals, including surrounding logical and NULL checks.
+or literals, including surrounding logical and NULL checks. Direct same-type DECIMAL
+comparisons and DECIMAL input/literal NULL checks also qualify for character consumers.
 This character-consumer extension does not change the separate BOOLEAN-to-integer proof.
 The formatting operation is total for these BOOLEAN values; TRY_CAST still preserves
-failures while evaluating unverified operands. Other DECIMAL comparisons, character, floating,
+failures while evaluating unverified operands. Computed/mixed-type DECIMAL comparisons, character, floating,
 temporal, division, remainder and stateful comparison operands keep their existing routes.
 Modern mode emits uppercase `TRUE`/`FALSE`, truncates VARCHAR/CHAR
 and pads bounded CHAR with spaces. Legacy mode emits lowercase `true`/`false` and ignores
@@ -1357,12 +1358,31 @@ spelling, VARCHAR truncation, CHAR padding, NULLs and resolved output types are 
 The same-type decimal zero comparison retains the source precision/scale.
 
 This extends only the character-consumer proof. Nested integer-target TRY_CAST,
-unverified DECIMAL arithmetic, failing/stateful producers and arbitrary DECIMAL comparison
-operands retain their preceding routes. In particular, ordinary DECIMAL-to-BOOLEAN CAST
-reduces to a DECIMAL comparison whose character consumer keeps its separate generated path.
+unverified DECIMAL arithmetic and failing/stateful producers retain their preceding routes.
+Direct DECIMAL comparison consumers have their separate proof below; arbitrary comparison
+operands do not qualify.
 Released ordinary DECIMAL(p,p)-to-BOOLEAN CAST still fails during planning.
 The [release qualification](../benchmarks/scalar-functions.md#character-consumers-of-decimal-truth)
 retains actual preceding evaluation, independent stock, tiny controls and complete jobs.
+
+### Character consumers of direct decimal predicates
+
+CAST and TRY_CAST to STRING/VARCHAR(n)/CHAR(n) keep comparisons of direct DECIMAL
+inputs/literals in the native BOOLEAN formatter when both operands have identical
+precision and scale. Equality, inequality and all four ordered comparisons qualify,
+along with direct DECIMAL IS NULL/IS NOT NULL and verified logical/NULL wrappers.
+The NULL checks also cover released-planner rewrites of nullable comparison predicates.
+No decimal-to-floating conversion, rescaling or generated evaluator is needed for these
+character consumers. Modern/legacy spelling, truncation, padding and NULLs are preserved.
+
+The released ordinary DECIMAL-to-BOOLEAN CAST rewrite consequently qualifies inside
+these character casts when precision exceeds scale. Ordinary DECIMAL(p,p) CAST retains
+its released planning failure. Computed, failing, stateful and mixed-type decimal
+operands retain their preceding routes. Integer-target TRY_CAST and bounded-position
+condition proofs stay separate; this character extension does not expand them.
+
+The [release qualification](../benchmarks/scalar-functions.md#character-consumers-of-direct-decimal-predicates)
+retains actual preceding evaluator controls, independent stock, tiny batches and full jobs.
 
 ### Integer/string casts
 

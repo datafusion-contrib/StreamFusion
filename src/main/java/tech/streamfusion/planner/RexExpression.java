@@ -4666,7 +4666,9 @@ final class RexExpression {
         && SqlTypeFamily.CHARACTER.contains(call.getType())
         && nativeBooleanFormattingOperand(
             call.getOperands().get(0),
-            producer -> nativeIntegralBooleanTryCast(producer) || nativeDecimalBooleanTryCast(producer));
+            producer -> nativeIntegralBooleanTryCast(producer)
+                || nativeDecimalBooleanTryCast(producer)
+                || nativeDirectDecimalPredicate(producer));
   }
 
   private static boolean nativeIntegerPrintf(RexCall call) {
@@ -4704,6 +4706,32 @@ final class RexExpression {
         && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DECIMAL
         && (call.getOperands().get(0) instanceof RexInputRef
             || call.getOperands().get(0) instanceof RexLiteral);
+  }
+
+  private static boolean nativeDirectDecimalPredicate(RexCall call) {
+    switch (call.getKind()) {
+      case IS_NULL:
+      case IS_NOT_NULL:
+        return call.getOperands().size() == 1
+            && nativeDirectDecimalOperand(call.getOperands().get(0));
+      case EQUALS:
+      case NOT_EQUALS:
+      case LESS_THAN:
+      case LESS_THAN_OR_EQUAL:
+      case GREATER_THAN:
+      case GREATER_THAN_OR_EQUAL:
+        return call.getOperands().size() == 2
+            && call.getOperands().stream().allMatch(RexExpression::nativeDirectDecimalOperand)
+            && org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
+                call.getOperands().get(0).getType(), call.getOperands().get(1).getType());
+      default:
+        return false;
+    }
+  }
+
+  private static boolean nativeDirectDecimalOperand(RexNode node) {
+    return node.getType().getSqlTypeName() == SqlTypeName.DECIMAL
+        && (node instanceof RexInputRef || node instanceof RexLiteral);
   }
 
   private static boolean nativeBooleanFormattingOperand(RexNode node) {
