@@ -48,7 +48,7 @@ class FlinkIntegerPrintfSqlHarnessTest {
           FlinkIntegralEpochSqlHarnessTest.verify(type, nullable, "UTC", query, true);
           FlinkIntegralEpochSqlHarnessTest.verify(type, nullable, "UTC", query + " WHERE id<0", true);
           FlinkIntegralEpochSqlHarnessTest.verify(type, nullable, "UTC",
-              "SELECT id,CHAR_LENGTH(PRINTF('%s/%d',n,n)) FROM src", false);
+              "SELECT id,CHAR_LENGTH(PRINTF('%s/%d',n,n)) FROM src", true);
         }));
       }
     }

@@ -2411,7 +2411,7 @@ integer-to-BOOLEAN TRY_CAST over total integer producers, direct DECIMAL-to-BOOL
 direct DECIMAL comparisons with matching precision/scale, and their verified logical/NULL
 wrappers. Ordinary DECIMAL-to-BOOLEAN CAST benefits from its existing comparison rewrite
 where released Flink supports it; DECIMAL(p,p) retains its released planning failure.
-Computed/mixed DECIMAL predicates, failing/stateful producers, and protected string consumers
+Computed/mixed DECIMAL predicates, failing/stateful producers, and unverified string consumers
 keep their preceding routes. This shares the proof without widening integer-target or
 rounding-position admission.
 The [numeric BOOLEAN producer qualification](../benchmarks/scalar-functions.md#numeric-boolean-producers-for-printf)
@@ -2423,9 +2423,15 @@ allocation diagnostics and complete jobs with both transposes.
 This path borrows the literal format and reuses row/conversion buffers, appending each
 result to Arrow directly. It binds no JVM evaluator. Dynamic/non-ASCII formats, STRING/
 DECIMAL/other argument types, other conversions, larger widths/precision and unverified
-producers retain their existing paths. Composed string consumers such as CHAR_LENGTH still
-use the existing generated representation protection; direct JVM-free formatting does not
-remove those guards. Flink 1.18 still rejects PRINTF, which that release does not provide.
+producers retain their existing paths. Direct built-in CHAR_LENGTH and CHARACTER_LENGTH over
+this verified primitive formatter also bind no JVM evaluator: its ASCII result has identical
+byte, character and UTF-16 length. The producer proof includes the numeric BOOLEAN subset above.
+This does not bypass a catalog UDF with the same name. Dynamic/non-ASCII/invalid formats,
+character conversions, unverified producers, other consumers and relational boundaries retain
+their existing representation guards. The
+[length-consumer qualification](../benchmarks/scalar-functions.md#length-of-primitive-ascii-printf)
+records stock, actual-previous and native controls. Flink 1.18 still rejects PRINTF,
+which that release does not provide.
 The [integer-format qualification](../benchmarks/scalar-functions.md#integer-printf-with-a-literal-format)
 retains both release controls, stock/actual-previous/native measurements and the initial
 prototype that did not improve over every existing certified path.
@@ -2445,8 +2451,8 @@ than introducing BigDecimal formatting. Non-ASCII, temporal/hash/floating format
 flags retain Flink's Locale.US formatter; invalid formats still return NULL.
 
 Certificates apply to complete batches. Retained evaluator descriptors indicate that a call
-**may** use Java, not that a certified batch performed an upcall. String consumers still fuse
-with PRINTF because character formatting can produce isolated UTF-16 surrogates. A sensitive
+**may** use Java, not that a certified batch performed an upcall. Unverified string consumers
+still fuse with PRINTF because character formatting can produce isolated UTF-16 surrogates. A sensitive
 string crossing another operator retains the existing representation-protection fallback.
 
 ### URL_DECODE

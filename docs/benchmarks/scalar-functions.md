@@ -8906,3 +8906,72 @@ NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`; previous controls set
 Complete jobs use `IntegralExpressionPipelineBenchmark`, matching decimal precision/scale,
 secondary type and expression. General STRING/DECIMAL printf arguments, remaining formats,
 producers and consumers remain in [#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).
+
+## Length of primitive ASCII PRINTF
+
+On 2026-11-04, direct released built-in `CHAR_LENGTH`/`CHARACTER_LENGTH` over the
+already-qualified primitive ASCII formatter reuse the native length kernel. ASCII has
+identical byte, character and UTF-16 lengths, so this consumer does not need Java String
+identity. The proof includes total integer/BOOLEAN and admitted exact numeric truth
+producers. Operator identity prevents a same-name catalog UDF from being substituted.
+Generic Unicode, invalid/dynamic formats, unverified producers, other consumers and
+relational representation guards remain unchanged. No native runtime or transport change.
+
+The [record](results/primitive-printf-length-2026-11-04.json) retains source/artifact hashes,
+every configuration, allocation diagnostics and [3,000 raw trials](results/primitive-printf-length-2026-11-04.csv.gz).
+The actual preceding encoder/helper is `bbada54b`, replayed on its saved whole runtime;
+candidate DSO and prepared executable are byte-identical. Apple M4 Pro, macOS arm64,
+one thread, JDK 17.0.12, released Flink 2.2.1, Java `--release 11`, release/mimalloc build.
+
+Stock starts on prepared GenericRowData/BinaryRowData and native starts inside Rust on
+equal prepared Arrow batches. The timer retains production Calc, consumption, allocation,
+intrinsic conversions and callbacks after input import and before output export. Only
+initial JNI/import/export and perimeter transposes are outside this small-function timer.
+Each cell uses 131,072 logical rows, 16 warmups and nine alternating measured trials.
+Both NULL modes and row layouts cover INT/BIGINT extrema, BOOLEAN/mixed INT, compact/wide
+DECIMAL truth/comparisons, indexed formats and padding. Digests match for all engines.
+
+| Scope | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk, 1,024 rows | 24 | 2.224-6.884x | 2.718-7.269x | 2.159-6.921x |
+| Tiny, 16 rows | 6 | 1.352-4.703x | 8.432-10.516x | 1.406-5.079x |
+
+Four complete million-row jobs retain job submission/startup, JNI and both RowData/Arrow
+transposes, with bounded row sources and blackhole sinks. Each engine has two warmups and
+five alternating measured jobs; the surrounding JVM startup and setup remain outside the
+job timer. Median seconds:
+
+| Shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| int-length | 0.319771 | 0.210095 | 0.318141 | 0.343298 |
+| boolean-mixed | 0.762079 | 0.277136 | 0.779459 | 0.808125 |
+| decimal-truth | 0.608789 | 0.226033 | 0.658311 | 0.658383 |
+| decimal-comparison | 0.780619 | 0.298393 | 0.755788 | 0.810500 |
+
+Native/stock elapsed spans **0.364-0.657** and native/previous **0.343-0.612**.
+All measured bulk, tiny and complete-job cells improve; these bounded measurements do
+not establish universal job acceleration. Raw trials retain variability and independent
+stock controls.
+
+All **114 final focused JVM invocations** pass, zero skips, across released Flink
+1.18.1/2.2.1 and JDK 11/17. Full 5,003-row maps and resolved types cover all integer
+widths, BOOLEAN, numeric truth, decimal extremes/NULLs, aliases, modern/legacy casts,
+empty filtered batches, invalid/dynamic/non-ASCII formats and failing/lazy controls.
+An executed same-name catalog UDF keeps its implementation. Pure routes require consumed
+NativeCalc work, no fallback and empty evaluator descriptors. Each JDK's actual preceding
+control compares fourteen complete first-query maps/schema before the intended pure-route
+assertion fails; later queries in those failing invocations are not counted. Its retained
+route and catalog UDF controls pass. An initial local UDF control needed quoted SQL
+identifiers; final controls use the corrected test with no production-code change.
+
+Four unchanged released `ScalarFunctionsTest.testCharLength` stock-oracle runs pass
+separately, one per release/JDK pair. The byte-identical native artifacts retain their
+earlier 912-core-test and PRINTF-oracle qualifications; these are not new Rust/PRINTF
+oracle runs. Full hosted suites must qualify the exact pushed head separately.
+
+Reproduce with release `integral_expression`, the record's expression/type/secondary type,
+NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`. Previous controls set
+`SF_INTEGRAL_PREVIOUS=true` and use the saved actual preceding encoder/helper and runtime.
+Complete jobs use `IntegralExpressionPipelineBenchmark` with matching input and expression
+properties. Remaining consumers/representations stay in
+[#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).

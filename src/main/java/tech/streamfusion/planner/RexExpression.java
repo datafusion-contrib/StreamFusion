@@ -1938,6 +1938,16 @@ final class RexExpression {
         && containsExactScalarFunction(call)) {
       return emitHostExpression(call, true);
     }
+    if ((call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CHAR_LENGTH
+            || call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CHARACTER_LENGTH)
+        && call.getOperands().size() == 1
+        && call.getOperands().get(0) instanceof RexCall
+        && nativePrintf((RexCall) call.getOperands().get(0)) != 0) {
+      // The qualified primitive formatter produces ASCII, so no UTF-16 identity is lost.
+      return emitBuiltinCall(call, 52);
+    }
     if (call.getOperands().stream()
         .anyMatch(
             operand ->
