@@ -34,8 +34,9 @@ class BinaryCharacterPipelineBenchmark {
               .returns(Types.ROW_NAMED(new String[] {"b"}, Types.PRIMITIVE_ARRAY(Types.BYTE)));
           table.createTemporaryView("inputs", source,
               Schema.newBuilder().column("b", DataTypes.BYTES()).build());
-          table.executeSql("CREATE TABLE output_rows(s STRING) WITH ('connector'='blackhole')");
-          String sql = "INSERT INTO output_rows SELECT CAST(b AS STRING) FROM inputs";
+          String target = BinaryCharacterBenchmarkFunctions.target();
+          table.executeSql("CREATE TABLE output_rows(s " + target + ") WITH ('connector'='blackhole')");
+          String sql = "INSERT INTO output_rows SELECT CAST(b AS " + target + ") FROM inputs";
           var scan = nativeRun ? NativePlanner.install(table) : null;
           String plan = table.explainSql(sql);
           if (nativeRun && !previous) {
@@ -58,8 +59,9 @@ class BinaryCharacterPipelineBenchmark {
             RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
           if (nativeRun && previous) assertTrue(metrics.nativeOperators().isEmpty());
           System.out.printf(Locale.ROOT,
-              "[binary-character-pipeline] engine=%s trial=%d warmup=%s rows=%d seconds=%.9f%n",
-              nativeRun ? previous ? "previous" : "native" : "stock", trial, trial < warmups, count, seconds);
+              "[binary-character-pipeline] target=%s engine=%s trial=%d warmup=%s rows=%d seconds=%.9f%n",
+              target, nativeRun ? previous ? "previous" : "native" : "stock", trial, trial < warmups,
+              count, seconds);
         }
       }
     }

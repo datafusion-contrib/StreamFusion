@@ -41,6 +41,10 @@ public final class FlinkCompat {
     return 1;
   }
 
+  public static boolean supportsSubHourLtzRounding() {
+    return false;
+  }
+
   public static org.apache.flink.table.functions.ScalarFunction scalarFunction(
       org.apache.calcite.sql.SqlOperator operator) {
     Object scalarCandidate;

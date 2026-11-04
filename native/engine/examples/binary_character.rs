@@ -6,8 +6,31 @@ use jni::objects::JValue;
 use std::{hint::black_box, sync::Arc, time::Instant};
 use streamfusion::bench::CalcProgram;
 
+/// `SF_BINARY_CHARACTER_TARGET` selects STRING (default), `VARCHAR(n)` or `CHAR(n)`.
 fn program() -> CalcProgram {
-    CalcProgram::new(vec![6, 0], vec![237, 0], vec![1, 0], vec![], vec![], vec![])
+    let target = std::env::var("SF_BINARY_CHARACTER_TARGET").unwrap_or_default();
+    let length = |prefix: &str| {
+        target
+            .strip_prefix(prefix)
+            .and_then(|rest| rest.strip_suffix(')'))
+            .map(|n| n.parse::<i64>().unwrap())
+    };
+    match (length("VARCHAR("), length("CHAR(")) {
+        (Some(n), _) => bounded(n),
+        (_, Some(n)) => bounded(-n),
+        _ => CalcProgram::new(vec![6, 0], vec![237, 0], vec![1, 0], vec![], vec![], vec![]),
+    }
+}
+
+fn bounded(length: i64) -> CalcProgram {
+    CalcProgram::new(
+        vec![6, 0, 7],
+        vec![237, 0, 0],
+        vec![2, 0, 0],
+        vec![length],
+        vec![],
+        vec![],
+    )
 }
 
 fn checksum(batch: &RecordBatch) -> i64 {
@@ -68,11 +91,16 @@ fn main() {
         std::env::var("SF_NATIVE_LIB_DIR").unwrap()
     );
     let previous_flag = format!("-Dsf.binary.character.previous={previous}");
+    let target_flag = format!(
+        "-Dsf.binary.character.target={}",
+        std::env::var("SF_BINARY_CHARACTER_TARGET").unwrap_or_else(|_| "STRING".into())
+    );
     let options = jni::InitArgsBuilder::new()
         .version(jni::JNIVersion::V8)
         .option(&cp)
         .option(&lib)
         .option(&previous_flag)
+        .option(&target_flag)
         .option("-Xms256m")
         .option("-Xmx512m")
         .option("-Dstreamfusion.native.development=true")
@@ -153,8 +181,8 @@ fn main() {
                 (start.elapsed().as_nanos(), black_box(sum))
             };
             assert_eq!(digest, expected);
-            println!("binary_character,{width},{mode},{fixed},{nullable},{binary},{rows},{},{trial},{},{name},{nanos},{digest}",
-                rows * loops, trial < warmups);
+            println!("binary_character,{width},{mode},{fixed},{nullable},{binary},{rows},{},{trial},{},{name},{nanos},{digest},{}",
+                rows * loops, trial < warmups, std::env::var("SF_BINARY_CHARACTER_TARGET").unwrap_or_else(|_| "STRING".into()));
         }
     }
     env.call_static_method(class, "close", "()V", &[]).unwrap();

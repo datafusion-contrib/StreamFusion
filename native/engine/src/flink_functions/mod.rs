@@ -68,6 +68,7 @@ mod hash_code;
 mod if_null;
 mod instr;
 pub(crate) mod integer_divide;
+mod integer_printf;
 pub(crate) mod integer_string;
 mod is_json;
 mod java_timsort;
@@ -86,6 +87,7 @@ mod negate;
 pub(crate) mod numeric;
 pub(crate) mod numeric_cast;
 mod numeric_classification;
+mod round_position;
 mod row_constructor;
 mod scalar;
 pub(crate) mod sha2_runtime;
@@ -311,6 +313,9 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         232 => from_base64::function(),
         237 => binary_character::function(),
         245 => unnest_temporal::function(unnest_temporal::Operation::EpochSeconds),
+        246 => temporal_round::utc_ltz_ceil(),
+        247 => round_position::function(),
+        248 => integer_printf::function(),
         _ => return None,
     })
 }

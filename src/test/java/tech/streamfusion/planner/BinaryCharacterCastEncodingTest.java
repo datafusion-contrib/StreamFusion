@@ -22,16 +22,24 @@ class BinaryCharacterCastEncodingTest {
           types.createSqlType(SqlTypeName.VARBINARY, 8))) {
         for (var target : List.of(types.createSqlType(SqlTypeName.VARCHAR, Integer.MAX_VALUE),
             types.createSqlType(SqlTypeName.CHAR, 1), types.createSqlType(SqlTypeName.VARCHAR, 1))) {
-          if (!legacy && target.getPrecision() != Integer.MAX_VALUE) continue;
+          boolean bounded = !legacy && target.getPrecision() != Integer.MAX_VALUE;
           for (var operator : List.of(FlinkSqlOperatorTable.CAST, FlinkSqlOperatorTable.TRY_CAST)) {
             RexNode call = rex.makeCall(target, operator, List.of(rex.makeInputRef(source, 0)));
             var encoded = encode(call, legacy);
-            assertArrayEquals(new int[] {6, 0}, encoded.kinds());
             assertEquals(237, encoded.payload()[0]);
             assertArrayEquals(new String[0], encoded.strings());
             assertTrue(encoded.jvmFunctionCalls().isEmpty());
             long[] literals = encoded.longs();
             assertSame(literals, encoded.udfBinding().bind(literals, null));
+            if (!bounded) {
+              assertArrayEquals(new int[] {6, 0}, encoded.kinds());
+              continue;
+            }
+            // CHAR(n) pads, so its length literal is negative.
+            assertEquals(3, encoded.kinds().length);
+            assertEquals(2, encoded.childCounts()[0]);
+            assertArrayEquals(
+                new long[] {target.getSqlTypeName() == SqlTypeName.CHAR ? -1 : 1}, literals);
           }
         }
       }

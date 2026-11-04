@@ -1144,6 +1144,9 @@ logical proof. Each comparison operand must be an integer reference/literal or t
 wrapping-arithmetic, lossless-widening and integral-rounding tree described below. This removes
 the formatting evaluator without dropping comparison inputs. The same verified integer operands
 also admit IS NULL/IS NOT NULL, including the optimizer's expansion of nullable comparisons.
+For character targets, the same proof additionally admits integer-to-BOOLEAN TRY_CAST
+over those verified integer operands, including surrounding logical and NULL checks.
+This character-consumer extension does not change the separate BOOLEAN-to-integer proof.
 The formatting operation is total for these BOOLEAN values; TRY_CAST still preserves
 failures while evaluating unverified operands. DECIMAL, character, floating,
 temporal, division, remainder and stateful comparison operands keep their existing routes.
@@ -1166,6 +1169,19 @@ Logical-operand CAST and TRY_CAST have separate
 [TRY_CAST qualification](../benchmarks/scalar-functions.md#boolean-try_cast-over-logical-operands),
 separate from direct-input formatting and existing planner simplifications.
 
+Verified BOOLEAN CASE forms can already run without evaluators after released-planner
+rewrites. For example, `CAST(CASE WHEN b THEN n<0 WHEN b IS NULL THEN n=1 ELSE NOT b END
+AS STRING)` and the corresponding TRY_CAST reduce to existing logical/integer-comparison
+trees. The [runtime route record](../benchmarks/results/boolean-case-existing-routes-2026-11-03.json)
+covers five CASE shapes, including nested cases and NULL branches, each cast to STRING,
+VARCHAR(1/3) and CHAR(4/8), in modern/legacy modes and nullable/NOT NULL inputs. All sixteen
+invocations across released Flink 1.18.1/2.2.1 and JDK 11/17 compare complete 5,003-row maps
+and resolved schemas, require consumed NativeCalc work and empty JVM evaluators. No planner
+or kernel change is needed for these existing rewrites; this supplies no new performance
+claim. CASE shapes and producers that do not reduce to the verified tree retain their
+existing routes, including failing/stateful and other comparison families tracked in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
 Native, unconditionally, with no host involvement:
 
 - **Widening numeric** — integer→wider integer, integer→float/double, float→double.
@@ -1173,6 +1189,9 @@ Native, unconditionally, with no host involvement:
   reproduces Flink's primitive Java cast semantics exactly: two's-complement wraparound for an
   integer source, and saturation to INT/BIGINT followed by low-bit narrowing for a float source. Arrow's own
   cast kernel can't do this — it errors on overflow instead of wrapping/saturating.
+  Integer inputs map their original typed value buffer in one pass and retain its immutable
+  validity buffer, without allocating an intermediate i64 column. Decimal/floating conversion
+  paths keep their separate semantics.
 - **DECIMAL → TINYINT/SMALLINT/INT/BIGINT** — truncate toward zero, then keep the destination's
   low bits, matching Flink's BigDecimal `longValue()` followed by the Java integer cast.
   Overflow wraps rather than saturating or producing NULL; NULL input remains NULL.
@@ -1249,6 +1268,84 @@ When its input expression can fail, the existing generated-expression callback p
 Flink's input evaluation errors: TRY_CAST only catches conversion failures. The reverse
 BOOLEAN-to-character casts follow the direct-input and generated paths described above.
 
+### Integer TRY_CAST
+
+TRY_CAST between TINYINT, SMALLINT, INT and BIGINT reuses the existing native primitive
+cast kernels for verified inputs/literals, integer arithmetic, lossless widening and
+admitted rounding producers. Widening is exact; narrowing retains the low destination bits,
+matching Flink's primitive Java cast. Integer overflow wraps rather than becoming NULL.
+Input NULL stays NULL and the resolved TRY_CAST nullability is retained in both modern and
+legacy cast modes. Same-type expressions may be removed by the released planner.
+
+Every producer must be failure-free. Division, narrowing producers and other unverified
+trees retain their preceding fallback, including failures while evaluating an operand,
+untaken CASE branches and empty filtered batches. No conversion error is possible in the
+admitted integer subset, so TRY_CAST can reuse CAST without an exception-catching callback.
+The [integer TRY_CAST qualification](../benchmarks/scalar-functions.md#integer-try_cast)
+retains initial/final kernel measurements, actual previous stock fallback, complete jobs and
+shared CAST controls. Other scalar TRY_CAST pairs remain governed by their separate coverage below and
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+### BOOLEAN-to-integer TRY_CAST
+
+TRY_CAST from verified BOOLEAN inputs/literals, logical trees, NULL checks and integer
+comparisons to TINYINT/SMALLINT/INT/BIGINT uses the existing native primitive CAST.
+TRUE becomes 1, FALSE becomes 0 and NULL stays NULL, in both cast modes. This follows
+Flink's BooleanToNumeric rule and the same DataFusion-compatible primitive path used by
+Comet; there is no conversion error to catch. The resolved TRY_CAST type/nullability stays
+unchanged. Ordinary BOOLEAN-to-integer CAST already lowers to Flink's native-encodable
+CASE tree and needs no new admission.
+
+Division and other unverified/failing/stateful BOOLEAN producers retain fallback, including
+their operand failures, lazy branches and empty filtered batches. Other target families
+and reverse TRY_CAST conversions are covered separately below.
+The [release qualification](../benchmarks/scalar-functions.md#boolean-to-integer-try_cast)
+retains actual preceding fallback, independent stock, tiny controls and complete jobs.
+
+### Integer-to-BOOLEAN TRY_CAST
+
+TRY_CAST from verified TINYINT/SMALLINT/INT/BIGINT input, arithmetic, widening and rounding
+trees to BOOLEAN uses a native comparison against a zero of the input's resolved width.
+Every nonzero integer, including signed minima, becomes TRUE; zero becomes FALSE and NULL
+stays NULL in both cast modes. This follows Flink's NumericToBoolean rule; ordinary CAST
+already lowers to this comparison through released planning. Conversion cannot fail.
+
+Division and other unverified/failing/stateful producers keep the preceding fallback,
+including operand failures, lazy branches and all-filtered batches. Verified character
+consumers of the new BOOLEAN result are covered below; other source families retain
+their preceding coverage.
+The [release qualification](../benchmarks/scalar-functions.md#integer-to-boolean-try_cast)
+retains actual preceding fallback, independent stock, tiny controls and complete jobs.
+
+### Character consumers of integer truth
+
+CAST and TRY_CAST of the verified integer-to-BOOLEAN TRY_CAST result to
+STRING/VARCHAR(n)/CHAR(n) reuse the existing native BOOLEAN formatter. The shared
+producer proof also permits surrounding logical/NULL checks inside these character casts;
+it does not extend the separately qualified integer-target cast proof or admit a failing
+or otherwise unverified integer producer. Modern/legacy
+spelling, VARCHAR truncation, CHAR padding and resolved output/nullability are unchanged.
+Ordinary integer-to-BOOLEAN CAST already has a released comparison rewrite.
+The [release qualification](../benchmarks/scalar-functions.md#character-consumers-of-integer-truth)
+retains actual preceding evaluation, independent stock, tiny controls and complete jobs.
+
+### DECIMAL-to-BOOLEAN TRY_CAST
+
+TRY_CAST from a direct DECIMAL input or literal to BOOLEAN compares with a DECIMAL zero
+of the same precision and scale in Rust. Every nonzero value is TRUE, zero is FALSE and
+NULL stays NULL in modern and legacy modes. This follows Flink's NumericToBoolean rule
+and Comet's same-type zero-comparison structure; no floating conversion or rescaling is
+needed. Logical/NULL checks, filters and nullable CASE consumers retain their native
+comparison path. Character formatting keeps its separate generated producer proof.
+
+Computed DECIMAL producers retain their preceding routes, including arithmetic overflow,
+selected failures, lazy branches and all-filtered batches. Ordinary CAST already reduces
+to a native comparison when the source precision exceeds its scale. Released Flink rejects
+ordinary DECIMAL(p,p)-to-BOOLEAN CAST while constructing its zero literal; that planning
+failure remains unchanged. TRY_CAST for that same source type is independently supported.
+The [release qualification](../benchmarks/scalar-functions.md#decimal-to-boolean-try_cast)
+retains actual preceding fallback, independent stock, tiny batches and complete jobs.
+
 ### Integer/string casts
 
 `CAST` and `TRY_CAST` between `STRING`/`VARCHAR`/`CHAR` and
@@ -1269,7 +1366,7 @@ through JNI. Successful results and NULL-on-error policies match as well.
 Integer formatting uses canonical decimal text, including signed minima and zero.
 `VARCHAR(n)` truncates to `n` characters; `CHAR(n)` also pads shorter results with spaces.
 Legacy mode leaves the formatted text unchanged regardless of the declared length, matching
-Flink. Other TRY_CAST pairs, except the BOOLEAN and temporal forms described here and
+Flink. Other TRY_CAST pairs, except the integer, BOOLEAN and temporal forms described here and
 the binary, DECIMAL and collection forms below, still fall back. Bare encoders without table configuration
 decline mode-dependent casts. See the [kernel ledger](../optimizations/scalar-function-kernels.md)
 for the release benchmark against the previous host-cast path.
@@ -1338,10 +1435,17 @@ from raw `FROM_BASE64` STRING transport and never exposes malformed Arrow Utf8.
 
 The unbounded conversion has the same decoding behavior in modern and legacy cast modes.
 Legacy bounded CHAR/VARCHAR casts also use this kernel because the released rule ignores
-their length. Modern bounded targets retain fallback: their UTF-16 truncation/padding can
-produce an isolated surrogate and is not equivalent to truncating Unicode code points.
+their length. Modern bounded targets apply Flink's rule to the decoded text in the same
+kernel: VARCHAR(n) keeps at most n UTF-16 units and CHAR(n) also pads with spaces. This is
+not truncation by Unicode code points; a cut through a surrogate pair writes `?`, the UTF-8
+that Flink produces for the isolated high surrogate. Rows whose UTF-8 length already fits
+VARCHAR(n), and ASCII rows of exactly n bytes for CHAR(n), share the decoded Arrow buffers.
+Inside a Calc, consumers of a modern bounded result, such as LIKE, comparisons, CASE or
+another cast, would observe the original Java String; they keep the generated Flink
+expression around the cast, which recomputes the conversion itself.
 TRY_CAST catches conversion failures, not failures while computing its operand; binary UTF-8
-decoding itself replaces malformed input instead of throwing. CASE remains lazy and an
+decoding itself replaces malformed input instead of throwing, so bounded TRY_CAST uses the
+same native conversion without catching operand errors. CASE remains lazy and an
 empty filtered batch never evaluates the cast.
 
 Admitted value-only consumers such as length, HEX, equality, LIKE and re-encoding compose
@@ -1349,8 +1453,10 @@ with the native conversion. Existing string-ordering and representation-sensitiv
 rules remain in force. A decoded STRING feeding another relational operator retains
 fallback so its original Java-backed representation cannot be lost before a comparator
 observes it; a CAST delayed until the final projection by the released optimizer does not
-cross that boundary. The remaining bounded/boundary scope is tracked in
-[#493](https://github.com/datafusion-contrib/StreamFusion/issues/493).
+cross that boundary. The remaining relational-boundary scope is tracked in
+[#493](https://github.com/datafusion-contrib/StreamFusion/issues/493). Bounded-target
+measurements, including slower 16-row batches, are in the
+[scalar benchmark record](../benchmarks/scalar-functions.md#modern-bounded-charvarchar-targets).
 
 CAST and TRY_CAST from STRING/VARCHAR/CHAR or BINARY/VARBINARY to BINARY/VARBINARY
 use a native byte-copy kernel when their operands do not require Flink's rowwise error handling.
@@ -1643,7 +1749,7 @@ failures, and negative positions allocate values
 while sharing sliced validity. The input remains unchanged.
 
 The kernel follows Comet's native-width/widened integer split, with Flink's HALF_UP and
-wrapping contract. It does not use floating point. Runtime positions, literals outside -38..38,
+wrapping contract. It does not use floating point. Unverified runtime positions, literals outside -38..38,
 division, remainder, narrowing and other unverified producers retain generated evaluation. In particular,
 released Flink throws for nonzero `ROUND(value, 2147483647)` while zero returns zero;
 the ordinary nonnegative-position identity must not erase that behavior. CASE and empty
@@ -1654,6 +1760,25 @@ include both Flink lines, the actual previous scalar callback, slower small-batc
 and a complete job retaining both transposes.
 The [computed-operand controls](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
 cover wrapping arithmetic, literal positions, NULL folding and complete jobs with position -1.
+
+### Integer ROUND with a bounded runtime position
+
+`ROUND(value, CASE WHEN condition THEN position ELSE position END)` also runs in Rust
+when every result is an INT literal in -38..38 or NULL, including nested CASE results.
+Conditions must consist of direct/literal BOOLEAN values, logical/null predicates or
+comparisons of recursively verified integer operands. The value uses the same verified
+integer producer tree as literal-position ROUND. Each row retains its original integer
+width, HALF_UP ties, wrapping overflow and selected NULL position.
+
+The planner proves every condition and result failure-free before emitting a typed position
+selector. It picks the first TRUE condition in one Arrow pass; NULL conditions behave as
+false. ROUND consumes that INT column without the generic CASE filter/scatter machinery
+or a JVM evaluator. Empty filtered batches remain empty. No configuration switch or JNI
+contract changes are needed. Arbitrary position columns, out-of-range results,
+division/remainder, narrowing, stateful or other unverified conditions/producers retain the
+complete generated expression. TRUNCATE has the separate verified subset below.
+The [runtime-position measurements](../benchmarks/scalar-functions.md#integer-round-with-a-bounded-runtime-position)
+retain the initial slower prototype, batch qualification and conversion-inclusive jobs.
 
 ### Single-argument integer TRUNCATE
 
@@ -1687,7 +1812,7 @@ values while retaining sliced validity.
 This removes Flink's DECIMAL(38,18) intermediate only in the verified domain, preserving
 resolved widths, signed minima and exact large BIGINTs without JVM computation.
 
-Runtime/extreme positions, division, remainder, narrowing and other unverified producers keep their
+Unverified runtime/extreme positions, division, remainder, narrowing and other unverified producers keep their
 complete generated expression. In particular, nonzero input with position -2147483648
 keeps Flink's Underflow exception. Direct TINYINT/SMALLINT signatures still preserve
 released Flink's generated-compilation failure; explicit widening is supported. Conditional
@@ -1697,6 +1822,24 @@ compare stock and the actual preceding scalar callback, including both transpose
 complete jobs.
 The [arithmetic controls](../benchmarks/scalar-functions.md#integer-truncate-over-arithmetic)
 add computed operands, bounded positions and failure-safe NULL folding.
+
+### Integer TRUNCATE with a bounded runtime position
+
+INT/BIGINT `TRUNCATE(value, position)` reuses the
+[bounded CASE proof](#integer-round-with-a-bounded-runtime-position), typed position selector
+and exact integer kernel. Every position result must be a literal in -38..38 or NULL,
+including nested CASE; every condition and value producer must satisfy the failure-free
+proof. Negative positions truncate toward zero without a DECIMAL(38,18) JVM intermediate.
+The selected NULL, input NULL, resolved width, integer overflow in verified producers,
+STRING/epoch consumers and empty-batch contracts remain exact.
+
+Arbitrary columns, out-of-range results, failing/stateful conditions and other unverified
+producers retain their complete generated expression. Direct TINYINT/SMALLINT TRUNCATE
+retains released Flink's compilation failure; explicit widening to INT/BIGINT is supported.
+No Rust implementation, opcode, JNI, transport or switch is added by this extension.
+The [TRUNCATE qualification](../benchmarks/scalar-functions.md#integer-truncate-with-a-bounded-runtime-position)
+compares both releases with stock and the actual preceding encoder, retaining tiny and
+conversion-inclusive complete-job controls.
 
 ### Exact unary and integral functions
 
@@ -2206,9 +2349,37 @@ retain their existing exact route.
 
 ### PRINTF
 
-Direct input/literal calls have a certified Rust path for ASCII formats and arguments:
+On Flink 2.2, ASCII literal formats of at most 512 characters have a JVM-free path when
+all arguments are verified integer inputs/literals, arithmetic, lossless widening or
+admitted integer rounding trees. Supported conversions are `%s`/`%S`, `%d`, `%x`/`%X`,
+`%o`, `%b`/`%B` and `%%`, including argument indices/reuse, alignment, sign/zero padding and string
+precision. Width and precision are bounded at 256. The planner checks the running JDK's
+flags/indexing rules during planning with `Locale.US`; data rows execute only the Arrow formatter.
+Explicit index zero retains its preceding route because JDK 11 accepts it while JDK 17 rejects it.
+NULL arguments retain their formatted `null`/`NULL` text, including precision and padding.
+For `%b`/`%B`, every non-NULL integer, including zero, formats as `true`/`TRUE`;
+NULL formats as `false`/`FALSE`. Precision and space padding apply to those words.
+Boolean-object arguments retain their separate preceding route; integer formatting does
+not interpret zero as SQL FALSE. Invalid boolean-format flags still retain Flink's NULL result.
+Signed widths and two's-complement formatting remain exact. All child producers must be
+failure-free even when the format does not use an argument.
+
+This path borrows the literal format and reuses an output scratch buffer, appending each
+result to Arrow directly. It binds no JVM evaluator. Dynamic/non-ASCII formats, STRING/
+DECIMAL/other argument types, other conversions, larger widths/precision and unverified
+producers retain their existing paths. Composed string consumers such as CHAR_LENGTH still
+use the existing generated representation protection; direct JVM-free formatting does not
+remove those guards. Flink 1.18 still rejects PRINTF, which that release does not provide.
+The [integer-format qualification](../benchmarks/scalar-functions.md#integer-printf-with-a-literal-format)
+retains both release controls, stock/actual-previous/native measurements and the initial
+prototype that did not improve over every existing certified path.
+The separate [integer boolean-format qualification](../benchmarks/scalar-functions.md#integer-boolean-printf-formats)
+replays the actual preceding encoder and whole runtime, retaining independent stock and
+shared numeric-format controls.
+
+Other direct input/literal calls have a certified Rust path for ASCII formats and arguments:
 STRING/integer/DECIMAL `%s`, signed integer `%d`, two's-complement `%x`/`%X`/`%o`, ASCII integer
-`%c`/`%C` over TINYINT/SMALLINT/INT, `%%`, argument indices/reuse, width, string precision,
+`%c`/`%C` over TINYINT/SMALLINT/INT, integer `%b`/`%B`, `%%`, argument indices/reuse, width, string precision,
 alignment and sign/zero padding. BIGINT character conversions retain the formatter, which
 rejects non-NULL Long arguments.
 DECIMAL string conversion preserves scale and Java scientific notation. The released SQL
@@ -3108,7 +3279,17 @@ this test-only setting empty and retains normal JVM exception optimization.
 `TO_DATE`, `TO_TIMESTAMP`, all `TO_TIMESTAMP_LTZ` overloads, calendar fields, and temporal
 `FLOOR`/`CEIL` now have expression implementations. Formatted parsing and recurring-DST LTZ
 calendar fields use Flink's own generated code. Timestamp results retain the complete millisecond/fraction pair and run
-by default. See the complete [temporal function inventory](temporal-functions.md).
+by default. Direct integer epoch inputs to `TO_TIMESTAMP_LTZ` with literal precision
+0 or 3 execute in Rust; TINYINT/SMALLINT/INT widen losslessly before the existing
+BIGINT kernel. Verified integer arithmetic, widening and rounding trees also use these
+kernels in ordinary Calc; the computed child retains its resolved integer width before
+widening. Division, narrowing, unknown producers and string/formatted signatures retain
+their existing routes, as does UNNEST admission. See the complete [temporal function inventory](temporal-functions.md).
+Direct/literal LTZ FLOOR/CEIL in fixed-zero session zones also runs in Rust for DAY/HOUR
+on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The latter three forms retain
+released 1.18's code-generation failure. LTZ CEIL uses a dedicated signed-remainder
+kernel that discards fractional nanos; ordinary TIMESTAMP rounding stays unchanged.
+Computed operands and nonzero/regional zones retain their existing routes.
 
 ### LTRIM
 

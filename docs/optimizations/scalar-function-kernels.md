@@ -1316,3 +1316,86 @@ retains the first implementation, final stock/prior-encoder/native trials and re
 millisecond controls. All 32 final bulk cells beat stock by 1.342-4.511x, while tiny controls
 and all measured complete seconds jobs still lose to stock. One final millisecond NULL probe
 also remains 6.7% slower than retained native; no universal unchanged-path speedup is claimed.
+
+## Select bounded integer rounding positions without CASE scattering
+
+For integer ROUND and INT/BIGINT TRUNCATE, the planner can prove a CASE position returns only INT literals in
+-38..38 or NULL and that every condition/result is failure-free. This narrower contract
+allows eager condition evaluation and a single typed Arrow selection pass. It avoids
+generic CASE filtering, branch materialization and scattering while preserving first-TRUE
+selection, NULL conditions and selected NULL results. General lazy CASE remains unchanged.
+Borrowed predicates/positions keep constants scalar and avoid per-row type dispatch.
+
+The integer kernel consumes the selected position column. Precomputed positive i64 powers
+replace per-row i128 exponentiation/remainder; signed remainder and wrapping increments
+preserve Flink's integer result width. The only nonzero result beyond a signed-long power,
+rounding to 10^19, has a separate exact threshold/wrapping case. Larger powers yield zero.
+Literal-position fast paths remain separate and retain their existing buffer sharing.
+
+The initial nullable three-branch INT pilot requests 147 allocations/58,661 bytes per
+1,024-row batch; typed selection reduces this to 48/16,231. Selection alone still loses
+one nullable INT/short GenericRowData qualification (10.452 native versus 9.433 stock
+ns/row), so it is not shipped as the final implementation. After signed-64-bit arithmetic,
+the eight-cell pilot measures 8.286-10.004 native ns/row and beats its paired stock by
+1.393-2.004x. Independent stock drift and both failed/intermediate versions remain in the
+[full qualification](../benchmarks/scalar-functions.md#integer-round-with-a-bounded-runtime-position),
+alongside the final bulk matrix, tiny controls, literal-path rechecks and conversion-inclusive
+complete jobs. Allocation reductions and this pilot alone do not establish a job speedup.
+
+INT/BIGINT TRUNCATE reuses the same selector and toward-zero kernel branch without a
+new native implementation. Its [separate qualification](../benchmarks/scalar-functions.md#integer-truncate-with-a-bounded-runtime-position)
+compares the actual preceding encoder, whose bounded runtime TRUNCATE still calls the JVM,
+on the same release runtime and fixture. The ROUND measurements above retain their own
+original scope and provenance. All 40 TRUNCATE bulk cells beat paired stock by
+3.801-16.393x and the previous evaluator by 6.796-20.044x. Four of eight tiny controls
+still lose to stock. All eight measured complete jobs retain both transposes and improve
+over stock (native/stock elapsed 0.764-0.928); this does not imply a universal job gain.
+
+
+## Reuse the integer formatter's literal and output buffers
+
+A verified literal integer PRINTF binds no JVM evaluator and borrows its format once per
+batch. A reusable scratch String writes each formatted row into one Arrow StringBuilder;
+there is no repeated-format StringArray or separate output String per row. Shared Java
+Formatter-compatible parsing preserves signed widths, NULL text, padding, precision and
+indexing. The planner uses the running JDK to validate formats during planning, with conservative
+bounds and an explicit index-zero exclusion for JDK 11/17 differences. Other formats and
+representation-sensitive consumers retain their previous routes. Parsing and individual
+conversion strings remain rowwise; this is not yet a compiled-format-token engine.
+
+The initial evaluator-free prototype did not consistently beat the existing certified Rust
+path (previous/native 0.968-1.033x), so buffer reuse is part of the final implementation.
+A nullable INT short-format allocation probe drops from 4,136 requests/
+195,476 requested bytes to 3,102/91,842 per 1,024-row batch.
+Final 40-cell bulk qualification beats stock by 2.532-5.180x and
+actual preceding encoder by 1.072-5.250x. Earlier direct compatible
+batches could already execute certified Rust despite retaining a JVM descriptor. Raw
+initial/optimized pilots, independent stock, tiny and retained-formatter controls, and
+conversion-inclusive jobs remain in the [full qualification](../benchmarks/scalar-functions.md#integer-printf-with-a-literal-format).
+Allocation reductions alone are not a claim of universal job acceleration.
+Integer `%b`/`%B` also reuses this path: non-NULL objects, including zero, produce true;
+NULL produces false. Width, precision, case and indexing remain the Formatter contract.
+Its [separate qualification](../benchmarks/scalar-functions.md#integer-boolean-printf-formats)
+replays the original encoder/DSO and retains shared numeric-format controls.
+
+
+## Map primitive integer casts without widening
+
+The shared integer narrowing kernel uses Arrow's typed unary value mapping directly from
+the original integer width, carrying the immutable validity buffer into the result. This
+follows Comet's legacy integer-cast structure: infallible low-bit narrowing needs no NULL
+branch per row. It removes the intermediate i64 column and rebuilding validity with
+Option iteration. Flink wraps integer overflow in both cast modes; Spark's ANSI/try error
+policy is not reused. Same-width arrays retain the existing identity fast path. Decimal
+and floating conversions keep their separate contracts.
+
+The first integer TRY_CAST admission reused the old narrowing kernel; four independent
+previous medians were lower despite all paired-stock bulk wins. The final nullable INT
+probe drops from 28 allocations/11,007 requested bytes to
+21/2,279 per 1,024-row batch. Final 112 bulk cells beat stock by
+2.463-15.672x. Ordinary integer CAST controls isolate a 4.190-8.023x
+initial/current kernel gain on the same encoder and final fixture. Tests cover signed
+wrapping, all six narrowing pairs, sliced/empty/shared NULL buffers, scalar materialization,
+input immutability and shared ARRAY casts. Initial losing controls, tiny batches, separate
+DECIMAL controls, independent previous stock fallback and conversion-inclusive jobs remain
+in the [full qualification](../benchmarks/scalar-functions.md#integer-try_cast).

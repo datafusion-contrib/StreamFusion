@@ -1,7 +1,6 @@
 package tech.streamfusion.planner;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rex.RexNode;
 import org.apache.flink.table.api.EnvironmentSettings;
@@ -41,15 +40,33 @@ public final class BinaryCharacterBenchmarkFunctions {
     var table = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
     table.executeSql("CREATE TABLE inputs(b " + (fixed ? "BINARY(" + width + ")" : "BYTES")
         + ") WITH ('connector'='datagen')");
-    var query = ((TableImpl) table.sqlQuery("SELECT CAST(b AS STRING) FROM inputs")).getQueryOperation();
+    var query = ((TableImpl) table.sqlQuery("SELECT CAST(b AS " + target() + ") FROM inputs"))
+        .getQueryOperation();
     call = ((Project) ((PlannerQueryOperation) query).getCalciteTree()).getProjects().get(0);
-    var encoded = RexExpression.encodeProjections(List.of(call), List.of("s"));
+    var encoded = encode(call);
     if (Boolean.getBoolean("sf.binary.character.previous")) {
       if (encoded != null) throw new IllegalStateException("Previous binary cast must fall back");
     } else if (encoded == null || encoded.kinds()[0] != 6 || encoded.payload()[0] != 237
         || !encoded.jvmFunctionCalls().isEmpty()) {
       throw new IllegalStateException("Candidate binary cast must use the native UTF-8 decoder");
     }
+  }
+
+  /** STRING, or a modern bounded target such as VARCHAR(4) or CHAR(16). */
+  public static String target() {
+    return System.getProperty("sf.binary.character.target", "STRING");
+  }
+
+  private static RexExpression encode(RexNode call) throws Exception {
+    var constructor = RexExpression.class.getDeclaredConstructor();
+    constructor.setAccessible(true);
+    var encoder = constructor.newInstance();
+    var configure = RexExpression.class.getDeclaredMethod("configure", TableConfig.class);
+    configure.setAccessible(true);
+    configure.invoke(encoder, TableConfig.getDefault());
+    var emit = RexExpression.class.getDeclaredMethod("emit", RexNode.class);
+    emit.setAccessible(true);
+    return (Boolean) emit.invoke(encoder, call) ? encoder : null;
   }
 
   public static byte[] bytes(int width, int mode, int row) {
@@ -90,7 +107,10 @@ public final class BinaryCharacterBenchmarkFunctions {
     for (int loop = 0; loop < loops; loop++) for (RowData row : rows) {
       var value = (StringData) stock.evalRow(row);
       String text = value == null ? null : value.toString();
-      sum += text == null ? -1 : text.isEmpty() ? 0 : text.charAt(0) + 1;
+      // A split pair leaves one high surrogate, which Flink writes as '?'.
+      char first = text == null || text.isEmpty() ? 0 : text.charAt(0);
+      if (Character.isHighSurrogate(first) && text.length() == 1) first = '?';
+      sum += text == null ? -1 : text.isEmpty() ? 0 : first + 1;
     }
     consumed = sum;
     return new long[] {System.nanoTime() - start, sum};

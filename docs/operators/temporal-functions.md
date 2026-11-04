@@ -13,12 +13,12 @@ unsupported `MATCH_RECOGNIZE` operator.
 | `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. DATE/plain-TIMESTAMP calendar fields and HOUR/MINUTE/SECOND over DATE, plain TIMESTAMP and TIME execute in Rust, preserving Java signed arithmetic. Direct LTZ extraction uses the planning JDK's serialized fixed/finite offset history; recurring-DST zones retain Flink. Interval fields and unverified wrappers remain generated. |
 | `TO_DATE(text)`, `TO_DATE(text, format)` | The one-argument parser stays in Rust; formatted parsing uses Flink. Dynamic formats, NULL behavior and invalid-input failures follow Flink. |
 | `TO_TIMESTAMP(text[, format])` | Flink parsing, including dynamic formats and full-range timestamp results. |
-| `TO_TIMESTAMP_LTZ` | Direct/literal BIGINT epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. Ordinary Calc computed inputs, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
+| `TO_TIMESTAMP_LTZ` | Direct/literal integer epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. TINYINT/SMALLINT/INT widen losslessly to BIGINT first. Verified ordinary-Calc integer arithmetic, widening and rounding trees also execute in Rust; widening happens after the computed integer result. Unverified producers, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
 | `DATE_FORMAT`, `UNIX_TIMESTAMP(text[, format])`, `CONVERT_TZ` | Flink evaluation supports dynamic patterns and zones. The existing literal numeric-pattern DATE_FORMAT fast path for plain timestamps remains in Rust. |
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
 | `TIMESTAMPADD`, `TIMESTAMPDIFF` | Planner rewrites can use native interval arithmetic and comparisons. Verified runtime MONTH/DAY addition, MONTH difference and LTZ SECOND difference have no generated children; other rewrites retain their existing expression admission. Month-end and precision rules follow Flink. |
-| `FLOOR(timepoint TO unit)`, `CEIL`, `CEILING` | DATE/plain-TIMESTAMP MONTH/YEAR and plain TIMESTAMP DAY/HOUR/MINUTE/SECOND/MILLISECOND use Rust kernels. Direct/literal LTZ FLOOR/CEIL to MONTH/YEAR also uses the existing kernel in fixed zero-offset zones. Other LTZ units, nonzero/regional zones and computed inputs retain their existing routes. Numeric FLOOR/CEIL admission is unchanged. |
+| `FLOOR(timepoint TO unit)`, `CEIL`, `CEILING` | DATE/plain-TIMESTAMP MONTH/YEAR and plain TIMESTAMP DAY/HOUR/MINUTE/SECOND/MILLISECOND use Rust kernels. Direct/literal LTZ FLOOR/CEIL to MONTH/YEAR also uses the existing kernel in fixed zero-offset zones. In the same zones, direct/literal LTZ FLOOR/CEIL uses Rust for DAY/HOUR on both releases and MINUTE/SECOND/MILLISECOND on 2.2; LTZ CEIL has its own remainder/overflow kernel. Released 1.18 cannot compile those three sub-hour LTZ forms; its failure stays intact. Nonzero/regional zones, computed inputs and other units retain their existing routes. Numeric FLOOR/CEIL admission is unchanged. |
 | Temporal `CAST`, date/time/timestamp/interval literals, interval arithmetic, temporal comparisons, `OVERLAPS` | Timestamp +/- day-time/year-month intervals, DATE +/- month intervals and verified day literals, and TIME +/- day-time intervals execute in Rust. Timestamp results preserve nanoseconds. Matching temporal GREATEST/LEAST operands use native null-propagating comparisons. OVERLAPS can rewrite to native comparisons, including the verified runtime plain-timestamp/day-time-interval form. Other casts, comparisons and interval computations retain their existing expression admission. |
 | `CURRENT_WATERMARK(time_attribute)` | Calc projections and predicates read the last watermark received by that operator; NULL before its first watermark. Join/UNNEST residuals without a Calc watermark context fall back. |
 | `SOURCE_WATERMARK()` | Source declaration, not a scalar calculation. Existing DataStream/source watermarks are forwarded into the native pipeline. Native connector scan admission is unchanged. |
@@ -59,8 +59,9 @@ zero nanoseconds and keeps combined input/range validity on the parent. Non-null
 children remain consistent with the existing schema, including sliced inputs and empty
 batches. No input bytes are modified and the output owns its retained Arrow buffer reference.
 This removes temporary value vectors and their copies without changing JNI or timestamp
-transport. Computed ordinary-Calc operands, other numeric types and runtime/other
-precisions keep their existing routes. No production switch is added.
+transport. The verified computed-integer subset below also uses this kernel. Unverified
+producers, non-integer numeric types and runtime/other precisions keep their existing routes.
+No production switch is added.
 
 The [qualification](../benchmarks/scalar-functions.md#bigint-epoch-millisecond-conversion)
 retains stock/actual-previous/native measurements, the initial slower pilot, profiling and
@@ -75,6 +76,43 @@ with a new immutable millisecond buffer and zero sub-millisecond nanos. Session 
 not affect the numeric conversion. The admission does not extend computed UNNEST inputs,
 numeric precision or the string/format overloads.
 
+Direct TINYINT/SMALLINT/INT columns and literals also use these kernels for precision
+0 and 3. A lossless signed Arrow cast supplies the existing BIGINT input contract;
+there is no narrowing or floating conversion, and all such values fit both released
+epoch ranges. Output remains TIMESTAMP_LTZ(3), with input NULLs retained. Both Flink
+lines widen these inputs before applying their long-based timestamp conversion.
+This direct-input extension leaves existing UNNEST admission unchanged; the additional
+ordinary-Calc computed subset is specified below.
+The BIGINT buffer-sharing and overflow-bound rules above remain unchanged.
+The [narrow-integer qualification](../benchmarks/scalar-functions.md#narrow-integer-epoch-conversion)
+records bulk function gains alongside slower tiny batches and complete jobs.
+
+## Native computed integer epochs
+
+Ordinary Calc also accepts verified integer trees as the first operand of
+`TO_TIMESTAMP_LTZ(...,0)` or `(...,3)`: integer addition/subtraction/multiplication,
+lossless widening, identity FLOOR/CEIL/ROUND, verified literal-position ROUND/TRUNCATE
+(-38 through 38 or NULL), and bounded runtime-position ROUND/TRUNCATE. The latter accepts only
+failure-free CASE conditions and literal/CASE results proven in that same range or NULL;
+see the [ROUND contract](calc-filter.md#integer-round-with-a-bounded-runtime-position) and
+[INT/BIGINT TRUNCATE subset](calc-filter.md#integer-truncate-with-a-bounded-runtime-position).
+Every child must satisfy the same
+recursive proof. Division, remainder, narrowing, unknown/stateful producers and other
+signatures keep their existing correct evaluator. UNNEST admission is unchanged.
+
+The integer child executes at its resolved width before any widening for the BIGINT
+epoch kernel. This retains narrow and signed-long overflow, rounding NULLs and the
+released epoch bounds. For example, an overflowing INT addition must wrap as an INT
+before conversion; it must not become a wider addition. Existing millisecond/second
+kernels retain their parent validity, range checks and timestamp schema. Session zones
+do not affect the numeric conversion; a recurring-DST extraction consumer may still
+require generated evaluation independently of this epoch conversion.
+
+Epoch conversion itself reuses the existing kernels and verified integer proof without
+a new switch, JNI bridge or transport. The
+[computed-epoch qualification](../benchmarks/scalar-functions.md#computed-integer-epoch-conversion)
+retains prepared stock/actual-previous/native controls and conversion-inclusive jobs.
+
 ## Native UTC LTZ calendar rounding
 
 FLOOR/CEIL to MONTH/YEAR over a direct LTZ input or literal reuses the plain-timestamp calendar
@@ -84,13 +122,57 @@ does not qualify. Released Flink adds/subtracts no offset in these zones and use
 Julian-date arithmetic, including signed millisecond division, int overflow and the Gregorian
 cutover. Output fractions are zero and the declared SQL precision is retained.
 
-Computed inputs, nonzero/regional zones and other units keep their existing paths.
+Computed inputs and nonzero/regional zones keep their existing paths; fixed-unit
+rounding has the separate verified subsets below.
 In particular, fixed-unit LTZ CEIL has different submillisecond/overflow behavior from plain
-TIMESTAMP CEIL, so the plain kernel is not a blanket replacement. This adds no new native
-kernel, JNI bridge or switch. The separate
+TIMESTAMP CEIL, so the plain kernel is not a blanket replacement. Calendar admission adds
+no new native kernel, JNI bridge or switch. The separate
 [FLOOR](../benchmarks/scalar-functions.md#utc-ltz-calendar-floor) and
 [CEIL](../benchmarks/scalar-functions.md#utc-ltz-calendar-ceil) qualifications record
 stock/actual-previous/native timings and complete jobs with both transposes.
+
+## Native UTC LTZ fixed-unit FLOOR
+
+Direct/literal LTZ FLOOR reuses the existing plain-TIMESTAMP fixed-width kernel when
+the configured zone normalizes to fixed UTC. DAY/HOUR qualify on both released Flink
+lines; MINUTE/SECOND/MILLISECOND qualify only on 2.2. Released 1.18 generates invalid
+Java casts for these three smaller LTZ units, so they keep the existing code-generation
+failure through Flink fallback. A version capability preserves that released behavior;
+it is not a runtime option.
+
+With zero offset, Flink floors the signed millisecond field using Java remainder and
+wrapping subtraction, and resets fractional nanoseconds to zero even for MILLISECOND.
+The existing Rust kernel has the same floor behavior, including full signed-long
+extrema; timestamp schema, declared precision and NULLs are unchanged. The extension
+changes no production Rust kernel, JNI contract or transport. Computed operands and
+nonzero/regional zones retain their preceding routes. LTZ CEIL ignores fractional nanos
+and uses different overflow arithmetic from plain TIMESTAMP CEIL; its separate kernel
+below preserves those rules.
+The [fixed-unit FLOOR qualification](../benchmarks/scalar-functions.md#utc-ltz-fixed-unit-floor)
+retains bulk improvements, slower tiny controls and conversion-inclusive complete jobs.
+
+## Native UTC LTZ fixed-unit CEIL
+
+Direct/literal LTZ CEIL in a fixed-zero session zone uses a dedicated Rust kernel for
+DAY/HOUR on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The same source, zone
+and released-version safeguards as fixed-unit FLOOR apply. Computed operands, nonzero/
+regional zones and other units retain their existing evaluation routes.
+
+The kernel follows released `DateTimeUtils.timestampCeil`: take the original signed
+millisecond remainder, subtract it, then add the width only for a positive remainder.
+Subtraction/addition wrap as Java long arithmetic. Fractional nanos are discarded for
+all admitted units, including MILLISECOND; an input millisecond of -1 with positive
+fractional nanos still produces -1 milliseconds at that unit. With width 1, Long.MAX_VALUE
+stays Long.MAX_VALUE. These differ from plain TIMESTAMP CEIL, whose original kernel is
+unchanged. Output fractions are zero, input NULLs are retained and SQL precision stays
+unchanged.
+
+The UDF accepts the existing component and primitive Arrow timestamp inputs without
+coercing primitives into ordinary ROW values. Scalar broadcasts, slices and empty arrays
+use the existing timestamp helpers and return the normal component timestamp schema.
+No JNI, transport, dependency or configuration switch changes.
+The [fixed-unit CEIL qualification](../benchmarks/scalar-functions.md#utc-ltz-fixed-unit-ceil)
+records bulk improvements and the slower tiny/complete-job controls.
 
 ## Native FROM_UNIXTIME
 
@@ -166,9 +248,10 @@ both row/Arrow transposes, are on the [scalar benchmark page](../benchmarks/scal
 ## Remaining native boundaries
 
 [Issue #504](https://github.com/datafusion-contrib/StreamFusion/issues/504) still tracks
-LTZ rounding outside the direct/literal fixed-zero MONTH/YEAR subset and recurring-DST LTZ
-extraction. Runtime FLOOR(LTZ TO DAY) retains generated evaluation even in UTC, Asia/Shanghai
-and GMT+05:30. MONTH/YEAR rounding in nonzero/regional zones also retains it.
+LTZ rounding outside the direct/literal fixed-zero calendar/fixed-unit subsets above and
+recurring-DST LTZ extraction. Nonzero/regional zones, computed inputs and unverified units
+retain generated rounding; fixed-zero DAY/HOUR and release-supported sub-hour forms no
+longer require it. MONTH/YEAR rounding in nonzero/regional zones also retains it.
 America/New_York extraction retains it because the zone has recurring future DST transitions.
 
 The [expanded route audit](../benchmarks/results/calendar-residual-routes-2026-11-02.json)

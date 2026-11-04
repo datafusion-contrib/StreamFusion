@@ -25,6 +25,10 @@ struct EncodedProgram {
     boolean_output: bool,
     #[serde(default)]
     string_output: bool,
+    #[serde(default)]
+    long_output: bool,
+    #[serde(default)]
+    integer_output: Option<String>,
 }
 
 macro_rules! java {
@@ -273,10 +277,13 @@ fn main() {
                 _ => unreachable!(),
             };
             let maximum = 10_i128.pow(precision as u32) - 1;
+            let decimal_truth =
+                std::env::var("SF_INTEGRAL_CORPUS").is_ok_and(|value| value == "decimal-truth");
             let values = (0..rows).map(|row| {
                 (!nullable || row % 7 != 0).then(|| match row % 17 {
                     0 => maximum,
                     1 => -maximum,
+                    2 if decimal_truth => 0,
                     _ if precision == 4 => {
                         (if row % 2 == 0 { -1 } else { 1 }) * (row as i128 * 7919 % 10_000)
                     }
@@ -324,8 +331,16 @@ fn main() {
             &DataType::Utf8
         } else if program.boolean_output {
             &DataType::Boolean
+        } else if program.long_output {
+            &DataType::Int64
         } else {
-            batch.column(0).data_type()
+            match program.integer_output.as_deref() {
+                Some("TINYINT") => &DataType::Int8,
+                Some("SMALLINT") => &DataType::Int16,
+                Some("INTEGER") => &DataType::Int32,
+                Some("BIGINT") => &DataType::Int64,
+                _ => batch.column(0).data_type(),
+            }
         }
     );
     let expected = checksum(&actual).wrapping_mul(loops as i64);

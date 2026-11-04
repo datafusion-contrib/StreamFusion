@@ -116,7 +116,7 @@ class FlinkBooleanStringCastSqlHarnessTest {
     }
   }
 
-  private static void assertRuntimeCasts(String sql, boolean legacy,
+  static void assertRuntimeCasts(String sql, boolean legacy,
       org.apache.flink.table.types.DataType rowType, List<Row> rows) throws Exception {
     TreeMap<Integer, List<Object>> stock = null;
     List<org.apache.flink.table.types.DataType> stockTypes = null;

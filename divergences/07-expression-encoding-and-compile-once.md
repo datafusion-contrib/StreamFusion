@@ -301,6 +301,11 @@ strict NULL propagation applied to `CONCAT` below.
   to the INT/BIGINT range, `NaN`→0); byte/short targets then keep the low bits of that INT.
   A dedicated kernel uses staged Rust `as` casts to reproduce the two-step Java conversion; parity is
   tested at the `2³¹`/`2³²+1` integer boundaries and the `NaN`/`±∞`/`±1e20` float boundaries.
+  Integer inputs use Arrow typed unary conversion directly from the source width and retain the
+  immutable validity buffer, following Comet's legacy integer-cast structure. Both Flink cast
+  modes wrap integer overflow; Spark's ANSI/try overflow policy is not applied. Verified integer
+  TRY_CAST producers reuse these total conversions, while potentially failing producers retain
+  their preceding route rather than catching failures outside the conversion itself.
   Integer/string conversions use a Flink-compatible native parser/formatter. As in Comet's cast
   dispatcher, semantics and error mode travel with the expression; Comet's Spark grammar is not
   reused because Flink trims only ASCII spaces and accepts fractional text (even `.`) as an

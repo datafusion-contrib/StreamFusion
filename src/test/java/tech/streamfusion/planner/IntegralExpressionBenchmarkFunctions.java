@@ -29,7 +29,9 @@ public final class IntegralExpressionBenchmarkFunctions {
   private static FlinkExpressionFunction stock;
   private static RowData[] rows;
   private static String type;
+  private static LogicalTypeRoot outputRoot;
   private static boolean booleanOutput;
+  private static boolean longOutput;
   private static boolean stringOutput;
   private static volatile long consumed;
   private static final long[] TIMESTAMP_EPOCHS = {Long.MIN_VALUE, Long.MAX_VALUE,
@@ -73,7 +75,9 @@ public final class IntegralExpressionBenchmarkFunctions {
     LogicalType[] inputTypes = secondary.isEmpty() ? new LogicalType[] {inputType}
         : new LogicalType[] {inputType, LogicalTypeParser.parse(secondaryDeclaration, getLoader())};
     LogicalType outputType = FlinkTypeFactory.toLogicalType(project.getProjects().get(0).getType());
+    outputRoot = outputType.getTypeRoot();
     booleanOutput = outputType.getTypeRoot() == LogicalTypeRoot.BOOLEAN;
+    longOutput = outputType.getTypeRoot() == LogicalTypeRoot.BIGINT;
     stringOutput = outputType.getTypeRoot() == LogicalTypeRoot.VARCHAR
         || outputType.getTypeRoot() == LogicalTypeRoot.CHAR;
     boolean configuredCast = stringOutput || type.equals("BOOLEAN") || type.startsWith("DECIMAL(")
@@ -89,9 +93,9 @@ public final class IntegralExpressionBenchmarkFunctions {
     if (fallbackControl && !previous)
       throw new IllegalStateException("A fallback control requires the preceding encoder");
     String fallbackReason = null;
-    var encoded = configuredCast ? null
+    var encoded = configuredCast || fallbackControl ? null
         : RexExpression.encodeProjections(project.getProjects(), List.of("v"));
-    if (configuredCast) {
+    if (configuredCast || fallbackControl) {
       var constructor = RexExpression.class.getDeclaredConstructor();
       constructor.setAccessible(true);
       encoded = constructor.newInstance();
@@ -106,7 +110,10 @@ public final class IntegralExpressionBenchmarkFunctions {
         var reason = RexExpression.class.getDeclaredField("reason");
         reason.setAccessible(true);
         fallbackReason = (String) reason.get(encoded);
-        if (fallbackReason == null || !fallbackReason.startsWith("unsupported TRY_CAST DECIMAL"))
+        String expectedReason = System.getProperty("sf.integral.fallbackReason", "");
+        if (fallbackReason == null || (expectedReason.isEmpty()
+            ? !fallbackReason.startsWith("unsupported TRY_CAST DECIMAL")
+            : !fallbackReason.equals(expectedReason)))
           throw new IllegalStateException("Unexpected preceding fallback: " + fallbackReason);
         encoded = null;
       } else if (fallbackControl) {
@@ -138,7 +145,8 @@ public final class IntegralExpressionBenchmarkFunctions {
         "kinds", encoded.kinds(), "payload", encoded.payload(),
         "child_counts", encoded.childCounts(), "longs", constants,
         "doubles", encoded.doubles(), "strings", encoded.strings(),
-        "boolean_output", booleanOutput, "string_output", stringOutput));
+        "boolean_output", booleanOutput, "string_output", stringOutput,
+        "long_output", longOutput, "integer_output", outputType.getTypeRoot().name()));
   }
 
   /** A rejected native signature runs in Java on RowData in the actual preceding implementation. */
@@ -201,7 +209,9 @@ public final class IntegralExpressionBenchmarkFunctions {
           default: throw new IllegalArgumentException(type);
         }
         BigInteger maximum = BigInteger.TEN.pow(precision).subtract(BigInteger.ONE);
-        BigInteger unscaled = row % 17 == 0 ? maximum : row % 17 == 1 ? maximum.negate()
+        boolean decimalTruth = "decimal-truth".equals(System.getenv("SF_INTEGRAL_CORPUS"));
+        BigInteger unscaled = decimalTruth && row % 17 == 2 ? BigInteger.ZERO
+            : row % 17 == 0 ? maximum : row % 17 == 1 ? maximum.negate()
             : BigInteger.valueOf((row % 2 == 0 ? -1L : 1L)
                 * (precision == 4 ? v % 10000 : 9007199254740993L + v));
         return DecimalData.fromBigDecimal(new BigDecimal(unscaled, scale), precision, scale);
@@ -241,17 +251,18 @@ public final class IntegralExpressionBenchmarkFunctions {
         RowData result = (RowData) stock.evalRow(input);
         if (result.isNullAt(0)) sum--;
         else if (booleanOutput) sum += result.getBoolean(0) ? 1 : 0;
+        else if (longOutput) sum += result.getLong(0);
         else if (stringOutput) {
           var value = (BinaryStringData) result.getString(0);
           int length = value.getSizeInBytes();
           sum += length + (length == 0 ? 0 : value.byteAt(0) + value.byteAt(length - 1));
         }
-        else switch (type) {
-          case "TINYINT": sum += result.getByte(0); break;
-          case "SMALLINT": sum += result.getShort(0); break;
-          case "INT": sum += result.getInt(0); break;
-          case "BIGINT": sum += result.getLong(0); break;
-          default: throw new IllegalArgumentException(type);
+        else switch (outputRoot) {
+          case TINYINT: sum += result.getByte(0); break;
+          case SMALLINT: sum += result.getShort(0); break;
+          case INTEGER: sum += result.getInt(0); break;
+          case BIGINT: sum += result.getLong(0); break;
+          default: throw new IllegalArgumentException(outputRoot.toString());
         }
       }
     }
