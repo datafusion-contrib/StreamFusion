@@ -479,6 +479,7 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
     --artifact "org.apache.maven.surefire:surefire-junit-platform:${test_runtime_surefire_version}"
     --artifact "org.junit.platform:junit-platform-launcher:${test_runtime_platform_version}"
     --artifact "org.apache.httpcomponents:httpclient:4.4.1"
+    --artifact "org.apache.paimon:paimon-vfs-hadoop:${PAIMON_VERSION}"
   )
   if [[ "${FLINK_LINE}" == "2.2" ]]; then
     test_runtime_artifacts+=(

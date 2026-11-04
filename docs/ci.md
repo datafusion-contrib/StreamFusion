@@ -393,11 +393,14 @@ once with their original assertions and failure handling. Tests are never retrie
 their commands still use normal Maven resolution for any other artifacts requested dynamically by plugins.
 
 The download stage sets a 60-second HTTP read inactivity timeout and five transport retries
-for both [Maven Resolver](https://maven.apache.org/resolver/configuration.html) and the older
+for both [Maven 3.9's Resolver](https://maven.apache.org/resolver-archives/resolver-1.9.24/configuration.html) and the older
 [Wagon transport](https://maven.apache.org/wagon/wagon-providers/wagon-http/).
 This bounds stalled requests within the existing ten-minute setup attempt, while allowing
 connection resets to recover before restarting the dependency goal. These options apply only
 to dependency setup, not to test execution.
+Resolver also retries HTTP 429/500/502/503/504 responses at that request boundary. A local
+HTTP fixture verifies five 502 responses with Resolver and five dropped connections with
+Wagon, requiring recovery in a single setup invocation rather than using the outer retries.
 
 Before compiling the pinned upstream Flink reactor, the suite invokes the helper with
 `--model-only`. It runs the fixed Maven Help `evaluate` goal for `project.id`, preserving the
@@ -406,6 +409,14 @@ build extensions with the same bounded setup retries without trying to download 
 reactor artifacts or invoking a build/test lifecycle. The post-merge Flink 2.2 preparation
 for #595 failed loading a build extension's JUnit POM, before its build could reach the
 existing runtime dependency preparation.
+
+Upstream preparation also fetches the released `paimon-vfs-hadoop` provider's original
+transitive graph at the selected Paimon version. This covers Hadoop client artifacts needed
+when compiling Paimon's unchanged connector tests after restoring the shared build. A
+validation run for #596 failed in that skipped-test compilation on a Central HTTP 502 for
+`hadoop-mapreduce-client-jobclient:3.3.4`; the provider graph includes that artifact. Resolving
+the published provider independently avoids running `go-offline` across upstream report and
+legacy test-plugin graphs that request obsolete JDK `tools.jar` artifacts on JDK 17.
 
 The Java matrix also prefetches the original transitive graphs of the JUnit Platform providers
 used by runtime Surefire 3.2.5 and the separate evidence agent's Surefire 3.5.3. These downloads

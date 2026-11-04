@@ -831,6 +831,9 @@ loads models without executing a lifecycle or requiring unbuilt reactor artifact
 the line's pinned wrapper, profile and isolated repository. Downloads have bounded setup
 retries and a 60-second HTTP read inactivity timeout for both Resolver and Wagon; the original
 build and unchanged upstream test commands still run once. See [dependency setup](ci.md#maven-dependencies).
+The shared repository also contains the selected release's `paimon-vfs-hadoop` transitive
+provider graph, so Paimon connector compilation does not first fetch its Hadoop client graph
+after the dependency-preparation stage. Provider downloads use the same bounded setup retries.
 
 This follows [Flink's own compile-and-fan-out CI pattern](https://github.com/apache/flink/blob/master/.github/workflows/template.flink-ci.yml):
 compile once, transfer build outputs, then run module groups on independent runners. Flink also
