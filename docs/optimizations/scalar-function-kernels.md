@@ -1377,6 +1377,19 @@ original scope and provenance. All 40 TRUNCATE bulk cells beat paired stock by
 still lose to stock. All eight measured complete jobs retain both transposes and improve
 over stock (native/stock elapsed 0.764-0.928); this does not imply a universal job gain.
 
+The selector also accepts integer ROUND positions conservatively bounded through built-in
+GREATEST/LEAST and CASE. Planning propagates intervals, treating wrapping integer producers
+as the full INT range until an extremum bounds them. NULL-only branches do not widen CASE
+intervals, and all arguments still require a total-expression proof. Existing extrema and
+selection kernels produce the position array without a JVM callback or generic CASE
+scattering; epoch precision retains its separate discrete proof.
+The [clamped ROUND qualification](../benchmarks/scalar-functions.md#integer-round-with-clamped-runtime-positions)
+uses identical release runtime artifacts for actual-prior and candidate encoders. All 64
+bulk cells beat stock by 2.052-20.494x and previous by 6.389-29.439x; negative-clamp controls
+execute nontrivial rounding rather than only saturated zero/identity paths. Twelve of
+sixteen tiny controls and three of eight complete jobs still lose to stock. Complete-job
+native/stock elapsed is 0.878-1.057; no universal full-job gain is claimed.
+
 
 ## Reuse the primitive formatter's literal and conversion buffers
 

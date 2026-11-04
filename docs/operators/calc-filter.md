@@ -1824,6 +1824,20 @@ complete generated expression. TRUNCATE has the separate verified subset below.
 The [runtime-position measurements](../benchmarks/scalar-functions.md#integer-round-with-a-bounded-runtime-position)
 retain the initial slower prototype, batch qualification and conversion-inclusive jobs.
 
+Integer ROUND also admits total runtime INT positions bounded by the built-in GREATEST
+and LEAST, for example `ROUND(value, GREATEST(-38, LEAST(position, 38)))`.
+The planner computes conservative intervals through both extrema and CASE, and requires
+every non-NULL result to stay in -38..38. NULL-only branches do not enlarge an interval;
+NULL arguments still propagate through extrema. Every argument must be verified total,
+even when another argument guarantees NULL. Wrapping integer arithmetic is conservatively
+treated as the full INT range before clamping, rather than assuming mathematical bounds.
+CASE branches may contain these clamped arrays and use the existing typed selector.
+Same-name catalog functions, unbounded/one-sided ranges and failing or unverified producers
+keep their preceding routes. Epoch precision keeps its separate 0/3 proof.
+This extension changes only planning and reuses existing Arrow extrema, selection and
+rounding kernels. Its [separate qualification](../benchmarks/scalar-functions.md#integer-round-with-clamped-runtime-positions)
+compares stock with the actual preceding encoder on the identical release runtime.
+
 ### Single-argument integer TRUNCATE
 
 `TRUNCATE(value)` over INT and BIGINT preserves the integer, its resolved width and NULL.

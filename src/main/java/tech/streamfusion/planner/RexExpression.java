@@ -4975,7 +4975,12 @@ final class RexExpression {
         || call.getType().getSqlTypeName() != call.getOperands().get(0).getType().getSqlTypeName()
         || call.getOperands().get(1).getType().getSqlTypeName() != SqlTypeName.INTEGER
         || !nativeIntegralRoundingOperand(call.getOperands().get(0))) return false;
-    return nativeBoundedIntegralPosition(call.getOperands().get(1));
+    RexNode position = call.getOperands().get(1);
+    if (nativeBoundedIntegralPosition(position)) return true;
+    if (call.getOperator()
+        != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND) return false;
+    IntegralPositionRange range = integralPositionRange(position);
+    return range != null && (range.isNullOnly() || range.lower >= -38 && range.upper <= 38);
   }
 
   private static boolean nativeBoundedIntegralPosition(RexNode node) {
@@ -5002,9 +5007,86 @@ final class RexExpression {
         call.getOperands().get(call.getOperands().size() - 1), admitted);
   }
 
+  private static final class IntegralPositionRange {
+    final int lower;
+    final int upper;
+
+    IntegralPositionRange(int lower, int upper) {
+      this.lower = lower;
+      this.upper = upper;
+    }
+
+    boolean isNullOnly() {
+      // An empty interval proves NULL-only; a null proof means unknown or potentially failing.
+      return lower > upper;
+    }
+  }
+
+  private static IntegralPositionRange integralPositionRange(RexNode node) {
+    if (node.getType().getSqlTypeName() != SqlTypeName.INTEGER) return null;
+    if (node instanceof RexLiteral) {
+      var literal = (RexLiteral) node;
+      if (literal.isNull()) return new IntegralPositionRange(1, 0);
+      Integer value = literal.getValueAs(Integer.class);
+      return value == null ? null : new IntegralPositionRange(value, value);
+    }
+    if (node instanceof RexCall) {
+      var call = (RexCall) node;
+      if (call.getKind() == SqlKind.CASE && call.getOperands().size() >= 3
+          && call.getOperands().size() % 2 == 1) {
+        int lower = Integer.MAX_VALUE;
+        int upper = Integer.MIN_VALUE;
+        for (int i = 0; i < call.getOperands().size(); i++) {
+          if (i % 2 == 0 && i < call.getOperands().size() - 1) {
+            if (!nativeBooleanFormattingOperand(call.getOperands().get(i))) return null;
+          } else {
+            IntegralPositionRange branch = integralPositionRange(call.getOperands().get(i));
+            if (branch == null) return null;
+            if (!branch.isNullOnly()) {
+              lower = Math.min(lower, branch.lower);
+              upper = Math.max(upper, branch.upper);
+            }
+          }
+        }
+        return new IntegralPositionRange(lower, upper);
+      }
+      boolean greatest = isBuiltinDefinition(
+          call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.GREATEST);
+      boolean least = isBuiltinDefinition(
+          call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.LEAST);
+      if ((greatest || least) && call.getOperands().size() >= 2) {
+        int lower = greatest ? Integer.MIN_VALUE : Integer.MAX_VALUE;
+        int upper = lower;
+        boolean nullOnly = false;
+        for (RexNode operand : call.getOperands()) {
+          IntegralPositionRange range = integralPositionRange(operand);
+          if (range == null) return null;
+          nullOnly |= range.isNullOnly();
+          lower = greatest ? Math.max(lower, range.lower) : Math.min(lower, range.lower);
+          upper = greatest ? Math.max(upper, range.upper) : Math.min(upper, range.upper);
+        }
+        return nullOnly ? new IntegralPositionRange(1, 0) : new IntegralPositionRange(lower, upper);
+      }
+    }
+    return nativeIntegralRoundingOperand(node)
+        ? new IntegralPositionRange(Integer.MIN_VALUE, Integer.MAX_VALUE) : null;
+  }
+
   private boolean emitBoundedIntegralPosition(RexNode node) {
-    if (node instanceof RexLiteral) return emit(node);
+    if (!(node instanceof RexCall)) return emit(node);
     var call = (RexCall) node;
+    if (call.getKind() != SqlKind.CASE) {
+      boolean greatest = isBuiltinDefinition(
+          call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.GREATEST);
+      boolean least = isBuiltinDefinition(
+          call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.LEAST);
+      if (!greatest && !least) return emit(node);
+      add(KIND_CALL, greatest ? 109 : 110, call.getOperands().size());
+      for (RexNode operand : call.getOperands()) {
+        if (!emitBoundedIntegralPosition(operand)) return false;
+      }
+      return true;
+    }
     add(KIND_CALL, 247, call.getOperands().size());
     for (int i = 0; i < call.getOperands().size() - 1; i += 2) {
       if (!emit(call.getOperands().get(i))
