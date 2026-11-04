@@ -810,7 +810,9 @@ planning; benchmark `previous` mode retains the prior StreamFusion format shim a
 These modes exist only in the test agent, with no production performance switch.
 
 The Flink 2.2/JDK 17 Paimon Parquet CI job runs both modes and retains the reports. This validation
-is independent of the general upstream SQL corpus and of release performance measurements.
+is independent of the general upstream SQL corpus and of release performance measurements. CI
+resolves the maintenance profile and agent dependencies with bounded download retries before
+running either mode; test failures are never retried by that preparation step.
 
 ## Shared builds and runtime shards
 

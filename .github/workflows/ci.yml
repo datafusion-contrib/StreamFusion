@@ -328,7 +328,10 @@ jobs:
 
       - name: Run unchanged Paimon compaction fixtures with stock and native work evidence
         if: matrix.name == 'Paimon Parquet' && matrix.jdk == '17'
-        run: python3 bin/paimon-compaction-suite.py --skip-native-build
+        run: |
+          python3 bin/ci-maven-dependencies.py --profile paimon,upstream-paimon-compaction --projects streamfusion-paimon --also-make
+          python3 bin/ci-maven-dependencies.py --pom dev/flink-suite/agent/pom.xml
+          python3 bin/paimon-compaction-suite.py --skip-native-build
 
       - name: Retain Paimon compaction results and invocation evidence
         if: always() && matrix.name == 'Paimon Parquet' && matrix.jdk == '17'
