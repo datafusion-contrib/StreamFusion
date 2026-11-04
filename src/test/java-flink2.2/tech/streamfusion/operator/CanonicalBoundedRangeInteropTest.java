@@ -353,6 +353,18 @@ class CanonicalBoundedRangeInteropTest {
         int offset,
         long ttl)
         throws Exception {
+      this(type, keyless, processingRows, eventRows, offset, ttl, false);
+    }
+
+    Plan(
+        String type,
+        boolean keyless,
+        boolean processingRows,
+        boolean eventRows,
+        int offset,
+        long ttl,
+        boolean starAndLiteral)
+        throws Exception {
       this.eventRows = eventRows;
       this.processingRows = processingRows;
       this.offset = offset;
@@ -380,8 +392,11 @@ class CanonicalBoundedRangeInteropTest {
       json =
           table
               .compilePlanSql(
-                  "INSERT INTO range_output SELECT k,v,rt,SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER"
-                      + " w FROM range_input WINDOW w AS ("
+                  "INSERT INTO range_output SELECT k,v,rt,"
+                      + (starAndLiteral
+                          ? "COUNT(*) OVER w,SUM(CAST(7 AS BIGINT)) OVER w,AVG(v) OVER w"
+                          : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
+                      + " FROM range_input WINDOW w AS ("
                       + (keyless ? "" : "PARTITION BY k ")
                       + (processingRows || eventRows
                           ? "ORDER BY "
@@ -389,8 +404,9 @@ class CanonicalBoundedRangeInteropTest {
                               + " ROWS BETWEEN "
                               + offset
                               + " PRECEDING AND CURRENT ROW)"
-                          : "ORDER BY rt RANGE BETWEEN INTERVAL '0.032' SECOND PRECEDING AND"
-                              + " CURRENT ROW)"))
+                          : "ORDER BY rt RANGE BETWEEN INTERVAL '"
+                              + java.math.BigDecimal.valueOf(offset, 3).toPlainString()
+                              + "' SECOND PRECEDING AND CURRENT ROW)"))
               .asJsonString();
       planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
       var node = node();
@@ -433,7 +449,7 @@ class CanonicalBoundedRangeInteropTest {
       constants =
           tech.streamfusion.planner.OverConstantArguments.create(
                   spec.getConstants(),
-                  false,
+                  starAndLiteral,
                   calls.stream()
                       .flatMap(call -> call.getArgList().stream())
                       .filter(index -> index >= input.getFieldCount())
@@ -441,7 +457,14 @@ class CanonicalBoundedRangeInteropTest {
                       .collect(java.util.stream.Collectors.toSet()))
               .orElseThrow();
       var arguments = constants.appendTo(input);
-      values = calls.stream().mapToInt(call -> call.getArgList().get(0)).toArray();
+      values =
+          calls.stream()
+              .mapToInt(
+                  call ->
+                      call.getArgList().isEmpty()
+                          ? input.getFieldCount() + spec.getConstants().size()
+                          : call.getArgList().get(0))
+              .toArray();
       codes =
           Arrays.stream(values)
               .map(

@@ -10,6 +10,39 @@ Representative canonical conversion paths now exist in all **15 operator familie
 tested draft adapters awaiting consolidation. Every family remains partial; this count excludes
 connector protocols and is not a percentage of overall completion or individual state variants.
 
+## Operator coverage inventory
+
+Every row below remains partial. A qualified subset has actual stock/native continuation evidence;
+that does not qualify all variants of its family. Draft integration evidence also needs consolidation
+into the current automatic workflow. Detailed scopes and exclusions belong to the linked operator
+pages. Historical cohorts are not silently requalified against each newer library.
+
+| Family | Current stock-interchange scope | Main remaining work |
+| --- | --- | --- |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Automatic arithmetic and BIGINT append/retract MIN/MAX handoffs | Wider types/keys, DISTINCT/UDF views and other aggregation phases |
+| [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
+| [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
+| [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
+| [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Representative draft interchange; namespaced and DISTINCT-state groundwork | Planner/test consolidation and complete phase/type/view matrix |
+| [Sessions](../operators/window-aggregate.md) | Representative draft state and continuation evidence | Consolidation and wider merging/timer/recovery matrix |
+| [Window rank](../operators/top-n.md) | Representative draft interchange evidence | Consolidation and wider bounds/type/timer variants |
+| [Window deduplication](../operators/deduplication.md) | Representative draft interchange evidence | Consolidation and wider winner/timer/type variants |
+| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic contracts and automatic binding; older unbounded draft evidence | Wider job/type matrix, unbounded/view consolidation and event-ROWS cleanup |
+| [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
+| [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
+| [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs | Legacy proctime variant, wider schemas and commit-failure matrix |
+| [Event-time sort](../operators/event-time-sort.md#stock-compatible-canonical-interchange) | Direct single ascending-key contract and historical complete jobs | Planner consolidation, secondary sorting and wider rescale/version matrix |
+| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | All five stock layouts; qualified BIGINT compiled-plan jobs | Ordinary SQL, accelerated connector binding, wider types and writer rescaling |
+| [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs | Wider schemas/residuals and additional exchange/rescale combinations |
+
+Stock-compatible canonical qualification is on released Flink 2.2.1. Shared Flink 1.18 tests establish
+processing/native-checkpoint regressions only. Custom stock source/committer fixtures retain their
+state and external effects in the qualified jobs, but native connector transaction and delivery
+protocols remain separate unfinished work. Benchmarking stays deferred under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+## Private native envelope
+
 Each non-empty key group has a versioned `SFCS` header in
 `__streamfusion_canonical_native_state_v1` and zero or more 4 MiB chunk states. The header records:
 
@@ -1263,3 +1296,28 @@ ordered changelog materialization. Broader sink-rescale and connector matrices r
 See [arithmetic aggregate scope and pending coverage](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial).
 All 15 families and the complete acceptance matrix remain partial/open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+## Bounded OVER submission binding (partial)
+
+The existing released bounded arithmetic adapters bind during ordinary SQL and portable-plan
+submission for processing-time ROWS, event-time RANGE and event-time ROWS without processing
+cleanup. Their state schemas, raw accumulator fields, retained input buckets, counters, timers
+and callback bookkeeping retain the released stock contract. Captured serializers and stock
+operator identities accompany the runtime owner; canonical export visits live state directly.
+Constants become internal native columns rather than extra durable state or external conversion
+steps. Ordinary SQL starts this binding from the original stock template because the native
+physical rewrite can introduce multiple constant helpers for one original OVER role.
+
+The initial numeric, key, retention and state-layout limits are listed with the
+[bounded OVER coverage](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial).
+Unsupported compiled contracts keep stock owners. This binding does not qualify unbounded OVER,
+other views, complete connector delivery/failure guarantees or cross-version migration.
+Benchmarking remains deferred under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+The current bounded binding passes one 1,834-check regression cohort and a separate 84-job
+handoff/recovery/rescale cohort on Flink 2.2.1. See the operator page for the exact type, key and
+scenario split; earlier overlapping cohorts are not cumulative coverage. Original released OVER
+restore programs remain stock controls where their UDF/key layouts are outside this binding.
+The shared 1.18 processing tests do not establish stock-compatible canonical restore there.

@@ -1272,8 +1272,8 @@ The native bridge can bind original-input retention before a bounded ROWS or eve
 operator consumes rows. Retained frames then preserve every original column, including unused
 columns, NULLs, INSERT RowKind and Arrow schema metadata, alongside frame order and the sampled
 processing clock. A COUNT-only ROWS frame retains all `n + 1` current rows when bound, even though
-its ordinary execution path can discard one earlier. This is preparation for stock bounded-state
-projection; it does not enable bounded stock canonical restore in the portable planner.
+its ordinary execution path can discard one earlier. These retained inputs feed the qualified
+stock bounded contracts and automatic submission binding described below.
 
 Memory frames own their input buffers, including nested dictionary values and validity. Typed
 RocksDB stores original rows beside its existing aggregate-argument frame table. Original rows
@@ -1348,9 +1348,9 @@ Event-time pending rows use the separate direct pending-input visitor. A pending
 protocol is represented by the independent direct RANGE protocol bridge described below.
 Frame payload layouts are unchanged; RANGE timer metadata supports absent cleanup deadlines.
 
-This is a native state-transfer foundation, not automatic stock bounded canonical restore.
-The released stock descriptors/serializers, processing-time bucket/counter protocol, remaining
-views, full private planner coverage and clean-process qualification remain in
+The qualified bounded arithmetic contracts below combine this transfer foundation with released
+serializers, counters, timers and automatic job binding. Additional views and the full
+schema/connector/version/failure matrix remain in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
 
 ### RANGE callback order and keys without frames
@@ -1401,8 +1401,8 @@ processes without StreamFusion dependencies, exercise both transposes, switch in
 re-export before new input and recover an ordinary native checkpoint before returning to stock.
 This is arithmetic RANGE coverage. Processing-time arithmetic ROWS now has its own stock
 counter/bucket/cleanup contract; event-time arithmetic ROWS without processing cleanup now has
-its own counter/cutoff contract. Event-time ROWS cleanup, additional bounded views, complete
-automatic planner consolidation and the remaining #569 matrix are still required.
+its own counter/cutoff contract. Event-time ROWS cleanup, additional bounded views, unbounded
+planner consolidation and the remaining #569 matrix are still required.
 Benchmarking remains deferred.
 
 
@@ -1428,9 +1428,61 @@ output and exported state after callbacks. It also rejects missing or inconsiste
 cutoffs, accumulators, input rows and timers, and unowned descriptors. These controls use actual
 released stock operators and serializers.
 
-The draft portable planner binds this arithmetic mode while retaining the stock submission plan
-and operator identity. Processing-time cleanup for event-time ROWS, bounded views, full rescaling
-and version matrices, and the remaining issue acceptance criteria are still required in
+Normal SQL and portable compiled plans bind this arithmetic mode while retaining the stock
+submission plan and operator identity. Processing-time cleanup for event-time ROWS, bounded views,
+full rescaling and version matrices, and the remaining issue acceptance criteria are still required in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Until its cleanup protocol is
-qualified, that draft planner retains the stock event-time ROWS operator when retention exceeds
+qualified, the portable planner retains the stock event-time ROWS operator when retention exceeds
 one millisecond. Benchmarking remains deferred.
+
+
+### Automatic bounded arithmetic state binding (partial)
+
+Ordinary SQL and stock portable plans capture the released bounded operator's actual accumulator
+schema, physical aggregate calls and widths, hidden input counter, key serializer, time column,
+constant arguments, retention, identity and maximum parallelism. The initial binding covers
+processing-time ROWS, event-time RANGE and event-time ROWS without processing cleanup. Values
+are BIGINT, FLOAT, DOUBLE or DECIMAL(38,2), with one BIGINT partition key or a keyless global owner.
+Retained input columns must be represented scalars or timestamps with precision at most three.
+Qualified aggregates are SUM, SUM0, COUNT and AVG without DISTINCT or additional views.
+
+A bounded ordinary plan can add constant projection helpers that share the original OVER role.
+Its state binding therefore starts from the original stock template, like the qualified rank
+bindings, and supplies constants through the native operator's internal constant columns.
+The displayed and serialized submission plan stays stock Flink; runtime transposes remain ordinary
+boundaries. Unsupported unbounded, selection, DISTINCT/view, wider key/type and event-time ROWS
+cleanup contracts are outside this binding. Unaligned checkpoints and asynchronous state are
+also excluded. The general native OVER processing coverage above does not establish stock
+canonical interchange for those additional contracts.
+
+The planner matrix covers all three modes, all four value types, keyed/global state, both
+submission forms and UID policies, and applicable TTL settings. Rejection controls retain actual
+stock owners for unqualified contracts. Broad connector transactions, cross-version interoperability,
+all rescaling/failure combinations and the complete acceptance matrix remain in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+The final Flink 2.2.1 regression cohort passes 1,834 checks in eighteen classes with no failures,
+errors or skips: 942 bounded state controls (including 64 COUNT(*)/literal and zero-bound cases),
+204 OVER planner/admission controls, 176 rank planner regressions, 400 grouped-aggregate controls,
+22 identity/ordinary-SQL controls and 90 existing OVER processing/SQL controls. Scalar headers,
+independent counts, original ages, pending buckets and callback ownership remain separate checks.
+
+A separate 84-case isolated job cohort passes all three bounded modes, both submission forms,
+native stores and initial engine orders. It contains 24 continued-input switches, 24 no-input
+round trips, twelve ordinary native-checkpoint recoveries and 24 rescalings through one, three
+and two native tasks at maximum parallelism 128. Scripted event watermarks place pending rows
+at the first cut and processed/pending state at the second. Every job retains custom stock
+source/committer state and both transposes, requires actual native work/storage, excludes
+StreamFusion from stock classpaths/metadata and compares complete committed changes plus final
+tables against stock and independent arithmetic results. These jobs use BIGINT keys/values;
+typed and global qualification is at the operator/planner level. Sources and the committing sink
+remain singleton during native-key rescaling. Broader writer/connector transaction failures remain
+outside this matrix.
+
+The unchanged released OVER restore suite also passes all eight programs as stock-only controls.
+Its UDF and wider key layouts do not receive native qualification from this arithmetic binding.
+Shared Flink 1.18 processing/native-checkpoint controls pass seventy cases without a stock canonical
+claim. This binding changes Java planning only and uses the previously qualified native library;
+it adds no native snapshot intermediate or ordinary-checkpoint conversion. Earlier cohorts overlap
+these final runs and are not added cumulatively. All fifteen families and the complete acceptance
+matrix remain partial/open under #569.

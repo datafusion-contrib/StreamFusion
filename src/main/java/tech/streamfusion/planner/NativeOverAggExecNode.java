@@ -68,6 +68,42 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
+  public boolean hasStockBoundedArithmeticState() {
+    if ((frameKind != 1 && frameKind != 2)
+        || proctime && frameKind == 2
+        || keyColumns.length > 1
+        || java.util.Arrays.stream(aggregateKinds)
+            .anyMatch(kind -> kind != 0 && kind != 3 && kind != 4 && kind != 22)
+        || !proctime
+            && frameKind == 1
+            && getPersistedConfig()
+                    .get(
+                        org.apache.flink.table.api.config.ExecutionConfigOptions
+                            .IDLE_STATE_RETENTION)
+                    .toMillis()
+                > 1) return false;
+    var input = (RowType) getInputEdges().get(0).getOutputType();
+    if (keyColumns.length == 1
+        && !input
+            .getTypeAt(keyColumns[0])
+            .is(org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT)) return false;
+    for (int column : valueColumns) {
+      if (column < 0 || column >= input.getFieldCount()) return false;
+      var type = input.getTypeAt(column);
+      if (!stockArithmeticValueType(type)) return false;
+    }
+    return true;
+  }
+
+  static boolean stockArithmeticValueType(org.apache.flink.table.types.logical.LogicalType type) {
+    return type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT)
+        || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT)
+        || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE)
+        || type instanceof org.apache.flink.table.types.logical.DecimalType
+            && ((org.apache.flink.table.types.logical.DecimalType) type).getPrecision() == 38
+            && ((org.apache.flink.table.types.logical.DecimalType) type).getScale() == 2;
+  }
+
   public NativeOverAggExecNode withStateMaxParallelism(int maximum) {
     if (maximum <= 0) throw new IllegalArgumentException("Invalid OVER maximum parallelism");
     stateMaxParallelism = maximum;

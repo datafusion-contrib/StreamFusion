@@ -114,8 +114,8 @@ final class NativeStreamPlanner extends StreamPlanner {
     if (!StockCompiledPlanLowering.containsNativeNodes(graph))
       return runtimeGraph(new ExecNodeGraph(graph.getFlinkVersion(), graph.getRootNodes()));
     if (!StockCompiledPlanLowering.canBindOrdinary(graph)) {
-      // Unqualified native state owners must retain their stock layout for rank interchange.
-      return StockCompiledPlanLowering.requiresStockRankTemplate(graph)
+      // State contracts with internal helper roles bind from the original stock template.
+      return StockCompiledPlanLowering.requiresStockTemplate(graph)
           ? runtimeGraph(graph.stock)
           : graph;
     }
@@ -132,7 +132,7 @@ final class NativeStreamPlanner extends StreamPlanner {
             stockStreamGraph.getJobGraph(getFlinkContext().getClassLoader()));
     ExecNodeGraph bound = lowering.bindOrdinary(graph);
     if (bound == null)
-      return StockCompiledPlanLowering.requiresStockRankTemplate(graph)
+      return StockCompiledPlanLowering.requiresStockTemplate(graph)
           ? runtimeGraph(graph.stock)
           : graph;
     var transformations = super.translateToPlan(bound);
