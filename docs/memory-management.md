@@ -39,6 +39,19 @@ overhead are also outside the reservation pool. The cap is therefore an allocati
 the large StreamFusion-controlled consumers above, not an RSS or container hard limit. Leave
 process headroom for those costs and for the JVM.
 
+## Arrow allocation during startup
+
+A connector can create its decoder schema before another task initializes the process memory
+budget. StreamFusion tracks those early Arrow allocations and adopts the live balance when the
+TaskManager budget becomes available. Buffers already released do not consume that budget.
+Initialization publishes the capacity only after the existing buffers are charged, so a source
+thread can release them safely while other tasks start.
+
+If the configured cap cannot cover the live startup buffers, initialization fails with the normal
+memory-limit exception. Their ownership remains intact for cleanup or a later initialization with
+sufficient capacity. Startup schema and buffer overhead contributes to the same cap and high-water
+mark as later allocations; no separate configuration or per-operator allocator is introduced.
+
 ## Arrow schema and buffer ownership
 
 C Data import transfers the array release callback using the existing Comet-style ownership

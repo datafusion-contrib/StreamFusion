@@ -1,6 +1,5 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.NativeMemoryLimitException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -10,6 +9,7 @@ import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.metrics.MetricGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tech.streamfusion.NativeMemoryLimitException;
 
 /** Process-wide authority for memory charged to Flink task off-heap memory. */
 public final class TaskOffHeapMemory {
@@ -23,6 +23,7 @@ public final class TaskOffHeapMemory {
 
   private static volatile long capacity = -1;
   private static volatile long arrowOwner;
+  private static long uninitializedArrowBytes;
 
   private TaskOffHeapMemory() {}
 
@@ -56,6 +57,20 @@ public final class TaskOffHeapMemory {
       DENIED.set(0);
       return;
     }
+    if (capacity < 0 && uninitializedArrowBytes != 0) {
+      if (uninitializedArrowBytes > configured) {
+        DENIED.incrementAndGet();
+        throw exhausted("arrow [shared Arrow allocator]", uninitializedArrowBytes, configured, 0);
+      }
+      Owner owner = OWNERS.get(arrowOwner());
+      if (!owner.reserve(uninitializedArrowBytes)) {
+        throw new IllegalStateException("cannot adopt early Arrow reservations");
+      }
+      RESERVED.set(uninitializedArrowBytes);
+      PEAK.accumulateAndGet(uninitializedArrowBytes, Math::max);
+      uninitializedArrowBytes = 0;
+    }
+    // Publish the budget only after early buffers have an owner that can accept their release.
     capacity = configured;
   }
 
@@ -103,7 +118,8 @@ public final class TaskOffHeapMemory {
     NativeMemoryLimitException failure = tryReserve(owner, bytes);
     if (failure != null) {
       // The JNI boolean contract also serves optional caches that can recover from denial.
-      LOG.warn("Task off-heap reservation rejected for owner {}: {}", ownerId, failure.getMessage());
+      LOG.warn(
+          "Task off-heap reservation rejected for owner {}: {}", ownerId, failure.getMessage());
       return false;
     }
     return true;
@@ -125,7 +141,12 @@ public final class TaskOffHeapMemory {
 
   static void reserveArrow(long bytes) {
     if (capacity < 0) {
-      return;
+      synchronized (TaskOffHeapMemory.class) {
+        if (capacity < 0) {
+          uninitializedArrowBytes = Math.addExact(uninitializedArrowBytes, bytes);
+          return;
+        }
+      }
     }
     NativeMemoryLimitException failure = tryReserve(OWNERS.get(arrowOwner()), bytes);
     if (failure != null) {
@@ -134,6 +155,17 @@ public final class TaskOffHeapMemory {
   }
 
   static void releaseArrow(long bytes) {
+    if (capacity < 0) {
+      synchronized (TaskOffHeapMemory.class) {
+        if (capacity < 0) {
+          if (bytes > uninitializedArrowBytes) {
+            throw new IllegalStateException("early Arrow buffers released more than reserved");
+          }
+          uninitializedArrowBytes -= bytes;
+          return;
+        }
+      }
+    }
     long owner = arrowOwner;
     if (owner != 0) {
       release(owner, bytes);
@@ -186,7 +218,7 @@ public final class TaskOffHeapMemory {
   }
 
   static synchronized void resetForTests(long bytes) {
-    if (RESERVED.get() != 0) {
+    if (RESERVED.get() != 0 || uninitializedArrowBytes != 0) {
       throw new IllegalStateException("cannot reset task off-heap memory with live reservations");
     }
     OWNERS.clear();
@@ -195,6 +227,7 @@ public final class TaskOffHeapMemory {
     DENIED.set(0);
     NEXT_OWNER.set(1);
     arrowOwner = 0;
+    uninitializedArrowBytes = 0;
     capacity = bytes;
   }
 
@@ -221,7 +254,9 @@ public final class TaskOffHeapMemory {
 
   private static synchronized long arrowOwner() {
     if (arrowOwner == 0) {
-      arrowOwner = registerOwner("arrow", "shared Arrow allocator");
+      long id = NEXT_OWNER.getAndIncrement();
+      OWNERS.put(id, new Owner("arrow", "shared Arrow allocator"));
+      arrowOwner = id;
     }
     return arrowOwner;
   }
@@ -246,7 +281,8 @@ public final class TaskOffHeapMemory {
     return null;
   }
 
-  private static NativeMemoryLimitException denied(Owner owner, long bytes, long limit, long reserved) {
+  private static NativeMemoryLimitException denied(
+      Owner owner, long bytes, long limit, long reserved) {
     DENIED.incrementAndGet();
     // Capture the failed capacity check, not a later sample after other tasks release memory.
     return exhausted(owner.category + " [" + owner.name + "]", bytes, limit, reserved);
