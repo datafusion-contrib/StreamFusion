@@ -2188,7 +2188,9 @@ final class RexExpression {
     if (roundingWidth > 0) {
       boolean ltzCeil = call.getKind() == SqlKind.CEIL
           && call.getOperands().get(0).getType().getSqlTypeName()
-              == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE;
+              == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+          // Numeric epochs have zero fractions and bounded millis, so plain CEIL is exact.
+          && !nativeTotalEpochTimestamp(call.getOperands().get(0));
       add(KIND_CALL, ltzCeil ? 246 : 154, ltzCeil ? 2 : 3);
       if (!emit(call.getOperands().get(0))) {
         return false;
@@ -4545,8 +4547,7 @@ final class RexExpression {
         && java.time.ZoneId.of(sessionZoneId).normalized().equals(java.time.ZoneOffset.UTC)
         && (operand instanceof RexInputRef
             || operand instanceof RexLiteral
-            || !unnestOperand && call.getKind() == SqlKind.FLOOR
-                && nativeTotalEpochTimestamp(operand));
+            || !unnestOperand && nativeTotalEpochTimestamp(operand));
   }
 
   private static boolean nativeTotalEpochTimestamp(RexNode node) {

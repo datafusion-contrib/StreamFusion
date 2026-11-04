@@ -3507,7 +3507,10 @@ released 1.18's code-generation failure. LTZ CEIL uses a dedicated signed-remain
 kernel that discards fractional nanos; ordinary TIMESTAMP rounding stays unchanged.
 UTC FLOOR also consumes verified total built-in integer epoch conversions, with literal
 0/3 or separately proven runtime CASE precision 0/3/NULL, using those same release-supported
-units and the existing Rust kernels. Computed CEIL, other computed timestamp producers and
+units and the existing Rust kernels. CEIL/CEILING accepts the same producer proof; fixed-unit
+CEIL reuses plain-timestamp rounding only because numeric epochs have zero fractions and
+bounded milliseconds that exclude its differing overflow cases. General LTZ inputs retain
+their dedicated kernel. Other computed timestamp producers and
 nonzero/regional zones retain their existing routes. See [computed UTC FLOOR](temporal-functions.md#native-utc-floor-over-integer-epochs).
 
 ### LTRIM

@@ -1497,14 +1497,22 @@ in the [full qualification](../benchmarks/scalar-functions.md#integer-try_cast).
 
 ## Compose verified epoch rounding
 
-Verified UTC FLOOR also keeps the integer epoch conversion and timestamp round in
+Verified UTC FLOOR/CEIL keeps the integer epoch conversion and timestamp round in
 Arrow instead of materializing the nested temporal result through a generated evaluator.
 A total producer/precision proof and released built-in identity allow the existing kernels
-to compose; fixed-unit results write directly to a capacity-sized Arrow timestamp builder,
-avoiding temporary Option vectors and repeated component-buffer growth. Specializing the
-five verified scalar widths avoids runtime division and scalar-column broadcasts;
-nonzero/regional zones and unverified inputs keep Flink. All 32 prepared
-bulk cells beat stock by 1.017-1.985x and previous by
-2.552-5.131x. All tiny controls and six complete jobs, including their
-remaining losses and both transposes, are retained in the
-[computed-epoch FLOOR qualification](../benchmarks/scalar-functions.md#utc-floor-over-integer-epochs).
+to compose. Fixed component widths above one millisecond map values with Arrow unary and
+reuse parent validity, avoiding per-row NULL/fraction appends. Other paths retain
+capacity-sized component builders. Specializing the five verified scalar widths avoids
+runtime division and scalar-column broadcasts; nonzero/regional zones and unverified
+inputs keep Flink. This follows Comet's timestamp unary/bitmap pattern while preserving
+Flink's millisecond/nanosecond representation and rounding arithmetic.
+
+The [CEIL qualification](../benchmarks/scalar-functions.md#utc-ceil-over-integer-epochs)
+retains a profiled initial bulk loss (0.943x stock) before bitmap reuse. All 32 final bulk
+cells beat stock by 1.085-3.083x and actual previous behavior by 2.614-8.457x. A representative
+batch drops from 92 allocation requests/39,541 bytes to 88/39,165 bytes. All eight tiny
+controls and six complete jobs still lose to stock; complete jobs beat the prior evaluator
+path, retaining both transposes and JNI. The earlier
+[FLOOR qualification](../benchmarks/scalar-functions.md#utc-floor-over-integer-epochs)
+preserves its own builder/constant-width measurements and artifacts. Those historical
+timings are not relabeled as measurements of the newer bitmap-sharing runtime.

@@ -31,7 +31,7 @@ class UtcLtzFixedFloorAdmissionTest {
           "FLOOR(ts TO MINUTE)", "FLOOR(ts TO SECOND)", "FLOOR(ts TO MILLISECOND)",
           "CEIL(ts TO DAY)", "CEIL(ts TO HOUR)", "CEIL(ts TO MINUTE)",
           "CEIL(ts TO SECOND)", "CEIL(ts TO MILLISECOND)",
-          "FLOOR(TO_TIMESTAMP_LTZ(n,3) TO DAY)")) {
+          "FLOOR(TO_TIMESTAMP_LTZ(n,3) TO DAY)", "CEIL(TO_TIMESTAMP_LTZ(n,3) TO DAY)")) {
         var operation = ((TableImpl) table.sqlQuery("SELECT " + expression + " FROM src"))
             .getQueryOperation();
         var projection = (Project) ((PlannerQueryOperation) operation).getCalciteTree();
@@ -53,7 +53,8 @@ class UtcLtzFixedFloorAdmissionTest {
         if (pure) {
           boolean ceiling = expression.startsWith("CEIL");
           assertTrue(encoder.nativeFunctionCalls().contains(ceiling ? "CEIL" : "FLOOR"));
-          assertEquals(ceiling ? 246 : 154, encoder.payload()[0]);
+          assertEquals(ceiling && !expression.contains("TO_TIMESTAMP_LTZ") ? 246 : 154,
+              encoder.payload()[0]);
         }
       }
     }

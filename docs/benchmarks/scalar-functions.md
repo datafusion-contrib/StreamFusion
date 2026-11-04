@@ -9700,3 +9700,98 @@ epoch input properties. The record identifies the actual preceding encoder; an a
 older main/runtime is not an equivalent previous control. Full hosted checks qualify the
 exact pushed head separately. Broad [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504)
 remains open for other producers/zones, units and recurring-DST extraction.
+
+## UTC CEIL over integer epochs
+
+`CEIL(TO_TIMESTAMP_LTZ(n,p) TO unit)` composes the existing Rust integer, epoch
+and rounding kernels in fixed-zero session zones, after proving the genuine built-in
+conversion and total integer/precision producers. YEAR/MONTH/DAY/HOUR qualify on both
+released lines; smaller verified units remain 2.2-only. Other zones, fallible/unverified
+inputs and invalid precision keep their correct preceding routes. See the
+[coverage contract](../operators/temporal-functions.md#native-utc-ceil-over-integer-epochs).
+The verified numeric epoch bound and zero fractions make plain-timestamp fixed-unit CEIL
+exact here, so this extension reuses the existing rounding operation. General LTZ
+inputs retain their dedicated signed-remainder/overflow path. The fixed component loop
+now maps millisecond values with Arrow unary and reuses parent validity, avoiding per-row
+NULL rebuilding and fractional-buffer appends. No opcode, JNI, transport or configuration change.
+
+The final matrix passes **388 fresh JVM invocations** with zero skips across
+released Flink 1.18.1/2.2.1 and JDK 11/17, targeting Java 11. Full 5,003-row maps/schema
+cover all signed integer widths, NULLs, epoch limits, wrapping arithmetic, runtime 0/3/NULL
+precision, YEAR/NULL consumers, three zero-zone aliases and all-filtered batches. Direct/plain
+TIMESTAMP and LTZ FLOOR/CEIL, both CEIL aliases, nanoseconds and released unsupported sub-hour forms are revalidated.
+Catalog functions and fallible/unknown producers retain their existing contracts. Four
+unchanged released `testTemporalFloor` (including CEIL) stock-oracle invocations pass separately.
+Actual preceding encoder `0e4ed571` matches each positive invocation's
+first complete map/schema before the intended pure-route assertion fails. Subsequent
+queries in those failing invocations are not reached. Candidate SQL consumes NativeCalc
+with no fallback and empty evaluators.
+
+The rebuilt release runtime passes **915 fresh Rust core tests**, including shared sliced
+parent validity and zero fractions. The actual preceding runtime retains its archived
+914-test qualification; none of its historical tests are relabeled as fresh. Measured and validated encoder,
+build-selected compatibility and fixture hashes are recorded. Setup additionally requires
+CEIL in candidate native descriptors and previous JVM descriptors, preventing the
+outer YEAR consumer from disguising a generated or removed round operation.
+
+Prepared timing starts stock on equal prebuilt GenericRowData/BinaryRowData and native
+inside Rust on equal Arrow batches. It retains production epoch, rounding and YEAR,
+NULL handling, result consumption, allocation and intrinsic conversions/callbacks; initial
+JNI/import/export and perimeter transposes remain outside this small-function timer.
+One thread, 131,072 rows/trial, 16 warmups and nine measurements, both NULL modes, batches
+1,024 and 16. Four shapes consume seconds/YEAR, milliseconds/MONTH, INT milliseconds/DAY,
+and runtime CASE precision/HOUR through YEAR. Epoch corpora include released range limits,
+invalid values and signed extrema; INT uses the identical signed-width generator in both
+runtimes. Candidate and actual preceding encoders use identical fixtures/TableConfig and
+their recorded release native artifacts; stock is independently measured in both JVMs.
+
+| Prepared controls | Cells | Stock/native throughput | Previous/native throughput |
+| --- | ---: | ---: | ---: |
+| 1,024 rows/batch | 32 | 1.085-3.083x | 2.614-8.457x |
+| 16 rows/batch | 8 | 0.122-0.321x | 9.247-12.703x |
+
+All 32 final bulk medians beat stock and previous. **8/8
+tiny controls lose to stock**; they remain in the record. Independent stock medians and
+min/max ranges remain visible rather than being replaced with paired controls.
+
+Complete jobs use a bounded million-row source and blackhole sink, one thread, two
+warmups and five alternating measured trials. Submission/startup, JNI and both perimeter
+transposes stay inside the job timer; surrounding JVM startup is outside. Six configurations
+span the three BIGINT shapes on both releases. Values are median elapsed seconds:
+
+| Release-shape | Paired stock | Native | Independent stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 22-seconds-year | 0.177023 | 0.188216 | 0.175292 | 0.234545 |
+| 22-millis-month | 0.182372 | 0.196069 | 0.180223 | 0.225036 |
+| 22-runtime-hour | 0.168022 | 0.180388 | 0.168876 | 0.223127 |
+| 118-seconds-year | 0.173584 | 0.192806 | 0.176364 | 0.223084 |
+| 118-millis-month | 0.177507 | 0.200562 | 0.178427 | 0.221420 |
+| 118-runtime-hour | 0.163780 | 0.183824 | 0.168138 | 0.218249 |
+
+Native/stock elapsed is **1.063-1.130**,
+with 6/6 paired medians slower than stock; native/previous is
+**0.802-0.906**, with
+0/6 slower than previous. 6/6 independent
+stock medians also beat native. Overlapping ranges and slower complete jobs remain
+limitations; prepared bulk gains do not establish universal pipeline acceleration.
+
+The initial candidate includes a nullable runtime-precision/HOUR bulk cell at **0.943x**
+stock. A five-second native stack sample finds 1,886 inclusive TemporalRound frames, with
+per-row append_nulls/append_value and validity/timestamp reads below the fixed loop. Counts
+are sampled frames, not elapsed percentages. Following Comet's timestamp-extraction unary
+pattern, the final fixed component loop maps milliseconds and reuses sliced parent validity.
+Flink wrapping and fraction rules remain unchanged. Initial trials, all six initial complete
+jobs, and their source/artifact provenance remain in the record. The representative
+runtime-precision/HOUR allocation probe falls from 92 requests/39,541 bytes to 88/39,165 bytes.
+
+All **8,000 prepared raw samples**, allocation probes, complete-job trials,
+independent controls, source/bytecode/artifact hashes and exact expressions are in the
+[portable JSON](results/epoch-ltz-ceil-2026-11-04.json) and
+[compressed raw CSV](results/epoch-ltz-ceil-2026-11-04.csv.gz). The existing prepared
+`integral_expression` fixture selects these shapes through `SF_INTEGRAL_EXPRESSION`,
+`SF_INTEGRAL_CORPUS=epoch-seconds|epoch-millis` and
+`SF_INTEGRAL_REQUIRED_FUNCTION=CEIL`; the complete-job fixture uses its corresponding
+epoch input properties. The record identifies the actual preceding encoder; an arbitrary
+older main/runtime is not an equivalent previous control. Full hosted checks qualify the
+exact pushed head separately. Broad [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504)
+remains open for other producers/zones, units and recurring-DST extraction.
