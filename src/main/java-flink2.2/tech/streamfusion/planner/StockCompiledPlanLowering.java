@@ -273,6 +273,8 @@ final class StockCompiledPlanLowering {
         .anyMatch(
             node -> {
               if (node instanceof NativeTemporalSortExecNode) return true;
+              if (node instanceof NativeWindowRankExecNode)
+                return !((NativeWindowRankExecNode) node).isProcessingTime();
               if (node instanceof NativeColumnarTopNExecNode)
                 return ((NativeColumnarTopNExecNode) node).hasUniqueRowKeyState()
                     || ((NativeColumnarTopNExecNode) node).hasRetractingState();
@@ -285,7 +287,8 @@ final class StockCompiledPlanLowering {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
     for (ExecNode<?> node : nodes) {
-      if (node instanceof NativeTemporalSortExecNode) return false;
+      if (node instanceof NativeTemporalSortExecNode || node instanceof NativeWindowRankExecNode)
+        return false;
       if (node instanceof NativeOverAggExecNode
           && ((NativeOverAggExecNode) node).hasStockArithmeticState()) return false;
       if (ordinaryHelper(node)) continue;
@@ -590,6 +593,15 @@ final class StockCompiledPlanLowering {
         && nativeKeyedState
         && NativeConfig.operatorEnabled("changelogNormalize")) result = lowerNormalize(node);
     else if (node
+            instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWindowRank
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("windowRank")) result = lowerWindowRank(node, false);
+    else if (node
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWindowDeduplicate
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("windowRank")) result = lowerWindowRank(node, true);
+    else if (node
             instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecTemporalSort
         && nativeKeyedState
         && NativeConfig.operatorEnabled("temporalSort")) result = lowerTemporalSort(node);
@@ -607,6 +619,221 @@ final class StockCompiledPlanLowering {
         && NativeConfig.operatorEnabled("topN")) result = lowerRank(node);
     lowered.put(node, result);
     return result;
+  }
+
+  private ExecNode<?> lowerWindowRank(ExecNode<?> stock, boolean deduplicate) throws IOException {
+    var definition = definitions.get(stock.getId());
+    if (!deduplicate && !definition.path("rankType").asText().equals("ROW_NUMBER")) return stock;
+    long limit = 1;
+    if (!deduplicate) {
+      var range =
+          reader
+              .forType(org.apache.flink.table.runtime.operators.rank.RankRange.class)
+              .<org.apache.flink.table.runtime.operators.rank.RankRange>readValue(
+                  definition.path("rankRange"));
+      if (!(range instanceof org.apache.flink.table.runtime.operators.rank.ConstantRankRange))
+        return stock;
+      var constant = (org.apache.flink.table.runtime.operators.rank.ConstantRankRange) range;
+      if (constant.getRankStart() != 1 || constant.getRankEnd() <= 0) return stock;
+      limit = constant.getRankEnd();
+    }
+    var windowing =
+        reader
+            .forType(WindowingStrategy.class)
+            .<WindowingStrategy>readValue(definition.path("windowing"));
+    if (!(windowing
+            instanceof org.apache.flink.table.planner.plan.logical.WindowAttachedWindowingStrategy)
+        || !windowing.isRowtime()) return stock;
+    var attached =
+        (org.apache.flink.table.planner.plan.logical.WindowAttachedWindowingStrategy) windowing;
+    if (attached.getWindowStart() < 0 || attached.getWindowEnd() < 0) return stock;
+    var input = stock.getInputEdges().get(0).getSource();
+    var inputType = (RowType) stock.getInputEdges().get(0).getOutputType();
+    if (!RowDataArrowConverter.supports(inputType)) return stock;
+    int[] partitions, sortColumns, ascending, nullsFirst;
+    if (deduplicate) {
+      partitions = reader.forType(int[].class).readValue(definition.path("partitionKeys"));
+      sortColumns = new int[] {definition.path("orderKey").asInt()};
+      ascending = new int[] {definition.path("keepLastRow").asBoolean() ? 0 : 1};
+      nullsFirst = new int[] {0};
+    } else {
+      partitions =
+          reader
+              .forType(org.apache.flink.table.planner.plan.nodes.exec.spec.PartitionSpec.class)
+              .<org.apache.flink.table.planner.plan.nodes.exec.spec.PartitionSpec>readValue(
+                  definition.path("partitionSpec"))
+              .getFieldIndices();
+      var sort =
+          reader
+              .forType(org.apache.flink.table.planner.plan.nodes.exec.spec.SortSpec.class)
+              .<org.apache.flink.table.planner.plan.nodes.exec.spec.SortSpec>readValue(
+                  definition.path("sortSpec"));
+      sortColumns = sort.getFieldIndices();
+      ascending = new int[sortColumns.length];
+      nullsFirst = new int[sortColumns.length];
+      for (int i = 0; i < sortColumns.length; i++) {
+        ascending[i] = sort.getFieldSpec(i).getIsAscendingOrder() ? 1 : 0;
+        nullsFirst[i] = sort.getFieldSpec(i).getNullIsLast() ? 0 : 1;
+      }
+    }
+    var transformation = stockTransformations.get(stock.getId());
+    if (!(transformation instanceof OneInputTransformation)) return stock;
+    var original = (OneInputTransformation<?, ?>) transformation;
+    if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)
+        || !(original.getStateKeySelector()
+            instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector)) return stock;
+    var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
+    if (operator.getClass()
+            != org.apache.flink.table.runtime.operators.window.tvf.common.WindowAggOperator.class
+        || !(boolean) releasedField(operator, "isEventTime")) return stock;
+    var processor = releasedField(operator, "windowProcessor");
+    if (processor.getClass()
+        != (deduplicate
+            ? org.apache.flink.table.runtime.operators.deduplicate.window.processors
+                .RowTimeSyncStateWindowDeduplicateProcessor.class
+            : org.apache.flink.table.runtime.operators.rank.window.processors
+                .SyncStateWindowRankProcessor.class)) return stock;
+    var rowSerializer = new org.apache.flink.table.runtime.typeutils.RowDataSerializer(inputType);
+    if (!rowSerializer.equals(releasedField(processor, "inputSerializer"))
+        || (int) releasedField(processor, "windowEndIndex") != attached.getWindowEnd())
+      return stock;
+    if (deduplicate) {
+      var buffer = releasedField(processor, "bufferFactory");
+      if (buffer.getClass()
+          != org.apache.flink.table.runtime.operators.aggregate.window.buffers.RecordsWindowBuffer
+              .Factory.class) return stock;
+      var combiner = releasedField(buffer, "factory");
+      if (combiner.getClass()
+              != org.apache.flink.table.runtime.operators.deduplicate.window.combines
+                  .RowTimeDeduplicateRecordsCombiner.Factory.class
+          || (int) releasedField(combiner, "rowtimeIndex") != sortColumns[0]
+          || (boolean) releasedField(combiner, "keepLastRow")
+              != definition.path("keepLastRow").asBoolean()
+          || !rowSerializer.equals(releasedField(combiner, "recordSerializer"))) return stock;
+    } else if ((long) releasedField(processor, "rankStart") != 1
+        || (long) releasedField(processor, "rankEnd") != limit
+        || (boolean) releasedField(processor, "outputRankNumber")
+            != definition.path("outputRowNumber").asBoolean()) return stock;
+    @SuppressWarnings("unchecked")
+    TypeSerializer<RowData> keySerializer =
+        (TypeSerializer<RowData>)
+            original
+                .getStateKeyType()
+                .createSerializer(planner.getExecEnv().getConfig().getSerializerConfig());
+    var selectors =
+        org.apache.flink.table.planner.plan.utils.KeySelectorUtil.getRowDataSelector(
+            planner.getFlinkContext().getClassLoader(),
+            partitions,
+            org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(inputType));
+    var sortSelector =
+        org.apache.flink.table.planner.plan.utils.KeySelectorUtil.getRowDataSelector(
+            planner.getFlinkContext().getClassLoader(),
+            sortColumns,
+            org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(inputType));
+    if (!keySerializer.equals(selectors.getProducedType().toSerializer())) return stock;
+    @SuppressWarnings("unchecked")
+    TypeSerializer<RowData> sortSerializer =
+        deduplicate
+            ? null
+            : (TypeSerializer<RowData>) releasedField(processor, "sortKeySerializer");
+    if (!deduplicate && !sortSerializer.equals(sortSelector.getProducedType().toSerializer()))
+      return stock;
+    int maximum = stockMaximum(original);
+    Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
+    ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
+    if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
+        || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
+      return stock;
+    String zone = ((java.time.ZoneId) releasedField(processor, "shiftTimeZone")).getId();
+    var zoneId = java.time.ZoneId.of(zone);
+    var spec = windowing.getWindow();
+    if (!(spec instanceof TumblingWindowSpec)
+        && !(spec instanceof HoppingWindowSpec)
+        && !(spec instanceof CumulativeWindowSpec)) return stock;
+    long size = WindowAggregateMatcher.windowSize(windowing),
+        slide = WindowAggregateMatcher.windowSlide(windowing);
+    Duration offset;
+    org.apache.flink.table.runtime.operators.window.tvf.slicing.SliceAssigner assigner;
+    if (spec instanceof TumblingWindowSpec) {
+      offset = ((TumblingWindowSpec) spec).getOffset();
+      assigner =
+          org.apache.flink.table.runtime.operators.window.tvf.slicing.SliceAssigners.tumbling(
+                  Integer.MAX_VALUE, zoneId, Duration.ofMillis(size))
+              .withOffset(offset == null ? Duration.ZERO : offset);
+    } else if (spec instanceof HoppingWindowSpec) {
+      offset = ((HoppingWindowSpec) spec).getOffset();
+      assigner =
+          org.apache.flink.table.runtime.operators.window.tvf.slicing.SliceAssigners.hopping(
+                  Integer.MAX_VALUE, zoneId, Duration.ofMillis(size), Duration.ofMillis(slide))
+              .withOffset(offset == null ? Duration.ZERO : offset);
+    } else if (spec instanceof CumulativeWindowSpec) {
+      offset = ((CumulativeWindowSpec) spec).getOffset();
+      assigner =
+          org.apache.flink.table.runtime.operators.window.tvf.slicing.SliceAssigners.cumulative(
+                  Integer.MAX_VALUE, zoneId, Duration.ofMillis(size), Duration.ofMillis(slide))
+              .withOffset(offset == null ? Duration.ZERO : offset);
+    } else return stock;
+    var contract =
+        deduplicate
+            ? tech.streamfusion.state.StockWindowRankStateContract.deduplicate(
+                keySerializer,
+                selectors.getProducedType().toRowType(),
+                inputType,
+                partitions,
+                sortColumns[0],
+                attached.getWindowStart(),
+                attached.getWindowEnd(),
+                zone,
+                assigner::getWindowStart)
+            : new tech.streamfusion.state.StockWindowRankStateContract(
+                keySerializer,
+                selectors.getProducedType().toRowType(),
+                sortSerializer,
+                sortSelector.getProducedType().toRowType(),
+                inputType,
+                partitions,
+                sortColumns,
+                attached.getWindowStart(),
+                attached.getWindowEnd(),
+                zone,
+                assigner::getWindowStart);
+    var exchange =
+        (NativeColumnarExchangeExecNode)
+            canonicalJoinInput(input, config, inputType, partitions, false);
+    exchange.withStateMaxParallelism(maximum);
+    var rank =
+        new NativeWindowRankExecNode(
+                config,
+                InputProperty.DEFAULT,
+                (RowType) stock.getOutputType(),
+                "NativeColumnarWindowRank",
+                attached.getWindowStart(),
+                attached.getWindowEnd(),
+                partitions,
+                sortColumns,
+                ascending,
+                nullsFirst,
+                limit,
+                !deduplicate && definition.path("outputRowNumber").asBoolean(),
+                false,
+                size,
+                slide,
+                spec instanceof CumulativeWindowSpec,
+                zoneId.getRules().isFixedOffset()
+                    ? zoneId.getRules().getOffset(java.time.Instant.EPOCH).getTotalSeconds() * 1000L
+                    : 0,
+                deduplicate && definition.path("keepLastRow").asBoolean(),
+                FlinkKeyGroupUtils.stockKeyDescriptor(inputType, partitions))
+            .withCalendarZone(zone)
+            .withStateMaxParallelism(maximum);
+    connect(exchange, rank);
+    bindings.put(rank, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
+    columnar.add(rank);
+    var exit =
+        new ArrowToRowDataExecNode(
+            config, InputProperty.DEFAULT, (RowType) stock.getOutputType(), "ArrowToRowData");
+    connect(rank, exit);
+    return exit;
   }
 
   private ExecNode<?> lowerTemporalSort(ExecNode<?> stock) throws IOException {

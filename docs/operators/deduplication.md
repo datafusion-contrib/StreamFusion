@@ -164,3 +164,49 @@ preserve an original pending winner through both switches and reject newer repla
 Continued serialized output matches stock byte for byte. These schemas test memory and
 RocksDB's snapshot-backed native state; they do not claim direct typed RocksDB coverage for
 nested payloads. Canonical conversion is guarded against intermediate native snapshots.
+
+
+## Window deduplication canonical interchange (partial)
+
+Normal SQL and portable stock compiled plans bind released Flink 2.2.1 event-time window
+deduplication for TUMBLE/HOP/CUMULATE. The actual processor and combiner supply the input serializer,
+time zone, rowtime column and first/last policy. The original key serializer, identity and maximum
+parallelism accompany the runtime owner. Async/unaligned event-time state retains stock ownership. Explicit UIDs are optional; portable JSON remains stock-compatible.
+
+Direct live export writes the released `window_deduplicate` VALUE row under its Long window-end
+namespace, event timers and UNION watermark. Keep-first preserves the earliest arrival on equal
+time; keep-last replaces it. Both policy and calendar configuration precede restore-time import.
+The input watermark survives canonical and ordinary native checkpoints, including an empty
+state and immediate canonical re-export. Complete source validation precedes row installation,
+and source state remains until installation succeeds.
+
+The shared 425-check cohort includes 152 dedup controls across both stores, keyed/global state,
+three shapes, four zones, first/last ties, watermark/late-input recovery and malformed state/timers.
+The separate 384-check planner cohort also covers both submission forms and UID policies.
+See [window rank interchange](top-n.md#window-rank-canonical-interchange-partial) for the shared
+protocol and qualification boundaries. Broader types, resource/receiver failures, full connector
+delivery and cross-version qualification remain in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+
+All eight unchanged released WindowDeduplicateEventTimeRestoreTest programs pass on each engine.
+Every native-side invocation requires nonempty canonical winner import and subsequent native
+input, covering selected keyed/global first/last TUMBLE/HOP/CUMULATE programs with the original
+released assertions. The full paired rank/dedup selection is fourteen invocations per engine;
+these are separate from the shared operator/planner cohorts. A clean shared Flink 1.18.1 run
+passes 27 processing/checkpoint controls without claiming canonical interchange on that line.
+
+
+The separate 56-job matrix includes 28 keyed TUMBLE first-row dedup scenarios with BIGINT payloads:
+eight continued-input, eight no-input, four native-checkpoint recovery and eight 64-key rescale
+cases. It crosses submission forms, stores and engine orders (checkpoint starts native), retains
+both transposes/custom stock source/committer state, and compares full external effects with stock
+and an independent winner oracle. Source/sink remain singleton while the keyed owner rescales
+1→3→2 at maxP128. Last-row dedup and HOP/CUMULATE recovery/rescaling remain outside that job matrix.
+A combined 2,374-check regression cohort passes; its controls overlap the earlier cohorts.
+Processing-time native window dedup has no released stock counterpart and receives no stock
+canonical qualification. Benchmarking remains deferred.
+
+Processing-time ordinary SQL retains its existing native owner rather than passing through the
+released stock translator, which rejects that shape. Six dedicated keyed/global rank/first/last
+planner controls check actual owner routing and the stock rejection separately.

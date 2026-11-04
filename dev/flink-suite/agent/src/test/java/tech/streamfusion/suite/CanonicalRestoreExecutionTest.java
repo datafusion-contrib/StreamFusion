@@ -14,6 +14,72 @@ class CanonicalRestoreExecutionTest {
     System.setProperty("streamfusion.flink-suite.native-reports", reports.toString());
   }
 
+  static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> windowScopes() {
+    return java.util.stream.Stream.of(
+        org.junit.jupiter.params.provider.Arguments.of(
+            "WindowRankRestoreTest", "window-rank-tumble-tvf-min-top-n"),
+        org.junit.jupiter.params.provider.Arguments.of(
+            "WindowDeduplicateEventTimeRestoreTest", "window-deduplicate-asc-tumble-first-row"));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.MethodSource("windowScopes")
+  void windowImportAndNewInputAreBothRequired(String owner, String program) throws Exception {
+    var scope =
+        NativeExecution.beginRestore(
+            "org.apache.flink.table.planner.plan.nodes.exec.stream." + owner,
+            new Object(),
+            program);
+    var operator = new NativeColumnarWindowRankOperator();
+    StreamFusionSuiteAgent.RecordCanonicalWindowRankImport.exit(java.util.List.of(1, 2));
+    NativeExecution.opened(operator);
+    NativeExecution.completed(operator, 4);
+    assertDoesNotThrow(() -> NativeExecution.finish(scope));
+    try (var files = java.nio.file.Files.list(reports)) {
+      var fields =
+          java.nio.file.Files.readString(files.findFirst().orElseThrow())
+              .stripTrailing()
+              .split("\\t", -1);
+      assertEquals("NativeColumnarWindowRankOperator=4", fields[2]);
+      assertEquals("NativeColumnarWindowRankOperator=2", fields[4]);
+    }
+  }
+
+  static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> missingWindowWork() {
+    return windowScopes()
+        .flatMap(
+            args ->
+                java.util.stream.Stream.of(
+                        "none", "openOnly", "importOnly", "inputOnly", "otherFamily")
+                    .map(
+                        mode ->
+                            org.junit.jupiter.params.provider.Arguments.of(
+                                args.get()[0], args.get()[1], mode)));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.MethodSource("missingWindowWork")
+  void unrelatedOrIncompleteWindowWorkCannotProveRestore(
+      String owner, String program, String mode) {
+    var scope =
+        NativeExecution.beginRestore(
+            "org.apache.flink.table.planner.plan.nodes.exec.stream." + owner,
+            new Object(),
+            program);
+    var operator = new NativeColumnarWindowRankOperator();
+    if (!mode.equals("none")) NativeExecution.opened(operator);
+    if (mode.equals("importOnly"))
+      StreamFusionSuiteAgent.RecordCanonicalWindowRankImport.exit(java.util.List.of(1, 2));
+    if (mode.equals("inputOnly")) NativeExecution.completed(operator, 4);
+    if (mode.equals("otherFamily")) {
+      var other = new NativeColumnarTopNOperator();
+      NativeExecution.opened(other);
+      NativeExecution.restored("NativeColumnarTopNOperator", 2);
+      NativeExecution.completed(other, 4);
+    }
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
   private static final String GROUP =
       "org.apache.flink.table.planner.plan.nodes.exec.stream.GroupAggregateRestoreTest";
   private static final String JOIN =
@@ -449,6 +515,7 @@ class CanonicalRestoreExecutionTest {
             new Object(),
             "window-deduplicate-asc-tumble-first-row");
     var operator = new NativeColumnarWindowRankOperator();
+    StreamFusionSuiteAgent.RecordCanonicalWindowRankImport.exit(java.util.List.of(1, 2));
     NativeExecution.opened(operator);
     NativeExecution.completed(operator, 3);
     assertDoesNotThrow(() -> NativeExecution.finish(scope));

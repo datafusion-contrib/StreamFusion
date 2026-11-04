@@ -260,6 +260,13 @@ public final class StreamFusionSuiteAgent {
                     ? builder.visit(
                         Advice.to(RecordCanonicalFirstNImport.class).on(named("importBatch")))
                     : builder)
+        .type(named("tech.streamfusion.state.StockWindowRankStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalWindowRankImport.class).on(named("importBatch")))
+                    : builder)
         .type(named("tech.streamfusion.state.StockWindowJoinStateContract"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -660,6 +667,13 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodExit
     static void exit(@Advice.Argument(1) int side, @Advice.Argument(2) java.util.List<?> rows) {
       if (side >= 0) NativeExecution.restored("NativeTemporalJoinOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalWindowRankImport {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(0) java.util.List<?> rows) {
+      NativeExecution.restored("NativeColumnarWindowRankOperator", rows.size());
     }
   }
 

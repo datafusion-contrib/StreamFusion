@@ -25,8 +25,8 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
 | [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Representative draft interchange; namespaced and DISTINCT-state groundwork | Planner/test consolidation and complete phase/type/view matrix |
 | [Sessions](../operators/window-aggregate.md) | Representative draft state and continuation evidence | Consolidation and wider merging/timer/recovery matrix |
-| [Window rank](../operators/top-n.md) | Representative draft interchange evidence | Consolidation and wider bounds/type/timer variants |
-| [Window deduplication](../operators/deduplication.md) | Representative draft interchange evidence | Consolidation and wider winner/timer/type variants |
+| [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
+| [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
 | [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic and processing-time unbounded scalar contracts with automatic binding | Wider job/type matrix, event-time unbounded/views and event-ROWS cleanup |
 | [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
@@ -1365,3 +1365,31 @@ Both boundaries and custom stock source/committer effects remain in the complete
 strict global output order. Native connector transaction/writer failures and wider schema/version
 matrices remain unfinished. All fifteen operator families remain partial under #569; benchmarking
 is deferred.
+
+
+## Automatic window rank and deduplication binding (partial)
+
+Ordinary SQL and portable stock Flink 2.2.1 plans capture the actual synchronous event-time
+window processor, key/sort serializers, schema, time zone, stock identities and maximum
+parallelism. TUMBLE/HOP/CUMULATE use Long window-end namespaces, released event timers,
+`window_rank` sort-key lists or `window_deduplicate` winner rows, and the UNION input watermark.
+The direct live projection does not first serialize a native snapshot. Calendar and tie policy
+configuration precede import, and native checkpoints retain managed watermark bookkeeping.
+The stock plan remains portable, and generated identities work without explicit UIDs.
+
+The paired 425-check state/bridge cohort and separate 384-check planner cohort qualify their
+listed subsets. The unchanged released pair passes fourteen invocations on each engine, with
+twelve positive canonical-import/new-input witnesses and two rank-after-aggregate processing
+controls without rank-state import credit. Twenty admission checks preserve stock owners for
+async/unaligned/OFFSET contracts. See the operator pages for complete-job evidence and limitations.
+All fifteen families remain partial and all ten full acceptance criteria remain open under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+
+The separate 56-job window rank/dedup cohort passes both submission forms, stores and engine orders
+for keyed TUMBLE general rank/first-row dedup. It covers 16 continued-input, 16 no-input, eight
+native-checkpoint and sixteen 64-key owner-rescale cases; source/sink remain singleton. The combined
+2,374-check regression selection also passes. This establishes representative automatic job
+handoffs in thirteen of fifteen families; fixed-window aggregates and sessions remain drafts.
+It does not qualify all variants in those thirteen families. Native processing-time window rank
+and dedup have no released stock counterpart and receive no stock canonical qualification.

@@ -704,3 +704,74 @@ not repair released Flink's processing behavior or infer counters from an ideal 
 Wider schemas, three or more sort fields, nullable variable bounds, broader native graphs and the
 full version/failure/delivery matrix remain open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+## Window rank canonical interchange (partial)
+
+Normal SQL and portable stock compiled plans bind the released Flink 2.2.1 event-time
+window-rank processor for constant ROW_NUMBER ranges starting at one. TUMBLE, HOP and CUMULATE
+retain attached local start/end columns, including SQL offsets. Capture uses the actual stock key
+and sort serializers, input schema, processor time zone, original identity and resolved maximum
+parallelism. Global owners keep the stock singleton maximum; keyed owners and their columnar
+exchange share the captured maximum. Explicit UIDs are optional. Async and unaligned event-time state keep
+stock owners. The portable compiled plan remains unchanged.
+
+Canonical export visits live memory or typed RocksDB rows directly into stock `window_rank`
+MAP state, with Long window-end namespaces, full sort-key lists, released event timers and the
+`watermark` UNION state. No intermediate native snapshot is written. Import validates the complete
+row/key/namespace/timer inventory before applying row batches and clears source entries only after
+success. Calendar and tie policies are installed before import; canonical and ordinary native
+checkpoints retain the input watermark, so immediate returns and older incoming watermarks cannot
+reopen closed windows. Native checkpoints retain their existing raw format.
+
+The 425-check rank/dedup cohort includes 252 rank cases, 152 dedup cases and 21 shared bridge/operator
+regressions. It covers both native stores, keyed/global state, three shapes, four zones including
+DST transitions, rank-number output, NULL scores/keys, arrival-order ties, a 2,500-row sort list,
+empty watermark-only snapshots, native-checkpoint continuation and malformed ownership/state.
+The separate 384-check planner cohort crosses shapes, zones, keyed/global state, first/last order,
+both submission forms and explicit/generated identities. These cohorts do not establish full
+connector, type, failure or version qualification.
+
+OFFSET/other rank kinds, broader retained-type/sort parity,
+populated-target and resource/callback failure qualification, and the complete connector/delivery/
+version matrices remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+
+The unchanged released WindowRankRestoreTest and WindowDeduplicateEventTimeRestoreTest suites
+pass all fourteen invocations on each engine. Four rank and eight dedup invocations require both
+a nonempty successful canonical import and new native input. The two rank-after-aggregate programs
+prove native rank processing after restore but have no nonempty rank-import witness; they receive
+no rank-state import credit. Their stock upstream aggregate remains outside this native window
+aggregate qualification. Released schemas include DECIMAL and VARCHAR fields in addition to the
+BIGINT operator fixtures. The agent's 130 canonical witness controls pass, including rejection
+of import-only, input-only and unrelated-family activity. Twenty separate planner controls
+verify stock fallback for async, unaligned and OFFSET contracts.
+
+A clean Flink 1.18.1 build passes 27 shared processing, bridge and native-checkpoint checks.
+Those checks do not qualify stock canonical interchange on 1.18. Native code is unchanged from
+the previously qualified library; this milestone does not claim a new native-suite run.
+
+
+A separate 56-case complete-job matrix passes: 28 cases per family, each with eight continued-input
+switches, eight no-input round trips, four ordinary native-checkpoint recoveries and eight rescalings.
+Both submission forms, native stores and engine orders are covered; checkpoint cases start native.
+The keyed TUMBLE fixtures use BIGINT payloads, general ascending rank without rank-number output
+and first-row dedup. They retain both transposes, custom stock source/committing-sink state,
+clean stock worker classpaths and metadata, exact externally committed changes and an independent
+per-key selection oracle. Rescaling redistributes 64 actual keys through one, three and two native
+owners at maximum parallelism 128 while source/sink remain singleton. Positive native work is
+required in every native owner. Other shapes, last-row dedup and broader retained schemas have
+operator/planner or released-suite evidence, rather than this complete-job recovery/rescale matrix.
+
+The final 2,374-check regression cohort passes all twenty selected classes without failures,
+errors or skips. It combines the rank/dedup state and planner controls with existing sort, OVER,
+identity, SQL and ordinary rank regressions. These counts overlap earlier cohorts and are not
+added cumulatively. Processing-time native windows have no released stock Window TopN/Dedup
+counterpart and receive no stock canonical qualification. Benchmarking remains deferred.
+
+Six additional planner controls require actual native processing-time window owners in ordinary
+SQL for keyed/global rank and first/last dedup. They also assert that the same stock queries fail
+with the released processing-time-window rejection. Event-time canonical routing therefore leaves
+the existing native processing-time path intact; unrelated native Calc activity cannot satisfy
+these controls.

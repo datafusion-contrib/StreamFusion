@@ -1,6 +1,6 @@
 # Released restore method<TAB>fixture selector<TAB>required native state family.
 # These are implementation gates: an unrelated native Calc cannot satisfy a state restore.
-org.apache.flink.table.planner.plan.nodes.exec.stream.WindowDeduplicateEventTimeRestoreTest#testRestore	*	NativeColumnarWindowRankOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowDeduplicateEventTimeRestoreTest#testRestore	*	@resume:NativeColumnarWindowRankOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.GroupAggregateRestoreTest#testRestore	*	NativeColumnarGroupAggregateOperator|NativeColumnarJvmGroupOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.DeduplicationRestoreTest#testRestore	program=deduplicate_asc	NativeColumnarKeepLastDeduplicateOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.DeduplicationRestoreTest#testRestore	program=deduplicate_asc_proctime	NativeColumnarKeepLastDeduplicateOperator
@@ -56,7 +56,12 @@ org.apache.flink.table.planner.plan.nodes.exec.stream.WindowJoinEventTimeRestore
 org.apache.flink.table.planner.plan.nodes.exec.stream.WindowJoinEventTimeRestoreTest#testRestore	program=window_join_cumulate_event_time	NativeWindowJoinOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.WindowJoinEventTimeRestoreTest#testRestore	program=window_join_semi_tumble_event_time	!@NativeWindowJoinOperator:window join: semi/anti retain the released stock state owner&&StockWindowJoin
 org.apache.flink.table.planner.plan.nodes.exec.stream.WindowJoinEventTimeRestoreTest#testRestore	program=window_join_anti_tumble_event_time	!@NativeWindowJoinOperator:window join: semi/anti retain the released stock state owner&&StockWindowJoin
-org.apache.flink.table.planner.plan.nodes.exec.stream.WindowRankRestoreTest#testRestore	*	NativeColumnarWindowRankOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowRankRestoreTest#testRestore	program=window_rank_tumble_tvf_min_top_n	@resume:NativeColumnarWindowRankOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowRankRestoreTest#testRestore	program=window_rank_tumble_tvf_agg_min_top_n	NativeColumnarWindowRankOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowRankRestoreTest#testRestore	program=window_rank_tumble_tvf_max_top_n	@resume:NativeColumnarWindowRankOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowRankRestoreTest#testRestore	program=window_rank_tumble_tvf_agg_max_top_n	NativeColumnarWindowRankOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowRankRestoreTest#testRestore	program=window_rank_hop_tvf_min_top_n	@resume:NativeColumnarWindowRankOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowRankRestoreTest#testRestore	program=window_rank_cumulate_tvf_min_top_n	@resume:NativeColumnarWindowRankOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest#testRestore	program=interval_join_event_time	NativeIntervalJoinOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest#testRestore	program=interval_join_proc_time	NativeIntervalJoinOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest#testRestore	program=interval_join_negative_interval	@elided:IntervalJoin
