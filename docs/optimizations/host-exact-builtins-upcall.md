@@ -866,3 +866,30 @@ stock improvement on this recorded workload. Short-job startup/JIT and remaining
 costs are included; these numbers do not imply a gain for all jobs. The
 [full measurements](../benchmarks/scalar-functions.md#integer-truncate-with-a-literal-position)
 retain all trials, checksums, allocation probes, routes and applicability limits.
+
+## Batch masks for bounded epoch precision
+
+Verified runtime integer TO_TIMESTAMP_LTZ precision CASE trees execute in one batch kernel,
+avoiding partitioning and merging Struct timestamp branches or building a precision column
+for scalar leaves. The kernel uses the same packed remaining/selected-mask structure as
+Comet's infallible CASE path: exclude NULL predicates, remove rows after the first match,
+and combine selected branch masks. Eager argument evaluation is admitted only after proving
+the epoch producer and all conditions/branches total and free of state changes.
+
+For scalar 0/3/NULL leaves, validity combines original-unit bounds and CASE masks before
+scaling selected seconds. Millisecond-only selection shares immutable input values, including
+sliced arrays. Timestamp validity belongs to the parent; non-null component arrays borrow
+or own their buffers through Arrow reference counts. Nested precision CASE branches reuse
+the existing total integer selector. No JNI ownership or wire contract changes.
+
+The [runtime precision measurements](../benchmarks/scalar-functions.md#runtime-integer-epoch-precision)
+retain the slower timestamp-CASE, materialized-precision and row-selection implementations,
+CPU profiles, final prepared stock/actual-previous/native matrix and conversion-inclusive
+jobs. Tiny batches and unfavorable complete-job measurements remain explicit; native
+execution does not imply a speedup at those boundaries. Unproven signatures retain Flink.
+
+All 64 release prepared bulk controls improve 1.145-4.399x over stock and 6.227-38.014x
+over the actual preceding encoder. All 16 tiny controls lose to stock. The eight complete
+million-row configurations retain JNI and both transposes: native/stock elapsed is
+1.006-1.128, native/previous 0.803-0.865. The bulk function result does not establish a
+complete-job stock speedup.

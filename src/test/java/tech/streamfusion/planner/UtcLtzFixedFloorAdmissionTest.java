@@ -38,7 +38,7 @@ class UtcLtzFixedFloorAdmissionTest {
         var encoder = constructor.newInstance();
         configure.invoke(encoder, table.getConfig());
         boolean fixedUnitSupported = FlinkCompat.supportsSubHourLtzRounding()
-            || expression.endsWith("ts TO DAY)") || expression.endsWith("ts TO HOUR)");
+            || expression.endsWith("TO DAY)") || expression.endsWith("TO HOUR)");
         boolean admitted = (Boolean) emit.invoke(encoder, projection.getProjects().get(0));
         if (!FlinkCompat.supportsSubHourLtzRounding()
             && (expression.contains("TO MINUTE") || expression.contains("TO SECOND")
@@ -48,12 +48,11 @@ class UtcLtzFixedFloorAdmissionTest {
         }
         assertTrue(admitted, expression);
         boolean pure = ZoneId.of(zone).normalized().equals(java.time.ZoneOffset.UTC)
-            && (expression.startsWith("FLOOR(ts") || expression.startsWith("CEIL(ts"))
             && fixedUnitSupported;
         assertEquals(pure, encoder.jvmFunctionCalls().isEmpty(), zone + " " + expression);
         if (pure) {
           boolean ceiling = expression.startsWith("CEIL");
-          assertEquals(List.of(ceiling ? "CEIL" : "FLOOR"), encoder.nativeFunctionCalls());
+          assertTrue(encoder.nativeFunctionCalls().contains(ceiling ? "CEIL" : "FLOOR"));
           assertEquals(ceiling ? 246 : 154, encoder.payload()[0]);
         }
       }

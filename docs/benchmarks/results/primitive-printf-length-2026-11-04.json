@@ -1,0 +1,2451 @@
+{
+  "date": "2026-11-04",
+  "base": "0f5fc16796d6e7882e34722435480320a25434dd",
+  "previous_head": "bbada54b0d4f6395f06943442f6ed0867a90416f",
+  "platform": "Apple M4 Pro, macOS arm64, one thread",
+  "jdk": "17.0.12",
+  "java_release": 11,
+  "flink_versions": [
+    "1.18.1",
+    "2.2.1"
+  ],
+  "performance_flink": "2.2.1",
+  "build": "release --no-default-features --features mimalloc",
+  "scope": "Direct released built-in CHAR_LENGTH/CHARACTER_LENGTH over the already-qualified primitive ASCII PRINTF. Preserve operator identity, full primitive producer proof and all generic Unicode/representation guards. Java admission only; no native rebuild or transport change.",
+  "method": {
+    "rows_per_trial": 131072,
+    "warmups": 16,
+    "measurements": 9,
+    "bulk_batch": 1024,
+    "tiny_batch": 16,
+    "input": "Equal prepared GenericRowData/BinaryRowData and Arrow; both NULL modes; signed INT/BIGINT extrema, BOOLEAN/mixed INT and DECIMAL(4,2)/DECIMAL(38,18) truth/comparisons; literal padded/indexed formats.",
+    "native_timer": "Starts/stops inside Rust after import and before export, retaining production Calc, output consumption, allocation, conversions and intrinsic callbacks. Initial JNI/import/export and perimeter transposes are outside this prepared operation only.",
+    "previous": "The actual preceding encoder/helper from bbada54b runs the identical fixture/data/JDK on its saved whole DSO/executable. The candidate native artifacts are byte-identical because this extension changes Java admission only. Both runtime paths require consumed operations; only the new route requires empty evaluators.",
+    "pipeline": "Four million-row bounded row-source to blackhole jobs, one thread, two warmups and five alternating stock/native measurements. Job submission/startup, JNI and both RowData/Arrow perimeter transposes are retained; setup and the surrounding JVM process startup are outside the job timer."
+  },
+  "cells": {
+    "0": {
+      "shape": "int-length",
+      "expression": "CHAR_LENGTH(PRINTF('%s/%d',v,v))",
+      "type": "INT",
+      "secondary": "",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 118.9559326171875,
+          "min": 116.61243438720703,
+          "max": 122.48738098144531
+        },
+        "native": {
+          "median": 53.49159240722656,
+          "min": 49.504913330078125,
+          "max": 55.75752258300781
+        },
+        "prior-stock": {
+          "median": 115.50109100341797,
+          "min": 112.04401397705078,
+          "max": 117.97746276855469
+        },
+        "previous": {
+          "median": 145.40641021728516,
+          "min": 141.03221893310547,
+          "max": 152.47599029541016
+        }
+      }
+    },
+    "1": {
+      "shape": "int-length",
+      "expression": "CHAR_LENGTH(PRINTF('%s/%d',v,v))",
+      "type": "INT",
+      "secondary": "",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 119.7363510131836,
+          "min": 115.54940795898438,
+          "max": 126.85743713378906
+        },
+        "native": {
+          "median": 53.810760498046875,
+          "min": 51.897682189941406,
+          "max": 55.67359924316406
+        },
+        "prior-stock": {
+          "median": 139.56101989746094,
+          "min": 136.7349624633789,
+          "max": 141.6524200439453
+        },
+        "previous": {
+          "median": 158.53500366210938,
+          "min": 153.167724609375,
+          "max": 169.77914428710938
+        }
+      }
+    },
+    "2": {
+      "shape": "int-length",
+      "expression": "CHAR_LENGTH(PRINTF('%s/%d',v,v))",
+      "type": "INT",
+      "secondary": "",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 121.63734436035156,
+          "min": 115.2502670288086,
+          "max": 137.2823715209961
+        },
+        "native": {
+          "median": 52.39550018310547,
+          "min": 48.854827880859375,
+          "max": 53.84223175048828
+        },
+        "prior-stock": {
+          "median": 129.9289093017578,
+          "min": 128.12137603759766,
+          "max": 157.97138214111328
+        },
+        "previous": {
+          "median": 151.48512268066406,
+          "min": 146.67256927490234,
+          "max": 179.5943603515625
+        }
+      }
+    },
+    "3": {
+      "shape": "int-length",
+      "expression": "CHAR_LENGTH(PRINTF('%s/%d',v,v))",
+      "type": "INT",
+      "secondary": "",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 124.13915252685547,
+          "min": 122.52680969238281,
+          "max": 135.68910217285156
+        },
+        "native": {
+          "median": 52.132606506347656,
+          "min": 49.31037139892578,
+          "max": 53.012847900390625
+        },
+        "prior-stock": {
+          "median": 123.48143005371094,
+          "min": 120.48721313476562,
+          "max": 128.83567810058594
+        },
+        "previous": {
+          "median": 144.43460845947266,
+          "min": 140.1859893798828,
+          "max": 148.3799591064453
+        }
+      }
+    },
+    "4": {
+      "shape": "bigint-padded",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$+020d/%1$08X',v))",
+      "type": "BIGINT",
+      "secondary": "",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 493.87073516845703,
+          "min": 485.4860305786133,
+          "max": 503.41161346435547
+        },
+        "native": {
+          "median": 76.40838623046875,
+          "min": 73.3652114868164,
+          "max": 78.49852752685547
+        },
+        "prior-stock": {
+          "median": 496.2148666381836,
+          "min": 490.22960662841797,
+          "max": 499.6824264526367
+        },
+        "previous": {
+          "median": 494.65338134765625,
+          "min": 490.7519073486328,
+          "max": 522.7289199829102
+        }
+      }
+    },
+    "5": {
+      "shape": "bigint-padded",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$+020d/%1$08X',v))",
+      "type": "BIGINT",
+      "secondary": "",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 496.8900680541992,
+          "min": 494.49825286865234,
+          "max": 500.4936828613281
+        },
+        "native": {
+          "median": 75.15621185302734,
+          "min": 72.71353912353516,
+          "max": 77.05815887451172
+        },
+        "prior-stock": {
+          "median": 507.42784881591797,
+          "min": 491.52532958984375,
+          "max": 510.3801040649414
+        },
+        "previous": {
+          "median": 528.115592956543,
+          "min": 514.9513854980469,
+          "max": 538.1530151367188
+        }
+      }
+    },
+    "6": {
+      "shape": "bigint-padded",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$+020d/%1$08X',v))",
+      "type": "BIGINT",
+      "secondary": "",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 507.8713073730469,
+          "min": 498.11808013916016,
+          "max": 593.3160781860352
+        },
+        "native": {
+          "median": 73.77275085449219,
+          "min": 72.80794525146484,
+          "max": 79.02685546875
+        },
+        "prior-stock": {
+          "median": 498.8600387573242,
+          "min": 498.03829193115234,
+          "max": 512.9235534667969
+        },
+        "previous": {
+          "median": 518.4666290283203,
+          "min": 514.1976623535156,
+          "max": 528.8365707397461
+        }
+      }
+    },
+    "7": {
+      "shape": "bigint-padded",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$+020d/%1$08X',v))",
+      "type": "BIGINT",
+      "secondary": "",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 421.97196197509766,
+          "min": 417.8460388183594,
+          "max": 425.076171875
+        },
+        "native": {
+          "median": 72.7256088256836,
+          "min": 67.37454986572266,
+          "max": 75.51225280761719
+        },
+        "prior-stock": {
+          "median": 440.8572540283203,
+          "min": 433.5320816040039,
+          "max": 447.49705505371094
+        },
+        "previous": {
+          "median": 452.7985305786133,
+          "min": 446.1015090942383,
+          "max": 479.10118103027344
+        }
+      }
+    },
+    "8": {
+      "shape": "boolean-length",
+      "expression": "CHAR_LENGTH(PRINTF('%1$8.2S/%1$-8.3b',v))",
+      "type": "BOOLEAN",
+      "secondary": "",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 361.01753997802734,
+          "min": 350.49979400634766,
+          "max": 376.0194778442383
+        },
+        "native": {
+          "median": 57.20329284667969,
+          "min": 53.78564453125,
+          "max": 59.57349395751953
+        },
+        "prior-stock": {
+          "median": 336.6540298461914,
+          "min": 333.709716796875,
+          "max": 339.0932083129883
+        },
+        "previous": {
+          "median": 369.2414016723633,
+          "min": 365.68959045410156,
+          "max": 385.3114471435547
+        }
+      }
+    },
+    "9": {
+      "shape": "boolean-length",
+      "expression": "CHAR_LENGTH(PRINTF('%1$8.2S/%1$-8.3b',v))",
+      "type": "BOOLEAN",
+      "secondary": "",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 396.0212097167969,
+          "min": 377.322509765625,
+          "max": 417.71411895751953
+        },
+        "native": {
+          "median": 57.78916931152344,
+          "min": 54.87854766845703,
+          "max": 63.26866149902344
+        },
+        "prior-stock": {
+          "median": 350.82848358154297,
+          "min": 346.8357696533203,
+          "max": 353.37479400634766
+        },
+        "previous": {
+          "median": 366.6229248046875,
+          "min": 363.21067810058594,
+          "max": 370.4643249511719
+        }
+      }
+    },
+    "10": {
+      "shape": "boolean-length",
+      "expression": "CHAR_LENGTH(PRINTF('%1$8.2S/%1$-8.3b',v))",
+      "type": "BOOLEAN",
+      "secondary": "",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 353.32234954833984,
+          "min": 350.72994232177734,
+          "max": 356.9332733154297
+        },
+        "native": {
+          "median": 53.81520080566406,
+          "min": 52.86566925048828,
+          "max": 56.61518859863281
+        },
+        "prior-stock": {
+          "median": 330.9342041015625,
+          "min": 327.29085540771484,
+          "max": 339.76109313964844
+        },
+        "previous": {
+          "median": 391.1825866699219,
+          "min": 387.9114761352539,
+          "max": 396.75235748291016
+        }
+      }
+    },
+    "11": {
+      "shape": "boolean-length",
+      "expression": "CHAR_LENGTH(PRINTF('%1$8.2S/%1$-8.3b',v))",
+      "type": "BOOLEAN",
+      "secondary": "",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 346.1186065673828,
+          "min": 345.21007537841797,
+          "max": 350.36055755615234
+        },
+        "native": {
+          "median": 53.39019012451172,
+          "min": 52.60181427001953,
+          "max": 55.614471435546875
+        },
+        "prior-stock": {
+          "median": 351.75672912597656,
+          "min": 345.28319549560547,
+          "max": 370.2872619628906
+        },
+        "previous": {
+          "median": 376.68387603759766,
+          "min": 367.8585739135742,
+          "max": 385.96057891845703
+        }
+      }
+    },
+    "12": {
+      "shape": "boolean-mixed",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$b/%2$+08d/%1$S',v,n))",
+      "type": "BOOLEAN",
+      "secondary": "INT",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 522.4844665527344,
+          "min": 516.6123657226562,
+          "max": 531.9725723266602
+        },
+        "native": {
+          "median": 87.96373748779297,
+          "min": 84.09468078613281,
+          "max": 91.43733978271484
+        },
+        "prior-stock": {
+          "median": 531.7350997924805,
+          "min": 529.7946929931641,
+          "max": 541.434928894043
+        },
+        "previous": {
+          "median": 565.939582824707,
+          "min": 558.4182739257812,
+          "max": 577.9228210449219
+        }
+      }
+    },
+    "13": {
+      "shape": "boolean-mixed",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$b/%2$+08d/%1$S',v,n))",
+      "type": "BOOLEAN",
+      "secondary": "INT",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 527.6517868041992,
+          "min": 520.5074920654297,
+          "max": 531.1390609741211
+        },
+        "native": {
+          "median": 86.286865234375,
+          "min": 82.25218963623047,
+          "max": 91.67257690429688
+        },
+        "prior-stock": {
+          "median": 561.5037231445312,
+          "min": 550.9258880615234,
+          "max": 583.4681167602539
+        },
+        "previous": {
+          "median": 581.6008224487305,
+          "min": 563.8920440673828,
+          "max": 585.5185165405273
+        }
+      }
+    },
+    "14": {
+      "shape": "boolean-mixed",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$b/%2$+08d/%1$S',v,n))",
+      "type": "BOOLEAN",
+      "secondary": "INT",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 539.5021438598633,
+          "min": 531.6251068115234,
+          "max": 544.5801391601562
+        },
+        "native": {
+          "median": 83.83623504638672,
+          "min": 82.366943359375,
+          "max": 87.1702880859375
+        },
+        "prior-stock": {
+          "median": 534.3167037963867,
+          "min": 522.7804183959961,
+          "max": 549.6883392333984
+        },
+        "previous": {
+          "median": 555.0324096679688,
+          "min": 539.8750305175781,
+          "max": 565.9726486206055
+        }
+      }
+    },
+    "15": {
+      "shape": "boolean-mixed",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$b/%2$+08d/%1$S',v,n))",
+      "type": "BOOLEAN",
+      "secondary": "INT",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 540.7021865844727,
+          "min": 537.2975616455078,
+          "max": 552.607536315918
+        },
+        "native": {
+          "median": 84.43864440917969,
+          "min": 79.68870544433594,
+          "max": 86.3822250366211
+        },
+        "prior-stock": {
+          "median": 533.8729248046875,
+          "min": 530.683837890625,
+          "max": 539.4725799560547
+        },
+        "previous": {
+          "median": 556.9906234741211,
+          "min": 553.3851013183594,
+          "max": 558.9526519775391
+        }
+      }
+    },
+    "16": {
+      "shape": "decimal-truth",
+      "expression": "CHAR_LENGTH(PRINTF('%1$8.2S/%1$B',TRY_CAST(v AS BOOLEAN)))",
+      "type": "DECIMAL(4,2)",
+      "secondary": "",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 330.66622161865234,
+          "min": 320.30074310302734,
+          "max": 335.6625213623047
+        },
+        "native": {
+          "median": 57.964637756347656,
+          "min": 54.654754638671875,
+          "max": 61.08411407470703
+        },
+        "prior-stock": {
+          "median": 377.5173797607422,
+          "min": 369.17749786376953,
+          "max": 381.8515090942383
+        },
+        "previous": {
+          "median": 399.2459030151367,
+          "min": 392.4725875854492,
+          "max": 403.8248062133789
+        }
+      }
+    },
+    "17": {
+      "shape": "decimal-truth",
+      "expression": "CHAR_LENGTH(PRINTF('%1$8.2S/%1$B',TRY_CAST(v AS BOOLEAN)))",
+      "type": "DECIMAL(4,2)",
+      "secondary": "",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 335.1160659790039,
+          "min": 328.48262786865234,
+          "max": 343.2725296020508
+        },
+        "native": {
+          "median": 54.64363098144531,
+          "min": 53.18927764892578,
+          "max": 57.337440490722656
+        },
+        "prior-stock": {
+          "median": 357.0744171142578,
+          "min": 348.8915710449219,
+          "max": 371.0492477416992
+        },
+        "previous": {
+          "median": 366.2745132446289,
+          "min": 362.71922302246094,
+          "max": 379.2994842529297
+        }
+      }
+    },
+    "18": {
+      "shape": "decimal-truth",
+      "expression": "CHAR_LENGTH(PRINTF('%1$8.2S/%1$B',TRY_CAST(v AS BOOLEAN)))",
+      "type": "DECIMAL(4,2)",
+      "secondary": "",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 332.4460983276367,
+          "min": 324.215576171875,
+          "max": 348.91446685791016
+        },
+        "native": {
+          "median": 54.48119354248047,
+          "min": 52.04200744628906,
+          "max": 55.536903381347656
+        },
+        "prior-stock": {
+          "median": 359.2564239501953,
+          "min": 348.62487030029297,
+          "max": 411.78321838378906
+        },
+        "previous": {
+          "median": 395.0265197753906,
+          "min": 380.2150115966797,
+          "max": 470.45326232910156
+        }
+      }
+    },
+    "19": {
+      "shape": "decimal-truth",
+      "expression": "CHAR_LENGTH(PRINTF('%1$8.2S/%1$B',TRY_CAST(v AS BOOLEAN)))",
+      "type": "DECIMAL(4,2)",
+      "secondary": "",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 344.55108642578125,
+          "min": 341.5368423461914,
+          "max": 354.18065643310547
+        },
+        "native": {
+          "median": 54.13818359375,
+          "min": 52.141510009765625,
+          "max": 55.898033142089844
+        },
+        "prior-stock": {
+          "median": 374.68115997314453,
+          "min": 357.03436279296875,
+          "max": 386.6278305053711
+        },
+        "previous": {
+          "median": 391.48585510253906,
+          "min": 377.3622512817383,
+          "max": 414.50023651123047
+        }
+      }
+    },
+    "20": {
+      "shape": "decimal-comparison",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$b/%2$+08d/%1$S',v<CAST(0 AS $TYPE),n))",
+      "type": "DECIMAL(38,18)",
+      "secondary": "INT",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 539.8887023925781,
+          "min": 531.1667098999023,
+          "max": 549.4912490844727
+        },
+        "native": {
+          "median": 88.68694305419922,
+          "min": 86.78372955322266,
+          "max": 92.71399688720703
+        },
+        "prior-stock": {
+          "median": 533.6074829101562,
+          "min": 525.7619247436523,
+          "max": 547.8356704711914
+        },
+        "previous": {
+          "median": 577.7047424316406,
+          "min": 565.5879974365234,
+          "max": 590.1381149291992
+        }
+      }
+    },
+    "21": {
+      "shape": "decimal-comparison",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$b/%2$+08d/%1$S',v<CAST(0 AS $TYPE),n))",
+      "type": "DECIMAL(38,18)",
+      "secondary": "INT",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 578.7547378540039,
+          "min": 570.6329345703125,
+          "max": 584.306396484375
+        },
+        "native": {
+          "median": 89.18793487548828,
+          "min": 87.47259521484375,
+          "max": 91.3400650024414
+        },
+        "prior-stock": {
+          "median": 591.2361145019531,
+          "min": 581.3029632568359,
+          "max": 607.5757369995117
+        },
+        "previous": {
+          "median": 587.6429824829102,
+          "min": 579.5882568359375,
+          "max": 606.7018508911133
+        }
+      }
+    },
+    "22": {
+      "shape": "decimal-comparison",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$b/%2$+08d/%1$S',v<CAST(0 AS $TYPE),n))",
+      "type": "DECIMAL(38,18)",
+      "secondary": "INT",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 536.6045608520508,
+          "min": 530.6371078491211,
+          "max": 550.2732620239258
+        },
+        "native": {
+          "median": 84.85443878173828,
+          "min": 82.87525177001953,
+          "max": 87.52632141113281
+        },
+        "prior-stock": {
+          "median": 543.1226043701172,
+          "min": 526.3706893920898,
+          "max": 553.0687942504883
+        },
+        "previous": {
+          "median": 576.8032073974609,
+          "min": 569.6808547973633,
+          "max": 586.4419937133789
+        }
+      }
+    },
+    "23": {
+      "shape": "decimal-comparison",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$b/%2$+08d/%1$S',v<CAST(0 AS $TYPE),n))",
+      "type": "DECIMAL(38,18)",
+      "secondary": "INT",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 571.995735168457,
+          "min": 567.1478881835938,
+          "max": 576.6703262329102
+        },
+        "native": {
+          "median": 87.05265808105469,
+          "min": 84.9326400756836,
+          "max": 89.89556884765625
+        },
+        "prior-stock": {
+          "median": 582.3173522949219,
+          "min": 577.8319091796875,
+          "max": 583.879150390625
+        },
+        "previous": {
+          "median": 557.2153701782227,
+          "min": 550.235107421875,
+          "max": 576.5488967895508
+        }
+      }
+    },
+    "24": {
+      "shape": "int-length",
+      "expression": "CHAR_LENGTH(PRINTF('%s/%d',v,v))",
+      "type": "INT",
+      "secondary": "",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 110.70442199707031,
+          "min": 106.22914123535156,
+          "max": 114.32011413574219
+        },
+        "native": {
+          "median": 81.8627700805664,
+          "min": 79.65564727783203,
+          "max": 83.2662582397461
+        },
+        "prior-stock": {
+          "median": 115.0624008178711,
+          "min": 110.43294525146484,
+          "max": 126.18223571777344
+        },
+        "previous": {
+          "median": 690.2761459350586,
+          "min": 676.4945983886719,
+          "max": 773.0089874267578
+        }
+      }
+    },
+    "25": {
+      "shape": "bigint-padded",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$+020d/%1$08X',v))",
+      "type": "BIGINT",
+      "secondary": "",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 421.4407653808594,
+          "min": 415.5343322753906,
+          "max": 448.95204162597656
+        },
+        "native": {
+          "median": 102.13216400146484,
+          "min": 99.58267211914062,
+          "max": 103.35667419433594
+        },
+        "prior-stock": {
+          "median": 518.7333450317383,
+          "min": 515.3973922729492,
+          "max": 530.2349700927734
+        },
+        "previous": {
+          "median": 999.0434646606445,
+          "min": 993.2374954223633,
+          "max": 1075.2569885253906
+        }
+      }
+    },
+    "26": {
+      "shape": "boolean-length",
+      "expression": "CHAR_LENGTH(PRINTF('%1$8.2S/%1$-8.3b',v))",
+      "type": "BOOLEAN",
+      "secondary": "",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 347.8212356567383,
+          "min": 343.66703033447266,
+          "max": 356.8118438720703
+        },
+        "native": {
+          "median": 85.82560729980469,
+          "min": 82.35804748535156,
+          "max": 88.84271240234375
+        },
+        "prior-stock": {
+          "median": 411.24629974365234,
+          "min": 405.3497314453125,
+          "max": 423.15006256103516
+        },
+        "previous": {
+          "median": 902.5341644287109,
+          "min": 889.4577026367188,
+          "max": 994.6877136230469
+        }
+      }
+    },
+    "27": {
+      "shape": "boolean-mixed",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$b/%2$+08d/%1$S',v,n))",
+      "type": "BOOLEAN",
+      "secondary": "INT",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 539.654411315918,
+          "min": 535.2408065795898,
+          "max": 546.0948944091797
+        },
+        "native": {
+          "median": 114.74609375,
+          "min": 110.52799224853516,
+          "max": 115.7372817993164
+        },
+        "prior-stock": {
+          "median": 556.4378051757812,
+          "min": 553.7999496459961,
+          "max": 565.8842697143555
+        },
+        "previous": {
+          "median": 1092.782974243164,
+          "min": 1069.2116394042969,
+          "max": 1178.990364074707
+        }
+      }
+    },
+    "28": {
+      "shape": "decimal-truth",
+      "expression": "CHAR_LENGTH(PRINTF('%1$8.2S/%1$B',TRY_CAST(v AS BOOLEAN)))",
+      "type": "DECIMAL(4,2)",
+      "secondary": "",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 344.60131072998047,
+          "min": 340.1613235473633,
+          "max": 356.6163330078125
+        },
+        "native": {
+          "median": 98.58036041259766,
+          "min": 96.6161117553711,
+          "max": 101.789794921875
+        },
+        "prior-stock": {
+          "median": 372.0054626464844,
+          "min": 364.6920471191406,
+          "max": 388.7910842895508
+        },
+        "previous": {
+          "median": 890.2136535644531,
+          "min": 873.4518661499023,
+          "max": 954.9446105957031
+        }
+      }
+    },
+    "29": {
+      "shape": "decimal-comparison",
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$b/%2$+08d/%1$S',v<CAST(0 AS $TYPE),n))",
+      "type": "DECIMAL(38,18)",
+      "secondary": "INT",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 579.6699523925781,
+          "min": 569.1184997558594,
+          "max": 596.2746963500977
+        },
+        "native": {
+          "median": 137.31098175048828,
+          "min": 132.92726135253906,
+          "max": 139.8188247680664
+        },
+        "prior-stock": {
+          "median": 611.3700866699219,
+          "min": 579.2659149169922,
+          "max": 618.8662796020508
+        },
+        "previous": {
+          "median": 1241.1651611328125,
+          "min": 1212.0180130004883,
+          "max": 1262.4355926513672
+        }
+      }
+    }
+  },
+  "bulk_ratios": {
+    "flink": [
+      2.2238248529149582,
+      2.2251376844512274,
+      2.321522724952869,
+      2.381218988383792,
+      6.463567149276086,
+      6.61143045668532,
+      6.8842669073674845,
+      5.802247224722787,
+      6.3111321396418925,
+      6.852862126845425,
+      6.565474889227814,
+      6.482812774410367,
+      5.939771108807665,
+      6.115088146625508,
+      6.435190506364651,
+      6.403492031021884,
+      5.704619823703485,
+      6.132756186952424,
+      6.102034054529651,
+      6.364289740698985,
+      6.087578213882467,
+      6.48915953331558,
+      6.323824287286839,
+      6.570686614024721
+    ],
+    "previous": [
+      2.7183040114102335,
+      2.9461580210869456,
+      2.8911857344862084,
+      2.7705234427878898,
+      6.473810084872691,
+      7.026905427182864,
+      7.027887980630314,
+      6.226122240707927,
+      6.454897669300791,
+      6.344145956283562,
+      7.2689979933838655,
+      7.055301267126601,
+      6.433782817643968,
+      6.740316974883358,
+      6.620435774112094,
+      6.596394664687065,
+      6.887749470519474,
+      6.7029680617124505,
+      7.25069503969985,
+      7.2312336527621195,
+      6.513977396634227,
+      6.5888170109925195,
+      6.79756080740936,
+      6.400900127132243
+    ],
+    "prior-stock": [
+      2.159238224282403,
+      2.5935522673485814,
+      2.479772286698246,
+      2.3686026525198938,
+      6.494246130803794,
+      6.751642163767178,
+      6.762117895552861,
+      6.061925931552027,
+      5.885221166349905,
+      6.07083451382275,
+      6.149455899953301,
+      6.588414993571697,
+      6.04493527649699,
+      6.507406679097193,
+      6.373338491414225,
+      6.32261363905373,
+      6.512891210458752,
+      6.534602673740793,
+      6.594136445819112,
+      6.920829904171364,
+      6.016753588902629,
+      6.629104209300891,
+      6.400638695721406,
+      6.6892541265394385
+    ]
+  },
+  "tiny_ratios": {
+    "flink": [
+      1.3523170775691928,
+      4.126425494859923,
+      4.052651028051971,
+      4.703030784574468,
+      3.4956385763623525,
+      4.221584792437891
+    ],
+    "previous": [
+      8.432113221379065,
+      9.781869153837919,
+      10.515907697291235,
+      9.523487367021277,
+      9.030334742524355,
+      9.039081545481695
+    ],
+    "prior-stock": [
+      1.4055522517089367,
+      5.079039988071713,
+      4.791650332366343,
+      4.849296276595744,
+      3.773626522458377,
+      4.4524485869663355
+    ]
+  },
+  "pipeline": {
+    "int-length": {
+      "expression": "CHAR_LENGTH(PRINTF('%s/%d',v,v))",
+      "secondary": "",
+      "type": "INT",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.699208959
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.359732292
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.250608792
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.368361917
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.321710709
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.22025375
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.2100955
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.317428791
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.333836166
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.208744792
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.212584333
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.314591459
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.319771125
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.209558542
+            }
+          ],
+          "stats": {
+            "native": {
+              "median": 0.2100955,
+              "min": 0.208744792,
+              "max": 0.22025375
+            },
+            "stock": {
+              "median": 0.319771125,
+              "min": 0.314591459,
+              "max": 0.333836166
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.657784416
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.510646292
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.355105583
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.3301185
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.325663291
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.347151084
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.345424333
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.318141375
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.313486625
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.330997708
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.326607625
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.313064708
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.354744041
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.343297916
+            }
+          ],
+          "stats": {
+            "previous": {
+              "median": 0.343297916,
+              "min": 0.326607625,
+              "max": 0.347151084
+            },
+            "stock": {
+              "median": 0.318141375,
+              "min": 0.313064708,
+              "max": 0.354744041
+            }
+          }
+        }
+      }
+    },
+    "boolean-mixed": {
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$b/%2$+08d/%1$S',v,n))",
+      "secondary": "INT",
+      "type": "BOOLEAN",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 1.116566917
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.426282875
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.29650525
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.758908041
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.7863395
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.277135917
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.276742584
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.761281791
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.761035583
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.265614959
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.277279084
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.762079459
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.767164084
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.282951333
+            }
+          ],
+          "stats": {
+            "native": {
+              "median": 0.277135917,
+              "min": 0.265614959,
+              "max": 0.282951333
+            },
+            "stock": {
+              "median": 0.762079459,
+              "min": 0.761035583,
+              "max": 0.7863395
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 1.120478084
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 1.012686041
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.832692041
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.789596583
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.780789458
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.811537625
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.828022792
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.800785542
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.779351208
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.808125208
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.798845542
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.762137209
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.779459
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.808097
+            }
+          ],
+          "stats": {
+            "previous": {
+              "median": 0.808125208,
+              "min": 0.798845542,
+              "max": 0.828022792
+            },
+            "stock": {
+              "median": 0.779459,
+              "min": 0.762137209,
+              "max": 0.800785542
+            }
+          }
+        }
+      }
+    },
+    "decimal-truth": {
+      "expression": "CHAR_LENGTH(PRINTF('%1$8.2S/%1$B',TRY_CAST(v AS BOOLEAN)))",
+      "secondary": "",
+      "type": "DECIMAL(4,2)",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.99665775
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.404771166
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.249720333
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.652620917
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.616262416
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.237039458
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.234809625
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.626596583
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.605320416
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.226033333
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.2225725
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.607795417
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.608788542
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.22102425
+            }
+          ],
+          "stats": {
+            "native": {
+              "median": 0.226033333,
+              "min": 0.22102425,
+              "max": 0.237039458
+            },
+            "stock": {
+              "median": 0.608788542,
+              "min": 0.605320416,
+              "max": 0.626596583
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 1.048858
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.87804725
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.667628708
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.641598375
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.658311125
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.660911333
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.638468875
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.67239225
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.655848042
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.658815875
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.658359458
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.652287
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.660128
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.658383042
+            }
+          ],
+          "stats": {
+            "previous": {
+              "median": 0.658383042,
+              "min": 0.638468875,
+              "max": 0.660911333
+            },
+            "stock": {
+              "median": 0.658311125,
+              "min": 0.652287,
+              "max": 0.67239225
+            }
+          }
+        }
+      }
+    },
+    "decimal-comparison": {
+      "expression": "CHARACTER_LENGTH(PRINTF('%1$b/%2$+08d/%1$S',v<CAST(0 AS DECIMAL(38,18)),n))",
+      "secondary": "INT",
+      "type": "DECIMAL(38,18)",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 1.179562333
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.479901958
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.320783792
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.842815209
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.795055791
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.312484459
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.298393
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.7764025
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.784756583
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.294757167
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.29360375
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.780068083
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.780619458
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.299601584
+            }
+          ],
+          "stats": {
+            "native": {
+              "median": 0.298393,
+              "min": 0.29360375,
+              "max": 0.312484459
+            },
+            "stock": {
+              "median": 0.780619458,
+              "min": 0.7764025,
+              "max": 0.795055791
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 1.147675583
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 1.026490917
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.818609
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.756824584
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.75578825
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.820011041
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.793445084
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.760650125
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.771272834
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.811009125
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.78645475
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.746967333
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.754264542
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.810499834
+            }
+          ],
+          "stats": {
+            "previous": {
+              "median": 0.810499834,
+              "min": 0.78645475,
+              "max": 0.820011041
+            },
+            "stock": {
+              "median": 0.75578825,
+              "min": 0.746967333,
+              "max": 0.771272834
+            }
+          }
+        }
+      }
+    }
+  },
+  "pipeline_native_over_stock": [
+    0.6570183596158033,
+    0.36365750805520664,
+    0.3712838159822003,
+    0.38225155284304996
+  ],
+  "pipeline_native_over_previous": [
+    0.6119917721842506,
+    0.3429368546563146,
+    0.3433158489522578,
+    0.36815923641509346
+  ],
+  "raw_samples": 3000,
+  "raw_csv_columns": [
+    "stage",
+    "shape",
+    "expression",
+    "secondary_type",
+    "benchmark",
+    "input_type",
+    "nullable",
+    "binary_row",
+    "batch_rows",
+    "total_rows",
+    "trial",
+    "warmup",
+    "engine",
+    "elapsed_ns",
+    "digest"
+  ],
+  "validation": {
+    "22-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=50 succeeded=50 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "22-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=50 succeeded=50 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=7 succeeded=7 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=7 succeeded=7 aborted=0 skipped=0 failed=0"
+      ]
+    }
+  },
+  "jvm_invocations": 114,
+  "before_validation": {
+    "22-11": {
+      "exit": 1,
+      "result": [
+        "RESULT found=16 succeeded=2 aborted=0 skipped=0 failed=14"
+      ]
+    },
+    "22-17": {
+      "exit": 1,
+      "result": [
+        "RESULT found=16 succeeded=2 aborted=0 skipped=0 failed=14"
+      ]
+    }
+  },
+  "before_observation": "Each JDK compares fourteen complete first-query maps/schema before expected pure-route failures. Subsequent queries in those invocations are not reached. The retained-route and same-name catalog UDF tests both pass. An initial local same-name UDF control omitted identifier quoting and failed SQL parsing; it was corrected in the test, with no production change, before these final controls.",
+  "upstream_stock_oracle": {
+    "22-11": {
+      "exit": 0,
+      "result": [
+        "ORACLE_PRINTF_LENGTH_RESULT successful=1"
+      ]
+    },
+    "22-17": {
+      "exit": 0,
+      "result": [
+        "ORACLE_PRINTF_LENGTH_RESULT successful=1"
+      ]
+    },
+    "118-11": {
+      "exit": 0,
+      "result": [
+        "ORACLE_PRINTF_LENGTH_RESULT successful=1"
+      ]
+    },
+    "118-17": {
+      "exit": 0,
+      "result": [
+        "ORACLE_PRINTF_LENGTH_RESULT successful=1"
+      ]
+    }
+  },
+  "upstream_methods": [
+    "ScalarFunctionsTest.testCharLength unchanged, one test per release/JDK pair, separately as stock semantics."
+  ],
+  "native_runtime_qualification": {
+    "unchanged": true,
+    "rust_core_passed": 912,
+    "rust_core_ignored": 0,
+    "reference": "boolean-object-printf-2026-11-04.json",
+    "method": "No native source/build change in this extension. The exact preceding DSO/executable hashes retain their 912-core-test and two unchanged released 47-assertion PRINTF stock-oracle qualification; those are not new Rust/oracle runs. Fresh JVM/SQL and performance controls use that exact runtime."
+  },
+  "artifacts": {
+    "printf.rs": "4d1cfe5459d9a1b8e209cd3522581bf15b11f4432f2363f70b0134a5ce414247",
+    "certified.rs": "4af600c4b6bd720cbdfa31bd25068576cb56cb59ec0ae8e12a031c0fc1d98c81",
+    "integer_printf.rs": "f02c54fce75d0fd8c5a2702d78c20f81e8dad09d0646621eeabf4c27da48a817",
+    "mod.rs": "16167a86633dc6f6c13fb9d433ffb4afca0d3dc7d5ddf7922fc935b1b01f92ae",
+    "RexExpression.java": "7cbd5c8ef859b6980ffa91b68cbeb1df342e7e3baa37d646fbea9c327329f624",
+    "IntegerPrintfFormat.java": "3e922cc214e888308cfea097537bac00c60cd8fc702080c757dc70188ba90dc1",
+    "FlinkBooleanPrintfSqlHarnessTest.java": "c32912a1bfa20bcd22154ea2e262f46c596e4769bdb0250431aeb04266144a0d",
+    "IntegerPrintfFormatTest.java": "7c812c506b4426886a55fc224fbf184eaa2861e40d51c5e2ca5aef9b997a18db",
+    "libstreamfusion.dylib": "db75ac85cc504a2013c7b216a3ee7c03885f89db72365939e34293732392d563",
+    "integral_expression": "8d79fa9c9d269888ee03513ec019172a2b376a3191d3d31f998a65c23aba7f72",
+    "libstreamfusion.dylib-allocator": {
+      "aliases": true,
+      "symbols": {
+        "_malloc": "00000000006237f4",
+        "_mi_malloc": "00000000006237f4"
+      }
+    },
+    "integral_expression-allocator": {
+      "aliases": true,
+      "symbols": {
+        "_malloc": "00000001001a758c",
+        "_mi_malloc": "00000001001a758c"
+      }
+    }
+  },
+  "encoder_bytecode": {
+    "22": {
+      "RexExpression": "f3a7d36063be5e6062468b03802ba7fb7cd4b2df6c15a0a836c7f61949ae6e26",
+      "IntegerPrintfFormat": "5b0b982542321d5ebec1227c121454b0eb5f1437821c0c05a832581999228120",
+      "JvmFunctionCodeGeneratorContext": "810f7d27876f7203c124e66f0543f0da514b4b382f9ffab1edc1e990bd9cbc03",
+      "ExternalContainerConverter": "49f11ff153c4ec54cce90f8bf63014c92d76005ac80e2de35af8e058a77b3f2e"
+    },
+    "118": {
+      "RexExpression": "bd521b7fac15a2e6911781e75b7c1cdf17a8f4efd9d042cd2d9aa2b67f630f3c",
+      "IntegerPrintfFormat": "5b0b982542321d5ebec1227c121454b0eb5f1437821c0c05a832581999228120",
+      "JvmFunctionCodeGeneratorContext": "810f7d27876f7203c124e66f0543f0da514b4b382f9ffab1edc1e990bd9cbc03",
+      "ExternalContainerConverter": "49f11ff153c4ec54cce90f8bf63014c92d76005ac80e2de35af8e058a77b3f2e"
+    }
+  },
+  "previous_encoder_bytecode": {
+    "RexExpression": "2b74480e90441e08aa17f39f3e1a5e3785b4522bdcdccfe0834b804cc43afaa2",
+    "IntegerPrintfFormat": "5b0b982542321d5ebec1227c121454b0eb5f1437821c0c05a832581999228120"
+  },
+  "previous_encoder_source_sha256": {
+    "RexExpression": "97aded1ad93fbb60b2aa0f33068c288e1e35c3b8febfa079db5e09e93d41c272",
+    "IntegerPrintfFormat": "3e922cc214e888308cfea097537bac00c60cd8fc702080c757dc70188ba90dc1"
+  },
+  "source_sha256": {
+    "src/main/java/tech/streamfusion/planner/RexExpression.java": "0182dd1ccf5335fdc0116e7128ccad6433ffe4367d89c7d2bb99adcd26764264",
+    "src/main/java/tech/streamfusion/planner/IntegerPrintfFormat.java": "3e922cc214e888308cfea097537bac00c60cd8fc702080c757dc70188ba90dc1",
+    "src/main/java/tech/streamfusion/planner/JvmFunctionCodeGeneratorContext.java": "ac3caaa7129ff0db3c92c2fa53e4a3d505a7bc84d7ad0a6899693177ffd718c6",
+    "src/main/java/tech/streamfusion/planner/ExternalContainerConverter.java": "ccb1b66bed74cd6746bb4543677b74ae192584350b88798ea60be9b65c86a7d7",
+    "src/test/java/tech/streamfusion/FlinkPrimitivePrintfLengthSqlHarnessTest.java": "92ad6b47c57aa623596450ed390387efa5eb57f778fb6f11f309069961711264",
+    "src/test/java/tech/streamfusion/FlinkIntegerPrintfSqlHarnessTest.java": "e07302d14f441b7882d0d75e1489bf667cb4f71ed4646c4e7bc1d5b1262cbaa5",
+    "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "8f59c72deb1e298ca937a8196f683de813c57ce4314a08569bfc45a5bf68c8ee",
+    "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "6eed2f405be5eed5f2b39428bcfbad9d7a6e7b79beeeeb1f431a99d657a9334c"
+  },
+  "allocation_probes": {
+    "0": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",37,48326,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4096"
+      ]
+    },
+    "1": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",37,48326,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4096"
+      ]
+    },
+    "2": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",37,48326,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4096"
+      ]
+    },
+    "3": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",37,48326,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4096"
+      ]
+    },
+    "4": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",35,58433,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4096"
+      ]
+    },
+    "5": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",35,58433,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4096"
+      ]
+    },
+    "6": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",35,58433,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4096"
+      ]
+    },
+    "7": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",35,58433,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4096"
+      ]
+    },
+    "8": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",35,59459,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4096"
+      ]
+    },
+    "9": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",35,59459,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4096"
+      ]
+    },
+    "10": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",35,59459,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4096"
+      ]
+    },
+    "11": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",35,59459,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4096"
+      ]
+    },
+    "12": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",37,60670,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,5240,0,4096"
+      ]
+    },
+    "13": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",37,60670,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,5240,0,4096"
+      ]
+    },
+    "14": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",37,60670,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,5240,0,4096"
+      ]
+    },
+    "15": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",37,60670,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,5240,0,4096"
+      ]
+    },
+    "16": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",42,55892,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",70,4236,0,4096"
+      ]
+    },
+    "17": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",42,55892,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",70,4236,0,4096"
+      ]
+    },
+    "18": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",42,55892,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",70,4236,0,4096"
+      ]
+    },
+    "19": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",42,55892,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",70,4236,0,4096"
+      ]
+    },
+    "20": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",44,61207,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,5264,0,4096"
+      ]
+    },
+    "21": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",44,61207,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,5264,0,4096"
+      ]
+    },
+    "22": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",44,61207,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,5264,0,4096"
+      ]
+    },
+    "23": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",44,61207,0,4096"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,5264,0,4096"
+      ]
+    },
+    "24": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",37,2966,0,64"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,64"
+      ]
+    },
+    "25": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",35,2993,0,64"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,64"
+      ]
+    },
+    "26": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",35,3011,0,64"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,64"
+      ]
+    },
+    "27": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",37,3214,0,64"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,5240,0,64"
+      ]
+    },
+    "28": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",42,3356,0,64"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",70,4236,0,64"
+      ]
+    },
+    "29": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",44,3631,0,64"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,5264,0,64"
+      ]
+    }
+  },
+  "limitations": [
+    "PRINTF exists only on released Flink 2.2; 1.18 SQL rejection remains outside the native backlog.",
+    "Format <=512 ASCII characters, width/precision <=256; actual argument-specific JDK validation and index-zero rejection remain. Other formats/argument families retain preceding routes.",
+    "Only a direct built-in length consumer of an already-qualified primitive formatter is admitted. Custom same-name functions, non-ASCII/dynamic/invalid formats, character conversions, unverified producers and all other representation/relational guards retain prior behavior.",
+    "Complete-job measurements retain all slower/overlapping cases; prepared gains do not establish universal job acceleration.",
+    "This extension has focused local JVM verification; full hosted suites must qualify the exact pushed head separately."
+  ]
+}

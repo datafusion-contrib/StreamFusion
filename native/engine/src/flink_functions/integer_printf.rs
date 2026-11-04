@@ -5,19 +5,33 @@ use datafusion::logical_expr::{
 };
 
 pub(super) fn function() -> ScalarUDF {
-    ScalarUDF::new_from_impl(IntegerPrintf {
+    make_function(false)
+}
+
+pub(super) fn boolean_arguments() -> ScalarUDF {
+    make_function(true)
+}
+
+fn make_function(allow_booleans: bool) -> ScalarUDF {
+    ScalarUDF::new_from_impl(PrimitivePrintf {
+        allow_booleans,
         signature: Signature::user_defined(Volatility::Immutable),
     })
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-struct IntegerPrintf {
+struct PrimitivePrintf {
+    allow_booleans: bool,
     signature: Signature,
 }
 
-impl ScalarUDFImpl for IntegerPrintf {
+impl ScalarUDFImpl for PrimitivePrintf {
     fn name(&self) -> &str {
-        "flink_integer_printf"
+        if self.allow_booleans {
+            "flink_boolean_printf"
+        } else {
+            "flink_integer_printf"
+        }
     }
 
     fn signature(&self) -> &Signature {
@@ -35,10 +49,10 @@ impl ScalarUDFImpl for IntegerPrintf {
                 !matches!(
                     t,
                     DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
-                )
+                ) && !(self.allow_booleans && t == &DataType::Boolean)
             })
         {
-            return exec_err!("Integer PRINTF requires a UTF-8 format and signed integers");
+            return exec_err!("{}: unexpected operand types {types:?}", self.name());
         }
         Ok(DataType::Utf8)
     }
@@ -67,8 +81,12 @@ impl ScalarUDFImpl for IntegerPrintf {
             .iter()
             .map(|arg| arg.clone().into_array(args.number_rows))
             .collect::<Result<Vec<_>>>()?;
-        let Some(output) = super::certified::integer_printf(pattern, &arrays, args.number_rows)
-        else {
+        let output = if self.allow_booleans {
+            super::certified::boolean_printf(pattern, &arrays, args.number_rows)
+        } else {
+            super::certified::integer_printf(pattern, &arrays, args.number_rows)
+        };
+        let Some(output) = output else {
             return exec_err!("Integer PRINTF violated its verified literal-format contract");
         };
         Ok(ColumnarValue::Array(output))
@@ -136,5 +154,50 @@ mod tests {
             1
         )
         .is_err());
+    }
+
+    #[test]
+    fn boolean_objects_keep_values_nullness_and_mixed_integer_widths() {
+        use arrow::array::BooleanArray;
+        let booleans = BooleanArray::from(vec![None, Some(false), Some(true)]);
+        let integers = Int8Array::from(vec![Some(0), Some(-1), None]);
+        for offset in 0..=3 {
+            let rows = 3 - offset;
+            let result = boolean_arguments()
+                .invoke_with_args(ScalarFunctionArgs {
+                    args: vec![
+                        ColumnarValue::Scalar(ScalarValue::Utf8(Some(
+                            "%1$b|%1$B|%1$s|%1$8.2S|%2$b|%2$02x".into(),
+                        ))),
+                        ColumnarValue::Array(Arc::new(booleans.slice(offset, rows))),
+                        ColumnarValue::Array(Arc::new(integers.slice(offset, rows))),
+                    ],
+                    number_rows: rows,
+                    return_field: Arc::new(Field::new("v", DataType::Utf8, true)),
+                    arg_fields: vec![],
+                    config_options: Arc::new(ConfigOptions::default()),
+                })
+                .unwrap()
+                .into_array(rows)
+                .unwrap();
+            let expected = StringArray::from(vec![
+                "false|FALSE|null|      NU|true|00",
+                "false|FALSE|false|      FA|true|ff",
+                "true|TRUE|true|      TR|false|null",
+            ]);
+            assert_eq!(result.to_data(), expected.slice(offset, rows).to_data());
+            result.to_data().validate_full().unwrap();
+        }
+        assert_eq!(
+            booleans,
+            BooleanArray::from(vec![None, Some(false), Some(true)])
+        );
+        assert_eq!(integers, Int8Array::from(vec![Some(0), Some(-1), None]));
+        assert!(function()
+            .return_type(&[DataType::Utf8, DataType::Boolean])
+            .is_err());
+        assert!(boolean_arguments()
+            .return_type(&[DataType::Utf8, DataType::Float64])
+            .is_err());
     }
 }

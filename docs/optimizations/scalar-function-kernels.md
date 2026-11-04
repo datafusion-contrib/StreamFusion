@@ -24,6 +24,43 @@ experiments; they do not imply that the direct STRING kernel is enabled. Boolean
 ARRAY_DISTINCT, fixed binary casts, and the scale-dependent exact DOUBLE TRUNCATE helper
 remain admitted. See [current Calc coverage](../operators/calc-filter.md).
 
+## Proven primitive case conversion
+
+UPPER/LOWER prove a bounded primitive text producer before using the existing native kernels.
+Signed integer CAST/TRY_CAST to unbounded STRING contains no letters, so its existing
+native result is reused. BOOLEAN text writes its final case directly through
+the existing BOOLEAN text writer. Qualified primitive ASCII PRINTF uses the Arrow case
+kernel only when no literal lowercase `i` (UPPER) or uppercase `I` (LOWER) can observe Turkish/Azeri locale behavior;
+primitive conversions cannot introduce that character. General STRING/Unicode and
+representation-sensitive consumers retain Flink generation.
+
+An initial extra case scan/buffer lost five of seven 16-row controls on Flink 2.2. A
+native-only stack sample located generic scalar dispatch, casts and case conversion.
+Eliding integer case work cuts one representative INT/16-row batch from 38 allocations
+and 2,760 requested bytes to 33 and 2,208. Writing BOOLEAN text in its final case improves
+the original tiny BOOLEAN control from 0.824x to 1.205x stock. All 56 final bulk controls
+beat stock and previous, but seven of fourteen tiny controls remain slower than stock.
+Three of eight complete jobs lose to stock, and one loses 2.4% to previous with overlapping
+ranges. See the [full qualification, initial attempts and raw timings](../benchmarks/scalar-functions.md#primitive-text-upper).
+
+LOWER reuses those identity/final-case optimizations. Its independent 56 bulk controls
+beat stock by 1.508-21.269x and previous by 2.959-30.765x. Nine of fourteen tiny controls
+and three of eight complete jobs still lose to stock; one complete median loses 1.0%
+to previous with overlapping ranges. The [separate LOWER record](../benchmarks/scalar-functions.md#primitive-text-lower)
+retains all 7,000 trials and revalidates both functions, including DECIMAL truth/predicate
+producers. These bounded proofs do not replace general Java Unicode/locale semantics.
+
+Direct CHAR_LENGTH/CHARACTER_LENGTH now compose with that same ASCII producer proof,
+keeping verified UPPER/LOWER text in Arrow through the length kernel. Integer casing
+still reuses its CAST buffer, and BOOLEAN writes its final case. General Unicode,
+unverified producers and further dependent expressions keep Flink generation. The
+[length-consumer qualification](../benchmarks/scalar-functions.md#length-of-proven-primitive-case-results)
+uses the actual preceding encoder on the same release runtime and production TableConfig.
+All 72 bulk cells beat stock by 1.437-16.236x and previous by 2.626-21.935x. Fifteen of
+eighteen tiny controls lose to stock. Twelve measured complete jobs have native/stock
+elapsed 0.329-0.998, but near-parity ranges overlap and two independent stock medians
+beat native. Those controls remain; no stable full-job gain is claimed for them.
+
 ## DECIMAL formatting
 
 Direct DECIMAL-to-STRING casts format the unscaled integer into reusable stack buffers, insert
@@ -1351,17 +1388,41 @@ original scope and provenance. All 40 TRUNCATE bulk cells beat paired stock by
 still lose to stock. All eight measured complete jobs retain both transposes and improve
 over stock (native/stock elapsed 0.764-0.928); this does not imply a universal job gain.
 
+The selector also accepts integer ROUND positions conservatively bounded through built-in
+GREATEST/LEAST and CASE. Planning propagates intervals, treating wrapping integer producers
+as the full INT range until an extremum bounds them. NULL-only branches do not widen CASE
+intervals, and all arguments still require a total-expression proof. Existing extrema and
+selection kernels produce the position array without a JVM callback or generic CASE
+scattering; epoch precision retains its separate discrete proof.
+The [clamped ROUND qualification](../benchmarks/scalar-functions.md#integer-round-with-clamped-runtime-positions)
+uses identical release runtime artifacts for actual-prior and candidate encoders. All 64
+bulk cells beat stock by 2.052-20.494x and previous by 6.389-29.439x; negative-clamp controls
+execute nontrivial rounding rather than only saturated zero/identity paths. Twelve of
+sixteen tiny controls and three of eight complete jobs still lose to stock. Complete-job
+native/stock elapsed is 0.878-1.057; no universal full-job gain is claimed.
 
-## Reuse the integer formatter's literal and output buffers
+INT/BIGINT TRUNCATE reuses that clamped-position proof with its existing toward-zero
+kernel. The [independent qualification](../benchmarks/scalar-functions.md#integer-truncate-with-clamped-runtime-positions)
+compares its actual preceding ROUND-only encoder on byte-identical runtime artifacts.
+All 32 bulk cells beat paired stock by 6.593-28.118x and previous by 11.913-36.111x.
+Three of eight tiny controls still lose to stock. All eight measured complete jobs
+beat stock (native/stock elapsed 0.765-0.888) and previous (0.687-0.777); ranges and
+independent stock controls remain in the record. No universal job gain is inferred.
+
+
+## Reuse the primitive formatter's literal and conversion buffers
 
 A verified literal integer PRINTF binds no JVM evaluator and borrows its format once per
-batch. A reusable scratch String writes each formatted row into one Arrow StringBuilder;
+batch. Reusable row and conversion Strings write each formatted row into one Arrow StringBuilder;
 there is no repeated-format StringArray or separate output String per row. Shared Java
 Formatter-compatible parsing preserves signed widths, NULL text, padding, precision and
 indexing. The planner uses the running JDK to validate formats during planning, with conservative
 bounds and an explicit index-zero exclusion for JDK 11/17 differences. Other formats and
-representation-sensitive consumers retain their previous routes. Parsing and individual
-conversion strings remain rowwise; this is not yet a compiled-format-token engine.
+representation-sensitive consumers retain their previous routes. Integer decimal digits use
+the existing `itoa` buffer; numeric signs, hexadecimal/octal digits, ASCII characters and
+Boolean/NULL words append into the reusable conversion String. General certified DECIMAL
+string conversion retains its owned result without a redundant copy. Parsing remains
+rowwise; this is not yet a compiled-format-token engine.
 
 The initial evaluator-free prototype did not consistently beat the existing certified Rust
 path (previous/native 0.968-1.033x), so buffer reuse is part of the final implementation.
@@ -1377,6 +1438,40 @@ Integer `%b`/`%B` also reuses this path: non-NULL objects, including zero, produ
 NULL produces false. Width, precision, case and indexing remain the Formatter contract.
 Its [separate qualification](../benchmarks/scalar-functions.md#integer-boolean-printf-formats)
 replays the original encoder/DSO and retains shared numeric-format controls.
+
+Verified BOOLEAN objects and mixed integer/BOOLEAN arguments use the same buffers with
+argument-specific Java Formatter validation at planning time. Integer-only and
+Boolean-capable loops are compiled separately and selected once per batch, keeping new
+Boolean dispatch out of the existing integer loop. `%b` observes actual BOOLEAN values,
+while any non-NULL integer object remains true. The
+[BOOLEAN-object qualification](../benchmarks/scalar-functions.md#boolean-object-and-mixed-integer-printf)
+retains the first slower shared-loop version, the intermediate specialization and
+reversed numeric controls, final allocation probes and complete jobs. Earlier measurements
+above retain their original source/runtime provenance.
+
+An unbounded STRING CAST/TRY_CAST of a verified total integer producer can be elided
+inside the primitive formatter. Format validation still observes the logical STRING type,
+so numeric conversions remain invalid. Its general string/Boolean conversions consume the
+underlying integer directly, avoiding intermediate text and a generated evaluator. Bounded
+text, BOOLEAN/DECIMAL text and unverified/failing producers retain their previous paths.
+The [integer-text qualification](../benchmarks/scalar-functions.md#integer-text-producers-for-printf)
+replays the actual preceding encoder/helper and byte-identical runtime: all 28 bulk cells
+beat stock **2.059-7.947x** and previous **3.023-8.367x**; seven tiny controls also improve.
+Four complete million-row jobs keep both transposes with native/stock elapsed **0.342-0.844**.
+The record preserves independent controls and variability; this does not resolve the earlier
+small-batch comparison loss or establish universal gains.
+
+General certified batches whose formats are equal and non-NULL also borrow the format once
+and reuse these buffers. The complete-batch ASCII/cache identity checks still run first;
+invalid formats reject the entire certificate, and varying/NULL formats keep row handling.
+This removes per-row output String materialization without admitting new argument families
+or removing the general evaluator. All eight measured DECIMAL controls improve over the
+actual preceding whole runtime by **1.103-1.214x**. Existing integer controls improve by
+**1.285-1.440x**; the nullable BIGINT padded 1,024-row allocation probe drops from 2,489
+requests / 80,164 requested bytes to 29 / 48,687. These are allocation traffic, not peak
+memory. New BOOLEAN/mixed bulk controls beat stock **4.930-7.627x**, and four complete
+million-row jobs retain both transposes with native/stock elapsed **0.309-0.640**. The
+qualification retains full variability, previous runtimes, tiny controls and slower prototypes.
 
 
 ## Map primitive integer casts without widening
@@ -1399,3 +1494,17 @@ wrapping, all six narrowing pairs, sliced/empty/shared NULL buffers, scalar mate
 input immutability and shared ARRAY casts. Initial losing controls, tiny batches, separate
 DECIMAL controls, independent previous stock fallback and conversion-inclusive jobs remain
 in the [full qualification](../benchmarks/scalar-functions.md#integer-try_cast).
+
+## Compose verified epoch rounding
+
+Verified UTC FLOOR also keeps the integer epoch conversion and timestamp round in
+Arrow instead of materializing the nested temporal result through a generated evaluator.
+A total producer/precision proof and released built-in identity allow the existing kernels
+to compose; fixed-unit results write directly to a capacity-sized Arrow timestamp builder,
+avoiding temporary Option vectors and repeated component-buffer growth. Specializing the
+five verified scalar widths avoids runtime division and scalar-column broadcasts;
+nonzero/regional zones and unverified inputs keep Flink. All 32 prepared
+bulk cells beat stock by 1.017-1.985x and previous by
+2.552-5.131x. All tiny controls and six complete jobs, including their
+remaining losses and both transposes, are retained in the
+[computed-epoch FLOOR qualification](../benchmarks/scalar-functions.md#utc-floor-over-integer-epochs).

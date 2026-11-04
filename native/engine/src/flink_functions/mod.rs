@@ -316,6 +316,8 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         246 => temporal_round::utc_ltz_ceil(),
         247 => round_position::function(),
         248 => integer_printf::function(),
+        249 => unnest_temporal::function(unnest_temporal::Operation::EpochPrecision),
+        250 => integer_printf::boolean_arguments(),
         _ => return None,
     })
 }

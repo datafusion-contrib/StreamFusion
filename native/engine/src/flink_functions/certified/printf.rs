@@ -1,11 +1,20 @@
 use super::{integer, text};
-use arrow::array::{ArrayRef, Decimal128Array, StringArray, StringBuilder};
+use arrow::array::{Array, ArrayRef, BooleanArray, Decimal128Array, StringArray, StringBuilder};
 use arrow::datatypes::DataType;
 use std::fmt::Write;
 use std::sync::Arc;
 
 pub(super) fn evaluate(args: &[ArrayRef]) -> Option<ArrayRef> {
-    let mut output = Vec::with_capacity(args.first()?.len());
+    let rows = args.first()?.len();
+    if let Some(formats) = args[0].as_any().downcast_ref::<StringArray>() {
+        if rows != 0 && formats.null_count() == 0 {
+            let pattern = formats.value(0);
+            if formats.iter().skip(1).all(|value| value == Some(pattern)) {
+                return primitive_literal::<false>(pattern, &args[1..], rows);
+            }
+        }
+    }
+    let mut output = Vec::with_capacity(rows);
     for row in 0..args[0].len() {
         if args[0].is_null(row) {
             output.push(None);
@@ -18,22 +27,35 @@ pub(super) fn evaluate(args: &[ArrayRef]) -> Option<ArrayRef> {
 
 fn format(pattern: &str, args: &[ArrayRef], row: usize) -> Option<String> {
     let mut output = String::with_capacity(pattern.len() + 32);
-    write_format(pattern, args, row, &mut output)?;
+    let mut value = String::new();
+    write_format::<false>(pattern, args, row, &mut output, &mut value)?;
     Some(output)
 }
 
-pub(super) fn integer_literal(pattern: &str, args: &[ArrayRef], rows: usize) -> Option<ArrayRef> {
+pub(super) fn primitive_literal<const BOOLEAN_OBJECTS: bool>(
+    pattern: &str,
+    args: &[ArrayRef],
+    rows: usize,
+) -> Option<ArrayRef> {
     let mut output = StringBuilder::with_capacity(rows, rows.saturating_mul(pattern.len() + 32));
     let mut scratch = String::with_capacity(pattern.len() + 32);
+    let mut value = String::with_capacity(32);
     for row in 0..rows {
         scratch.clear();
-        write_format(pattern, args, row, &mut scratch)?;
+        write_format::<BOOLEAN_OBJECTS>(pattern, args, row, &mut scratch, &mut value)?;
         output.append_value(&scratch);
     }
     Some(Arc::new(output.finish()))
 }
 
-fn write_format(pattern: &str, args: &[ArrayRef], row: usize, output: &mut String) -> Option<()> {
+fn write_format<const BOOLEAN_OBJECTS: bool>(
+    pattern: &str,
+    args: &[ArrayRef],
+    row: usize,
+    output: &mut String,
+    value: &mut String,
+) -> Option<()> {
+    let mut digits = itoa::Buffer::new();
     let bytes = pattern.as_bytes();
     let mut i = 0;
     let mut ordinary = 0;
@@ -135,18 +157,19 @@ fn write_format(pattern: &str, args: &[ArrayRef], row: usize, output: &mut Strin
         };
         previous = Some(index);
         let arg = args.get(index)?;
-        let mut value = if arg.is_null(row) {
+        value.clear();
+        if arg.is_null(row) {
             if !matches!(
                 conversion,
                 b's' | b'S' | b'd' | b'x' | b'X' | b'o' | b'b' | b'B' | b'f' | b'c' | b'C'
             ) {
                 return None;
             }
-            if matches!(conversion, b'b' | b'B') {
-                "false".to_owned()
+            value.push_str(if matches!(conversion, b'b' | b'B') {
+                "false"
             } else {
-                "null".to_owned()
-            }
+                "null"
+            });
         } else {
             match conversion {
                 b's' | b'S' => {
@@ -154,11 +177,19 @@ fn write_format(pattern: &str, args: &[ArrayRef], row: usize, output: &mut Strin
                         return None;
                     }
                     if let Some(text) = text(arg, row) {
-                        text.to_owned()
-                    } else if let Some(value) = integer(arg, row) {
-                        value.to_string()
+                        value.push_str(text);
+                    } else if let Some(number) = integer(arg, row) {
+                        value.push_str(digits.format(number));
+                    } else if BOOLEAN_OBJECTS && arg.data_type() == &DataType::Boolean {
+                        value.push_str(
+                            if arg.as_any().downcast_ref::<BooleanArray>()?.value(row) {
+                                "true"
+                            } else {
+                                "false"
+                            },
+                        );
                     } else if let Some(values) = arg.as_any().downcast_ref::<Decimal128Array>() {
-                        decimal_text(values.value(row), values.scale())?
+                        *value = decimal_text(values.value(row), values.scale())?;
                     } else {
                         return None;
                     }
@@ -167,14 +198,13 @@ fn write_format(pattern: &str, args: &[ArrayRef], row: usize, output: &mut Strin
                     if precision.is_some() {
                         return None;
                     }
-                    let value = integer(arg, row)?;
-                    if value >= 0 && plus {
-                        format!("+{value}")
-                    } else if value >= 0 && space {
-                        format!(" {value}")
-                    } else {
-                        value.to_string()
+                    let number = integer(arg, row)?;
+                    if number >= 0 && plus {
+                        value.push('+');
+                    } else if number >= 0 && space {
+                        value.push(' ');
                     }
+                    value.push_str(digits.format(number));
                 }
                 // Formatter treats any non-NULL boxed integer, including zero, as true.
                 b'b' | b'B'
@@ -183,7 +213,14 @@ fn write_format(pattern: &str, args: &[ArrayRef], row: usize, output: &mut Strin
                         DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
                     ) =>
                 {
-                    "true".to_owned()
+                    value.push_str("true");
+                }
+                b'b' | b'B' if BOOLEAN_OBJECTS && arg.data_type() == &DataType::Boolean => {
+                    value.push_str(if arg.as_any().downcast_ref::<BooleanArray>()?.value(row) {
+                        "true"
+                    } else {
+                        "false"
+                    });
                 }
                 b'f' => {
                     // The released SQL evaluator passes DecimalData, not BigDecimal.
@@ -200,35 +237,33 @@ fn write_format(pattern: &str, args: &[ArrayRef], row: usize, output: &mut Strin
                     ) {
                         return None;
                     }
-                    let value = integer(arg, row)?;
-                    if !(0..128).contains(&value) {
+                    let number = integer(arg, row)?;
+                    if !(0..128).contains(&number) {
                         return None;
                     }
-                    (value as u8 as char).to_string()
+                    value.push(number as u8 as char);
                 }
                 b'x' | b'X' | b'o' => {
                     if precision.is_some() || plus || space {
                         return None;
                     }
-                    let value = integer(arg, row)?;
+                    let number = integer(arg, row)?;
                     let bits = match arg.data_type() {
-                        DataType::Int8 => value as u8 as u64,
-                        DataType::Int16 => value as u16 as u64,
-                        DataType::Int32 => value as u32 as u64,
-                        DataType::Int64 => value as u64,
+                        DataType::Int8 => number as u8 as u64,
+                        DataType::Int16 => number as u16 as u64,
+                        DataType::Int32 => number as u32 as u64,
+                        DataType::Int64 => number as u64,
                         _ => return None,
                     };
-                    let mut result = String::new();
                     if conversion == b'o' {
-                        write!(result, "{bits:o}").ok()?;
+                        write!(value, "{bits:o}").ok()?;
                     } else {
-                        write!(result, "{bits:x}").ok()?;
+                        write!(value, "{bits:x}").ok()?;
                     }
-                    result
                 }
                 _ => return None,
             }
-        };
+        }
         if precision.is_some() && !matches!(conversion, b's' | b'S' | b'b' | b'B' | b'f') {
             return None;
         }
@@ -240,17 +275,17 @@ fn write_format(pattern: &str, args: &[ArrayRef], row: usize, output: &mut Strin
         }
         let padding = width.saturating_sub(value.len());
         if left {
-            output.push_str(&value);
+            output.push_str(value);
             output.extend(std::iter::repeat_n(' ', padding));
         } else if zero && !arg.is_null(row) {
             if value.starts_with(['-', '+', ' ']) {
                 output.push(value.remove(0));
             }
             output.extend(std::iter::repeat_n('0', padding));
-            output.push_str(&value);
+            output.push_str(value);
         } else {
             output.extend(std::iter::repeat_n(' ', padding));
-            output.push_str(&value);
+            output.push_str(value);
         }
     }
     Some(())
@@ -296,6 +331,52 @@ fn decimal_text(value: i128, scale: i8) -> Option<String> {
 mod tests {
     use super::*;
     use arrow::array::{Array, Int16Array, Int32Array, Int64Array, Int8Array};
+
+    #[test]
+    fn equal_and_varying_formats_preserve_decimal_nulls_and_batch_rejection() {
+        let values: ArrayRef = Arc::new(
+            Decimal128Array::from(vec![Some(12000), None, Some(-1), Some(0)])
+                .with_precision_and_scale(20, 3)
+                .unwrap(),
+        );
+        let original = values.to_data();
+        for offset in 0..=values.len() {
+            let rows = values.len() - offset;
+            let formats: ArrayRef = Arc::new(StringArray::from(vec!["%s/%1$s"; rows]));
+            let output = evaluate(&[formats, values.slice(offset, rows)]).unwrap();
+            let expected = StringArray::from(vec![
+                "12.000/12.000",
+                "null/null",
+                "-0.001/-0.001",
+                "0.000/0.000",
+            ]);
+            assert_eq!(output.to_data(), expected.slice(offset, rows).to_data());
+        }
+        let formats: ArrayRef = Arc::new(StringArray::from(vec![
+            Some("%s"),
+            None,
+            Some("%s/%1$s"),
+            Some("%s"),
+        ]));
+        let output = evaluate(&[formats, values.clone()]).unwrap();
+        assert_eq!(
+            output.to_data(),
+            StringArray::from(vec![
+                Some("12.000"),
+                None,
+                Some("-0.001/-0.001"),
+                Some("0.000")
+            ])
+            .to_data()
+        );
+        let invalid: ArrayRef = Arc::new(StringArray::from(vec!["%q"; values.len()]));
+        assert!(evaluate(&[invalid, values.clone()]).is_none());
+        let booleans: ArrayRef = Arc::new(BooleanArray::from(vec![true; values.len()]));
+        let formats: ArrayRef = Arc::new(StringArray::from(vec!["%b"; values.len()]));
+        assert!(evaluate(&[formats, booleans]).is_none());
+        assert_eq!(values.to_data(), original);
+    }
+
     #[test]
     fn boolean_integer_format_uses_object_nullness_not_numeric_truth() {
         for input in [
@@ -327,9 +408,12 @@ mod tests {
             let original = input.to_data();
             for offset in 0..=input.len() {
                 let len = input.len() - offset;
-                let output =
-                    integer_literal("%b/%1$B/%1$.2b/%1$8.1B", &[input.slice(offset, len)], len)
-                        .unwrap();
+                let output = primitive_literal::<false>(
+                    "%b/%1$B/%1$.2b/%1$8.1B",
+                    &[input.slice(offset, len)],
+                    len,
+                )
+                .unwrap();
                 let expected = StringArray::from(vec![
                     "true/TRUE/tr/       T",
                     "true/TRUE/tr/       T",
