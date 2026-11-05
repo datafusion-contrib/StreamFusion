@@ -94,6 +94,7 @@ final class NativePaimonAppendRewriter implements CompactRewriter {
           try (var reader = new PaimonRustReader(table, split, type, batchRows, true)) {
             for (var batch = reader.next(); batch != null; batch = reader.next())
               try (var root = batch) {
+                if (root.getRowCount() == 0) continue;
                 PaimonVersion.advanceAppendSequence(sequence, root.getRowCount());
                 output.writeBundle(new ArrowBatchBundle(root, type));
                 written += root.getRowCount();

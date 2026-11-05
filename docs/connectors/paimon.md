@@ -1082,7 +1082,7 @@ bucket's stock compaction manager before notification or submission. Running sto
 left on their original callback; unsupported private API shapes retain the stock provider.
 Java retains file selection, scheduling, output levels, delete retention, writer settings,
 metadata, commit messages, checkpoints and recovery. For admitted rewrites, the released
-paimon-rust 0.4 reader decodes and deduplicates Java's selected sections and the existing native
+paimon-rust 0.4 reader decodes and merges Java's selected sections and the existing native
 Parquet/ORC writer encodes the result. Payloads stay columnar. Only file-boundary metadata keys,
 stored sequence bounds and delete counts are assembled in Java.
 
@@ -1100,12 +1100,32 @@ The return value counts adapted workers, not successful native rewrites. The ada
 sources, coordinators, committers, transformation identities, partition filters and parallelism.
 An unadapted SQL `CALL sys.compact` uses the stock implementation.
 
-The initial scope is primary-key `deduplicate` tables with `none` or `input` changelog production,
+The scope is primary-key `deduplicate`, `first-row`, basic `partial-update`, and bounded
+`aggregation` tables with `none` or `input` changelog production,
 fixed or existing dynamic buckets, ordinary stored sequence numbers, current-schema Parquet/ORC input,
 and Parquet/ORC output. Both thin and full physical layouts are supported. Native format settings,
 per-level compression and statistics, target file size and asynchronous output retain their
 existing meanings. Compaction rolls across Arrow batches by file size; the write-time
 `target-file-row-num` limit does not apply, matching Java Paimon.
+
+The three additional merge engines use the same released Rust reader and shared Java adapter on
+both Flink 2.2/Paimon 2.1 and Flink 1.18/Paimon 1.0; modern Flink 1.18/Paimon 2.0 uses that code too.
+They require every selected file to report zero retract records. Basic partial updates exclude
+sequence groups and configured field aggregates. Bounded aggregation admits `sum`, `min`, and
+`max` on integer types, plus `first_value`, `first_non_null_value`, `last_value`, and
+`last_non_null_value` on otherwise supported value types. The default last-non-null aggregation
+is included. Partial-update and aggregation with nested values retain Java when reading or writing
+ORC: the measured released reader path does not consistently beat stock on those workloads. Explicit `sum.fail-on-overflow` options retain Java because the released hosts differ
+in their interpretation. Paimon 2.0 always checks sum overflow, so its sum compactions retain Java;
+its min/max and value-picking functions use the shared native implementation. Paimon 1.0 and 2.1
+retain their wrapping sums. No StreamFusion reducer is added. Physical-state tests compare stock
+and native output, stored sequence/kind, bounds and statistics, then commit the output, write more
+data and compact again for both formats and both delete-retention modes.
+First-row rewrites containing L0 files must target the highest configured level. At lower output
+levels, Java can look up an older first row in an unselected higher-level file; that path retains
+the stock rewriter. Rewrites containing only higher-level files use the ordinary merge path.
+First-row remote lookup-file generation also retains Java. Paimon permits first-row with
+`none` or `lookup` changelogs; only `none` is accelerated here.
 
 Append-only compaction uses the same released Rust raw reader, reading Java-selected files in
 order, and Paimon's configured append rolling-writer factory. Paimon retains sequence assignment,
@@ -1119,8 +1139,11 @@ stock rewriting; remaining integration and upstream validation are tracked in
 
 A complete primary-key rewrite delegates to the original Java rewriter before opening output for:
 
-- Other merge engines or changelog producers; user sequence fields, ignored deletes, snapshot
+- Unsupported merge-engine configurations or changelog producers; user sequence fields, ignored deletes, snapshot
   sequence ordering, or another sort engine.
+- Retract-containing or unknown-delete-count files for first-row, partial-update or aggregation;
+  partial-update sequence groups/field aggregates; unlisted aggregation functions/types/options;
+  nested ORC values in field-merge engines.
 - Deletion vectors, record expiry, row tracking, data evolution, blob fields, or file indexes.
 - Unsupported key/value types or native format writer settings; another input/default/output format;
   ORC CHAR or unsafe/unknown timestamp bounds;
@@ -1146,6 +1169,11 @@ Append rewrites likewise delegate before output for unavailable writer factories
 writer shapes/settings/types, deletion vectors, expiry, row tracking/evolution, indexes/sidecars,
 historical schemas, unsafe ORC input or the projected decode budget. Append does not introduce a
 merge or sort policy. Its budget check covers one file at a time; PK checks the concurrent sorted runs.
+
+The [merge-engine worker comparison](../benchmarks/paimon-merge-compaction-20261105/README.md)
+records all three additional engines on both releases and formats, including the slower nested
+ORC candidate measurements that led to retaining Java for that combination. It includes physical
+output fingerprints, stock/previous/native trials and ranges; it does not establish job-latency gains.
 
 The [expanded 1.0 release diagnostic](../benchmarks/paimon-compaction-expanded-20261105/README.md)
 measures Parquet worker gains of 1.27–2.04× and ORC gains of 1.27–1.67× versus stock, with identical

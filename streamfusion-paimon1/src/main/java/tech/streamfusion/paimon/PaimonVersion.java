@@ -45,6 +45,10 @@ import org.apache.paimon.utils.StatsCollectorFactories;
 
 /** Released API differences used by the shared columnar reader and writer. */
 final class PaimonVersion {
+  static boolean compactionSumWraps() {
+    return true;
+  }
+
   static boolean partialUpdateDeleteRemovalNeedsJava() {
     return false;
   }

@@ -11,6 +11,7 @@ import org.apache.paimon.CoreOptions;
 import org.apache.paimon.compact.CompactResult;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.fileindex.FileIndexOptions;
+import org.apache.paimon.flink.LogicalTypeConversion;
 import org.apache.paimon.format.FileFormat;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.mergetree.SortedRun;
@@ -148,6 +149,59 @@ final class NativePaimonCompactRewriter implements CompactRewriter {
     return stock.rewrite(level, dropDelete, sections);
   }
 
+  static boolean supportsMergeEngine(CoreOptions.MergeEngine engine) {
+    return engine == CoreOptions.MergeEngine.DEDUPLICATE
+        || engine == CoreOptions.MergeEngine.FIRST_ROW
+        || engine == CoreOptions.MergeEngine.PARTIAL_UPDATE
+        || engine == CoreOptions.MergeEngine.AGGREGATE;
+  }
+
+  private String unsupportedMergeReason() {
+    var options = table.coreOptions();
+    if (!supportsMergeEngine(options.mergeEngine())) return "merge-engine";
+    if (options.mergeEngine() == CoreOptions.MergeEngine.FIRST_ROW
+        && Boolean.parseBoolean(options.toMap().get("lookup.remote-file.enabled")))
+      return "lookup-remote-files";
+    if (options.mergeEngine() == CoreOptions.MergeEngine.PARTIAL_UPDATE
+        && options.toMap().keySet().stream()
+            .anyMatch(key -> key.endsWith("sequence-group") || key.contains("aggregate-function")))
+      return "partial-update-options";
+    if (options.mergeEngine() == CoreOptions.MergeEngine.AGGREGATE) {
+      if (options.toMap().keySet().stream().anyMatch(key -> key.endsWith("sum.fail-on-overflow")))
+        return "aggregate-options";
+      for (var field : table.rowType().getFields()) {
+        if (table.primaryKeys().contains(field.name())) continue;
+        String function = options.fieldAggFunc(field.name());
+        if (function == null) function = options.fieldsDefaultFunc();
+        if (function == null) function = "last_non_null_value";
+        switch (function) {
+          case "sum":
+            if (!PaimonVersion.compactionSumWraps()) return "aggregate-overflow-policy";
+          case "min":
+          case "max":
+            switch (field.type().getTypeRoot()) {
+              case TINYINT:
+              case SMALLINT:
+              case INTEGER:
+              case BIGINT:
+                break;
+              default:
+                return "aggregate-type";
+            }
+            break;
+          case "last_value":
+          case "last_non_null_value":
+          case "first_value":
+          case "first_non_null_value":
+            break;
+          default:
+            return "aggregate-function";
+        }
+      }
+    }
+    return null;
+  }
+
   private String unsupportedReason(int level, List<List<SortedRun>> sections) {
     if (sections.isEmpty()
         || sections.stream()
@@ -158,7 +212,8 @@ final class NativePaimonCompactRewriter implements CompactRewriter {
     if (table.primaryKeys().isEmpty()) return "append-table";
     if (table.bucketMode() != BucketMode.HASH_FIXED
         && table.bucketMode() != BucketMode.HASH_DYNAMIC) return "bucket-mode";
-    if (options.mergeEngine() != CoreOptions.MergeEngine.DEDUPLICATE) return "merge-engine";
+    String mergeReason = unsupportedMergeReason();
+    if (mergeReason != null) return mergeReason;
     if (options.changelogProducer() != CoreOptions.ChangelogProducer.NONE
         && options.changelogProducer() != CoreOptions.ChangelogProducer.INPUT)
       return "changelog-producer";
@@ -186,11 +241,23 @@ final class NativePaimonCompactRewriter implements CompactRewriter {
                 table.rowType(),
                 options.fileCompressionPerLevel().getOrDefault(level, options.fileCompression()));
     if (writerReason != null) return "writer-settings: " + writerReason;
+    boolean nestedFieldMerge =
+        (options.mergeEngine() == CoreOptions.MergeEngine.PARTIAL_UPDATE
+                || options.mergeEngine() == CoreOptions.MergeEngine.AGGREGATE)
+            && table.rowType().getFields().stream()
+                .anyMatch(
+                    field ->
+                        !LogicalTypeConversion.toLogicalType(field.type()).getChildren().isEmpty());
     for (var section : sections) {
       if (section.size() > Math.min(256, options.sortSpillThreshold())) return "sorted-run-count";
       if (PaimonReadPreflight.overlappingSequences(section)) return "overlapping-sequences";
       for (var run : section)
         for (var file : run.files()) {
+          if (nestedFieldMerge && (outputFormat.equals("orc") || file.fileFormat().equals("orc")))
+            return "orc-nested-merge";
+          // The public value reducer is a snapshot reader; retain stock delete-state semantics.
+          if (options.mergeEngine() != CoreOptions.MergeEngine.DEDUPLICATE
+              && file.deleteRowCount().orElse(1L) != 0) return "merge-retracts";
           if (!PaimonRustReader.supports(table, file)) return "input-format";
           if (file.schemaId() != table.schema().id()) return "schema-evolution";
           if (file.minSequenceNumber() < 0
@@ -202,6 +269,13 @@ final class NativePaimonCompactRewriter implements CompactRewriter {
           if (PaimonVersion.specialFileMetadata(file)) return "input-row-tracking-or-evolution";
         }
     }
+    // First-row L0 rewrites may consult unselected higher levels through Java's lookup wrapper.
+    if (options.mergeEngine() == CoreOptions.MergeEngine.FIRST_ROW
+        && level < options.numLevels() - 1
+        && sections.stream()
+            .flatMap(List::stream)
+            .flatMap(run -> run.files().stream())
+            .anyMatch(file -> file.level() == 0)) return "first-row-history";
     return null;
   }
 

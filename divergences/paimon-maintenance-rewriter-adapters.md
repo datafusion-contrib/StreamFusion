@@ -31,3 +31,11 @@ preflight, payload loops and failure cleanup are shared. Multi-table/precommit w
 remaining host validation and broader unchanged upstream fixtures are part of
 [#592](https://github.com/datafusion-contrib/StreamFusion/issues/592). The existing benchmark report
 measures the original 2.1 Parquet path; it is not evidence for the additional formats/releases.
+
+First-row, basic partial-update and bounded aggregation reuse the same public audit reader and
+its existing reducers. Their additional shared admission checks require known add-only files,
+ordinary stored sequences and verified aggregate functions/types. No native comparison, reducer
+or version-specific payload implementation is introduced. Delete-state configurations that the
+public snapshot reader cannot preserve remain stock before output. The shared physical-state
+oracle runs on both modern and legacy releases, including another write and compaction after
+publishing the native result.

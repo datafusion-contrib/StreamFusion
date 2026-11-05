@@ -19,6 +19,28 @@ import org.apache.paimon.table.sink.CommitMessage;
 final class PaimonTestCompat {
   private PaimonTestCompat() {}
 
+  static boolean wrappingSum() {
+    return true;
+  }
+
+  static CommitMessage compactMessage(org.apache.paimon.compact.CompactResult result) {
+    return new org.apache.paimon.table.sink.CommitMessageImpl(
+        BinaryRow.EMPTY_ROW,
+        0,
+        new org.apache.paimon.io.DataIncrement(
+            java.util.List.of(), java.util.List.of(), java.util.List.of()),
+        new org.apache.paimon.io.CompactIncrement(
+            result.before(), result.after(), java.util.List.of()));
+  }
+
+  static boolean coordinatedWriters() {
+    return false;
+  }
+
+  static boolean publicCompactionFactory() {
+    return false;
+  }
+
   static Object appendWrite(
       FileStoreTable table, Object write, NativePaimonCompactRewriter.Counters counters) {
     return new PaimonAppendCompactWrite(

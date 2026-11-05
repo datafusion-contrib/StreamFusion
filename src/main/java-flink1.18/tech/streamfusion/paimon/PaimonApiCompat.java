@@ -19,6 +19,10 @@ import org.apache.paimon.table.FileStoreTable;
 final class PaimonApiCompat {
   private PaimonApiCompat() {}
 
+  static boolean compactionSumWraps() {
+    return false;
+  }
+
   static boolean compactionProviderAvailable() {
     return NativePaimonStoreSinkWrite.compactionProviderAvailable();
   }

@@ -20,13 +20,46 @@ public final class PaimonCompactionFixtures {
   }
 
   public static void install(Object store, Object write) throws Exception {
-    if (!adapt()) return;
+    if (!adapt() || !SqlInventory.activeTestSource().contains("org.apache.paimon.")) return;
     Class.forName(
             "tech.streamfusion.paimon.PaimonCompactionTestAdapter",
             true,
             store.getClass().getClassLoader())
         .getMethod("install", Object.class, Object.class)
         .invoke(null, store, write);
+  }
+
+  public static void bucket(Object write, Object partition, int bucket, Object container)
+      throws Exception {
+    if (!adapt() || !SqlInventory.activeTestSource().contains("org.apache.paimon.")) return;
+    Class.forName(
+            "tech.streamfusion.paimon.PaimonCompactionTestAdapter",
+            true,
+            write.getClass().getClassLoader())
+        .getMethod("bucket", Object.class, Object.class, int.class, Object.class)
+        .invoke(null, write, partition, bucket, container);
+  }
+
+  public static Object appendWrite(Object table, Object write) throws Exception {
+    if (!adapt() || !SqlInventory.activeTestSource().contains("org.apache.paimon.")) return write;
+    return Class.forName(
+            "tech.streamfusion.paimon.PaimonCompactionTestAdapter",
+            true,
+            write.getClass().getClassLoader())
+        .getMethod("appendWrite", Object.class, Object.class)
+        .invoke(null, table, write);
+  }
+
+  public static void closeAppend(Object adapted, Throwable failure) throws Exception {
+    if (adapted == null) return;
+    try {
+      var close = adapted.getClass().getMethod("close");
+      close.setAccessible(true);
+      close.invoke(adapted);
+    } catch (Exception closing) {
+      if (failure != null) failure.addSuppressed(closing);
+      else throw closing;
+    }
   }
 
   public static void adaptEnvironment(Object environment) throws Exception {
@@ -58,6 +91,26 @@ public final class PaimonCompactionFixtures {
       Object result,
       Throwable failure)
       throws Exception {
+    Object before = result == null ? null : result.getClass().getMethod("before").invoke(result);
+    Object after = result == null ? null : result.getClass().getMethod("after").invoke(result);
+    record(rewriter, token, level, dropDelete, before, after, failure);
+  }
+
+  public static void completedAppend(
+      Object rewriter, Object token, Object before, Object after, Throwable failure)
+      throws Exception {
+    record(rewriter, token, 0, false, before, after, failure);
+  }
+
+  private static void record(
+      Object rewriter,
+      Object token,
+      int level,
+      boolean dropDelete,
+      Object before,
+      Object after,
+      Throwable failure)
+      throws Exception {
     var scope = (Rewrite) token;
     Map<String, Object> work = new LinkedHashMap<>();
     Object fallback = field(rewriter, "fallbackReason");
@@ -68,24 +121,34 @@ public final class PaimonCompactionFixtures {
     work.put("drop_delete", dropDelete);
     work.put("fallback", fallback);
     work.put("failure", failure == null ? null : failure.toString());
-    if (result != null) {
-      for (String side : new String[] {"before", "after"}) {
-        var files = (java.util.List<?>) result.getClass().getMethod(side).invoke(result);
-        long rows = 0, bytes = 0;
-        for (Object file : files) {
-          rows += ((Number) file.getClass().getMethod("rowCount").invoke(file)).longValue();
-          bytes += ((Number) file.getClass().getMethod("fileSize").invoke(file)).longValue();
-        }
-        work.put(side + "_files", files.size());
-        work.put(side + "_rows", rows);
-        work.put(side + "_bytes", bytes);
-      }
-    }
+    files(work, "before", before);
+    files(work, "after", after);
     SqlInventory.compaction(scope.owner(), work);
   }
 
+  private static void files(Map<String, Object> work, String side, Object value) throws Exception {
+    if (value == null) return;
+    var files = (java.util.List<?>) value;
+    long rows = 0, bytes = 0;
+    var formats = new java.util.TreeSet<String>();
+    for (Object file : files) {
+      formats.add(file.getClass().getMethod("fileFormat").invoke(file).toString());
+      rows += ((Number) file.getClass().getMethod("rowCount").invoke(file)).longValue();
+      bytes += ((Number) file.getClass().getMethod("fileSize").invoke(file)).longValue();
+    }
+    work.put(side + "_files", files.size());
+    work.put(side + "_formats", formats);
+    work.put(side + "_rows", rows);
+    work.put(side + "_bytes", bytes);
+  }
+
   private static long count(Object rewriter, String name) throws Exception {
-    Object counter = field(rewriter, name);
+    Object counter;
+    try {
+      counter = field(rewriter, name);
+    } catch (NoSuchFieldException sharedCounters) {
+      counter = field(field(rewriter, "counters"), name);
+    }
     var method = counter.getClass().getMethod("getCount");
     method.setAccessible(true);
     return ((Number) method.invoke(counter)).longValue();

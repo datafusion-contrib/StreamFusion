@@ -12,7 +12,6 @@ import org.apache.paimon.operation.AbstractFileStoreWrite;
 import org.apache.paimon.schema.TableSchema;
 import org.apache.paimon.table.CatalogEnvironment;
 import org.apache.paimon.table.FileStoreTable;
-import org.apache.paimon.table.FileStoreTableFactory;
 
 /** Installs the production decorators in unchanged, released upstream fixtures. */
 public final class PaimonCompactionTestAdapter {
@@ -36,13 +35,28 @@ public final class PaimonCompactionTestAdapter {
       return;
     var store = (FileStore<?>) originalStore;
     var base = KeyValueFileStore.class.getSuperclass();
+    var schema =
+        ((TableSchema) NativePaimonMaintenance.field(base, "schema").get(store))
+            .copy(store.options().toMap());
+    var type =
+        Class.forName(
+            "org.apache.paimon.table."
+                + (schema.primaryKeys().isEmpty()
+                    ? "AppendOnlyFileStoreTable"
+                    : "PrimaryKeyFileStoreTable"));
+    var constructor =
+        type.getDeclaredConstructor(
+            FileIO.class,
+            org.apache.paimon.fs.Path.class,
+            TableSchema.class,
+            CatalogEnvironment.class);
+    constructor.setAccessible(true);
     var table =
-        FileStoreTableFactory.create(
-            (FileIO) NativePaimonMaintenance.field(base, "fileIO").get(store),
-            store.pathFactory().root(),
-            ((TableSchema) NativePaimonMaintenance.field(base, "schema").get(store))
-                .copy(store.options().toMap()),
-            (CatalogEnvironment)
+        (FileStoreTable)
+            constructor.newInstance(
+                NativePaimonMaintenance.field(base, "fileIO").get(store),
+                store.pathFactory().root(),
+                schema,
                 NativePaimonMaintenance.field(base, "catalogEnvironment").get(store));
     var context = new Context(table);
     WRITES.put(originalWrite, context);
@@ -52,7 +66,9 @@ public final class PaimonCompactionTestAdapter {
   public static void bucket(Object write, Object partition, int bucket, Object container)
       throws Exception {
     var context = WRITES.get(write);
-    if (context == null) return;
+    if (context == null
+        || (PaimonTestCompat.publicCompactionFactory() && !context.table.primaryKeys().isEmpty()))
+      return;
     NativePaimonStoreSinkWrite.install(
         context.table,
         write,

@@ -209,6 +209,8 @@
                                         <include>**/PaimonSplitWatermarksTest.java</include>
                                         <include>**/PaimonFetcherLifecycleTest.java</include>
                                         <include>**/PaimonCompactionCompatibilityTest.java</include>
+                                        <include>**/PaimonCompactionMergeEngineTest.java</include>
+                                        <include>**/PaimonMaintenanceTest.java</include>
                                         <include>**/PaimonCompactionFailureTest.java</include>
                                         <include>**/PaimonCompactionBenchmark.java</include>
                                         <include>**/PaimonCompactionTestAdapter.java</include>
@@ -424,6 +426,7 @@
                             </excludes>
                             <dependenciesToScan>
                                 <dependency>org.apache.paimon:paimon-flink-common</dependency>
+                                <dependency>org.apache.paimon:paimon-core:test-jar:tests</dependency>
                             </dependenciesToScan>
                             <systemPropertyVariables>
                                 <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>

@@ -47,6 +47,10 @@ import org.apache.paimon.utils.StatsCollectorFactories;
 final class PaimonVersion {
   private PaimonVersion() {}
 
+  static boolean compactionSumWraps() {
+    return PaimonApiCompat.compactionSumWraps();
+  }
+
   static boolean appendWorkerStreaming(StreamOperatorFactory<?> factory, boolean streaming)
       throws ReflectiveOperationException {
     return NativePaimonMaintenance.field(factory.getClass(), "isStreaming").getBoolean(factory);

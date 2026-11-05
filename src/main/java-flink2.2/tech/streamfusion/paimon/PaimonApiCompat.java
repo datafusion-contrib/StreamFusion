@@ -20,6 +20,10 @@ import org.apache.paimon.table.FileStoreTable;
 final class PaimonApiCompat {
   private PaimonApiCompat() {}
 
+  static boolean compactionSumWraps() {
+    return true;
+  }
+
   static boolean compactionProviderAvailable() {
     return StreamFusionStoreSinkWrite.available();
   }

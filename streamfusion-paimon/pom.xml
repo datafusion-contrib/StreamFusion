@@ -191,7 +191,7 @@
                     </exclusions>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.paimon</groupId><artifactId>paimon-flink2-common</artifactId>
+                    <groupId>org.apache.paimon</groupId><artifactId>${paimon.flink.test.module}</artifactId>
                     <version>${paimon.version}</version><type>test-jar</type><scope>test</scope>
                     <exclusions>
                         <exclusion><groupId>org.apache.flink</groupId><artifactId>*</artifactId></exclusion>
@@ -256,11 +256,11 @@
                     <executions><execution>
                         <id>compaction-fixture-flink-line</id><goals><goal>enforce</goal></goals>
                         <configuration><rules><requireProperty>
-                            <property>flink.line</property><regex>2\.2</regex>
-                            <message>The pinned Paimon compaction fixtures use Flink 2.2.</message>
+                            <property>flink.line</property><regex>2\.2|1\.18</regex>
+                            <message>Use a supported Flink host for the pinned Paimon compaction fixtures.</message>
                         </requireProperty><requireProperty>
-                            <property>paimon.version</property><regex>2\.1\.0</regex>
-                            <message>The compaction fixture inventory is pinned to released Paimon 2.1.0.</message>
+                            <property>paimon.version</property><regex>2\.(0|1)\.0</regex>
+                            <message>The compaction inventories use released Paimon 2.0.0 or 2.1.0.</message>
                         </requireProperty></rules></configuration>
                     </execution></executions>
                 </plugin>

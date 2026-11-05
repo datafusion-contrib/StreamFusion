@@ -147,6 +147,12 @@ class PaimonCompactionBenchmark {
     var fileIO = LocalFileIO.create();
     boolean append = shape.startsWith("append");
     boolean wide = shape.contains("wide");
+    String mergeEngine =
+        shape.startsWith("first-row")
+            ? "first-row"
+            : shape.startsWith("partial-update")
+                ? "partial-update"
+                : shape.startsWith("aggregation") ? "aggregation" : "deduplicate";
     var fields =
         new ArrayList<org.apache.paimon.types.DataField>(
             List.of(
@@ -161,6 +167,8 @@ class PaimonCompactionBenchmark {
     options.put("bucket-key", "id");
     options.put("file.format", System.getenv().getOrDefault("SF_PAIMON_FILE_FORMAT", "parquet"));
     options.put("write-only", "true");
+    if (!append) options.put("merge-engine", mergeEngine);
+    if (mergeEngine.equals("aggregation")) options.put("fields.v.aggregate-function", "sum");
     options.put("write-buffer-size", "256 mb");
     options.put(
         "sort-spill-buffer-size",
@@ -178,7 +186,11 @@ class PaimonCompactionBenchmark {
         for (int row = 0; row < rows / 4; row++) {
           int key = shape.equals("unique") ? row * 4 + run : row;
           RowKind kind =
-              !append && run == 3 && key % 5 == 0 && !shape.equals("unique")
+              !append
+                      && mergeEngine.equals("deduplicate")
+                      && run == 3
+                      && key % 5 == 0
+                      && !shape.equals("unique")
                   ? RowKind.DELETE
                   : RowKind.INSERT;
           long value = (long) key * 17 + run;

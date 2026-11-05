@@ -769,7 +769,7 @@ Explicit `FLINK_SUITE_TEST` selectors keep their requested grouping for diagnosi
 
 ## Paimon compaction fixtures
 
-The modern module also runs **112 unchanged compaction invocations** from the canonical released
+The modern maintenance corpus includes **152 unchanged compaction invocations** from the canonical released
 Paimon **2.1.0** test JARs on Flink **2.2.1**. This is a separate maintenance corpus, covering core
 selection/rewriter contracts, writer state recovery, dedicated workers, actions, refresh and SQL
 procedures. The [case manifest](https://github.com/datafusion-contrib/StreamFusion/blob/main/dev/flink-suite/paimon-compaction-cases.csv)
@@ -792,7 +792,7 @@ to canonical `release-2.1.0`, commit `3a5ffe7870697e2c2605e63413fb5ac5800aae7e`:
 | `paimon-core-2.1.0-tests.jar` | `3f9ef9505f84c837bd015fb6a494d0309bca1f35716d66e48f360b8e82b1e076` |
 | `paimon-flink-common-2.1.0-tests.jar` | `b7e83358fa1df5ce7c7a215f979fa91ecf8b904fd12a70689bb5d503babfe3b1` |
 
-Both stock and native runs must report the exact 112 invocations with zero failures, errors or
+Both stock and native runs must report the exact 152 invocations with zero failures, errors or
 skips. Reports under `streamfusion-paimon/target/upstream-compaction/{stock,native}` retain JUnit
 XML, per-invocation JSON and a result CSV. Native records include selected input files/bytes,
 output rows, output level, delete retention and explicit fallback reasons. Required payload cases
@@ -809,6 +809,23 @@ stock-delegate and ownership assertions. Unadapted `CompactProcedureITCase` call
 and bypass both adapters. The stock mode resolves canonical format factories and retains Java
 planning; benchmark `previous` mode retains the prior StreamFusion format shim and stock compaction.
 These modes exist only in the test agent, with no production performance switch.
+
+The append additions cover the released append coordinator/task, table compaction, fixed-bucket
+manager/write and dedicated single-table worker fixtures. The upstream-disabled
+`BucketedAppendCompactManagerTest.testPick` is recorded explicitly in the release metadata;
+its enabled sibling methods remain in the corpus. Release metadata pins fixture hashes and host
+profiles. The additional engine invocations retain upstream forced partial-update and aggregate compactions,
+unsupported numeric-type delegation and first-row history/upgrade behavior. Paimon 1.0/Flink 1.18 runs **72 applicable unchanged invocations** with
+`--paimon-version 1.0.0`, including its renamed aggregate fixture and the matching released
+core/worker/action tests. A broader unchanged stock probe attempted 79 maintenance invocations:
+69 passed and 10 could not run on this host. Seven common SQL procedure cases require named
+arguments unsupported by Flink 1.18, and three common append-worker cases call a newer host
+constructor absent on 1.18. Each is recorded individually, with its stock failure reason, in the
+release metadata; these are not counted as passing or skipped acceptance cases. The three
+engine integration cases bring the applicable inventory to 72. Shared host-specific worker
+harnesses still require native append work on 1.0, including shutdown/refresh coverage. The shared `PaimonCompactionMergeEngineTest` additionally verifies first-row, basic
+partial-update and bounded aggregation physical output against the stock rewriter on both
+modern and legacy releases; it supplements the unchanged upstream fixtures.
 
 The Flink 2.2/JDK 17 Paimon Parquet CI job runs both modes and retains the reports. This validation
 is independent of the general upstream SQL corpus and of release performance measurements. CI

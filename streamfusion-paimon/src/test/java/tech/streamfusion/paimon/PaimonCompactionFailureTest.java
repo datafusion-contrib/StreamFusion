@@ -179,15 +179,71 @@ class PaimonCompactionFailureTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"merge", "sequence", "delete", "format", "budget", "ties"})
+  @ValueSource(
+      strings = {
+        "merge",
+        "sequence",
+        "delete",
+        "format",
+        "budget",
+        "ties",
+        "first-row-retract",
+        "partial-update-retract",
+        "aggregation-retract",
+        "aggregate-options",
+        "first-row-history",
+        "lookup-remote-files",
+        "partial-update-orc-nested",
+        "aggregation-orc-nested",
+        "aggregate-host-overflow"
+      })
   void unsupportedWholeRewriteDelegatesBeforeOutput(String variant) throws Exception {
     var io = new FailingIO();
-    var table = fixture(io, true);
+    var table = fixture(io, true, variant.endsWith("-retract"), variant.endsWith("-orc-nested"));
     var sections = sections(table);
     Map<String, String> changes;
     switch (variant) {
       case "merge":
-        changes = Map.of("merge-engine", "partial-update");
+        changes = Map.of("merge-engine", "aggregation", "fields.v.aggregate-function", "product");
+        break;
+      case "aggregate-host-overflow":
+        changes =
+            PaimonTestCompat.wrappingSum()
+                ? Map.of(
+                    "merge-engine",
+                    "aggregation",
+                    "fields.v.aggregate-function",
+                    "sum",
+                    "fields.v.sum.fail-on-overflow",
+                    "true")
+                : Map.of("merge-engine", "aggregation", "fields.v.aggregate-function", "sum");
+        break;
+      case "aggregate-options":
+        changes =
+            Map.of(
+                "merge-engine",
+                "aggregation",
+                "fields.v.aggregate-function",
+                "sum",
+                "fields.v.sum.fail-on-overflow",
+                "true");
+        break;
+      case "first-row-history":
+        changes = Map.of("merge-engine", "first-row", "num-levels", "4");
+        break;
+      case "lookup-remote-files":
+        changes = Map.of("merge-engine", "first-row", "lookup.remote-file.enabled", "true");
+        break;
+      case "first-row-retract":
+      case "partial-update-retract":
+      case "aggregation-retract":
+        changes = Map.of("merge-engine", variant.substring(0, variant.length() - 8));
+        break;
+      case "partial-update-orc-nested":
+      case "aggregation-orc-nested":
+        changes =
+            Map.of(
+                "merge-engine", variant.substring(0, variant.length() - 11), "file.format", "orc");
         break;
       case "sequence":
         changes = Map.of("sequence.field", "v");
@@ -215,6 +271,19 @@ class PaimonCompactionFailureTest {
     io.stage = "observe";
     try (rewriter) {
       assertSame(stock.result, rewriter.rewrite(2, false, sections));
+      if (variant.endsWith("-retract")) assertEquals("merge-retracts", rewriter.fallbackReason);
+      if (variant.equals("aggregate-options"))
+        assertEquals("aggregate-options", rewriter.fallbackReason);
+      if (variant.equals("first-row-history"))
+        assertEquals("first-row-history", rewriter.fallbackReason);
+      if (variant.equals("lookup-remote-files"))
+        assertEquals("lookup-remote-files", rewriter.fallbackReason);
+      if (variant.endsWith("-orc-nested"))
+        assertEquals("orc-nested-merge", rewriter.fallbackReason);
+      if (variant.equals("aggregate-host-overflow"))
+        assertEquals(
+            PaimonTestCompat.wrappingSum() ? "aggregate-options" : "aggregate-overflow-policy",
+            rewriter.fallbackReason);
       assertSame(stock.result, rewriter.upgrade(2, sections.get(0).get(0).files().get(0)));
     }
     assertEquals(1, stock.rewrites);
@@ -227,15 +296,24 @@ class PaimonCompactionFailureTest {
   }
 
   private FileStoreTable fixture(FailingIO io, boolean primaryKey) throws Exception {
+    return fixture(io, primaryKey, false, false);
+  }
+
+  private FileStoreTable fixture(FailingIO io, boolean primaryKey, boolean retract, boolean nested)
+      throws Exception {
     var path = new Path(directory.resolve("table").toUri());
+    var fields =
+        new ArrayList<>(
+            DataTypes.ROW(
+                    DataTypes.FIELD(0, "id", DataTypes.INT().notNull()),
+                    DataTypes.FIELD(1, "v", DataTypes.INT()))
+                .getFields());
+    if (nested) fields.add(DataTypes.FIELD(2, "payload", DataTypes.ARRAY(DataTypes.INT())));
     var schema =
         PaimonTestCompat.schemaManager(io, path)
             .createTable(
                 new Schema(
-                    DataTypes.ROW(
-                            DataTypes.FIELD(0, "id", DataTypes.INT().notNull()),
-                            DataTypes.FIELD(1, "v", DataTypes.INT()))
-                        .getFields(),
+                    fields,
                     List.of(),
                     primaryKey ? List.of("id") : List.of(),
                     Map.of(
@@ -253,7 +331,18 @@ class PaimonCompactionFailureTest {
         var commit = table.newCommit("seed")) {
       for (int section = 0; section < 3; section++) {
         for (int run = 0; run < 2; run++) {
-          for (int row = 0; row < 512; row++) write.write(GenericRow.of(section * 1000 + row, run));
+          for (int row = 0; row < 512; row++)
+            write.write(
+                nested
+                    ? GenericRow.of(
+                        section * 1000 + row,
+                        run,
+                        new org.apache.paimon.data.GenericArray(new Integer[] {row, null}))
+                    : GenericRow.of(section * 1000 + row, run));
+          if (retract)
+            write.write(
+                GenericRow.ofKind(
+                    org.apache.paimon.types.RowKind.DELETE, section * 1000 + 511, run));
           int id = section * 2 + run;
           commit.commit(id, write.prepareCommit(true, id));
         }

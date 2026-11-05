@@ -29,10 +29,10 @@ interface PaimonCompactionProvider extends StoreSinkWrite.Provider {
     } else if (!PaimonVersion.compactionProviderAvailable()
         || (table.bucketMode() != BucketMode.HASH_FIXED
             && table.bucketMode() != BucketMode.HASH_DYNAMIC)
-        || options.mergeEngine() != CoreOptions.MergeEngine.DEDUPLICATE
+        || !NativePaimonCompactRewriter.supportsMergeEngine(options.mergeEngine())
         || (options.changelogProducer() != CoreOptions.ChangelogProducer.NONE
             && options.changelogProducer() != CoreOptions.ChangelogProducer.INPUT)
-        || options.needLookup()
+        || (options.needLookup() && options.mergeEngine() != CoreOptions.MergeEngine.FIRST_ROW)
         || configuration.contains(CoreOptions.FULL_COMPACTION_DELTA_COMMITS)
         || configuration.contains(
             FlinkConnectorOptions.CHANGELOG_PRODUCER_FULL_COMPACTION_TRIGGER_INTERVAL))
