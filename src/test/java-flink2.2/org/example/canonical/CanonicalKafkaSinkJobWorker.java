@@ -88,8 +88,10 @@ public final class CanonicalKafkaSinkJobWorker {
     var loader = nativeRun ? CanonicalJobWorker.nativePlannerLoader(previous, root) : previous;
     Thread.currentThread().setContextClassLoader(loader);
     try (cluster) {
-      var environment = new TestStreamEnvironment(cluster, config, 1, List.of(), List.of());
-      environment.setParallelism(1);
+      int sourceParallelism = Files.exists(root.resolve("rescale-readers")) ? sinkParallelism : 1;
+      var environment =
+          new TestStreamEnvironment(cluster, config, sourceParallelism, List.of(), List.of());
+      environment.setParallelism(sourceParallelism);
       environment.setMaxParallelism(128);
       if (Files.exists(root.resolve("disable-chaining"))) environment.disableOperatorChaining();
       environment.enableCheckpointing(TimeUnit.HOURS.toMillis(1));

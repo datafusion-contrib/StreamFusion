@@ -48,6 +48,10 @@ class CanonicalKafkaSinkJobTest {
     return false;
   }
 
+  boolean rescaleReaders() {
+    return false;
+  }
+
   @BeforeAll
   static void startBroker() {
     kafka =
@@ -123,6 +127,11 @@ class CanonicalKafkaSinkJobTest {
     if (strictBatchBoundaries() || mode.equals("process-failure") || completedRecovery)
       Files.createFile(root.resolve("strict-batch-boundaries"));
     if (ordinary) Files.createFile(root.resolve("ordinary-sql"));
+    if (rescaleReaders()) {
+      assertTrue(kafkaInput());
+      assertEquals("rescale-uids", mode);
+      Files.createFile(root.resolve("rescale-readers"));
+    }
     if (mode.equals("checkpoint")) Files.createFile(root.resolve("prefix-native-checkpoint"));
     if (mode.startsWith("rescale")) {
       if (mode.equals("rescale-uids")) Files.createFile(root.resolve("stable-uids"));
@@ -326,6 +335,19 @@ class CanonicalKafkaSinkJobTest {
           mode.startsWith("rescale")
               ? stage.equals("middle") ? 3 : stage.equals("suffix") ? 2 : 1
               : 1;
+      if (rescaleReaders()) {
+        var sources =
+            inventory.stream()
+                .filter(cells -> cells[1].contains("SourceReaderState"))
+                .collect(Collectors.toList());
+        assertEquals(1, sources.size());
+        assertEquals(
+            writers,
+            Integer.parseInt(sources.get(0)[4]),
+            "Reader parallelism must change with the writers");
+        assertEquals(
+            128, Integer.parseInt(sources.get(0)[5]), "Source maximum parallelism must stay fixed");
+      }
       int owned =
           naming.equals("pooling") && mode.startsWith("rescale") && stage.equals("suffix")
               ? 3

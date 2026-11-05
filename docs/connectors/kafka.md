@@ -294,9 +294,41 @@ source/writer tasks. The ordinary-SQL planner-preview UID limitation above remai
 
 Run the sink command with `-Dtest=CanonicalKafkaPipelineJobTest` for this complete matrix. Generated
 hash rescaling disables chaining consistently; automatic-UID rescaling keeps normal chaining.
-Additional combined reader/writer rescaling and partition discovery in this both-native pipeline,
-schemas/formats/security, upsert/CDC delivery and failures around broker/coordinator/transaction
-commits need their own qualification under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Joint reader/writer rescaling has the additional qualification below. Combining it with partition
+discovery, schemas/formats/security, upsert/CDC delivery and failures around broker/coordinator/
+transaction commits needs further qualification under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+## Joint Kafka reader and writer rescaling (partial)
+
+A further eight real-broker cases pass while both source readers and exactly-once writers change
+parallelism 1→3→2 across repeated canonical engine switches. They cover ordinary SQL and portable
+compiled plans, both initial engine orders, and incrementing/pooling transaction ownership with
+automatic UIDs and normal chaining. Source maximum parallelism remains 128. The schema stays
+three nullable BIGINT fields in JSON, with three existing input partitions, on released Flink
+2.2.1, Kafka connector 5.0.0-2.2 and the Confluent Kafka 7.6.1 test broker.
+
+Every savepoint checks actual reader and writer parallelism, exact offsets for all three splits,
+nonempty coordinator state, writer prefixes/ownership/precommitted transactions and stable stock
+state identities. External `read_committed` results must contain exactly the expected five, nine
+and thirteen records at successive cuts. Advancing native legs must execute both decoding and
+encoding; their submitted plans contain neither transpose. Stock workers exclude StreamFusion
+classes, and canonical metadata contains stock dependencies.
+
+The final 44-case corpus passes all eight joint-rescale cases and reruns the original 36 native
+source/sink pipeline controls on the same test sources and native libraries. The earlier isolated
+eight-case run overlaps this corpus. Production connector code and state formats are unchanged.
+
+```sh
+SF_KAFKA_INTEGRATION=true mvn -Pcanonical-kafka -pl streamfusion-runtime -am \
+  -Dtest=CanonicalKafkaReaderWriterRescaleJobTest,CanonicalKafkaPipelineJobTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+This qualifies joint rescaling with a fixed input partition set. Partition discovery combined
+with joint rescaling, wider schemas/security/versions and additional failure/delivery boundaries
+remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.
 
 ## Transaction ownership at handoff
