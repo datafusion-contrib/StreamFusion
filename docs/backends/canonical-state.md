@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, and append scalar one/local-global mini-batches | Wider types/keys, retracting mini-batches, other views/phases and failures |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, and append scalar and local/global DISTINCT mini-batches | Wider types/keys, retracting mini-batches, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -1550,3 +1550,10 @@ native recovery reuse the existing state format and stock serializers. The
 124 state/recovery controls, 52 planner/admission controls and remaining local/global, retraction,
 TTL, schema and full-job matrices. Released 2.2.1 qualification remains separate from shared
 1.18 processing checks. Benchmarking remains deferred.
+
+
+The append local/global DISTINCT extension additionally binds shared COUNT/SUM memberships while
+retaining independent raw stock scalars. Private local Arrow views are transient and drain into
+the global owner before canonical barriers. Its released restore fixture, 120 state/recovery
+cases and 28 complete-job handoffs are qualified; see the [exact operator scope and remaining matrix](../operators/group-by.md#canonical-localglobal-distinct-mini-batches-partial).
+All fifteen families remain partial and benchmarking remains deferred.

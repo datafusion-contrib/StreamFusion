@@ -991,22 +991,29 @@ class CanonicalRestoreExecutionTest {
     assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
   }
 
+  static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments>
+      miniBatchGroupCases() {
+    return java.util.stream.Stream.of(
+            "group-aggregate-simple-mini-batch", "group-aggregate-distinct-mini-batch")
+        .flatMap(
+            program ->
+                java.util.stream.Stream.of(
+                        "complete",
+                        "missingLocal",
+                        "unopenedLocal",
+                        "missingImport",
+                        "missingGlobalInput",
+                        "wrongHandle",
+                        "validating",
+                        "emptyImport",
+                        "fallback")
+                    .map(mode -> org.junit.jupiter.params.provider.Arguments.of(program, mode)));
+  }
+
   @org.junit.jupiter.params.ParameterizedTest
-  @org.junit.jupiter.params.provider.ValueSource(
-      strings = {
-        "complete",
-        "missingLocal",
-        "unopenedLocal",
-        "missingImport",
-        "missingGlobalInput",
-        "wrongHandle",
-        "validating",
-        "emptyImport",
-        "fallback"
-      })
-  void miniBatchRequiresImportedGlobalStateAndBothNativeStages(String mode) {
-    var scope =
-        NativeExecution.beginRestore(GROUP, new Object(), "group-aggregate-simple-mini-batch");
+  @org.junit.jupiter.params.provider.MethodSource("miniBatchGroupCases")
+  void miniBatchRequiresImportedGlobalStateAndBothNativeStages(String program, String mode) {
+    var scope = NativeExecution.beginRestore(GROUP, new Object(), program);
     var global = new NativeColumnarGroupAggregateOperator();
     var local = new NativeColumnarLocalGroupAggregateOperator();
     if (!mode.equals("missingImport"))

@@ -38,6 +38,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends FlinkStreamOperat
   private final int[] distinctViewSources;
   private final int[] keyTimestampPrecisions;
   private final long miniBatchSize;
+  private boolean stockAppendDistinct;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -107,17 +108,23 @@ public class NativeColumnarLocalGroupAggregateOperator extends FlinkStreamOperat
             distinctViewSources,
             keyTimestampPrecisions,
             memoryBudget.nativeHandle());
-    if (auxiliaryColumns.length > 0) {
-      try {
+    try {
+      if (stockAppendDistinct) Native.configureLocalGroupStockAppendCanonical(handle);
+      if (auxiliaryColumns.length > 0) {
         Native.configureLocalGroupAggregateArguments(handle, auxiliaryColumns);
-      } catch (RuntimeException | Error failure) {
-        Native.closeLocalGroupAggregator(handle);
-        handle = 0;
-        throw failure;
       }
+    } catch (RuntimeException | Error failure) {
+      Native.closeLocalGroupAggregator(handle);
+      handle = 0;
+      throw failure;
     }
     boundary = new MiniBatchBoundary(miniBatchSize);
     miniBatchMetrics = new MiniBatchMetrics(getMetricGroup(), true);
+  }
+
+  public NativeColumnarLocalGroupAggregateOperator withStockAppendDistinct() {
+    this.stockAppendDistinct = true;
+    return this;
   }
 
   @Override

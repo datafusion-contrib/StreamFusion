@@ -258,6 +258,29 @@ impl<'a> DistinctColumn<'a> {
         changed
     }
 
+    pub(super) fn merge_stock_scalar(state: &mut GroupAggState, value: &ScalarValue) {
+        let (set, live, aggregate) = match state {
+            GroupAggState::Distinct { set, live } => (set, live, None),
+            GroupAggState::DistinctRunning { counts, agg, live } => (counts, live, Some(agg)),
+            _ => unreachable!("stock COUNT/SUM DISTINCT scalar"),
+        };
+        let changed = set.change_scalar(
+            value,
+            Change::Stock {
+                retract: false,
+                append: true,
+            },
+        );
+        if !value.is_null() && changed {
+            if let Some(aggregate) = aggregate {
+                aggregate.fold(distinct_num(value));
+                *live = 1;
+            } else {
+                *live = live.wrapping_add(1);
+            }
+        }
+    }
+
     pub(super) fn update(
         &self,
         state: &mut GroupAggState,

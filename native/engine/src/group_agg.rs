@@ -1519,6 +1519,37 @@ impl NumericViewBuffer {
         }
     }
 
+    fn merge_stock_entry(
+        &mut self,
+        value: &ScalarValue,
+        memberships: &[(usize, i64)],
+    ) -> Result<(), DataFusionError> {
+        for &(target, membership) in memberships {
+            if membership < 0 {
+                return Err(DataFusionError::Execution(
+                    "invalid append DISTINCT membership".into(),
+                ));
+            }
+            if self.counts.len() <= target {
+                self.counts.resize_with(target + 1, || None);
+            }
+            let set =
+                self.counts[target].get_or_insert_with(|| DistinctSet::new(self.order.data_type()));
+            if membership == 0 {
+                continue;
+            }
+            if value.is_null() {
+                if self.order.null_count(target) == 0 {
+                    self.order.add_null_count(target, 1);
+                }
+            } else if set.scalar_count(value) == 0 {
+                set.merge_scalar_delta(value, 1);
+            }
+            self.order.insert(value);
+        }
+        Ok(())
+    }
+
     fn bytes(&self) -> usize {
         std::mem::size_of::<Self>() + self.order.bytes() - std::mem::size_of::<NumericMapOrder>()
             + self.separator.as_ref().map_or(0, String::capacity)
@@ -2201,12 +2232,13 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     && self.distinct_view_columns[i] >= 0
                     && (ordered_distinct_type(&self.value_types[i])
                         || self.value_types[i] == DataType::Utf8)
-                    && (0..num_agg).any(|j| {
-                        matches!(self.kinds[j], 9 | 17 | 32 | 33 | 34)
-                            && self.distinct_view_columns[j] >= 0
-                            && self.value_types[j] == self.value_types[i]
-                            && same_view(i, j)
-                    }))
+                    && (self.stock_global_merge && ordered_distinct_type(&self.value_types[i])
+                        || (0..num_agg).any(|j| {
+                            matches!(self.kinds[j], 9 | 17 | 32 | 33 | 34)
+                                && self.distinct_view_columns[j] >= 0
+                                && self.value_types[j] == self.value_types[i]
+                                && same_view(i, j)
+                        })))
                 .then(|| self.value_types[i].clone())
             })
             .collect();
@@ -2810,12 +2842,20 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                             list.value_offsets()[row + 1] - list.value_offsets()[row],
                             "shared view entry alignment"
                         );
-                        deltas.push((
-                            target,
-                            other_counts.value(other_list.value_offsets()[row] as usize + relative),
-                        ));
+                        let entry = other_list.value_offsets()[row] as usize + relative;
+                        if self.stock_global_merge && other_counts.is_null(entry) {
+                            return Err(DataFusionError::Execution(
+                                "NULL append DISTINCT membership".into(),
+                            ));
+                        }
+                        deltas.push((target, other_counts.value(entry)));
                     }
-                    buffer.merge_entry(&ScalarValue::try_from_array(values, entry)?, &deltas);
+                    let value = ScalarValue::try_from_array(values, entry)?;
+                    if self.stock_global_merge {
+                        buffer.merge_stock_entry(&value, &deltas)?;
+                    } else {
+                        buffer.merge_entry(&value, &deltas);
+                    }
                 }
                 mapped_delta += (buffer.bytes() - std::mem::size_of::<NumericViewBuffer>())
                     as isize
@@ -3581,6 +3621,22 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                             }
                         }
                         for value in buffer.order.iter() {
+                            if self.stock_global_merge {
+                                for (target, set) in buffer.counts.iter().enumerate() {
+                                    let count = if value.is_null() {
+                                        buffer.order.null_count(target)
+                                    } else {
+                                        set.as_ref().map_or(0, |set| set.scalar_count(&value))
+                                    };
+                                    if count != 0 {
+                                        DistinctColumn::merge_stock_scalar(
+                                            &mut state.aggs[target],
+                                            &value,
+                                        );
+                                    }
+                                }
+                                continue;
+                            }
                             if value.is_null() {
                                 continue;
                             }
@@ -4451,6 +4507,7 @@ impl GroupAggregator<RocksGroupStore> {
 /// counts rows. Wide decimal DISTINCT views preserve the host's group-map emission order;
 /// other partials follow first appearance across buffered batches.
 pub(crate) struct LocalGroupAggregator {
+    stock_append_distinct: bool,
     single: Option<local_single::LocalSingleValue>,
     kinds: Vec<i64>,
     retracting_extremes: Vec<bool>,
@@ -4628,6 +4685,7 @@ impl LocalGroupAggregator {
         }
         let auxiliary_columns = vec![-1; kinds.len()];
         LocalGroupAggregator {
+            stock_append_distinct: false,
             single: local_single::LocalSingleValue::for_aggregates(
                 &kinds,
                 &value_columns,
@@ -5003,6 +5061,13 @@ impl LocalGroupAggregator {
             })
             .collect();
         let row_kinds = row_kind_column(batch);
+        if self.stock_append_distinct
+            && row_kinds.is_some_and(|kinds| (0..n).any(|row| matches!(kinds.value(row), 1 | 3)))
+        {
+            return Err(DataFusionError::Execution(
+                "stock local DISTINCT requires append-only input".into(),
+            ));
+        }
         let append_only = row_kinds.is_none();
         let track = self.memory.tracking();
         for row in 0..n {
@@ -5150,7 +5215,9 @@ impl LocalGroupAggregator {
                     continue;
                 }
                 if let Some(column) = &distinct_columns[i] {
-                    if view_only[i] {
+                    if self.stock_append_distinct {
+                        column.update_stock(&mut entry.states[i], row, false, true);
+                    } else if view_only[i] {
                         // The global re-accumulates from the shared view, never these partials.
                         column.merge_delta(
                             &mut entry.states[i],
@@ -5208,7 +5275,9 @@ impl LocalGroupAggregator {
                         }
                         touched = true;
                         if value.is_null() {
-                            order.add_null_count(source, if retract { -1 } else { 1 });
+                            if !self.stock_append_distinct || order.null_count(source) == 0 {
+                                order.add_null_count(source, if retract { -1 } else { 1 });
+                            }
                         }
                     }
                     if !touched {

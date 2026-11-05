@@ -657,6 +657,8 @@ public final class Native {
   /** Configures optional secondary argument columns before the local consumes its first batch. */
   public static native void configureLocalGroupAggregateArguments(long handle, int[] auxiliaryColumns);
 
+  public static native void configureLocalGroupStockAppendCanonical(long handle);
+
   /** Folds a batch into the buffered per-key accumulators; emits nothing. */
   public static native void updateLocalGroupAggregator(
       long handle, long inArrayAddress, long inSchemaAddress);

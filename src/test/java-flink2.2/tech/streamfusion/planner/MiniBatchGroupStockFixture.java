@@ -41,11 +41,16 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
   final OneInputStreamOperatorTestHarness<RowData, RowData> local;
   final boolean rocks, global;
 
-  @SuppressWarnings("unchecked")
   MiniBatchGroupStockFixture(String type, boolean global, boolean rocks) throws Exception {
+    this(type, global, rocks, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  MiniBatchGroupStockFixture(String type, boolean global, boolean rocks, boolean distinct)
+      throws Exception {
     this.rocks = rocks;
     this.global = global;
-    var stock = graph(type, global, false);
+    var stock = graph(type, global, false, distinct);
     StreamNode node =
         stock.getStreamNodes().stream()
             .filter(
@@ -98,7 +103,7 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
       local = null;
       seedType = inputType;
     }
-    var nativeGraph = graph(type, global, true);
+    var nativeGraph = graph(type, global, true, distinct);
     template =
         (NativeColumnarGroupAggregateOperator)
             nativeGraph.getStreamNodes().stream()
@@ -151,6 +156,11 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
   }
 
   static StreamGraph graph(String type, boolean global, boolean nativeEnabled) throws Exception {
+    return graph(type, global, nativeEnabled, false);
+  }
+
+  static StreamGraph graph(String type, boolean global, boolean nativeEnabled, boolean distinct)
+      throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", Boolean.toString(nativeEnabled));
     config.setString("pipeline.max-parallelism", "128");
@@ -172,30 +182,44 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
         "CREATE TABLE input_table(k BIGINT,a "
             + arithmeticType(type)
             + ",v "
-            + type
+            + (distinct ? "STRING" : type)
             + ") WITH"
             + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready','insert-only'='true')");
     table.useCatalog("default_catalog");
+    String aggregates =
+        distinct
+            ? "sd "
+                + type
+                + ",sf "
+                + type
+                + ",dn BIGINT,df BIGINT,av "
+                + (type.equals("FLOAT") || type.equals("DOUBLE") ? "DOUBLE" : "BIGINT")
+                + ",ds BIGINT"
+            : "av "
+                + arithmeticType(type)
+                + ",lo "
+                + type
+                + ",hi "
+                + type
+                + ",s "
+                + arithmeticType(type);
     table.executeSql(
-        "CREATE TABLE output_table(k BIGINT,n BIGINT,av "
-            + arithmeticType(type)
-            + ",lo "
-            + type
-            + ",hi "
-            + type
-            + ",s "
-            + arithmeticType(type)
-            + ") WITH"
-            + " ('connector'='blackhole')");
+        "CREATE TABLE output_table(k BIGINT,n BIGINT,"
+            + aggregates
+            + ") WITH ('connector'='blackhole')");
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     return CanonicalRegularJoinPlanTest.graph(
         planner,
         table,
         CanonicalRegularJoinPlanTest.translate(
             planner,
-            "INSERT INTO output_table SELECT k,COUNT(*),AVG(a) FILTER(WHERE"
-                + " a>1),MIN(v),MAX(v),SUM(a) FILTER(WHERE a>1) FROM fixture.db.input_table GROUP"
-                + " BY k"));
+            distinct
+                ? "INSERT INTO output_table SELECT k,COUNT(*),SUM(DISTINCT a),SUM(DISTINCT a)"
+                      + " FILTER(WHERE a>1),COUNT(DISTINCT a),COUNT(DISTINCT a) FILTER(WHERE"
+                      + " a>1),AVG(a),COUNT(DISTINCT v) FROM fixture.db.input_table GROUP BY k"
+                : "INSERT INTO output_table SELECT k,COUNT(*),AVG(a) FILTER(WHERE"
+                      + " a>1),MIN(v),MAX(v),SUM(a) FILTER(WHERE a>1) FROM fixture.db.input_table"
+                      + " GROUP BY k"));
   }
 
   RowData seed(Long key, Integer value, String text, boolean javaCache) throws Exception {
@@ -352,6 +376,7 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
             (int[]) field(seedTemplate, "keyTimestampPrecisions"),
             (long) field(seedTemplate, "miniBatchSize"),
             (int[]) field(seedTemplate, "auxiliaryColumns"));
+    if ((boolean) field(seedTemplate, "stockAppendDistinct")) owner.withStockAppendDistinct();
     var target = new OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch>(owner);
     target.setup(new ArrowBatchSerializer());
     return target;

@@ -1,5 +1,45 @@
 use super::*;
 
+impl LocalGroupAggregator {
+    pub(super) fn configure_stock_append_distinct(&mut self) -> Result<(), DataFusionError> {
+        if !self.order.is_empty()
+            || !self.states.is_empty()
+            || !self.scalar_states.is_empty()
+            || self.distinct_view_sources.is_empty()
+            || self
+                .kinds
+                .iter()
+                .any(|kind| !matches!(kind, 0 | 3 | 7 | 8 | 9 | 10 | 11))
+            || self.distinct_view_sources.iter().any(|&slot| {
+                slot < 0 || !matches!(self.kinds.get(slot as usize), Some(&7) | Some(&9))
+            })
+        {
+            return Err(DataFusionError::Execution(
+                "stock local DISTINCT requires drained append partials".into(),
+            ));
+        }
+        self.stock_append_distinct = true;
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_configureLocalGroupStockAppendCanonical<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        if let Err(error) =
+            unsafe { &mut *(handle as *mut LocalGroupAggregator) }.configure_stock_append_distinct()
+        {
+            canonical::throw_error(&mut env, error);
+        }
+    });
+}
+
 pub(super) fn append_group_string_caches(
     fields: &mut Vec<Field>,
     columns: &mut Vec<ArrayRef>,
@@ -47,8 +87,12 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             || self
                 .kinds
                 .iter()
-                .any(|kind| !matches!(kind, 0 | 4 | 10 | 11 | 22))
-            || self.distinct_view_columns.iter().any(|&column| column >= 0)
+                .any(|kind| !matches!(kind, 0 | 4 | 7 | 9 | 10 | 11 | 22))
+            || self
+                .distinct_view_columns
+                .iter()
+                .enumerate()
+                .any(|(slot, &column)| (column >= 0) != matches!(self.kinds[slot], 7 | 9))
             || self.value_columns.iter().any(|&column| column < 0)
             || self.filter_columns.iter().any(|&column| column >= 0)
             || self
@@ -58,7 +102,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 .any(|(slot, &column)| (self.kinds[slot] == 4) != (column >= 0))
         {
             return Err(DataFusionError::Execution(
-                "stock group merge requires drained scalar partials with explicit AVG counts"
+                "stock group merge requires drained scalar/DISTINCT partials with explicit AVG counts"
                     .into(),
             ));
         }
@@ -85,6 +129,42 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 .collect()
         });
         for (slot, state) in states.iter_mut().enumerate() {
+            if matches!(self.kinds[slot], 7 | 9) {
+                // Floating DISTINCT folds use the shared Java-map-order bundle below.
+                if ordered_distinct_type(&self.value_types[slot]) {
+                    continue;
+                }
+                let list =
+                    group_partial_map(batch.column(self.distinct_view_columns[slot] as usize));
+                let entries = list
+                    .values()
+                    .as_any()
+                    .downcast_ref::<arrow::array::StructArray>()
+                    .ok_or_else(|| {
+                        DataFusionError::Execution("invalid stock DISTINCT partial".into())
+                    })?;
+                let counts = entries
+                    .column(1)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .ok_or_else(|| {
+                        DataFusionError::Execution("invalid stock DISTINCT membership".into())
+                    })?;
+                let values = DistinctColumn::new(entries.column(0));
+                for entry in
+                    list.value_offsets()[row] as usize..list.value_offsets()[row + 1] as usize
+                {
+                    if counts.is_null(entry) || counts.value(entry) < 0 {
+                        return Err(DataFusionError::Execution(
+                            "invalid append DISTINCT membership".into(),
+                        ));
+                    }
+                    if counts.value(entry) != 0 {
+                        values.update_stock(state, entry, false, true);
+                    }
+                }
+                continue;
+            }
             let column = self.value_columns[slot] as usize;
             let values = batch.column(column);
             if matches!(self.kinds[slot], 10 | 11)
@@ -154,7 +234,23 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .get_mut(&key.0)
             .expect("stock merge retains its group");
         let before = group_key_state_bytes(state);
-        for (target, partial) in state.aggs.iter_mut().zip(partials) {
+        for (slot, (target, partial)) in state.aggs.iter_mut().zip(partials).enumerate() {
+            if matches!(self.kinds[slot], 7 | 9) {
+                if !ordered_distinct_type(&self.value_types[slot]) {
+                    let set = match &partial {
+                        GroupAggState::Distinct { set, .. }
+                        | GroupAggState::DistinctRunning { counts: set, .. } => set,
+                        _ => unreachable!("stock DISTINCT partial"),
+                    };
+                    set.for_each_scalar(|value, count| {
+                        if count != 0 {
+                            DistinctColumn::merge_stock_scalar(target, &value);
+                        }
+                        Ok(())
+                    })?;
+                }
+                continue;
+            }
             let GroupAggState::Running { agg, non_null } = partial else {
                 unreachable!("stock scalar partial");
             };

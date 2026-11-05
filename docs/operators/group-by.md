@@ -3336,8 +3336,8 @@ The preceding typed-extrema baseline passed all nine released stock GROUP BY con
 failed all nine native execution audits because the aggregates stayed stock-owned. The unchanged
 committed baseline reproduced those failures. The subsequent string-extrema addition below
 qualifies the simple and TTL-hint programs with actual state import and resumed native input;
-the scalar mini-batch extension below qualifies a third program. Six DISTINCT/UDF programs remain
-unqualified. Native Calc activity receives no aggregate-import credit.
+the later scalar and DISTINCT mini-batch extensions below qualify three more programs.
+Four UDF programs remain unqualified. Native Calc activity receives no aggregate-import credit.
 
 Wider retained types, keys, views/phases, connector delivery/failure and cross-version migrations
 remain open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
@@ -3388,8 +3388,8 @@ failing cohorts are retained separately, not added cumulatively. The unchanged r
 programs, `group-aggregate-simple` and `agg-with-state-ttl-hint`, additionally pass strict
 canonical-resume contracts: each imports two stock groups into the actual opened native handle
 and consumes three new native input rows. Their original queries, fixtures and sink assertions
-are unchanged. The later scalar mini-batch extension below qualifies one more program; six
-DISTINCT/UDF programs still fail their native execution gates and the full upstream suite remains red. Applied header batches count only after successful import, excluding
+are unchanged. The later scalar and DISTINCT extensions below qualify three more programs;
+four UDF programs still fail their native execution gates and the full upstream suite remains red. Applied header batches count only after successful import, excluding
 validation-only passes, and unknown program IDs cannot inherit the simple-program contract.
 The witness controls pass 143 cases and the independent Python report audit passes 49.
 Shared Flink 1.18 processing/accounting/ownership checks pass 34 cases without qualifying canonical
@@ -3437,9 +3437,9 @@ or consumers require rows. The portable stock plan remains unchanged.
 The unchanged released `group-aggregate-simple-mini-batch` restore fixture passes with its
 original query and sink assertions. Its strict witness records two applied stock groups in
 the opened native global owner, two new global rows and three local input rows. The full
-released GROUP BY selection now passes all nine stock programs and three native programs;
-six DISTINCT/UDF programs still fail their native execution contracts. Witness controls pass
-152 Java cases and 51 independent Python audit cases. The independently built native suite
+released GROUP BY selection at this scalar-library milestone passed all nine stock programs
+and three native programs. Later DISTINCT extensions below qualify two more programs. This
+milestone's witness controls passed 152 Java cases and 51 independent Python audit cases. The independently built native suite
 passes 1,332 tests with two existing ignores.
 
 The expanded 390-case cohort passes 104 SQL/compiled planner checks, 208 repeated canonical
@@ -3482,9 +3482,9 @@ views, keys, TTL, connector/failure and version matrices remain open under
 
 Append-only SUM DISTINCT over TINYINT, SMALLINT, INT, BIGINT, FLOAT and DOUBLE binds the
 released nullable raw sum and shared DISTINCT views during ordinary SQL and stock compiled-plan
-submission. Immediate and one-phase mini-batch owners are covered. Local/global DISTINCT,
-retracting SUM DISTINCT, decimal sums and independently expiring DISTINCT entries remain
-unqualified; their state cannot be inferred from this scalar contract.
+submission. Immediate and one-phase mini-batch owners are covered; append local/global
+DISTINCT is qualified separately below. Retracting SUM DISTINCT, decimal sums and independently
+expiring DISTINCT entries remain unqualified; their state cannot be inferred from this scalar contract.
 
 Each aggregate retains its own membership/filter bit even when COUNT and SUM share one stock
 MapView. Canonical export combines those native memberships into the released Long/long-array
@@ -3515,8 +3515,9 @@ wrapping arithmetic, bit-preserving floating values, ordinary recovery and inval
 rejection. The full native suite passes 1,338 tests with two existing ignores. The unchanged
 released DISTINCT fixture now also passes: three stock accumulator groups are applied to the
 opened native owner, which consumes seven new native rows. The full released GROUP BY selection
-passes all nine stock programs and four native programs; local/global DISTINCT and four UDF
-programs still fail their strict native checks. Canonical witness controls pass 153 cases.
+at this single-phase SUM-library milestone passed all nine stock programs and four native
+programs. The local/global extension below qualifies the fifth native program; four UDF
+programs remain failing. This milestone's canonical witness controls passed 153 cases.
 
 All 56 immediate and one-phase mini-batch complete-job scenarios pass: sixteen continued-input
 cases, sixteen no-input returns, eight ordinary native-checkpoint recoveries and sixteen
@@ -3535,3 +3536,53 @@ was removed; restoring that delegating overload makes all 44 affected-class cont
 The original failed run remains recorded rather than being called successful. Shared Flink 1.18
 processing/accounting checks pass 34 cases on the new library; this does not qualify canonical
 restore on that release. All broader #569 requirements remain open and benchmarking is deferred.
+
+
+## Canonical local/global DISTINCT mini-batches (partial)
+
+Append local/global COUNT DISTINCT and numeric SUM DISTINCT bind the original stock global
+accumulator and shared view contracts during ordinary SQL and stock compiled-plan submission.
+Six numeric types are qualified at the operator boundary. The native local stage keeps NULL
+membership and one presence bit per argument/filter pair; private Arrow lists carry those views
+through the native exchange. The portable stock plan is unchanged. The global stage unions the
+incoming memberships in its transient bundle, then folds only memberships absent from retained
+state. It never adds a local DISTINCT scalar to the retained sum. Non-DISTINCT scalar partials,
+including AVG's separate sum/count, retain their independent precombine-and-merge path.
+
+Floating DISTINCT bundles retain Java map iteration order, including shared-filter alignment and
+NULL markers. The focused regressions include FLOAT/DOUBLE inputs where input-order folding or
+adding a local sum would produce a different result; a separate JDK map reference confirms the
+expected values. Stock global export retains raw accumulators independently of the views and
+uses the existing direct stock canonical writer after both bundles drain. Ordinary native
+checkpoint formats are unchanged; restore rebinds the merge and local membership policies.
+
+Qualification passes 96 repeated canonical-switch cases and 24 native-checkpoint returns across
+six numeric types, both stores, both initial engine orders, backend changes, and single-row or
+seven-row physical batches crossing five-row local bundles. Cases include filtered shared views,
+duplicates, NULL-only groups, NULL keys and string memberships. Every serialized stock state
+entry, immediate re-export before input and per-key continued changelog remain checked. These
+cases use ordinary finite arithmetic; the broader single-phase floating edge suite remains a
+separate scope. Twenty-four new planner checks cover SQL/compiled submission and both UID
+policies at maximum parallelism 257; 156 prior planning controls also pass. Five focused native
+tests and the full 1,343-test native suite pass, with two existing ignores.
+
+The unchanged released DISTINCT mini-batch fixture applies three stock accumulator groups to
+its opened native global owner, then processes seven local input rows and five global input
+rows with the original sink assertions. The complete released GROUP BY selection passes all
+nine stock programs and five strict native resumes; four UDF programs remain failing and the
+whole selection remains red. Audit controls pass 162 Java cases and 51 Python cases.
+
+All 28 BIGINT complete-job scenarios pass: eight continued-input switches, eight no-input
+returns, four ordinary native-checkpoint recoveries and eight rescalings. They cover SQL/compiled
+submission, both native stores and initial engine orders, custom source/committer state, both
+transposes, clean stock workers and independent external effects. Rescaling redistributes 64
+keys through 1 → 3 → 2 global tasks at maximum parallelism 128; separate witnesses require local
+input and positive input in every global task. Mini-batch changelogs use a stock reference at
+identical cuts. The initial smoke case overlaps this matrix and is not additional coverage.
+
+The new library also passes all 2,166 prior aggregate state, planner, corruption and recovery
+controls in one run. This selection includes older scalar/SUM planning cases and is not additive
+coverage. Shared Flink 1.18 processing/accounting/ownership checks pass 34 cases; canonical
+interchange on that line remains unqualified. Wider retractions, decimal/view/TTL semantics,
+schemas, connector delivery, failures and versions remain open under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.

@@ -375,7 +375,7 @@ final class StockCompiledPlanLowering {
   private static boolean needsGlobalGroupTemplate(
       ExecNode<?> node, SqlPlanOrigins.RuntimeGraph graph) {
     if (!(node instanceof NativeColumnarGroupAggExecNode)
-        || !((NativeColumnarGroupAggExecNode) node).hasStockScalarPartials()
+        || !((NativeColumnarGroupAggExecNode) node).hasStockGroupPartials()
         || !(graph.originals.get(node)
             instanceof
             org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGlobalGroupAggregate))
@@ -1837,7 +1837,7 @@ final class StockCompiledPlanLowering {
         && !Arrays.equals(keys, java.util.stream.IntStream.range(0, localKeys.length).toArray()))
       return stock;
     RowType outputType = (RowType) stock.getOutputType();
-    if (!typedGroupArrowType(inputType)
+    if (!global && !typedGroupArrowType(inputType)
         || !typedGroupArrowType(outputType)
         || !typedGroupArrowType(sourceType)) return stock;
     for (int i = 0; i < keys.length; i++)
@@ -1865,11 +1865,13 @@ final class StockCompiledPlanLowering {
             retract,
             true,
             true);
-    if (global && infos.distinctInfos().length != 0) return stock;
     var localKinds = new ArrayList<Integer>();
     var localTypes = new ArrayList<Integer>();
     var localColumns = new ArrayList<Integer>();
     var localFilters = new ArrayList<Integer>();
+    var localViewKeys = new ArrayList<String>();
+    var localViewSources = new ArrayList<Integer>();
+    var localViewTypes = new ArrayList<LogicalType>();
     LogicalType[] actualTypes = (LogicalType[]) releasedField(function, "accTypes");
     LogicalType[] derivedTypes =
         Arrays.stream(infos.getAccTypes())
@@ -1891,8 +1893,10 @@ final class StockCompiledPlanLowering {
         columns = new int[size],
         scalars = new int[size],
         counts = new int[size],
+        viewColumns = new int[size],
         filters = new int[size];
     Arrays.fill(counts, -1);
+    Arrays.fill(viewColumns, -1);
     var nativeIndices = new java.util.HashMap<Integer, Integer>();
     int position = 0, actual = 0;
     for (var info : infos.aggInfos()) {
@@ -1978,6 +1982,18 @@ final class StockCompiledPlanLowering {
       if (width == 2) counts[actual] = position + 1;
       filters[actual] = call.filterArg;
       if (global) {
+        int localPosition = localKinds.size();
+        if (call.isDistinct()) {
+          String viewKey = call.getArgList() + "#" + call.filterArg;
+          int view = localViewKeys.indexOf(viewKey);
+          if (view < 0) {
+            view = localViewKeys.size();
+            localViewKeys.add(viewKey);
+            localViewSources.add(localPosition);
+            localViewTypes.add(sourceType.getTypeAt(value));
+          }
+          viewColumns[actual] = view;
+        }
         localKinds.add(kind == 4 ? 8 : kind);
         localTypes.add(kind == 4 ? typedGroupValueCode(actualTypes[position]) : valueType);
         localColumns.add(value);
@@ -1990,7 +2006,8 @@ final class StockCompiledPlanLowering {
         }
         columns[actual] = localKeys.length + position;
         kinds[actual] = kind == 3 ? 22 : kind;
-        if (kind != 4) types[actual] = typedGroupValueCode(inputType.getTypeAt(columns[actual]));
+        if (kind != 4 && kind != 7 && kind != 9)
+          types[actual] = typedGroupValueCode(inputType.getTypeAt(columns[actual]));
         filters[actual] = -1;
       }
       nativeIndices.put(info.aggIndex(), actual);
@@ -2060,15 +2077,47 @@ final class StockCompiledPlanLowering {
             .anyMatch(i -> (kinds[i] == 10 || kinds[i] == 11) && types[i] == 3);
     NativeColumnarExchangeExecNode exchange;
     if (global) {
-      RowType partialType = (RowType) local.getOutputType();
-      if (partialType.getFieldCount() != localKeys.length + localKinds.size()) return stock;
-      for (int i = 0; i < actualTypes.length; i++)
-        if (!partialType
+      RowType stockPartialType = (RowType) local.getOutputType();
+      var localInfos =
+          org.apache.flink.table.planner.plan.utils.AggregateUtil
+              .transformToStreamAggregateInfoList(
+                  planner.getTypeFactory(),
+                  sourceType,
+                  org.apache.flink.table.planner.utils.JavaScalaConversionUtil.toScala(
+                      Arrays.asList(calls)),
+                  retractions,
+                  retract,
+                  false,
+                  true);
+      LogicalType[] localAccumulatorTypes =
+          Arrays.stream(localInfos.getAccTypes())
+              .map(org.apache.flink.table.types.DataType::getLogicalType)
+              .toArray(LogicalType[]::new);
+      if (stockPartialType.getFieldCount() != localKeys.length + localAccumulatorTypes.length)
+        return stock;
+      for (int i = 0; i < localAccumulatorTypes.length; i++)
+        if (!stockPartialType
             .getTypeAt(localKeys.length + i)
             .copy(true)
-            .equals(actualTypes[i].copy(true))) return stock;
+            .equals(localAccumulatorTypes[i].copy(true))) return stock;
       for (int i = 0; i < localKeys.length; i++)
-        if (!partialType.getTypeAt(i).equals(sourceType.getTypeAt(localKeys[i]))) return stock;
+        if (!stockPartialType.getTypeAt(i).equals(sourceType.getTypeAt(localKeys[i]))) return stock;
+      if (localKinds.size() + infos.distinctInfos().length != localAccumulatorTypes.length)
+        return stock;
+      var partialFields = new ArrayList<LogicalType>();
+      for (int i = 0; i < localKeys.length + localKinds.size(); i++)
+        partialFields.add(stockPartialType.getTypeAt(i));
+      for (var type : localViewTypes)
+        partialFields.add(
+            new org.apache.flink.table.types.logical.ArrayType(
+                false,
+                RowType.of(
+                    new LogicalType[] {type.copy(true), new BigIntType(false)},
+                    new String[] {"value", "count"})));
+      RowType partialType = RowType.of(partialFields.toArray(LogicalType[]::new));
+      for (int i = 0; i < viewColumns.length; i++)
+        if (viewColumns[i] >= 0) viewColumns[i] += localKeys.length + localKinds.size();
+      inputType = partialType;
       var localConfig = new Configuration(config);
       ((ExecNodeBase<?>) local).getPersistedConfig().toMap().forEach(localConfig::setString);
       localConfig.setString("table.exec.mini-batch.enabled", "true");
@@ -2084,8 +2133,9 @@ final class StockCompiledPlanLowering {
               localColumns.stream().mapToInt(Integer::intValue).toArray(),
               localFilters.stream().mapToInt(Integer::intValue).toArray(),
               localKeys,
-              new int[0],
+              localViewSources.stream().mapToInt(Integer::intValue).toArray(),
               FlinkKeyGroupUtils.stockKeyDescriptor(sourceType, localKeys));
+      if (!localViewSources.isEmpty()) localOwner.withStockAppendDistinct();
       var producer = local.getInputEdges().get(0).getSource();
       ExecNode<?> entry;
       if (stringCaches) {
@@ -2137,7 +2187,7 @@ final class StockCompiledPlanLowering {
                         .map(i -> kinds[i] == 4 ? columns[i] + 1 : -1)
                         .toArray()
                     : new int[0],
-                new int[0],
+                global ? viewColumns : new int[0],
                 -1,
                 (Boolean) releasedField(function, "generateUpdateBefore"),
                 retention,

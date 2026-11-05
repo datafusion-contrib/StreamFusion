@@ -77,3 +77,21 @@ This follows Arroyo's accumulator/membership separation and Comet's existing mov
 ownership without adding a wire format or an intermediate native snapshot. The bound mode
 preserves raw sums and presence through ordinary native checkpoints. Local/global DISTINCT
 merge, retractions and independently aged views still require their own qualified projections.
+
+
+## Append local/global DISTINCT handoffs
+
+Released Flink merges each local DISTINCT MapView into a temporary heap map, then into the
+retained state map. It invokes the inner accumulator only for newly present membership bits;
+local DISTINCT scalar partials are not additive. Keep that two-stage union in native state and
+retain raw sums independently when canonical state is imported or exported. Native local views
+remain split by argument/filter pair inside the private Arrow chain; the global canonical
+projection combines their independent memberships into the released shared bit layout.
+
+Arroyo's incremental aggregation separates retained grouped state from changed-key processing;
+we retain that structure. Stock Flink's generated merge semantics additionally require retained
+NULL markers and Java map order for floating-point folds. Reuse the existing map-order model
+and preserve both filter alignment and initialization presence. Local policy is explicitly bound
+only for captured append stock contracts; ordinary native execution keeps its existing policy.
+No native snapshot intermediate or persisted format is introduced. The added JNI entry point
+configures a transient local owner and follows the existing guarded-handle ownership pattern.

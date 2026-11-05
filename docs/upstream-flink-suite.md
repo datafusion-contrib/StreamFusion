@@ -1696,19 +1696,26 @@ counts are overlapping, not additive. No program is excluded from this rank-clas
 ### Released grouped-state canonical resume proofs
 
 The unchanged released Flink 2.2.1 `GroupAggregateRestoreTest#testRestore` selection passes all nine
-stock invocations. Its simple and state-TTL-hint programs now also pass native canonical resume:
-each successfully imports two stock accumulator groups into an opened native grouped operator
-and consumes three new native input rows, preserving the original expected sink assertions.
-The scalar mini-batch extension below also qualifies its released program. Six DISTINCT/UDF
-programs still fail native execution contracts, so the overall native selection remains red.
+stock invocations and five native canonical resumes. Four UDF programs still fail strict native
+execution checks, so the complete native selection remains red. Original queries, fixtures and
+sink assertions remain unchanged.
 
-All nine program IDs have explicit selectors. Simple and TTL-hint contracts require both import
-and new input in `NativeColumnarGroupAggregateOperator`. The agent records typed/arithmetic header
-batches only after the JNI-backed import returns, excludes validation-only passes, and associates
-the native handle with the operator that subsequently opens. Unknown program IDs, unrelated Calc
-work, wrong/unopened handles, empty imports and import-only or input-only runs cannot satisfy the
-proof. The expanded canonical agent controls pass 152 cases and the independent Python report audit
-passes 51. These protocol controls are separate from native state and complete-job qualification.
+| Released program | Applied stock groups | New global native rows | New local native rows |
+| --- | ---: | ---: | ---: |
+| `group-aggregate-simple` | 2 | 3 | — |
+| `agg-with-state-ttl-hint` | 2 | 3 | — |
+| `group-aggregate-simple-mini-batch` | 2 | 2 | 3 |
+| `group-aggregate-distinct` | 3 | 7 | — |
+| `group-aggregate-distinct-mini-batch` | 3 | 5 | 7 |
+
+Every program has an explicit selector. Qualified grouped contracts require applied nonempty
+canonical state import and new input in the same opened native grouped owner. Mini-batches
+additionally require new input in the native local stage. The agent records header batches only
+after successful JNI-backed import, excludes validation-only passes, and associates the native
+handle with the operator that subsequently opens. Unknown programs, unrelated Calc work,
+wrong/unopened handles, empty imports, missing stages and import-only or input-only execution
+cannot satisfy the proof. Canonical controls pass 162 Java cases and 51 independent Python
+report/parser cases. These protocol checks do not qualify other operator or connector variants.
 
 Use the normal released runner without editing upstream tests or fixtures:
 
@@ -1717,32 +1724,6 @@ CANONICAL_UPSTREAM_TESTS=org.apache.flink.table.planner.plan.nodes.exec.stream.G
   bin/canonical-savepoints.sh sql
 ```
 
-The operator's [string-state coverage and restore oracle](operators/group-by.md#canonical-string-extrema-partial)
-identify the live Java/binary string distinction and the remaining matrix. Benchmarking is deferred
-under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
-
-
-The scalar mini-batch extension additionally qualifies the unchanged released
-`group-aggregate-simple-mini-batch` program. Its contract is
-`@resume:NativeColumnarGroupAggregateOperator&&NativeColumnarLocalGroupAggregateOperator`: the
-global owner must apply a nonempty stock canonical import and process new input, and the local
-stage must also process new input. A local-only, global-only, empty, validation-only, wrong-handle
-or fallback observation cannot satisfy it. Java and Python validate the companion-clause grammar
-and independently enforce all required work. The actual released fixture records two imported
-global groups, two new global rows and three local input rows. These counts are distinct from
-the witness unit fixtures.
-
-The full released GROUP BY selection passes nine stock programs and three native programs,
-with six native DISTINCT/UDF failures retained. The whole selection remains red. The canonical
-witness selection passes 152 Java cases, and the Python report/parser controls pass 51 cases.
-Neither these protocol controls nor native Calc input qualify another state family. All broader
-#569 operator/connector/version requirements remain open; benchmarking remains deferred.
-
-
-The append SUM DISTINCT extension strengthens `group-aggregate-distinct` to require an actual
-canonical import and new input in `NativeColumnarGroupAggregateOperator`. Its unchanged released
-fixture passes with three applied stock groups and seven new native rows. The canonical agent
-selection passes 153 controls. All nine stock GROUP BY programs pass; four native programs pass
-and the five remaining local/global DISTINCT/UDF programs still fail their native gates. The
-whole native selection remains red. Original queries, fixtures and sink assertions remain
-unchanged, and unrelated native Calc work receives no aggregate-state credit.
+The [grouped-state coverage page](operators/group-by.md#canonical-localglobal-distinct-mini-batches-partial)
+records the exact scalar/view, type, backend and complete-job qualification. All broader #569
+operator/connector/version requirements remain open; benchmarking remains deferred.

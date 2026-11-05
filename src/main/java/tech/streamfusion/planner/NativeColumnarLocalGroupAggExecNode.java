@@ -31,6 +31,7 @@ public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch
   private final int[] keyColumns;
   private final int[] distinctViewSources;
   private final int[] keyTimestampPrecisions;
+  private boolean stockAppendDistinct;
 
   public NativeColumnarLocalGroupAggExecNode(
       ReadableConfig tableConfig,
@@ -97,23 +98,31 @@ public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     // The size trigger that caps the bundle, like Flink's CountBundleTrigger (mini-batch.size).
     long miniBatchSize = tech.streamfusion.compat.FlinkCompat.miniBatchSize(config);
+    var operator =
+        new NativeColumnarLocalGroupAggregateOperator(
+            aggregateKinds,
+            valueTypes,
+            valueColumns,
+            filterColumns,
+            keyColumns,
+            distinctViewSources,
+            keyTimestampPrecisions,
+            miniBatchSize,
+            auxiliaryColumns);
+    if (stockAppendDistinct) operator.withStockAppendDistinct();
     Transformation<ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
-            new NativeColumnarLocalGroupAggregateOperator(
-                aggregateKinds,
-                valueTypes,
-                valueColumns,
-                filterColumns,
-                keyColumns,
-                distinctViewSources,
-                keyTimestampPrecisions,
-                miniBatchSize,
-                auxiliaryColumns),
+            operator,
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);
     return transformation;
+  }
+
+  public NativeColumnarLocalGroupAggExecNode withStockAppendDistinct() {
+    this.stockAppendDistinct = true;
+    return this;
   }
 }

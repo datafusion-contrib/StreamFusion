@@ -1,6 +1,8 @@
 use super::*;
 
 #[cfg(test)]
+mod distinct_merge_tests;
+#[cfg(test)]
 mod distinct_sum_tests;
 mod ffi;
 #[cfg(test)]
@@ -28,7 +30,13 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 .iter()
                 .enumerate()
                 .any(|(i, &column)| column >= 0 && !(self.stock_global_merge && self.kinds[i] == 4))
-            || self.distinct_view_columns.iter().any(|&column| column >= 0)
+            || self
+                .distinct_view_columns
+                .iter()
+                .enumerate()
+                .any(|(slot, &column)| {
+                    column >= 0 && !(self.stock_global_merge && matches!(self.kinds[slot], 7 | 9))
+                })
             || !self.global_partials.is_empty()
             || self.staged_keys() != 0
             || !self.deferred_batches.is_empty()
