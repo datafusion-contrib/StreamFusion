@@ -58,6 +58,11 @@ public class NativeColumnarGroupAggExecNode extends ExecNodeBase<ArrowBatch>
     return true;
   }
 
+  public boolean hasStockDistinctState() {
+    for (int kind : aggregateKinds) if (kind == 7 || kind == 9) return true;
+    return false;
+  }
+
   public boolean hasStringExtrema() {
     for (int i = 0; i < aggregateKinds.length; i++)
       if (valueTypes[i] == 3

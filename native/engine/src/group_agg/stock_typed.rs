@@ -6,6 +6,8 @@ mod distinct_merge_tests;
 mod distinct_sum_tests;
 mod ffi;
 #[cfg(test)]
+mod index_tests;
+#[cfg(test)]
 mod merge_tests;
 #[cfg(test)]
 mod string_tests;
@@ -19,6 +21,16 @@ fn invalid(message: &str) -> DataFusionError {
 
 impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     fn typed_shape(&self) -> Result<(), DataFusionError> {
+        if self
+            .kinds
+            .iter()
+            .enumerate()
+            .any(|(slot, &kind)| matches!(kind, 7 | 9) && slot >= u8::MAX as usize)
+        {
+            return Err(invalid(
+                "DISTINCT aggregate index exceeds companion table encoding",
+            ));
+        }
         if self.kinds.is_empty()
             || self
                 .kinds

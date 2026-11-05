@@ -34,6 +34,7 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 public final class StockGroupDistinctView implements Serializable {
   private static final long serialVersionUID = 1L;
   private static final int CHUNK_ROWS = 1024;
+  private static final int MAX_COMPANION_ID = 255;
   private final String name;
   private final TypeSerializer<Object> valueKeys;
   private final TypeSerializer<Object> counters;
@@ -50,6 +51,11 @@ public final class StockGroupDistinctView implements Serializable {
       int[] aggregates,
       boolean counted) {
     if (aggregates.length == 0) throw new IllegalArgumentException("Empty DISTINCT view");
+    var seen = new java.util.HashSet<Integer>();
+    for (int aggregate : aggregates)
+      if (!supportsAggregateIndex(aggregate) || !seen.add(aggregate))
+        throw new IllegalArgumentException(
+            "DISTINCT companion tables require unique aggregate indices from 0 to 254");
     this.name = name;
     this.valueKeys = (TypeSerializer<Object>) valueKeys.duplicate();
     this.counters = (TypeSerializer<Object>) counters.duplicate();
@@ -60,6 +66,10 @@ public final class StockGroupDistinctView implements Serializable {
             new VarBinaryType(false, VarBinaryType.MAX_LENGTH),
             valueType.copy(true),
             new BigIntType(false));
+  }
+
+  public static boolean supportsAggregateIndex(int aggregate) {
+    return aggregate >= 0 && aggregate < MAX_COMPANION_ID;
   }
 
   @FunctionalInterface

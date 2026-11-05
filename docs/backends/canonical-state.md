@@ -1557,3 +1557,10 @@ retaining independent raw stock scalars. Private local Arrow views are transient
 the global owner before canonical barriers. Its released restore fixture, 120 state/recovery
 cases and 28 complete-job handoffs are qualified; see the [exact operator scope and remaining matrix](../operators/group-by.md#canonical-localglobal-distinct-mini-batches-partial).
 All fifteen families remain partial and benchmarking remains deferred.
+
+
+Canonical DISTINCT view bindings validate native companion indices before initialization and
+use stock fallback in SQL/compiled plans when those indices cannot fit the current encoding.
+The [operator admission boundary](../operators/group-by.md#native-companion-table-index-admission)
+distinguishes this table-ID limit from scalar-only row width; wider native companion layouts
+remain open under #569.

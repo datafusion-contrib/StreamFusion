@@ -1189,12 +1189,22 @@ impl GroupStateCodec {
 impl crate::state::RocksStateCodec for GroupStateCodec {
     type Value = GroupKeyState;
     fn supported(&self) -> bool {
-        crate::state::rocks_group_supported(&self.kinds, &self.value_types, &self.state_types)
+        self.multiset_aggs.iter().all(|&agg| agg < u8::MAX as usize)
+            && crate::state::rocks_group_supported(
+                &self.kinds,
+                &self.value_types,
+                &self.state_types,
+            )
     }
     fn multiset_tables(&self) -> Vec<(u8, DataType)> {
         self.multiset_aggs
             .iter()
-            .map(|&agg| (1 + agg as u8, self.element_type(agg)))
+            .map(|&agg| {
+                (
+                    u8::try_from(agg + 1).expect("supported companion table index"),
+                    self.element_type(agg),
+                )
+            })
             .collect()
     }
     fn multiset_null_is_value(&self, table: usize) -> bool {

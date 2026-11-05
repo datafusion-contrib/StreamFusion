@@ -95,3 +95,14 @@ and preserve both filter alignment and initialization presence. Local policy is 
 only for captured append stock contracts; ordinary native execution keeps its existing policy.
 No native snapshot intermediate or persisted format is introduced. The added JNI entry point
 configures a transient local owner and follows the existing guarded-handle ownership pattern.
+
+
+## Companion-table bounds
+
+The existing native grouped RocksDB format stores the aggregate ordinal plus one in a table
+byte; zero is the main table. Reject positions above 254 before binding a canonical DISTINCT
+view, and reject an unencodable codec before opening a database. Checked conversion prevents
+wrapping into unrelated state. Keep wide scalar-only schemas admissible because they have no
+companion IDs. SQL/compiled fallback uses the captured stock template and never advertises an
+unbound native envelope as a stock-compatible handoff. This preserves current native checkpoint
+bytes for supported layouts; expanding the encoding remains part of #569.

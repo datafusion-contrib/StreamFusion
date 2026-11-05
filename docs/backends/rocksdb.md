@@ -313,3 +313,11 @@ Previously admitted scalar schemas and bytes are unchanged; these MAP-bearing sh
 fell back. Updating Top-N/LIMIT and MAP-bearing updating join inputs still use stock execution until the retained-row
 contract in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437) is implemented.
 Join/partition/order/unique-key contracts remain separately checked.
+
+
+Grouped multiset companion tables reserve identifier zero for the main row and encode aggregate
+positions 0–254 as identifiers 1–255. The codec rejects larger companion positions before opening
+a database; it does not truncate an index into a different table. Scalar-only wide rows do not
+need companion IDs. Canonical DISTINCT planning falls back to the captured stock owner for an
+unencodable view layout; see [grouped-state admission](../operators/group-by.md#native-companion-table-index-admission).
+Wider native companion encoding remains pending in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

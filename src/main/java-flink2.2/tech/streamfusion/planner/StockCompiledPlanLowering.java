@@ -348,6 +348,8 @@ final class StockCompiledPlanLowering {
                   || node instanceof NativeColumnarGlobalWindowAggExecNode) return true;
               if (needsStringTemplate(node, graph) || needsGlobalGroupTemplate(node, graph))
                 return true;
+              if (node instanceof NativeColumnarGroupAggExecNode
+                  && ((NativeColumnarGroupAggExecNode) node).hasStockDistinctState()) return true;
               if (node instanceof NativeWindowRankExecNode)
                 return !((NativeWindowRankExecNode) node).isProcessingTime();
               if (node instanceof NativeColumnarTopNExecNode)
@@ -2023,7 +2025,9 @@ final class StockCompiledPlanLowering {
       int[] slots = new int[distinct.aggIndexes().size()];
       for (int i = 0; i < slots.length; i++) {
         Integer index = nativeIndices.get((Integer) distinct.aggIndexes().apply(i));
-        if (index == null || kinds[index] != 7 && kinds[index] != 9) return stock;
+        if (index == null
+            || !tech.streamfusion.state.StockGroupDistinctView.supportsAggregateIndex(index)
+            || kinds[index] != 7 && kinds[index] != 9) return stock;
         slots[i] = index;
       }
       views.add(

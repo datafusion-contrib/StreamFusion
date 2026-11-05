@@ -3586,3 +3586,28 @@ coverage. Shared Flink 1.18 processing/accounting/ownership checks pass 34 cases
 interchange on that line remains unqualified. Wider retractions, decimal/view/TTL semantics,
 schemas, connector delivery, failures and versions remain open under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+## Native companion-table index admission
+
+Native grouped multiset tables use a one-byte table identifier: zero holds the main group row,
+and aggregate positions 0 through 254 use companion identifiers 1 through 255. Canonical DISTINCT
+bindings reject negative, duplicate or larger aggregate positions before native initialization.
+Ordinary SQL and compiled plans retain the captured stock aggregate when a DISTINCT binding
+cannot fit this encoding. The RocksDB codec independently rejects an unencodable multiset layout
+before creating its database and uses checked identifier conversion. Scalar-only wide accumulators
+do not consume companion identifiers and are not rejected by this limit.
+
+Boundary controls qualify real RocksDB writes/reads and canonical header/view visits at the last
+valid position, plus rejection before database creation. Four released-planner cases cover the
+254/255 boundary in both submission forms; nine constructor checks cover invalid/duplicate/empty
+views and valid endpoints. The native suite passes 1,348 tests with two existing ignores, and
+193 planner/constructor plus 167 state/recovery/corruption/admission controls pass. The latter
+include the previous 120-case local/global DISTINCT state matrix; these cohorts overlap.
+The strengthened four-case fallback check verifies the actual released stock aggregate owner,
+not only its displayed name. One compiled, stock-first heap continuation job also passes on this
+library with custom source/committer state, both transposes and a clean stock worker; this smoke
+case overlaps the earlier complete-job matrix and does not requalify all 28 scenarios.
+This is validation of the current encoding, not arbitrary-width canonical interchange. Wider
+companion layouts remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
