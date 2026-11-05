@@ -439,6 +439,13 @@ impl MappedExtreme {
             .map_or_else(|| null_scalar(ty), |key| key.scalar(ty))
     }
 
+    pub(super) fn stock_selected(&self) -> Result<Option<i64>, DataFusionError> {
+        self.extreme
+            .as_ref()
+            .map(stock_extrema::encode_key)
+            .transpose()
+    }
+
     pub(super) fn clear_header(&mut self) {
         self.extreme = None;
         self.map_size = 0;
@@ -451,13 +458,12 @@ impl MappedExtreme {
             .copied()
     }
 
-    pub(super) fn restore_header(&mut self, selected: Option<i64>, size: i64) {
-        self.extreme = selected.map(MinMaxKey::I64);
+    pub(super) fn restore_header(&mut self, selected: Option<MinMaxKey>, size: i64) {
+        self.extreme = selected;
         self.map_size = size;
     }
 
-    pub(super) fn import_entry(&mut self, value: i64, count: i64, written: Option<i64>) {
-        let key = MinMaxKey::I64(value);
+    pub(super) fn import_entry(&mut self, key: MinMaxKey, count: i64, written: Option<i64>) {
         self.counts.insert(key.clone(), count);
         if let Some(written) = written {
             self.written

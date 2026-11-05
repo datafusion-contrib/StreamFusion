@@ -70,6 +70,29 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
       boolean integerKey,
       boolean global)
       throws Exception {
+    this(mode, rocks, ttl, beforePolicy, append, integerKey, global, "BIGINT");
+  }
+
+  @SuppressWarnings("unchecked")
+  GroupAggregateStockTestFixture(
+      String mode,
+      boolean rocks,
+      long ttl,
+      Boolean beforePolicy,
+      boolean append,
+      boolean integerKey,
+      boolean global,
+      String valueSqlType)
+      throws Exception {
+    if (!valueSqlType.equals("BIGINT")
+        && ((!mode.equals("extrema") && !mode.equals("counted-extrema")) || append))
+      throw new IllegalArgumentException("Typed fixture requires retracting extrema");
+    var valueType =
+        valueSqlType.startsWith("TIME(")
+            ? new org.apache.flink.table.types.logical.TimeType(
+                Integer.parseInt(valueSqlType.substring(5, valueSqlType.length() - 1)))
+            : org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                valueSqlType, GroupAggregateStockTestFixture.class.getClassLoader());
     this.ttl = ttl;
     keyColumns = global ? new int[0] : new int[] {0};
     maximum = global ? 1 : 128;
@@ -80,12 +103,12 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
                 ? RowType.of(
                     new org.apache.flink.table.types.logical.BigIntType(),
                     new org.apache.flink.table.types.logical.BigIntType())
-                : RowType.of(new org.apache.flink.table.types.logical.BigIntType()))
+                : RowType.of(valueType))
             : RowType.of(
                 integerKey
                     ? new org.apache.flink.table.types.logical.IntType()
                     : new org.apache.flink.table.types.logical.BigIntType(),
-                new org.apache.flink.table.types.logical.BigIntType());
+                valueType);
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "false");
     var table = NativePlannerTestEnvironment.create(config);
@@ -104,38 +127,44 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
     table.executeSql(
         "CREATE TABLE input_table(k "
             + keyType
-            + ",v BIGINT) WITH"
+            + ",v "
+            + valueSqlType
+            + ") WITH"
             + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready','insert-only'='"
             + append
             + "')");
     table.useCatalog("default_catalog");
     String fields =
-        mode.equals("hidden-extrema")
-            ? "SUM(v) AS c,AVG(v) AS d,MIN(v) AS e,MAX(v) AS f"
-            : mode.equals("arithmetic")
-                ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d"
-                : mode.equals("hidden")
-                    ? "SUM(v) AS c,AVG(v) AS d"
-                    : mode.equals("extrema")
-                        ? "MIN(v) AS a,MAX(v) AS b"
-                        : mode.equals("mixed-extrema")
-                            ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d,MIN(v) AS"
-                                  + " e,MAX(v) AS f"
-                            : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
+        mode.equals("counted-extrema")
+            ? "COUNT(v) AS a,MIN(v) AS b,MAX(v) AS c"
+            : mode.equals("hidden-extrema")
+                ? "SUM(v) AS c,AVG(v) AS d,MIN(v) AS e,MAX(v) AS f"
+                : mode.equals("arithmetic")
+                    ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d"
+                    : mode.equals("hidden")
+                        ? "SUM(v) AS c,AVG(v) AS d"
+                        : mode.equals("extrema")
+                            ? "MIN(v) AS a,MAX(v) AS b"
+                            : mode.equals("mixed-extrema")
+                                ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d,MIN(v) AS"
+                                    + " e,MAX(v) AS f"
+                                : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
     table.executeSql(
         "CREATE TABLE output_table("
             + (global ? "" : "k " + keyType + ",")
-            + (mode.equals("hidden-extrema")
-                ? "c BIGINT,d BIGINT,e BIGINT,f BIGINT"
-                : mode.equals("arithmetic")
-                    ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
-                    : mode.equals("hidden")
-                        ? "c BIGINT,d BIGINT"
-                        : mode.equals("extrema")
-                            ? "a BIGINT,b BIGINT"
-                            : mode.equals("mixed-extrema")
-                                ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT,e BIGINT,f BIGINT"
-                                : "a BIGINT")
+            + (mode.equals("counted-extrema")
+                ? "a BIGINT,b " + valueSqlType + ",c " + valueSqlType
+                : mode.equals("hidden-extrema")
+                    ? "c BIGINT,d BIGINT,e BIGINT,f BIGINT"
+                    : mode.equals("arithmetic")
+                        ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
+                        : mode.equals("hidden")
+                            ? "c BIGINT,d BIGINT"
+                            : mode.equals("extrema")
+                                ? "a " + valueSqlType + ",b " + valueSqlType
+                                : mode.equals("mixed-extrema")
+                                    ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT,e BIGINT,f BIGINT"
+                                    : "a BIGINT")
             + ") WITH ('connector'='blackhole')");
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var transforms =
@@ -218,6 +247,12 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
         countFields = append ? new int[] {-1, 2, -1, -1} : new int[] {1, 3, -1, -1};
         valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1, global ? 0 : 1, global ? 0 : 1};
         break;
+      case "counted-extrema":
+        kinds = new int[] {3, 38, 39};
+        scalarFields = new int[] {0, 1, 2};
+        countFields = new int[] {-1, -1, -1};
+        valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1, global ? 0 : 1};
+        break;
       case "extrema":
         kinds = append ? new int[] {10, 11} : new int[] {38, 39};
         scalarFields = new int[] {0, 1};
@@ -275,7 +310,8 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
           maps[i] = "agg" + i + "$map";
           mapKeys[i] =
               org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
-                  org.apache.flink.table.api.DataTypes.BIGINT().notNull());
+                  org.apache.flink.table.types.utils.DataTypeUtils.toInternalDataType(
+                      accumulatorType.getTypeAt(scalarFields[i]).getChildren().get(0).copy(false)));
           mapValues[i] =
               org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
                   org.apache.flink.table.api.DataTypes.BIGINT());
@@ -302,6 +338,39 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
         countFields,
         recordCountField,
         ttl > 0);
+  }
+
+  int[] valueTypes() {
+    var result = new int[kinds.length];
+    for (int i = 0; i < result.length; i++) {
+      if (valueColumns[i] < 0 || kinds[i] == 3) continue;
+      switch (inputType.getTypeAt(valueColumns[i]).getTypeRoot()) {
+        case BIGINT:
+          result[i] = 0;
+          break;
+        case INTEGER:
+          result[i] = 2;
+          break;
+        case SMALLINT:
+          result[i] = 4;
+          break;
+        case TINYINT:
+          result[i] = 5;
+          break;
+        case DATE:
+          result[i] = 8;
+          break;
+        case TIME_WITHOUT_TIME_ZONE:
+          result[i] = 9;
+          break;
+        case BOOLEAN:
+          result[i] = 10;
+          break;
+        default:
+          throw new IllegalArgumentException("Unqualified fixture value type");
+      }
+    }
+    return result;
   }
 
   static Object field(Object target, String name) throws Exception {

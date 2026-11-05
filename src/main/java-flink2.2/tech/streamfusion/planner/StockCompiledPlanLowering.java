@@ -1951,11 +1951,16 @@ final class StockCompiledPlanLowering {
     if (!global && !(keyRoot == LogicalTypeRoot.BIGINT || keyRoot == LogicalTypeRoot.INTEGER)
         || java.util.stream.IntStream.range(0, inputType.getFieldCount())
             .anyMatch(
-                i -> (global || i != keys[0]) && !inputType.getTypeAt(i).is(LogicalTypeRoot.BIGINT))
+                i ->
+                    (global || i != keys[0])
+                        && !tech.streamfusion.state.StockGroupExtremaStateContract
+                            .supportsValueType(inputType.getTypeAt(i)))
         || !global && outputType.getTypeAt(0).getTypeRoot() != keyRoot
         || outputType.getChildren().stream()
             .skip(keys.length)
-            .anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT))
+            .anyMatch(
+                type ->
+                    !tech.streamfusion.state.StockGroupExtremaStateContract.supportsValueType(type))
         || !(original.getStateKeySelector()
             instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector)) return stock;
     Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
@@ -1998,6 +2003,7 @@ final class StockCompiledPlanLowering {
     int size = infos.getActualAggregateInfos().length;
     if (size == 0) return stock;
     int[] kinds = new int[size],
+        valueTypes = new int[size],
         columns = new int[size],
         scalars = new int[size],
         counts = new int[size];
@@ -2077,7 +2083,10 @@ final class StockCompiledPlanLowering {
       if (width != fields
           || (kind != 3
               && (info.argIndexes().length != 1
-                  || !inputType.getTypeAt(info.argIndexes()[0]).is(LogicalTypeRoot.BIGINT))))
+                  || (kind == 38 || kind == 39
+                      ? !tech.streamfusion.state.StockGroupExtremaStateContract.supportsValueType(
+                          inputType.getTypeAt(info.argIndexes()[0]))
+                      : !inputType.getTypeAt(info.argIndexes()[0]).is(LogicalTypeRoot.BIGINT)))))
         return stock;
       if (kind == 38 || kind == 39) {
         if (info.viewSpecs().length != 1
@@ -2086,7 +2095,10 @@ final class StockCompiledPlanLowering {
         var view = (org.apache.flink.table.runtime.dataview.MapViewSpec) info.viewSpecs()[0];
         if (view.getFieldIndex() != 2
             || view.containsNullKey()
-            || !view.getKeyDataType().getLogicalType().is(LogicalTypeRoot.BIGINT)
+            || !view.getKeyDataType()
+                .getLogicalType()
+                .copy(true)
+                .equals(inputType.getTypeAt(info.argIndexes()[0]).copy(true))
             || !view.getValueDataType().getLogicalType().is(LogicalTypeRoot.BIGINT)) return stock;
         mapNames[actual] = view.getStateId();
         mapKeys[actual] =
@@ -2103,6 +2115,8 @@ final class StockCompiledPlanLowering {
                             view.getValueDataType()));
       } else if (info.viewSpecs().length != 0) return stock;
       kinds[actual] = kind;
+      if (kind == 38 || kind == 39)
+        valueTypes[actual] = typedGroupValueCode(inputType.getTypeAt(info.argIndexes()[0]));
       columns[actual] = countEveryRow || info.argIndexes().length == 0 ? -1 : info.argIndexes()[0];
       scalars[actual] = slot;
       if (fields == 2) counts[actual] = slot + 1;
@@ -2163,7 +2177,7 @@ final class StockCompiledPlanLowering {
                 outputType,
                 "NativeColumnarGroupAggregate",
                 kinds,
-                new int[size],
+                valueTypes,
                 columns,
                 keys,
                 new int[0],

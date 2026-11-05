@@ -5,6 +5,39 @@ mod transfer;
 
 pub(super) const STOCK_ABSENT_ACCUMULATOR: &str = "stock_absent_accumulator";
 
+// A lossless transport carrier only; stock state retains the captured logical serializers.
+pub(super) fn encode_key(key: &MinMaxKey) -> Result<i64, DataFusionError> {
+    match key {
+        MinMaxKey::I64(value) => Ok(*value),
+        MinMaxKey::I32(value) | MinMaxKey::Date(value) | MinMaxKey::Time(value) => {
+            Ok(i64::from(*value))
+        }
+        MinMaxKey::I16(value) => Ok(i64::from(*value)),
+        MinMaxKey::I8(value) => Ok(i64::from(*value)),
+        MinMaxKey::Boolean(value) => Ok(i64::from(*value)),
+        _ => Err(DataFusionError::Execution(
+            "unsupported stock extrema key type".into(),
+        )),
+    }
+}
+
+fn decode_key(value: i64, ty: &DataType) -> Result<MinMaxKey, DataFusionError> {
+    let invalid =
+        || DataFusionError::Execution("stock extrema key outside its logical type".into());
+    Ok(match ty {
+        DataType::Int64 => MinMaxKey::I64(value),
+        DataType::Int32 => MinMaxKey::I32(value.try_into().map_err(|_| invalid())?),
+        DataType::Int16 => MinMaxKey::I16(value.try_into().map_err(|_| invalid())?),
+        DataType::Int8 => MinMaxKey::I8(value.try_into().map_err(|_| invalid())?),
+        DataType::Date32 => MinMaxKey::Date(value.try_into().map_err(|_| invalid())?),
+        DataType::Time32(arrow::datatypes::TimeUnit::Millisecond) => {
+            MinMaxKey::Time(value.try_into().map_err(|_| invalid())?)
+        }
+        DataType::Boolean if value == 0 || value == 1 => MinMaxKey::Boolean(value == 1),
+        _ => return Err(invalid()),
+    })
+}
+
 impl GroupKeyState {
     pub(super) fn expire_stock_accumulator(&mut self, kinds: &[i64], types: &[DataType]) -> bool {
         for (index, aggregate) in self.aggs.iter_mut().enumerate() {
@@ -31,7 +64,22 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             || kinds
                 .iter()
                 .any(|kind| !matches!(kind, 0 | 3 | 4 | 22 | 38 | 39))
-            || self.value_types.iter().any(|ty| *ty != DataType::Int64)
+            || self.kinds.iter().zip(&self.value_types).any(|(kind, ty)| {
+                if matches!(kind, 38 | 39) {
+                    !matches!(
+                        ty,
+                        DataType::Int64
+                            | DataType::Int32
+                            | DataType::Int16
+                            | DataType::Int8
+                            | DataType::Date32
+                            | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                            | DataType::Boolean
+                    )
+                } else {
+                    *ty != DataType::Int64
+                }
+            })
             || self.mini_batch
             || self.stock_append_only == Some(true)
             || self.record_count_column >= 0
@@ -45,7 +93,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             || !self.deferred_batches.is_empty()
         {
             return Err(DataFusionError::Execution(
-                "stock MIN/MAX requires qualified per-record retracting BIGINT state".into(),
+                "stock MIN/MAX requires qualified per-record retracting state".into(),
             ));
         }
         self.stock_extrema = true;

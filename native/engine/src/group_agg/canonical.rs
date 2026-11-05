@@ -40,7 +40,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         if self.kinds.iter().any(|kind| matches!(kind, 10 | 11))
             && self.stock_append_only != Some(true)
         {
-            return Err(invalid("scalar MIN/MAX requires the append-only stock contract"));
+            return Err(invalid(
+                "scalar MIN/MAX requires the append-only stock contract",
+            ));
         }
         Ok(())
     }
@@ -106,7 +108,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 return Err(invalid("malformed or duplicate group metadata"));
             }
             for (i, kind) in self.kinds.iter().enumerate() {
-                if values[3 + 2 * i].is_null(row) || (!matches!(kind, 0 | 10 | 11) && values[2 + 2 * i].is_null(row))
+                if values[3 + 2 * i].is_null(row)
+                    || (!matches!(kind, 0 | 10 | 11) && values[2 + 2 * i].is_null(row))
                 {
                     return Err(invalid("NULL in a required accumulator field"));
                 }
@@ -211,8 +214,10 @@ pub(super) fn transfer_batch(
         for (_, state) in entries {
             let (scalar, count) = match &state.aggs[i] {
                 GroupAggState::Running { agg, non_null } => (agg.emit(), *non_null),
-                GroupAggState::Mapped(mapped) if !append_only && matches!(kind, 38 | 39) =>
-                    (mapped.selected(&DataType::Int64), mapped.map_size),
+                GroupAggState::Mapped(mapped) if !append_only && matches!(kind, 38 | 39) => (
+                    ScalarValue::Int64(mapped.stock_selected()?),
+                    mapped.map_size,
+                ),
                 _ => return Err(invalid("unexpected retained aggregate state")),
             };
             let ScalarValue::Int64(value) = scalar else {

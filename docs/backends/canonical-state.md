@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, BIGINT append/retract MIN/MAX, typed scalar/shared COUNT DISTINCT and append date/time/boolean extrema | Wider types/keys, retracting typed extrema, other views/phases and failures |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT, append date/time/boolean extrema and integral/date/time/boolean retracting MIN/MAX | Wider types/keys, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -1485,3 +1485,15 @@ Its separate 194-control and 32-job cohorts qualify the precise subset on the
 [GROUP BY page](../operators/group-by.md#canonical-date-time-and-boolean-extrema-partial), with
 32 rejection/plan controls and 34 shared Flink 1.18 processing regressions kept separate.
 Retraction/view, type/precision and broader failure/version coverage remain open under #569.
+
+
+The structured retracting MIN/MAX adapter additionally binds integral, date, time and boolean
+cached selections and retained map keys. Its bounded transport uses a lossless internal long
+carrier while stock state retains the exact captured logical serializers and boxed values.
+Independent cached selections, map-size counters, signed frequencies and original write ages
+survive canonical and native-checkpoint recovery. The consolidated 1,232-check cohort, seven
+initial compiled/memory/stock-first complete jobs and 34 shared processing regressions pass;
+the full 28-case SMALLINT job class also passes while the other six classes in the larger
+complete-job matrix remain pending. See the [typed retracting scope and test
+boundaries](../operators/group-by.md#typed-retracting-canonical-extrema-partial). Wider types,
+keys, views/phases and full connector/failure/version coverage remain unfinished under #569.

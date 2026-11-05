@@ -88,9 +88,7 @@ fn visit_chunk(
                 continue;
             };
             for (value, count) in &mapped.counts {
-                let MinMaxKey::I64(number) = value else {
-                    return Err(invalid("non-BIGINT map key"));
-                };
+                let number = encode_key(value)?;
                 let written = if ttl {
                     mapped
                         .entry_written(value)
@@ -98,7 +96,7 @@ fn visit_chunk(
                 } else {
                     0
                 };
-                entries.push((key, index as i64, *number, *count, written));
+                entries.push((key, index as i64, number, *count, written));
                 if entries.len() == CHUNK_ROWS {
                     receiver(FrameKind::Entries, entry_batch(&entries)?)?;
                     entries.clear();
@@ -209,6 +207,9 @@ impl GroupAggregator {
                 if count.is_null(row) || !nullable && value.is_null(row) {
                     return Err(invalid("NULL in a required header field"));
                 }
+                if matches!(kind, 38 | 39) && !value.is_null(row) {
+                    decode_key(value.value(row), &self.value_types[index])?;
+                }
                 if !present.value(row)
                     && (count.value(row) != 0
                         || nullable && !value.is_null(row)
@@ -222,6 +223,7 @@ impl GroupAggregator {
             return Ok(());
         }
         self.snapshot_cache = None;
+        let value_types = self.value_types.clone();
         for row in 0..batch.num_rows() {
             let state = self.create(ByteKey::from(keys.value(row)));
             state.accumulator_present = present.value(row);
@@ -236,7 +238,12 @@ impl GroupAggregator {
                         agg.restore_value(&ScalarValue::Int64(value));
                         *non_null = count;
                     }
-                    GroupAggState::Mapped(mapped) => mapped.restore_header(value, count),
+                    GroupAggState::Mapped(mapped) => mapped.restore_header(
+                        value
+                            .map(|value| decode_key(value, &value_types[index]))
+                            .transpose()?,
+                        count,
+                    ),
                     _ => return Err(invalid("unexpected aggregate header state")),
                 }
             }
@@ -286,14 +293,12 @@ impl GroupAggregator {
             {
                 return Err(invalid("invalid or duplicate map entry"));
             }
+            let key = decode_key(fields[1].value(row), &self.value_types[index])?;
             if let Some(state) = self.store.get(keys.value(row)) {
                 let GroupAggState::Mapped(mapped) = &state.aggs[index] else {
                     return Err(invalid("unexpected map state"));
                 };
-                if mapped
-                    .counts
-                    .contains_key(&MinMaxKey::I64(fields[1].value(row)))
-                {
+                if mapped.counts.contains_key(&key) {
                     return Err(invalid("map entry already exists"));
                 }
             } else if !validating {
@@ -305,6 +310,7 @@ impl GroupAggregator {
         }
         self.snapshot_cache = None;
         let ttl = self.ttl_ms > 0;
+        let value_types = self.value_types.clone();
         for row in 0..batch.num_rows() {
             let state = self.store.get_mut(keys.value(row)).unwrap();
             let before = group_key_state_bytes(state);
@@ -313,7 +319,10 @@ impl GroupAggregator {
                 unreachable!()
             };
             mapped.import_entry(
-                fields[1].value(row),
+                decode_key(
+                    fields[1].value(row),
+                    &value_types[fields[0].value(row) as usize],
+                )?,
                 fields[2].value(row),
                 ttl.then(|| fields[3].value(row)),
             );
@@ -328,6 +337,9 @@ impl GroupAggregator {
 
 #[cfg(test)]
 mod import_tests;
+
+#[cfg(test)]
+mod typed_tests;
 
 #[cfg(test)]
 mod tests {

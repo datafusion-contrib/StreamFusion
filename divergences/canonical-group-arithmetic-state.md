@@ -58,3 +58,19 @@ aggregate calls retains its stock owner. Additional schemas/keys/phases,
 other state-backed data views and full version/connector/failure/delivery coverage
 remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is
 explicitly deferred by the maintainer.
+
+
+The structured extrema projection also captures INT/SMALLINT/TINYINT, DATE/TIME and BOOLEAN
+value contracts. This extends the existing operator and transfer instead of introducing a second
+snapshot format. Existing bounded long fields are lossless carriers for these values; Java
+reconstructs their exact boxed stock values and uses the original serializers for both headers
+and MapViews. Import checks each carrier's range and BOOLEAN domain before mutation. No type,
+serializer or bookkeeping is inferred from an emitted SQL result. Flink 2.2.1's resolved TIME
+precision is zero even for declared TIME(3), and that stock metadata remains authoritative.
+
+Arroyo's sliding accumulator and retained membership separation remains the reference, while
+Flink's signed counts, independently expiring views and hidden cache semantics define the state
+contract. Comet's moved C Data ownership and exception propagation remain unchanged. Memory and
+raw keyed RocksDB visit live state directly; existing ordinary checkpoint formats are unchanged.
+This wider extrema binding still excludes composite keys, other retained types/views/phases and
+the full connector/failure/version matrix. Benchmarking stays deferred under #569.

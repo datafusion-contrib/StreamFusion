@@ -68,7 +68,7 @@ class CanonicalRetractingExtremaValidationTest {
   @MethodSource("invalidSources")
   void completeValidationKeepsCorruptSourceAndEmptyNativeTarget(
       String mode, boolean rocks, long ttl, String reason) throws Exception {
-    try (var fixture = new GroupAggregateStockTestFixture(mode, rocks, ttl, true, false);
+    try (var fixture = fixture(mode, rocks, ttl);
         var source = new Projection(fixture, rocks)) {
       int groups = reason.startsWith("late") ? 1025 : 1;
       for (int i = 0; i < groups; i++) source.put(i, header(fixture, false, false), 1L);
@@ -80,7 +80,8 @@ class CanonicalRetractingExtremaValidationTest {
         bad.setField(
             (int) GroupAggregateStockTestFixture.field(source.contract, "recordCountField"), null);
         source.state.update(source.wrap(bad));
-      } else if (reason.equals("late-null-view")) source.maps[source.firstMap].put(7L, null);
+      } else if (reason.equals("late-null-view"))
+        source.maps[source.firstMap].put(value(fixture, 7), null);
       else if (reason.equals("bad-placeholder"))
         source.state.update(source.wrap(header(fixture, true, false)));
       else if (reason.equals("row-kind"))
@@ -119,7 +120,7 @@ class CanonicalRetractingExtremaValidationTest {
   void deniedImportRetainsAllHeadersAndViewsForFreshRetry(String mode, boolean rocks, long ttl)
       throws Exception {
     String handles = Native.liveNativeHandles();
-    try (var fixture = new GroupAggregateStockTestFixture(mode, rocks, ttl, true, false);
+    try (var fixture = fixture(mode, rocks, ttl);
         var source = new Projection(fixture, rocks)) {
       for (int i = 0; i < 1025; i++) source.put(i, header(fixture, false, false), 1L);
       var expected = source.bytes();
@@ -163,16 +164,18 @@ class CanonicalRetractingExtremaValidationTest {
   void receiverFailurePreservesExceptionAndLiveState(
       String mode, boolean rocks, long ttl, boolean entries) throws Exception {
     String handles = Native.liveNativeHandles();
-    try (var reference = new GroupAggregateStockTestFixture(mode, rocks, ttl, true, false);
+    try (var reference = fixture(mode, rocks, ttl);
         var target = nativeHarness(reference, rocks)) {
       reference.harness.open();
       target.open();
       assertEquals(
-          stockStep(reference, row(1L, 7L, 0), 1000),
-          nativeStep(target, row(1L, 7L, 0), 1000, reference.outputType));
+          stockStep(reference, input(reference, 7, 0), 1000),
+          nativeStep(
+              target, input(reference, 7, 0), 1000, reference.outputType, reference.inputType));
       assertEquals(
-          stockStep(reference, row(1L, 4L, 0), 1500),
-          nativeStep(target, row(1L, 4L, 0), 1500, reference.outputType));
+          stockStep(reference, input(reference, 4, 0), 1500),
+          nativeStep(
+              target, input(reference, 4, 0), 1500, reference.outputType, reference.inputType));
       var owner = (DirectGroup) target.getOperator();
       var sentinel = new IllegalArgumentException("extrema receiver sentinel");
       Native.BatchReceiver fail =
@@ -199,20 +202,65 @@ class CanonicalRetractingExtremaValidationTest {
                       owner.persistent(),
                       entries ? consume : fail,
                       entries ? fail : consume)));
-      assertState(reference, snapshot(target), mode, rocks, ttl, true, false);
+      assertProjectedState(reference, snapshot(target), mode, rocks, ttl);
       assertEquals(
-          stockStep(reference, row(1L, 7L, 3), 1600),
-          nativeStep(target, row(1L, 7L, 3), 1600, reference.outputType));
-      assertState(reference, snapshot(target), mode, rocks, ttl, true, false);
+          stockStep(reference, input(reference, 7, 3), 1600),
+          nativeStep(
+              target, input(reference, 7, 3), 1600, reference.outputType, reference.inputType));
+      assertProjectedState(reference, snapshot(target), mode, rocks, ttl);
     }
     assertEquals(handles, Native.liveNativeHandles());
+  }
+
+  GroupAggregateStockTestFixture fixture(String mode, boolean rocks, long ttl) throws Exception {
+    return new GroupAggregateStockTestFixture(mode, rocks, ttl, true, false);
+  }
+
+  private void assertProjectedState(
+      GroupAggregateStockTestFixture reference,
+      org.apache.flink.runtime.checkpoint.OperatorSubtaskState saved,
+      String mode,
+      boolean rocks,
+      long ttl)
+      throws Exception {
+    try (var returned = fixture(mode, rocks, ttl)) {
+      returned.harness.initializeState(saved);
+      returned.harness.open();
+      assertEquals(reference.rawStateBytes(), returned.rawStateBytes());
+    }
+  }
+
+  private static Object value(GroupAggregateStockTestFixture fixture, long number) {
+    switch (fixture.inputType.getTypeAt(1).getTypeRoot()) {
+      case BIGINT:
+        return number;
+      case INTEGER:
+      case DATE:
+        return Math.toIntExact(number);
+      case TIME_WITHOUT_TIME_ZONE:
+        return Math.toIntExact(number * 1000);
+      case SMALLINT:
+        return (short) number;
+      case TINYINT:
+        return (byte) number;
+      case BOOLEAN:
+        return number > 5;
+      default:
+        throw new IllegalArgumentException("Unqualified extrema fixture type");
+    }
+  }
+
+  private static RowData input(GroupAggregateStockTestFixture fixture, long number, int kind) {
+    var row = GenericRowData.of(1L, value(fixture, number));
+    row.setRowKind(org.apache.flink.types.RowKind.fromByteValue((byte) kind));
+    return row;
   }
 
   private long create(GroupAggregateStockTestFixture fixture, long budget) {
     int[] empty = new int[0];
     return Native.createGroupAggregator(
         fixture.kinds,
-        new int[fixture.kinds.length],
+        fixture.valueTypes(),
         fixture.valueColumns,
         new int[] {0},
         new int[] {Native.STOCK_KEY_PROJECTION, -1},
@@ -237,7 +285,9 @@ class CanonicalRetractingExtremaValidationTest {
         row.setField(
             fixture.scalarFields[i],
             GenericRowData.of(
-                7L, 1L, badPlaceholder ? null : BinaryRawValueData.fromBytes(new byte[] {0})));
+                value(fixture, 7),
+                1L,
+                badPlaceholder ? null : BinaryRawValueData.fromBytes(new byte[] {0})));
       else row.setField(fixture.scalarFields[i], fixture.kinds[i] == 22 ? 7L : 1L);
       if (fixture.countFields[i] >= 0) row.setField(fixture.countFields[i], 1L);
     }
@@ -251,7 +301,7 @@ class CanonicalRetractingExtremaValidationTest {
     final StockStateContract contract;
     final GroupAggregateStockTestFixture fixture;
     final ValueState<Object> state;
-    final MapState<Long, Object>[] maps;
+    final MapState<Object, Object>[] maps;
     final int firstMap;
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -285,7 +335,7 @@ class CanonicalRetractingExtremaValidationTest {
               VoidNamespace.INSTANCE,
               VoidNamespaceSerializer.INSTANCE,
               new ValueStateDescriptor<>("accState", (TypeSerializer<Object>) values));
-      maps = (MapState<Long, Object>[]) new MapState<?, ?>[fixture.kinds.length];
+      maps = (MapState<Object, Object>[]) new MapState<?, ?>[fixture.kinds.length];
       var names = (String[]) GroupAggregateStockTestFixture.field(contract, "mapNames");
       var keySerializers =
           (TypeSerializer<?>[]) GroupAggregateStockTestFixture.field(contract, "mapKeySerializers");
@@ -306,7 +356,7 @@ class CanonicalRetractingExtremaValidationTest {
                   VoidNamespaceSerializer.INSTANCE,
                   new MapStateDescriptor<>(
                       names[i],
-                      (TypeSerializer<Long>) keySerializers[i],
+                      (TypeSerializer<Object>) keySerializers[i],
                       (TypeSerializer<Object>) serializer));
         }
       firstMap = first;
@@ -319,7 +369,7 @@ class CanonicalRetractingExtremaValidationTest {
     void put(long key, RowData header, Long count) throws Exception {
       backend.setCurrentKey(fixture.selector.getKey(row(key, 7L, 0)));
       state.update(wrap(header));
-      for (var map : maps) if (map != null) map.put(7L, wrap(count));
+      for (var map : maps) if (map != null) map.put(value(fixture, 7), wrap(count));
     }
 
     List<RowData> keys() throws Exception {

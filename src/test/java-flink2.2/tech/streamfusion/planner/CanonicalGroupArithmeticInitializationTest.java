@@ -405,7 +405,7 @@ class CanonicalGroupArithmeticInitializationTest {
     DirectGroup(GroupAggregateStockTestFixture fixture, boolean persistent) {
       super(
           fixture.kinds,
-          new int[fixture.kinds.length],
+          fixture.valueTypes(),
           fixture.valueColumns,
           fixture.keyColumns,
           new int[0],
@@ -420,7 +420,7 @@ class CanonicalGroupArithmeticInitializationTest {
           fixture.maximum);
       this.persistent = persistent;
       this.direct = persistent && tech.streamfusion.Native.rocksdbGroupAggregatorSupported(
-          fixture.kinds, new int[fixture.kinds.length]);
+          fixture.kinds, fixture.valueTypes());
     }
 
     long address() {

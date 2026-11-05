@@ -43,6 +43,7 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
   private final TypeSerializer<RowData> keys;
   private final RowType keyType, accumulatorType, headerType, entryType;
   private final int[] kinds, scalarFields, countFields;
+  private final LogicalType[] valueTypes;
   private final String[] mapNames;
   private final TypeSerializer<?>[] mapKeySerializers, mapValueSerializers;
   private final int recordCountField;
@@ -71,6 +72,7 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
     this.mapValueSerializers = mapValueSerializers.clone();
     this.recordCountField = recordCountField;
     this.ttl = ttl;
+    this.valueTypes = new LogicalType[kinds.length];
     if (kinds.length == 0
         || kinds.length != scalarFields.length
         || kinds.length != countFields.length
@@ -97,7 +99,7 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
         var children = accumulatorType.getTypeAt(scalarFields[i]).getChildren();
         if (!(accumulatorType.getTypeAt(scalarFields[i]) instanceof StructuredType)
             || children.size() != 3
-            || !children.get(0).is(LogicalTypeRoot.BIGINT)
+            || !supportsValueType(children.get(0))
             || !children.get(1).is(LogicalTypeRoot.BIGINT)
             || !(children.get(2) instanceof RawType)
             || !((RawType<?>) children.get(2))
@@ -113,6 +115,7 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
             || mapValueSerializers[i] == null
             || !names.add(mapNames[i]))
           throw new IllegalArgumentException("Invalid released extrema accumulator or map binding");
+        valueTypes[i] = children.get(0);
         this.mapKeySerializers[i] = mapKeySerializers[i].duplicate();
         this.mapValueSerializers[i] = mapValueSerializers[i].duplicate();
       } else {
@@ -140,6 +143,63 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
             new BigIntType(false),
             new BigIntType(false),
             new BigIntType(false));
+  }
+
+  public static boolean supportsValueType(LogicalType type) {
+    switch (type.getTypeRoot()) {
+      case BIGINT:
+      case INTEGER:
+      case SMALLINT:
+      case TINYINT:
+      case DATE:
+      case TIME_WITHOUT_TIME_ZONE:
+      case BOOLEAN:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  private static long toCarrier(Object value, LogicalType type) {
+    switch (type.getTypeRoot()) {
+      case BIGINT:
+        return (Long) value;
+      case INTEGER:
+      case DATE:
+      case TIME_WITHOUT_TIME_ZONE:
+        return (Integer) value;
+      case SMALLINT:
+        return (Short) value;
+      case TINYINT:
+        return (Byte) value;
+      case BOOLEAN:
+        return (Boolean) value ? 1L : 0L;
+      default:
+        throw new IllegalStateException("Unsupported extrema value type");
+    }
+  }
+
+  private static Object fromCarrier(long value, LogicalType type) {
+    switch (type.getTypeRoot()) {
+      case BIGINT:
+        return value;
+      case INTEGER:
+      case DATE:
+      case TIME_WITHOUT_TIME_ZONE:
+        return Math.toIntExact(value);
+      case SMALLINT:
+        if (value >= Short.MIN_VALUE && value <= Short.MAX_VALUE) return (short) value;
+        break;
+      case TINYINT:
+        if (value >= Byte.MIN_VALUE && value <= Byte.MAX_VALUE) return (byte) value;
+        break;
+      case BOOLEAN:
+        if (value == 0 || value == 1) return value == 1;
+        break;
+      default:
+        break;
+    }
+    throw new IllegalStateException("Extrema carrier outside its logical type");
   }
 
   private static boolean mapped(int kind) {
@@ -176,16 +236,16 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
   }
 
   @SuppressWarnings("unchecked")
-  private StockMapState<Long, Long>[] maps(CheckpointableKeyedStateBackend<RowData> backend)
+  private StockMapState<Object, Long>[] maps(CheckpointableKeyedStateBackend<RowData> backend)
       throws Exception {
-    var states = (StockMapState<Long, Long>[]) new StockMapState<?, ?>[kinds.length];
+    var states = (StockMapState<Object, Long>[]) new StockMapState<?, ?>[kinds.length];
     for (int i = 0; i < kinds.length; i++)
       if (mapped(kinds[i]))
         states[i] =
             new StockMapState<>(
                 backend,
                 mapNames[i],
-                (TypeSerializer<Long>) mapKeySerializers[i],
+                (TypeSerializer<Object>) mapKeySerializers[i],
                 (TypeSerializer<Long>) mapValueSerializers[i],
                 ttl);
     return states;
@@ -323,7 +383,7 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
                           assigned,
                           scalarFields[i],
                           GenericRowData.of(
-                              value,
+                              value == null ? null : fromCarrier(value, valueTypes[i]),
                               row.getLong(4 + 2 * i),
                               BinaryRawValueData.fromBytes(new byte[] {0})));
                     else {
@@ -346,7 +406,10 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
                   if (index < 0 || index >= maps.length || maps[index] == null)
                     throw new IllegalStateException("Unbound extrema view");
                   backend.setCurrentKey(decode(row.getBinary(0)));
-                  maps[index].put(row.getLong(2), row.getLong(3), row.getLong(4));
+                  maps[index].put(
+                      fromCarrier(row.getLong(2), valueTypes[index]),
+                      row.getLong(3),
+                      row.getLong(4));
                 }));
   }
 
@@ -401,7 +464,13 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
           row.setField(4 + 2 * i, 0L);
         } else if (mapped(kinds[i])) {
           var nested = accumulator.getRow(scalarFields[i], 3);
-          row.setField(3 + 2 * i, nested.isNullAt(0) ? null : nested.getLong(0));
+          row.setField(
+              3 + 2 * i,
+              nested.isNullAt(0)
+                  ? null
+                  : toCarrier(
+                      RowData.createFieldGetter(valueTypes[i], 0).getFieldOrNull(nested),
+                      valueTypes[i]));
           row.setField(4 + 2 * i, nested.getLong(1));
         } else {
           row.setField(
@@ -426,7 +495,7 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
 
   private void visitEntries(
       CheckpointableKeyedStateBackend<RowData> backend,
-      StockMapState<Long, Long>[] maps,
+      StockMapState<Object, Long>[] maps,
       List<RowData> source,
       long handle,
       boolean persistent,
@@ -447,7 +516,7 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
                 GenericRowData.of(
                     encoded,
                     (long) i,
-                    entry.getKey(),
+                    toCarrier(entry.getKey(), valueTypes[i]),
                     entry.getValue().getUserValue(),
                     entry.getValue().getLastAccessTimestamp()));
             if (rows.size() == CHUNK_ROWS) {

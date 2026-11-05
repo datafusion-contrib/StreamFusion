@@ -3201,8 +3201,8 @@ the generated inner count uses Count1.
 
 The scalar projection accepts TINYINT, SMALLINT, INT, BIGINT, FLOAT and DOUBLE accumulator fields
 for the supported built-in COUNT/SUM0/SUM/AVG and append-only MIN/MAX layouts. Input-record and
-intermediate counts must be BIGINT. Retraction-capable MIN/MAX continue to use the preceding
-structured BIGINT adapter. Decimal accumulator rows, UDF views, other DISTINCT aggregates,
+intermediate counts must be BIGINT. Retraction-capable MIN/MAX use the independent structured header/MapView contract;
+its additional integral, date, time and boolean binding is described below. Decimal accumulator rows, UDF views, other DISTINCT aggregates,
 mini-batch/two-phase owners, asynchronous/unaligned state and DISTINCT with entry TTL are outside
 this new binding. Unsupported compiled contracts retain stock owners. An unbound ordinary native
 plan can retain its StreamFusion envelope and has no stock-interchange qualification.
@@ -3250,7 +3250,9 @@ BOOLEAN scalar state. The existing native fold already retains these values as t
 the stock contract now accepts their actual accumulator types without allowing them as SUM, AVG
 or COUNT fields. Stock identities, key/namespace serializers, field positions and generated
 accumulator schemas still come from the released Flink 2.2.1 owner. TIME uses Flink's physical
-millisecond integer while retaining its original logical precision in stock metadata.
+millisecond integer and the resolved stock logical type. Released Flink 2.2.1's planner
+normalizes SQL TIME precision to zero, including declarations of TIME(3); the adapter preserves
+that actual contract.
 
 Both memory and direct RocksDB state use the existing bounded live transfer. No new native
 snapshot, JNI representation or value-reconstruction step is introduced. NULL extrema, false
@@ -3275,7 +3277,67 @@ expected counts and extrema. TIME job inputs use whole seconds, while the state 
 millisecond values and DATE extremes. Shared Flink 1.18 compilation/processing regressions pass
 34 checks; they do not qualify canonical interchange there. Cohorts overlap and are not summed.
 
-Other TIME precisions, decimal accumulators, retracting extrema outside the preceding BIGINT
-contract, additional views/phases, TTL combinations and the wider job/rescale/failure/version
+Other TIME declarations, decimal accumulators, retracting extrema outside the structured
+contract below, additional views/phases, TTL combinations and the wider job/rescale/failure/version
 matrix remain unfinished under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+
+## Typed retracting canonical extrema (partial)
+
+Ordinary SQL and portable stock plans bind single-phase retracting MIN/MAX for BIGINT, INT,
+SMALLINT, TINYINT, DATE, TIME and BOOLEAN. The grouping contract remains one INT/BIGINT key or
+a global singleton. Actual generated accumulator fields, hidden record counts, MapView IDs,
+serializers, TTL policy, stock identities and maximum parallelism come from the released owner.
+The captured TIME schema uses the released planner's resolved precision zero; declared TIME(0)
+and TIME(3) queries are tested separately. Arithmetic slots sharing this contract remain BIGINT.
+Other schemas, composite keys, DISTINCT/views, aggregate phases and asynchronous/unaligned owners
+remain outside this structured binding.
+
+Each cached selection and map-size counter remains independent of the retained value-to-signed-
+count map. Negative and zero counts, independently written map entries, a cached selection hidden
+by a zero map size, and orphan views whose accumulator expired are preserved directly. Import does
+not derive one piece from another or replay input. The generated RAW placeholder retains its
+non-null one-byte NullSerializer payload.
+
+Both native memory and raw keyed RocksDB use the existing bounded header/entry transfer. An
+internal signed-long carrier holds integral values, epoch days, millisecond times or BOOLEAN 0/1
+losslessly; it is not the savepoint's value type. The writer converts each carrier back to the
+actual boxed Flink value and uses the captured stock serializer. Native import rejects out-of-
+range narrow integers and invalid BOOLEAN carriers before mutation. Existing native checkpoint
+formats, C Data ownership and the stock canonical container remain unchanged. Export reads live
+state directly, without an intermediate native snapshot.
+
+The consolidated 1,232-check cohort passes 128 repeated-switch cases with and without visible
+COUNT(value), sixteen native-checkpoint returns, 144 independent-cache/orphan-view cases, 384
+typed planner cases, 256 corruption/resource/callback cases and 304 existing BIGINT regressions.
+The lifecycle matrix covers eight SQL type declarations, both native stores and starting orders,
+TTL on/off, no-input canonical re-export, complete raw stock state bytes and exact per-record
+changelogs. Visible COUNT(value) and the hidden record count retain separate null/bookkeeping
+semantics. The export guards reject native snapshot/checkpoint calls. Planner checks cover both
+submission forms, BIGINT/INT/global keys, both UID policies and TTL on/off. The new native library
+passes all 1,317 native tests with two existing ignores, including checked carrier ranges, typed
+checkpoint continuation and cross-chunk duplicate rejection. Earlier overlapping cohorts are not
+added to these totals.
+
+Seven isolated complete-job cases pass, one each for INT/SMALLINT/TINYINT/DATE/TIME(0)/TIME(3)/BOOLEAN.
+These initial cases use compiled plans, native memory and stock-first repeated switches. They
+retain actual native processing, both transposes, custom source/committing-sink state, clean stock
+workers and exact external changelogs against stock plus an independent logical multiset oracle.
+Their BIGINT CSV inputs are converted by stock SQL to the actual typed accumulator/view values;
+output projection to BIGINT only serves the unchanged custom sink fixture. The broader 196-job
+SQL/compiled, store/order, no-input, checkpoint and rescale matrix is still running. Its full
+28-case SMALLINT class additionally passes all those modes; the other six type classes remain
+pending. These scenarios overlap the initial smoke cases and are not added cumulatively. Thirty-four shared Flink 1.18 processing/accounting/ownership checks
+pass; they do not establish canonical interchange there.
+
+The unchanged released `GroupAggregateRestoreTest` is not qualified for native grouped-state
+restore: all nine native-side invocations currently fail the strict execution audit because the
+aggregate remains stock-owned. The stock controls pass their nine original result assertions.
+The unchanged committed baseline reproduces exactly the same nine audit failures. Native Calc
+activity receives no aggregate-import credit. Its wider aggregate/view/UDF layouts
+remain separate unfinished work; this typed MIN/MAX addition does not certify those programs.
+
+Wider retained types, keys, views/phases, connector delivery/failure and cross-version migrations
+remain open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.
