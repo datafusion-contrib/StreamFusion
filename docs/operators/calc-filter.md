@@ -3679,6 +3679,8 @@ expressions run by default with the full Flink millisecond range and fractional 
 Plain-TIMESTAMP numeric `DATE_FORMAT` also handles Java quoted literals, doubled quotes and
 escaped literal percents natively. Optional sections and unsupported or invalid Java pattern
 syntax keep generated Flink evaluation, preserving output, failures and empty-batch laziness.
+Direct TIMESTAMP_LTZ columns in ordinary Calc reuse this exact renderer in fixed zero-offset
+sessions; other zones and unverified derived producers keep their existing generated routes.
 
 ## POWER and SQRT
 

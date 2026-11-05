@@ -43,15 +43,20 @@ class FlinkDateFormatExtendedYearSqlHarnessTest {
   }
 
   static void verify(int precision, String sql, int count, boolean pure) throws Exception {
+    verify(precision, sql, count, pure, false, "America/New_York");
+  }
+
+  static void verify(int precision, String sql, int count, boolean pure, boolean localZoned,
+      String zone) throws Exception {
     Map<Integer, List<Object>> expected = null;
     Object expectedSchema = null;
     for (boolean nativeRun : new boolean[] {false, true}) {
       try (var metrics = new RecoveryExecutionMetrics()) {
         var env = metrics.environment(new Configuration(), 1, 0);
         var table = StreamTableEnvironment.create(env);
-        table.getConfig().setLocalTimeZone(java.time.ZoneId.of("America/New_York"));
+        table.getConfig().setLocalTimeZone(java.time.ZoneId.of(zone));
         var type = DataTypes.ROW(DataTypes.FIELD("id", DataTypes.INT().notNull()),
-            DataTypes.FIELD("ts", DataTypes.TIMESTAMP(precision)));
+            DataTypes.FIELD("ts", localZoned ? DataTypes.TIMESTAMP_LTZ(precision) : DataTypes.TIMESTAMP(precision)));
         table.createTemporaryView("src", env.fromSequence(0, ROWS - 1).map(index -> {
           long divisor = (long) Math.pow(10, 9 - precision);
           int nanos = (int) (123456789 / divisor * divisor);

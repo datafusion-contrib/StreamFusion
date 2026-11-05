@@ -10300,3 +10300,43 @@ trials per engine. Native/stock median elapsed is **0.783-0.990** and native/pre
 is **0.607-0.707**. The narrowest stock margin is the literal-prefix pattern on
 Flink 1.18 (0.270 versus 0.273 seconds); raw startup and measured trials remain in the
 qualification rather than being hidden by the prepared speedup.
+
+## Exact UTC DATE_FORMAT over local-zoned timestamps (2026-11-05)
+
+Direct TIMESTAMP_LTZ input columns in ordinary Calc reuse the exact numeric formatter
+when the planning JDK normalizes the session zone to a fixed zero offset. This removes
+the generated evaluator without a separate timezone database or a new performance switch.
+Nonzero/regional zones, unverified derived producers, unsupported patterns, catalog
+functions and explicit incompatible/UNNEST routes keep their previous handling.
+
+All 68 new focused JVM tests pass across released Flink 1.18.1/2.2.1 and JDK 11/17,
+targeting Java 11. Complete runtime-source maps/schema cover TIMESTAMP_LTZ(0/3/6/9),
+UTC aliases, BCE/extended years, signed-millisecond endpoints, NULLs, filtering and
+empty batches. Pure routes require consumed NativeCalc, no fallback and empty JVM
+evaluators; retained routes are checked explicitly. The preceding encoder matches each
+first-query map/schema before twelve expected pure-route failures per released-line
+JDK 17 control; its nineteen retained tests pass. Later queries are not prior-parity evidence.
+
+The broader final selection has another 162 passing regression invocations and fourteen
+unchanged version-gated aborts: seven FlinkTemporalFunctionsSqlHarnessTest assumptions
+on each 1.18/JDK combination for absent LTZ text/default-precision signatures, the
+pre-epoch TIME external conversion limit and three sub-hour LTZ rounding signatures.
+Those aborts are not counted as passes; no new UTC-formatting test is aborted or skipped.
+The runtime is unchanged from the calendar repair, whose 927-core qualification remains
+separate preceding evidence.
+
+Release prepared measurements use equivalent Generic/Binary RowData and Arrow,
+TIMESTAMP_LTZ(3/9), NULL modes, full-range epoch data and three literal numeric formats.
+Each trial processes 131,072 rows with sixteen warmups and nine measurements per engine.
+Native timing starts inside Rust after input preparation/import and stops before export;
+intrinsic production Calc, allocations, conversions and output consumption remain timed.
+Previous behavior retains its actual generated evaluator inside NativeCalc.
+
+All 48 bulk cells beat stock **2.861-4.546x** and previous **4.168-5.989x**.
+Ten of twelve 16-row cells lose to stock (stock/native **0.676-1.062x**); all beat previous.
+Six complete million-row jobs retain submission, JNI and both perimeter transposes, with
+two warmups and three measured trials per engine. Native/stock median elapsed is
+**0.764-0.961** and native/previous **0.533-0.678**. All startup and measured trials,
+variability, source/runtime hashes and evaluator-route evidence remain in the
+[qualification](results/utc-date-format-2026-11-05.json) and
+[6,000 prepared samples](results/utc-date-format-2026-11-05.csv.gz).

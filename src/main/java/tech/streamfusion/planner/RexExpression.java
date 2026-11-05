@@ -2303,6 +2303,10 @@ final class RexExpression {
           precision.getOperands().get(precision.getOperands().size() - 1));
     }
     if (unnestOperand && isNativeUnnestTemporalCast(call)) return emitCast(call);
+    if (nativeUtcDateFormat(call)) {
+      return emitNumericDateFormat(call.getOperands().get(0),
+          ((RexLiteral) call.getOperands().get(1)).getValueAs(String.class));
+    }
     if (needsTemporalFunction(call) || needsExactPower(call) || needsExactScalarFunction(call)) {
       return emitHostExpression(call, false);
     }
@@ -4587,6 +4591,21 @@ final class RexExpression {
         && (operand instanceof RexInputRef
             || operand instanceof RexLiteral
             || !unnestOperand && nativeTotalEpochTimestamp(operand));
+  }
+
+  private boolean nativeUtcDateFormat(RexCall call) {
+    return !unnestOperand
+        && call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.DATE_FORMAT
+        && call.getOperands().size() == 2
+        && call.getOperands().get(0) instanceof RexInputRef
+        && call.getOperands().get(0).getType().getSqlTypeName()
+            == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+        && call.getOperands().get(1) instanceof RexLiteral
+        && toChronoFormat(((RexLiteral) call.getOperands().get(1)).getValueAs(String.class)) != null
+        && sessionZoneId != null
+        && java.time.ZoneId.of(sessionZoneId).normalized().equals(java.time.ZoneOffset.UTC)
+        && !NativeConfig.allowsIncompatible("DATE_FORMAT");
   }
 
   private static boolean nativeTotalEpochTimestamp(RexNode node) {
@@ -6924,6 +6943,10 @@ final class RexExpression {
     if (tsType == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
       return emitDateFormatLtz(timestamp, javaPattern);
     }
+    return emitNumericDateFormat(timestamp, javaPattern);
+  }
+
+  private boolean emitNumericDateFormat(RexNode timestamp, String javaPattern) {
     String chrono = toChronoFormat(javaPattern);
     if (chrono == null) {
       return reject("DATE_FORMAT: unsupported format pattern");

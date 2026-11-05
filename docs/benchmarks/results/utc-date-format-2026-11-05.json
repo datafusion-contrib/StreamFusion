@@ -1,0 +1,2696 @@
+{
+  "date": "2026-11-05",
+  "issue": 503,
+  "canonical_base": "9954a19c",
+  "parent": "e0bedd0d17286a6c8ce14f4c7196d21df252549f",
+  "method": "Released SQL admission and production prepared Calc. Java starts on equivalent prebuilt Generic/Binary RowData; native starts on prebuilt Arrow. Native timer is inside Rust after input preparation/import and before export. Intrinsic allocation/conversion/JVM callbacks remain timed; complete jobs retain both perimeter transposes and submission.",
+  "configuration": {
+    "flink": [
+      "1.18.1",
+      "2.2.1"
+    ],
+    "jdk": "17 for timing; 11/17 for parity",
+    "java_release": 11,
+    "rust": "release --no-default-features",
+    "batch_sizes": [
+      1024,
+      16
+    ],
+    "nullable": [
+      false,
+      true
+    ],
+    "binary_rowdata": [
+      false,
+      true
+    ],
+    "prepared_rows_per_trial": 131072,
+    "warmups": 16,
+    "measurements": 9,
+    "input": "TIMESTAMP_LTZ(3/9), full signed-millisecond endpoints, pre-epoch and extended dates, nullable every seventh row",
+    "pipeline_rows": 1000000,
+    "pipeline_parallelism": 1,
+    "pipeline_trials": 5,
+    "pipeline_warmups": 2,
+    "pipeline_measured": 3
+  },
+  "correctness": {
+    "jvm_invocations": {
+      "22-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=61 succeeded=61 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "22-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=61 succeeded=61 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=61 succeeded=54 aborted=7 skipped=0 failed=0"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=61 succeeded=54 aborted=7 skipped=0 failed=0"
+        ]
+      }
+    },
+    "preceding": {
+      "22-17": {
+        "exit": 1,
+        "result": [
+          "RESULT found=31 succeeded=19 aborted=0 skipped=0 failed=12"
+        ]
+      },
+      "118-17": {
+        "exit": 1,
+        "result": [
+          "RESULT found=31 succeeded=19 aborted=0 skipped=0 failed=12"
+        ]
+      }
+    },
+    "focused_new_tests_passed": 68,
+    "regression_tests_passed": 162,
+    "existing_118_version_gated_aborts": 14,
+    "abort_scope": "Seven unchanged FlinkTemporalFunctionsSqlHarnessTest assumptions on each 1.18/JDK combination: 2.2-only LTZ text/default-precision signatures, pre-epoch TIME and three sub-hour LTZ rounding forms. New UTC DATE_FORMAT tests have no aborted/skipped cases.",
+    "evidence": "Runtime 5003-row maps/schema, TIMESTAMP_LTZ(0/3/6/9), fixed zero-offset aliases, full signed milliseconds, BCE/extended dates, nonzero/regional controls, derived producers, unsupported patterns and same-named catalog functions, filtered and all-filtered input. Pure admitted routes consume NativeCalc, have no fallback and empty JVM evaluator lists. Unsupported patterns retain generated Flink evaluation. Prior failure ends each method; later unreached queries are not prior-parity evidence.",
+    "unchanged_runtime": "Runtime is byte-identical to the preceding literal-syntax feature and calendar repair; its fresh 927-core qualification and twelve released temporal oracles are retained as preceding evidence, not relabeled as a new runtime run."
+  },
+  "provenance": {
+    "source_sha256": {
+      "src/main/java/tech/streamfusion/planner/RexExpression.java": "3ff953950f6d55d49ef5c9a7b9c599e499b2d59c9b1d0cc85ef8617ee8306552",
+      "src/test/java/tech/streamfusion/FlinkUtcDateFormatSqlHarnessTest.java": "6c6c9d8e86f61e52310d5ba4e4173063bd680e0ccc5b7c3090bd810550b0022a",
+      "src/test/java/tech/streamfusion/FlinkDateFormatExtendedYearSqlHarnessTest.java": "653f12d615e0e27adb739c2dd7911d05be16dce8885308cdb57f41c2d3f3c8ec",
+      "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "8ae2e1dc1acecdc6ce33027c6ea1cbd3ebddedc46bc52b1974e7c3c23517ac46"
+    },
+    "runtime": {
+      "integral_expression": "a1824a3f3b22a2bfbeccbe2463d3598e11bdf00e1f7f16ef747e7d45c267e9ba",
+      "libstreamfusion.dylib": "1d7c4479a2e1251c762d6de89cc4e41de2a5eb2b8e38d9ca88ec8203c7b1db41",
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/planner/RexExpression.java": "901c583ce0ecf3824a6736c0c4f5edd185f5ce95e9b2726ddfd2ae06094466e5",
+        "native/engine/src/expr.rs": "02a70ce847bd4577809742215d552f98038c4c360bff0038570277eeed00fa3e",
+        "native/engine/src/flink_functions/date_format.rs": "61c159f18451e1a796c5fcc38a8bdfc1d20993f31cc91f3a5aa9c1d57cc41984",
+        "native/engine/src/flink_functions/mod.rs": "911e6eabfcb0fe4d4cba21b56b0abfc0a32f0bd68c878f758d23a17d478de214",
+        "src/test/java/tech/streamfusion/FlinkDateFormatExtendedYearSqlHarnessTest.java": "6aed7df2a24e6bb57d2ab78c0dcbd7f64e135ad8502c74bc0f8171f9d2275a93"
+      }
+    }
+  },
+  "prepared": {
+    "22": {
+      "0": {
+        "shape": "iso-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 144.2890167236328,
+            "min": 141.7086944580078,
+            "max": 154.08007049560547
+          },
+          "native": {
+            "median": 33.73272705078125,
+            "min": 33.29627227783203,
+            "max": 35.12828063964844
+          },
+          "prior-stock": {
+            "median": 147.42120361328125,
+            "min": 144.28075408935547,
+            "max": 164.492919921875
+          },
+          "previous": {
+            "median": 169.2479476928711,
+            "min": 160.97672271728516,
+            "max": 178.1177520751953
+          }
+        }
+      },
+      "1": {
+        "shape": "iso-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 160.8784942626953,
+            "min": 151.59352111816406,
+            "max": 164.67666625976562
+          },
+          "native": {
+            "median": 35.39085388183594,
+            "min": 34.215293884277344,
+            "max": 36.79689025878906
+          },
+          "prior-stock": {
+            "median": 155.83006286621094,
+            "min": 151.28453826904297,
+            "max": 160.92809295654297
+          },
+          "previous": {
+            "median": 171.78472137451172,
+            "min": 161.7921142578125,
+            "max": 179.54349517822266
+          }
+        }
+      },
+      "2": {
+        "shape": "iso-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 125.88056182861328,
+            "min": 118.10748291015625,
+            "max": 131.08190155029297
+          },
+          "native": {
+            "median": 32.71007537841797,
+            "min": 32.28791809082031,
+            "max": 33.263206481933594
+          },
+          "prior-stock": {
+            "median": 124.114990234375,
+            "min": 122.05314636230469,
+            "max": 135.2074966430664
+          },
+          "previous": {
+            "median": 154.7069549560547,
+            "min": 149.28722381591797,
+            "max": 159.73218536376953
+          }
+        }
+      },
+      "3": {
+        "shape": "iso-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 131.90777587890625,
+            "min": 127.4725570678711,
+            "max": 140.9184112548828
+          },
+          "native": {
+            "median": 33.187232971191406,
+            "min": 31.79486083984375,
+            "max": 33.74036407470703
+          },
+          "prior-stock": {
+            "median": 129.81382751464844,
+            "min": 124.33751678466797,
+            "max": 133.68384552001953
+          },
+          "previous": {
+            "median": 158.6173324584961,
+            "min": 150.7717742919922,
+            "max": 188.5242462158203
+          }
+        }
+      },
+      "4": {
+        "shape": "iso-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 138.0923614501953,
+            "min": 131.17313385009766,
+            "max": 140.8840789794922
+          },
+          "native": {
+            "median": 34.703887939453125,
+            "min": 33.86402130126953,
+            "max": 35.859107971191406
+          },
+          "prior-stock": {
+            "median": 143.30196380615234,
+            "min": 141.26173400878906,
+            "max": 152.04874420166016
+          },
+          "previous": {
+            "median": 172.60137939453125,
+            "min": 163.80596160888672,
+            "max": 204.11141204833984
+          }
+        }
+      },
+      "5": {
+        "shape": "iso-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 146.91130828857422,
+            "min": 140.00098419189453,
+            "max": 151.33030700683594
+          },
+          "native": {
+            "median": 34.083045959472656,
+            "min": 33.638954162597656,
+            "max": 34.55511474609375
+          },
+          "prior-stock": {
+            "median": 151.73021697998047,
+            "min": 146.82547760009766,
+            "max": 154.0247573852539
+          },
+          "previous": {
+            "median": 174.0264892578125,
+            "min": 170.2117919921875,
+            "max": 179.12133026123047
+          }
+        }
+      },
+      "6": {
+        "shape": "iso-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 120.7412109375,
+            "min": 115.03887176513672,
+            "max": 141.2655487060547
+          },
+          "native": {
+            "median": 32.076202392578125,
+            "min": 31.853363037109375,
+            "max": 33.50194549560547
+          },
+          "prior-stock": {
+            "median": 131.0431137084961,
+            "min": 123.7160415649414,
+            "max": 134.26335906982422
+          },
+          "previous": {
+            "median": 162.94638061523438,
+            "min": 153.64234161376953,
+            "max": 183.36041259765625
+          }
+        }
+      },
+      "7": {
+        "shape": "iso-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 139.7136001586914,
+            "min": 135.04568481445312,
+            "max": 145.39591217041016
+          },
+          "native": {
+            "median": 33.51020812988281,
+            "min": 31.923927307128906,
+            "max": 35.06946563720703
+          },
+          "prior-stock": {
+            "median": 135.35308837890625,
+            "min": 128.30448150634766,
+            "max": 138.07169342041016
+          },
+          "previous": {
+            "median": 176.2711181640625,
+            "min": 165.23456573486328,
+            "max": 183.65987396240234
+          }
+        }
+      },
+      "8": {
+        "shape": "date-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 82.60599517822266,
+            "min": 76.66301727294922,
+            "max": 101.85941314697266
+          },
+          "native": {
+            "median": 24.41278839111328,
+            "min": 23.814842224121094,
+            "max": 25.664649963378906
+          },
+          "prior-stock": {
+            "median": 82.69246673583984,
+            "min": 80.11722564697266,
+            "max": 85.8313217163086
+          },
+          "previous": {
+            "median": 114.00794982910156,
+            "min": 106.6443099975586,
+            "max": 120.05392456054688
+          }
+        }
+      },
+      "9": {
+        "shape": "date-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 84.96665954589844,
+            "min": 79.44488525390625,
+            "max": 89.5865707397461
+          },
+          "native": {
+            "median": 24.43408966064453,
+            "min": 23.777008056640625,
+            "max": 25.512062072753906
+          },
+          "prior-stock": {
+            "median": 85.66665649414062,
+            "min": 82.31925964355469,
+            "max": 87.541259765625
+          },
+          "previous": {
+            "median": 108.50874328613281,
+            "min": 105.2236557006836,
+            "max": 127.32601165771484
+          }
+        }
+      },
+      "10": {
+        "shape": "date-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 73.245361328125,
+            "min": 65.78508758544922,
+            "max": 102.54287719726562
+          },
+          "native": {
+            "median": 24.496078491210938,
+            "min": 23.963607788085938,
+            "max": 24.955116271972656
+          },
+          "prior-stock": {
+            "median": 69.27330780029297,
+            "min": 68.62163543701172,
+            "max": 72.92111206054688
+          },
+          "previous": {
+            "median": 102.41222381591797,
+            "min": 98.7997055053711,
+            "max": 107.5286865234375
+          }
+        }
+      },
+      "11": {
+        "shape": "date-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 76.13945007324219,
+            "min": 69.50187683105469,
+            "max": 106.83917999267578
+          },
+          "native": {
+            "median": 24.28308868408203,
+            "min": 23.590087890625,
+            "max": 25.79370880126953
+          },
+          "prior-stock": {
+            "median": 74.85039520263672,
+            "min": 71.272216796875,
+            "max": 107.22383117675781
+          },
+          "previous": {
+            "median": 102.74378204345703,
+            "min": 98.53521728515625,
+            "max": 110.52703857421875
+          }
+        }
+      },
+      "12": {
+        "shape": "date-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 78.97409057617188,
+            "min": 75.28337097167969,
+            "max": 92.94986724853516
+          },
+          "native": {
+            "median": 24.86260223388672,
+            "min": 23.878738403320312,
+            "max": 36.78575897216797
+          },
+          "prior-stock": {
+            "median": 80.28443908691406,
+            "min": 77.51909637451172,
+            "max": 82.18606567382812
+          },
+          "previous": {
+            "median": 110.87831115722656,
+            "min": 107.78331756591797,
+            "max": 114.56489562988281
+          }
+        }
+      },
+      "13": {
+        "shape": "date-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 87.33367919921875,
+            "min": 78.34212493896484,
+            "max": 102.84774017333984
+          },
+          "native": {
+            "median": 24.760879516601562,
+            "min": 24.09807586669922,
+            "max": 25.723770141601562
+          },
+          "prior-stock": {
+            "median": 84.5810546875,
+            "min": 83.20268249511719,
+            "max": 88.27177429199219
+          },
+          "previous": {
+            "median": 112.7166748046875,
+            "min": 109.64488983154297,
+            "max": 118.57414245605469
+          }
+        }
+      },
+      "14": {
+        "shape": "date-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 71.61521911621094,
+            "min": 67.92513275146484,
+            "max": 101.972900390625
+          },
+          "native": {
+            "median": 24.799667358398438,
+            "min": 23.682273864746094,
+            "max": 25.46373748779297
+          },
+          "prior-stock": {
+            "median": 69.9758529663086,
+            "min": 67.78939056396484,
+            "max": 73.08355712890625
+          },
+          "previous": {
+            "median": 105.43218994140625,
+            "min": 100.74075317382812,
+            "max": 117.41447448730469
+          }
+        }
+      },
+      "15": {
+        "shape": "date-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 72.4503173828125,
+            "min": 71.39936828613281,
+            "max": 80.32258605957031
+          },
+          "native": {
+            "median": 24.46460723876953,
+            "min": 23.83295440673828,
+            "max": 24.74053955078125
+          },
+          "prior-stock": {
+            "median": 75.62700653076172,
+            "min": 73.48506164550781,
+            "max": 79.6982421875
+          },
+          "previous": {
+            "median": 101.959228515625,
+            "min": 98.16265106201172,
+            "max": 109.5844955444336
+          }
+        }
+      },
+      "16": {
+        "shape": "timestamp-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 146.87347412109375,
+            "min": 143.77657318115234,
+            "max": 155.48165130615234
+          },
+          "native": {
+            "median": 35.06183624267578,
+            "min": 33.62019348144531,
+            "max": 36.224365234375
+          },
+          "prior-stock": {
+            "median": 147.823974609375,
+            "min": 144.7178497314453,
+            "max": 163.28907012939453
+          },
+          "previous": {
+            "median": 175.06980895996094,
+            "min": 171.35842895507812,
+            "max": 183.15760040283203
+          }
+        }
+      },
+      "17": {
+        "shape": "timestamp-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 143.91262817382812,
+            "min": 139.37059783935547,
+            "max": 149.6124267578125
+          },
+          "native": {
+            "median": 34.288726806640625,
+            "min": 33.852577209472656,
+            "max": 35.20774841308594
+          },
+          "prior-stock": {
+            "median": 153.48529815673828,
+            "min": 145.10726928710938,
+            "max": 166.95340728759766
+          },
+          "previous": {
+            "median": 176.5422821044922,
+            "min": 157.56988525390625,
+            "max": 190.93608856201172
+          }
+        }
+      },
+      "18": {
+        "shape": "timestamp-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 126.51029968261719,
+            "min": 121.86654663085938,
+            "max": 132.14874267578125
+          },
+          "native": {
+            "median": 32.477699279785156,
+            "min": 31.8145751953125,
+            "max": 34.385047912597656
+          },
+          "prior-stock": {
+            "median": 125.31916809082031,
+            "min": 123.45250701904297,
+            "max": 127.87786865234375
+          },
+          "previous": {
+            "median": 158.17578887939453,
+            "min": 150.01487731933594,
+            "max": 174.44769287109375
+          }
+        }
+      },
+      "19": {
+        "shape": "timestamp-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 134.91312408447266,
+            "min": 127.6871337890625,
+            "max": 140.40565490722656
+          },
+          "native": {
+            "median": 33.59858703613281,
+            "min": 32.176658630371094,
+            "max": 34.86824035644531
+          },
+          "prior-stock": {
+            "median": 130.74938201904297,
+            "min": 125.95462799072266,
+            "max": 136.52547454833984
+          },
+          "previous": {
+            "median": 161.47899627685547,
+            "min": 152.26681518554688,
+            "max": 181.18572235107422
+          }
+        }
+      },
+      "20": {
+        "shape": "timestamp-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 140.05406951904297,
+            "min": 132.85191345214844,
+            "max": 150.41033172607422
+          },
+          "native": {
+            "median": 34.35707092285156,
+            "min": 33.85003662109375,
+            "max": 35.042442321777344
+          },
+          "prior-stock": {
+            "median": 142.95514678955078,
+            "min": 139.56387329101562,
+            "max": 145.49414825439453
+          },
+          "previous": {
+            "median": 178.5287857055664,
+            "min": 172.6582794189453,
+            "max": 189.28909301757812
+          }
+        }
+      },
+      "21": {
+        "shape": "timestamp-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 146.575927734375,
+            "min": 136.8459014892578,
+            "max": 149.77645874023438
+          },
+          "native": {
+            "median": 33.98736572265625,
+            "min": 33.594451904296875,
+            "max": 34.659706115722656
+          },
+          "prior-stock": {
+            "median": 153.4719467163086,
+            "min": 148.5287322998047,
+            "max": 160.47254943847656
+          },
+          "previous": {
+            "median": 175.77043914794922,
+            "min": 167.97956085205078,
+            "max": 179.95134735107422
+          }
+        }
+      },
+      "22": {
+        "shape": "timestamp-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 126.3405532836914,
+            "min": 115.32974243164062,
+            "max": 136.5642547607422
+          },
+          "native": {
+            "median": 32.038047790527344,
+            "min": 31.59490966796875,
+            "max": 32.46179962158203
+          },
+          "prior-stock": {
+            "median": 122.83389282226562,
+            "min": 120.34829711914062,
+            "max": 133.358642578125
+          },
+          "previous": {
+            "median": 156.84127807617188,
+            "min": 151.5951156616211,
+            "max": 171.2353973388672
+          }
+        }
+      },
+      "23": {
+        "shape": "timestamp-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 134.53546905517578,
+            "min": 130.79039001464844,
+            "max": 138.99358367919922
+          },
+          "native": {
+            "median": 32.62488555908203,
+            "min": 31.9808349609375,
+            "max": 35.02781677246094
+          },
+          "prior-stock": {
+            "median": 131.77330780029297,
+            "min": 129.68222045898438,
+            "max": 134.09105682373047
+          },
+          "previous": {
+            "median": 162.32999420166016,
+            "min": 154.07180786132812,
+            "max": 166.45526885986328
+          }
+        }
+      },
+      "24": {
+        "shape": "iso-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 108.76941680908203,
+            "min": 101.6702651977539,
+            "max": 125.7959976196289
+          },
+          "native": {
+            "median": 120.75169372558594,
+            "min": 117.63540649414062,
+            "max": 121.94442749023438
+          },
+          "prior-stock": {
+            "median": 105.08600616455078,
+            "min": 103.49687194824219,
+            "max": 112.80377960205078
+          },
+          "previous": {
+            "median": 913.8495101928711,
+            "min": 903.546012878418,
+            "max": 965.7096862792969
+          }
+        }
+      },
+      "25": {
+        "shape": "iso-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 114.23269653320312,
+            "min": 109.47990417480469,
+            "max": 127.31615447998047
+          },
+          "native": {
+            "median": 113.99873352050781,
+            "min": 112.89755249023438,
+            "max": 124.47834014892578
+          },
+          "prior-stock": {
+            "median": 113.52474975585938,
+            "min": 107.91206359863281,
+            "max": 130.8765411376953
+          },
+          "previous": {
+            "median": 923.8646850585938,
+            "min": 916.3812026977539,
+            "max": 992.7899017333984
+          }
+        }
+      },
+      "26": {
+        "shape": "date-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 64.592041015625,
+            "min": 61.423622131347656,
+            "max": 70.93875122070312
+          },
+          "native": {
+            "median": 95.54672241210938,
+            "min": 93.42733764648438,
+            "max": 98.76823425292969
+          },
+          "prior-stock": {
+            "median": 63.10558319091797,
+            "min": 61.737060546875,
+            "max": 65.09780883789062
+          },
+          "previous": {
+            "median": 874.0895538330078,
+            "min": 848.69384765625,
+            "max": 879.657112121582
+          }
+        }
+      },
+      "27": {
+        "shape": "date-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 68.63975524902344,
+            "min": 62.541961669921875,
+            "max": 71.08306884765625
+          },
+          "native": {
+            "median": 94.81684875488281,
+            "min": 93.46898651123047,
+            "max": 95.7520751953125
+          },
+          "prior-stock": {
+            "median": 70.31631469726562,
+            "min": 68.08185577392578,
+            "max": 71.97125244140625
+          },
+          "previous": {
+            "median": 869.4515228271484,
+            "min": 848.1067047119141,
+            "max": 890.0801391601562
+          }
+        }
+      },
+      "28": {
+        "shape": "timestamp-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 104.02266693115234,
+            "min": 98.5250473022461,
+            "max": 110.57662963867188
+          },
+          "native": {
+            "median": 121.64815521240234,
+            "min": 116.31488800048828,
+            "max": 123.07199096679688
+          },
+          "prior-stock": {
+            "median": 112.16290283203125,
+            "min": 105.9732437133789,
+            "max": 113.82102966308594
+          },
+          "previous": {
+            "median": 939.8822784423828,
+            "min": 921.487174987793,
+            "max": 971.9126968383789
+          }
+        }
+      },
+      "29": {
+        "shape": "timestamp-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 124.72279357910156,
+            "min": 114.08615112304688,
+            "max": 129.9126968383789
+          },
+          "native": {
+            "median": 117.4796371459961,
+            "min": 115.76716613769531,
+            "max": 119.97382354736328
+          },
+          "prior-stock": {
+            "median": 108.53640747070312,
+            "min": 105.15340423583984,
+            "max": 115.55099487304688
+          },
+          "previous": {
+            "median": 919.3636627197266,
+            "min": 893.2231292724609,
+            "max": 971.148811340332
+          }
+        }
+      }
+    },
+    "118": {
+      "0": {
+        "shape": "iso-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 139.63954162597656,
+            "min": 135.39949798583984,
+            "max": 143.3086395263672
+          },
+          "native": {
+            "median": 34.64508056640625,
+            "min": 33.80298614501953,
+            "max": 35.54217529296875
+          },
+          "prior-stock": {
+            "median": 163.92961883544922,
+            "min": 146.05935668945312,
+            "max": 173.19011688232422
+          },
+          "previous": {
+            "median": 198.0419158935547,
+            "min": 194.20687866210938,
+            "max": 206.66344451904297
+          }
+        }
+      },
+      "1": {
+        "shape": "iso-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 150.44275665283203,
+            "min": 143.42308044433594,
+            "max": 157.28187561035156
+          },
+          "native": {
+            "median": 35.082496643066406,
+            "min": 34.3154296875,
+            "max": 35.823822021484375
+          },
+          "prior-stock": {
+            "median": 151.7038345336914,
+            "min": 146.8375473022461,
+            "max": 156.85144805908203
+          },
+          "previous": {
+            "median": 194.62712860107422,
+            "min": 187.23583221435547,
+            "max": 201.39185333251953
+          }
+        }
+      },
+      "2": {
+        "shape": "iso-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 124.99173736572266,
+            "min": 119.53003692626953,
+            "max": 130.90674591064453
+          },
+          "native": {
+            "median": 32.41411590576172,
+            "min": 32.07969665527344,
+            "max": 32.73773193359375
+          },
+          "prior-stock": {
+            "median": 126.64762878417969,
+            "min": 123.9023208618164,
+            "max": 139.79721069335938
+          },
+          "previous": {
+            "median": 174.9445571899414,
+            "min": 168.59817504882812,
+            "max": 192.67050170898438
+          }
+        }
+      },
+      "3": {
+        "shape": "iso-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 128.79212188720703,
+            "min": 120.7605972290039,
+            "max": 134.6248016357422
+          },
+          "native": {
+            "median": 32.503761291503906,
+            "min": 32.2113037109375,
+            "max": 33.26765441894531
+          },
+          "prior-stock": {
+            "median": 125.35636138916016,
+            "min": 122.96453857421875,
+            "max": 128.36297607421875
+          },
+          "previous": {
+            "median": 167.85971069335938,
+            "min": 162.76519012451172,
+            "max": 176.29591369628906
+          }
+        }
+      },
+      "4": {
+        "shape": "iso-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 147.26002502441406,
+            "min": 137.32878875732422,
+            "max": 163.09293365478516
+          },
+          "native": {
+            "median": 34.28840637207031,
+            "min": 33.79344940185547,
+            "max": 35.75769805908203
+          },
+          "prior-stock": {
+            "median": 144.76902770996094,
+            "min": 137.81166076660156,
+            "max": 147.00762176513672
+          },
+          "previous": {
+            "median": 199.39073181152344,
+            "min": 192.98267364501953,
+            "max": 201.27487182617188
+          }
+        }
+      },
+      "5": {
+        "shape": "iso-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 148.7696990966797,
+            "min": 142.17884826660156,
+            "max": 169.3455352783203
+          },
+          "native": {
+            "median": 34.77923583984375,
+            "min": 33.37065887451172,
+            "max": 36.69706726074219
+          },
+          "prior-stock": {
+            "median": 154.34741973876953,
+            "min": 149.60320281982422,
+            "max": 156.71379852294922
+          },
+          "previous": {
+            "median": 208.279296875,
+            "min": 197.74627685546875,
+            "max": 224.95809936523438
+          }
+        }
+      },
+      "6": {
+        "shape": "iso-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 124.92974090576172,
+            "min": 117.96125030517578,
+            "max": 129.0918960571289
+          },
+          "native": {
+            "median": 32.59881591796875,
+            "min": 32.080970764160156,
+            "max": 33.26066589355469
+          },
+          "prior-stock": {
+            "median": 124.7873306274414,
+            "min": 120.71927642822266,
+            "max": 132.01427459716797
+          },
+          "previous": {
+            "median": 171.9354019165039,
+            "min": 165.53179168701172,
+            "max": 178.73509216308594
+          }
+        }
+      },
+      "7": {
+        "shape": "iso-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 132.54165649414062,
+            "min": 123.99832153320312,
+            "max": 155.11385345458984
+          },
+          "native": {
+            "median": 33.56297302246094,
+            "min": 32.17665100097656,
+            "max": 45.331321716308594
+          },
+          "prior-stock": {
+            "median": 131.71322631835938,
+            "min": 127.4429931640625,
+            "max": 140.65837860107422
+          },
+          "previous": {
+            "median": 176.08197784423828,
+            "min": 167.89309692382812,
+            "max": 179.2093963623047
+          }
+        }
+      },
+      "8": {
+        "shape": "date-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 82.82152557373047,
+            "min": 79.56504821777344,
+            "max": 89.30301666259766
+          },
+          "native": {
+            "median": 25.066375732421875,
+            "min": 24.551071166992188,
+            "max": 25.33721923828125
+          },
+          "prior-stock": {
+            "median": 83.9700698852539,
+            "min": 80.76000213623047,
+            "max": 87.890625
+          },
+          "previous": {
+            "median": 117.46788024902344,
+            "min": 112.82412719726562,
+            "max": 122.114501953125
+          }
+        }
+      },
+      "9": {
+        "shape": "date-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 90.40864562988281,
+            "min": 82.977294921875,
+            "max": 101.77135467529297
+          },
+          "native": {
+            "median": 24.636268615722656,
+            "min": 24.200759887695312,
+            "max": 25.760971069335938
+          },
+          "prior-stock": {
+            "median": 87.3839111328125,
+            "min": 83.8918685913086,
+            "max": 90.4661865234375
+          },
+          "previous": {
+            "median": 126.64508819580078,
+            "min": 118.35225677490234,
+            "max": 128.3575668334961
+          }
+        }
+      },
+      "10": {
+        "shape": "date-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 74.39073181152344,
+            "min": 66.70856475830078,
+            "max": 85.61420440673828
+          },
+          "native": {
+            "median": 23.957565307617188,
+            "min": 23.747764587402344,
+            "max": 24.56792449951172
+          },
+          "prior-stock": {
+            "median": 72.38228607177734,
+            "min": 70.12208557128906,
+            "max": 76.39757537841797
+          },
+          "previous": {
+            "median": 112.10187530517578,
+            "min": 108.09135437011719,
+            "max": 117.6268310546875
+          }
+        }
+      },
+      "11": {
+        "shape": "date-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 73.8061294555664,
+            "min": 68.9840316772461,
+            "max": 87.08349609375
+          },
+          "native": {
+            "median": 24.640396118164062,
+            "min": 24.05675506591797,
+            "max": 25.763832092285156
+          },
+          "prior-stock": {
+            "median": 78.41236877441406,
+            "min": 73.7314224243164,
+            "max": 81.03433990478516
+          },
+          "previous": {
+            "median": 115.50458526611328,
+            "min": 108.3364486694336,
+            "max": 119.3869857788086
+          }
+        }
+      },
+      "12": {
+        "shape": "date-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 80.90813446044922,
+            "min": 73.7282485961914,
+            "max": 96.68414306640625
+          },
+          "native": {
+            "median": 23.873329162597656,
+            "min": 23.61170196533203,
+            "max": 25.40747833251953
+          },
+          "prior-stock": {
+            "median": 78.66986846923828,
+            "min": 76.53490447998047,
+            "max": 83.86707305908203
+          },
+          "previous": {
+            "median": 116.26529693603516,
+            "min": 112.47666931152344,
+            "max": 124.05109405517578
+          }
+        }
+      },
+      "13": {
+        "shape": "date-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 77.8071060180664,
+            "min": 76.60865783691406,
+            "max": 87.5218734741211
+          },
+          "native": {
+            "median": 24.227462768554688,
+            "min": 23.810707092285156,
+            "max": 25.062881469726562
+          },
+          "prior-stock": {
+            "median": 85.03055572509766,
+            "min": 82.63651275634766,
+            "max": 85.97628021240234
+          },
+          "previous": {
+            "median": 118.3023452758789,
+            "min": 114.5035400390625,
+            "max": 125.53437042236328
+          }
+        }
+      },
+      "14": {
+        "shape": "date-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 69.88556671142578,
+            "min": 65.59593963623047,
+            "max": 76.1254653930664
+          },
+          "native": {
+            "median": 24.42328643798828,
+            "min": 24.109207153320312,
+            "max": 25.011062622070312
+          },
+          "prior-stock": {
+            "median": 70.41390991210938,
+            "min": 68.31328582763672,
+            "max": 72.78951263427734
+          },
+          "previous": {
+            "median": 104.98491668701172,
+            "min": 101.07389831542969,
+            "max": 119.01378631591797
+          }
+        }
+      },
+      "15": {
+        "shape": "date-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 78.4002914428711,
+            "min": 73.31593322753906,
+            "max": 82.2884292602539
+          },
+          "native": {
+            "median": 24.991355895996094,
+            "min": 24.08281707763672,
+            "max": 26.32427215576172
+          },
+          "prior-stock": {
+            "median": 78.48326110839844,
+            "min": 74.93559265136719,
+            "max": 80.89828491210938
+          },
+          "previous": {
+            "median": 121.78007507324219,
+            "min": 115.57324981689453,
+            "max": 126.8011703491211
+          }
+        }
+      },
+      "16": {
+        "shape": "timestamp-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 147.5976333618164,
+            "min": 140.7333984375,
+            "max": 151.41519165039062
+          },
+          "native": {
+            "median": 34.921966552734375,
+            "min": 34.015655517578125,
+            "max": 36.28571319580078
+          },
+          "prior-stock": {
+            "median": 148.18509674072266,
+            "min": 144.9559555053711,
+            "max": 155.12974548339844
+          },
+          "previous": {
+            "median": 198.35853576660156,
+            "min": 190.4347686767578,
+            "max": 204.07422637939453
+          }
+        }
+      },
+      "17": {
+        "shape": "timestamp-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 145.73224639892578,
+            "min": 138.52500915527344,
+            "max": 151.09539031982422
+          },
+          "native": {
+            "median": 35.65692901611328,
+            "min": 34.64317321777344,
+            "max": 36.098793029785156
+          },
+          "prior-stock": {
+            "median": 149.39720916748047,
+            "min": 148.4874038696289,
+            "max": 153.2278060913086
+          },
+          "previous": {
+            "median": 196.9429702758789,
+            "min": 187.83792114257812,
+            "max": 210.5423583984375
+          }
+        }
+      },
+      "18": {
+        "shape": "timestamp-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 128.5394058227539,
+            "min": 122.3001480102539,
+            "max": 135.7135772705078
+          },
+          "native": {
+            "median": 32.73359680175781,
+            "min": 31.780242919921875,
+            "max": 33.359840393066406
+          },
+          "prior-stock": {
+            "median": 124.49041748046875,
+            "min": 119.62477111816406,
+            "max": 126.3265609741211
+          },
+          "previous": {
+            "median": 174.03316497802734,
+            "min": 164.91190338134766,
+            "max": 178.56884002685547
+          }
+        }
+      },
+      "19": {
+        "shape": "timestamp-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 134.95954132080078,
+            "min": 124.55780792236328,
+            "max": 143.01522064208984
+          },
+          "native": {
+            "median": 33.81507110595703,
+            "min": 32.76030731201172,
+            "max": 35.17024230957031
+          },
+          "prior-stock": {
+            "median": 126.00580596923828,
+            "min": 122.01341247558594,
+            "max": 128.59058380126953
+          },
+          "previous": {
+            "median": 167.0506820678711,
+            "min": 163.53893280029297,
+            "max": 170.33545684814453
+          }
+        }
+      },
+      "20": {
+        "shape": "timestamp-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 142.17218017578125,
+            "min": 140.39547729492188,
+            "max": 146.575927734375
+          },
+          "native": {
+            "median": 34.28522491455078,
+            "min": 33.58777618408203,
+            "max": 35.03385925292969
+          },
+          "prior-stock": {
+            "median": 147.39418029785156,
+            "min": 140.72799682617188,
+            "max": 154.17194366455078
+          },
+          "previous": {
+            "median": 198.75144958496094,
+            "min": 191.7575225830078,
+            "max": 215.14574432373047
+          }
+        }
+      },
+      "21": {
+        "shape": "timestamp-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 156.14032745361328,
+            "min": 147.15131378173828,
+            "max": 216.7317123413086
+          },
+          "native": {
+            "median": 34.977272033691406,
+            "min": 33.83445739746094,
+            "max": 35.509429931640625
+          },
+          "prior-stock": {
+            "median": 155.06458282470703,
+            "min": 148.6047134399414,
+            "max": 156.36316680908203
+          },
+          "previous": {
+            "median": 202.97686004638672,
+            "min": 196.4702606201172,
+            "max": 217.63896942138672
+          }
+        }
+      },
+      "22": {
+        "shape": "timestamp-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 122.83929443359375,
+            "min": 115.25027465820312,
+            "max": 131.3482894897461
+          },
+          "native": {
+            "median": 32.29808807373047,
+            "min": 31.946815490722656,
+            "max": 34.66033935546875
+          },
+          "prior-stock": {
+            "median": 128.48726654052734,
+            "min": 122.84819030761719,
+            "max": 134.90835571289062
+          },
+          "previous": {
+            "median": 179.9783706665039,
+            "min": 174.31513214111328,
+            "max": 192.2938003540039
+          }
+        }
+      },
+      "23": {
+        "shape": "timestamp-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 131.34288787841797,
+            "min": 127.87946319580078,
+            "max": 143.14492797851562
+          },
+          "native": {
+            "median": 33.37383270263672,
+            "min": 32.697364807128906,
+            "max": 34.277915954589844
+          },
+          "prior-stock": {
+            "median": 128.98572540283203,
+            "min": 126.64921569824219,
+            "max": 136.2466812133789
+          },
+          "previous": {
+            "median": 176.4119415283203,
+            "min": 167.4677505493164,
+            "max": 187.86048889160156
+          }
+        }
+      },
+      "24": {
+        "shape": "iso-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 109.17091369628906,
+            "min": 104.52842712402344,
+            "max": 113.50853729248047
+          },
+          "native": {
+            "median": 121.99942016601562,
+            "min": 120.45860290527344,
+            "max": 127.89376831054688
+          },
+          "prior-stock": {
+            "median": 109.77713775634766,
+            "min": 106.2774658203125,
+            "max": 115.81261444091797
+          },
+          "previous": {
+            "median": 907.5428619384766,
+            "min": 904.7927856445312,
+            "max": 990.7229690551758
+          }
+        }
+      },
+      "25": {
+        "shape": "iso-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 111.20223999023438,
+            "min": 107.36528778076172,
+            "max": 135.55844116210938
+          },
+          "native": {
+            "median": 118.94924926757812,
+            "min": 113.17984008789062,
+            "max": 123.43788146972656
+          },
+          "prior-stock": {
+            "median": 122.7095947265625,
+            "min": 112.21536254882812,
+            "max": 134.3669891357422
+          },
+          "previous": {
+            "median": 916.7458190917969,
+            "min": 912.0903015136719,
+            "max": 987.6257553100586
+          }
+        }
+      },
+      "26": {
+        "shape": "date-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 68.91664123535156,
+            "min": 61.23924255371094,
+            "max": 102.45195770263672
+          },
+          "native": {
+            "median": 94.78791046142578,
+            "min": 93.3812484741211,
+            "max": 97.33550262451172
+          },
+          "prior-stock": {
+            "median": 67.50074768066406,
+            "min": 64.6200180053711,
+            "max": 70.66949462890625
+          },
+          "previous": {
+            "median": 853.5559997558594,
+            "min": 835.5960845947266,
+            "max": 1072.3673477172852
+          }
+        }
+      },
+      "27": {
+        "shape": "date-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 71.0322036743164,
+            "min": 63.317298889160156,
+            "max": 97.94171905517578
+          },
+          "native": {
+            "median": 100.24960327148438,
+            "min": 97.2452163696289,
+            "max": 101.13556671142578
+          },
+          "prior-stock": {
+            "median": 66.32328033447266,
+            "min": 64.29132080078125,
+            "max": 68.23189544677734
+          },
+          "previous": {
+            "median": 900.0358581542969,
+            "min": 870.8683624267578,
+            "max": 910.9837188720703
+          }
+        }
+      },
+      "28": {
+        "shape": "timestamp-ms",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(3)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 110.17704010009766,
+            "min": 100.6784439086914,
+            "max": 130.2525177001953
+          },
+          "native": {
+            "median": 119.67817687988281,
+            "min": 114.73877716064453,
+            "max": 121.67644500732422
+          },
+          "prior-stock": {
+            "median": 109.44334411621094,
+            "min": 105.83718872070312,
+            "max": 114.52039337158203
+          },
+          "previous": {
+            "median": 935.6422424316406,
+            "min": 903.7348480224609,
+            "max": 961.4696502685547
+          }
+        }
+      },
+      "29": {
+        "shape": "timestamp-nanos",
+        "expression": "DATE_FORMAT(v,'yyyy-MM-dd HH:mm:ss')",
+        "type": "TIMESTAMP_LTZ(9)",
+        "secondary": "",
+        "legacy": false,
+        "previous_route": "generated-native-calc",
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 113.7701644897461,
+            "min": 108.55770111083984,
+            "max": 121.98002624511719
+          },
+          "native": {
+            "median": 118.5576171875,
+            "min": 117.05970764160156,
+            "max": 121.90882873535156
+          },
+          "prior-stock": {
+            "median": 111.18062591552734,
+            "min": 109.84834289550781,
+            "max": 114.50004577636719
+          },
+          "previous": {
+            "median": 907.3371887207031,
+            "min": 893.9412460327148,
+            "max": 919.5642471313477
+          }
+        }
+      }
+    }
+  },
+  "complete_job": {
+    "22": {
+      "yyyy-MM-dd": {
+        "previous": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 907902875,
+              "job_ms": 848
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 410139250,
+              "job_ms": 394
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 377583083,
+              "job_ms": 364
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 358784333,
+              "job_ms": 346
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 379358917,
+              "job_ms": 369
+            }
+          ],
+          "median_elapsed_ns": 377583083,
+          "median_job_ms": 364
+        },
+        "native": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 649491209,
+              "job_ms": 593
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 248574083,
+              "job_ms": 231
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 248338875,
+              "job_ms": 230
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 269685250,
+              "job_ms": 258
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 240479709,
+              "job_ms": 226
+            }
+          ],
+          "median_elapsed_ns": 248338875,
+          "median_job_ms": 230
+        },
+        "stock": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 618588084,
+              "job_ms": 567
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 311562583,
+              "job_ms": 295
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 283587125,
+              "job_ms": 269
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 314420375,
+              "job_ms": 303
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 272326666,
+              "job_ms": 261
+            }
+          ],
+          "median_elapsed_ns": 283587125,
+          "median_job_ms": 269
+        },
+        "native_over_stock": 0.8757057465144089,
+        "native_over_previous": 0.6577065715626884
+      },
+      "yyyy-MM-dd HH:mm:ss": {
+        "stock": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 623453000,
+              "job_ms": 573
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 314351000,
+              "job_ms": 298
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 301309792,
+              "job_ms": 287
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 313681833,
+              "job_ms": 300
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 339101209,
+              "job_ms": 327
+            }
+          ],
+          "median_elapsed_ns": 313681833,
+          "median_job_ms": 300
+        },
+        "native": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 620794958,
+              "job_ms": 568
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 266240959,
+              "job_ms": 250
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 250494750,
+              "job_ms": 238
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 251007041,
+              "job_ms": 239
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 250870917,
+              "job_ms": 235
+            }
+          ],
+          "median_elapsed_ns": 250870917,
+          "median_job_ms": 238
+        },
+        "previous": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 889701666,
+              "job_ms": 833
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 511143042,
+              "job_ms": 492
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 539605375,
+              "job_ms": 511
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 446834792,
+              "job_ms": 434
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 470630333,
+              "job_ms": 459
+            }
+          ],
+          "median_elapsed_ns": 470630333,
+          "median_job_ms": 459
+        },
+        "native_over_stock": 0.7997623407154727,
+        "native_over_previous": 0.5330530129684607
+      },
+      "yyyy-MM-dd'T'HH:mm:ss": {
+        "previous": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 926900208,
+              "job_ms": 871
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 476917459,
+              "job_ms": 461
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 439322458,
+              "job_ms": 425
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 433215458,
+              "job_ms": 421
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 483753958,
+              "job_ms": 469
+            }
+          ],
+          "median_elapsed_ns": 439322458,
+          "median_job_ms": 425
+        },
+        "native": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 646076917,
+              "job_ms": 594
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 264322917,
+              "job_ms": 248
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 252534292,
+              "job_ms": 234
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 260645125,
+              "job_ms": 248
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 258654292,
+              "job_ms": 246
+            }
+          ],
+          "median_elapsed_ns": 258654292,
+          "median_job_ms": 246
+        },
+        "stock": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 629855917,
+              "job_ms": 584
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 317664334,
+              "job_ms": 302
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 300324833,
+              "job_ms": 286
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 308297833,
+              "job_ms": 295
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 344673791,
+              "job_ms": 333
+            }
+          ],
+          "median_elapsed_ns": 308297833,
+          "median_job_ms": 295
+        },
+        "native_over_stock": 0.8389753813157681,
+        "native_over_previous": 0.5887572722266796
+      }
+    },
+    "118": {
+      "yyyy-MM-dd": {
+        "previous": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 876317542,
+              "job_ms": 804
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 408091167,
+              "job_ms": 387
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 375361417,
+              "job_ms": 356
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 376652708,
+              "job_ms": 360
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 380722959,
+              "job_ms": 363
+            }
+          ],
+          "median_elapsed_ns": 376652708,
+          "median_job_ms": 360
+        },
+        "native": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 671515208,
+              "job_ms": 603
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 275126125,
+              "job_ms": 256
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 267723041,
+              "job_ms": 252
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 255460417,
+              "job_ms": 238
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 253018000,
+              "job_ms": 239
+            }
+          ],
+          "median_elapsed_ns": 255460417,
+          "median_job_ms": 239
+        },
+        "stock": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 625960583,
+              "job_ms": 524
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 285483250,
+              "job_ms": 268
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 265887167,
+              "job_ms": 249
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 258171834,
+              "job_ms": 246
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 277069584,
+              "job_ms": 265
+            }
+          ],
+          "median_elapsed_ns": 265887167,
+          "median_job_ms": 249
+        },
+        "native_over_stock": 0.9607850573698429,
+        "native_over_previous": 0.6782386309034582
+      },
+      "yyyy-MM-dd HH:mm:ss": {
+        "stock": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 596523959,
+              "job_ms": 535
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 353549458,
+              "job_ms": 334
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 306831542,
+              "job_ms": 293
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 347398042,
+              "job_ms": 336
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 377849292,
+              "job_ms": 366
+            }
+          ],
+          "median_elapsed_ns": 347398042,
+          "median_job_ms": 336
+        },
+        "native": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 668566625,
+              "job_ms": 605
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 281889709,
+              "job_ms": 262
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 265340917,
+              "job_ms": 250
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 273440667,
+              "job_ms": 257
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 261993458,
+              "job_ms": 248
+            }
+          ],
+          "median_elapsed_ns": 265340917,
+          "median_job_ms": 250
+        },
+        "previous": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 871098084,
+              "job_ms": 795
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 446847250,
+              "job_ms": 421
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 446707333,
+              "job_ms": 428
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 452540291,
+              "job_ms": 433
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 479627834,
+              "job_ms": 463
+            }
+          ],
+          "median_elapsed_ns": 452540291,
+          "median_job_ms": 433
+        },
+        "native_over_stock": 0.7637950849475427,
+        "native_over_previous": 0.5863365589253134
+      },
+      "yyyy-MM-dd'T'HH:mm:ss": {
+        "previous": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 939489584,
+              "job_ms": 861
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 501726667,
+              "job_ms": 480
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 479576875,
+              "job_ms": 459
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 469737042,
+              "job_ms": 454
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 476081083,
+              "job_ms": 459
+            }
+          ],
+          "median_elapsed_ns": 476081083,
+          "median_job_ms": 459
+        },
+        "native": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 644401542,
+              "job_ms": 573
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 270349209,
+              "job_ms": 254
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 265216500,
+              "job_ms": 251
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 266643833,
+              "job_ms": 255
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 267360625,
+              "job_ms": 256
+            }
+          ],
+          "median_elapsed_ns": 266643833,
+          "median_job_ms": 255
+        },
+        "stock": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 617907209,
+              "job_ms": 561
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 344058584,
+              "job_ms": 329
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 327733542,
+              "job_ms": 315
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 325597958,
+              "job_ms": 305
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 399507417,
+              "job_ms": 386
+            }
+          ],
+          "median_elapsed_ns": 327733542,
+          "median_job_ms": 315
+        },
+        "native_over_stock": 0.8135994606252417,
+        "native_over_previous": 0.560080714234134
+      }
+    }
+  },
+  "summary": {
+    "bulk_cells": 48,
+    "bulk_stock_speedup": [
+      2.861431727825331,
+      4.545764699541903
+    ],
+    "bulk_previous_speedup": [
+      4.167621720656453,
+      5.988610498347732
+    ],
+    "tiny_cells": 12,
+    "tiny_stock_losses": 10,
+    "tiny_stock_speedup": [
+      0.6760257116620753,
+      1.0616545693285053
+    ],
+    "raw_prepared_samples": 6000
+  }
+}
