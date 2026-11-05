@@ -13,7 +13,7 @@ unsupported `MATCH_RECOGNIZE` operator.
 | `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. DATE/plain-TIMESTAMP calendar fields and HOUR/MINUTE/SECOND over DATE, plain TIMESTAMP and TIME execute in Rust, preserving Java signed arithmetic. Direct LTZ extraction uses the planning JDK's serialized fixed/finite offset history; recurring-DST zones retain Flink. Interval fields and unverified wrappers remain generated. |
 | `TO_DATE(text)`, `TO_DATE(text, format)` | The one-argument parser stays in Rust; formatted parsing uses Flink. Dynamic formats, NULL behavior and invalid-input failures follow Flink. |
 | `TO_TIMESTAMP(text[, format])` | Flink parsing, including dynamic formats and full-range timestamp results. |
-| `TO_TIMESTAMP_LTZ` | Direct/literal integer epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. Ordinary Calc also admits verified CASE precision trees whose results are 0, 3 or NULL. TINYINT/SMALLINT/INT widen losslessly to BIGINT first. Verified integer arithmetic, widening and rounding trees also execute in Rust; widening happens after the computed integer result. Direct/literal DECIMAL epochs with literal precision 0/3 also execute in Rust in ordinary Calc, with the distinct released DECIMAL truncation/wrap contract below. Unverified precision/epoch producers, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
+| `TO_TIMESTAMP_LTZ` | Direct/literal integer epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. Ordinary Calc also admits verified CASE precision trees whose results are 0, 3 or NULL. TINYINT/SMALLINT/INT widen losslessly to BIGINT first. Verified integer arithmetic, widening and rounding trees also execute in Rust; widening happens after the computed integer result. Direct/literal DECIMAL epochs and proven same-operator ABS/negation/same-scale-widening producers with literal precision 0/3 also execute in Rust in ordinary Calc, with the distinct released DECIMAL truncation/wrap contract below. Unverified precision/epoch producers, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
 | `DATE_FORMAT`, `UNIX_TIMESTAMP(text[, format])`, `CONVERT_TZ` | Flink evaluation supports dynamic patterns and zones. The existing literal numeric-pattern DATE_FORMAT fast path for plain timestamps remains in Rust. |
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
@@ -106,12 +106,17 @@ Negative fractional seconds truncate toward zero, rather than retaining a fracti
 Arrow unary truncates the coefficient directly into a millisecond buffer, using
 64-bit division for compact DECIMAL and 128-bit division when required. The existing
 epoch kernel builds the timestamp components and strict range/NULL validity without
-introducing a different temporal representation or a JVM callback. Computed DECIMAL
-producers, runtime precision, UNNEST and surrounding unverified consumers keep their
-preceding generated paths. A catalog function with the same name cannot acquire this
+introducing a different temporal representation or a JVM callback. Ordinary Calc also
+accepts same-operator chains of DECIMAL `ABS` or unary minus, with lossless widening
+that keeps the scale. These children cannot overflow their resolved DECIMAL domain or
+fail, so native evaluation preserves lazy and empty-batch behavior. Mixed unary trees,
+arithmetic, scale-changing/narrowing casts, runtime precision, UNNEST and surrounding
+unverified consumers keep their preceding generated paths. A catalog function with the same name cannot acquire this
 builtin proof. Other numeric overloads are not implied by this admission.
 The [independent release qualification](../benchmarks/scalar-functions.md#decimal-epoch-conversion)
 retains actual preceding controls, tiny/full-job losses and exact artifacts.
+The separate [unary producer qualification](../benchmarks/scalar-functions.md#decimal-unary-epoch-producers)
+records the bounded admission extension and its exact preceding encoder.
 
 ## Native computed integer epochs
 

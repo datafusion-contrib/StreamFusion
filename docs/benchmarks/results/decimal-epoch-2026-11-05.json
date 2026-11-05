@@ -9186,5 +9186,6 @@
     "The feature does not implement decimal computed producers, arbitrary precision or other numeric/string signatures.",
     "Historical experiments/partial tests on preceding classpaths are not relabeled as final full-core qualification.",
     "Hosted CI must qualify the exact final PR head separately."
-  ]
+  ],
+  "performance_jdk": 17
 }

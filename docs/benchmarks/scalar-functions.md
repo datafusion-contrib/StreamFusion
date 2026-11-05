@@ -9985,7 +9985,7 @@ invocations is not counted as preceding parity evidence. Sixteen unchanged relea
 temporal method oracles pass separately. The earlier released-utility algorithm oracle
 has 806,336 matches; it is algorithm evidence, not native execution evidence.
 
-Prepared inputs match Generic/Binary RowData and Arrow over DECIMAL(18,0), (18,3),
+Prepared and complete-job timings use JDK 17. Prepared inputs match Generic/Binary RowData and Arrow over DECIMAL(18,0), (18,3),
 (19,0), (19,19), (38,0), (38,18) and (38,38), seconds/milliseconds, both NULL modes,
 1,024/16-row batches and signed-fraction/range/low-64-bit wrapping values. Each trial
 processes 131,072 rows, with 16 warmups and nine measurements. Timers start inside Rust
@@ -10027,4 +10027,76 @@ The [machine-readable qualification](results/decimal-epoch-2026-11-05.json) and
 pilot/final medians, full trials, independent controls, source/fixture/encoder bytecodes,
 complete current-core compilation, exact preceding/candidate release artifacts and
 allocator aliases. Historical qualifications keep their original provenance.
+Hosted CI must qualify the exact final head separately.
+
+
+## DECIMAL unary epoch producers
+
+Ordinary-Calc `TO_TIMESTAMP_LTZ(...,0/3)` also accepts total same-operator
+DECIMAL ABS/negation chains and widening casts that keep the scale. The existing
+unary/cast kernels compose with the independently qualified decimal epoch kernel:
+truncate toward zero, wrap low signed 64 bits, wrap seconds multiplication, then
+check final millisecond bounds. NULLs, resolved types, regional display, lazy branches
+and empty batches remain exact. Mixed unary trees, arithmetic, narrowing/scale-changing
+casts, runtime precision and UNNEST keep their previous routes.
+
+All 624 focused JVM invocations pass on released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java 11. Full 5,003-row maps/schema cover signed fractions,
+precision/scale extremes, low-64-bit wrapping, final bounds, NULLs, nullable/non-null
+sources, modern/legacy cast modes and New York/UTC sessions. Positive routes require
+consumed NativeCalc, no fallback and empty evaluator descriptors. The actual preceding
+encoder compares complete first-query maps/schema before ten expected pure-route failures
+per release/JDK pair; the retained-control method passes. Later unreached queries are
+not preceding parity evidence.
+
+This extension changes only planner admission: it reuses the unchanged release runtime
+with its preceding 925-core-test qualification and sixteen unchanged released temporal
+method oracles. Those historical results are not relabeled as fresh tests. All other
+sources match the complete-core compilation from that qualification; each SQL/performance
+configuration uses its freshly compiled preceding or candidate encoder with Java release 11.
+The source, encoder and runtime hashes are checked independently.
+
+Prepared and complete-job timings use JDK 17. Prepared inputs match Generic/Binary RowData and Arrow over DECIMAL(18,3), (19,0),
+(19,19), (38,0), (38,18) and (38,38), ABS/negation/nesting/same-scale widening,
+seconds/milliseconds, both NULL modes,
+1,024/16-row batches and signed-fraction/range/low-64-bit wrapping values. Each trial
+processes 131,072 rows, with 16 warmups and nine measurements. Timers start inside Rust
+after input setup/import and stop before export, retaining production Calc, allocation,
+conversion and equivalent output consumption. Only this small-function gate excludes
+perimeter JNI/C Data entry and transposes. Preceding measurement uses its actual
+JVM evaluator inside NativeCalc; it is not relabeled as stock fallback. Both processes
+retain independent stock controls; process order reverses on 1.18.
+
+All 48 prepared bulk cells beat stock 1.815-12.115x
+and actual preceding behavior 8.100-21.684x.
+10/12 tiny controls lose to stock
+(stock/native 0.295-1.291x), and
+0/12 lose to previous. These losses remain;
+no universal tiny-batch speedup is claimed.
+
+Six complete million-row job configurations retain submission/startup, JNI and both
+row/Arrow transposes, one thread, two warmups and five alternating measurements per
+engine. Native/stock elapsed ranges 0.909-1.025;
+native/previous ranges 0.623-0.871.
+1/6 complete medians lose to the paired stock control,
+1/6 lose to independent stock and
+0/6 lose to previous. All complete-job losses and ranges
+remain; a prepared bulk gain is not a whole-job acceleration claim.
+
+| Flink/DECIMAL/unit | Stock seconds | Native seconds | Independent stock seconds | Previous seconds |
+|---|---:|---:|---:|---:|
+| 22-negate-p18s3-u0 | 0.197845 | 0.196491 | 0.197402 | 0.239379 |
+| 22-abs-p38s18-u3 | 0.250061 | 0.234997 | 0.251065 | 0.368419 |
+| 22-widen-p19s0-u3 | 0.207587 | 0.212784 | 0.196798 | 0.245700 |
+| 118-negate-p18s3-u0 | 0.205466 | 0.204706 | 0.205045 | 0.235013 |
+| 118-abs-p38s18-u3 | 0.250150 | 0.227381 | 0.249014 | 0.365091 |
+| 118-widen-p19s0-u3 | 0.204820 | 0.202692 | 0.203000 | 0.246186 |
+
+The [machine-readable qualification](results/decimal-unary-epoch-2026-11-05.json) and
+[all 6,950 raw prepared samples](results/decimal-unary-epoch-2026-11-05.csv.gz) retain
+pilot/final medians, full trials, independent controls, source/fixture/encoder bytecodes,
+complete current-core compilation, exact preceding/candidate release artifacts and
+allocator aliases. The initial double-negation probe folded to an already-native direct input, so it cannot
+establish a new-feature gain: its three completed paired cells and fifty unpaired
+candidate samples are retained separately. Historical qualifications keep their original provenance.
 Hosted CI must qualify the exact final head separately.

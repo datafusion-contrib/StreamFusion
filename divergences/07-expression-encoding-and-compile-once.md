@@ -441,8 +441,11 @@ truncates toward zero, wraps the integral value to signed 64 bits, then wraps mu
 by 1,000 for seconds and checks the resulting millisecond bounds. It cannot reuse the
 integer-seconds overload's original-unit range check. The existing millisecond/fraction
 timestamp builder retains parent NULL/range validity and immutable child buffers. Other
-DECIMAL producers and precision expressions retain generated evaluation until separately
-verified; this introduces no new JNI transport or configuration switch.
+DECIMAL arithmetic and precision expressions retain generated evaluation until separately
+verified. Same-operator ABS/negation chains and same-scale widening are proven total and
+reuse the existing unary/cast kernels before epoch conversion; mixed unary, narrowing and
+scale-changing trees remain outside this proof. This introduces no new JNI transport or
+configuration switch.
 
 ### QUARTER
 

@@ -4537,8 +4537,10 @@ final class RexExpression {
     if (!tech.streamfusion.compat.FlinkCompat.isBuiltinEpochTimestamp(call.getOperator())
         || call.getOperands().size() != 2
         || call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.DECIMAL
-        || !(call.getOperands().get(0) instanceof RexInputRef
-            || call.getOperands().get(0) instanceof RexLiteral)
+        || !(nativeDecimalUnaryOperand(call.getOperands().get(0),
+                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS)
+            || nativeDecimalUnaryOperand(call.getOperands().get(0),
+                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS))
         || !(call.getOperands().get(1) instanceof RexLiteral)) return 0;
     BigDecimal precision = ((RexLiteral) call.getOperands().get(1)).getValueAs(BigDecimal.class);
     if (precision == null) return 0;

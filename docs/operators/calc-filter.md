@@ -3535,7 +3535,9 @@ leaves, fallible conditions, division, narrowing, unknown producers and string/f
 their existing routes, as does UNNEST admission. Ordinary Calc also admits direct/literal
 DECIMAL epochs at literal precision 0/3: truncate toward zero, wrap to signed 64 bits,
 wrap seconds-to-milliseconds multiplication, then check the final millisecond range.
-Computed DECIMAL and runtime DECIMAL precision retain generated evaluation. The integer
+Same-operator DECIMAL ABS/negation chains and same-scale widening also execute natively.
+Mixed unary trees, arithmetic, narrowing/scale changes and runtime DECIMAL precision
+retain generated evaluation. The integer
 original-unit range check must not be applied to this distinct released DECIMAL overload.
 See the complete [temporal function inventory](temporal-functions.md).
 Direct/literal LTZ FLOOR/CEIL in fixed-zero session zones also runs in Rust for DAY/HOUR
