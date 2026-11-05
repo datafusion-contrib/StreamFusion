@@ -1318,8 +1318,7 @@ Native, unconditionally, with no host involvement:
   while computing an operand. Both CAST and TRY_CAST also admit direct DECIMAL inputs/literals to bounded
   VARCHAR/CHAR: modern mode truncates or pads the ASCII decimal text through native LEFT/RPAD;
   legacy mode ignores target length. CHAR with maximum INT length is not padded, matching
-  released Flink. Both casts also admit verified DECIMAL ABS and unary minus, same-operator nesting,
-  ABS over verified negative producers,
+  released Flink. Both casts also admit verified alternating DECIMAL ABS and unary-minus trees,
   and same-scale precision widening before or after those operators. Their released-Flink result
   precision/scale stays unchanged, so the same formatter and ASCII width kernels apply. This
   computed-operand proof excludes failures while evaluating the operand; TRY_CAST does not catch
@@ -2079,7 +2078,7 @@ the declared precision (1 through 38), scale, NULLs and sliced validity; it neve
 through floating point. Like Comet's decimal ABS, the kernel transforms the unscaled i128
 and explicitly retains its Arrow decimal type. Each arithmetic node retains its own
 resolved precision/scale and overflow NULL. Division, remainder, mixed numeric operands,
-rescaling, precision narrowing, negation over ABS and other unverified producers
+rescaling, precision narrowing and other unverified producers
 retain the enclosing generated expression. Existing
 value-dependent FLOOR/CEIL and runtime-scale rounding guards still apply before this matcher.
 The [DECIMAL ABS measurements](../benchmarks/scalar-functions.md#decimal-abs) compare
@@ -2096,19 +2095,24 @@ ABS also admits verified negative DECIMAL producers, including `ABS(-d)`, negati
 subtrees of the existing arithmetic proof and same-scale widening. Leading verified
 negations are omitted: every valid DECIMAL coefficient has an exact negation, so ABS
 retains the same value, precision, scale and NULL without the intermediate array.
-This does not admit `-ABS(d)` or `ABS(-ABS(d))`. Those alternating chains retain
-generated evaluation, as do fallible/unverified producers. STRING and numeric-epoch
+The same verified proof also admits negation over ABS, such as `-ABS(d)` and
+`ABS(-ABS(d))`, and alternating trees of both operators. Fallible/unverified producers
+retain generated evaluation. STRING and numeric-epoch
 consumers retain their own separate proofs; the latter accepts total unary/widening
 trees but excludes arithmetic. The [release qualification](../benchmarks/scalar-functions.md#decimal-abs-over-negative-producers-2026-11-05)
 records prepared and complete-job comparisons against stock and the preceding evaluator.
+The separate [negation-over-ABS qualification](../benchmarks/scalar-functions.md#decimal-negation-over-absolute-values-2026-11-05)
+records the later alternating-tree admission. Existing arithmetic character-consumer
+guards remain separate: for example, `TRY_CAST(-ABS(d*d) AS CHAR(48))` retains its explicit
+fallback; direct total unary/widening inputs do not acquire that restriction.
 
 DECIMAL unary minus admits direct inputs/literals, recursive same-scale precision widening,
-nested admitted negation and DECIMAL-only addition/subtraction/multiplication over those
+nested admitted negation/ABS and DECIMAL-only addition/subtraction/multiplication over those
 producers. Every arithmetic node retains its own resolved precision/scale and overflow NULL.
 It uses Arrow's decimal numeric negation for arrays and direct i128 scalar dispatch,
 retaining precision, scale and NULL without a JVM evaluator. All legal DECIMAL extrema
 have a representable negation. Division, remainder, mixed numeric operands, rescaling,
-narrowing, mixed ABS/negation chains and other producers retain their whole generated expression; existing rounding
+narrowing and other unverified producers retain their whole generated expression; existing rounding
 metadata guards remain unchanged. See the
 [DECIMAL unary-minus controls](../benchmarks/scalar-functions.md#decimal-unary-minus).
 The [arithmetic-producer controls](../benchmarks/scalar-functions.md#decimal-negation-over-arithmetic)
@@ -3568,10 +3572,8 @@ leaves, fallible conditions, division, narrowing, unknown producers and string/f
 their existing routes, as does UNNEST admission. Ordinary Calc also admits direct/literal
 DECIMAL epochs at literal precision 0/3: truncate toward zero, wrap to signed 64 bits,
 wrap seconds-to-milliseconds multiplication, then check the final millisecond range.
-Same-operator DECIMAL ABS/negation chains and same-scale widening also execute natively.
-ABS over verified negative producers also qualifies; negation over ABS, arithmetic,
-narrowing/scale changes and runtime DECIMAL precision
-retain generated evaluation. The integer
+Verified alternating DECIMAL ABS/negation chains and same-scale widening also execute natively.
+Arithmetic, narrowing/scale changes and runtime DECIMAL precision retain generated evaluation. The integer
 original-unit range check must not be applied to this distinct released DECIMAL overload.
 Flink 2.2 single-argument numeric `TO_TIMESTAMP_LTZ` uses the same verified integer/DECIMAL
 producer proofs at its released default precision 3. Flink 1.18's validation rejection,

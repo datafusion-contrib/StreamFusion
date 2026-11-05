@@ -69,10 +69,8 @@ class FlinkDecimalAbsNegateSqlHarnessTest {
   }
 
   @Test
-  void unverifiedAlternationCastsAndFallibleInputsKeepGeneratedEvaluation() throws Exception {
-    for (String sql : List.of("SELECT id,-ABS(d) FROM src",
-        "SELECT id,ABS(-ABS(d)) FROM src",
-        "SELECT id,ABS(-CAST(d AS DECIMAL(18,0))) FROM src",
+  void unverifiedCastsAndFallibleInputsKeepGeneratedEvaluation() throws Exception {
+    for (String sql : List.of("SELECT id,ABS(-CAST(d AS DECIMAL(18,0))) FROM src",
         "SELECT id,TO_TIMESTAMP_LTZ(ABS(-d+e),3) FROM src",
         "SELECT id,ABS(-(d/(id-id))) FROM src WHERE id<0",
         "SELECT id,CASE WHEN id>=0 THEN ABS(-d) ELSE ABS(-(d/(id-id))) END FROM src")) {

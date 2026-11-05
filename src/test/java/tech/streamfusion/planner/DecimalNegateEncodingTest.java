@@ -35,7 +35,11 @@ class DecimalNegateEncodingTest {
           var widened =
               rex.makeCall(
                   wide, FlinkSqlOperatorTable.UNARY_MINUS, List.of(rex.makeCast(wide, operand)));
-          for (RexNode expression : List.of(call, nested, widened)) {
+          var abs = rex.makeCall(type, FlinkSqlOperatorTable.ABS, List.of(operand));
+          var negativeAbs = rex.makeCall(type, FlinkSqlOperatorTable.UNARY_MINUS, List.of(abs));
+          var alternating = rex.makeCall(type, FlinkSqlOperatorTable.UNARY_MINUS,
+              List.of(rex.makeCall(type, FlinkSqlOperatorTable.ABS, List.of(negativeAbs))));
+          for (RexNode expression : List.of(call, nested, widened, negativeAbs, alternating)) {
             var encoded = RexExpression.encodeProjections(List.of(expression), List.of("d"));
             assertNotNull(encoded, expression.toString());
             assertEquals(6, encoded.kinds()[0]);
@@ -77,7 +81,7 @@ class DecimalNegateEncodingTest {
             rex.makeCall(type, FlinkSqlOperatorTable.MOD, List.of(input, input)),
             rex.makeCall(type, FlinkSqlOperatorTable.PLUS,
                 List.of(input, rex.makeInputRef(types.createSqlType(SqlTypeName.INTEGER), 1))),
-            rex.makeCall(type, FlinkSqlOperatorTable.ABS, List.of(input)),
+            rex.makeCall(type, FlinkSqlOperatorTable.SIGN, List.of(input)),
             rex.makeCast(types.createSqlType(SqlTypeName.DECIMAL, 18, 2), input),
             rex.makeCast(types.createSqlType(SqlTypeName.DECIMAL, 17, 3), input))) {
       var call =

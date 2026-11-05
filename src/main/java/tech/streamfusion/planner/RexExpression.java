@@ -5380,7 +5380,10 @@ final class RexExpression {
     if (nativeDecimalArithmeticUnary(call, operator)
         || (operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS
             && nativeDecimalArithmeticUnary(call,
-                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS))) {
+                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS))
+        || (operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS
+            && nativeDecimalArithmeticUnary(call,
+                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS))) {
       return true;
     }
     if (isDecimalArithmetic(call)
@@ -5404,7 +5407,10 @@ final class RexExpression {
     if (nativeDecimalUnary(call, operator)
         || (operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS
             && nativeDecimalUnary(call,
-                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS))) {
+                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS))
+        || (operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS
+            && nativeDecimalUnary(call,
+                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS))) {
       return true;
     }
     if (call.getKind() != SqlKind.CAST || call.getOperands().size() != 1) return false;

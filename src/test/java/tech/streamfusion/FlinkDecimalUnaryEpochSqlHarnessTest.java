@@ -15,6 +15,7 @@ class FlinkDecimalUnaryEpochSqlHarnessTest {
     for (boolean nullable : new boolean[] {false, true}) {
       String sql = "SELECT id,TO_TIMESTAMP_LTZ(-d,0),TO_TIMESTAMP_LTZ(ABS(d),3),"
           + "TO_TIMESTAMP_LTZ(-(-d),3),TO_TIMESTAMP_LTZ(ABS(ABS(e)),0),"
+          + "TO_TIMESTAMP_LTZ(-ABS(d),3),TO_TIMESTAMP_LTZ(ABS(-ABS(e)),0),"
           + "TO_TIMESTAMP_LTZ(CAST(-d AS DECIMAL(38," + scale + ")),3),"
           + "CASE WHEN MOD(id,3)=0 THEN TO_TIMESTAMP_LTZ(ABS(d),0) "
           + "ELSE TO_TIMESTAMP_LTZ(-e,3) END FROM src";
@@ -30,7 +31,6 @@ class FlinkDecimalUnaryEpochSqlHarnessTest {
   @Test
   void overflowProducingArithmeticAndFallibleOrRuntimePrecisionKeepTheirRoutes() throws Exception {
     for (String sql : List.of("SELECT id,TO_TIMESTAMP_LTZ(d+d,3) FROM src",
-        "SELECT id,TO_TIMESTAMP_LTZ(-ABS(d),3) FROM src",
         "SELECT id,TO_TIMESTAMP_LTZ(CAST(d AS DECIMAL(18,0)),3) FROM src",
         "SELECT id,TO_TIMESTAMP_LTZ(d/(id-id),0) FROM src WHERE id<0",
         "SELECT id,CASE WHEN id>=0 THEN TO_TIMESTAMP_LTZ(-d,3) "

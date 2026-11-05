@@ -52,7 +52,7 @@ class FlinkDefaultPrecisionEpochSqlHarnessTest {
         var coefficients = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions
             .decimalEpochCoefficients(precision, scale).toArray(new java.math.BigInteger[0]);
         String sql = "SELECT id,TO_TIMESTAMP_LTZ(d),TO_TIMESTAMP_LTZ(-d),"
-            + "TO_TIMESTAMP_LTZ(ABS(e)),TO_TIMESTAMP_LTZ(CAST(d AS DECIMAL(38," + scale
+            + "TO_TIMESTAMP_LTZ(ABS(e)),TO_TIMESTAMP_LTZ(-ABS(d)),TO_TIMESTAMP_LTZ(CAST(d AS DECIMAL(38," + scale
             + "))),TO_TIMESTAMP_LTZ(d) IS NULL,"
             + "CASE WHEN MOD(id,3)=0 THEN TO_TIMESTAMP_LTZ(e) "
             + "ELSE CAST(NULL AS TIMESTAMP_LTZ(3)) END FROM src";
@@ -69,8 +69,6 @@ class FlinkDefaultPrecisionEpochSqlHarnessTest {
           "SELECT id,TO_TIMESTAMP_LTZ(n/(id-id)) FROM src WHERE id<0", false);
       FlinkDecimalBooleanTryCastSqlHarnessTest.verify(18, 3, true, false,
           "SELECT id,TO_TIMESTAMP_LTZ(d+d) FROM src", false);
-      FlinkDecimalBooleanTryCastSqlHarnessTest.verify(18, 3, true, false,
-          "SELECT id,TO_TIMESTAMP_LTZ(-ABS(d)) FROM src", false);
       BuiltinFunctionParity.assertParity(() -> BuiltinFunctionParity.environment(
           DataTypes.ROW(DataTypes.FIELD("s", DataTypes.STRING())),
           List.of(Row.of("2024-01-02 03:04:05"), Row.of((Object) null))),

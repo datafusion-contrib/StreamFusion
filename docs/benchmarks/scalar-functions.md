@@ -10396,3 +10396,60 @@ See the [qualification and exact source/runtime provenance](results/decimal-abs-
 and [5,000 raw prepared samples](results/decimal-abs-negate-2026-11-05.csv.gz).
 The broader exact numeric scope remains tracked in
 [#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## DECIMAL negation over absolute values (2026-11-05)
+
+Verified DECIMAL unary minus now consumes ABS and alternating trees of both operators,
+including `-ABS(d)`, `ABS(-ABS(d))` and same-scale widening. The existing decimal-only
+arithmetic proof admits the same verified unary subtrees. Released ABS and negation keep
+precision and scale; every valid coefficient has an exact signed counterpart. The
+existing native kernels preserve NULLs, resolved intermediate types and arithmetic
+overflow. No production Rust/JNI change or performance switch is added. SIGN's separate
+representation proof, narrowing, rescaling and fallible/unverified producers remain unchanged.
+Total unary/widened character and epoch consumers also stay native; arithmetic epochs
+and unverified arithmetic character consumers keep their previous routes.
+
+All **212 focused/related JVM invocations** pass across released Flink 1.18.1/2.2.1 and
+JDK 11/17, targeting Java 11. Another **12 consumer-control invocations** pass on the
+same four combinations. These contain 64 new SQL invocations and 160 related invocations,
+with no skipped or aborted cases. Complete 5,003-row maps/schema cover ten precision/scale
+pairs, strict/legacy modes, independent NULLs, NOT NULL inputs, alternating trees,
+character/Boolean/CASE/epoch consumers and all-filtered batches. Positive pure paths consume
+NativeCalc with no fallback and empty JVM evaluators. Direct overflow keeps ERROR/DROP
+constraint enforcement; final NOT NULL defaults and predicate NULL flags are checked separately.
+`TRY_CAST(-ABS(d*d) AS CHAR(48))` explicitly retains its existing fallback and matches stock;
+this qualification does not silently extend character admission over arithmetic roots.
+Twelve unchanged released ABS and numeric/decimal unary stock-oracle invocations pass.
+Actual preceding encoder `6454ff64a` matches each first query's complete values/schema,
+then fails ten expected new route assertions per released-line JDK17 control; three
+retained controls pass. Unreached later queries are not prior-parity evidence.
+The unchanged release runtime retains its preceding 927-core-test qualification, not a
+new Rust run. Focused and final performance encoder instructions match on both released lines.
+
+Prepared release measurements use `(-ABS(...)<0 OR CAST(NULL AS BOOLEAN))` through the
+existing checksum fixture. Six shapes cover DECIMAL(18,3), (38,18), (38,38), widening
+from (19,0), arithmetic and alternating (19,19) trees. Each uses nullable/nonnullable and
+Generic/Binary RowData controls, 1,024-row batches and a separate 16-row nullable/Binary
+control, on both released lines. Stock starts on equivalent prebuilt RowData; native
+starts on prebuilt Arrow. The Rust timer excludes initial input preparation/import and
+final export, while retaining allocations, conversions and prior JVM callbacks intrinsic
+to the expression. Each trial processes 131,072 rows, with sixteen warmups and nine
+measurements. Actual preceding and candidate encoders share the same release runtime
+and fixture. Independent stock controls, warmups and all variability remain in the records;
+no other tests or benchmarks run concurrently.
+
+All **48 bulk cells** beat stock by **1.562-13.880x** and previous by **4.686-21.670x**.
+All **12 tiny controls lose to stock**, with stock/native **0.114-0.484x**. Six complete
+million-row jobs output DECIMAL directly, retaining submission/startup, production JNI
+and both RowData/Arrow transposes. At parallelism one, each engine has two warmups and
+five measured repetitions. All six native medians lose to paired stock, with
+native/stock elapsed **1.001-1.228**; the narrowest 0.12% difference is near parity.
+All six beat the preceding evaluator, with native/previous **0.772-0.921**. These are
+bounded prepared-function gains; row-source boundary costs remain material and no
+complete-job acceleration is claimed.
+
+See the [qualification and exact provenance](results/decimal-negate-abs-2026-11-05.json)
+and [6,000 raw prepared samples](results/decimal-negate-abs-2026-11-05.csv.gz).
+The remaining exact numeric and character-conversion scopes stay open in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491) and
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
