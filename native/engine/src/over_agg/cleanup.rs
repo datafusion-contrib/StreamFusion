@@ -44,6 +44,14 @@ impl OverWindowAggregator {
         columns.push(Arc::new(Int64Array::from(
             self.cleanup_state.values().copied().collect::<Vec<_>>(),
         )));
+        if self.event_cleanup_external_timers || !self.event_cleanup_unarmed.is_empty() {
+            fields.push(Field::new(EVENT_CLEANUP_ARMED, DataType::Boolean, false));
+            columns.push(Arc::new(BooleanArray::from(
+                keys.iter()
+                    .map(|key| !self.event_cleanup_unarmed.contains(*key))
+                    .collect::<Vec<_>>(),
+            )));
+        }
         write_ipc(
             &RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
                 .expect("cleanup snapshot"),
@@ -85,7 +93,31 @@ impl OverWindowAggregator {
             if self.range_offset().is_none() && !self.processing_rows() {
                 assert_eq!(deadlines.null_count(), 0, "NULL cleanup deadline");
             }
+            let armed = batch.column_by_name(EVENT_CLEANUP_ARMED).map(|column| {
+                column
+                    .as_any()
+                    .downcast_ref::<BooleanArray>()
+                    .expect("OVER cleanup ownership")
+            });
+            if let Some(armed) = armed {
+                assert!(
+                    self.range_offset().is_none()
+                        && !self.proctime
+                        && matches!(self.inner, OverInner::Aggregates(_)),
+                    "event cleanup ownership on another protocol"
+                );
+                assert_eq!(armed.null_count(), 0, "NULL cleanup ownership");
+                assert_eq!(
+                    deadlines.null_count(),
+                    0,
+                    "event cleanup ownership without deadline"
+                );
+            }
             for row in 0..batch.num_rows() {
+                if armed.is_some_and(|armed| !armed.value(row)) {
+                    self.event_cleanup_unarmed
+                        .insert(ByteKey::from(keys.row(row).data()));
+                }
                 if !deadlines.is_null(row) {
                     stamps.insert(ByteKey::from(keys.row(row).data()), deadlines.value(row));
                 }
@@ -115,6 +147,26 @@ impl OverWindowAggregator {
             .expect("cleanup deadlines");
         let key_columns = (0..arity).collect::<Vec<_>>();
         let store = self.store.as_ref().expect("over rocksdb store");
+        let armed = batch.column_by_name(EVENT_CLEANUP_ARMED).map(|column| {
+            column
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .expect("OVER cleanup ownership")
+        });
+        if let Some(armed) = armed {
+            assert!(
+                self.range_offset().is_none()
+                    && !self.proctime
+                    && matches!(self.inner, OverInner::Aggregates(_)),
+                "event cleanup ownership on another protocol"
+            );
+            assert_eq!(armed.null_count(), 0, "NULL cleanup ownership");
+            assert_eq!(
+                deadlines.null_count(),
+                0,
+                "event cleanup ownership without deadline"
+            );
+        }
         let entries = (0..batch.num_rows())
             .map(|row| {
                 let group = store.key_group(binary_row_hash(
@@ -125,14 +177,19 @@ impl OverWindowAggregator {
                 ));
                 (
                     store.stamp_key(group, keys.row(row).data()),
-                    (!deadlines.is_null(row)).then(|| deadlines.value(row)),
+                    (!deadlines.is_null(row)).then(|| {
+                        (
+                            deadlines.value(row),
+                            armed.is_none_or(|armed| armed.value(row)),
+                        )
+                    }),
                 )
             })
             .collect::<Vec<_>>();
         self.store
             .as_mut()
             .expect("over rocksdb store")
-            .write_stamps(&entries)?;
+            .write_cleanup_stamps(&entries)?;
         if self.range_offset().is_some() {
             self.restore_range_timer_batch(batch, &keys);
             self.sync_store_range_timers()?;
@@ -166,12 +223,12 @@ impl OverWindowAggregator {
         entries.extend(self.cleanup_state.iter().map(|(key, &deadline)| {
             (
                 store.stamp_key(self.store_fold_key_group(&key.0), &key.0),
-                Some(deadline),
+                Some((deadline, !self.event_cleanup_unarmed.contains(key))),
             )
         }));
         self.store
             .as_mut()
             .expect("over rocksdb store")
-            .write_stamps(&entries)
+            .write_cleanup_stamps(&entries)
     }
 }

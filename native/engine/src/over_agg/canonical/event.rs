@@ -1,5 +1,13 @@
 use super::*;
 
+struct PreparedEventBatch {
+    key_types: Vec<DataType>,
+    key_converter: Option<RowConverter>,
+    keys: arrow::row::Rows,
+    times: Int64Array,
+    timer_armed: Option<BooleanArray>,
+}
+
 impl OverWindowAggregator {
     fn canonical_event(&self) -> Result<(), DataFusionError> {
         match &self.inner {
@@ -64,10 +72,10 @@ impl OverWindowAggregator {
         Ok(())
     }
 
-    pub(super) fn import_canonical_pending(
-        &mut self,
-        batch: RecordBatch,
-    ) -> Result<(), DataFusionError> {
+    fn prepare_canonical_pending(
+        &self,
+        batch: &RecordBatch,
+    ) -> Result<PreparedEventBatch, DataFusionError> {
         self.canonical_event()?;
         if self.rt_column >= batch.num_columns()
             || self
@@ -142,6 +150,26 @@ impl OverWindowAggregator {
         }
         let mut converter = Some(key_row_converter_from_types(&types));
         let keys = encode_keys(&mut converter, &arrays, batch.num_rows());
+        Ok(PreparedEventBatch {
+            key_types: types,
+            key_converter: converter,
+            keys,
+            times,
+            timer_armed: None,
+        })
+    }
+
+    pub(super) fn import_canonical_pending(
+        &mut self,
+        batch: RecordBatch,
+    ) -> Result<(), DataFusionError> {
+        let PreparedEventBatch {
+            key_types: types,
+            key_converter: converter,
+            keys,
+            times,
+            ..
+        } = self.prepare_canonical_pending(&batch)?;
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &mut self.store {
             store.push_pending(
@@ -189,36 +217,56 @@ impl OverWindowAggregator {
         }
         let types = self.event_key_types()?;
         let converter = Some(key_row_converter_from_types(&types));
+        let ownership =
+            self.event_cleanup_external_timers || !self.event_cleanup_unarmed.is_empty();
         let mut fields = key_fields(&types);
         fields.push(Field::new(STAMP, DataType::Int64, false));
+        if ownership {
+            fields.push(Field::new(EVENT_CLEANUP_ARMED, DataType::Boolean, false));
+        }
         let schema = Arc::new(Schema::new(fields));
         let mut keys = Vec::with_capacity(CHUNK_ROWS);
         let mut stamps = Vec::with_capacity(CHUNK_ROWS);
+        let mut armed = Vec::with_capacity(CHUNK_ROWS);
         for (key, &stamp) in &self.cleanup_state {
             keys.push(key.0.as_ref());
             stamps.push(stamp);
+            armed.push(!self.event_cleanup_unarmed.contains(key));
             if keys.len() == CHUNK_ROWS {
                 let mut columns = decode_byte_keys(converter.as_ref(), &keys, &types);
                 columns.push(Arc::new(Int64Array::from(std::mem::take(&mut stamps))));
+                if ownership {
+                    columns.push(Arc::new(BooleanArray::from(std::mem::take(&mut armed))));
+                }
                 accept(RecordBatch::try_new(schema.clone(), columns)?)?;
                 keys.clear();
+                armed.clear();
             }
         }
         if !keys.is_empty() {
             let mut columns = decode_byte_keys(converter.as_ref(), &keys, &types);
             columns.push(Arc::new(Int64Array::from(stamps)));
+            if ownership {
+                columns.push(Arc::new(BooleanArray::from(armed)));
+            }
             accept(RecordBatch::try_new(schema, columns)?)?;
         }
         Ok(())
     }
 
-    fn import_canonical_cleanup(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+    fn prepare_canonical_cleanup(
+        &self,
+        batch: &RecordBatch,
+    ) -> Result<PreparedEventBatch, DataFusionError> {
         self.canonical_event()?;
         if !self.deadline_cleaning() {
             return Err(invalid("cleanup state requires enabled deadline retention"));
         }
         let arity = self.key_columns.len();
-        if batch.num_columns() != arity + 1 || batch.schema().field(arity).name() != STAMP {
+        let ownership = self.event_cleanup_external_timers && batch.num_columns() == arity + 2;
+        if (batch.num_columns() != arity + 1 && !ownership)
+            || batch.schema().field(arity).name() != STAMP
+        {
             return Err(invalid("unexpected cleanup state schema"));
         }
         let stamps = batch
@@ -226,9 +274,28 @@ impl OverWindowAggregator {
             .as_any()
             .downcast_ref::<Int64Array>()
             .ok_or_else(|| invalid("cleanup deadline must be BIGINT"))?;
-        if stamps.null_count() != 0 || stamps.iter().any(|stamp| stamp == Some(i64::MIN)) {
+        if stamps.null_count() != 0
+            || (!self.event_cleanup_external_timers
+                && stamps.iter().any(|stamp| stamp == Some(i64::MIN)))
+        {
             return Err(invalid("cleanup deadline is NULL or uninitialized"));
         }
+        let timer_armed = if ownership {
+            if batch.schema().field(arity + 1).name() != EVENT_CLEANUP_ARMED {
+                return Err(invalid("unexpected event cleanup ownership field"));
+            }
+            let armed = batch
+                .column(arity + 1)
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .ok_or_else(|| invalid("event cleanup ownership must be BOOLEAN"))?;
+            if armed.null_count() != 0 {
+                return Err(invalid("NULL event cleanup ownership"));
+            }
+            Some(armed.clone())
+        } else {
+            None
+        };
         let arrays = (0..arity)
             .map(|column| batch.column(column))
             .collect::<Vec<_>>();
@@ -245,12 +312,36 @@ impl OverWindowAggregator {
                 return Err(invalid("duplicate cleanup key"));
             }
         }
+        Ok(PreparedEventBatch {
+            key_types: types,
+            key_converter: converter,
+            keys,
+            times: stamps.clone(),
+            timer_armed,
+        })
+    }
+
+    fn import_canonical_cleanup(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        let PreparedEventBatch {
+            key_types: types,
+            key_converter: converter,
+            keys,
+            times: stamps,
+            timer_armed,
+        } = self.prepare_canonical_cleanup(batch)?;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             self.write_store_cleanup(batch)?;
         }
         for row in 0..batch.num_rows() {
             let key = ByteKey::from(keys.row(row).data());
+            if timer_armed.as_ref().is_some_and(|armed| !armed.value(row)) {
+                if self.event_cleanup_unarmed.insert(key.clone()) {
+                    self.retention_bytes += byte_key_bytes(&key.0);
+                }
+            } else if self.event_cleanup_unarmed.remove(&key) {
+                self.retention_bytes -= byte_key_bytes(&key.0);
+            }
             if self
                 .cleanup_state
                 .insert(key.clone(), stamps.value(row))
@@ -329,6 +420,46 @@ pub extern "system" fn Java_tech_streamfusion_Native_importOverCleanupCanonical<
         let result = {
             let batch = import_record_batch(array, schema);
             operator.import_canonical_cleanup(&batch)
+        };
+        if let Err(error) = result {
+            report(&mut env, error);
+        }
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_validateOverPendingCanonical<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    array: jlong,
+    schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let operator = unsafe { &*(handle as *const OverWindowAggregator) };
+        let result = {
+            let batch = import_record_batch(array, schema);
+            operator.prepare_canonical_pending(&batch).map(|_| ())
+        };
+        if let Err(error) = result {
+            report(&mut env, error);
+        }
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_validateOverCleanupCanonical<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    array: jlong,
+    schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let operator = unsafe { &*(handle as *const OverWindowAggregator) };
+        let result = {
+            let batch = import_record_batch(array, schema);
+            operator.prepare_canonical_cleanup(&batch).map(|_| ())
         };
         if let Err(error) = result {
             report(&mut env, error);

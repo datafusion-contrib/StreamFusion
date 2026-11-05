@@ -2,6 +2,8 @@ use crate::*;
 
 mod canonical;
 mod cleanup;
+mod event_cleanup;
+use event_cleanup::EVENT_CLEANUP_ARMED;
 mod proc_rows;
 mod range_flush;
 mod range_timers;
@@ -2705,6 +2707,8 @@ pub(crate) struct OverWindowAggregator {
     range_timers: HashMap<ByteKey, RangeTimers>,
     proc_rows: HashMap<ByteKey, ProcRowsState>,
     processing_rows_external_timers: bool,
+    event_cleanup_external_timers: bool,
+    event_cleanup_unarmed: ahash::HashSet<ByteKey>,
     /// Per-key last-write wall clock for the proctime unbounded shape's per-value TTL
     /// (`StateTtlConfig`, OnCreateAndWrite / NeverReturnExpired — stamped on every processed row).
     last_write_ms: HashMap<ByteKey, i64>,
@@ -2778,6 +2782,8 @@ impl OverWindowAggregator {
             range_timers: HashMap::default(),
             proc_rows: HashMap::default(),
             processing_rows_external_timers: false,
+            event_cleanup_external_timers: false,
+            event_cleanup_unarmed: ahash::HashSet::default(),
             last_write_ms: HashMap::default(),
             pending_rows: HashMap::default(),
             last_sweep_ms: 0,
@@ -2878,7 +2884,7 @@ impl OverWindowAggregator {
     /// Flink's `registerProcessingCleanupTimer`: the deadline moves to `now + maxRetention` only
     /// when the key has none, or the current one would land within a min-retention of now.
     fn register_cleanup(&mut self, key: &[u8], now_ms: i64) {
-        let (armed, minimum) = if self.processing_rows() {
+        let (armed, minimum) = if self.processing_rows() || self.event_cleanup_external_timers {
             (
                 now_ms.wrapping_add(self.max_retention_ms),
                 now_ms.wrapping_add(self.min_retention_ms),
@@ -2893,11 +2899,17 @@ impl OverWindowAggregator {
             Some(deadline) => {
                 if minimum > *deadline {
                     *deadline = armed;
+                    if self.event_cleanup_unarmed.remove(key) {
+                        self.retention_bytes -= byte_key_bytes(key);
+                    }
                 }
             }
             None => {
                 self.retention_bytes += byte_key_bytes(key);
                 self.cleanup_state.insert(ByteKey::from(key), armed);
+                if self.event_cleanup_unarmed.remove(key) {
+                    self.retention_bytes -= byte_key_bytes(key);
+                }
             }
         }
     }
@@ -2930,6 +2942,9 @@ impl OverWindowAggregator {
         if self.cleanup_state.remove(key).is_some() {
             self.retention_bytes -= byte_key_bytes(key);
         }
+        if self.event_cleanup_unarmed.remove(key) {
+            self.retention_bytes -= byte_key_bytes(key);
+        }
         if let Some(timers) = self.range_timers.remove(key) {
             self.retention_bytes -= byte_key_bytes(key) + timers.bytes();
         }
@@ -2948,6 +2963,9 @@ impl OverWindowAggregator {
     /// shape has no deferral and clears its frame unconditionally (the frame restarts short,
     /// exactly as in Flink).
     fn expire_if_due(&mut self, key: &[u8], now_ms: i64) {
+        if self.event_cleanup_external_timers {
+            return;
+        }
         match self.cleanup_state.get(key) {
             Some(&deadline) if now_ms >= deadline && !self.pending_rows.contains_key(key) => {
                 self.clear_key(key);
@@ -2961,7 +2979,10 @@ impl OverWindowAggregator {
     /// rows pending a watermark) re-arms to `now + maxRetention` instead — Flink's fired timer
     /// re-registering.
     fn maybe_sweep(&mut self, now_ms: i64) {
-        if self.processing_rows_external_timers || self.independent_distinct_ttl() {
+        if self.processing_rows_external_timers
+            || self.event_cleanup_external_timers
+            || self.independent_distinct_ttl()
+        {
             return;
         }
         if now_ms < self.last_sweep_ms.saturating_add(self.min_retention_ms) {
@@ -3258,9 +3279,12 @@ impl OverWindowAggregator {
             .store
             .as_ref()
             .expect("over rocksdb store")
-            .scan_stamps()?;
-        for (key, stamp) in stamps {
+            .scan_cleanup_stamps()?;
+        for (key, stamp, armed) in stamps {
             let key = ByteKey(key);
+            if !armed && self.event_cleanup_unarmed.insert(key.clone()) {
+                self.retention_bytes += byte_key_bytes(&key.0);
+            }
             if !self.cleanup_state.contains_key(&key) {
                 self.retention_bytes += byte_key_bytes(&key.0);
             }
@@ -3872,14 +3896,16 @@ impl OverWindowAggregator {
             .map(|key| {
                 (
                     store.stamp_key(self.store_fold_key_group(&key.0), &key.0),
-                    self.cleanup_state.get(key).copied(),
+                    self.cleanup_state
+                        .get(key)
+                        .map(|&stamp| (stamp, !self.event_cleanup_unarmed.contains(key))),
                 )
             })
             .collect();
         self.store
             .as_mut()
             .expect("over rocksdb store")
-            .write_stamps(&entries)
+            .write_cleanup_stamps(&entries)
     }
 
     fn admission_mask(
@@ -5066,6 +5092,8 @@ impl OverWindowAggregator {
             &self.snapshot_cleanup(),
             if self.range_offset().is_some() || self.processing_rows() {
                 3
+            } else if self.event_cleanup_external_timers || !self.event_cleanup_unarmed.is_empty() {
+                2
             } else {
                 1
             },
@@ -5256,6 +5284,8 @@ impl OverWindowAggregator {
             range_timers: HashMap::default(),
             proc_rows: HashMap::default(),
             processing_rows_external_timers: false,
+            event_cleanup_external_timers: false,
+            event_cleanup_unarmed: ahash::HashSet::default(),
             last_write_ms: HashMap::default(),
             pending_rows: HashMap::default(),
             last_sweep_ms: 0,
@@ -5343,7 +5373,12 @@ impl OverWindowAggregator {
                 .chain(self.pending_rows.keys())
                 .map(|key| byte_key_bytes(&key.0))
                 .sum::<usize>()
-                + self.proc_rows_bytes();
+                + self.proc_rows_bytes()
+                + self
+                    .event_cleanup_unarmed
+                    .iter()
+                    .map(|key| byte_key_bytes(&key.0))
+                    .sum::<usize>();
         } else if self.value_ttl_on() {
             self.last_write_ms = stamps;
             if !(has_ttl_column && self.independent_distinct_ttl()) {

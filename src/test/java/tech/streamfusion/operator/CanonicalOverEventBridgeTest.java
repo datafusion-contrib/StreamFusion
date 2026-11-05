@@ -82,6 +82,11 @@ class CanonicalOverEventBridgeTest {
       var cleanup = dump(CLEANUP, source);
       assertEquals(4, pending.size());
       assertEquals(ttl > 1 ? (keyless ? 1 : 4) : 0, cleanup.size());
+      transfer(PENDING, source, target, Native::validateOverPendingCanonical);
+      if (ttl > 1) transfer(CLEANUP, source, target, Native::validateOverCleanupCanonical);
+      assertTrue(dump(PENDING, target).isEmpty());
+      assertTrue(dump(CLEANUP, target).isEmpty());
+      assertTrue(dump(FOLDS, target).isEmpty());
       transfer(FOLDS, source, target, Native::importOverFoldCanonical);
       transfer(PENDING, source, target, Native::importOverPendingCanonical);
       if (ttl > 1) transfer(CLEANUP, source, target, Native::importOverCleanupCanonical);
@@ -235,6 +240,16 @@ class CanonicalOverEventBridgeTest {
       RowType malformedType = type;
       List<RowData> malformedRows = input;
       Importer invalid = importer;
+      Importer validator =
+          List.of("stamp", "null_stamp", "duplicate").contains(mode)
+              ? Native::validateOverCleanupCanonical
+              : Native::validateOverPendingCanonical;
+      assertThrows(
+          RuntimeException.class,
+          () -> importRows(validator, target, malformedRows, malformedType));
+      assertTrue(dump(PENDING, target).isEmpty());
+      assertTrue(dump(CLEANUP, target).isEmpty());
+      assertTrue(dump(FOLDS, target).isEmpty());
       assertThrows(
           RuntimeException.class, () -> importRows(invalid, target, malformedRows, malformedType));
       assertTrue(dump(PENDING, target).isEmpty());
@@ -255,6 +270,7 @@ class CanonicalOverEventBridgeTest {
         Native.createOverAggregator(
             new int[] {1}, new int[] {0}, 2, new int[] {1}, new int[] {0}, 3, 0, false, 1000, 1);
     try {
+      importRows(Native::validateOverPendingCanonical, handle, List.of(row(1L, 1.0, 10)), INPUT);
       assertThrows(
           tech.streamfusion.NativeMemoryLimitException.class,
           () ->
@@ -262,6 +278,37 @@ class CanonicalOverEventBridgeTest {
                   Native::importOverPendingCanonical, handle, List.of(row(1L, 1.0, 10)), INPUT));
     } finally {
       Native.closeOverAggregator(handle);
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  @ParameterizedTest
+  @MethodSource("receiverCases")
+  void validationLeavesExistingFoldsPendingRowsAndDeadlinesUnchanged(
+      boolean persistent, boolean deadlines) {
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    long target = create(persistent, false, true, 1000, "populated");
+    try {
+      push(target, List.of(row(1L, 3.0, 1)), 100);
+      flush(target, 1, 101);
+      push(target, List.of(row(2L, 7.0, 10)), 200);
+      push(target, List.of(row(9L, 99.0, 1)), 201);
+      var folds = dump(FOLDS, target);
+      var pending = dump(PENDING, target);
+      var cleanup = dump(CLEANUP, target);
+      assertFalse(folds.isEmpty());
+      assertFalse(pending.isEmpty());
+      assertEquals(3, cleanup.size());
+      transfer(
+          deadlines ? CLEANUP : PENDING,
+          target,
+          target,
+          deadlines ? Native::validateOverCleanupCanonical : Native::validateOverPendingCanonical);
+      assertEquals(folds, dump(FOLDS, target));
+      assertEquals(pending, dump(PENDING, target));
+      assertEquals(cleanup, dump(CLEANUP, target));
+    } finally {
+      close(target, persistent);
     }
     assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
   }

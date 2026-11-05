@@ -256,6 +256,14 @@ fn malformed_pending_rows_fail_before_buffer_or_retention_mutation() {
         }
         let malformed = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
         assert!(
+            target.prepare_canonical_pending(&malformed).is_err(),
+            "{mode}"
+        );
+        assert!(target.buffered.is_empty(), "{mode}");
+        assert!(target.pending_rows.is_empty(), "{mode}");
+        assert!(target.cleanup_state.is_empty(), "{mode}");
+        assert_eq!(target.retention_bytes, 0, "{mode}");
+        assert!(
             target.import_canonical_pending(malformed).is_err(),
             "{mode}"
         );
@@ -305,6 +313,12 @@ fn malformed_cleanup_deadlines_fail_before_any_key_is_installed() {
         }
         let malformed = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
         assert!(
+            target.prepare_canonical_cleanup(&malformed).is_err(),
+            "{mode}"
+        );
+        assert!(target.cleanup_state.is_empty(), "{mode}");
+        assert_eq!(target.retention_bytes, 0, "{mode}");
+        assert!(
             target.import_canonical_cleanup(&malformed).is_err(),
             "{mode}"
         );
@@ -324,6 +338,218 @@ fn seed_checkpoint_state(source: &mut OverWindowAggregator) {
     source
         .push(timed(&[Some(9)], &[Some(99.0)], &[1]), 201)
         .unwrap();
+}
+
+fn state_keys<T: Copy>(state: &HashMap<ByteKey, T>) -> std::collections::BTreeMap<Vec<u8>, T> {
+    state
+        .iter()
+        .map(|(key, value)| (key.0.as_ref().to_vec(), *value))
+        .collect()
+}
+
+fn event_state(operator: &OverWindowAggregator) -> impl std::fmt::Debug + PartialEq {
+    let mut folds = Vec::new();
+    operator
+        .visit_canonical_folds(|batch| {
+            folds.push(batch);
+            Ok(())
+        })
+        .unwrap();
+    (
+        rows_of(&folds),
+        rows_of(&pending(operator)),
+        rows_of(&cleanup(operator)),
+        operator.input_schema.clone(),
+        operator.cleanup_key_types(),
+        operator.key_converter.is_some(),
+        state_keys(&operator.pending_rows),
+        state_keys(&operator.cleanup_state),
+        state_keys(&operator.last_write_ms),
+        operator
+            .event_cleanup_unarmed
+            .iter()
+            .map(|key| key.0.to_vec())
+            .collect::<std::collections::BTreeSet<_>>(),
+        (
+            operator.watermark,
+            operator.next_seq,
+            operator.last_sweep_ms,
+            operator.frame_clock,
+            operator.late_drops,
+            operator.retention_bytes,
+            operator.memory.state_bytes,
+        ),
+    )
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn pending_and_cleanup_preflight_leaves_fresh_and_populated_targets_identical() {
+    for persistent in [false, true] {
+        for keyless in [false, true] {
+            for rows in [false, true] {
+                for populated in [false, true] {
+                    let directory = tempfile::tempdir().unwrap();
+                    let mut source = operator(
+                        keyless,
+                        rows,
+                        1000,
+                        persistent,
+                        &directory.path().join("source"),
+                    );
+                    let mut target = operator(
+                        keyless,
+                        rows,
+                        1000,
+                        persistent,
+                        &directory.path().join("target"),
+                    );
+                    source.proctime = false;
+                    target.proctime = false;
+                    seed_checkpoint_state(&mut source);
+                    if populated {
+                        seed_checkpoint_state(&mut target);
+                    }
+                    let source_before = event_state(&source);
+                    let target_before = event_state(&target);
+                    for batch in pending(&source) {
+                        target.prepare_canonical_pending(&batch).unwrap();
+                        assert_eq!(event_state(&target), target_before);
+                    }
+                    for batch in cleanup(&source) {
+                        target.prepare_canonical_cleanup(&batch).unwrap();
+                        assert_eq!(event_state(&target), target_before);
+                    }
+                    assert_eq!(event_state(&source), source_before);
+                    if !populated {
+                        source
+                            .visit_canonical_folds(|batch| target.import_canonical_folds(&batch))
+                            .unwrap();
+                        source
+                            .visit_canonical_pending(|batch| target.import_canonical_pending(batch))
+                            .unwrap();
+                        source
+                            .visit_canonical_cleanup(|batch| {
+                                target.import_canonical_cleanup(&batch)
+                            })
+                            .unwrap();
+                        assert_eq!(rows_of(&pending(&source)), rows_of(&pending(&target)));
+                        assert_eq!(rows_of(&cleanup(&source)), rows_of(&cleanup(&target)));
+                        assert_eq!(
+                            rows_of(&[source.flush(10, 300).unwrap()]),
+                            rows_of(&[target.flush(10, 300).unwrap()])
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn validated_pending_keys_do_not_seed_a_memory_targets_key_codec_or_schema() {
+    let mut target = memory(false, true, 1000);
+    target.proctime = false;
+    let initial = event_state(&target);
+    let integers = timed(&[Some(1)], &[Some(2.0)], &[10]);
+    target.prepare_canonical_pending(&integers).unwrap();
+    assert_eq!(event_state(&target), initial);
+    let strings = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Utf8, true),
+            integers.schema().field(1).clone(),
+            integers.schema().field(2).clone(),
+        ])),
+        vec![
+            Arc::new(StringArray::from(vec!["different-key-type"])),
+            integers.column(1).clone(),
+            integers.column(2).clone(),
+        ],
+    )
+    .unwrap();
+    target.prepare_canonical_pending(&strings).unwrap();
+    assert_eq!(event_state(&target), initial);
+    target.import_canonical_pending(strings).unwrap();
+    assert_eq!(target.cleanup_key_types(), vec![DataType::Utf8]);
+    assert_eq!(
+        pending(&target)
+            .iter()
+            .map(RecordBatch::num_rows)
+            .sum::<usize>(),
+        1
+    );
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn malformed_later_event_chunk_keeps_validated_target_empty_and_source_retryable() {
+    for persistent in [false, true] {
+        for deadlines in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut source = operator(
+                false,
+                true,
+                1000,
+                persistent,
+                &directory.path().join("source"),
+            );
+            let mut target = operator(
+                false,
+                true,
+                1000,
+                persistent,
+                &directory.path().join("target"),
+            );
+            source.proctime = false;
+            target.proctime = false;
+            let keys = (0..2500).map(Some).collect::<Vec<_>>();
+            source
+                .push(
+                    timed(&keys, &vec![Some(1.0); keys.len()], &vec![10; keys.len()]),
+                    100,
+                )
+                .unwrap();
+            let source_before = event_state(&source);
+            let target_before = event_state(&target);
+            let mut chunks = if deadlines {
+                cleanup(&source)
+            } else {
+                pending(&source)
+            };
+            assert_eq!(chunks.len(), 3);
+            let last = chunks.pop().unwrap();
+            let mut columns = last.columns().to_vec();
+            let column = if deadlines { 1 } else { 2 };
+            columns[column] = Arc::new(Int64Array::from(vec![i64::MIN; last.num_rows()]));
+            let malformed = RecordBatch::try_new(last.schema(), columns).unwrap();
+            for batch in &chunks {
+                if deadlines {
+                    target.prepare_canonical_cleanup(batch).unwrap();
+                } else {
+                    target.prepare_canonical_pending(batch).unwrap();
+                }
+                assert_eq!(event_state(&target), target_before);
+            }
+            assert!(if deadlines {
+                target.prepare_canonical_cleanup(&malformed)
+            } else {
+                target.prepare_canonical_pending(&malformed)
+            }
+            .is_err());
+            assert_eq!(event_state(&target), target_before);
+            assert_eq!(event_state(&source), source_before);
+            source
+                .visit_canonical_pending(|batch| target.import_canonical_pending(batch))
+                .unwrap();
+            source
+                .visit_canonical_cleanup(|batch| target.import_canonical_cleanup(&batch))
+                .unwrap();
+            assert_eq!(
+                rows_of(&[source.flush(10, 200).unwrap()]),
+                rows_of(&[target.flush(10, 200).unwrap()])
+            );
+        }
+    }
 }
 
 #[cfg(feature = "rocksdb-state")]
@@ -702,4 +928,388 @@ fn pending_schema_change_rejects_logical_columns_before_touching_live_state() {
     assert_eq!(pending(&target), before);
     assert!(target.cleanup_state.is_empty());
     assert_eq!(target.pending_rows.values().sum::<u32>(), 1);
+}
+
+#[test]
+fn event_cleanup_binding_rejects_other_protocols_without_mutation() {
+    for ttl in [0, 1, 1000] {
+        let mut processing = memory(false, true, ttl);
+        assert!(processing.bind_event_cleanup_timers().is_err());
+        assert!(!processing.event_cleanup_external_timers);
+        processing.proctime = false;
+        if ttl <= 1 {
+            assert!(processing.bind_event_cleanup_timers().is_err());
+            assert!(!processing.event_cleanup_external_timers);
+        } else {
+            processing.bind_event_cleanup_timers().unwrap();
+            assert_eq!(processing.next_event_cleanup().unwrap(), None);
+        }
+    }
+    let mut bounded = OverWindowAggregator::new(vec![1], vec![0], 2, vec![1], vec![0], 1, 2, false)
+        .with_state_retention(1000);
+    assert!(bounded.bind_event_cleanup_timers().is_err());
+    assert!(!bounded.event_cleanup_external_timers);
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn event_cleanup_callbacks_clear_idle_and_late_only_keys_and_defer_pending_at_actual_clock() {
+    for persistent in [false, true] {
+        for keyless in [false, true] {
+            for rows in [false, true] {
+                let directory = tempfile::tempdir().unwrap();
+                let mut source = operator(keyless, rows, 1000, persistent, directory.path());
+                source.proctime = false;
+                source.bind_event_cleanup_timers().unwrap();
+                seed_checkpoint_state(&mut source);
+                let before = event_state(&source);
+                assert_eq!(source.next_event_cleanup().unwrap(), Some(1600));
+                assert!(source.fire_event_cleanup(1600, 1599).is_err());
+                assert_eq!(event_state(&source), before);
+                while let Some(deadline) = source
+                    .next_event_cleanup()
+                    .unwrap()
+                    .filter(|time| *time <= 1800)
+                {
+                    source.fire_event_cleanup(deadline, 1800).unwrap();
+                }
+                assert_eq!(source.cleanup_state.len(), 1);
+                assert_eq!(source.next_event_cleanup().unwrap(), Some(3300));
+                assert_eq!(source.pending_rows.values().sum::<u32>(), 1);
+                let mut folds = 0;
+                source
+                    .visit_canonical_folds(|batch| {
+                        folds += batch.num_rows();
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(folds, usize::from(keyless));
+                assert_eq!(source.flush(10, 1900).unwrap().num_rows(), 1);
+                assert!(source.pending_rows.is_empty());
+                assert_eq!(source.next_event_cleanup().unwrap(), Some(3300));
+                source.fire_event_cleanup(3300, 3300).unwrap();
+                assert!(source.cleanup_state.is_empty());
+                assert!(source.event_cleanup_unarmed.is_empty());
+                assert_eq!(source.next_event_cleanup().unwrap(), None);
+                let mut folds = 0;
+                source
+                    .visit_canonical_folds(|batch| {
+                        folds += batch.num_rows();
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(folds, 0);
+                assert_eq!(source.retention_bytes, 0);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+fn restore_event_timer_checkpoint(
+    source: &mut OverWindowAggregator,
+    keyless: bool,
+    rows: bool,
+    from_store: bool,
+    to_store: bool,
+    path: &std::path::Path,
+) -> OverWindowAggregator {
+    let precisions: &[i32] = if keyless {
+        &[i32::MIN]
+    } else {
+        &[i32::MIN, -1]
+    };
+    let snapshots = if from_store {
+        source.canonical_partitions(128, precisions).unwrap()
+    } else {
+        source.snapshot_partitions(128, precisions)
+    };
+    assert!(!snapshots.is_empty());
+    let columns: Vec<usize> = if keyless { vec![] } else { vec![0] };
+    for (&group, bytes) in &snapshots {
+        let (_, cleanup) = OverWindowAggregator::split_cleanup(bytes);
+        for batch in read_ipc_if_present(cleanup) {
+            for row in 0..batch.num_rows() {
+                assert_eq!(
+                    group,
+                    flink_key_group(binary_row_hash(&batch, &columns, row, precisions), 128) as i32
+                );
+            }
+        }
+    }
+    let snapshots = snapshots.into_values().collect::<Vec<_>>();
+    let mut restored = if to_store {
+        let mut target = operator(keyless, rows, 1000, true, path);
+        target.proctime = false;
+        target.import_partitions(&snapshots).unwrap();
+        target.adopt_store_retention(900).unwrap();
+        target
+    } else {
+        OverWindowAggregator::restore_partitions(
+            vec![1; 5],
+            vec![0, 3, 4, 1, 2],
+            2,
+            vec![1; 5],
+            if keyless { vec![] } else { vec![0] },
+            if rows { 3 } else { 0 },
+            0,
+            false,
+            &snapshots,
+            1000,
+            900,
+        )
+    };
+    restored.bind_event_cleanup_timers().unwrap();
+    restored
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn overflowed_event_cleanup_value_without_a_timer_survives_direct_transfer_and_native_checkpoints()
+{
+    for keyless in [false, true] {
+        for rows in [false, true] {
+            for from_store in [false, true] {
+                for to_store in [false, true] {
+                    let directory = tempfile::tempdir().unwrap();
+                    let mut source = operator(
+                        keyless,
+                        rows,
+                        1000,
+                        from_store,
+                        &directory.path().join("source"),
+                    );
+                    source.proctime = false;
+                    source.bind_event_cleanup_timers().unwrap();
+                    source
+                        .push(timed(&[Some(1)], &[Some(3.0)], &[10]), i64::MAX - 500)
+                        .unwrap();
+                    let deadline = i64::MIN + 999;
+                    assert_eq!(source.next_event_cleanup().unwrap(), Some(deadline));
+                    source.fire_event_cleanup(deadline, i64::MAX - 400).unwrap();
+                    assert_eq!(source.next_event_cleanup().unwrap(), None);
+                    assert_eq!(
+                        source.cleanup_state.values().copied().collect::<Vec<_>>(),
+                        vec![deadline]
+                    );
+                    assert_eq!(source.event_cleanup_unarmed.len(), 1);
+                    let expected_pending = rows_of(&pending(&source));
+                    let expected_cleanup = rows_of(&cleanup(&source));
+                    let mut direct = operator(
+                        keyless,
+                        rows,
+                        1000,
+                        to_store,
+                        &directory.path().join("direct"),
+                    );
+                    direct.proctime = false;
+                    direct.bind_event_cleanup_timers().unwrap();
+                    source
+                        .visit_canonical_pending(|batch| direct.import_canonical_pending(batch))
+                        .unwrap();
+                    source
+                        .visit_canonical_cleanup(|batch| {
+                            direct.prepare_canonical_cleanup(&batch)?;
+                            direct.import_canonical_cleanup(&batch)
+                        })
+                        .unwrap();
+                    let mut restored = restore_event_timer_checkpoint(
+                        &mut source,
+                        keyless,
+                        rows,
+                        from_store,
+                        to_store,
+                        &directory.path().join("restored"),
+                    );
+                    for target in [&mut direct, &mut restored] {
+                        assert_eq!(target.next_event_cleanup().unwrap(), None);
+                        assert_eq!(target.event_cleanup_unarmed.len(), 1);
+                        assert_eq!(rows_of(&cleanup(target)), expected_cleanup);
+                        assert_eq!(rows_of(&pending(target)), expected_pending);
+                        assert_eq!(target.retention_bytes, source.retention_bytes);
+                        target
+                            .push(timed(&[Some(1)], &[Some(4.0)], &[11]), 0)
+                            .unwrap();
+                        assert!(target.event_cleanup_unarmed.is_empty());
+                        assert_eq!(target.next_event_cleanup().unwrap(), Some(1500));
+                        assert_eq!(target.flush(11, 1).unwrap().num_rows(), 2);
+                        target.fire_event_cleanup(1500, 1500).unwrap();
+                        assert_eq!(target.retention_bytes, 0);
+                        assert!(target.cleanup_state.is_empty());
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn minimum_timestamp_is_a_real_event_cleanup_timer_for_fresh_late_only_keys() {
+    for keyless in [false, true] {
+        for rows in [false, true] {
+            for from_store in [false, true] {
+                for to_store in [false, true] {
+                    let directory = tempfile::tempdir().unwrap();
+                    let mut source = operator(
+                        keyless,
+                        rows,
+                        1000,
+                        from_store,
+                        &directory.path().join("source"),
+                    );
+                    source.proctime = false;
+                    source.bind_event_cleanup_timers().unwrap();
+                    source.flush(1, 0).unwrap();
+                    source
+                        .push(timed(&[Some(9)], &[Some(99.0)], &[1]), i64::MAX - 1499)
+                        .unwrap();
+                    assert!(source.pending_rows.is_empty());
+                    assert_eq!(source.next_event_cleanup().unwrap(), Some(i64::MIN));
+                    let expected = rows_of(&cleanup(&source));
+                    let mut restored = restore_event_timer_checkpoint(
+                        &mut source,
+                        keyless,
+                        rows,
+                        from_store,
+                        to_store,
+                        &directory.path().join("restored"),
+                    );
+                    assert_eq!(restored.next_event_cleanup().unwrap(), Some(i64::MIN));
+                    assert_eq!(rows_of(&cleanup(&restored)), expected);
+                    restored.fire_event_cleanup(i64::MIN, 0).unwrap();
+                    assert_eq!(restored.next_event_cleanup().unwrap(), None);
+                    assert_eq!(restored.retention_bytes, 0);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn event_cleanup_ownership_preflight_rejects_invalid_fields_without_state_changes() {
+    let mut source = memory(false, true, 1000);
+    source.proctime = false;
+    source.bind_event_cleanup_timers().unwrap();
+    seed_checkpoint_state(&mut source);
+    let valid = cleanup(&source).remove(0);
+    let before = event_state(&source);
+    for variant in 0..3 {
+        let mut fields = valid
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| f.as_ref().clone())
+            .collect::<Vec<_>>();
+        let mut columns = valid.columns().to_vec();
+        let index = columns.len() - 1;
+        match variant {
+            0 => fields[index] = Field::new("unknown-ownership", DataType::Boolean, false),
+            1 => {
+                fields[index] = Field::new(EVENT_CLEANUP_ARMED, DataType::Int64, false);
+                columns[index] = Arc::new(Int64Array::from(vec![1; valid.num_rows()]));
+            }
+            _ => {
+                fields[index] = Field::new(EVENT_CLEANUP_ARMED, DataType::Boolean, true);
+                columns[index] = Arc::new(BooleanArray::from(vec![None; valid.num_rows()]));
+            }
+        }
+        let invalid = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
+        assert!(source.prepare_canonical_cleanup(&invalid).is_err());
+        assert!(source.import_canonical_cleanup(&invalid).is_err());
+        assert_eq!(event_state(&source), before);
+    }
+    let mut unbound = memory(false, true, 1000);
+    unbound.proctime = false;
+    let before = event_state(&unbound);
+    assert!(unbound.import_canonical_cleanup(&valid).is_err());
+    assert_eq!(event_state(&unbound), before);
+}
+
+#[test]
+fn bound_event_cleanup_uses_released_wrapping_max_retention_horizon() {
+    for minimum in [2, 1000, i64::MAX / 2, i64::MAX] {
+        let mut source = memory(false, true, minimum);
+        source.proctime = false;
+        source.bind_event_cleanup_timers().unwrap();
+        source
+            .push(timed(&[Some(1)], &[Some(1.0)], &[10]), 0)
+            .unwrap();
+        assert_eq!(
+            source.next_event_cleanup().unwrap(),
+            Some(minimum.wrapping_mul(3) / 2)
+        );
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn unarmed_cleanup_value_survives_actual_native_database_checkpoint() {
+    for keyless in [false, true] {
+        for rows in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut source = operator(keyless, rows, 1000, true, &directory.path().join("source"));
+            source.proctime = false;
+            source.bind_event_cleanup_timers().unwrap();
+            source
+                .push(timed(&[Some(1)], &[Some(3.0)], &[10]), i64::MAX - 500)
+                .unwrap();
+            source
+                .fire_event_cleanup(i64::MIN + 999, i64::MAX - 400)
+                .unwrap();
+            assert_eq!(source.next_event_cleanup().unwrap(), None);
+            let snapshot = directory.path().join("snapshot");
+            let manifest = source.checkpoint_store(snapshot.to_str().unwrap()).unwrap();
+            let bytes = source.retention_bytes;
+            let types = source.inner.store_state_types();
+            drop(source);
+            let store = crate::state::RocksOverAggStore::open_merged(
+                crate::state::RocksStoreConfig {
+                    table_dir: directory.path().join("restored").to_str().unwrap().into(),
+                    max_parallelism: 128,
+                    options_json: include_str!("../../../../benches/fixtures/rocks-options.json")
+                        .into(),
+                    ttl_ms: 0,
+                    shared_resources: 0,
+                },
+                &types,
+                &[],
+                &[],
+                batch(&[], &[]).schema(),
+                0..=127,
+                &[(snapshot.to_str().unwrap().into(), manifest.snapshot_id)],
+                true,
+            )
+            .unwrap();
+            let mut restored = memory(keyless, rows, 1000);
+            restored.proctime = false;
+            restored = restored
+                .with_key_timestamp_precisions(if keyless {
+                    vec![i32::MIN]
+                } else {
+                    vec![i32::MIN, -1]
+                })
+                .with_store(
+                    store,
+                    if keyless {
+                        vec![]
+                    } else {
+                        vec![DataType::Int64]
+                    },
+                );
+            restored.adopt_store_retention(900).unwrap();
+            restored.bind_event_cleanup_timers().unwrap();
+            assert_eq!(restored.next_event_cleanup().unwrap(), None);
+            assert_eq!(restored.event_cleanup_unarmed.len(), 1);
+            assert_eq!(restored.pending_rows.values().sum::<u32>(), 1);
+            assert_eq!(restored.retention_bytes, bytes);
+            restored
+                .push(timed(&[Some(1)], &[Some(4.0)], &[11]), 0)
+                .unwrap();
+            assert_eq!(restored.next_event_cleanup().unwrap(), Some(1500));
+            assert_eq!(restored.flush(11, 1).unwrap().num_rows(), 2);
+            restored.fire_event_cleanup(1500, 1500).unwrap();
+            assert_eq!(restored.retention_bytes, 0);
+        }
+    }
 }

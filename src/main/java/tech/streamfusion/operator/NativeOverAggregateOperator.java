@@ -40,6 +40,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   private final boolean proctime;
   private final long stateTtlMillis;
   private final RowType rowType;
+  private boolean eventCleanupTimers;
   private RowType constantType;
   private byte[] constantValues;
   private transient RowType nativeRowType;
@@ -49,6 +50,8 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   private transient long reportedLateRecords;
   private transient java.util.concurrent.ScheduledFuture<?> processingCleanup;
   private transient long processingCleanupDeadline;
+  private transient boolean processingCleanupArmed;
+  private transient long processingCleanupGeneration;
 
   public NativeOverAggregateOperator(
       int timeColumn,
@@ -74,6 +77,18 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
     this.proctime = proctime;
     this.stateTtlMillis = stateTtlMillis;
     this.rowType = rowType;
+  }
+
+  public NativeOverAggregateOperator withEventTimeCleanupTimers() {
+    if (proctime || (frameKind != 0 && frameKind != 3) || stateTtlMillis <= 1)
+      throw new IllegalArgumentException("Event cleanup requires retained unbounded rowtime OVER");
+    eventCleanupTimers = true;
+    return this;
+  }
+
+  @Override
+  protected void configureStateHandle() {
+    if (eventCleanupTimers) Native.bindOverEventCleanupTimers(handle);
   }
 
   public NativeOverAggregateOperator withConstantArguments(RowType type, byte[] values) {
@@ -262,6 +277,8 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
 
   @Override
   protected void closeHandle() {
+    processingCleanupArmed = false;
+    processingCleanupGeneration++;
     if (processingCleanup != null) {
       processingCleanup.cancel(false);
       processingCleanup = null;
@@ -313,33 +330,48 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
       numLateRecordsDropped = getMetricGroup().counter("numLateRecordsDropped");
     }
     if (processingCleanupEnabled()) {
-      Native.bindOverProcessingRowsCleanupTimers(handle);
+      if (!eventCleanupTimers) Native.bindOverProcessingRowsCleanupTimers(handle);
       armProcessingCleanup();
     }
   }
 
   private boolean processingCleanupEnabled() {
-    return proctime && frameKind == 1 && stateTtlMillis > 1;
+    return eventCleanupTimers || proctime && frameKind == 1 && stateTtlMillis > 1;
   }
 
   private void armProcessingCleanup() {
     if (!processingCleanupEnabled()) return;
-    long[] next = Native.nextOverProcessingRowsCleanup(handle);
-    if (processingCleanup != null && next.length == 1 && processingCleanupDeadline == next[0])
-      return;
+    long[] next =
+        eventCleanupTimers
+            ? Native.nextOverEventCleanup(handle)
+            : Native.nextOverProcessingRowsCleanup(handle);
+    if (processingCleanupArmed && next.length == 1 && processingCleanupDeadline == next[0]) return;
     if (processingCleanup != null) processingCleanup.cancel(false);
     processingCleanup = null;
+    processingCleanupArmed = false;
     if (next.length == 1) {
+      long generation = ++processingCleanupGeneration;
       processingCleanupDeadline = next[0];
-      processingCleanup =
-          getProcessingTimeService().registerTimer(next[0], this::fireProcessingCleanup);
+      processingCleanupArmed = true;
+      var future =
+          getProcessingTimeService()
+              .registerTimer(next[0], timestamp -> fireProcessingCleanup(timestamp, generation));
+      if (processingCleanupArmed && processingCleanupGeneration == generation)
+        processingCleanup = future;
+      else future.cancel(false);
     }
   }
 
-  private void fireProcessingCleanup(long timestamp) {
-    if (processingCleanup == null || processingCleanupDeadline != timestamp) return;
+  private void fireProcessingCleanup(long timestamp, long generation) {
+    if (!processingCleanupArmed
+        || generation != processingCleanupGeneration
+        || processingCleanupDeadline != timestamp) return;
+    processingCleanupArmed = false;
     processingCleanup = null;
-    Native.fireOverProcessingRowsCleanup(handle, timestamp);
+    if (eventCleanupTimers)
+      Native.fireOverEventCleanup(
+          handle, timestamp, getProcessingTimeService().getCurrentProcessingTime());
+    else Native.fireOverProcessingRowsCleanup(handle, timestamp);
     publishStateBytes();
     armProcessingCleanup();
   }
@@ -479,6 +511,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
       }
     }
     publishStateBytes();
+    armProcessingCleanup();
     super.processWatermark(mark);
   }
 }

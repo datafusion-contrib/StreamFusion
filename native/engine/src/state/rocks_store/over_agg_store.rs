@@ -804,17 +804,51 @@ impl RocksOverAggStore {
         writes.finish()
     }
 
-    /// Every persisted per-key stamp — restore-time retention hydration for the bounded shapes.
+    pub(crate) fn write_cleanup_stamps(
+        &mut self,
+        entries: &[(Vec<u8>, Option<(i64, bool)>)],
+    ) -> Result<(), DataFusionError> {
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        for (key, stamp) in entries {
+            match stamp {
+                Some((stamp, true)) => writes.put(key, stamp.to_le_bytes())?,
+                Some((stamp, false)) => {
+                    let mut value = stamp.to_le_bytes().to_vec();
+                    value.push(0);
+                    writes.put(key, value)?;
+                }
+                None => writes.delete(key)?,
+            }
+        }
+        writes.finish()
+    }
+
     pub(crate) fn scan_stamps(&self) -> Result<Vec<(Box<[u8]>, i64)>, DataFusionError> {
+        Ok(self
+            .scan_cleanup_stamps()?
+            .into_iter()
+            .map(|(key, stamp, _)| (key, stamp))
+            .collect())
+    }
+
+    pub(crate) fn scan_cleanup_stamps(
+        &self,
+    ) -> Result<Vec<(Box<[u8]>, i64, bool)>, DataFusionError> {
         let mut out = Vec::new();
         for row in self.db.iterator(IteratorMode::Start) {
-            let (db_key, value) = row.map_err(re)?;
-            if db_key.len() < KEY_PREFIX_LEN || db_key[4] != STAMPS_TABLE || value.len() != 8 {
+            let (key, value) = row.map_err(re)?;
+            if key.len() < KEY_PREFIX_LEN || key[4] != STAMPS_TABLE {
                 continue;
             }
+            if value.len() != 8 && !(value.len() == 9 && value[8] == 0) {
+                return Err(DataFusionError::Execution(
+                    "invalid OVER cleanup stamp".into(),
+                ));
+            }
             out.push((
-                db_key[KEY_PREFIX_LEN..].into(),
-                i64::from_le_bytes(value[..8].try_into().expect("stamp")),
+                key[KEY_PREFIX_LEN..].into(),
+                i64::from_le_bytes(value[..8].try_into().unwrap()),
+                value.len() == 8,
             ));
         }
         Ok(out)
@@ -1454,6 +1488,48 @@ mod tests {
             0..=127,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn cleanup_stamp_reader_preserves_old_armed_and_new_unarmed_values() {
+        let mut store = sum_store("cleanup-ownership");
+        let old = store.stamp_key(1, b"old");
+        let unarmed = store.stamp_key(2, b"unarmed");
+        store
+            .write_stamps(&[(old.clone(), Some(i64::MIN))])
+            .unwrap();
+        store
+            .write_cleanup_stamps(&[(unarmed.clone(), Some((i64::MAX, false)))])
+            .unwrap();
+        assert_eq!(store.db.get(&old).unwrap().unwrap().len(), 8);
+        assert_eq!(store.db.get(&unarmed).unwrap().unwrap().len(), 9);
+        let entries = store
+            .scan_cleanup_stamps()
+            .unwrap()
+            .into_iter()
+            .map(|(key, stamp, armed)| (key.to_vec(), (stamp, armed)))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(entries.get(b"old".as_slice()), Some(&(i64::MIN, true)));
+        assert_eq!(entries.get(b"unarmed".as_slice()), Some(&(i64::MAX, false)));
+        assert_eq!(store.scan_stamps().unwrap().len(), 2);
+        store
+            .write_cleanup_stamps(&[(unarmed.clone(), Some((7, true))), (old, None)])
+            .unwrap();
+        assert_eq!(store.db.get(&unarmed).unwrap().unwrap().len(), 8);
+        assert_eq!(store.scan_cleanup_stamps().unwrap().len(), 1);
+        store.write_cleanup_stamps(&[(unarmed, None)]).unwrap();
+        assert!(store.scan_cleanup_stamps().unwrap().is_empty());
+    }
+
+    #[test]
+    fn malformed_cleanup_stamp_encodings_fail_closed() {
+        let store = sum_store("cleanup-ownership-corrupt");
+        let key = store.stamp_key(0, b"broken");
+        for bytes in [vec![], vec![0; 7], vec![0; 10], vec![1; 9]] {
+            store.db.put(&key, bytes).unwrap();
+            assert!(store.scan_cleanup_stamps().is_err());
+            assert!(store.scan_stamps().is_err());
+        }
     }
 
     fn store_sum_over(name: &str, retention_ms: i64) -> OverWindowAggregator {

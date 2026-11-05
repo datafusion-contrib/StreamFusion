@@ -1547,3 +1547,47 @@ claim constant-query checkpoint/no-input/rescaling qualification. A separate 32-
 regression passes 24 bounded OVER continuations and eight global GROUP BY rescalings.
 Native connector transactions, sink-writer rescaling and the wider failure/version matrix remain
 unfinished; the custom fixtures establish their stock connector protocols only.
+
+
+### Event-time pending-state preflight
+
+The event-time transfer interface exposes separate read-only validation for pending input rows
+and processing-time cleanup deadlines. Validation shares the same preparation as import, checks
+rowtime/RowKind/schema/key types and deadline uniqueness, and builds only temporary key codecs.
+It does not install keys, buffers, clocks, retention maps, generated schemas or persistent rows.
+A stock adapter can therefore validate every source chunk before applying the first chunk and
+keep the source available for a fresh-target retry after failure. No serialized native snapshot
+or new durable format is introduced.
+
+The released stock event-time `inputState`, cleanup ValueState, timer queues and automatic
+planner binding still require their complete adapter and full-job qualification under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). This validation interface
+alone does not qualify event-time unbounded OVER interchange. The full engine suite passes
+1,351 tests with two existing ignores; 61 JNI event-transfer controls pass across both stores,
+keyed/global execution, ROWS/RANGE, valid and malformed input, retry and Arrow ownership checks.
+Imported Arrow resources are released before reporting Java errors, preserving the original
+validation exception. Benchmarking remains deferred.
+
+
+### Event-time cleanup callback component
+
+The #569 candidate can bind actual processing-time callbacks for retained unbounded event-time
+ROWS/RANGE operators. A due callback clears idle accumulators and late-only keys; pending rows
+defer cleanup from the actual current clock. This mode disables the previous lazy cleanup while
+callbacks own deadlines, rebinds on native recovery and preserves the released signed-overflow
+arithmetic. A cleanup VALUE whose timer has fired may remain unarmed when the released hysteresis
+does not register a replacement. Native checkpoint metadata preserves that distinction; historical
+eight-byte persistent stamps remain readable as armed deadlines. Internal Arrow transfer carries
+ownership separately from the deadline; this is not a stock savepoint descriptor or serializer.
+
+The independently built native library passes 1,360 tests with two existing ignores, including
+nine new cleanup/ownership tests. All 206 selected Java checks pass: 59 callback/overflow/native
+recovery cases, 16 comparisons against actual released Flink 2.2.1 V2 callbacks, 61 direct event
+transfer controls, four existing operator controls and 66 constant/ownership recovery controls.
+Overdue harness timers are explicitly drained before testing their fired state. Exact native
+cleanup key-group assignment is checked before cross-store recovery; the ownership field is not
+part of the logical key. These cohorts overlap previous controls and are not summed cumulatively.
+
+This component qualification does not establish stock event-time canonical compatibility: the
+complete stock adapter, timer inventory, automatic planner binding and full cross-engine jobs
+remain required. Benchmarking remains deferred.

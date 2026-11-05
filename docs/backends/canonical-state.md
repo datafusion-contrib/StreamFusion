@@ -1587,3 +1587,28 @@ Captured local/global UDFs retain stock managed global state while original loca
 carry private Arrow partial events between the two captured handlers. The [two-stage scope](../operators/group-by.md#captured-localglobal-udf-canonical-handoffs-partial) records all nine released aggregate resumes, strict stage ownership, 144 state cases,
 56 complete jobs and regression results. This does not qualify all user-function
 types, keys or connector failure combinations.
+
+
+## Event-time OVER import preflight
+
+Read-only pending-row and cleanup-deadline validation shares the eventual mutation path's
+schema/key checks without installing state. This permits complete-source validation before
+import and preserves retryable source ownership. See the [OVER transfer scope](../operators/over.md#event-time-pending-state-preflight);
+the released event-time stock-state adapter, timer projection, planner binding and complete-job
+qualification remain pending. All fifteen families stay partial; benchmarking remains deferred.
+
+
+## Event-time OVER cleanup callback foundation
+
+Retained unbounded event-time OVER can bind actual processing callbacks independently of its
+watermark-driven pending rows. Idle/late-only keys clear without new input, pending keys defer
+from the actual callback clock, and ordinary native recovery rebinds pending/overdue deadlines.
+Cleanup VALUE state and armed timer ownership remain separate, including released signed-overflow
+hysteresis. Native memory partitions and persistent stamps preserve unarmed values; historical
+stamps remain readable as armed. The internal ownership column is excluded from key-group hashing
+and is not a stock managed descriptor or serializer.
+
+The independent native suite passes 1,360 checks with two existing ignores. Its exact library
+passes 206 Java transfer/callback/recovery controls, including 16 actual released 2.2.1 callback
+comparisons. This is component evidence; the [remaining OVER adapter/planner/job work](../operators/over.md#event-time-cleanup-callback-component)
+remains part of #569. Every family stays partial and benchmarking remains deferred.

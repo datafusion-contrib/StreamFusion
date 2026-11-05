@@ -88,6 +88,12 @@ public final class Native {
 
   public static native void fireOverProcessingRowsCleanup(long handle, long timestamp);
 
+  public static native void bindOverEventCleanupTimers(long handle);
+
+  public static native long[] nextOverEventCleanup(long handle);
+
+  public static native void fireOverEventCleanup(long handle, long timestamp, long currentTime);
+
   public static native void importOverCanonicalRange(
       long handle, long arrayAddress, long schemaAddress);
 
@@ -97,9 +103,15 @@ public final class Native {
   public static native void importOverPendingCanonical(
       long handle, long arrayAddress, long schemaAddress);
 
+  public static native void validateOverPendingCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
   public static native void exportOverCleanupCanonical(long handle, BatchReceiver receiver);
 
   public static native void importOverCleanupCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void validateOverCleanupCanonical(
       long handle, long arrayAddress, long schemaAddress);
 
   public static native void exportSessionAggregatorCanonical(long handle, BatchReceiver receiver);
