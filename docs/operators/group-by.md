@@ -3325,19 +3325,86 @@ These initial cases use compiled plans, native memory and stock-first repeated s
 retain actual native processing, both transposes, custom source/committing-sink state, clean stock
 workers and exact external changelogs against stock plus an independent logical multiset oracle.
 Their BIGINT CSV inputs are converted by stock SQL to the actual typed accumulator/view values;
-output projection to BIGINT only serves the unchanged custom sink fixture. The broader 196-job
-SQL/compiled, store/order, no-input, checkpoint and rescale matrix is still running. Its full
-28-case SMALLINT class additionally passes all those modes; the other six type classes remain
-pending. These scenarios overlap the initial smoke cases and are not added cumulatively. Thirty-four shared Flink 1.18 processing/accounting/ownership checks
+output projection to BIGINT only serves the unchanged custom sink fixture. The full 196-job matrix additionally passes all 28 modes for each of the seven types:
+SQL/compiled submission, both stores and engine orders, no-input returns, ordinary native
+checkpoint recovery and 64-key rescaling through 1 → 3 → 2 tasks at maximum parallelism 128.
+These results use the independently built typed-extrema library; later string-library builds do
+not automatically requalify this cohort. These scenarios overlap the initial smoke cases and are not added cumulatively. Thirty-four shared Flink 1.18 processing/accounting/ownership checks
 pass; they do not establish canonical interchange there.
 
-The unchanged released `GroupAggregateRestoreTest` is not qualified for native grouped-state
-restore: all nine native-side invocations currently fail the strict execution audit because the
-aggregate remains stock-owned. The stock controls pass their nine original result assertions.
-The unchanged committed baseline reproduces exactly the same nine audit failures. Native Calc
-activity receives no aggregate-import credit. Its wider aggregate/view/UDF layouts
-remain separate unfinished work; this typed MIN/MAX addition does not certify those programs.
+The preceding typed-extrema baseline passed all nine released stock GROUP BY controls but
+failed all nine native execution audits because the aggregates stayed stock-owned. The unchanged
+committed baseline reproduced those failures. The subsequent string-extrema addition below
+qualifies the simple and TTL-hint programs with actual state import and resumed native input;
+seven mini-batch, DISTINCT and UDF programs remain unqualified. Native Calc activity receives no
+aggregate-import credit.
 
 Wider retained types, keys, views/phases, connector delivery/failure and cross-version migrations
 remain open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+
+## Canonical string extrema (partial)
+
+Append-only, single-phase MIN/MAX over STRING, VARCHAR and CHAR inputs binds the released
+VARCHAR accumulator in ordinary SQL and portable stock compiled plans. Other aggregate kinds
+cannot use a string scalar, and retracting string extrema still require their separate structured
+contract. The existing generated key, accumulator and view serializers, identity and maximum
+parallelism remain authoritative. Memory and direct RocksDB export live state through the same
+bounded stock-schema writer; canonical export never takes an intermediate native snapshot.
+
+Released Flink 2.2.1 compares two Java-backed BinaryStringData values using Java UTF-16 order,
+and otherwise compares their UTF-8 bytes. Those orders differ for some valid Unicode strings.
+The Arrow boundary therefore preserves each input's optional Java UTF-16 representation, and
+native running extrema retain the winning representation. Changelog before/after images carry
+the corresponding companion values, including changes between Java strings whose encoded UTF-8
+bytes coincide. Owned UTF-8/UTF-16 payloads count against the native state budget.
+
+The captured stock input graph remains in place upstream of these string extrema until native
+expression producers preserve the same representations. The native aggregate still consumes and
+produces Arrow batches through its native exchange. This preserves input semantics without
+crediting retained stock producers as native execution. Unqualified retracting ordinary native
+routes retain their existing behavior.
+
+Stock RocksDB deserializes its accumulator for every input record, so native persistent state
+clears transient Java caches between records even within one physical Arrow batch. A canonical
+savepoint, or an ordinary stock checkpoint restore, also removes those caches. Six stock-only
+characterization cases demonstrate that stock heap execution itself can choose a different
+future string extreme after restore than uninterrupted stock execution. String continuation
+controls use an independently restored stock operator at the same checkpoint/savepoint cuts;
+they preserve exact serialized state and output assertions. The cache is transient execution
+metadata and is not exported as a StreamFusion-dependent serializer or state field.
+
+The final 296-check cohort passes 30 repeated-switch/native-checkpoint scenarios, twelve
+singleton/multirow representation cases, six stock normalization controls, twelve admission
+guards, 24 SQL/compiled-plan bindings and eighteen malformed-state/retry controls, plus 194
+previous typed aggregate controls. State scenarios include both engine orders, both stores and
+heap/RocksDB backend changes. The unchanged-state export guards, exact raw stock bytes and
+per-record changelogs remain checked. The independently built native suite passes 1,325 tests
+with two existing ignores. The full earlier 1,232-case typed retracting state/planner/failure
+selection also passes against this final string library, as do all 32 prior temporal/boolean
+admission guards. These are separate regressions, not new string variants. Earlier passing and
+failing cohorts are retained separately, not added cumulatively. The unchanged released GROUP BY selection passes all nine stock invocations. Two native
+programs, `group-aggregate-simple` and `agg-with-state-ttl-hint`, additionally pass strict
+canonical-resume contracts: each imports two stock groups into the actual opened native handle
+and consumes three new native input rows. Their original queries, fixtures and sink assertions
+are unchanged. Seven other programs still fail their native execution gates; the full upstream
+suite remains red. Applied header batches count only after successful import, excluding
+validation-only passes, and unknown program IDs cannot inherit the simple-program contract.
+The witness controls pass 143 cases and the independent Python report audit passes 49.
+Shared Flink 1.18 processing/accounting/ownership checks pass 34 cases without qualifying canonical
+interchange on that line.
+
+Twenty-eight isolated complete-job scenarios also pass: eight continued-input switches, eight
+no-input returns, four ordinary native-checkpoint recoveries and eight rescale cases. They cover
+SQL and compiled-plan submission, both native stores and initial engine orders, native grouped
+input, both transposes, unchanged custom sources/committing sinks, stock workers without
+StreamFusion and exact external committed changelogs. Rescale redistributes 64 group keys through
+1 → 3 → 2 tasks at maximum parallelism 128; source and sink writers stay singleton. These jobs
+cast BIGINT source values to strings and back only for the fixed custom sink schema. Their
+independent ASCII string oracle distinguishes lexical from numeric extrema, including 12 versus
+2. Unicode representation semantics are checked by operator/transport controls, not claimed as
+complete-job Unicode qualification. Broader string views, retractions, phases, TTL, Unicode
+complete-job scenarios and the full connector,
+failure and version matrices remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.

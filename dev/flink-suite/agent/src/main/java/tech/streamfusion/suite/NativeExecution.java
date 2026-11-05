@@ -210,6 +210,10 @@ public final class NativeExecution {
       OPERATORS.putIfAbsent(operator, active);
       String kind = operator.getClass().getSimpleName();
       active.opened.add(kind);
+      if (!active.groupImports.isEmpty() && kind.equals("NativeColumnarGroupAggregateOperator")) {
+        Long rows = active.groupImports.remove(((Number) field(operator, "handle")).longValue());
+        if (rows != null) active.importedRows.merge(kind, rows, Long::sum);
+      }
       if (!active.windowImports.isEmpty()
           && (kind.equals("NativeColumnarWindowAggregateOperator")
               || kind.equals("NativeColumnarSessionWindowAggregateOperator")
@@ -236,6 +240,11 @@ public final class NativeExecution {
   public static synchronized void restoredWindow(long handle, int rows) {
     if (active != null && handle > 0 && rows > 0)
       active.windowImports.merge(handle, (long) rows, Long::sum);
+  }
+
+  public static synchronized void restoredGroup(long handle, int rows) {
+    if (active != null && handle > 0 && rows > 0)
+      active.groupImports.merge(handle, (long) rows, Long::sum);
   }
 
   public static synchronized void restored(String operator, int rows) {
@@ -535,6 +544,7 @@ public final class NativeExecution {
     private final Map<String, Long> rows = new TreeMap<>();
     private final Map<String, Long> importedRows = new TreeMap<>();
     private final Map<Long, Long> windowImports = new TreeMap<>();
+    private final Map<Long, Long> groupImports = new TreeMap<>();
     private final Map<String, Long> stockRows = new TreeMap<>();
     private final Map<String, Map<String, Object>> submittedGraphs = new LinkedHashMap<>();
     private final Set<String> opened = new LinkedHashSet<>();

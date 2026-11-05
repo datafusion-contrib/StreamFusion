@@ -1391,6 +1391,13 @@ impl RunningAgg {
             };
             return Self::new(8, &sum_type);
         }
+        if matches!(kind, 10 | 11) && *value_type == DataType::Utf8 {
+            return OverStringValue {
+                value: None,
+                java_utf16: None,
+                kind,
+            };
+        }
         if matches!(kind, 10 | 11)
             && matches!(
                 value_type,

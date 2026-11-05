@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT, append date/time/boolean extrema and integral/date/time/boolean retracting MIN/MAX | Wider types/keys, other views/phases and failures |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT, append string/date/time/boolean extrema and integral/date/time/boolean retracting MIN/MAX | Wider types/keys, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -1493,7 +1493,27 @@ carrier while stock state retains the exact captured logical serializers and box
 Independent cached selections, map-size counters, signed frequencies and original write ages
 survive canonical and native-checkpoint recovery. The consolidated 1,232-check cohort, seven
 initial compiled/memory/stock-first complete jobs and 34 shared processing regressions pass;
-the full 28-case SMALLINT job class also passes while the other six classes in the larger
-complete-job matrix remain pending. See the [typed retracting scope and test
+the full 196-case complete-job matrix passes all 28 modes for each of the seven types across
+SQL/compiled submission, stores/orders, no-input returns, native checkpoint recovery and selected
+64-key rescaling at 1 → 3 → 2/maxP128. These are the original typed-extrema library qualifications,
+not reruns against later string-library builds. See the [typed retracting scope and test
 boundaries](../operators/group-by.md#typed-retracting-canonical-extrema-partial). Wider types,
 keys, views/phases and full connector/failure/version coverage remain unfinished under #569.
+
+
+## Append-only string aggregate handoffs
+
+The released VARCHAR accumulator for STRING/VARCHAR/CHAR MIN/MAX inputs uses the existing direct
+stock-schema projection. Native memory retains the winning optional Java string representation,
+while persistent state matches stock RocksDB's per-record deserialization. Canonical files carry
+only the original stock serializer and encoded value. Restored caches are cold, as on stock Flink.
+Captured stock input producers and cache-preserving RowData/Arrow boundaries retain live comparison
+semantics; native grouped state still executes on Arrow. The 296-case cohort includes Unicode,
+mixed Java/binary representations, multirow batches, malformed state, repeated switches and backend
+changes. Two unchanged released GROUP BY programs also prove imported groups and resumed input; seven
+others remain unqualified. Twenty-eight ASCII-string complete-job switches additionally cover both
+submission forms, stores/orders, no-input returns, native checkpoint recovery and selected rescaling,
+with custom source/sink state, transposes, clean stock classpaths and exact external effects.
+See [the exact string scope and restore
+oracle](../operators/group-by.md#canonical-string-extrema-partial). Retracting string views, wider
+phases and the full connector/failure/version matrix remain unfinished; benchmarking is deferred.

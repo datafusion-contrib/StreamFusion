@@ -75,6 +75,7 @@ final class StockCompiledPlanLowering {
   private final Map<ExecNode<?>, ExecNode<?>> lowered = new IdentityHashMap<>();
   private final Map<ExecNode<?>, StockBinding> bindings = new IdentityHashMap<>();
   private final Set<Integer> stockOwners = new HashSet<>();
+  private final Set<Integer> stringComparisonInputs = new HashSet<>();
   private final ObjectReader reader;
   private final Set<ExecNode<?>> columnar = Collections.newSetFromMap(new IdentityHashMap<>());
 
@@ -134,6 +135,7 @@ final class StockCompiledPlanLowering {
       }
       collectUids(original.getRootNodes());
       ExecNodeGraph copy = reader.forType(ExecNodeGraph.class).readValue(json);
+      retainStringComparisonInputs(copy.getRootNodes());
       List<ExecNode<?>> roots = new ArrayList<>();
       for (ExecNode<?> root : copy.getRootNodes()) roots.add(lower(root));
       var runtime = new RuntimeGraph(copy.getFlinkVersion(), roots);
@@ -149,6 +151,37 @@ final class StockCompiledPlanLowering {
     RuntimeGraph(FlinkVersion version, List<ExecNode<?>> roots) {
       super(version, roots);
     }
+  }
+
+  private void retainStringComparisonInputs(List<ExecNode<?>> roots) throws IOException {
+    Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    collectOrdinaryNodes(roots, nodes);
+    for (ExecNode<?> node : nodes) {
+      if (!(node
+          instanceof
+          org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGroupAggregate)) continue;
+      JsonNode definition = definitions.get(node.getId());
+      if (definition.path("needRetraction").asBoolean()) continue;
+      var input = node.getInputEdges().get(0).getSource();
+      RowType type = (RowType) input.getOutputType();
+      AggregateCall[] calls =
+          reader.forType(AggregateCall[].class).readValue(definition.path("aggCalls"));
+      for (AggregateCall call : calls) {
+        SqlKind kind = call.getAggregation().getKind();
+        if ((kind == SqlKind.MIN || kind == SqlKind.MAX) && call.getArgList().size() == 1) {
+          LogicalTypeRoot root = type.getTypeAt(call.getArgList().get(0)).getTypeRoot();
+          if (root == LogicalTypeRoot.CHAR || root == LogicalTypeRoot.VARCHAR)
+            retainStringComparisonInput(input);
+        }
+      }
+    }
+  }
+
+  private void retainStringComparisonInput(ExecNode<?> node) {
+    if (!stringComparisonInputs.add(node.getId())) return;
+    // Flink compares Java strings differently from binary strings. Keep the captured producer
+    // until native expression pipelines preserve that representation, then transport its cache.
+    for (ExecEdge edge : node.getInputEdges()) retainStringComparisonInput(edge.getSource());
   }
 
   private void insertShares(ExecNodeGraph graph) {
@@ -299,6 +332,7 @@ final class StockCompiledPlanLowering {
                   || node instanceof NativeColumnarWindowAggExecNode
                   || node instanceof NativeColumnarSessionWindowAggExecNode
                   || node instanceof NativeColumnarGlobalWindowAggExecNode) return true;
+              if (needsStringTemplate(node, graph)) return true;
               if (node instanceof NativeWindowRankExecNode)
                 return !((NativeWindowRankExecNode) node).isProcessingTime();
               if (node instanceof NativeColumnarTopNExecNode)
@@ -309,10 +343,25 @@ final class StockCompiledPlanLowering {
             });
   }
 
+  private static boolean needsStringTemplate(ExecNode<?> node, SqlPlanOrigins.RuntimeGraph graph) {
+    if (!(node instanceof NativeColumnarGroupAggExecNode)
+        || !((NativeColumnarGroupAggExecNode) node).hasStringExtrema()) return false;
+    ExecNode<?> original = graph.originals.get(node);
+    if (!(original
+        instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGroupAggregate))
+      return false;
+    try {
+      return !(Boolean) releasedField(original, "needRetraction");
+    } catch (IOException failure) {
+      throw new TableException("Cannot inspect the captured string aggregate contract", failure);
+    }
+  }
+
   static boolean canBindOrdinary(SqlPlanOrigins.RuntimeGraph graph, ClassLoader loader) {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
     for (ExecNode<?> node : nodes) {
+      if (needsStringTemplate(node, graph)) return false;
       if (node instanceof NativeTemporalSortExecNode || node instanceof NativeWindowRankExecNode)
         return false;
       if (node instanceof NativeOverAggExecNode
@@ -593,6 +642,10 @@ final class StockCompiledPlanLowering {
 
   private ExecNode<?> lower(ExecNode<?> node) throws IOException {
     if (lowered.containsKey(node)) return lowered.get(node);
+    if (stringComparisonInputs.contains(node.getId())) {
+      lowered.put(node, node);
+      return node;
+    }
     List<ExecEdge> edges = new ArrayList<>();
     for (ExecEdge edge : node.getInputEdges())
       edges.add(
@@ -1898,7 +1951,15 @@ final class StockCompiledPlanLowering {
     }
     int maximum = stockMaximum(original);
     var exchange =
-        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
+        (NativeColumnarExchangeExecNode)
+            canonicalJoinInput(
+                input,
+                config,
+                inputType,
+                keys,
+                true,
+                java.util.stream.IntStream.range(0, kinds.length)
+                    .anyMatch(i -> (kinds[i] == 10 || kinds[i] == 11) && types[i] == 3));
     exchange.withStateMaxParallelism(maximum);
     var owner =
         new NativeColumnarGroupAggExecNode(
@@ -3512,6 +3573,16 @@ final class StockCompiledPlanLowering {
 
   private ExecNode<?> canonicalJoinInput(
       ExecNode<?> input, Configuration config, RowType type, int[] keys, boolean changelog) {
+    return canonicalJoinInput(input, config, type, keys, changelog, false);
+  }
+
+  private ExecNode<?> canonicalJoinInput(
+      ExecNode<?> input,
+      Configuration config,
+      RowType type,
+      int[] keys,
+      boolean changelog,
+      boolean preserveStringCaches) {
     var source =
         input instanceof StreamExecExchange ? input.getInputEdges().get(0).getSource() : input;
     var exchange =
@@ -3523,7 +3594,23 @@ final class StockCompiledPlanLowering {
             keys,
             FlinkKeyGroupUtils.stockKeyDescriptor(type, keys),
             keys.length == 0);
-    connect(arrowInput(source, config, type, changelog), exchange);
+    ExecNode<?> columnarInput;
+    if (preserveStringCaches) {
+      columnarInput =
+          new RowDataToArrowExecNode(
+              config,
+              InputProperty.DEFAULT,
+              type,
+              "RowDataToArrow",
+              changelog,
+              null,
+              false,
+              1024,
+              false,
+              true);
+      connect(source, columnarInput);
+    } else columnarInput = arrowInput(source, config, type, changelog);
+    connect(columnarInput, exchange);
     return exchange;
   }
 

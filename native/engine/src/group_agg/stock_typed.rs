@@ -2,6 +2,8 @@ use super::*;
 
 mod ffi;
 #[cfg(test)]
+mod string_tests;
+#[cfg(test)]
 mod tests;
 const CHUNK_ROWS: usize = 1024;
 

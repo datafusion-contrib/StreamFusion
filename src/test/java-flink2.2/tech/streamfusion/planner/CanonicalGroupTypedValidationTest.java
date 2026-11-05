@@ -45,13 +45,12 @@ class CanonicalGroupTypedValidationTest {
   @SuppressWarnings("unchecked")
   void invalidWholeSourceRetainsAllStockStateAndAnEmptyNativeTarget(
       boolean append, boolean rocks, String reason) throws Exception {
-    try (var fixture = new TypedGroupStockFixture("INT", append, rocks);
+    try (var fixture = fixture(append, rocks);
         var destination = fixture.nativeHarness()) {
       fixture.harness.open();
       destination.open();
       int size = reason.startsWith("late-") ? 1025 : 1;
-      for (int i = 0; i < size; i++)
-        stockStep(fixture, row("INT", "key-" + i, 0, 7, "member", true, RowKind.INSERT));
+      for (int i = 0; i < size; i++) stockStep(fixture, seed("key-" + i));
       var backend = fixture.backend();
       var accumulator = (ValueState<RowData>) field(fixture.function, "accState");
       var views = (List<?>) field(fixture.contract, "views");
@@ -139,5 +138,13 @@ class CanonicalGroupTypedValidationTest {
             "repaired source remains retryable with all shared-view bytes");
       }
     }
+  }
+
+  TypedGroupStockFixture fixture(boolean append, boolean rocks) throws Exception {
+    return new TypedGroupStockFixture("INT", append, rocks);
+  }
+
+  RowData seed(String key) {
+    return row("INT", key, 0, 7, "member", true, RowKind.INSERT);
   }
 }

@@ -929,11 +929,14 @@ class CanonicalRestoreExecutionTest {
     assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
   }
 
-  @Test
-  void inheritedRestoreMethodUsesItsConcreteStateFamily() {
-    var scope = NativeExecution.beginRestore(GROUP, new Object());
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"group-aggregate-simple", "agg-with-state-ttl-hint"})
+  void inheritedRestoreMethodUsesItsConcreteStateFamily(String program) {
+    var scope = NativeExecution.beginRestore(GROUP, new Object(), program);
     assertNotNull(scope);
     var operator = new NativeColumnarGroupAggregateOperator();
+    StreamFusionSuiteAgent.RecordCanonicalGroupImport.exit(77L, java.util.List.of(1, 2), false);
     NativeExecution.opened(operator);
     NativeExecution.completed(operator, 3);
     assertDoesNotThrow(() -> NativeExecution.finish(scope));
@@ -941,12 +944,58 @@ class CanonicalRestoreExecutionTest {
 
   @Test
   void unrelatedNativeWorkCannotSatisfyAStateRestore() {
-    var scope = NativeExecution.beginRestore(GROUP, new Object());
+    var scope = NativeExecution.beginRestore(GROUP, new Object(), "group-aggregate-simple");
     var operator = new NativeCalcOperator();
     NativeExecution.opened(operator);
     NativeExecution.completed(operator, 3);
     var failure = assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
     assertTrue(failure.getMessage().contains("Execution contract failed"));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "none",
+        "openOnly",
+        "inputOnly",
+        "importOnly",
+        "validating",
+        "wrongHandle",
+        "unopened",
+        "otherFamily",
+        "zeroHandle",
+        "negativeHandle",
+        "emptyRows"
+      })
+  void groupRestoreRequiresAppliedHeadersInTheOpenedOwnerAndNewInput(String mode) {
+    var scope = NativeExecution.beginRestore(GROUP, new Object(), "group-aggregate-simple");
+    var group = new NativeColumnarGroupAggregateOperator();
+    if (!mode.equals("none") && !mode.equals("openOnly") && !mode.equals("inputOnly"))
+      StreamFusionSuiteAgent.RecordCanonicalGroupImport.exit(
+          mode.equals("wrongHandle")
+              ? 78L
+              : mode.equals("zeroHandle") ? 0L : mode.equals("negativeHandle") ? -1L : 77L,
+          mode.equals("emptyRows") ? java.util.List.of() : java.util.List.of(1, 2),
+          mode.equals("validating"));
+    if (!mode.equals("none") && !mode.equals("unopened") && !mode.equals("otherFamily"))
+      NativeExecution.opened(group);
+    if (!mode.equals("none")
+        && !mode.equals("openOnly")
+        && !mode.equals("importOnly")
+        && !mode.equals("unopened")) NativeExecution.completed(group, 3);
+    if (mode.equals("otherFamily")) {
+      var calc = new NativeCalcOperator();
+      NativeExecution.opened(calc);
+      NativeExecution.completed(calc, 3);
+    }
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  @Test
+  void unknownGroupProgramsCannotInheritTheSimpleRestoreWitness() {
+    assertThrows(
+        AssertionError.class,
+        () -> NativeExecution.beginRestore(GROUP, new Object(), "group-aggregate-unknown"));
   }
 
   @Test
@@ -1128,7 +1177,9 @@ class CanonicalRestoreExecutionTest {
     }
   }
 
-  private static final class NativeColumnarGroupAggregateOperator {}
+  private static final class NativeColumnarGroupAggregateOperator {
+    final long handle = 77L;
+  }
 
   private static final class NativeCalcOperator {}
 

@@ -1691,3 +1691,32 @@ programs in each engine, with all four required native paths. Its retracting pro
 proves six imported rows and two new Top-N rows through the stronger continuation contract.
 These are the same four rank programs selected by the thin classes above, so the qualification
 counts are overlapping, not additive. No program is excluded from this rank-class run.
+
+
+### Released grouped-state canonical resume proofs
+
+The unchanged released Flink 2.2.1 `GroupAggregateRestoreTest#testRestore` selection passes all nine
+stock invocations. Its simple and state-TTL-hint programs now also pass native canonical resume:
+each successfully imports two stock accumulator groups into an opened native grouped operator
+and consumes three new native input rows, preserving the original expected sink assertions.
+The remaining seven mini-batch, DISTINCT and UDF programs still fail native execution contracts,
+so the overall native selection remains red and does not qualify those layouts.
+
+All nine program IDs have explicit selectors. Simple and TTL-hint contracts require both import
+and new input in `NativeColumnarGroupAggregateOperator`. The agent records typed/arithmetic header
+batches only after the JNI-backed import returns, excludes validation-only passes, and associates
+the native handle with the operator that subsequently opens. Unknown program IDs, unrelated Calc
+work, wrong/unopened handles, empty imports and import-only or input-only runs cannot satisfy the
+proof. The canonical agent controls pass 143 cases and the independent Python report audit passes
+49. These protocol controls are separate from native state and complete-job qualification.
+
+Use the normal released runner without editing upstream tests or fixtures:
+
+```sh
+CANONICAL_UPSTREAM_TESTS=org.apache.flink.table.planner.plan.nodes.exec.stream.GroupAggregateRestoreTest#testRestore \
+  bin/canonical-savepoints.sh sql
+```
+
+The operator's [string-state coverage and restore oracle](operators/group-by.md#canonical-string-extrema-partial)
+identify the live Java/binary string distinction and the remaining matrix. Benchmarking is deferred
+under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

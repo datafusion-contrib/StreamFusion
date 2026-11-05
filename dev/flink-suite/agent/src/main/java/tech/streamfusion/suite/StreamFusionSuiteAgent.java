@@ -189,6 +189,15 @@ public final class StreamFusionSuiteAgent {
                 builder
                     .visit(Advice.to(RecordFallback.class).on(named("recordFallback")))
                     .visit(Advice.to(RecordSqlPlan.class).on(named("optimizeConfigured"))))
+        .type(
+            namedOneOf(
+                "tech.streamfusion.state.StockGroupTypedStateContract",
+                "tech.streamfusion.state.StockGroupArithmeticStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(Advice.to(RecordCanonicalGroupImport.class).on(named("batch")))
+                    : builder)
         .type(named("tech.streamfusion.state.StockJoinStateContract$Side"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -592,6 +601,16 @@ public final class StreamFusionSuiteAgent {
     static void exit(@Advice.Enter NativeExecution.Scope scope, @Advice.Thrown Throwable failure) {
       if (scope == null) return;
       RequireNativeExecution.exit(scope, failure);
+    }
+  }
+
+  public static final class RecordCanonicalGroupImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(0) long handle,
+        @Advice.Argument(2) java.util.List<?> rows,
+        @Advice.Argument(3) boolean validating) {
+      if (!validating) NativeExecution.restoredGroup(handle, rows.size());
     }
   }
 

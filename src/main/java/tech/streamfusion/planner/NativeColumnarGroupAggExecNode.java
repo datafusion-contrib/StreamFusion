@@ -38,6 +38,16 @@ public class NativeColumnarGroupAggExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] keyTimestampPrecisions;
   private Integer stateMaxParallelism;
 
+  public boolean hasStringExtrema() {
+    for (int i = 0; i < aggregateKinds.length; i++)
+      if (valueTypes[i] == 3
+          && (aggregateKinds[i] == 1
+              || aggregateKinds[i] == 2
+              || aggregateKinds[i] == 10
+              || aggregateKinds[i] == 11)) return true;
+    return false;
+  }
+
   public NativeColumnarGroupAggExecNode withStateMaxParallelism(int maximum) {
     if (maximum < 1)
       throw new IllegalArgumentException("State maximum parallelism must be positive");

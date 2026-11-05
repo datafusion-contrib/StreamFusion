@@ -35,3 +35,21 @@ admits those carriers for append extrema. Other aggregate kinds and retraction l
 rejected. Released scalar serializers retain logical precision and NULL/false distinctions;
 no extrema are reconstructed from outputs or membership. Comet's existing C Data ownership and
 Arroyo's accumulator/retained-entry separation continue to apply without another bridge format.
+
+
+Append-only string extrema reuse the existing owned string accumulator and Arrow Java-string
+companions. Released Flink compares two Java-backed values in UTF-16 order and otherwise uses
+UTF-8 byte order. The captured stock input graph therefore remains upstream of these native
+aggregates until native producers preserve the same representation. This differs from simply
+choosing one columnar string comparator: neither universal UTF-8 nor universal UTF-16 matches
+Flink's mixed-representation behavior. The aggregate itself remains Arrow-in/Arrow-out, with
+Comet's existing moved C Data ownership and accounted owned UTF-8/UTF-16 payloads.
+
+The native persistent path follows released RocksDB's per-record deserialization boundary even
+inside one Arrow batch. Canonical and ordinary checkpoint restore retain only encoded strings,
+like released stock; no StreamFusion cache serializer enters the savepoint. Stock-only controls
+prove that canonical restore itself can alter later heap Unicode comparison choices. Continuation
+therefore compares with independently restored stock state at identical cuts, retaining exact
+serialized state and changelog assertions. This transient-cache handling changes neither the
+canonical state schema nor the ordinary native checkpoint format. Retracting string views and
+wider phase/failure/version coverage remain open under #569; benchmarking stays deferred.

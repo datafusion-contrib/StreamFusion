@@ -106,9 +106,9 @@ public final class StockGroupTypedStateContract implements StockStateContract {
         case DATE:
         case TIME_WITHOUT_TIME_ZONE:
         case BOOLEAN:
+        case VARCHAR:
           if (kinds[i] != 10 && kinds[i] != 11)
-            throw new IllegalArgumentException(
-                "Typed temporal/boolean state requires append MIN/MAX");
+            throw new IllegalArgumentException("Typed nonnumeric state requires append MIN/MAX");
           break;
         default:
           throw new IllegalArgumentException("Unqualified scalar accumulator type: " + scalarType);

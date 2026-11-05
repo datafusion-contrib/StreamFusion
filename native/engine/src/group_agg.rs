@@ -465,7 +465,63 @@ impl GroupAggState {
         }
     }
 
-    fn accumulate_typed_extreme(&mut self, column: &ArrayRef, row: usize) {
+    fn string_cache(&self) -> Option<Arc<[u16]>> {
+        match self {
+            Self::Running {
+                agg: RunningAgg::OverStringValue { java_utf16, .. },
+                ..
+            } => java_utf16.clone(),
+            _ => None,
+        }
+    }
+
+    fn clear_string_cache(&mut self) {
+        if let Self::Running {
+            agg: RunningAgg::OverStringValue { java_utf16, .. },
+            ..
+        } = self
+        {
+            *java_utf16 = None;
+        }
+    }
+
+    fn accumulate_typed_extreme(&mut self, column: &ArrayRef, row: usize, cache: Option<&[u16]>) {
+        if matches!(
+            column.data_type(),
+            DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+        ) {
+            let strings = StringColumn::new(column);
+            let candidate = strings.at(row).expect("non-null running string");
+            let GroupAggState::Running {
+                agg:
+                    RunningAgg::OverStringValue {
+                        value,
+                        java_utf16,
+                        kind,
+                    },
+                non_null,
+            } = self
+            else {
+                unreachable!("running string extreme")
+            };
+            assert!(matches!(kind, 10 | 11), "append string extreme kind");
+            if value.as_deref().is_none_or(|current| {
+                let order = match (cache, java_utf16.as_deref()) {
+                    (Some(candidate), Some(current)) => candidate.cmp(current),
+                    _ => candidate.cmp(current),
+                };
+                if *kind == 10 {
+                    order.is_lt()
+                } else {
+                    order.is_gt()
+                }
+            }) {
+                *value = Some(Arc::from(candidate));
+                *java_utf16 = cache.map(Arc::from);
+            }
+            *non_null = non_null.wrapping_add(1);
+            return;
+        }
         let value = match column.data_type() {
             DataType::Date32 => column
                 .as_any()
@@ -1558,6 +1614,21 @@ pub(crate) fn group_agg_state_bytes(state: &GroupAggState) -> usize {
             ordered.bytes() - std::mem::size_of::<OrderedValueState>()
         }
         GroupAggState::Mapped(state) => state.bytes(),
+        GroupAggState::Running {
+            agg:
+                RunningAgg::OverStringValue {
+                    value: Some(value),
+                    java_utf16,
+                    ..
+                },
+            ..
+        } => {
+            value.len()
+                + 2 * std::mem::size_of::<usize>()
+                + java_utf16.as_ref().map_or(0, |units| {
+                    units.len() * std::mem::size_of::<u16>() + 2 * std::mem::size_of::<usize>()
+                })
+        }
         GroupAggState::Running { .. } => 0,
         GroupAggState::Extremes { counts, .. } => counts.len() * MULTISET_ENTRY_BYTES,
         GroupAggState::Distinct { set, .. } => set.len() * MULTISET_ENTRY_BYTES,
@@ -1599,6 +1670,38 @@ impl GroupChanges {
         }
         self.kinds.push(kind);
     }
+}
+
+fn group_string_caches(state: Option<&GroupKeyState>, slots: &[usize]) -> Vec<Option<Arc<[u16]>>> {
+    slots
+        .iter()
+        .map(|&slot| state.and_then(|state| state.aggs[slot].string_cache()))
+        .collect()
+}
+
+fn group_row_equal(
+    left: &[ScalarValue],
+    right: &[ScalarValue],
+    slots: &[usize],
+    current: &[Option<Arc<[u16]>>],
+    previous: &[Option<Arc<[u16]>>],
+) -> bool {
+    if slots.is_empty() {
+        return crate::flink_float::record_row_equal(left, right);
+    }
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .enumerate()
+            .all(|(index, (left, right))| {
+                if let Some(slot) = slots.iter().position(|&slot| slot == index) {
+                    if let (Some(left), Some(right)) = (&current[slot], &previous[slot]) {
+                        return left == right;
+                    }
+                }
+                crate::flink_float::record_equal(left, right)
+            })
 }
 
 /// A group's current output tuple (each aggregate reports NULL while it has no live input).
@@ -2214,6 +2317,27 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 }
             })
             .collect();
+        let java_string_columns: Vec<_> = scalar_extreme_cols
+            .iter()
+            .map(|column| {
+                column
+                    .and_then(|column| {
+                        streamfusion_bridge::string_cache::string_cache_column(batch, column)
+                    })
+                    .map(streamfusion_bridge::string_cache::JavaStringCacheColumn::new)
+            })
+            .collect();
+        let string_slots: Vec<_> = self
+            .kinds
+            .iter()
+            .zip(&self.result_types)
+            .enumerate()
+            .filter_map(|(slot, (kind, ty))| {
+                (matches!(kind, 10 | 11) && *ty == DataType::Utf8).then_some(slot)
+            })
+            .collect();
+        let mut string_outputs: Vec<Vec<Option<Arc<[u16]>>>> =
+            string_slots.iter().map(|_| Vec::new()).collect();
         let list_columns: Vec<_> = (0..num_agg)
             .map(|i| {
                 (is_list_agg(self.kinds[i])
@@ -2458,11 +2582,22 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 self.memory.record(-expired_bytes);
             }
             let resident = self.store.contains(key);
+            let output_start = output.rows.len();
             let before = if track && resident {
                 group_key_state_bytes(self.store.get(key).expect("key present")) as isize
             } else {
                 0
             };
+            if self.store.serializes_values() && !string_slots.is_empty() {
+                if let Some(state) = self.store.get_mut(key) {
+                    // Stock RocksDB deserializes accState for each record, including records
+                    // within one Arrow batch. Its previous value has no Java string cache.
+                    for &slot in &string_slots {
+                        state.aggs[slot].clear_string_cache();
+                    }
+                }
+            }
+            let previous_string_caches = group_string_caches(self.store.get(key), &string_slots);
             if !exists && retract {
                 continue; // no accumulator for a key's first message being a retraction (host skips it)
             }
@@ -2898,7 +3033,13 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         if !column.is_null(row) {
                             if matches!(state.aggs[i], GroupAggState::Running { .. }) {
                                 assert!(!retract, "running extrema require insert-only input");
-                                state.aggs[i].accumulate_typed_extreme(column, row);
+                                state.aggs[i].accumulate_typed_extreme(
+                                    column,
+                                    row,
+                                    java_string_columns[i]
+                                        .as_ref()
+                                        .and_then(|cache| cache.value(row)),
+                                );
                                 continue;
                             }
                             let scalar = ScalarValue::try_from_array(column, row)
@@ -3092,8 +3233,13 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         // With TTL on the no-change suppression is disabled: Flink always emits -U/+U
                         // so downstream state keeps refreshing instead of expiring too early.
                         Some(prev)
-                            if !crate::flink_float::record_row_equal(&new, &prev)
-                                || ttl.enabled() =>
+                            if !group_row_equal(
+                                &new,
+                                &prev,
+                                &string_slots,
+                                &group_string_caches(Some(state), &string_slots),
+                                &previous_string_caches,
+                            ) || ttl.enabled() =>
                         {
                             state.last_output_bytes = scalar_row_bytes(&new);
                             if self.generate_update_before {
@@ -3130,6 +3276,19 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     delta -= byte_key_bytes(key) as isize;
                 }
                 self.memory.record(delta);
+            }
+            if !string_slots.is_empty() && output_start < output.rows.len() {
+                let current = group_string_caches(self.store.get(key), &string_slots);
+                for index in output_start..output.rows.len() {
+                    let caches = if matches!(output.kinds[index], 1 | 3) {
+                        &previous_string_caches
+                    } else {
+                        &current
+                    };
+                    for (column, cache) in string_outputs.iter_mut().zip(caches) {
+                        column.push(cache.clone());
+                    }
+                }
             }
         }
         let GroupChanges {
@@ -3187,6 +3346,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 rt,
             ));
             columns.push(values.finish());
+        }
+        for (slot, caches) in string_slots.iter().zip(string_outputs) {
+            if caches.iter().any(Option::is_some) {
+                let cache = streamfusion_bridge::string_cache::string_cache_array(
+                    caches.iter().map(|value| value.as_deref()),
+                );
+                fields.push(streamfusion_bridge::string_cache::string_cache_field(
+                    self.key_columns.len() + slot,
+                    cache.data_type().clone(),
+                ));
+                columns.push(cache);
+            }
         }
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         columns.push(Arc::new(Int8Array::from(out_kinds)));
@@ -4875,7 +5046,7 @@ impl LocalGroupAggregator {
                     if !column.is_null(row) {
                         if matches!(entry.states[i], GroupAggState::Running { .. }) {
                             assert!(!retract, "running local extrema require insert-only input");
-                            entry.states[i].accumulate_typed_extreme(column, row);
+                            entry.states[i].accumulate_typed_extreme(column, row, None);
                             continue;
                         }
                         let scalar = ScalarValue::try_from_array(column, row)
