@@ -10340,3 +10340,59 @@ two warmups and three measured trials per engine. Native/stock median elapsed is
 variability, source/runtime hashes and evaluator-route evidence remain in the
 [qualification](results/utc-date-format-2026-11-05.json) and
 [6,000 prepared samples](results/utc-date-format-2026-11-05.csv.gz).
+
+
+## DECIMAL ABS over negative producers (2026-11-05)
+
+Verified DECIMAL ABS now consumes unary-minus trees and same-scale widening, including
+`ABS(-d)`, `ABS(CAST(-d AS DECIMAL(38,s)))` and negative subtrees of the existing
+DECIMAL-only arithmetic proof. Leading verified negations are omitted rather than
+materializing an intermediate array. Released Flink's decimal ABS and negation retain
+precision and scale, and every valid SQL DECIMAL coefficient has an exact negation.
+The existing typed ABS kernel retains arithmetic overflow NULLs and constraint enforcement.
+No runtime opcode, JNI boundary, configuration switch or production Rust change is added.
+Negation over ABS, narrowing, scale changes, fallible/unverified inputs and arithmetic
+epoch producers retain their generated paths.
+
+All **124 fresh focused JVM invocations** pass on released Flink 1.18.1/2.2.1 and
+JDK 11/17, targeting Java 11. These include **52 new SQL invocations** over ten
+precision/scale pairs, nullable/NOT NULL inputs, strict/legacy modes, complete 5,003-row
+maps/schema, consumers, overflow, lazy/all-filtered paths and catalog identity. Pure
+admitted routes consume NativeCalc with no fallback and empty JVM evaluators. Another
+**138 existing ABS/negation/CAST regression invocations** pass on both released lines/JDK17,
+including encoding checks across every DECIMAL precision/scale. Four unchanged released
+`ScalarFunctionsTest.testAbs` stock-oracle invocations pass independently. Nothing in this
+selection is skipped or aborted. Actual preceding encoder `a23b3e3b4` matches the first
+query's values/schema, then fails ten expected new route assertions per released-line
+JDK17 control; three retained controls pass. Later unreached queries are not prior-parity evidence.
+The unchanged runtime retains the preceding calendar repair's 927-core-test qualification;
+this is not reported as a fresh Rust run.
+
+Prepared release measurements use `(ABS(...)>0 OR CAST(NULL AS BOOLEAN))` so both
+engines consume the same nullable BOOLEAN output through the existing checksum fixture.
+Stock starts on equivalent prebuilt Generic/Binary RowData; native starts on prebuilt
+Arrow. The timer is inside Rust after input setup/import and before output export;
+intrinsic allocations, conversions and prior JVM callbacks remain timed. Five producer/type
+shapes cover DECIMAL(18,3), (38,18), (38,38), widening from (19,0), and negative arithmetic.
+Each runs nullable/nonnullable and Generic/Binary controls with 1,024-row batches and an
+additional 16-row nullable/Binary control on each released line. Each trial processes
+131,072 rows, with sixteen warmups and nine measured repetitions. No other tests or
+benchmarks run concurrently. The actual previous encoder uses the same unchanged release
+runtime and fixture; independently measured stock controls remain in the raw data.
+
+All **40 bulk cells** beat stock by **1.460-20.950x** and previous by **5.485-28.144x**.
+All **10 tiny controls lose to stock**, with stock/native **0.094-0.481x**. These are
+bounded prepared-function results, not a universal job-speedup claim.
+
+Six complete million-row jobs output DECIMAL directly, retaining submission/startup,
+production JNI and both RowData/Arrow transposes. Each engine has two warmups and five
+measured repetitions at parallelism one. Five of six native medians lose to paired stock;
+the remaining 0.18% difference is near parity and does not establish a stable gain.
+Native/stock elapsed is **0.998-1.222**, native/previous **0.771-0.890**. All six beat the
+preceding callback route, but row-source boundary costs remain material. Complete-job
+ranges, independent stock controls and all slower results are retained.
+
+See the [qualification and exact source/runtime provenance](results/decimal-abs-negate-2026-11-05.json)
+and [5,000 raw prepared samples](results/decimal-abs-negate-2026-11-05.csv.gz).
+The broader exact numeric scope remains tracked in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).

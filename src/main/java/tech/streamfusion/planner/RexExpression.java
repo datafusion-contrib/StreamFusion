@@ -2946,7 +2946,18 @@ final class RexExpression {
       return emitDateFormat(call.getOperands());
     }
     if ("ABS".equals(functionName)) {
-      if (nativeIntegralAbs(call) || nativeDecimalAbs(call)) return emitBuiltinCall(call, 218);
+      if (nativeDecimalAbs(call)) {
+        RexNode operand = call.getOperands().get(0);
+        // Verified DECIMAL negation is exact; ABS need not materialize its intermediate array.
+        while (operand instanceof RexCall
+            && nativeDecimalArithmeticUnary((RexCall) operand,
+                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS)) {
+          operand = ((RexCall) operand).getOperands().get(0);
+        }
+        add(KIND_CALL, 218, 1);
+        return emit(operand);
+      }
+      if (nativeIntegralAbs(call)) return emitBuiltinCall(call, 218);
       return emitFloatUnary(call, 62);
     }
     if ("FLOOR".equals(functionName)) {
@@ -5366,7 +5377,12 @@ final class RexExpression {
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    if (nativeDecimalArithmeticUnary(call, operator)) return true;
+    if (nativeDecimalArithmeticUnary(call, operator)
+        || (operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS
+            && nativeDecimalArithmeticUnary(call,
+                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS))) {
+      return true;
+    }
     if (isDecimalArithmetic(call)
         && (call.getKind() == SqlKind.PLUS || call.getKind() == SqlKind.MINUS
             || call.getKind() == SqlKind.TIMES)) {
@@ -5385,7 +5401,12 @@ final class RexExpression {
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    if (nativeDecimalUnary(call, operator)) return true;
+    if (nativeDecimalUnary(call, operator)
+        || (operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS
+            && nativeDecimalUnary(call,
+                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS))) {
+      return true;
+    }
     if (call.getKind() != SqlKind.CAST || call.getOperands().size() != 1) return false;
     RelDataType input = call.getOperands().get(0).getType();
     return input.getSqlTypeName() == SqlTypeName.DECIMAL
