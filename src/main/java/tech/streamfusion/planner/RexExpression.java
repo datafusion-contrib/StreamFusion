@@ -1958,7 +1958,7 @@ final class RexExpression {
     if (primitiveCase != 0) {
       var input = (RexCall) call.getOperands().get(0);
       // Signed integer text contains no letters, so casing needs no second scan or output buffer.
-      if (nativePrintfIntegerText(input) != null) return emit(input);
+      if (nativeIntegerTextProducer(input) != null) return emit(input);
       if (nativeBooleanCharacterCast(input)) return emitBooleanCharacterCast(input, primitiveCase == 51);
       return emitBuiltinCall(call, primitiveCase);
     }
@@ -2262,7 +2262,7 @@ final class RexExpression {
     if (printf != 0) {
       add(KIND_CALL, printf, call.getOperands().size());
       for (RexNode operand : call.getOperands()) {
-        RexNode integerText = nativePrintfIntegerText(operand);
+        RexNode integerText = nativeIntegerTextProducer(operand);
         if (!emit(integerText == null ? operand : integerText)) return false;
       }
       return true;
@@ -4056,6 +4056,11 @@ final class RexExpression {
       add(KIND_INTEGER_TO_STRING, pad ? -length : length, 1);
       return emit(call.getOperands().get(0));
     }
+    RexNode integerTextDecimal = nativeIntegerTextDecimal(call);
+    if (!unnestOperand && integerTextDecimal != null) {
+      add(KIND_CAST_DECIMAL, resultType.getPrecision() * 100 + resultType.getScale(), 1);
+      return emit(integerTextDecimal);
+    }
     if (tryCast && (source == SqlTypeName.VARCHAR || source == SqlTypeName.CHAR)) {
       if (targetType == SqlTypeName.BOOLEAN) {
         // TRY_CAST catches conversion failures, not failures while evaluating its input.
@@ -4812,7 +4817,7 @@ final class RexExpression {
         if (!nativeBooleanTextOperand(operand)) return 0;
         booleanArguments[i - 1] = true;
         hasBoolean = true;
-      } else if (nativePrintfIntegerText(operand) != null) {
+      } else if (nativeIntegerTextProducer(operand) != null) {
         stringArguments[i - 1] = true;
       } else if (!SqlTypeFamily.INTEGER.contains(operand.getType())
           || !nativeIntegralRoundingOperand(operand)) return 0;
@@ -4822,7 +4827,7 @@ final class RexExpression {
         ? (hasBoolean ? 250 : 248) : 0;
   }
 
-  private static RexNode nativePrintfIntegerText(RexNode operand) {
+  private static RexNode nativeIntegerTextProducer(RexNode operand) {
     if (!(operand instanceof RexCall)) return null;
     var call = (RexCall) operand;
     if (!(call.getOperator()
@@ -4838,6 +4843,27 @@ final class RexExpression {
     return call.getOperands().get(0);
   }
 
+  private static RexNode nativeIntegerTextDecimal(RexCall call) {
+    if (!(call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CAST
+            || call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST)
+        || call.getOperands().size() != 1
+        || call.getType().getSqlTypeName() != SqlTypeName.DECIMAL) return null;
+    RexNode integer = nativeIntegerTextProducer(call.getOperands().get(0));
+    if (integer == null) return null;
+    int digits;
+    switch (integer.getType().getSqlTypeName()) {
+      case TINYINT: digits = 3; break;
+      case SMALLINT: digits = 5; break;
+      case INTEGER: digits = 10; break;
+      case BIGINT: digits = 19; break;
+      default: return null;
+    }
+    // Full-width capacity makes parsing total; integer text has no extra leading zeros.
+    return call.getType().getPrecision() - call.getType().getScale() >= digits ? integer : null;
+  }
+
   private static int nativePrimitiveCase(RexCall call) {
     int op = call.getOperator()
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UPPER ? 50
@@ -4846,7 +4872,7 @@ final class RexExpression {
     if (op == 0 || call.getOperands().size() != 1
         || !(call.getOperands().get(0) instanceof RexCall)) return 0;
     var input = (RexCall) call.getOperands().get(0);
-    if (nativePrintfIntegerText(input) != null) return op;
+    if (nativeIntegerTextProducer(input) != null) return op;
     if (nativePrimitiveBooleanText(input)) return op;
     // Primitive conversions cannot write i/I. Exclude literals that observe Turkish/Azeri casing.
     return nativePrintf(input) != 0
@@ -4869,7 +4895,7 @@ final class RexExpression {
     if (node instanceof RexLiteral) return isAsciiLiteralResult(node);
     if (!(node instanceof RexCall)) return false;
     var call = (RexCall) node;
-    return nativePrintfIntegerText(call) != null || nativePrimitiveBooleanText(call)
+    return nativeIntegerTextProducer(call) != null || nativePrimitiveBooleanText(call)
         || nativePrintf(call) != 0 || nativePrimitiveCase(call) != 0;
   }
 

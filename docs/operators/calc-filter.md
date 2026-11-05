@@ -1671,9 +1671,31 @@ SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
   -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
 ```
 
+### DECIMAL from proven integer text
+
+In ordinary Calc, `CAST(CAST(n AS STRING) AS DECIMAL(p,s))` and the corresponding
+TRY_CAST combinations use the exact numeric decimal kernel when the inner CAST/TRY_CAST
+formats a verified total signed integer producer and `p-s` is at least 3, 5, 10 or 19
+for its resolved TINYINT, SMALLINT, INT or BIGINT width. For example, BIGINT text fits
+`DECIMAL(22,3)`. Integer arithmetic, lossless widening and admitted integer rounding
+producers retain their resolved widths before conversion. NULLs, declared scale,
+nullable result schemas, modern/legacy mode, conditional consumers and empty batches
+remain exact; the intermediate text and released parser are not evaluated.
+
+This proof requires unbounded STRING. Ordinary source strings, bounded CHAR/VARCHAR,
+insufficient integral capacity, fallible/stateful or unverified producers and UNNEST
+keep their preceding routes. The released decimal parser has precision- and byte-length-
+dependent behavior, so this does not admit arbitrary text parsing or DECIMAL text
+roundtrips. Some ordinary CAST forms already simplify to native numeric casts in Flink;
+they are existing controls, not newly accelerated signatures. Unreduced TRY_CAST forms
+require the explicit producer/capacity proof.
+The [separate qualification](../benchmarks/scalar-functions.md#decimal-from-proven-integer-text)
+retains actual preceding routes, tiny/full-job losses and exact source/runtime provenance.
+
 ### DECIMAL TRY_CAST
 
-`TRY_CAST` from STRING/VARCHAR/CHAR to DECIMAL uses Flink's generated conversion through the
+Outside the proven integer-text subset, `TRY_CAST` from STRING/VARCHAR/CHAR to DECIMAL
+uses Flink's generated conversion through the
 existing columnar callback. Malformed text and conversion failures become NULL; failures in
 operand expressions still propagate. Default and legacy modes follow the configured host rules.
 DECIMAL-to-DECIMAL TRY_CAST reuses the native exact rescaling kernel, including HALF_UP and
@@ -1770,7 +1792,7 @@ the cached expression's error path in the second job.
 
 With `table.exec.legacy-cast-behaviour=ENABLED`, the verified basic pairs remain native:
 STRING/CHAR/VARCHAR to DECIMAL; BOOLEAN or DECIMAL to CHAR/VARCHAR; and character to
-character. STRING to DECIMAL uses Flink's complete generated expression, including
+character. Other STRING-to-DECIMAL inputs use Flink's complete generated expression, including
 its catch-on-conversion-failure contract: malformed strings and overflow become NULL.
 Setting only the cast executor's legacy flag would still throw for malformed strings.
 BOOLEAN uses the native formatter's legacy lowercase spelling within its verified operand scope.

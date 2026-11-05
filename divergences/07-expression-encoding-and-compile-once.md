@@ -327,7 +327,13 @@ strict NULL propagation applied to `CONCAT` below.
   HALF_UP, then a HALF_UP rescale to the declared `DECIMAL(p, s)` (NULL on overflow) — since that
   intermediate quotient can need more digits than fit in a fixed-width `i128` before it is rescaled back
   down. A `CAST` to `DECIMAL` from an exact source (another decimal or an integer) is likewise
-  byte-exact. Legacy float/double casts also admit a conservative native batch fast path:
+  byte-exact. Proven unbounded integer text can also feed this numeric kernel directly
+  when the target integral capacity covers the complete resolved integer width. This
+  elides formatting/parsing only for a total producer; ordinary CAST forms already
+  simplified by Flink remain existing controls. Arbitrary source text, DECIMAL text
+  roundtrips and insufficient capacity retain the released parser, whose short-byte
+  grammar and precision checks differ from BigDecimal and Spark's casts.
+  Legacy float/double casts also admit a conservative native batch fast path:
   adjacent binary values bound the host's round-tripping decimal rendering, and outward-rounded
   multiplication by an exact power of ten bounds the scaled decimal. The result is used only
   when both bounds round to the same HALF_UP integer below magnitude 2^52, for scales 0 through

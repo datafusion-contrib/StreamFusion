@@ -10100,3 +10100,79 @@ allocator aliases. The initial double-negation probe folded to an already-native
 establish a new-feature gain: its three completed paired cells and fifty unpaired
 candidate samples are retained separately. Historical qualifications keep their original provenance.
 Hosted CI must qualify the exact final head separately.
+
+
+## DECIMAL from proven integer text
+
+A genuine ordinary-Calc `TRY_CAST(CAST(n AS STRING) AS DECIMAL(p,s))` can use the
+existing exact numeric kernel when the inner CAST/TRY_CAST formats a verified total
+signed integer producer and `p-s` covers the complete resolved width: 3/5/10/19 digits
+for TINYINT/SMALLINT/INT/BIGINT. Integer text is ASCII with no extra leading zeros,
+point or exponent, so both released parser branches give exactly integer times
+10^scale, without overflow. This removes intermediate formatting, parsing and a JVM
+evaluator. It preserves NULLs, resolved result schema/scale, original integer width,
+modern/legacy behavior, lazy consumers and empty batches. Ordinary CAST roundtrips
+that Flink already simplifies to numeric casts remain existing controls.
+
+Source STRING, bounded CHAR/VARCHAR, insufficient capacity, fallible/stateful or
+unverified producers and UNNEST retain their preceding routes. This is not a generic
+STRING parser: the released compact parser has precision/byte-length and malformed-text
+behavior that differs from ordinary decimal parsing.
+
+After rebase onto canonical main `9954a19c`, the complete core is rebuilt
+against released Flink 1.18.1/2.2.1, targeting Java 11. All 132 focused
+JVM invocations pass on JDK 11/17, with full 5,003-row maps/schema at all four signed
+widths, scales 0/3/38-widthDigits, both NULL modes, modern/legacy modes, lazy branches
+and empty batches. Admitted routes require consumed NativeCalc, no fallback and empty
+evaluators. Each actual-before release/JDK run compares the complete first-query
+map/schema before eight expected pure-route failures; two retained controls pass.
+Later unreached queries are not preceding-parity evidence.
+
+An independent released utility oracle matches 243,968 cases across every fitting
+target precision/scale and all signed widths on both release/JDK pairs. Four unchanged
+released `CastRulesTest#castTests` runs pass; these are stock-only tests, separate from
+native SQL qualification. An initial local 1.18 oracle run lacked its released
+`TableAssertions` test dependency; that classpath failure is excluded. Native runtime
+sources/artifacts do not change. The preceding 925 Rust core tests are reused with
+their original runtime hashes, rather than described as a fresh run.
+
+Release prepared measurements use JDK 17, equivalent Generic/Binary RowData and Arrow,
+all four signed widths at three target scales, both NULL modes and signed extremes.
+Both engines evaluate the same TRY_CAST roundtrip compared with decimal zero. Each
+trial processes 131,072 rows, with 16 warmups and nine measurements. The native timer
+runs inside Rust after setup/import and before export, retaining production Calc,
+allocation, exact conversion, comparison and equivalent output consumption. Only this
+small-function gate excludes perimeter JNI/C Data entry and transposes. Actual previous
+behavior retains its generated evaluator inside NativeCalc, not whole-Calc fallback.
+Both processes retain independent stock controls; process order reverses on 1.18.
+
+All 96 prepared bulk cells beat stock **6.574-23.579x**
+and actual previous behavior **12.440-35.978x**.
+6/24 tiny controls lose to stock
+(stock/native 0.811-1.795x), and
+0/24 lose to previous. All losses remain.
+
+Six complete million-row configurations retain startup/submission, JNI and both
+row/Arrow transposes, with two warmups and five alternating trials per engine.
+Native/stock elapsed is 0.679-0.891,
+native/previous 0.576-0.736.
+0/6 medians lose to paired stock,
+0/6 to independent stock and
+0/6 to previous. Prepared gains do not establish
+universal complete-job acceleration.
+
+| Flink/target | Stock seconds | Native seconds | Independent stock seconds | Previous seconds |
+|---|---:|---:|---:|---:|
+| 22-int-p13s3 | 0.194477 | 0.173282 | 0.195940 | 0.235402 |
+| 22-int-p38s28 | 0.235606 | 0.173231 | 0.226662 | 0.265245 |
+| 22-bigint-p38s19 | 0.258878 | 0.175869 | 0.240012 | 0.305235 |
+| 118-int-p13s3 | 0.203184 | 0.176220 | 0.198230 | 0.241878 |
+| 118-int-p38s28 | 0.223859 | 0.170982 | 0.225316 | 0.271301 |
+| 118-bigint-p38s19 | 0.254095 | 0.182445 | 0.254451 | 0.294057 |
+
+The [machine-readable qualification](results/integer-text-decimal-2026-11-05.json) and
+[12,850 raw prepared samples](results/integer-text-decimal-2026-11-05.csv.gz) retain
+full trials, independent controls, source/encoder/fixture/core bytecode and release
+artifact hashes. The 800 pilot samples retain their pre-rebase provenance. Fifty
+unpaired ordinary-CAST probe samples are an already-native control, not a new-feature
+speedup. Hosted CI must qualify the exact final PR head separately.
