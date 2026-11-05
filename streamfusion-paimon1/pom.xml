@@ -152,6 +152,7 @@
                                     </includes>
                                     <excludes>
                                         <exclude>tech/streamfusion/paimon/PaimonVersion.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonSingleFileWriter.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativeAppendSinkWrite.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativeKeyValueSinkWrite.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonAppendSink.java</exclude>
@@ -162,14 +163,12 @@
                                         <exclude>tech/streamfusion/paimon/NativePaimonMaintenance.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonCoordinatorCommitOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonDynamicPartitionOperator.java</exclude>
-                                        <exclude>tech/streamfusion/paimon/NativePaimonKeyValueFileWriter.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonLocalMergeOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonOrcFormat.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonParquetFormat.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonPostponeSink.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonWriteOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonDynamicBucketIndex.java</exclude>
-                                        <exclude>tech/streamfusion/paimon/PaimonKeyValueLayout.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonMergeOptions.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonParquetFloatingStats.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonPostponeFileOrder.java</exclude>

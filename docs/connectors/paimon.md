@@ -1379,7 +1379,9 @@ Parquet/ORC modules. Keep the same `01-streamfusion-paimon.jar` classpath orderi
 The two adapters must not be installed together.
 
 The adapter shares the released paimon-rust source reader, Java FileIO bridge, native writer
-codecs and Arrow batch routing with the 2.1 integration. Its build stages shared Java sources and overlays the classes whose
+codecs, key-value file layout, batch/rolling writer and Arrow routing with the modern integration.
+Released API adapters translate statistics extraction, rolling-writer construction and file metadata;
+the payload, bounds and cleanup algorithms are shared. Its build stages shared Java sources and overlays the classes whose
 released APIs changed. From the Flink 1.18 compatibility directory it copies only the shared
 source-reader adapter; modern writer and coordinator compatibility classes stay out of the 1.0
 artifact. The artifacts deliberately use the same package names: choose

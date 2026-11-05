@@ -23,8 +23,7 @@ import org.apache.paimon.io.BundleRecords;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.DataFilePathFactory;
 import org.apache.paimon.io.DataIncrement;
-import org.apache.paimon.io.RollingFileWriterImpl;
-import org.apache.paimon.io.SingleFileWriter;
+import org.apache.paimon.io.RollingFileWriter;
 import org.apache.paimon.manifest.FileSource;
 import org.apache.paimon.stats.SimpleStats;
 import org.apache.paimon.table.FileStoreTable;
@@ -104,17 +103,20 @@ public final class NativePaimonKeyValueFileWriter {
             : level == 0 ? layout : PaimonKeyValueLayout.of(table, level);
     String compression =
         options.fileCompressionPerLevel().getOrDefault(level, options.fileCompression());
-    if (changelog && options.changelogFileCompression() != null)
-      compression = options.changelogFileCompression();
+    if (changelog && PaimonVersion.changelogCompression(options) != null)
+      compression = PaimonVersion.changelogCompression(options);
     String format = options.fileFormatPerLevel().getOrDefault(level, options.fileFormatString());
-    if (changelog && options.changelogFileFormat() != null) format = options.changelogFileFormat();
+    if (changelog && PaimonVersion.changelogFormat(options) != null)
+      format = PaimonVersion.changelogFormat(options);
     FormatWriterFactory factory =
         FileFormat.fromIdentifier(format, options.toConfiguration())
             .createWriterFactory(fileLayout.fileType);
     DataFilePathFactory paths =
         table.store().pathFactory().createDataFilePathFactory(partition, bucket);
     long targetRows =
-        source == FileSource.COMPACT || changelog ? Long.MAX_VALUE : options.targetFileRowNum();
+        source == FileSource.COMPACT || changelog
+            ? Long.MAX_VALUE
+            : PaimonVersion.targetFileRows(options);
     return new Rolling(
         factory,
         fileLayout,
@@ -129,7 +131,7 @@ public final class NativePaimonKeyValueFileWriter {
   }
 
   final class Rolling implements AutoCloseable {
-    private final RollingFileWriterImpl<InternalRow, DataFileMeta> writer;
+    private final RollingFileWriter<InternalRow, DataFileMeta> writer;
     private final PaimonKeyValueLayout fileLayout;
     private final long targetRows;
     private long fileRows;
@@ -148,7 +150,7 @@ public final class NativePaimonKeyValueFileWriter {
       this.fileLayout = fileLayout;
       this.targetRows = targetRows;
       writer =
-          new RollingFileWriterImpl<>(
+          PaimonVersion.rollingWriter(
               () ->
                   new Output(
                       factory,
@@ -160,13 +162,8 @@ public final class NativePaimonKeyValueFileWriter {
                       changelog,
                       creationTime),
               targetSize,
-              targetRows) {
-            @Override
-            protected void closeCurrentWriter() throws IOException {
-              super.closeCurrentWriter();
-              fileRows = 0;
-            }
-          };
+              targetRows,
+              () -> fileRows = 0);
     }
 
     void write(VectorSchemaRoot root) throws IOException {
@@ -181,7 +178,7 @@ public final class NativePaimonKeyValueFileWriter {
       }
     }
 
-    List<DataFileMeta> result() {
+    List<DataFileMeta> result() throws IOException {
       return writer.result();
     }
 
@@ -195,7 +192,7 @@ public final class NativePaimonKeyValueFileWriter {
     }
   }
 
-  private final class Output extends SingleFileWriter<InternalRow, DataFileMeta> {
+  private final class Output extends PaimonSingleFileWriter<InternalRow, DataFileMeta> {
     private final PaimonKeyValueLayout fileLayout;
     private final DataFilePathFactory paths;
     private final int level;
@@ -267,9 +264,8 @@ public final class NativePaimonKeyValueFileWriter {
       if (!closed)
         throw new IllegalStateException("The data file must be closed before describing it");
       if (recordCount() == 0) return null;
-      long size = outputBytes();
-      SimpleColStats[] rowStats =
-          fileLayout.statsProducer.extract(fileIO, path, size, writerMetadata());
+      long size = bytes();
+      SimpleColStats[] rowStats = fileLayout.statsProducer.extract(fileIO, path, size, metadata());
       SimpleColStats[] valueColumns =
           Arrays.copyOfRange(
               rowStats, fileLayout.thinMode ? 2 : fileLayout.valueColumnOffset(), rowStats.length);
@@ -279,7 +275,7 @@ public final class NativePaimonKeyValueFileWriter {
       SimpleStats keyStats = fileLayout.keyStatsConverter.toBinaryAllMode(keyColumns);
       Pair<List<String>, SimpleStats> valueStats =
           fileLayout.valueStatsConverter.toBinary(valueColumns);
-      return PaimonApiCompat.fileMeta(
+      return PaimonVersion.fileMeta(
           path.getName(),
           size,
           recordCount(),
@@ -295,7 +291,7 @@ public final class NativePaimonKeyValueFileWriter {
           deleteRows,
           source,
           valueStats.getLeft(),
-          paths.isExternalPath() ? path.toString() : null);
+          PaimonVersion.externalPath(paths, path));
     }
   }
 
