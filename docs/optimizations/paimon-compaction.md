@@ -80,7 +80,7 @@ retained separately in the [job CSV](../benchmarks/paimon-compaction-20261104/jo
 | 2M | wide | 0.761 (0.720–0.781) | 0.744 (0.732–0.791) | 0.545 (0.524–0.592) | 1.40× |
 | 2M | multilevel | 0.471 (0.397–0.518) | 0.447 (0.437–0.475) | 0.335 (0.294–0.355) | 1.41× |
 
-Publication-to-commit medians improved **1.13–1.43×** versus stock and **1.20–1.36×** versus previous
+Publication-to-commit medians improved **1.13–1.43×** versus stock and **1.20–1.39×** versus previous
 StreamFusion. Polling and checkpoint alignment contribute substantial variance, including slower
 individual native observations. The small 40k smoke diagnostic was dominated by that cadence
 and did not consistently improve latency; no speedup is claimed for it. MiniCluster startup,
