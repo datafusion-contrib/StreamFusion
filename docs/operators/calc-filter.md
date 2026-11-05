@@ -3532,7 +3532,12 @@ widening. Ordinary Calc also evaluates verified runtime INT precision CASE trees
 a batch kernel selecting seconds/milliseconds when every result is 0, 3 or NULL and conditions
 are total admitted BOOLEAN/integer trees. Arbitrary precision columns, invalid/unverified
 leaves, fallible conditions, division, narrowing, unknown producers and string/formatted signatures retain
-their existing routes, as does UNNEST admission. See the complete [temporal function inventory](temporal-functions.md).
+their existing routes, as does UNNEST admission. Ordinary Calc also admits direct/literal
+DECIMAL epochs at literal precision 0/3: truncate toward zero, wrap to signed 64 bits,
+wrap seconds-to-milliseconds multiplication, then check the final millisecond range.
+Computed DECIMAL and runtime DECIMAL precision retain generated evaluation. The integer
+original-unit range check must not be applied to this distinct released DECIMAL overload.
+See the complete [temporal function inventory](temporal-functions.md).
 Direct/literal LTZ FLOOR/CEIL in fixed-zero session zones also runs in Rust for DAY/HOUR
 on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The latter three forms retain
 released 1.18's code-generation failure. LTZ CEIL uses a dedicated signed-remainder

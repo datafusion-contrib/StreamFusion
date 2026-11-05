@@ -2269,6 +2269,11 @@ final class RexExpression {
     }
     int certifiedBuiltin = certifiedBuiltin(call);
     if (certifiedBuiltin != 0) return emitCertifiedBuiltin(call, certifiedBuiltin);
+    int decimalEpoch = nativeDecimalEpochTimestamp(call);
+    if (!unnestOperand && decimalEpoch != 0) {
+      add(KIND_CALL, decimalEpoch, 1);
+      return emit(call.getOperands().get(0));
+    }
     int epochTimestamp = nativeEpochTimestamp(call);
     if (epochTimestamp != 0
         && (epochTimestamp == 173 && unnestOperand
@@ -4526,6 +4531,19 @@ final class RexExpression {
     return (input == SqlTypeName.DATE || input == SqlTypeName.TIMESTAMP || utcLtz)
         && java.util.Set.of("MONTH", "YEAR")
             .contains(String.valueOf(((RexLiteral) call.getOperands().get(1)).getValue()));
+  }
+
+  private static int nativeDecimalEpochTimestamp(RexCall call) {
+    if (!tech.streamfusion.compat.FlinkCompat.isBuiltinEpochTimestamp(call.getOperator())
+        || call.getOperands().size() != 2
+        || call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.DECIMAL
+        || !(call.getOperands().get(0) instanceof RexInputRef
+            || call.getOperands().get(0) instanceof RexLiteral)
+        || !(call.getOperands().get(1) instanceof RexLiteral)) return 0;
+    BigDecimal precision = ((RexLiteral) call.getOperands().get(1)).getValueAs(BigDecimal.class);
+    if (precision == null) return 0;
+    if (precision.compareTo(BigDecimal.valueOf(3)) == 0) return 251;
+    return precision.signum() == 0 ? 252 : 0;
   }
 
   private static int nativeEpochTimestamp(RexCall call) {

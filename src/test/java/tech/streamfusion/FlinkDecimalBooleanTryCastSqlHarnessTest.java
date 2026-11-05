@@ -86,18 +86,27 @@ class FlinkDecimalBooleanTryCastSqlHarnessTest {
 
   static void verify(int precision, int scale, boolean nullable, boolean legacy,
       String sql, boolean pure) throws Exception {
-    var decimal = DECIMAL(precision, scale);
-    var input = nullable ? decimal : decimal.notNull();
-    var type = ROW(FIELD("id", INT().notNull()), FIELD("d", input), FIELD("e", input));
     BigInteger maximum = BigInteger.TEN.pow(precision).subtract(BigInteger.ONE);
     BigInteger[] values = {maximum.negate(), maximum.negate().add(BigInteger.ONE),
         BigInteger.ONE.negate(), BigInteger.ZERO, BigInteger.ONE, maximum};
+    verify(precision, scale, nullable, legacy, sql, pure, values, "UTC");
+  }
+
+  static void verify(int precision, int scale, boolean nullable, boolean legacy,
+      String sql, boolean pure, BigInteger[] values, String zone) throws Exception {
+    assertTrue(values.length > 0);
+    assertTrue(java.util.Arrays.stream(values)
+        .allMatch(value -> value.abs().compareTo(BigInteger.TEN.pow(precision)) < 0));
+    var decimal = DECIMAL(precision, scale);
+    var input = nullable ? decimal : decimal.notNull();
+    var type = ROW(FIELD("id", INT().notNull()), FIELD("d", input), FIELD("e", input));
     TreeMap<Integer, List<Object>> expected = null;
     List<DataType> expectedTypes = null;
     for (boolean nativeRun : new boolean[] {false, true}) {
       try (var metrics = new RecoveryExecutionMetrics()) {
         var env = metrics.environment(new Configuration(), 1, 0);
         var table = StreamTableEnvironment.create(env);
+        table.getConfig().setLocalTimeZone(java.time.ZoneId.of(zone));
         table.getConfig().set("table.exec.legacy-cast-behaviour", legacy ? "ENABLED" : "DISABLED");
         table.createTemporaryView("src", env.fromSequence(0, 5002).map(index ->
             (RowData) GenericRowData.of(index.intValue(), nullable && index % 37 == 0 ? null

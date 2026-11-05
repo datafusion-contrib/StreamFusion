@@ -199,15 +199,15 @@ public final class IntegralExpressionBenchmarkFunctions {
       case "TIMESTAMP_LTZ(9)": return org.apache.flink.table.data.TimestampData.fromEpochMillis(
           temporalMillis(row), (row * 7919) % 1000000);
       default:
-        int precision;
-        int scale;
-        switch (type) {
-          case "DECIMAL(4,2)": precision = 4; scale = 2; break;
-          case "DECIMAL(18,2)": precision = 18; scale = 2; break;
-          case "DECIMAL(19,19)": precision = 19; scale = 19; break;
-          case "DECIMAL(38,18)": precision = 38; scale = 18; break;
-          case "DECIMAL(38,38)": precision = 38; scale = 38; break;
-          default: throw new IllegalArgumentException(type);
+        if (!type.startsWith("DECIMAL(") || !type.endsWith(")"))
+          throw new IllegalArgumentException(type);
+        String[] decimal = type.substring(8, type.length() - 1).split(",");
+        int precision = Integer.parseInt(decimal[0]);
+        int scale = Integer.parseInt(decimal[1]);
+        if ("decimal-epoch".equals(System.getenv("SF_INTEGRAL_CORPUS"))) {
+          var values = decimalEpochCoefficients(precision, scale);
+          return DecimalData.fromBigDecimal(new BigDecimal(values.get(row % values.size()), scale),
+              precision, scale);
         }
         BigInteger maximum = BigInteger.TEN.pow(precision).subtract(BigInteger.ONE);
         boolean decimalTruth = "decimal-truth".equals(System.getenv("SF_INTEGRAL_CORPUS"));
@@ -217,6 +217,27 @@ public final class IntegralExpressionBenchmarkFunctions {
                 * (precision == 4 ? v % 10000 : 9007199254740993L + v));
         return DecimalData.fromBigDecimal(new BigDecimal(unscaled, scale), precision, scale);
     }
+  }
+
+  public static List<BigInteger> decimalEpochCoefficients(int precision, int scale) {
+    BigInteger limit = BigInteger.TEN.pow(precision);
+    BigInteger factor = BigInteger.TEN.pow(scale);
+    var values = new java.util.ArrayList<BigInteger>(List.of(
+        BigInteger.ZERO, BigInteger.ONE, BigInteger.ONE.negate(),
+        limit.subtract(BigInteger.ONE), BigInteger.ONE.subtract(limit)));
+    for (long integer : new long[] {0, -1, 1, -86401, 951827696, 1706659200,
+        -62167219200L, 253402300799L, 253402300800L, -62167219200000L,
+        253402300799999L, 253402300800000L, Long.MIN_VALUE, Long.MAX_VALUE}) {
+      for (int wrap : new int[] {0, -1, 1}) {
+        BigInteger base = BigInteger.valueOf(integer)
+            .add(BigInteger.ONE.shiftLeft(64).multiply(BigInteger.valueOf(wrap))).multiply(factor);
+        for (int fraction : new int[] {-1, 0, 1}) {
+          BigInteger coefficient = base.add(BigInteger.valueOf(fraction));
+          if (coefficient.abs().compareTo(limit) < 0) values.add(coefficient);
+        }
+      }
+    }
+    return values;
   }
 
   public static long temporalMillis(long row) {
@@ -263,6 +284,10 @@ public final class IntegralExpressionBenchmarkFunctions {
           case SMALLINT: sum += result.getShort(0); break;
           case INTEGER: sum += result.getInt(0); break;
           case BIGINT: sum += result.getLong(0); break;
+          case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+            var timestamp = result.getTimestamp(0, 3);
+            sum += timestamp.getMillisecond() + timestamp.getNanoOfMillisecond();
+            break;
           default: throw new IllegalArgumentException(outputRoot.toString());
         }
       }

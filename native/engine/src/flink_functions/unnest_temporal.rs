@@ -168,7 +168,7 @@ impl ScalarUDFImpl for UnnestTemporal {
     }
 }
 
-fn epoch_timestamp<const SECONDS: bool>(values: &Int64Array) -> ArrayRef {
+pub(super) fn epoch_timestamp<const SECONDS: bool>(values: &Int64Array) -> ArrayRef {
     let bounds = if SECONDS {
         -62_167_219_200..=253_402_300_799
     } else {

@@ -9956,3 +9956,75 @@ rows and modern/legacy casts beat stock 2.520-13.333x and actual previous 1.326-
 All four 16-row controls still lose to stock (0.190-0.504x); their previous/native
 ratios are 1.711-1.838x. They remain prepared controls, not new complete-job timings.
 The same machine-readable record and raw CSV retain all 2,000 additional samples.
+
+
+## DECIMAL epoch conversion
+
+Genuine ordinary-Calc `TO_TIMESTAMP_LTZ(d,0)` / `(d,3)` over direct DECIMAL
+columns/literals executes in Rust. Released Flink 1.18.1/2.2.1 first truncates
+toward zero, wraps `BigDecimal.longValue()`, wraps seconds times 1,000, then checks
+the final millisecond range. The integer overload's original-unit bounds do not
+apply. NULLs, pre-epoch fractions, resolved TIMESTAMP_LTZ(3), session-zone behavior,
+empty/lazy branches and catalog function identity are preserved. Computed decimal
+producers, runtime precision, UNNEST and other signatures keep their preceding routes.
+
+Arrow unary truncates directly into Int64 milliseconds, using compact 64-bit or
+128-bit division as required. The existing epoch kernel builds timestamp components
+with strict range/NULL parent validity and immutable child buffers. No new callback,
+temporal transport or configuration switch is introduced.
+
+All 580 fresh focused JVM invocations pass on both released Flink
+lines and JDK 11/17, targeting Java 11. All 925 release Rust core tests pass, including
+an independent wide-integer oracle for every precision/scale, sliced/scalar/NULL/empty
+and wrap/range controls. The complete current Java core is freshly compiled (373/375
+sources); expected native work must be consumed and admitted routes have empty
+evaluator descriptors. The actual preceding encoder/runtime returns the same complete
+5,003-row first-query maps/schema before failing 86 expected pure-route assertions per
+release/JDK pair, while three retained controls pass. Subsequent SQL in those failing
+invocations is not counted as preceding parity evidence. Sixteen unchanged released
+temporal method oracles pass separately. The earlier released-utility algorithm oracle
+has 806,336 matches; it is algorithm evidence, not native execution evidence.
+
+Prepared inputs match Generic/Binary RowData and Arrow over DECIMAL(18,0), (18,3),
+(19,0), (19,19), (38,0), (38,18) and (38,38), seconds/milliseconds, both NULL modes,
+1,024/16-row batches and signed-fraction/range/low-64-bit wrapping values. Each trial
+processes 131,072 rows, with 16 warmups and nine measurements. Timers start inside Rust
+after input setup/import and stop before export, retaining production Calc, allocation,
+conversion and equivalent output consumption. Only this small-function gate excludes
+perimeter JNI/C Data entry and transposes. Preceding measurement uses its actual
+JVM evaluator inside NativeCalc; it is not relabeled as stock fallback. Both processes
+retain independent stock controls; process order reverses on 1.18.
+
+All 112 prepared bulk cells beat stock 1.965-12.441x
+and actual preceding behavior 11.439-29.473x.
+23/28 tiny controls lose to stock
+(stock/native 0.218-1.351x), and
+0/28 lose to previous. These losses remain;
+no universal tiny-batch speedup is claimed.
+
+Eight complete million-row job configurations retain submission/startup, JNI and both
+row/Arrow transposes, one thread, two warmups and five alternating measurements per
+engine. Native/stock elapsed ranges 0.934-1.165;
+native/previous ranges 0.649-0.880.
+6/8 complete medians lose to the paired stock control,
+5/8 lose to independent stock and
+0/8 lose to previous. All complete-job losses and ranges
+remain; a prepared bulk gain is not a whole-job acceleration claim.
+
+| Flink/DECIMAL/unit | Stock seconds | Native seconds | Independent stock seconds | Previous seconds |
+|---|---:|---:|---:|---:|
+| 22-p18s0-u0 | 0.191690 | 0.198154 | 0.189804 | 0.235846 |
+| 22-p18s3-u3 | 0.195445 | 0.196903 | 0.198312 | 0.240912 |
+| 22-p38s0-u0 | 0.210570 | 0.224670 | 0.200114 | 0.259989 |
+| 22-p38s18-u3 | 0.241333 | 0.235233 | 0.248650 | 0.362492 |
+| 118-p18s0-u0 | 0.196552 | 0.197247 | 0.192116 | 0.224039 |
+| 118-p18s3-u3 | 0.193650 | 0.197908 | 0.193933 | 0.232247 |
+| 118-p38s0-u0 | 0.196993 | 0.229459 | 0.208220 | 0.271942 |
+| 118-p38s18-u3 | 0.246362 | 0.230224 | 0.241323 | 0.348089 |
+
+The [machine-readable qualification](results/decimal-epoch-2026-11-05.json) and
+[all 14,800 raw prepared samples](results/decimal-epoch-2026-11-05.csv.gz) retain
+pilot/final medians, full trials, independent controls, source/fixture/encoder bytecodes,
+complete current-core compilation, exact preceding/candidate release artifacts and
+allocator aliases. Historical qualifications keep their original provenance.
+Hosted CI must qualify the exact final head separately.

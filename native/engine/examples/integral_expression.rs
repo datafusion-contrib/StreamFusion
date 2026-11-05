@@ -9,7 +9,9 @@ use jni::objects::JValue;
 use std::{hint::black_box, sync::Arc, time::Instant};
 use streamfusion::bench::CalcProgram;
 use streamfusion_benchmark_support::{measure, report, CountingAllocator};
-use streamfusion_bridge::timestamp::{timestamp_array, TimestampValue};
+use streamfusion_bridge::timestamp::{
+    timestamp_array, timestamp_type, TimestampColumn, TimestampValue,
+};
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
@@ -73,6 +75,19 @@ fn checksum(batch: &RecordBatch) -> i64 {
                 })
             })
             .sum(),
+        ty if *ty == timestamp_type() => {
+            let values = TimestampColumn::try_new(batch.column(0).as_ref()).unwrap();
+            (0..values.len()).fold(0i64, |sum, row| {
+                sum.wrapping_add(if values.is_null(row) {
+                    -1
+                } else {
+                    let value = values.value(row).unwrap();
+                    value
+                        .millis()
+                        .wrapping_add(i64::from(value.nano_of_milli()))
+                })
+            })
+        }
         other => panic!("Unsupported exact-numeric-expression output {other}"),
     }
 }
@@ -266,20 +281,19 @@ fn main() {
                 })
             })))
         }
-        "DECIMAL(4,2)" | "DECIMAL(18,2)" | "DECIMAL(19,19)" | "DECIMAL(38,18)"
-        | "DECIMAL(38,38)" => {
-            let (precision, scale) = match element {
-                "DECIMAL(4,2)" => (4, 2),
-                "DECIMAL(18,2)" => (18, 2),
-                "DECIMAL(19,19)" => (19, 19),
-                "DECIMAL(38,18)" => (38, 18),
-                "DECIMAL(38,38)" => (38, 38),
-                _ => unreachable!(),
-            };
+        ty if ty.starts_with("DECIMAL(") => {
+            let (precision, scale) = ty[8..ty.len() - 1].split_once(',').unwrap();
+            let precision: u8 = precision.parse().unwrap();
+            let scale: i8 = scale.parse().unwrap();
             let maximum = 10_i128.pow(precision as u32) - 1;
             let decimal_truth =
                 std::env::var("SF_INTEGRAL_CORPUS").is_ok_and(|value| value == "decimal-truth");
+            let epochs = (std::env::var("SF_INTEGRAL_CORPUS").as_deref() == Ok("decimal-epoch"))
+                .then(|| decimal_epoch_coefficients(precision, scale));
             let values = (0..rows).map(|row| {
+                if let Some(values) = &epochs {
+                    return (!nullable || row % 7 != 0).then(|| values[row % values.len()]);
+                }
                 (!nullable || row % 7 != 0).then(|| match row % 17 {
                     0 => maximum,
                     1 => -maximum,
@@ -325,6 +339,7 @@ fn main() {
     );
     let actual = native.run(batch.clone());
     assert_eq!(actual.num_rows(), rows);
+    let timestamp_output = timestamp_type();
     assert_eq!(
         actual.column(0).data_type(),
         if program.string_output {
@@ -339,6 +354,7 @@ fn main() {
                 Some("SMALLINT") => &DataType::Int16,
                 Some("INTEGER") => &DataType::Int32,
                 Some("BIGINT") => &DataType::Int64,
+                Some("TIMESTAMP_WITH_LOCAL_TIME_ZONE") => &timestamp_output,
                 _ => batch.column(0).data_type(),
             }
         }
@@ -381,4 +397,38 @@ fn main() {
         }
     }
     java!(env, env.call_static_method(class, "close", "()V", &[]));
+}
+
+fn decimal_epoch_coefficients(precision: u8, scale: i8) -> Vec<i128> {
+    let limit = 10_i128.pow(precision as u32);
+    let factor = 10_i128.pow(scale as u32);
+    let mut values = vec![0, 1, -1, limit - 1, 1 - limit];
+    for integer in [
+        0,
+        -1,
+        1,
+        -86401,
+        951827696,
+        1706659200,
+        -62167219200,
+        253402300799,
+        253402300800,
+        -62167219200000,
+        253402300799999,
+        253402300800000,
+        i64::MIN,
+        i64::MAX,
+    ] {
+        for wrap in [0_i128, -1, 1] {
+            let Some(base) = (i128::from(integer) + (wrap << 64)).checked_mul(factor) else {
+                continue;
+            };
+            for fraction in [-1, 0, 1] {
+                if let Some(coefficient) = base.checked_add(fraction).filter(|v| v.abs() < limit) {
+                    values.push(coefficient);
+                }
+            }
+        }
+    }
+    values
 }

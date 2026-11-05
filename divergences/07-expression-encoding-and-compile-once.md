@@ -434,6 +434,16 @@ Timestamp inputs and results use the lossless millisecond/fraction pair across n
 Timestamp-producing expressions run by default without a range opt-in, including years 0001 and
 9999. See [the coverage and range contract](../docs/operators/temporal-functions.md).
 
+Direct/literal DECIMAL epoch conversion at literal precision 0/3 uses Arroyo's typed
+ScalarUDF registration and Arrow unary structure, as does Comet's DECIMAL timestamp cast.
+The semantics differ from Spark's fractional-microsecond conversion: released Flink first
+truncates toward zero, wraps the integral value to signed 64 bits, then wraps multiplication
+by 1,000 for seconds and checks the resulting millisecond bounds. It cannot reuse the
+integer-seconds overload's original-unit range check. The existing millisecond/fraction
+timestamp builder retains parent NULL/range validity and immutable child buffers. Other
+DECIMAL producers and precision expressions retain generated evaluation until separately
+verified; this introduces no new JNI transport or configuration switch.
+
 ### QUARTER
 
 Fuses Flink's timestamp-to-day conversion and integer Julian-calendar extraction in one Arrow primitive-array pass. Epoch milliseconds divide towards zero, including before 1970. The integer algorithm also preserves Flink's overflow behavior across the full DATE range.

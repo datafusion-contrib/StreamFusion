@@ -13,7 +13,7 @@ unsupported `MATCH_RECOGNIZE` operator.
 | `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. DATE/plain-TIMESTAMP calendar fields and HOUR/MINUTE/SECOND over DATE, plain TIMESTAMP and TIME execute in Rust, preserving Java signed arithmetic. Direct LTZ extraction uses the planning JDK's serialized fixed/finite offset history; recurring-DST zones retain Flink. Interval fields and unverified wrappers remain generated. |
 | `TO_DATE(text)`, `TO_DATE(text, format)` | The one-argument parser stays in Rust; formatted parsing uses Flink. Dynamic formats, NULL behavior and invalid-input failures follow Flink. |
 | `TO_TIMESTAMP(text[, format])` | Flink parsing, including dynamic formats and full-range timestamp results. |
-| `TO_TIMESTAMP_LTZ` | Direct/literal integer epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. Ordinary Calc also admits verified CASE precision trees whose results are 0, 3 or NULL. TINYINT/SMALLINT/INT widen losslessly to BIGINT first. Verified integer arithmetic, widening and rounding trees also execute in Rust; widening happens after the computed integer result. Unverified precision/epoch producers, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
+| `TO_TIMESTAMP_LTZ` | Direct/literal integer epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. Ordinary Calc also admits verified CASE precision trees whose results are 0, 3 or NULL. TINYINT/SMALLINT/INT widen losslessly to BIGINT first. Verified integer arithmetic, widening and rounding trees also execute in Rust; widening happens after the computed integer result. Direct/literal DECIMAL epochs with literal precision 0/3 also execute in Rust in ordinary Calc, with the distinct released DECIMAL truncation/wrap contract below. Unverified precision/epoch producers, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
 | `DATE_FORMAT`, `UNIX_TIMESTAMP(text[, format])`, `CONVERT_TZ` | Flink evaluation supports dynamic patterns and zones. The existing literal numeric-pattern DATE_FORMAT fast path for plain timestamps remains in Rust. |
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
@@ -86,6 +86,32 @@ ordinary-Calc computed subset is specified below.
 The BIGINT buffer-sharing and overflow-bound rules above remain unchanged.
 The [narrow-integer qualification](../benchmarks/scalar-functions.md#narrow-integer-epoch-conversion)
 records bulk function gains alongside slower tiny batches and complete jobs.
+
+## Native DECIMAL epochs
+
+In ordinary Calc, the genuine built-in `TO_TIMESTAMP_LTZ(d,0)` / `(d,3)` accepts
+verified direct DECIMAL columns and literals, including precisions 1-38 and all
+valid scales. The result remains TIMESTAMP_LTZ(3), independent of the session zone;
+input NULLs propagate and filtered empty batches do not evaluate projections.
+
+Released Flink 1.18.1 and 2.2.1 truncate the decimal toward zero, convert the
+integral result using `BigDecimal.longValue()` (low signed 64 bits), then multiply
+seconds by 1,000 with signed wrapping. Only the resulting milliseconds are tested
+against `[-62167219200000,253402300799999]`; an out-of-range result is NULL. This
+intentionally differs from the integer-seconds overload's original-unit check.
+For example, DECIMAL value `18446744073709551617` at precision 0 wraps to one
+second after the epoch; rejecting the original decimal magnitude would be wrong.
+Negative fractional seconds truncate toward zero, rather than retaining a fraction.
+
+Arrow unary truncates the coefficient directly into a millisecond buffer, using
+64-bit division for compact DECIMAL and 128-bit division when required. The existing
+epoch kernel builds the timestamp components and strict range/NULL validity without
+introducing a different temporal representation or a JVM callback. Computed DECIMAL
+producers, runtime precision, UNNEST and surrounding unverified consumers keep their
+preceding generated paths. A catalog function with the same name cannot acquire this
+builtin proof. Other numeric overloads are not implied by this admission.
+The [independent release qualification](../benchmarks/scalar-functions.md#decimal-epoch-conversion)
+retains actual preceding controls, tiny/full-job losses and exact artifacts.
 
 ## Native computed integer epochs
 
