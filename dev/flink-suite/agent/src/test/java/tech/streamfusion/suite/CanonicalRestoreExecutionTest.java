@@ -1229,4 +1229,98 @@ class CanonicalRestoreExecutionTest {
   private static final class NativeColumnarUpdatingJoinOperator {}
 
   private static final class NativeColumnarWindowRankOperator {}
+
+  static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> managedGroupCases() {
+    return java.util.stream.Stream.of(
+            "group-aggregate-udf-with-merge", "group-aggregate-udf-without-merge")
+        .flatMap(
+            program ->
+                java.util.stream.Stream.of(
+                        "complete",
+                        "missingImport",
+                        "missingInput",
+                        "unopened",
+                        "otherOwner",
+                        "otherState",
+                        "brokenBackend",
+                        "duplicateInput",
+                        "unrelatedCalc")
+                    .map(mode -> org.junit.jupiter.params.provider.Arguments.of(program, mode)));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.MethodSource("managedGroupCases")
+  void managedGroupRequiresRestoredStateAndNewInputInTheSameOpenedOwner(
+      String program, String mode) {
+    var scope = NativeExecution.beginRestore(GROUP, new Object(), program);
+    var owner =
+        new NativeColumnarJvmGroupOperator(
+            mode.equals("missingImport") ? 0 : 3,
+            mode.equals("otherState") ? "foreignState" : "accState",
+            mode.equals("brokenBackend"));
+    if (mode.equals("brokenBackend")) {
+      assertThrows(AssertionError.class, () -> NativeExecution.opened(owner));
+    } else if (!mode.equals("unopened")) {
+      NativeExecution.opened(owner);
+      assertTrue(owner.backend.closed);
+    }
+    if (mode.equals("otherOwner")) {
+      var other = new NativeColumnarJvmGroupOperator(0, "accState", false);
+      NativeExecution.opened(other);
+      NativeExecution.completed(other, 4);
+    } else if (mode.equals("unrelatedCalc")) {
+      var calc = new NativeCalcOperator();
+      NativeExecution.opened(calc);
+      NativeExecution.completed(calc, 4);
+    } else if (!mode.equals("missingInput") && !mode.equals("brokenBackend")) {
+      NativeExecution.completed(owner, mode.equals("duplicateInput") ? 2 : 4);
+      if (mode.equals("duplicateInput")) NativeExecution.completed(owner, 2);
+    }
+    if (mode.equals("complete") || mode.equals("duplicateInput")) {
+      assertDoesNotThrow(() -> NativeExecution.finish(scope));
+      var text =
+          assertDoesNotThrow(
+              () -> {
+                try (var files = java.nio.file.Files.list(reports)) {
+                  return java.nio.file.Files.readString(
+                      files.filter(p -> p.toString().endsWith(".tsv")).findFirst().orElseThrow());
+                }
+              });
+      assertTrue(text.contains("NativeColumnarJvmGroupOperator=4"));
+      assertTrue(text.contains("NativeColumnarJvmGroupOperator=3"));
+    } else assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  public static final class NativeColumnarJvmGroupOperator {
+    final ManagedGroupBackend backend;
+    final boolean broken;
+
+    NativeColumnarJvmGroupOperator(int rows, String state, boolean broken) {
+      this.backend = new ManagedGroupBackend(rows, state);
+      this.broken = broken;
+    }
+
+    public Object getKeyedStateBackend() {
+      if (broken) throw new IllegalStateException("backend unavailable");
+      return backend;
+    }
+  }
+
+  public static final class ManagedGroupBackend {
+    final int rows;
+    final String state;
+    boolean closed;
+
+    ManagedGroupBackend(int rows, String state) {
+      this.rows = rows;
+      this.state = state;
+    }
+
+    public java.util.stream.Stream<Integer> getKeys(String requested, Object namespace) {
+      assertNotNull(namespace);
+      return java.util.stream.IntStream.range(0, state.equals(requested) ? rows : 0)
+          .boxed()
+          .onClose(() -> closed = true);
+    }
+  }
 }

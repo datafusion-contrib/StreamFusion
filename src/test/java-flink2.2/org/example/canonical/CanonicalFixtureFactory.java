@@ -646,7 +646,8 @@ public final class CanonicalFixtureFactory
       var encoded = new DataOutputSerializer(64);
       serializer.serialize(row, encoded);
       pending.add(encoded.getCopyOfBuffer());
-      if (countEnabled) Files.writeString(Path.of(witness + "-sink-count"), Long.toString(++received));
+      if (countEnabled)
+        Files.writeString(Path.of(witness + "-sink-count"), Long.toString(++received));
       if (!outputWitnessed) {
         Files.writeString(Path.of(witness + "-sink-output-ready"), "row received");
         outputWitnessed = true;
@@ -737,6 +738,8 @@ public final class CanonicalFixtureFactory
     public long rows;
     public org.apache.flink.table.api.dataview.MapView<Long, Long> counts =
         new org.apache.flink.table.api.dataview.MapView<>();
+    public org.apache.flink.table.api.dataview.ListView<Long> history =
+        new org.apache.flink.table.api.dataview.ListView<>();
   }
 
   public static final class HistoryAggregate
@@ -749,8 +752,24 @@ public final class CanonicalFixtureFactory
     @Override
     public Long getValue(HistoryAccumulator accumulator) {
       try {
-        long distinct = 0;
-        for (var ignored : accumulator.counts.entries()) distinct++;
+        long distinct = 0, mappedSum = 0, mappedCount = 0, listedSum = 0, listedCount = 0;
+        var entries = accumulator.counts.entries();
+        if (entries != null)
+          for (var entry : entries) {
+            distinct++;
+            mappedSum += entry.getKey() * entry.getValue();
+            mappedCount += entry.getValue();
+          }
+        var history = accumulator.history.get();
+        if (history != null)
+          for (long value : history) {
+            listedSum += value;
+            listedCount++;
+          }
+        if (mappedSum != accumulator.sum
+            || listedSum != accumulator.sum
+            || listedCount != mappedCount)
+          throw new IllegalStateException("Accumulator and managed views disagree");
         return accumulator.sum + accumulator.rows + 1000L * distinct;
       } catch (Exception error) {
         throw new IllegalStateException(error);
@@ -761,6 +780,7 @@ public final class CanonicalFixtureFactory
       accumulator.rows++;
       if (value != null) {
         accumulator.sum += value;
+        accumulator.history.add(value);
         Long count = accumulator.counts.get(value);
         long next = count == null ? 1L : count + 1;
         if (next == 0) accumulator.counts.remove(value);
@@ -772,6 +792,8 @@ public final class CanonicalFixtureFactory
       accumulator.rows--;
       if (value != null) {
         accumulator.sum -= value;
+        if (!accumulator.history.remove(value))
+          throw new IllegalStateException("Missing history value on retract");
         Long stored = accumulator.counts.get(value);
         long count = stored == null ? 0 : stored;
         if (count == 1) accumulator.counts.remove(value);
@@ -784,6 +806,8 @@ public final class CanonicalFixtureFactory
       for (HistoryAccumulator partial : partials) {
         accumulator.sum += partial.sum;
         accumulator.rows += partial.rows;
+        var history = partial.history.get();
+        if (history != null) for (Long value : history) accumulator.history.add(value);
         for (var entry : partial.counts.entries()) {
           Long previous = accumulator.counts.get(entry.getKey());
           long next = (previous == null ? 0 : previous) + entry.getValue();

@@ -211,6 +211,11 @@ public final class NativeExecution {
       OPERATORS.putIfAbsent(operator, active);
       String kind = operator.getClass().getSimpleName();
       active.opened.add(kind);
+      if (kind.equals("NativeColumnarJvmGroupOperator")
+          && Boolean.getBoolean("streamfusion.flink-suite.canonical")) {
+        long rows = managedGroupRows(operator);
+        if (rows > 0) active.managedGroupImports.put(operator, rows);
+      }
       if (!active.groupImports.isEmpty() && kind.equals("NativeColumnarGroupAggregateOperator")) {
         Long rows = active.groupImports.remove(((Number) field(operator, "handle")).longValue());
         if (rows != null) active.importedRows.merge(kind, rows, Long::sum);
@@ -235,6 +240,28 @@ public final class NativeExecution {
           }
         }
       }
+    }
+  }
+
+  private static long managedGroupRows(Object operator) {
+    try {
+      var getBackend = operator.getClass().getMethod("getKeyedStateBackend");
+      getBackend.setAccessible(true);
+      Object backend = getBackend.invoke(operator);
+      Object namespace =
+          Class.forName(
+                  "org.apache.flink.runtime.state.VoidNamespace",
+                  false,
+                  operator.getClass().getClassLoader())
+              .getField("INSTANCE")
+              .get(null);
+      var getKeys = backend.getClass().getMethod("getKeys", String.class, Object.class);
+      getKeys.setAccessible(true);
+      try (var keys = (java.util.stream.Stream<?>) getKeys.invoke(backend, "accState", namespace)) {
+        return keys.count();
+      }
+    } catch (ReflectiveOperationException | RuntimeException failure) {
+      throw new AssertionError("Cannot verify restored JVM aggregate state", failure);
     }
   }
 
@@ -323,6 +350,9 @@ public final class NativeExecution {
     synchronized (NativeExecution.class) {
       Scope scope = OPERATORS.get(operator);
       if (scope != null && scope == active) {
+        Long imported = scope.managedGroupImports.get(operator);
+        if (imported != null && scope.resumedManagedGroups.add(operator))
+          scope.importedRows.merge(operator.getClass().getSimpleName(), imported, Long::sum);
         scope.rows.merge(operator.getClass().getSimpleName(), (long) rows, Long::sum);
         String contract = CONTRACTS.get(scope.test).get(scope.variant);
         if (operator
@@ -548,6 +578,9 @@ public final class NativeExecution {
     private final Map<String, Long> importedRows = new TreeMap<>();
     private final Map<Long, Long> windowImports = new TreeMap<>();
     private final Map<Long, Long> groupImports = new TreeMap<>();
+    private final Map<Object, Long> managedGroupImports = new java.util.IdentityHashMap<>();
+    private final Set<Object> resumedManagedGroups =
+        java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private final Map<String, Long> stockRows = new TreeMap<>();
     private final Map<String, Map<String, Object>> submittedGraphs = new LinkedHashMap<>();
     private final Set<String> opened = new LinkedHashSet<>();

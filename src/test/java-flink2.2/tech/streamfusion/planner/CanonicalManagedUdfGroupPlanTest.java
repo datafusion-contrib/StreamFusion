@@ -1,0 +1,145 @@
+package tech.streamfusion.planner;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static tech.streamfusion.planner.GroupAggregateStockTestFixture.field;
+
+import java.util.*;
+import java.util.stream.Stream;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.streaming.api.graph.StreamGraph;
+import org.apache.flink.streaming.api.operators.*;
+import org.apache.flink.table.api.PlanReference;
+import org.apache.flink.table.api.internal.TableEnvironmentImpl;
+import org.apache.flink.table.planner.delegation.PlannerBase;
+import org.apache.flink.table.runtime.keyselector.RowDataKeySelector;
+import org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction;
+import org.apache.flink.table.types.logical.LogicalType;
+import org.example.canonical.CanonicalFixtureFactory;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.*;
+import tech.streamfusion.NativePlannerTestEnvironment;
+import tech.streamfusion.operator.NativeColumnarJvmGroupOperator;
+
+class CanonicalManagedUdfGroupPlanTest {
+  static Stream<Arguments> cases() {
+    return Stream.of(false, true)
+        .flatMap(
+            compiled ->
+                Stream.of(false, true)
+                    .flatMap(
+                        append ->
+                            Stream.of("DISABLED", "ALWAYS")
+                                .flatMap(
+                                    uid ->
+                                        Stream.of(0, 16)
+                                            .map(
+                                                cache ->
+                                                    Arguments.of(compiled, append, uid, cache)))));
+  }
+
+  @ParameterizedTest(name = "compiled={0},append={1},uid={2},cache={3}")
+  @MethodSource("cases")
+  void capturedHandlerKeepsStockAccumulatorKeyAndPortablePlan(
+      boolean compiled, boolean append, String uid, int cache) throws Exception {
+    String previous = System.getProperty("streamfusion.experimental.jvmAccumulatorCacheEntries");
+    System.setProperty(
+        "streamfusion.experimental.jvmAccumulatorCacheEntries", Integer.toString(cache));
+    try {
+      var stock = graph(false, compiled, append, uid);
+      var nativeGraph = graph(true, compiled, append, uid);
+      var stockNode =
+          stock.getStreamNodes().stream()
+              .filter(
+                  n -> {
+                    if (!(n.getOperatorFactory() instanceof SimpleOperatorFactory)) return false;
+                    var op = ((SimpleOperatorFactory<?>) n.getOperatorFactory()).getOperator();
+                    return op instanceof KeyedProcessOperator
+                        && ((KeyedProcessOperator<?, ?, ?>) op).getUserFunction()
+                            instanceof GroupAggFunction;
+                  })
+              .findFirst()
+              .orElseThrow();
+      var original =
+          ((KeyedProcessOperator<?, ?, ?>)
+                  ((SimpleOperatorFactory<?>) stockNode.getOperatorFactory()).getOperator())
+              .getUserFunction();
+      var owners =
+          nativeGraph.getStreamNodes().stream()
+              .filter(
+                  n ->
+                      n.getOperatorFactory() instanceof SimpleOperatorFactory
+                          && ((SimpleOperatorFactory<?>) n.getOperatorFactory()).getOperator()
+                              instanceof NativeColumnarJvmGroupOperator)
+              .collect(java.util.stream.Collectors.toList());
+      assertEquals(1, owners.size(), nativeGraph.getStreamingPlanAsJSON());
+      var node = owners.get(0);
+      assertTrue(node.getOperatorName().startsWith("NativeColumnarJvmGroup"));
+      var operator = ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator();
+      var captured = field(operator, "function");
+      assertEquals(GroupAggFunction.class, captured.getClass());
+      assertArrayEquals(
+          (LogicalType[]) field(original, "accTypes"), (LogicalType[]) field(captured, "accTypes"));
+      assertEquals(
+          ((RowDataKeySelector) stockNode.getStatePartitioners()[0]).getProducedType(),
+          ((RowDataKeySelector) field(operator, "keySelector")).getProducedType());
+      assertEquals(257, node.getMaxParallelism());
+      assertEquals(2, node.getParallelism());
+      assertEquals(cache, field(operator, "cacheEntries"));
+      assertEquals(uid.equals("DISABLED"), node.getTransformationUID() == null);
+      assertTrue(
+          nativeGraph.getStreamNodes().stream()
+              .anyMatch(n -> n.getOperatorName().contains("RowDataToArrow")));
+      assertTrue(
+          nativeGraph.getStreamNodes().stream()
+              .anyMatch(n -> n.getOperatorName().contains("ArrowToRowData")));
+    } finally {
+      if (previous == null)
+        System.clearProperty("streamfusion.experimental.jvmAccumulatorCacheEntries");
+      else System.setProperty("streamfusion.experimental.jvmAccumulatorCacheEntries", previous);
+    }
+  }
+
+  private static StreamGraph graph(boolean nativeRun, boolean compiled, boolean append, String uid)
+      throws Exception {
+    var config = new Configuration();
+    config.setString("streamfusion.native.enabled", Boolean.toString(nativeRun));
+    config.setString("parallelism.default", "2");
+    config.setString("pipeline.max-parallelism", "257");
+    config.setString("table.exec.uid.generation", uid);
+    var table = NativePlannerTestEnvironment.create(config);
+    table.getConfig().set("table.exec.mini-batch.enabled", "false");
+    table.createTemporarySystemFunction(
+        "fixture_history", CanonicalFixtureFactory.HistoryAggregate.class);
+    table.registerCatalog(
+        "fixture",
+        new org.apache.flink.table.catalog.GenericInMemoryCatalog("fixture", "db") {
+          @Override
+          public Optional<org.apache.flink.table.factories.Factory> getFactory() {
+            return Optional.of(new CanonicalFixtureFactory());
+          }
+        });
+    table.useCatalog("fixture");
+    table.executeSql(
+        "CREATE TABLE input_table(k BIGINT,v BIGINT) WITH ('connector'='canonical-fixture',"
+            + "'input'='unused.csv','ready'='unused.ready','insert-only'='"
+            + append
+            + "')");
+    table.useCatalog("default_catalog");
+    table.executeSql(
+        "CREATE TABLE output_table(k BIGINT,h BIGINT,n BIGINT) WITH ('connector'='blackhole')");
+    String sql =
+        "INSERT INTO output_table SELECT k,fixture_history(v),COUNT(*) FROM fixture.db.input_table"
+            + " GROUP BY k";
+    var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
+    var portable = compiled ? table.compilePlanSql(sql) : null;
+    String json = portable == null ? "" : portable.asJsonString();
+    assertFalse(json.contains("tech.streamfusion"));
+    var transformations =
+        compiled
+            ? planner.translatePlan(planner.loadPlan(PlanReference.fromJsonString(json)))
+            : CanonicalRegularJoinPlanTest.translate(planner, sql);
+    var graph = CanonicalRegularJoinPlanTest.graph(planner, table, transformations);
+    if (compiled) assertEquals(json, portable.asJsonString());
+    return graph;
+  }
+}

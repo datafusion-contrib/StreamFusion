@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, and append scalar and local/global DISTINCT mini-batches | Wider types/keys, retracting mini-batches, other views/phases and failures |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured one-phase managed UDFs | Wider types/keys, retracting and UDF mini-batches, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -1564,3 +1564,9 @@ use stock fallback in SQL/compiled plans when those indices cannot fit the curre
 The [operator admission boundary](../operators/group-by.md#native-companion-table-index-admission)
 distinguishes this table-ID limit from scalar-only row width; wider native companion layouts
 remain open under #569.
+
+
+Captured one-phase JVM aggregate handlers retain released managed accumulator/data-view state
+behind Arrow boundaries. They use normal stock restore/export and do not introduce native
+snapshot intermediates or StreamFusion serializers. The [managed UDF qualification](../operators/group-by.md#captured-managed-udf-canonical-state-partial) records exact released restore
+witnesses, planner and 56 complete-job scenarios across cached/uncached execution. Mini-batch UDF and wider type/TTL/failure/version coverage remain open under #569.

@@ -67,6 +67,10 @@ public final class CanonicalJobWorker {
     }
     System.setProperty("streamfusion.transpose.flushLatencyMs", "0");
     System.setProperty("streamfusion.exchange.coalesceRows", "1");
+    if (Files.exists(root.resolve("jvm-cache-entries")))
+      System.setProperty(
+          "streamfusion.experimental.jvmAccumulatorCacheEntries",
+          Files.readString(root.resolve("jvm-cache-entries")).trim());
     int parallelism =
         Files.exists(root.resolve(stage + "-parallelism"))
             ? Integer.parseInt(Files.readString(root.resolve(stage + "-parallelism")).trim())
@@ -523,6 +527,15 @@ public final class CanonicalJobWorker {
         if (!stateBackend.contains(expectedBackend))
           throw new AssertionError(
               "JVM aggregate did not use its stock managed backend: " + stateBackend);
+        int cacheEntries =
+            Integer.getInteger("streamfusion.experimental.jvmAccumulatorCacheEntries", 0);
+        if ((cacheEntries > 0) == EvidenceReporter.jvmCacheHits.isEmpty())
+          throw new AssertionError("JVM accumulator cache activation mismatch");
+        if (cacheEntries > 0
+            && limit > restoredLimit
+            && !Files.exists(root.resolve("rescale"))
+            && EvidenceReporter.jvmCacheHits.stream().noneMatch(counter -> counter.getCount() > 0))
+          throw new AssertionError("JVM accumulator cache handled no repeated keys");
       } else if (nativeRun) {
         String expectedStorage = backend.equals("rocksdb") ? "rocksdb" : "memory";
         if (Files.exists(root.resolve("native-storage"))) {
@@ -734,6 +747,8 @@ public final class CanonicalJobWorker {
         java.util.concurrent.ConcurrentHashMap.newKeySet();
     static final java.util.List<org.apache.flink.metrics.Counter> inputCounters =
         new java.util.concurrent.CopyOnWriteArrayList<>();
+    static final java.util.List<org.apache.flink.metrics.Counter> jvmCacheHits =
+        new java.util.concurrent.CopyOnWriteArrayList<>();
     static final java.util.Map<String, java.util.List<org.apache.flink.metrics.Counter>>
         inputsByOperator = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -755,6 +770,9 @@ public final class CanonicalJobWorker {
         observedStorage.add(
             String.valueOf(((org.apache.flink.metrics.Gauge<?>) metric).getValue()));
       }
+      if (name.equals("jvmAccumulatorCacheHits")
+          && metric instanceof org.apache.flink.metrics.Counter)
+        jvmCacheHits.add((org.apache.flink.metrics.Counter) metric);
       if (name.equals("miniBatchCheckpointFlushes")
           && metric instanceof org.apache.flink.metrics.Counter)
         checkpointFlushesByOperator

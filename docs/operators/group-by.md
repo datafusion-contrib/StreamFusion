@@ -953,8 +953,9 @@ retaining the mixed UDAF/COUNT/managed-ListView workload. It verifies the same v
 source offsets, stable operator identities, complete key-group ownership, consumed native work
 and cleanup. Both lines also pass the existing checkpoint controls through the shared harness.
 [Savepoint evidence](../benchmarks/results/jvm-aggregate-savepoint-2026-10-16.json)
-records every stage. Cross-version migration, stock/native state-layout migration and
-two-phase merge/reset remain pending.
+records every stage. Cross-version migration and two-phase merge/reset remain pending.
+Released Flink 2.2.1 stock/native one-phase state-layout migration is qualified separately in
+[captured managed UDF canonical state](#captured-managed-udf-canonical-state-partial).
 
 DISTINCT and FILTER use the released generated handlers, including shared membership state,
 NULL handling, retractions and managed DataViews. Released Flink still rejects DISTINCT on
@@ -3611,3 +3612,40 @@ case overlaps the earlier complete-job matrix and does not requalify all 28 scen
 This is validation of the current encoding, not arbitrary-width canonical interchange. Wider
 companion layouts remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.
+
+
+## Captured managed UDF canonical state (partial)
+
+On Flink 2.2.1, one-phase synchronous user aggregates can retain the captured released
+`GroupAggFunction`, key selector, accumulator types and generated handler while consuming and
+emitting Arrow batches. This preserves the stock managed `accState` and original data-view
+descriptors/serializers, including user accumulator fields, rather than rebuilding them from the
+SQL result. Canonical restore uses normal Flink managed-state initialization; canonical export
+uses its stock writer directly. Normal user-function dependencies remain required by stock Flink;
+StreamFusion classes and libraries are excluded from the qualified stock worker.
+
+Both ordinary SQL and portable stock compiled plans keep the captured identities and maximum
+parallelism. Admitted keys and Arrow-visible inputs/results follow the existing typed row
+contract; unsupported RAW boundary fields, async state and unaligned exchange retain stock
+owners. The optional JVM accumulator cache is active only without retention and drains before
+savepoint barriers. It does not change durable state or its serializers.
+
+The unchanged released aggregate restore selection currently passes nine stock and seven native
+programs. Both one-phase UDF programs enumerate three restored managed groups and process seven
+new rows in the same opened Arrow UDF owner; unrelated Calc activity cannot satisfy this witness.
+The 180 Java audit controls include missing state/input, wrong owner/state, failed backend
+inspection and duplicate-event cases. Two mini-batch UDF programs remain failing in this selection.
+
+Sixteen planner cases cover SQL/compiled submission, append/retract input, enabled/disabled UIDs
+and cache settings. Uncached/cached compiled stock-first heap continuation smoke jobs pass with
+a user accumulator retaining raw fields, MapView and ListView, retractions and NULLs, custom
+source/committer state, both transposes, clean stock workers and an independent final-state oracle.
+All 56 immediate-UDF complete-job cases pass: 16 continued-input, 16 no-input returns,
+eight ordinary checkpoint recoveries and 16 rescalings across cached/uncached execution,
+SQL/compiled submission, both engine orders and both stores. Rescaling redistributes 64 keys
+through parallelism 1→3→2 with maximum parallelism 128 and exercises the bounded cache's eviction.
+The smoke cases overlap this matrix. Each job keeps the custom source/committer state, both
+transposes, clean stock workers and external output verification. This does not qualify the
+separate mini-batch UDF variants or the complete TTL/failure/version matrix.
+Wider UDF types, phases, TTL/failure/version and connector delivery combinations remain required
+by [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

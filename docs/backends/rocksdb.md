@@ -321,3 +321,9 @@ a database; it does not truncate an index into a different table. Scalar-only wi
 need companion IDs. Canonical DISTINCT planning falls back to the captured stock owner for an
 unencodable view layout; see [grouped-state admission](../operators/group-by.md#native-companion-table-index-admission).
 Wider native companion encoding remains pending in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+Captured JVM UDF aggregate accumulators and data views remain Flink managed state. With the
+RocksDB configuration they use the released embedded RocksDB delegate, rather than the native
+grouped-table codec. The [managed UDF canonical scope](../operators/group-by.md#captured-managed-udf-canonical-state-partial) keeps this distinction explicit; native grouped-table
+coverage does not qualify user accumulator state or its full restore matrix.

@@ -106,3 +106,17 @@ wrapping into unrelated state. Keep wide scalar-only schemas admissible because 
 companion IDs. SQL/compiled fallback uses the captured stock template and never advertises an
 unbound native envelope as a stock-compatible handoff. This preserves current native checkpoint
 bytes for supported layouts; expanding the encoding remains part of #569.
+
+
+## Captured JVM accumulator handlers
+
+Arroyo's incremental aggregate structure remains the native aggregate model, but arbitrary
+Flink user accumulators and managed ListView/MapView contracts require their actual released
+generated handler. Retain the captured synchronous stock function and key selector behind the
+existing Arrow UDF operator instead of regenerating a different accumulator schema. This is an
+authorized UDF execution path, not a Rust acceleration claim. Stock manages its state and
+serializers directly; the optional cache drains before barriers and is disabled for TTL.
+Canonical execution proof enumerates the opened owner's restored accState keys and credits
+those imports only when that same object successfully consumes new input. Stock fallback and
+unrelated native Calc work do not qualify. Broader mini-batch/view/failure coverage remains #569;
+benchmarking is explicitly deferred.

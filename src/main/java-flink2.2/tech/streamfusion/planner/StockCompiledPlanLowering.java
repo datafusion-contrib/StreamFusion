@@ -343,6 +343,7 @@ final class StockCompiledPlanLowering {
         .anyMatch(
             node -> {
               if (node instanceof NativeTemporalSortExecNode
+                  || node instanceof NativeJvmGroupExecNode
                   || node instanceof NativeColumnarWindowAggExecNode
                   || node instanceof NativeColumnarSessionWindowAggExecNode
                   || node instanceof NativeColumnarGlobalWindowAggExecNode) return true;
@@ -1737,7 +1738,77 @@ final class StockCompiledPlanLowering {
 
   private ExecNode<?> lowerGroupAggregate(ExecNode<?> stock) throws IOException {
     var arithmetic = lowerArithmeticGroupAggregate(stock);
-    return arithmetic == stock ? lowerTypedGroupAggregate(stock) : arithmetic;
+    if (arithmetic != stock) return arithmetic;
+    var typed = lowerTypedGroupAggregate(stock);
+    return typed == stock ? lowerJvmGroupAggregate(stock) : typed;
+  }
+
+  private ExecNode<?> lowerJvmGroupAggregate(ExecNode<?> stock) throws IOException {
+    if (!Boolean.parseBoolean(
+        System.getProperty("streamfusion.experimental.jvmGroupAggregates", "true"))) return stock;
+    var transformation = stockTransformations.get(stock.getId());
+    if (!(transformation instanceof OneInputTransformation) || !ordinaryKeyLayout(transformation))
+      return stock;
+    var original = (OneInputTransformation<?, ?>) transformation;
+    if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)
+        || !(original.getStateKeySelector()
+            instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector)) return stock;
+    var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
+    if (!(operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator))
+      return stock;
+    var function =
+        ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
+            .getUserFunction();
+    if (function.getClass()
+        != org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.class) return stock;
+    JsonNode definition = definitions.get(stock.getId());
+    var calls =
+        reader
+            .forType(org.apache.calcite.rel.core.AggregateCall[].class)
+            .<org.apache.calcite.rel.core.AggregateCall[]>readValue(definition.path("aggCalls"));
+    boolean userAggregate = false;
+    for (var call : calls) {
+      var user = JvmGroupAggregateMatcher.userFunction(call.getAggregation());
+      if (user instanceof org.apache.flink.table.functions.python.PythonFunction
+          || user instanceof org.apache.flink.table.functions.SpecializedFunction) return stock;
+      userAggregate |= user != null;
+    }
+    if (!userAggregate) return stock;
+    var input = stock.getInputEdges().get(0).getSource();
+    var inputType = (RowType) input.getOutputType();
+    var outputType = (RowType) stock.getOutputType();
+    if (!typedGroupArrowType(inputType) || !typedGroupArrowType(outputType)) return stock;
+    var config = new Configuration(planner.getTableConfig().getConfiguration());
+    ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
+    if (Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false"))
+        || Boolean.parseBoolean(
+            config.getString("execution.checkpointing.unaligned.enabled", "false"))) return stock;
+    int[] grouping = reader.forType(int[].class).readValue(definition.path("grouping"));
+    int maximum = stockMaximum(original);
+    var exchange =
+        (NativeColumnarExchangeExecNode)
+            canonicalJoinInput(input, config, inputType, grouping, true);
+    exchange.withStateMaxParallelism(maximum);
+    var ttl =
+        (org.apache.flink.api.common.state.StateTtlConfig) releasedField(function, "ttlConfig");
+    var owner =
+        new CapturedJvmGroupExecNode(
+            config,
+            inputType,
+            outputType,
+            (org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction) function,
+            (org.apache.flink.table.runtime.keyselector.RowDataKeySelector)
+                original.getStateKeySelector(),
+            grouping,
+            maximum,
+            ttl.isEnabled() ? ttl.getTimeToLive().toMillis() : 0);
+    connect(exchange, owner);
+    bindings.put(owner, new StockBinding(stock.getId(), stockUids.get(stock.getId()), null));
+    columnar.add(owner);
+    var exit =
+        new ArrowToRowDataExecNode(config, InputProperty.DEFAULT, outputType, "ArrowToRowData");
+    connect(owner, exit);
+    return exit;
   }
 
   private static boolean typedGroupArrowType(LogicalType type) {
