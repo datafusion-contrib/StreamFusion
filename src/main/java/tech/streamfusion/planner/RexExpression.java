@@ -4031,7 +4031,7 @@ final class RexExpression {
             || nativeDecimalUnaryOperand(call.getOperands().get(0),
                 org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS)
             || (tryCast || sourceType.isNullable()) && resultType.isNullable()
-                && nativeDecimalFormattingArithmetic(call.getOperands().get(0)))) {
+                && nativeDecimalFormattingArithmetic(call.getOperands().get(0), tryCast))) {
       boolean bounded = Boolean.FALSE.equals(legacyCastBehaviour)
           && resultType.getPrecision() != Integer.MAX_VALUE;
       boolean pad = targetType == SqlTypeName.CHAR;
@@ -5422,15 +5422,18 @@ final class RexExpression {
         && nativeDecimalUnaryOperand(call.getOperands().get(0), operator);
   }
 
-  private static boolean nativeDecimalFormattingArithmetic(RexNode node) {
+  private static boolean nativeDecimalFormattingArithmetic(
+      RexNode node, boolean arithmeticUnary) {
     if (node.getType().getSqlTypeName() != SqlTypeName.DECIMAL) return false;
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
+    if (arithmeticUnary && (nativeDecimalAbs(call) || nativeDecimalNegate(call))) return true;
     if (isDecimalArithmetic(call)
         && (call.getKind() == SqlKind.PLUS || call.getKind() == SqlKind.MINUS
             || call.getKind() == SqlKind.TIMES)) {
-      return call.getOperands().stream().allMatch(RexExpression::nativeDecimalFormattingArithmetic);
+      return call.getOperands().stream()
+          .allMatch(operand -> nativeDecimalFormattingArithmetic(operand, arithmeticUnary));
     }
     return nativeDecimalUnaryOperand(node,
             org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS)
@@ -5726,6 +5729,15 @@ final class RexExpression {
     }
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
+    if (call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST
+        && call.getOperands().size() == 1
+        && call.getType().isNullable()
+        && SqlTypeFamily.CHARACTER.contains(call.getType())
+        && nativeDecimalFormattingArithmetic(call.getOperands().get(0), true)) {
+      // Verified character TRY_CAST resolves arithmetic NULLs before a consumer sees a value.
+      return false;
+    }
     return isDecimalArithmetic(call) && !call.getType().isNullable()
         || call.getOperands().stream().anyMatch(RexExpression::containsNonNullableDecimalArithmetic);
   }

@@ -1327,6 +1327,11 @@ Native, unconditionally, with no host involvement:
   resolved precision/scale, and overflow stays SQL NULL. CAST requires a nullable computed source
   and character result. TRY_CAST's character result is nullable, so it also admits NOT NULL
   arithmetic inputs and retains overflow NULL instead of CAST's empty projection default.
+  TRY_CAST additionally admits verified ABS/unary-minus wrappers over these arithmetic trees,
+  including alternating unary trees and arithmetic containing those wrappers. Its nullable
+  character result normalizes arithmetic NULLs before consumers such as IS NULL observe them;
+  this verified boundary does not require the whole projection's default-value evaluator.
+  Ordinary CAST keeps its existing arithmetic/unary producer and final-default rules.
   NOT NULL arithmetic CAST retains the generated projection contract described below;
   division/remainder, mixed numeric operands and other producers keep their preceding routes.
   Unknown length configuration and other computed DECIMAL operands retain their existing
@@ -1707,7 +1712,8 @@ native formatter described above. It preserves scale, plain notation and NULLs i
 and legacy modes without a JVM evaluator. Modern bounded targets truncate/pad; legacy ignores length.
 Verified ABS/unary-minus trees and same-scale precision widening also stay native. The DECIMAL-only
 addition/subtraction/multiplication proof also formats through TRY_CAST with nullable or NOT NULL
-sources. Its character result remains nullable and arithmetic overflow remains SQL NULL. Other
+sources, including verified ABS/unary-minus wrappers over those arithmetic trees. Its character
+result remains nullable and arithmetic overflow remains SQL NULL. Other
 computed DECIMAL operands keep their previous rules; in particular, TRY_CAST does not catch an
 error raised while computing its input. See the direct [TRY_CAST comparison](../benchmarks/scalar-functions.md#decimal-to-string-try_cast)
 and [arithmetic qualification](../benchmarks/scalar-functions.md#decimal-arithmetic-try_cast-to-character).
@@ -1730,6 +1736,8 @@ cast, with the rest of the expression tree still evaluated natively around it:
   Both casts also keep verified ABS/unary-minus trees and same-scale precision widening native;
   CAST also keeps the nullable DECIMAL-only addition/subtraction/multiplication proof above native;
   TRY_CAST admits the same arithmetic proof with nullable or NOT NULL inputs.
+  TRY_CAST also admits verified ABS/unary-minus wrappers over that arithmetic and resolves
+  overflow NULLs before basic consumers; ordinary CAST keeps its separate default/producer rules.
   Other computed DECIMAL producers retain the host route or their existing fallback.
   For CAST of an unverified NOT NULL computed DECIMAL, the complete enclosing projection or
   condition stays in one generated evaluator. This retains Flink's separate value and NULL flag
@@ -2102,9 +2110,11 @@ consumers retain their own separate proofs; the latter accepts total unary/widen
 trees but excludes arithmetic. The [release qualification](../benchmarks/scalar-functions.md#decimal-abs-over-negative-producers-2026-11-05)
 records prepared and complete-job comparisons against stock and the preceding evaluator.
 The separate [negation-over-ABS qualification](../benchmarks/scalar-functions.md#decimal-negation-over-absolute-values-2026-11-05)
-records the later alternating-tree admission. Existing arithmetic character-consumer
-guards remain separate: for example, `TRY_CAST(-ABS(d*d) AS CHAR(48))` retains its explicit
-fallback; direct total unary/widening inputs do not acquire that restriction.
+records the later alternating-tree admission. Character-consumer guards remain separate:
+`TRY_CAST(-ABS(d*d) AS CHAR(48))` now uses the verified arithmetic formatter, while
+ordinary CAST over unverified unary/arithmetic producers retains generated evaluation.
+The separate [TRY_CAST qualification](../benchmarks/scalar-functions.md#decimal-unary-arithmetic-try_cast-to-character-2026-11-05)
+records the nullable-result boundary and its stock/preceding fallback comparisons.
 
 DECIMAL unary minus admits direct inputs/literals, recursive same-scale precision widening,
 nested admitted negation/ABS and DECIMAL-only addition/subtraction/multiplication over those

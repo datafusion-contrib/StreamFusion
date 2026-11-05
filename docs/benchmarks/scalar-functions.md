@@ -10453,3 +10453,65 @@ and [6,000 raw prepared samples](results/decimal-negate-abs-2026-11-05.csv.gz).
 The remaining exact numeric and character-conversion scopes stay open in
 [#491](https://github.com/datafusion-contrib/StreamFusion/issues/491) and
 [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## DECIMAL unary arithmetic TRY_CAST to character (2026-11-05)
+
+Nullable character TRY_CAST now admits verified ABS/unary-minus wrappers over
+DECIMAL-only addition, subtraction and multiplication. For example,
+`TRY_CAST(-ABS(d*d) AS CHAR(48))` formats through existing native decimal kernels.
+Resolved intermediate precision/scale and overflow NULLs remain unchanged. This
+verified TRY_CAST boundary resolves arithmetic NULLs before consumers such as IS NULL
+observe them, including NOT NULL source fields. Ordinary CAST retains its separate
+producer and projection-default guards; narrowing, rescaling and fallible/unverified
+producers retain their existing routes. No production Rust/JNI change or switch is added.
+
+All **428 fresh JVM invocations** pass on released Flink 1.18.1/2.2.1 and JDK 11/17,
+targeting Java 11: 48 new SQL invocations and 380 related invocations, with no skips or
+aborts. Complete 5,003-row maps/schema cover ten precision/scale pairs, strict/legacy
+modes, nullable/NOT NULL sources, STRING/CHAR/VARCHAR, arithmetic overflow,
+IS NULL/CHAR_LENGTH/CASE consumers, runtime filters and all-filtered batches. Admitted
+pure routes consume NativeCalc, have no fallback and have empty JVM evaluator descriptors.
+Ordinary CAST defaults and unverified/fallible producer controls remain explicit.
+Four unchanged released `CastRulesTest#castTests` stock-oracle runs pass 535 cases each;
+these are separate stock evidence, not 2,140 new native tests.
+
+Actual preceding encoder `83d032683` fails eleven expected route assertions and passes
+one retained control per released-line JDK17 run. Ten core methods compare first-query
+full maps/schema before their expected fallback assertion fails. The mixed ordinary-CAST
+control fails its NativeSubstitution assertion before multiset comparison and is not
+preceding-value evidence; later unreached queries are not counted either. Final parity
+and performance encoder instructions, including nested classes, match on both released
+lines. The unchanged release runtime retains its historical 927-core-test qualification.
+
+Prepared release measurements output STRING/CHAR/VARCHAR directly with equivalent
+UTF-8 checksum consumption. Four shapes cover ABS of a product at DECIMAL(18,3),
+negative ABS of a product at (38,18), a negative sum at (38,38), and nested unary
+arithmetic at (19,0). Each uses strict/legacy, nullable/nonnullable and Generic/Binary
+RowData controls with 1,024-row batches, plus 16-row nullable/Binary controls.
+Stock starts on prebuilt RowData and native on equivalent prebuilt Arrow. The timer
+starts inside Rust after setup/import and stops before export; production Calc,
+allocations and conversions intrinsic to the operation remain timed. Every trial
+processes 131,072 rows, with sixteen warmups and nine measured repetitions.
+Candidate and preceding prepared JVMs both use `-Xmx1g`; no other tests or benchmarks
+run concurrently. Independent preceding stock controls remain in the raw records.
+
+These direct character-root expressions used **whole-Calc stock fallback** before
+the change. The preceding control verifies that actual rejection and times Flink,
+rather than fabricating a callback inside NativeCalc. This performance scope does
+not cover the distinct preceding whole-projection evaluator route that a NOT NULL
+arithmetic TRY_CAST observed by IS NULL can use; that consumer has pure-native
+correctness evidence but no separate speedup claim here.
+
+All **64 bulk cells** beat stock by **1.283-8.044x** and previous by **1.280-8.426x**.
+Nine of sixteen tiny controls lose to stock, and eight lose to previous; tiny
+stock/native ranges **0.808-2.431x**. Six complete million-row jobs output character
+values directly and retain submission/startup, production JNI and both RowData/Arrow
+transposes. At parallelism one and `-Xmx2g` for every engine, each has two warmups
+and five measured repetitions. All six beat paired stock and actual preceding
+fallback: native/stock elapsed is **0.502-0.705**, native/previous **0.519-0.744**.
+These measured shapes do not establish universal job or tiny-batch acceleration.
+
+See the [qualification, raw full-job trials and exact provenance](results/decimal-unary-arithmetic-try-cast-2026-11-05.json)
+and [8,000 prepared samples](results/decimal-unary-arithmetic-try-cast-2026-11-05.csv.gz).
+Remaining character conversions stay tracked in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).

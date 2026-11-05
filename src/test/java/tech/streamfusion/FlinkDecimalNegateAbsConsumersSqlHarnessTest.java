@@ -23,13 +23,10 @@ class FlinkDecimalNegateAbsConsumersSqlHarnessTest {
   }
 
   @Test
-  void unverifiedArithmeticCharacterConsumerKeepsFallback() throws Exception {
+  void verifiedArithmeticTryCastPreservesNulls() throws Exception {
     for (boolean nullable : new boolean[] {false, true}) {
       String sql = "SELECT TRY_CAST(-ABS(d*d) AS CHAR(48)) FROM src";
-      NativeParity.assertFallbackReasonContains(() -> environment(nullable), sql,
-          "unsupported TRY_CAST DECIMAL");
-      NativeFailureParity.run(() -> environment(nullable), sql)
-          .assertSuccess(NativeFailureParity.Route.FALLBACK);
+      BuiltinFunctionParity.assertParity(() -> environment(nullable), sql);
     }
   }
 
