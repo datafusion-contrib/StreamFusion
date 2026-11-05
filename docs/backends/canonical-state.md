@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Automatic arithmetic, BIGINT append/retract MIN/MAX and typed scalar/shared COUNT DISTINCT handoffs | Wider types/keys, other views/phases and failure coverage |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, BIGINT append/retract MIN/MAX, typed scalar/shared COUNT DISTINCT and append date/time/boolean extrema | Wider types/keys, retracting typed extrema, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -1477,3 +1477,11 @@ more input. Recovery never rolls back to an older state after new effects commit
 86-check cohort also reruns the preceding 70 checks on the updated fixture sources. See the
 [completion-failure scope](../connectors/kafka.md#client-failure-after-canonical-completion-partial).
 This does not qualify every failure during capture, publication, commit or broker outages.
+
+The grouped scalar contract also captures DATE/TIME/BOOLEAN append MIN/MAX without changing the
+native fold or transfer format. Exact released accumulator serializers and logical precision
+remain in the stock artifact; values move directly through the existing bounded Arrow frames.
+Its separate 194-control and 32-job cohorts qualify the precise subset on the
+[GROUP BY page](../operators/group-by.md#canonical-date-time-and-boolean-extrema-partial), with
+32 rejection/plan controls and 34 shared Flink 1.18 processing regressions kept separate.
+Retraction/view, type/precision and broader failure/version coverage remain open under #569.

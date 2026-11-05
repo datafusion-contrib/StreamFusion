@@ -3204,7 +3204,8 @@ for the supported built-in COUNT/SUM0/SUM/AVG and append-only MIN/MAX layouts. I
 intermediate counts must be BIGINT. Retraction-capable MIN/MAX continue to use the preceding
 structured BIGINT adapter. Decimal accumulator rows, UDF views, other DISTINCT aggregates,
 mini-batch/two-phase owners, asynchronous/unaligned state and DISTINCT with entry TTL are outside
-this new binding. An unsupported stock contract retains its stock owner.
+this new binding. Unsupported compiled contracts retain stock owners. An unbound ordinary native
+plan can retain its StreamFusion envelope and has no stock-interchange qualification.
 
 Shared COUNT DISTINCT views preserve the original state IDs and actual key/counter serializers.
 Append-only views retain shared membership bits; retracting views retain independent signed long
@@ -3241,3 +3242,40 @@ checks require typed stock contracts for the newly supported layouts and retain 
 unsupported layouts. These cohorts overlap and are not cumulative coverage.
 The existing wider connector, failure, version, type and aggregation-phase matrices remain open;
 benchmarking remains deferred.
+
+## Canonical date, time and boolean extrema (partial)
+
+Normal SQL and portable stock plans additionally bind append-only MIN/MAX with DATE, TIME and
+BOOLEAN scalar state. The existing native fold already retains these values as typed scalars;
+the stock contract now accepts their actual accumulator types without allowing them as SUM, AVG
+or COUNT fields. Stock identities, key/namespace serializers, field positions and generated
+accumulator schemas still come from the released Flink 2.2.1 owner. TIME uses Flink's physical
+millisecond integer while retaining its original logical precision in stock metadata.
+
+Both memory and direct RocksDB state use the existing bounded live transfer. No new native
+snapshot, JNI representation or value-reconstruction step is introduced. NULL extrema, false
+BOOLEAN values and independent COUNT/shared filtered COUNT DISTINCT state remain distinct.
+Retraction-capable extrema still require their multiset/view contract and receive no new
+qualification from this append-only addition.
+
+The 194-check cohort passes 24 new DATE/TIME(0)/TIME(3)/BOOLEAN state scenarios plus the existing
+170 typed controls. Sixteen new cases cover repeated switches, no-input re-export, exact raw stock
+state and per-record serialized output on both stores and in both starting orders; eight cover
+ordinary native-checkpoint recovery before canonical return and continued input. The fixture's
+canonical export guards reject any intermediate native snapshot. Another 32 negative controls
+reject other scalar aggregate layouts and retraction bookkeeping, and inspect real released
+retracting plans to prevent assigning them this append contract.
+
+A separate 32 complete-job cohort passes eight continued-input cases per value type, across SQL
+and compiled plans, memory/RocksDB and both starting orders. Composite STRING/TIMESTAMP keys,
+NULL values, actual native execution, row/Arrow boundaries, custom source/committing-sink state,
+clean stock worker classpaths and exact external changelogs remain checked. The source carries
+BIGINT values that stock SQL converts to the target type; a separate Java oracle computes the
+expected counts and extrema. TIME job inputs use whole seconds, while the state controls cover
+millisecond values and DATE extremes. Shared Flink 1.18 compilation/processing regressions pass
+34 checks; they do not qualify canonical interchange there. Cohorts overlap and are not summed.
+
+Other TIME precisions, decimal accumulators, retracting extrema outside the preceding BIGINT
+contract, additional views/phases, TTL combinations and the wider job/rescale/failure/version
+matrix remain unfinished under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.

@@ -31,10 +31,15 @@ final class TypedGroupStockFixture implements AutoCloseable {
   final NativeColumnarGroupAggregateOperator template;
   final boolean rocks;
 
-  @SuppressWarnings("unchecked")
   TypedGroupStockFixture(String numeric, boolean append, boolean rocks) throws Exception {
+    this(numeric, append, rocks, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  TypedGroupStockFixture(String numeric, boolean append, boolean rocks, boolean extremaOnly)
+      throws Exception {
     this.rocks = rocks;
-    var graph = graph(numeric, append, false);
+    var graph = graph(numeric, append, false, extremaOnly);
     var node =
         graph.getStreamNodes().stream()
             .filter(
@@ -72,7 +77,7 @@ final class TypedGroupStockFixture implements AutoCloseable {
     harness.setup(
         (org.apache.flink.api.common.typeutils.TypeSerializer<RowData>)
             node.getTypeSerializerOut());
-    var nativeGraph = graph(numeric, append, true);
+    var nativeGraph = graph(numeric, append, true, extremaOnly);
     template =
         (NativeColumnarGroupAggregateOperator)
             nativeGraph.getStreamNodes().stream()
@@ -90,8 +95,8 @@ final class TypedGroupStockFixture implements AutoCloseable {
     assertEquals(2, ((int[]) field(views.get(0), "aggregates")).length);
   }
 
-  private static StreamGraph graph(String numeric, boolean append, boolean nativeEnabled)
-      throws Exception {
+  private static StreamGraph graph(
+      String numeric, boolean append, boolean nativeEnabled, boolean extremaOnly) throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", Boolean.toString(nativeEnabled));
     config.setString("pipeline.max-parallelism", "128");
@@ -116,18 +121,25 @@ final class TypedGroupStockFixture implements AutoCloseable {
             + "')");
     table.useCatalog("default_catalog");
     String average = List.of("FLOAT", "DOUBLE").contains(numeric) ? "DOUBLE" : "BIGINT";
+    String aggregates =
+        extremaOnly
+            ? "lo " + numeric + ",hi " + numeric + ",d BIGINT,e BIGINT"
+            : "total "
+                + numeric
+                + ",a "
+                + average
+                + ",d BIGINT,e BIGINT"
+                + (append ? ",lo " + numeric + ",hi " + numeric : "");
     table.executeSql(
-        "CREATE TABLE output_table(k STRING,t TIMESTAMP(3),n BIGINT,total "
-            + numeric
-            + ",a "
-            + average
-            + ",d BIGINT,e BIGINT"
-            + (append ? ",lo " + numeric + ",hi " + numeric : "")
+        "CREATE TABLE output_table(k STRING,t TIMESTAMP(3),n BIGINT,"
+            + aggregates
             + ") WITH ('connector'='blackhole')");
     String query =
-        "INSERT INTO output_table SELECT k,t,COUNT(*),SUM(v),AVG(v),COUNT(DISTINCT"
+        "INSERT INTO output_table SELECT k,t,COUNT(*),"
+            + (extremaOnly ? "MIN(v),MAX(v)" : "SUM(v),AVG(v)")
+            + ",COUNT(DISTINCT"
             + " s),COUNT(DISTINCT s) FILTER(WHERE f)"
-            + (append ? ",MIN(v),MAX(v)" : "")
+            + (append && !extremaOnly ? ",MIN(v),MAX(v)" : "")
             + " FROM fixture.db.input_table GROUP BY k,t";
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     return CanonicalRegularJoinPlanTest.graph(

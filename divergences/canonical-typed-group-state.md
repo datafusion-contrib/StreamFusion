@@ -28,3 +28,10 @@ until independent view ages have a complete projection.
 The exact supported and tested subsets remain on [the operator coverage page](../docs/operators/group-by.md).
 Other views, phases, schemas, connector guarantees and failure/version matrices remain in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+Append MIN/MAX additionally accepts the existing DATE/Time32/BOOLEAN scalar representation.
+The native fold, Arrow ownership and bounded visitors are unchanged; only the stock type binding
+admits those carriers for append extrema. Other aggregate kinds and retraction layouts remain
+rejected. Released scalar serializers retain logical precision and NULL/false distinctions;
+no extrema are reconstructed from outputs or membership. Comet's existing C Data ownership and
+Arroyo's accumulator/retained-entry separation continue to apply without another bridge format.
