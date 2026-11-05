@@ -327,3 +327,9 @@ Captured JVM UDF aggregate accumulators and data views remain Flink managed stat
 RocksDB configuration they use the released embedded RocksDB delegate, rather than the native
 grouped-table codec. The [managed UDF canonical scope](../operators/group-by.md#captured-managed-udf-canonical-state-partial) keeps this distinction explicit; native grouped-table
 coverage does not qualify user accumulator state or its full restore matrix.
+
+
+Captured one-phase mini-batch UDFs retain this same managed RocksDB delegate and released
+serializers. Their transient bundles and optional cached accumulators drain before canonical
+barriers; the [one-phase qualification](../operators/group-by.md#captured-one-phase-udf-mini-batches-partial) includes both stores, backend changes, TTL ages and ordinary recovery. This is separate from
+the native grouped-table codec and from the unfinished two-stage UDF matrix.

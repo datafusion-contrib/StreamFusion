@@ -351,6 +351,19 @@ final class StockCompiledPlanLowering {
                 return true;
               if (node instanceof NativeColumnarGroupAggExecNode
                   && ((NativeColumnarGroupAggExecNode) node).hasStockDistinctState()) return true;
+              if (node
+                  instanceof
+                  org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGroupAggregate) {
+                try {
+                  var calls =
+                      (org.apache.calcite.rel.core.AggregateCall[]) releasedField(node, "aggCalls");
+                  for (var call : calls)
+                    if (JvmGroupAggregateMatcher.userFunction(call.getAggregation()) != null)
+                      return true;
+                } catch (IOException failure) {
+                  throw new TableException("Cannot inspect captured user aggregate calls", failure);
+                }
+              }
               if (node instanceof NativeWindowRankExecNode)
                 return !((NativeWindowRankExecNode) node).isProcessingTime();
               if (node instanceof NativeColumnarTopNExecNode)
@@ -1754,13 +1767,21 @@ final class StockCompiledPlanLowering {
         || !(original.getStateKeySelector()
             instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector)) return stock;
     var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
-    if (!(operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator))
-      return stock;
-    var function =
-        ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
-            .getUserFunction();
+    boolean miniBatch =
+        operator.getClass()
+            == org.apache.flink.table.runtime.operators.bundle.KeyedMapBundleOperator.class;
+    Object function;
+    if (miniBatch) function = releasedField(operator, "function");
+    else if (operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator)
+      function =
+          ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
+              .getUserFunction();
+    else return stock;
     if (function.getClass()
-        != org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.class) return stock;
+        != (miniBatch
+            ? org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction.class
+            : org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.class))
+      return stock;
     JsonNode definition = definitions.get(stock.getId());
     var calls =
         reader
@@ -1789,19 +1810,35 @@ final class StockCompiledPlanLowering {
         (NativeColumnarExchangeExecNode)
             canonicalJoinInput(input, config, inputType, grouping, true);
     exchange.withStateMaxParallelism(maximum);
-    var ttl =
-        (org.apache.flink.api.common.state.StateTtlConfig) releasedField(function, "ttlConfig");
+    long retention;
+    if (miniBatch) retention = ((Number) releasedField(function, "stateRetentionTime")).longValue();
+    else {
+      var ttl =
+          (org.apache.flink.api.common.state.StateTtlConfig) releasedField(function, "ttlConfig");
+      retention = ttl.isEnabled() ? ttl.getTimeToLive().toMillis() : 0;
+    }
     var owner =
         new CapturedJvmGroupExecNode(
             config,
             inputType,
             outputType,
-            (org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction) function,
+            miniBatch
+                ? null
+                : (org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction) function,
+            miniBatch
+                ? (org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction)
+                    function
+                : null,
+            miniBatch
+                ? (org.apache.flink.table.runtime.operators.bundle.trigger.BundleTrigger<
+                        org.apache.flink.table.data.RowData>)
+                    releasedField(operator, "bundleTrigger")
+                : null,
             (org.apache.flink.table.runtime.keyselector.RowDataKeySelector)
                 original.getStateKeySelector(),
             grouping,
             maximum,
-            ttl.isEnabled() ? ttl.getTimeToLive().toMillis() : 0);
+            retention);
     connect(exchange, owner);
     bindings.put(owner, new StockBinding(stock.getId(), stockUids.get(stock.getId()), null));
     columnar.add(owner);

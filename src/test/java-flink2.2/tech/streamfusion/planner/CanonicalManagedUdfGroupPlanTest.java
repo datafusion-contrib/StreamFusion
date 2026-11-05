@@ -32,37 +32,47 @@ class CanonicalManagedUdfGroupPlanTest {
                                 .flatMap(
                                     uid ->
                                         Stream.of(0, 16)
-                                            .map(
+                                            .flatMap(
                                                 cache ->
-                                                    Arguments.of(compiled, append, uid, cache)))));
+                                                    Stream.of(false, true)
+                                                        .map(
+                                                            mini ->
+                                                                Arguments.of(
+                                                                    compiled, append, uid, cache,
+                                                                    mini))))));
   }
 
-  @ParameterizedTest(name = "compiled={0},append={1},uid={2},cache={3}")
+  @ParameterizedTest(name = "compiled={0},append={1},uid={2},cache={3},mini={4}")
   @MethodSource("cases")
   void capturedHandlerKeepsStockAccumulatorKeyAndPortablePlan(
-      boolean compiled, boolean append, String uid, int cache) throws Exception {
+      boolean compiled, boolean append, String uid, int cache, boolean mini) throws Exception {
     String previous = System.getProperty("streamfusion.experimental.jvmAccumulatorCacheEntries");
     System.setProperty(
         "streamfusion.experimental.jvmAccumulatorCacheEntries", Integer.toString(cache));
     try {
-      var stock = graph(false, compiled, append, uid);
-      var nativeGraph = graph(true, compiled, append, uid);
+      var stock = graph(false, compiled, append, uid, mini);
+      var nativeGraph = graph(true, compiled, append, uid, mini);
       var stockNode =
           stock.getStreamNodes().stream()
               .filter(
                   n -> {
                     if (!(n.getOperatorFactory() instanceof SimpleOperatorFactory)) return false;
                     var op = ((SimpleOperatorFactory<?>) n.getOperatorFactory()).getOperator();
-                    return op instanceof KeyedProcessOperator
-                        && ((KeyedProcessOperator<?, ?, ?>) op).getUserFunction()
-                            instanceof GroupAggFunction;
+                    return mini
+                        ? op.getClass()
+                            == org.apache.flink.table.runtime.operators.bundle
+                                .KeyedMapBundleOperator.class
+                        : op instanceof KeyedProcessOperator
+                            && ((KeyedProcessOperator<?, ?, ?>) op).getUserFunction()
+                                instanceof GroupAggFunction;
                   })
               .findFirst()
               .orElseThrow();
+      var stockOperator = ((SimpleOperatorFactory<?>) stockNode.getOperatorFactory()).getOperator();
       var original =
-          ((KeyedProcessOperator<?, ?, ?>)
-                  ((SimpleOperatorFactory<?>) stockNode.getOperatorFactory()).getOperator())
-              .getUserFunction();
+          mini
+              ? field(stockOperator, "function")
+              : ((KeyedProcessOperator<?, ?, ?>) stockOperator).getUserFunction();
       var owners =
           nativeGraph.getStreamNodes().stream()
               .filter(
@@ -75,8 +85,17 @@ class CanonicalManagedUdfGroupPlanTest {
       var node = owners.get(0);
       assertTrue(node.getOperatorName().startsWith("NativeColumnarJvmGroup"));
       var operator = ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator();
-      var captured = field(operator, "function");
-      assertEquals(GroupAggFunction.class, captured.getClass());
+      var captured = field(operator, mini ? "bundleFunction" : "function");
+      assertEquals(
+          mini
+              ? org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction.class
+              : GroupAggFunction.class,
+          captured.getClass());
+      if (mini) {
+        assertEquals(
+            field(field(stockOperator, "bundleTrigger"), "maxCount"),
+            field(field(operator, "bundleTrigger"), "maxCount"));
+      }
       assertArrayEquals(
           (LogicalType[]) field(original, "accTypes"), (LogicalType[]) field(captured, "accTypes"));
       assertEquals(
@@ -99,7 +118,8 @@ class CanonicalManagedUdfGroupPlanTest {
     }
   }
 
-  private static StreamGraph graph(boolean nativeRun, boolean compiled, boolean append, String uid)
+  private static StreamGraph graph(
+      boolean nativeRun, boolean compiled, boolean append, String uid, boolean mini)
       throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", Boolean.toString(nativeRun));
@@ -107,7 +127,10 @@ class CanonicalManagedUdfGroupPlanTest {
     config.setString("pipeline.max-parallelism", "257");
     config.setString("table.exec.uid.generation", uid);
     var table = NativePlannerTestEnvironment.create(config);
-    table.getConfig().set("table.exec.mini-batch.enabled", "false");
+    table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(mini));
+    table.getConfig().set("table.exec.mini-batch.size", "5");
+    table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+    table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     table.createTemporarySystemFunction(
         "fixture_history", CanonicalFixtureFactory.HistoryAggregate.class);
     table.registerCatalog(

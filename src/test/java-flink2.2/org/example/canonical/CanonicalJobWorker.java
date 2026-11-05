@@ -534,6 +534,9 @@ public final class CanonicalJobWorker {
         if (cacheEntries > 0
             && limit > restoredLimit
             && !Files.exists(root.resolve("rescale"))
+            && (!miniBatch
+                || EvidenceReporter.completedBundles.stream()
+                    .anyMatch(counter -> counter.getCount() > 1))
             && EvidenceReporter.jvmCacheHits.stream().noneMatch(counter -> counter.getCount() > 0))
           throw new AssertionError("JVM accumulator cache handled no repeated keys");
       } else if (nativeRun) {
@@ -749,6 +752,8 @@ public final class CanonicalJobWorker {
         new java.util.concurrent.CopyOnWriteArrayList<>();
     static final java.util.List<org.apache.flink.metrics.Counter> jvmCacheHits =
         new java.util.concurrent.CopyOnWriteArrayList<>();
+    static final java.util.List<org.apache.flink.metrics.Counter> completedBundles =
+        new java.util.concurrent.CopyOnWriteArrayList<>();
     static final java.util.Map<String, java.util.List<org.apache.flink.metrics.Counter>>
         inputsByOperator = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -773,6 +778,9 @@ public final class CanonicalJobWorker {
       if (name.equals("jvmAccumulatorCacheHits")
           && metric instanceof org.apache.flink.metrics.Counter)
         jvmCacheHits.add((org.apache.flink.metrics.Counter) metric);
+      if (name.equals("miniBatchCompletedBundles")
+          && metric instanceof org.apache.flink.metrics.Counter)
+        completedBundles.add((org.apache.flink.metrics.Counter) metric);
       if (name.equals("miniBatchCheckpointFlushes")
           && metric instanceof org.apache.flink.metrics.Counter)
         checkpointFlushesByOperator

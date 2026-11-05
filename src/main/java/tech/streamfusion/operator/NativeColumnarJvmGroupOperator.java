@@ -1,6 +1,9 @@
 package tech.streamfusion.operator;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
@@ -12,6 +15,8 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.runtime.keyselector.RowDataKeySelector;
 import org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction;
+import org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction;
+import org.apache.flink.table.runtime.operators.bundle.trigger.BundleTrigger;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
@@ -29,6 +34,8 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
   private final RowType inputType;
   private final RowType outputType;
   private final GroupAggFunction function;
+  private final MiniBatchGroupAggFunction bundleFunction;
+  private final BundleTrigger<RowData> bundleTrigger;
   private final RowDataKeySelector keySelector;
   private final int batchRows;
   private final int cacheEntries;
@@ -44,6 +51,9 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
   private transient int count;
   private transient BatchCoalescer coalescer;
   private transient org.apache.arrow.vector.types.pojo.Schema outputSchema;
+  private transient Map<RowData, List<RowData>> bundle;
+  private transient org.apache.flink.metrics.Counter checkpointFlushes;
+  private transient org.apache.flink.metrics.Counter completedBundles;
 
   public NativeColumnarJvmGroupOperator(
       RowType inputType,
@@ -55,9 +65,40 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
       LogicalTypeRoot keyType,
       int keyColumn,
       long stateRetentionTime) {
+    this(
+        inputType,
+        outputType,
+        function,
+        null,
+        null,
+        keySelector,
+        batchRows,
+        cacheEntries,
+        keyType,
+        keyColumn,
+        stateRetentionTime);
+  }
+
+  public NativeColumnarJvmGroupOperator(
+      RowType inputType,
+      RowType outputType,
+      GroupAggFunction function,
+      MiniBatchGroupAggFunction bundleFunction,
+      BundleTrigger<RowData> bundleTrigger,
+      RowDataKeySelector keySelector,
+      int batchRows,
+      int cacheEntries,
+      LogicalTypeRoot keyType,
+      int keyColumn,
+      long stateRetentionTime) {
+    if ((function == null) == (bundleFunction == null)
+        || (bundleFunction == null) != (bundleTrigger == null))
+      throw new IllegalArgumentException("Exactly one released aggregate handler is required");
     this.inputType = inputType;
     this.outputType = outputType;
     this.function = function;
+    this.bundleFunction = bundleFunction;
+    this.bundleTrigger = bundleTrigger;
     this.keySelector = keySelector;
     this.batchRows = batchRows;
     this.cacheEntries = cacheEntries;
@@ -104,30 +145,31 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
           @Override
           public void close() {}
         };
-    context =
-        function.new Context() {
-          @Override
-          public RowData getCurrentKey() {
-            return (RowData) NativeColumnarJvmGroupOperator.this.getCurrentKey();
-          }
+    if (function != null)
+      context =
+          function.new Context() {
+            @Override
+            public RowData getCurrentKey() {
+              return (RowData) NativeColumnarJvmGroupOperator.this.getCurrentKey();
+            }
 
-          @Override
-          public Long timestamp() {
-            return null;
-          }
+            @Override
+            public Long timestamp() {
+              return null;
+            }
 
-          @Override
-          public TimerService timerService() {
-            throw new UnsupportedOperationException(
-                "released synchronous grouped aggregation has no explicit timers");
-          }
+            @Override
+            public TimerService timerService() {
+              throw new UnsupportedOperationException(
+                  "released synchronous grouped aggregation has no explicit timers");
+            }
 
-          @Override
-          public <X> void output(OutputTag<X> tag, X value) {
-            output.collect(tag, new StreamRecord<>(value));
-          }
-        };
-    var runtime = getRuntimeContext();
+            @Override
+            public <X> void output(OutputTag<X> tag, X value) {
+              output.collect(tag, new StreamRecord<>(value));
+            }
+          };
+    org.apache.flink.api.common.functions.RuntimeContext runtime = getRuntimeContext();
     // Expiring state must be read and updated against Flink's TTL clock for every input row.
     if (cacheEntries > 0 && keyType != null && stateRetentionTime <= 0) {
       accumulatorCache =
@@ -138,10 +180,20 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
               this::setCurrentKey,
               getMetricGroup().counter("jvmAccumulatorCacheHits"),
               getMetricGroup().counter("jvmAccumulatorCacheBypasses"));
-      JvmAggregateCompat.open(function, accumulatorCache.wrap(runtime));
-    } else JvmAggregateCompat.open(function, runtime);
+      runtime = accumulatorCache.wrap(runtime);
+    }
+    if (bundleFunction == null) JvmAggregateCompat.open(function, runtime);
+    else {
+      bundleFunction.open(
+          new org.apache.flink.table.runtime.context.ExecutionContextImpl(this, runtime));
+      bundle = new HashMap<>();
+      checkpointFlushes = getMetricGroup().counter("miniBatchCheckpointFlushes");
+      completedBundles = getMetricGroup().counter("miniBatchCompletedBundles");
+      bundleTrigger.registerCallback(this::finishBundle);
+      bundleTrigger.reset();
+    }
     coalescer =
-        stateRetentionTime > 0
+        stateRetentionTime > 0 || bundleFunction != null
             ? null
             : BatchCoalescer.create(getProcessingTimeService(), this::ingest);
   }
@@ -167,11 +219,16 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
         var keyRow = keyReader == reader ? row : keyReader.read(index);
         row.setRowKind(
             inputKinds == null ? RowKind.INSERT : RowKind.fromByteValue(inputKinds.get(index)));
-        setCurrentKey(
+        var key =
             accumulatorCache == null
                 ? keySelector.getKey(keyRow)
-                : accumulatorCache.keyFor(keyRow, keyColumn, keySelector));
-        function.processElement(row, context, collector);
+                : accumulatorCache.keyFor(keyRow, keyColumn, keySelector);
+        setCurrentKey(key);
+        if (bundleFunction == null) function.processElement(row, context, collector);
+        else {
+          bundle.put(key, bundleFunction.addInput(bundle.get(key), row));
+          bundleTrigger.onElement(row);
+        }
       }
       flush();
     } catch (Exception failure) {
@@ -185,6 +242,7 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
   @Override
   public void endInput() throws Exception {
     if (coalescer != null) coalescer.flush();
+    if (bundleFunction != null) finishBundle();
     flush();
     if (accumulatorCache != null) accumulatorCache.flush();
   }
@@ -203,9 +261,20 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
 
   @Override
   public void prepareSnapshotPreBarrier(long checkpointId) throws Exception {
+    if (bundle != null && !bundle.isEmpty()) checkpointFlushes.inc();
     endInput();
     if (accumulatorCache != null) accumulatorCache.invalidate();
     super.prepareSnapshotPreBarrier(checkpointId);
+  }
+
+  private void finishBundle() throws Exception {
+    if (!bundle.isEmpty()) {
+      bundleFunction.finishBundle(bundle, collector);
+      bundle.clear();
+      completedBundles.inc();
+    }
+    bundleTrigger.reset();
+    flush();
   }
 
   @Override
@@ -264,7 +333,8 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
       if (coalescer != null) coalescer.close();
     } finally {
       try {
-        function.close();
+        if (bundleFunction == null) function.close();
+        else bundleFunction.close();
       } finally {
         discard();
         super.close();

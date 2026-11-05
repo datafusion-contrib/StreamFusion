@@ -3630,8 +3630,7 @@ contract; unsupported RAW boundary fields, async state and unaligned exchange re
 owners. The optional JVM accumulator cache is active only without retention and drains before
 savepoint barriers. It does not change durable state or its serializers.
 
-The unchanged released aggregate restore selection currently passes nine stock and seven native
-programs. Both one-phase UDF programs enumerate three restored managed groups and process seven
+The recorded immediate-UDF qualification passes nine stock and seven native programs. Both one-phase UDF programs enumerate three restored managed groups and process seven
 new rows in the same opened Arrow UDF owner; unrelated Calc activity cannot satisfy this witness.
 The 180 Java audit controls include missing state/input, wrong owner/state, failed backend
 inspection and duplicate-event cases. Two mini-batch UDF programs remain failing in this selection.
@@ -3649,3 +3648,38 @@ transposes, clean stock workers and external output verification. This does not 
 separate mini-batch UDF variants or the complete TTL/failure/version matrix.
 Wider UDF types, phases, TTL/failure/version and connector delivery combinations remain required
 by [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+
+## Captured one-phase UDF mini-batches (partial)
+
+The one-phase mini-batch path keeps the actual released `MiniBatchGroupAggFunction`, count
+trigger, key selector, accumulator schema and stock managed data views behind Arrow input/output.
+It preserves stock bundle accumulation and changelog emission, finishing pending work before
+watermarks, end-of-input and savepoint barriers. Accumulator caching remains disabled for TTL;
+otherwise cached writes drain before the cut. Cache-hit assertions require repeated completed
+bundles, because a group is looked up once within a single bundle.
+
+All 56 uncached/cached one-phase mini-batch complete jobs pass: SQL/compiled submission, both
+stores and engine orders, sixteen continued-input and sixteen no-input returns, eight ordinary
+checkpoint recoveries and sixteen 64-key rescalings through 1→3→2 at maximum parallelism 128.
+They retain positive partial-bundle barrier witnesses, custom source/committer state, both
+transposes, clean stock workers, independent final-state assertions and a stock reference stopped
+at identical savepoint cuts. The two initial job smokes overlap this matrix.
+
+The 88 state controls cover 64 repeated switches across immediate/mini execution, stores, backend
+changes, engine orders, cache settings and single-row/seven-row batches crossing five-row bundles;
+sixteen controlled TTL age/expiry cases; and eight UDF failure/cancellation/recovery cases.
+They compare every canonical KV byte, including accumulator, MapView and ListView state, and
+require immediate re-export before new input. TTL handoffs preserve original write timestamps.
+Failed-task cleanup bypasses graceful finish, matching cancellation rather than replaying the
+failed bundle. Thirty-two planner controls pass for schemas, portable plans, IDs and cache modes.
+
+The unchanged released aggregate suite passes nine stock programs and eight strict native
+resumes, with 189 canonical audit controls. The without-merge mini UDF restores three groups
+and consumes seven new rows in the same opened owner. The two-stage UDF fixture still fails
+in this one-phase revision; local/global transport and its wider job/state/TTL/failure matrix
+remain separate work in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+The exact one-phase source also passes 36 shared Flink 1.18 processing, allocator, ownership
+and TTL/checkpoint controls; canonical interchange on that release remains unqualified.
+Broader type/key/view and connector delivery/version combinations remain partial. Benchmarking
+is explicitly deferred.

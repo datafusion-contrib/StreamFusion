@@ -120,3 +120,13 @@ Canonical execution proof enumerates the opened owner's restored accState keys a
 those imports only when that same object successfully consumes new input. Stock fallback and
 unrelated native Calc work do not qualify. Broader mini-batch/view/failure coverage remains #569;
 benchmarking is explicitly deferred.
+
+
+## Captured one-phase bundle semantics
+
+Keep Flink's actual one-phase MapBundleFunction and BundleTrigger behind the Arrow UDF boundary.
+The local per-key buffer follows the released addInput/finishBundle sequence and is transient:
+count triggers, watermarks and barriers drain it into original managed accumulators and views.
+This preserves generated bookkeeping and avoids replacing a mini-batch UDF with immediate
+row-at-a-time evaluation. The optional JVM cache flushes before capture and remains disabled
+for TTL. Conversion benchmarks are deferred; local/global partial transport remains separate.

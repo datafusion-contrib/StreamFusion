@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured one-phase managed UDFs | Wider types/keys, retracting and UDF mini-batches, other views/phases and failures |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured one-phase managed UDFs | Wider types/keys, retracting and local/global UDF mini-batches, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -37,8 +37,12 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 Stock-compatible canonical qualification is on released Flink 2.2.1. Shared Flink 1.18 tests establish
 processing/native-checkpoint regressions only. Custom stock source/committer fixtures retain their
-state and external effects in the qualified jobs, but native connector transaction and delivery
-protocols remain separate unfinished work. Benchmarking stays deferred under
+state and external effects in the qualified jobs. Native connector protocols have separate
+qualification: the [Kafka handoff matrices](../connectors/kafka.md#canonical-sink-handoffs-partial)
+include real-broker exactly-once sink and both-native pipelines, writer rescaling, transaction
+ownership and selected process/commit-failure cases. Reader rescaling, discovery, wider schemas
+and broker/coordinator/publication failures remain open; those historical cohorts are not
+implicitly requalified by newer operator libraries. Benchmarking stays deferred under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
 ## Private native envelope
@@ -1570,3 +1574,10 @@ Captured one-phase JVM aggregate handlers retain released managed accumulator/da
 behind Arrow boundaries. They use normal stock restore/export and do not introduce native
 snapshot intermediates or StreamFusion serializers. The [managed UDF qualification](../operators/group-by.md#captured-managed-udf-canonical-state-partial) records exact released restore
 witnesses, planner and 56 complete-job scenarios across cached/uncached execution. Mini-batch UDF and wider type/TTL/failure/version coverage remain open under #569.
+
+
+Captured one-phase mini-batch UDFs use their actual released bundle function and managed state.
+The [qualified one-phase scope](../operators/group-by.md#captured-one-phase-udf-mini-batches-partial) records 56 complete-job scenarios, 88 state/TTL/failure cases, 32 planner controls and
+eight released native aggregate resumes. These overlapping cohorts do not qualify the two-stage
+UDF contract or the wider connector/version matrix. All bundles and optional cached writes drain
+before the direct stock canonical writer runs; ordinary checkpoints retain their existing path.

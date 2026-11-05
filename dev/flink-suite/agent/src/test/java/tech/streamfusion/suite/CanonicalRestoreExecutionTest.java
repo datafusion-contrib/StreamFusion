@@ -1232,7 +1232,9 @@ class CanonicalRestoreExecutionTest {
 
   static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> managedGroupCases() {
     return java.util.stream.Stream.of(
-            "group-aggregate-udf-with-merge", "group-aggregate-udf-without-merge")
+            "group-aggregate-udf-with-merge",
+            "group-aggregate-udf-without-merge",
+            "group-aggregate-udf-without-merge-mini-batch")
         .flatMap(
             program ->
                 java.util.stream.Stream.of(
