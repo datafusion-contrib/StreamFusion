@@ -300,9 +300,49 @@ guarantee with competing owners. Current-attempt input counters prevent aborted 
 from satisfying retry readiness. Native execution, stock classpath exclusion and exact saved
 reader/writer state checks remain mandatory.
 
-TaskManager termination runs normal shutdown code. Abrupt process death, broker/coordinator
-outages, failures during savepoint upload/finalization and additional external-commit boundaries
-require separate qualification. The wider connector/type/version matrix remains open under #569.
+TaskManager termination runs normal shutdown code. Abrupt process death has the separate subset
+below. Broker/coordinator outages, failures during savepoint upload/finalization and additional
+external-commit boundaries require separate qualification. The wider connector/type/version
+matrix remains open under #569.
 Run `CanonicalKafkaSinkFailureJobTest,CanonicalKafkaPipelineFailureJobTest` for task-manager
 recovery and `CanonicalKafkaSinkFencingJobTest,CanonicalKafkaPipelineFencingJobTest` for the
 ownership controls, using the functional Kafka command above. Benchmarking remains deferred.
+
+## Canonical batch boundaries and abrupt-process recovery (partial)
+
+A separate 70-check cohort passes 24 controlled canonical batch-boundary scenarios, sixteen
+abrupt-process recovery scenarios, eight existing grouped-state rescale jobs and 22 admission
+checks. The new Kafka scenarios cover both SQL/compiled submissions, initial engine orders and
+transaction naming strategies, using singleton source/writer tasks, three nullable BIGINT fields,
+JSON and the released versions above. These counts overlap other regression cohorts.
+
+The 24 boundary scenarios use a custom row source and the actual RowData-to-Arrow boundary before
+native Kafka encoding. Eight cover partial batches, eight include no-input engine switches and
+eight reach a full five-row batch. The fixture explicitly disables the default 50 ms latency
+flush timer. Before requesting the savepoint, it checks actual transpose input and encoded-row
+counters, including the exact pending-row count. After the barrier, every pre-barrier row must
+have been encoded, saved reader/writer state must match, and committed Kafka records must be exact.
+Source readiness alone does not prove that a partial batch remains pending.
+
+The sixteen process cases halt the worker JVM after new records reach the broker and before
+another savepoint. They bypass producer close, finally blocks and shutdown hooks. Eight use the
+custom row source, requiring exactly three encoded rows and one pending row before death; eight
+use native Kafka decoding/encoding, requiring four encoded rows and no transpose. The last valid
+canonical savepoint is retried only after checking that the interrupted attempt committed no new
+effects. Recovery must clean up its actual lingering transactions, commit the remaining input
+exactly once, and preserve exact output through another engine switch. Stock processes remain
+free of StreamFusion classes.
+
+Run `CanonicalKafkaSinkBarrierJobTest,CanonicalKafkaSinkProcessFailureJobTest,CanonicalKafkaPipelineProcessFailureJobTest`
+with the functional Kafka command for the full forty-case matrix. Adding
+`-Dsf.canonical.kafka.fixture.smoke=true` selects five cases; it does not qualify the full matrix.
+The 70-check regression selection also includes `CanonicalGroupArithmeticIntJobTest` and
+`CanonicalKafkaSinkAdmissionTest`. The separate 94-check ordinary sink/pipeline/admission cohort
+passes against the preceding worker sources and the same native libraries; it does not silently
+requalify every historical operator cohort against this newer fixture.
+
+Failures after external commits but before reporting a savepoint location, broker/coordinator
+outages, capture/upload/finalization failures and the wider schema/security/discovery/version
+matrix remain open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+The production latency timer and ordinary native checkpoint paths are unchanged. Benchmarking
+remains deferred.

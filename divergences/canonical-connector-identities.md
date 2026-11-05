@@ -52,3 +52,10 @@ without failing savepoint completion. Its advanced source positions cannot stand
 delivery. Tests reject that artifact, retain the original prefix and retry earlier state only
 after proving there were no new committed effects. No state converter or permissive restore mode
 can repair competing ownership. See the [Kafka failure coverage](../docs/connectors/kafka.md#canonical-task-manager-recovery-partial).
+
+Boundary tests explicitly disable the latency flush timer and observe actual transpose input
+and native encoding before the barrier; waiting for a source alone cannot prove pending rows.
+Abrupt JVM termination separately bypasses normal cleanup and leaves real transactions to the
+released writer's restore protocol. Its source offset and the externally committed prefix must
+agree before retrying older canonical state. Neither fixture adds a native snapshot intermediate
+or changes production memory/flush ownership. The exact partial scope remains on the Kafka page.

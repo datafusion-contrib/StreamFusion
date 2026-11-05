@@ -1460,3 +1460,12 @@ failed commits while savepoint creation succeeds, so those artifacts receive no 
 See [Kafka recovery and ownership scope](../connectors/kafka.md#canonical-task-manager-recovery-partial).
 Normal TaskManager shutdown is distinct from abrupt process death, and broader failure and
 delivery guarantees remain unfinished under #569.
+
+Kafka's additional controlled-boundary and abrupt-process lane qualifies forty new complete-job
+scenarios. Explicitly disabling the fixture's latency timer and comparing transpose input with
+encoded rows proves empty, partial and full batches at canonical barriers. Separate hard JVM
+termination cases leave real Kafka transactions open for restore-time cleanup, including a row
+still pending in the transpose. The same 70-check cohort includes eight existing grouped-state
+rescale jobs and 22 admission controls. See the [exact Kafka scope](../connectors/kafka.md#canonical-batch-boundaries-and-abrupt-process-recovery-partial).
+This adds no native snapshot intermediate, changes no production flush setting and leaves broader
+operator, connector and failure qualification open under #569.

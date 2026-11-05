@@ -44,6 +44,10 @@ class CanonicalKafkaSinkJobTest {
     return false;
   }
 
+  boolean strictBatchBoundaries() {
+    return false;
+  }
+
   @BeforeAll
   static void startBroker() {
     kafka =
@@ -76,11 +80,31 @@ class CanonicalKafkaSinkJobTest {
                                                     Arguments.of(mode, ordinary, first, naming)))));
   }
 
+  static Stream<Arguments> fixtureCases(Stream<String> modes) {
+    boolean smoke = Boolean.getBoolean("sf.canonical.kafka.fixture.smoke");
+    return modes.flatMap(
+        mode ->
+            Stream.of(false, true)
+                .filter(ordinary -> !smoke || !ordinary)
+                .flatMap(
+                    ordinary ->
+                        Stream.of(false, true)
+                            .filter(first -> !smoke || first == mode.equals("full-batch"))
+                            .flatMap(
+                                first ->
+                                    Stream.of("incrementing", "pooling")
+                                        .filter(naming -> !smoke || naming.equals("incrementing"))
+                                        .map(
+                                            naming ->
+                                                Arguments.of(mode, ordinary, first, naming)))));
+  }
+
   @ParameterizedTest(name = "{0},ordinary={1},nativeFirst={2},naming={3}")
   @MethodSource("cases")
   @Timeout(value = 12, unit = TimeUnit.MINUTES)
   void preservesExactlyOnceSinkEffectsAcrossRepeatedCanonicalSwitches(
       String mode, boolean ordinary, boolean nativeFirst, String naming) throws Exception {
+    int batchRows = mode.equals("full-batch") ? 5 : 3;
     String topic = "canonical-sink-" + UUID.randomUUID();
     String inputTopic = topic + "-input";
     var adminProperties = new Properties();
@@ -95,6 +119,8 @@ class CanonicalKafkaSinkJobTest {
     Files.createDirectories(root);
     Files.writeString(root.resolve("brokers"), kafka.getBootstrapServers());
     Files.writeString(root.resolve("output-topic"), topic);
+    if (strictBatchBoundaries() || mode.equals("process-failure"))
+      Files.createFile(root.resolve("strict-batch-boundaries"));
     if (ordinary) Files.createFile(root.resolve("ordinary-sql"));
     if (mode.equals("checkpoint")) Files.createFile(root.resolve("prefix-native-checkpoint"));
     if (mode.startsWith("rescale")) {
@@ -141,10 +167,10 @@ class CanonicalKafkaSinkJobTest {
             + "')");
     var runner = new CanonicalJobRunner(directory, CanonicalKafkaSinkJobWorker.class);
     Path fixture = runner.fixtureJar();
-    runner.run(fixture, nativeFirst, root, 5, "none", "prefix", 3);
+    runner.run(fixture, nativeFirst, root, 5, "none", "prefix", batchRows);
     String restore = "prefix";
     if (mode.equals("checkpoint")) {
-      runner.run(fixture, true, root, 5, restore, "canonical", 3);
+      runner.run(fixture, true, root, 5, restore, "canonical", batchRows);
       assertEquals(
           "0",
           Files.readString(root.resolve("canonical-native-rows")),
@@ -153,20 +179,30 @@ class CanonicalKafkaSinkJobTest {
     }
     assertRows(topic, 5);
     if (mode.equals("no-input")) {
-      runner.run(fixture, !nativeFirst, root, 5, restore, "no-input", 3);
+      runner.run(fixture, !nativeFirst, root, 5, restore, "no-input", batchRows);
       assertRows(topic, 5);
-      runner.run(fixture, nativeFirst, root, 5, "no-input", "return", 3);
+      runner.run(fixture, nativeFirst, root, 5, "no-input", "return", batchRows);
       assertRows(topic, 5);
       restore = "return";
     }
     if (kafkaInput()) produce(inputTopic, 5, 9);
-    if (mode.equals("fence") || mode.equals("task-failure")) {
-      Files.createFile(
-          root.resolve(
-              mode.equals("fence")
-                  ? "failed-fence-transactions"
-                  : "failed-terminate-task-manager"));
-      runner.run(fixture, !nativeFirst, root, 9, restore, "failed", 3);
+    var failures =
+        java.util.Map.of(
+            "fence", "fence-transactions",
+            "task-failure", "terminate-task-manager",
+            "process-failure", "halt-process");
+    if (failures.containsKey(mode)) {
+      Files.createFile(root.resolve("failed-" + failures.get(mode)));
+      runner.run(
+          fixture,
+          !nativeFirst,
+          root,
+          9,
+          restore,
+          "failed",
+          batchRows,
+          "hashmap",
+          mode.equals("process-failure") ? 42 : 0);
       assertFalse(Files.exists(root.resolve("failed-savepoint")));
       if (mode.equals("fence")) {
         assertTrue(Files.exists(root.resolve("failed-rejected-savepoint")));
@@ -177,6 +213,16 @@ class CanonicalKafkaSinkJobTest {
             Files.readString(root.resolve("failed-inventory.tsv"))
                 .contains(kafkaInput() ? "[0=3, 1=3, 2=3]" : "[9]"),
             "Fenced savepoint advances source positions despite missing external effects");
+      } else if (mode.equals("process-failure")) {
+        assertEquals(
+            !nativeFirst && !kafkaInput() ? "8" : "9",
+            Files.readString(root.resolve("failed-halt-ready")),
+            "The process must die after records reached the broker, retaining its partial batch");
+        if (!nativeFirst)
+          assertEquals(
+              kafkaInput() ? "4" : "3",
+              Files.readString(root.resolve("failed-native-rows")),
+              "The row source must retain one pending row; the Kafka pipeline has no transpose");
       } else assertTrue(Files.exists(root.resolve("failed-expected-failure")));
       assertRows(topic, 5);
       if (!nativeFirst)
@@ -186,10 +232,10 @@ class CanonicalKafkaSinkJobTest {
         assertTrue(
             Long.parseLong(Files.readString(root.resolve("failed-native-source-output"))) > 0);
     }
-    runner.run(fixture, !nativeFirst, root, 9, restore, "middle", 3);
+    runner.run(fixture, !nativeFirst, root, 9, restore, "middle", batchRows);
     assertRows(topic, 9);
     if (kafkaInput()) produce(inputTopic, 9, 13);
-    runner.run(fixture, nativeFirst, root, 13, "middle", "suffix", 3);
+    runner.run(fixture, nativeFirst, root, 13, "middle", "suffix", batchRows);
     assertRows(topic, 13);
     List<String> expectedIds = null;
     for (String stage :
@@ -293,6 +339,15 @@ class CanonicalKafkaSinkJobTest {
             Long.parseLong(Files.readString(root.resolve(stage + "-native-rows"))),
             "Native encoder must process every row, including the partial barrier batch");
       else assertTrue(Files.exists(root.resolve(stage + "-stock-classpath-verified")));
+      if (nativeStage && !kafkaInput() && Files.exists(root.resolve("strict-batch-boundaries"))) {
+        long incoming =
+            stage.equals("prefix") ? 5 : stage.equals("middle") || stage.equals("suffix") ? 4 : 0;
+        long full = incoming - incoming % batchRows;
+        assertEquals(
+            incoming + "/" + full + "/" + (incoming - full),
+            Files.readString(root.resolve(stage + "-batch-boundary")),
+            "Actual transpose input and encoded rows must prove the batch boundary before saving");
+      }
       if (nativeStage
           && kafkaInput()
           && (stage.equals("prefix") || stage.equals("middle") || stage.equals("suffix")))

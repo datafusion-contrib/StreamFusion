@@ -61,6 +61,20 @@ class CanonicalJobRunner {
       int batchRows,
       String backend)
       throws Exception {
+    run(fixture, nativeRun, root, limit, restore, stage, batchRows, backend, 0);
+  }
+
+  void run(
+      Path fixture,
+      boolean nativeRun,
+      Path root,
+      int limit,
+      String restore,
+      String stage,
+      int batchRows,
+      String backend,
+      int expectedExitCode)
+      throws Exception {
     String sourceClasspath =
         System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"));
     Path tests =
@@ -124,7 +138,7 @@ class CanonicalJobRunner {
       }
       assertTrue(completed, () -> "worker did not finish; log: " + log);
       assertEquals(
-          0,
+          expectedExitCode,
           process.exitValue(),
           () -> {
             try {

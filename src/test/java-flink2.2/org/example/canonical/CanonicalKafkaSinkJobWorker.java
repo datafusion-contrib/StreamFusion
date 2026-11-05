@@ -47,6 +47,8 @@ public final class CanonicalKafkaSinkJobWorker {
             : 1;
     Path ready = root.resolve(stage + "-ready");
     boolean kafkaInput = Files.exists(root.resolve("kafka-input"));
+    boolean strictBatches = Files.exists(root.resolve("strict-batch-boundaries"));
+    if (strictBatches) System.setProperty("streamfusion.transpose.flushLatencyMs", "0");
     if (!nativeRun) {
       try {
         Class.forName(
@@ -170,7 +172,9 @@ public final class CanonicalKafkaSinkJobWorker {
           && kafkaInput
           && (!actualPlan.contains("NativeSource")
               || actualPlan.contains("RowDataToArrow")
-              || actualPlan.contains("ArrowToRowData")))
+              || actualPlan.contains("ArrowToRowData")
+              || actualPlan.contains("row-to-arrow")
+              || actualPlan.contains("arrow-to-row")))
         throw new AssertionError(
             "Submitted Kafka pipeline is not entirely columnar: " + actualPlan);
       Files.write(
@@ -184,6 +188,25 @@ public final class CanonicalKafkaSinkJobWorker {
                           + "\t"
                           + vertex.getMaxParallelism())
               .collect(java.util.stream.Collectors.toList()));
+
+      if (strictBatches && nativeRun && !kafkaInput) {
+        long incoming = limit - (restore.equals("none") ? 0 : savedSourceRows(root, restore));
+        long full = incoming - incoming % Integer.parseInt(args[5]);
+        long boundaryDeadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (Reporter.transposeRows() < incoming || Reporter.rows() < full) {
+          if (job.getJobExecutionResult().isDone()) job.getJobExecutionResult().get();
+          if (System.nanoTime() > boundaryDeadline)
+            throw new AssertionError("Transpose did not receive its staged input: " + actualPlan);
+          Thread.sleep(10);
+        }
+        if (Reporter.transposeInputs.isEmpty()
+            || Reporter.transposeRows() != incoming
+            || Reporter.rows() != full)
+          throw new AssertionError("Wrong partial/full batch at the controlled boundary");
+        Files.writeString(
+            root.resolve(stage + "-batch-boundary"),
+            incoming + "/" + full + "/" + (incoming - full));
+      }
 
       if (Files.exists(root.resolve(stage + "-fence-transactions"))) {
         fenceTransactions(root, stage);
@@ -207,13 +230,23 @@ public final class CanonicalKafkaSinkJobWorker {
         return;
       }
 
-      if (Files.exists(root.resolve(stage + "-terminate-task-manager"))) {
+      if (Files.exists(root.resolve(stage + "-terminate-task-manager"))
+          || Files.exists(root.resolve(stage + "-halt-process"))) {
         int emitted = limit;
         if (nativeRun && !kafkaInput) {
           long previousRows = restore.equals("none") ? 0 : savedSourceRows(root, restore);
           emitted -= (limit - previousRows) % Integer.parseInt(args[5]);
         }
         awaitKafkaOutput(root, emitted, job.getJobExecutionResult());
+        if (Files.exists(root.resolve(stage + "-halt-process"))) {
+          Files.writeString(root.resolve(stage + "-native-rows"), Long.toString(Reporter.rows()));
+          Files.writeString(
+              root.resolve(stage + "-native-source-output"),
+              Long.toString(Reporter.sourceOutput()));
+          Files.writeString(root.resolve(stage + "-halt-ready"), Integer.toString(emitted));
+          Runtime.getRuntime().halt(42);
+          throw new AssertionError("Process halt returned");
+        }
         cluster.terminateTaskManager(0).get(30, TimeUnit.SECONDS);
         try {
           job.getJobExecutionResult().get(60, TimeUnit.SECONDS);
@@ -481,6 +514,7 @@ public final class CanonicalKafkaSinkJobWorker {
     static final Map<String, Counter> sources = new ConcurrentHashMap<>();
     static final Map<String, Counter> stockSources = new ConcurrentHashMap<>();
     static final Map<String, Counter> failed = new ConcurrentHashMap<>();
+    static final Map<String, Counter> transposeInputs = new ConcurrentHashMap<>();
 
     public void open(org.apache.flink.metrics.MetricConfig config) {}
 
@@ -494,6 +528,11 @@ public final class CanonicalKafkaSinkJobWorker {
         counters.put(group.getMetricIdentifier(name), (Counter) metric);
       if (name.equals("failedCommittables") && metric instanceof Counter)
         failed.put(group.getMetricIdentifier(name), (Counter) metric);
+      if (name.equals("numInputRows") && metric instanceof Counter) {
+        String operator = group.getAllVariables().getOrDefault("<operator_name>", "");
+        if (operator.contains("RowDataToArrow") || operator.contains("row-to-arrow"))
+          transposeInputs.put(group.getMetricIdentifier(name), (Counter) metric);
+      }
       if (name.equals("numRecordsOut")
           && group.getAllVariables().getOrDefault("<operator_name>", "").contains("NativeSource")
           && metric instanceof Counter)
@@ -524,6 +563,10 @@ public final class CanonicalKafkaSinkJobWorker {
 
     static long failedCommittables() {
       return failed.values().stream().mapToLong(Counter::getCount).sum();
+    }
+
+    static long transposeRows() {
+      return transposeInputs.values().stream().mapToLong(Counter::getCount).sum();
     }
   }
 }
