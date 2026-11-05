@@ -1506,9 +1506,9 @@ error. Source entries are cleared only after the complete import succeeds. Memor
 leave the source available for a fresh target retry. Arrow callbacks retain the original Java
 exception and release their imported buffers on both success and failure.
 
-Unbounded DECIMAL, DISTINCT, selection/UDF/view accumulators, wider keys and event-time unbounded
-contracts remain outside this stock binding. They require their own exact accumulator and timer
-contracts; the bounded DECIMAL qualification does not extend to this path. Native checkpoint
+Unbounded DECIMAL, DISTINCT, selection/UDF/view accumulators and wider keys remain outside this
+scalar binding. They require their own exact contracts; the bounded DECIMAL qualification does
+not extend to this path. Event-time V2 uses the separate contract described below. Native checkpoint
 recovery is checked before a canonical savepoint performs any backend change. Broader connector
 transactions, sink-writer rescaling, failure combinations and cross-version interoperability
 remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
@@ -1588,6 +1588,61 @@ Overdue harness timers are explicitly drained before testing their fired state. 
 cleanup key-group assignment is checked before cross-store recovery; the ownership field is not
 part of the logical key. These cohorts overlap previous controls and are not summed cumulatively.
 
-This component qualification does not establish stock event-time canonical compatibility: the
-complete stock adapter, timer inventory, automatic planner binding and full cross-engine jobs
-remain required. Benchmarking remains deferred.
+This callback foundation's qualification is independent of the stock-schema projection below.
+The full cross-engine job and variant matrices remain required. Benchmarking remains deferred.
+
+
+### Released V2 event-time unbounded scalar binding (partial)
+
+Normal SQL and stock compiled plans can bind unbounded event-time ROWS/RANGE SUM, SUM0, COUNT
+and AVG on BIGINT, FLOAT and DOUBLE with one BIGINT partition key or an empty global key.
+The binding captures the original released V2 accumulator schema, full input-row serializer,
+operator identity and maximum parallelism. Stock canonical state contains plain `accState`,
+`inputState` timestamp-bucket lists, Void event timers and, when retention exceeds one
+millisecond, `RowTimeUnboundedOverCleanupTime` and its independent processing timer queue.
+The cleanup value can legitimately survive without an armed timer; import preserves that state.
+
+Export visits live folds, pending rows and cleanup ownership directly into stock managed state
+and Flink's canonical writer. It does not write a native snapshot first. Import validates the
+complete descriptor/timer inventory, row/key/time/kind agreement and every native transfer chunk
+before applying any chunk. The native target must be empty. Original stock entries and queues
+clear only after the whole import succeeds. COUNT(*) and literal argument columns are appended
+only for native execution and omitted from stock pending input rows. Ordinary native checkpoints
+retain their native state representation and cleanup ownership.
+
+A projected PROCTIME indicator is logically NOT NULL while its retained physical input slot can
+be NULL until downstream materialization. Arrow schemas admit that placeholder on both row-input
+and canonical-transfer paths; the stock logical types and serializers do not change. Required
+ordinary payload fields still reject NULL during import. This also lets the RocksDB pending-row
+visitor reconstruct a valid Arrow batch instead of failing its non-nullability check.
+
+The corrected component passes 896 checks with zero failures, errors or skips: 316 actual released
+state/recovery/rejection cases, 240 planner controls, 318 neighboring unbounded controls and 22
+Arrow/timestamp controls. The new cases include bidirectional physical-placeholder handoffs,
+ordinary native-checkpoint recovery and actual serialized transpose-schema checks under both SQL
+and compiled submission. The 76 focused correction cases overlap this selection.
+
+The merged wider-key/event-time component passes all 2,086 selected checks and all nine unchanged
+released aggregate restore programs on each engine, with 199 execution-audit controls. Its complete
+192-job event-time OVER matrix also passes on that same source and library: 112 keyed and 80 global
+jobs over ROWS/RANGE with cleanup disabled/enabled. These comprise 64 continuation, 64 no-input
+re-export, 32 ordinary native-checkpoint handoffs and 32 keyed rescale cases. Both SQL submission
+forms, both native stores and initial engine orders are covered; checkpoint cases begin natively.
+The complete jobs use BIGINT SUM/AVG, while the controlled state/planner cases cover the additional
+arithmetic types/calls and constant helpers.
+
+The jobs keep custom checkpointed source/coordinator and transactional sink state, both transpose
+boundaries, positive native work and clean stock workers without StreamFusion. Exported metadata
+contains stock dependencies, and committed results match uninterrupted stock and an independent
+oracle. Rescaling redistributes 64 keys through 1→3→2/maxP128; global operators stay singleton.
+The one-hour cleanup configuration in complete jobs does not establish exact wall-clock expiry;
+controlled callback tests qualify idle, overdue, overflow and unarmed-deadline behavior.
+
+A separate released Flink 1.18 build passes all 212 shared callback/checkpoint and Arrow controls,
+including compilation of the common operator/contract code. This is a shared-code regression,
+not stock canonical compatibility on 1.18. Earlier component/smoke cohorts overlap the current
+proof and are not added cumulatively.
+
+Legacy event-time V1, unbounded DECIMAL, DISTINCT/views, wider keys/payloads, bounded event-ROWS
+processing cleanup and the wider rescale/version/failure/connector matrix remain unfinished in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.

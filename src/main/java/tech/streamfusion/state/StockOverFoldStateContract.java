@@ -173,6 +173,13 @@ public final class StockOverFoldStateContract implements StockStateContract {
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
     StockStateInventory.validate(backend, stateDescriptors(), Set.of(), keys);
+    requireEmpty(handle);
+    transferState(backend, handle, true);
+    transferState(backend, handle, false);
+    clear(backend);
+  }
+
+  void requireEmpty(long handle) {
     Native.exportOverFoldCanonical(
         handle,
         (array, schema) ->
@@ -182,35 +189,37 @@ public final class StockOverFoldStateContract implements StockStateContract {
                 row -> {
                   throw new IllegalStateException("Unbounded OVER import requires an empty target");
                 }));
+  }
+
+  void transferState(
+      CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean validating)
+      throws Exception {
     var state = state(backend);
-    for (boolean validating : new boolean[] {true, false}) {
-      var rows = new ArrayList<RowData>(CHUNK_ROWS);
-      try (var stream = backend.getKeys(STATE, VoidNamespace.INSTANCE)) {
-        var iterator = stream.iterator();
-        while (iterator.hasNext()) {
-          RowData key = iterator.next();
-          validateKey(key);
-          backend.setCurrentKey(key);
-          var stored = state.value();
-          if (stored == null) continue;
-          var value = stored.getUserValue();
-          validateAccumulator(value);
-          var row = new GenericRowData(bridge.getFieldCount());
-          for (int i = 0; i < keyGetters.length; i++)
-            row.setField(i, keyGetters[i].getFieldOrNull(key));
-          for (int i = 0; i < valueGetters.length; i++)
-            row.setField(keyGetters.length + i, valueGetters[i].getFieldOrNull(value));
-          row.setField(bridge.getFieldCount() - 1, stored.getLastAccessTimestamp());
-          rows.add(row);
-          if (rows.size() == CHUNK_ROWS) {
-            transfer(handle, rows, validating);
-            rows.clear();
-          }
+    var rows = new ArrayList<RowData>(CHUNK_ROWS);
+    try (var stream = backend.getKeys(STATE, VoidNamespace.INSTANCE)) {
+      var iterator = stream.iterator();
+      while (iterator.hasNext()) {
+        RowData key = iterator.next();
+        validateKey(key);
+        backend.setCurrentKey(key);
+        var stored = state.value();
+        if (stored == null) continue;
+        var value = stored.getUserValue();
+        validateAccumulator(value);
+        var row = new GenericRowData(bridge.getFieldCount());
+        for (int i = 0; i < keyGetters.length; i++)
+          row.setField(i, keyGetters[i].getFieldOrNull(key));
+        for (int i = 0; i < valueGetters.length; i++)
+          row.setField(keyGetters.length + i, valueGetters[i].getFieldOrNull(value));
+        row.setField(bridge.getFieldCount() - 1, stored.getLastAccessTimestamp());
+        rows.add(row);
+        if (rows.size() == CHUNK_ROWS) {
+          transfer(handle, rows, validating);
+          rows.clear();
         }
       }
-      if (!rows.isEmpty()) transfer(handle, rows, validating);
     }
-    clear(backend);
+    if (!rows.isEmpty()) transfer(handle, rows, validating);
   }
 
   private void transfer(long handle, List<RowData> rows, boolean validating) {

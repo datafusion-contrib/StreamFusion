@@ -90,6 +90,19 @@ class CanonicalBoundedOverPlanTest {
       long ttl,
       boolean starAndLiteral)
       throws Exception {
+    assertPlan(mode, type, keyless, compiled, uids, ttl, starAndLiteral, false);
+  }
+
+  void assertPlan(
+      String mode,
+      String type,
+      boolean keyless,
+      boolean compiled,
+      String uids,
+      long ttl,
+      boolean starAndLiteral,
+      boolean proctimePayload)
+      throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("parallelism.default", "2");
@@ -109,14 +122,16 @@ class CanonicalBoundedOverPlanTest {
             + type
             + ",c BIGINT,a "
             + type
+            + (proctimePayload ? ",pt TIMESTAMP_LTZ(3)" : "")
             + ") WITH ('connector'='blackhole')");
-    boolean unbounded = mode.startsWith("processing-unbounded");
+    boolean unbounded = mode.contains("unbounded");
     boolean processing = mode.startsWith("processing"), rows = !mode.endsWith("range");
     String query =
         "INSERT INTO over_output SELECT k,v,rt,"
             + (starAndLiteral
                 ? "COUNT(*) OVER w,SUM(CAST(7 AS BIGINT)) OVER w,AVG(v) OVER w"
                 : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
+            + (proctimePayload ? ",pt" : "")
             + " FROM over_input WINDOW w AS ("
             + (keyless ? "" : "PARTITION BY k ")
             + "ORDER BY "
@@ -149,13 +164,43 @@ class CanonicalBoundedOverPlanTest {
     assertEquals(1, owners.size(), graph.getStreamingPlanAsJSON());
     var owner = owners.get(0);
     var operator = ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();
+    if (proctimePayload) {
+      var physical =
+          (org.apache.flink.table.types.logical.RowType)
+              GroupAggregateStockTestFixture.field(operator, "rowType");
+      int indicators = 0;
+      for (int p = 0; p < physical.getFieldCount(); p++) {
+        if (!org.apache.flink.table.types.logical.utils.LogicalTypeChecks.isProctimeAttribute(
+            physical.getTypeAt(p))) continue;
+        indicators++;
+        assertFalse(physical.getTypeAt(p).isNullable());
+        int boundaries = 0;
+        for (var node : graph.getStreamNodes()) {
+          if (!(node.getOperatorFactory() instanceof SimpleOperatorFactory)) continue;
+          var boundary = ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator();
+          if (!(boundary instanceof tech.streamfusion.operator.RowDataToArrowOperator)) continue;
+          var schema =
+              org.apache.arrow.vector.types.pojo.Schema.deserializeMessage(
+                  java.nio.ByteBuffer.wrap(
+                      (byte[]) GroupAggregateStockTestFixture.field(boundary, "arrowSchema")));
+          var field = schema.findField(physical.getFieldNames().get(p));
+          assertNotNull(field);
+          assertTrue(field.isNullable(), "The actual transpose must admit the physical NULL");
+          boundaries++;
+        }
+        assertEquals(1, boundaries);
+      }
+      assertEquals(1, indicators);
+    }
     var contract = GroupAggregateStockTestFixture.field(operator, "stockStateContract");
     assertNotNull(contract);
     if (starAndLiteral && !unbounded)
       assertEquals(-1, GroupAggregateStockTestFixture.field(contract, "hiddenCount"));
     assertEquals(
         unbounded
-            ? tech.streamfusion.state.StockOverFoldStateContract.class
+            ? processing
+                ? tech.streamfusion.state.StockOverFoldStateContract.class
+                : tech.streamfusion.state.StockOverEventFoldStateContract.class
             : processing
                 ? StockOverProcessingRowsStateContract.class
                 : rows ? StockOverEventRowsStateContract.class : StockOverRangeStateContract.class,

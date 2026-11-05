@@ -1540,7 +1540,7 @@ final class StockCompiledPlanLowering {
                             || type.is(LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE))
                         && LogicalTypeChecks.getPrecision(type) <= 3))) return stock;
     boolean processing = LogicalTypeChecks.isProctimeAttribute(inputType.getTypeAt(order[0]));
-    if (bounded && processing && !group.isRows() || !bounded && !processing) return stock;
+    if (bounded && processing && !group.isRows()) return stock;
     long offset = 0;
     if (bounded) {
       var bound =
@@ -1553,7 +1553,11 @@ final class StockCompiledPlanLowering {
     }
     Class<?> expected =
         !bounded
-            ? org.apache.flink.table.runtime.operators.over.ProcTimeUnboundedPrecedingFunction.class
+            ? processing
+                ? org.apache.flink.table.runtime.operators.over.ProcTimeUnboundedPrecedingFunction
+                    .class
+                : org.apache.flink.table.runtime.operators.over
+                    .RowTimeUnboundedPrecedingOverFunctionV2.class
             : processing
                 ? org.apache.flink.table.runtime.operators.over.ProcTimeRowsBoundedPrecedingFunction
                     .class
@@ -1572,7 +1576,7 @@ final class StockCompiledPlanLowering {
         config
             .get(org.apache.flink.table.api.config.ExecutionConfigOptions.IDLE_STATE_RETENTION)
             .toMillis();
-    if (!bounded) {
+    if (!bounded && processing) {
       var ttl =
           (org.apache.flink.api.common.state.StateTtlConfig) releasedField(function, "ttlConfig");
       retention = ttl.isEnabled() ? ttl.getTimeToLive().toMillis() : 0;
@@ -1675,8 +1679,21 @@ final class StockCompiledPlanLowering {
       int hiddenCount = infos.countStarInserted() ? infos.getIndexOfCountStar() : -1;
       contract =
           !bounded
-              ? new tech.streamfusion.state.StockOverFoldStateContract(
-                  serializer, keyType, RowType.of(generated), kinds, widths, retention > 0)
+              ? processing
+                  ? new tech.streamfusion.state.StockOverFoldStateContract(
+                      serializer, keyType, RowType.of(generated), kinds, widths, retention > 0)
+                  : new tech.streamfusion.state.StockOverEventFoldStateContract(
+                      serializer,
+                      keyType,
+                      inputType,
+                      RowType.of(generated),
+                      keys,
+                      order[0],
+                      kinds,
+                      widths,
+                      constants.get().type(),
+                      constants.get().encodedValues(),
+                      retention > 1)
               : processing
                   ? new tech.streamfusion.state.StockOverProcessingRowsStateContract(
                       serializer,
@@ -1743,6 +1760,7 @@ final class StockCompiledPlanLowering {
             .withStateMaxParallelism(maximum);
     if (constants.get().type().getFieldCount() > 0)
       over.withConstantArguments(constants.get().type(), constants.get().encodedValues());
+    if (!bounded && !processing && retention > 1) over.withEventTimeCleanupTimers();
     connect(exchange, over);
     bindings.put(over, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
     columnar.add(over);

@@ -1641,3 +1641,26 @@ The corrected path passes 108 complete-identity planner cases and the combined 1
 managed-UDF selection. All 168 complete jobs retain generated UIDs, including ordinary SQL and
 compiled-plan continuations, native checkpoints and rescaling. Tests preserve native execution
 and complete stock metadata checks; production counters are unchanged.
+## Unbounded event-time V2 OVER state projection
+
+The candidate V2 scalar binding projects the released stock plain accumulator VALUE, timestamp
+input MAP, Void event callbacks, optional cleanup VALUE and independent processing callbacks.
+Both native stores use direct live-state visits for canonical export. Complete read-only inventory
+and chunk preflight precedes native installation, and original stock values and queues clear only
+after successful import. An unarmed cleanup VALUE is preserved without inventing a callback.
+Original operator IDs, key-group configuration and key/input/accumulator serializers are retained;
+helper constants are transient native arguments. Native checkpoints keep their existing path.
+
+PROCTIME indicators can occupy physical NULL input slots despite their logical NOT NULL type.
+Arrow transport schemas represent those slots as nullable without altering the stock serializer
+snapshot or weakening checks for ordinary required fields. This matters when persistent pending
+rows are reconstructed for export, as well as when stock input rows enter canonical import.
+The dedicated correction passes 32 actual SQL-derived bidirectional handoff cases and 44 malformed
+state controls. The expanded component regression passes all 896 selected checks, including native
+checkpoint recovery and actual SQL/compiled transpose-schema controls. The merged component passes
+2,086 checks, all nine unchanged released aggregate programs per engine and all 192 event-time
+OVER full jobs on the same source/library. The latter retain both native stores, ROWS/RANGE,
+keyed/global state, cleanup on/off, custom connectors and transpose boundaries, no-input returns,
+ordinary native recovery and selected 1→3→2 keyed rescaling. The separate 212-check Flink 1.18 run
+is shared-code regression coverage, not canonical qualification. See [exact OVER coverage](../operators/over.md#released-v2-event-time-unbounded-scalar-binding-partial).
+Every operator family remains partial and benchmarking remains deferred under #569.

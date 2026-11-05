@@ -25,8 +25,8 @@ class CanonicalUnboundedOverAdmissionTest {
             "minimum",
             "maximum",
             "distinct",
-            "event-rows",
-            "event-range",
+            "legacy-event-rows",
+            "legacy-event-range",
             "async",
             "unaligned")
         .flatMap(mode -> Stream.of("DISABLED", "ALWAYS").map(uids -> Arguments.of(mode, uids)));
@@ -39,7 +39,8 @@ class CanonicalUnboundedOverAdmissionTest {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("table.exec.uid.generation", uids);
-    if (mode.equals("event-cleanup")) config.setString("table.exec.state.ttl", "1000 ms");
+    if (mode.startsWith("legacy-event-"))
+      config.setString("table.exec.unbounded-over.version", "1");
     if (mode.equals("async")) config.setString("table.exec.async-state.enabled", "true");
     if (mode.equals("unaligned"))
       config.setString("execution.checkpointing.unaligned.enabled", "true");
@@ -64,7 +65,7 @@ class CanonicalUnboundedOverAdmissionTest {
                 ? "MAX(v)"
                 : mode.equals("distinct") ? "SUM(DISTINCT v)" : "SUM(v)";
     String frame =
-        (mode.equals("event-range") ? "RANGE" : "ROWS")
+        (mode.endsWith("event-range") ? "RANGE" : "ROWS")
             + " BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW";
     String query =
         "INSERT INTO negative_output SELECT k,"
@@ -72,7 +73,7 @@ class CanonicalUnboundedOverAdmissionTest {
             + " OVER w,AVG(v) OVER w FROM negative_input WINDOW w AS (PARTITION BY k"
             + (mode.equals("composite-key") ? ",k2" : "")
             + " ORDER BY "
-            + (mode.startsWith("event-") ? "rt" : "pt")
+            + (mode.contains("event-") ? "rt" : "pt")
             + " "
             + frame
             + ")";

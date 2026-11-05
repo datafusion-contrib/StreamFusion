@@ -35,6 +35,7 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
   private int stateMaxParallelism = -1;
   private RowType constantType;
   private byte[] constantValues;
+  private boolean eventCleanupTimers;
 
   public NativeOverAggExecNode(
       ReadableConfig tableConfig,
@@ -70,7 +71,16 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
 
   public boolean hasStockArithmeticState() {
     boolean bounded = frameKind == 1 || frameKind == 2;
-    if (!bounded && (frameKind != 0 && frameKind != 3 || !proctime)
+    if (!bounded
+            && (frameKind != 0 && frameKind != 3
+                || !proctime
+                    && getPersistedConfig()
+                            .get(
+                                org.apache.flink.configuration.ConfigOptions.key(
+                                        "table.exec.unbounded-over.version")
+                                    .intType()
+                                    .defaultValue(2))
+                        != 2)
         || bounded && proctime && frameKind == 2
         || keyColumns.length > 1
         || java.util.Arrays.stream(aggregateKinds)
@@ -113,6 +123,11 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
     return this;
   }
 
+  public NativeOverAggExecNode withEventTimeCleanupTimers() {
+    eventCleanupTimers = true;
+    return this;
+  }
+
   public NativeOverAggExecNode withConstantArguments(RowType type, byte[] values) {
     constantType = type;
     constantValues = values.clone();
@@ -147,6 +162,7 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
             (RowType) getInputEdges().get(0).getOutputType(),
             maxParallelism);
     if (constantType != null) operator.withConstantArguments(constantType, constantValues);
+    if (eventCleanupTimers) operator.withEventTimeCleanupTimers();
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,

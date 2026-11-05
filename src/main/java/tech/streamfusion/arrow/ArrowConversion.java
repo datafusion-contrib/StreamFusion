@@ -196,8 +196,14 @@ public final class ArrowConversion {
         && preserve
         && (logicalType instanceof VarCharType || logicalType instanceof CharType))
       return NestedRepresentation.stringField(fieldName, logicalType.isNullable());
+    // Processing-time indicators remain physical NULLs until Flink materializes them.
     FieldType fieldType =
-        new FieldType(logicalType.isNullable(), logicalType.accept(TypeConverter.INSTANCE), null);
+        new FieldType(
+            logicalType.isNullable()
+                || org.apache.flink.table.types.logical.utils.LogicalTypeChecks.isProctimeAttribute(
+                    logicalType),
+            logicalType.accept(TypeConverter.INSTANCE),
+            null);
     if (preserve && logicalType instanceof ArrayType)
       fieldType =
           new FieldType(
