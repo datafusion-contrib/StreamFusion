@@ -2,6 +2,33 @@ use super::*;
 use jni::objects::JObject;
 
 #[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_configureGroupTypedGlobalCanonical<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    persistent: jboolean,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let result = if persistent == 0 {
+            unsafe { &mut *(handle as *mut GroupAggregator) }.configure_stock_global_merge()
+        } else {
+            #[cfg(feature = "rocksdb-state")]
+            {
+                unsafe { &mut *(handle as *mut GroupAggregator<RocksGroupStore>) }
+                    .configure_stock_global_merge()
+            }
+            #[cfg(not(feature = "rocksdb-state"))]
+            {
+                Err(invalid("native RocksDB is unavailable"))
+            }
+        };
+        if let Err(error) = result {
+            canonical::throw_error(&mut env, error);
+        }
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_configureGroupTypedCanonical<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,

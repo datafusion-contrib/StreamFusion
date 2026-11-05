@@ -176,7 +176,9 @@ public final class CanonicalJobWorker {
       boolean miniBatch = twoPhase || Files.exists(root.resolve("one-phase-mini-batch"));
       table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
       if (miniBatch) {
-        if (twoPhase) table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
+        table
+            .getConfig()
+            .set("table.optimizer.agg-phase-strategy", twoPhase ? "TWO_PHASE" : "ONE_PHASE");
         table
             .getConfig()
             .set(
@@ -779,8 +781,7 @@ public final class CanonicalJobWorker {
         org.apache.flink.metrics.MetricGroup group) {}
   }
 
-  static ClassLoader nativePlannerLoader(ClassLoader parent, Path directory)
-      throws IOException {
+  static ClassLoader nativePlannerLoader(ClassLoader parent, Path directory) throws IOException {
     String service = "META-INF/services/org.apache.flink.table.factories.Factory";
     var providers = new LinkedHashSet<String>();
     for (URL resource : Collections.list(parent.getResources(service))) {

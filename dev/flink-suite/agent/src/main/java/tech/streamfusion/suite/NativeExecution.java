@@ -60,7 +60,8 @@ public final class NativeExecution {
             || !fields[1].matches("\\*|\\w+=\\w+(?:&\\w+=\\w+)*")
             || !(fields[2].matches("\\w+(?:[+|]\\w+)*")
                 || fields[2].matches("!.+")
-                || fields[2].matches("@(?:restore|resume):\\w+")
+                || fields[2].matches("@restore:\\w+")
+                || fields[2].matches("@resume:\\w+(?:&&\\w+(?:[+|]\\w+)*)?")
                 || fields[2].equals(ElidedTemporalSort.CONTRACT)
                 || fields[2].equals(ElidedIntervalJoin.CONTRACT))
             || fields[2].startsWith("!@") && !fields[2].matches("!@\\w+:.+")) {
@@ -77,7 +78,7 @@ public final class NativeExecution {
           throw new IllegalStateException(
               "Elided interval proof is restricted to the unchanged negative-interval fixture");
         if (fields[2].contains("&&")
-            && (!fields[2].startsWith("!@")
+            && (!(fields[2].startsWith("!@") || fields[2].startsWith("@resume:"))
                 || !fields[2].split("&&", -1)[1].matches("\\w+(?:[+|]\\w+)*")
                 || fields[2].split("&&", -1).length != 2))
           throw new IllegalStateException("Invalid stock state-owner contract: " + line);
@@ -478,12 +479,14 @@ public final class NativeExecution {
               && scope.fallbacks.isEmpty()
               && restored.getOrDefault(contract.substring(9), 0L) > 0;
     } else if (contract.startsWith("@resume:")) {
-      String operator = contract.substring(8);
+      String[] clauses = contract.substring(8).split("&&", 2);
+      String operator = clauses[0];
       satisfied =
           scope.rows.getOrDefault(operator, 0L) > 0
               && restored.getOrDefault(operator, 0L) > 0
               && scope.stockRows.isEmpty()
-              && scope.fallbacks.isEmpty();
+              && scope.fallbacks.isEmpty()
+              && (clauses.length == 1 || workSatisfied(scope, clauses[1]));
     } else if (contract.startsWith("!@")) {
       String[] clauses = contract.split("&&", 2);
       String[] requirement = clauses[0].substring(2).split(":", 2);

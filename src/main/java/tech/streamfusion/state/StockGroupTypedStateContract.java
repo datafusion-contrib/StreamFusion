@@ -37,7 +37,7 @@ public final class StockGroupTypedStateContract implements StockStateContract {
   private final RowType keyType, accumulatorType, bridgeType;
   private final int[] kinds, scalarFields, countFields;
   private final int recordCountField;
-  private final boolean ttl;
+  private final boolean ttl, globalMerge;
   private final List<StockGroupDistinctView> views;
 
   public StockGroupTypedStateContract(
@@ -50,6 +50,34 @@ public final class StockGroupTypedStateContract implements StockStateContract {
       int recordCountField,
       boolean ttl,
       List<StockGroupDistinctView> views) {
+    this(
+        keys,
+        keyType,
+        accumulatorType,
+        kinds,
+        scalarFields,
+        countFields,
+        recordCountField,
+        ttl,
+        views,
+        false);
+  }
+
+  public StockGroupTypedStateContract(
+      TypeSerializer<RowData> keys,
+      RowType keyType,
+      RowType accumulatorType,
+      int[] kinds,
+      int[] scalarFields,
+      int[] countFields,
+      int recordCountField,
+      boolean ttl,
+      List<StockGroupDistinctView> views,
+      boolean globalMerge) {
+    this.globalMerge = globalMerge;
+    if (globalMerge && (recordCountField >= 0 || !views.isEmpty()))
+      throw new IllegalArgumentException(
+          "Global scalar merge requires append-only accumulators without views");
     this.keys = keys.duplicate();
     this.keyType = keyType;
     this.accumulatorType = accumulatorType;
@@ -163,6 +191,7 @@ public final class StockGroupTypedStateContract implements StockStateContract {
 
   @Override
   public void configureNativeState(long handle, boolean persistent) {
+    if (globalMerge) Native.configureGroupTypedGlobalCanonical(handle, persistent);
     Native.configureGroupTypedCanonical(handle, persistent, kinds, recordCountField < 0);
   }
 

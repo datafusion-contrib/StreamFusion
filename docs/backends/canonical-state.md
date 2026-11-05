@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT, append string/date/time/boolean extrema and integral/date/time/boolean retracting MIN/MAX | Wider types/keys, other views/phases and failures |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, and append scalar one/local-global mini-batches | Wider types/keys, retracting mini-batches, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -1517,3 +1517,26 @@ with custom source/sink state, transposes, clean stock classpaths and exact exte
 See [the exact string scope and restore
 oracle](../operators/group-by.md#canonical-string-extrema-partial). Retracting string views, wider
 phases and the full connector/failure/version matrix remain unfinished; benchmarking is deferred.
+
+
+## Scalar mini-batch canonical boundary
+
+Selected append-only scalar bundles use the original released `accState` schema and serializers
+in both phases. The local stage owns only temporary partial accumulators and drains before
+barriers; the global stage retains its stock operator identity and key-group space. AVG exports
+the widened sum and independent count directly. The global bundle combines incoming partials
+before merging them once into retained state, rather than reconstructing accumulators from
+emitted averages or extrema.
+
+Once local/global buffers drain, canonical export projects the consistent live state into the
+stock writer in one capture. It does not first write a native snapshot. Ordinary native
+checkpoints retain their existing representation and restore the configured merge mode during
+operator initialization. Optional Java-string caches remain internal execution transport and
+do not add StreamFusion serializer classes to the savepoint.
+
+The [GROUP BY coverage page](../operators/group-by.md#canonical-scalar-mini-batches-partial)
+records the 390 scalar/planner/state cases, 40 corruption/retry controls, 56 distinct complete-job
+scenarios and exact released restore witnesses. Selected 64-key rescalings retain the global
+key-group space and preserve custom connector state. Wider phase/type/view/TTL/failure matrices
+remain under qualification in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.

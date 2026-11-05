@@ -53,3 +53,17 @@ therefore compares with independently restored stock state at identical cuts, re
 serialized state and changelog assertions. This transient-cache handling changes neither the
 canonical state schema nor the ordinary native checkpoint format. Retracting string views and
 wider phase/failure/version coverage remain open under #569; benchmarking stays deferred.
+
+
+Scalar mini-batches follow released Flink's bundle protocol rather than treating each partial
+as a direct retained-state update. A global bundle has an independent transient accumulator
+which is merged into durable state once at drain. This preserves both floating-point rounding
+and the nontransitive mixed Java/binary string comparator. The local AVG sum uses the actual
+stock widened accumulator carrier; input type alone cannot define its partial schema.
+
+Arroyo's incremental accumulator/retained-entry separation remains the starting structure.
+The extra global buffer is a required Flink protocol projection, not another persisted native
+snapshot. Buffers drain before barriers; direct stock export visits live durable state. Comet's
+existing moved C Data ownership applies to partials and their optional string companions.
+An empty local barrier before any key schema has been observed exports no rows. Ordinary
+native checkpoints retain their existing format and rebind the stock merge mode on restore.

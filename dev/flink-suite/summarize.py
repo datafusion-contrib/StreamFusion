@@ -32,7 +32,7 @@ def execution_contracts(
             len(fields) != 3
             or not re.fullmatch(r"[\w.$]+#[\w$]+", fields[0])
             or not re.fullmatch(r"\*|\w+=\w+(?:&\w+=\w+)*", fields[1])
-            or not re.fullmatch(r"\w+(?:[+|]\w+)*|!.+|@(?:restore|resume):\w+|@elided:(?:TemporalSort|IntervalJoin)", fields[2])
+            or not re.fullmatch(r"\w+(?:[+|]\w+)*|!.+|@restore:\w+|@resume:\w+(?:&&\w+(?:[+|]\w+)*)?|@elided:(?:TemporalSort|IntervalJoin)", fields[2])
             or fields[2].startswith("!@") and not re.fullmatch(r"!@\w+:.+", fields[2])
         ):
             raise ValueError(f"Invalid native execution contract: {line}")
@@ -48,7 +48,7 @@ def execution_contracts(
             raise ValueError("Elided interval proof is restricted to the unchanged negative-interval fixture")
         if "&&" in fields[2]:
             clauses = fields[2].split("&&")
-            if not fields[2].startswith("!@") or len(clauses) != 2 or not re.fullmatch(r"\w+(?:[+|]\w+)*", clauses[1]):
+            if not fields[2].startswith(("!@", "@resume:")) or len(clauses) != 2 or not re.fullmatch(r"\w+(?:[+|]\w+)*", clauses[1]):
                 raise ValueError(f"Invalid stock state-owner contract: {line}")
         variants = contracts.setdefault(fields[0], {})
         if fields[1] in variants:
@@ -180,8 +180,8 @@ def check_execution(
                 else:
                     problems.append(f"{test} [{variant}]: missing native canonical import; observed {restored}")
             elif contract.startswith("@resume:"):
-                operator = contract.removeprefix("@resume:")
-                if counts.get(operator, 0) > 0 and restored.get(operator, 0) > 0 and not stock and not reasons:
+                operator, separator, required = contract.removeprefix("@resume:").partition("&&")
+                if counts.get(operator, 0) > 0 and restored.get(operator, 0) > 0 and not stock and not reasons and (not separator or work_satisfied(required)):
                     proved += 1
                     matched = True
                 else:

@@ -38,6 +38,24 @@ public class NativeColumnarGroupAggExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] keyTimestampPrecisions;
   private Integer stateMaxParallelism;
 
+  public boolean hasStockScalarPartials() {
+    for (int i = 0; i < aggregateKinds.length; i++) {
+      int kind = aggregateKinds[i];
+      if (kind != 0
+          && kind != 1
+          && kind != 2
+          && kind != 4
+          && kind != 10
+          && kind != 11
+          && kind != 22
+          && kind != 23) return false;
+      int type = valueTypes[i];
+      if (type < 0 || type == 7 || type > 10) return false;
+      if ((kind == 22 || kind == 23) && type != 0) return false;
+    }
+    return true;
+  }
+
   public boolean hasStringExtrema() {
     for (int i = 0; i < aggregateKinds.length; i++)
       if (valueTypes[i] == 3

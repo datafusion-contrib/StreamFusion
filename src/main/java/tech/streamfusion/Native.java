@@ -1590,6 +1590,8 @@ public final class Native {
       long outArrayAddress,
       long outSchemaAddress);
 
+  public static native void configureGroupTypedGlobalCanonical(long handle, boolean persistent);
+
   public static native void configureGroupTypedCanonical(
       long handle, boolean persistent, int[] kinds, boolean appendOnly);
 

@@ -991,6 +991,40 @@ class CanonicalRestoreExecutionTest {
     assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "complete",
+        "missingLocal",
+        "unopenedLocal",
+        "missingImport",
+        "missingGlobalInput",
+        "wrongHandle",
+        "validating",
+        "emptyImport",
+        "fallback"
+      })
+  void miniBatchRequiresImportedGlobalStateAndBothNativeStages(String mode) {
+    var scope =
+        NativeExecution.beginRestore(GROUP, new Object(), "group-aggregate-simple-mini-batch");
+    var global = new NativeColumnarGroupAggregateOperator();
+    var local = new NativeColumnarLocalGroupAggregateOperator();
+    if (!mode.equals("missingImport"))
+      StreamFusionSuiteAgent.RecordCanonicalGroupImport.exit(
+          mode.equals("wrongHandle") ? 78L : 77L,
+          mode.equals("emptyImport") ? java.util.List.of() : java.util.List.of(1, 2),
+          mode.equals("validating"));
+    NativeExecution.opened(global);
+    if (!mode.equals("missingGlobalInput")) NativeExecution.completed(global, 3);
+    if (!mode.equals("unopenedLocal")) NativeExecution.opened(local);
+    if (!mode.equals("missingLocal")) NativeExecution.completed(local, 4);
+    if (mode.equals("fallback")) NativeExecution.fallback("unqualified aggregate");
+    if (mode.equals("complete")) assertDoesNotThrow(() -> NativeExecution.finish(scope));
+    else assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  private static final class NativeColumnarLocalGroupAggregateOperator {}
+
   @Test
   void unknownGroupProgramsCannotInheritTheSimpleRestoreWitness() {
     assertThrows(

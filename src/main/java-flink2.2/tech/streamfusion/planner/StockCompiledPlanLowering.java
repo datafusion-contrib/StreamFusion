@@ -157,12 +157,26 @@ final class StockCompiledPlanLowering {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(roots, nodes);
     for (ExecNode<?> node : nodes) {
+      boolean global =
+          node
+              instanceof
+              org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGlobalGroupAggregate;
       if (!(node
-          instanceof
-          org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGroupAggregate)) continue;
+              instanceof
+              org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGroupAggregate)
+          && !global) continue;
       JsonNode definition = definitions.get(node.getId());
       if (definition.path("needRetraction").asBoolean()) continue;
       var input = node.getInputEdges().get(0).getSource();
+      if (global) {
+        if (!(input instanceof StreamExecExchange)) continue;
+        var local = input.getInputEdges().get(0).getSource();
+        if (!(local
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecLocalGroupAggregate))
+          continue;
+        input = local.getInputEdges().get(0).getSource();
+      }
       RowType type = (RowType) input.getOutputType();
       AggregateCall[] calls =
           reader.forType(AggregateCall[].class).readValue(definition.path("aggCalls"));
@@ -332,7 +346,8 @@ final class StockCompiledPlanLowering {
                   || node instanceof NativeColumnarWindowAggExecNode
                   || node instanceof NativeColumnarSessionWindowAggExecNode
                   || node instanceof NativeColumnarGlobalWindowAggExecNode) return true;
-              if (needsStringTemplate(node, graph)) return true;
+              if (needsStringTemplate(node, graph) || needsGlobalGroupTemplate(node, graph))
+                return true;
               if (node instanceof NativeWindowRankExecNode)
                 return !((NativeWindowRankExecNode) node).isProcessingTime();
               if (node instanceof NativeColumnarTopNExecNode)
@@ -357,11 +372,26 @@ final class StockCompiledPlanLowering {
     }
   }
 
+  private static boolean needsGlobalGroupTemplate(
+      ExecNode<?> node, SqlPlanOrigins.RuntimeGraph graph) {
+    if (!(node instanceof NativeColumnarGroupAggExecNode)
+        || !((NativeColumnarGroupAggExecNode) node).hasStockScalarPartials()
+        || !(graph.originals.get(node)
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGlobalGroupAggregate))
+      return false;
+    try {
+      return !(Boolean) releasedField(graph.originals.get(node), "needRetraction");
+    } catch (IOException failure) {
+      throw new TableException("Cannot inspect global aggregate origins", failure);
+    }
+  }
+
   static boolean canBindOrdinary(SqlPlanOrigins.RuntimeGraph graph, ClassLoader loader) {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
     for (ExecNode<?> node : nodes) {
-      if (needsStringTemplate(node, graph)) return false;
+      if (needsStringTemplate(node, graph) || needsGlobalGroupTemplate(node, graph)) return false;
       if (node instanceof NativeTemporalSortExecNode || node instanceof NativeWindowRankExecNode)
         return false;
       if (node instanceof NativeOverAggExecNode
@@ -715,6 +745,11 @@ final class StockCompiledPlanLowering {
             org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGroupAggregate
         && nativeKeyedState
         && NativeConfig.operatorEnabled("groupAggregate")) result = lowerGroupAggregate(node);
+    else if (node
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGlobalGroupAggregate
+        && nativeKeyedState
+        && NativeConfig.operatorEnabled("groupAggregate")) result = lowerGlobalGroupAggregate(node);
     else if (node instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecRank
         && nativeKeyedState
         && NativeConfig.operatorEnabled("topN")) result = lowerRank(node);
@@ -1746,26 +1781,65 @@ final class StockCompiledPlanLowering {
   }
 
   private ExecNode<?> lowerTypedGroupAggregate(ExecNode<?> stock) throws IOException {
+    return lowerTypedGroupAggregate(stock, null);
+  }
+
+  private ExecNode<?> lowerGlobalGroupAggregate(ExecNode<?> stock) throws IOException {
+    var exchange = stock.getInputEdges().get(0).getSource();
+    if (!(exchange instanceof StreamExecExchange)
+        || consumerCounts.getOrDefault(exchange.getId(), 0) != 1) return stock;
+    var local = exchange.getInputEdges().get(0).getSource();
+    if (!(local
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecLocalGroupAggregate)
+        || consumerCounts.getOrDefault(local.getId(), 0) != 1) return stock;
+    return lowerTypedGroupAggregate(stock, local);
+  }
+
+  private ExecNode<?> lowerTypedGroupAggregate(ExecNode<?> stock, ExecNode<?> local)
+      throws IOException {
+    boolean global = local != null;
     var transformation = stockTransformations.get(stock.getId());
     if (!(transformation instanceof OneInputTransformation)) return stock;
     var original = (OneInputTransformation<?, ?>) transformation;
     if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)) return stock;
     var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
-    if (!(operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator))
-      return stock;
-    var function =
-        ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
-            .getUserFunction();
-    if (function.getClass()
-        != org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.class) return stock;
+    boolean miniBatch =
+        operator instanceof org.apache.flink.table.runtime.operators.bundle.KeyedMapBundleOperator;
+    Object function;
+    if (miniBatch) function = releasedField(operator, "function");
+    else if (operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator)
+      function =
+          ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
+              .getUserFunction();
+    else return stock;
+    Class<?> expectedFunctionClass =
+        global
+            ? org.apache.flink.table.runtime.operators.aggregate.MiniBatchGlobalGroupAggFunction
+                .class
+            : miniBatch
+                ? org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction.class
+                : org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.class;
+    if (function.getClass() != expectedFunctionClass || global && !miniBatch) return stock;
     if (!(original.getStateKeySelector()
         instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector)) return stock;
     JsonNode definition = definitions.get(stock.getId());
     int[] keys = reader.forType(int[].class).readValue(definition.path("grouping"));
     ExecNode<?> input = stock.getInputEdges().get(0).getSource();
     RowType inputType = (RowType) input.getOutputType();
+    RowType sourceType =
+        global ? (RowType) local.getInputEdges().get(0).getSource().getOutputType() : inputType;
+    int[] localKeys =
+        global
+            ? reader.forType(int[].class).readValue(definitions.get(local.getId()).path("grouping"))
+            : keys;
+    if (global
+        && !Arrays.equals(keys, java.util.stream.IntStream.range(0, localKeys.length).toArray()))
+      return stock;
     RowType outputType = (RowType) stock.getOutputType();
-    if (!typedGroupArrowType(inputType) || !typedGroupArrowType(outputType)) return stock;
+    if (!typedGroupArrowType(inputType)
+        || !typedGroupArrowType(outputType)
+        || !typedGroupArrowType(sourceType)) return stock;
     for (int i = 0; i < keys.length; i++)
       if (!inputType.getTypeAt(keys[i]).equals(outputType.getTypeAt(i))) return stock;
     Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
@@ -1774,6 +1848,7 @@ final class StockCompiledPlanLowering {
         || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
       return stock;
     boolean retract = definition.path("needRetraction").asBoolean();
+    if (miniBatch && retract) return stock;
     var calls =
         reader
             .forType(org.apache.calcite.rel.core.AggregateCall[].class)
@@ -1783,13 +1858,18 @@ final class StockCompiledPlanLowering {
     var infos =
         org.apache.flink.table.planner.plan.utils.AggregateUtil.transformToStreamAggregateInfoList(
             planner.getTypeFactory(),
-            inputType,
+            sourceType,
             org.apache.flink.table.planner.utils.JavaScalaConversionUtil.toScala(
                 Arrays.asList(calls)),
             retractions,
             retract,
             true,
             true);
+    if (global && infos.distinctInfos().length != 0) return stock;
+    var localKinds = new ArrayList<Integer>();
+    var localTypes = new ArrayList<Integer>();
+    var localColumns = new ArrayList<Integer>();
+    var localFilters = new ArrayList<Integer>();
     LogicalType[] actualTypes = (LogicalType[]) releasedField(function, "accTypes");
     LogicalType[] derivedTypes =
         Arrays.stream(infos.getAccTypes())
@@ -1883,9 +1963,9 @@ final class StockCompiledPlanLowering {
           kind == 7
               ? call.getArgList().get(0)
               : countAll || info.argIndexes().length == 0 ? -1 : info.argIndexes()[0];
-      int valueType = value < 0 ? 0 : typedGroupValueCode(inputType.getTypeAt(value));
+      int valueType = value < 0 ? 0 : typedGroupValueCode(sourceType.getTypeAt(value));
       if (valueType < 0) return stock;
-      if (call.filterArg >= 0 && !inputType.getTypeAt(call.filterArg).is(LogicalTypeRoot.BOOLEAN))
+      if (call.filterArg >= 0 && !sourceType.getTypeAt(call.filterArg).is(LogicalTypeRoot.BOOLEAN))
         return stock;
       kinds[actual] = kind;
       types[actual] = valueType;
@@ -1893,6 +1973,22 @@ final class StockCompiledPlanLowering {
       scalars[actual] = position;
       if (width == 2) counts[actual] = position + 1;
       filters[actual] = call.filterArg;
+      if (global) {
+        localKinds.add(kind == 4 ? 8 : kind);
+        localTypes.add(kind == 4 ? typedGroupValueCode(actualTypes[position]) : valueType);
+        localColumns.add(value);
+        localFilters.add(call.filterArg);
+        if (kind == 4) {
+          localKinds.add(3);
+          localTypes.add(valueType);
+          localColumns.add(value);
+          localFilters.add(call.filterArg);
+        }
+        columns[actual] = localKeys.length + position;
+        kinds[actual] = kind == 3 ? 22 : kind;
+        if (kind != 4) types[actual] = typedGroupValueCode(inputType.getTypeAt(columns[actual]));
+        filters[actual] = -1;
+      }
       nativeIndices.put(info.aggIndex(), actual);
       actual++;
       position += width;
@@ -1920,10 +2016,14 @@ final class StockCompiledPlanLowering {
               distinct.consumeRetraction()));
     }
     var ttl =
-        (org.apache.flink.api.common.state.StateTtlConfig) releasedField(function, "ttlConfig");
+        miniBatch
+            ? org.apache.flink.table.runtime.util.StateConfigUtil.createTtlConfig(
+                (Long) releasedField(function, "stateRetentionTime"))
+            : (org.apache.flink.api.common.state.StateTtlConfig)
+                releasedField(function, "ttlConfig");
     long retention = ttl.isEnabled() ? ttl.getTimeToLive().toMillis() : 0;
     config.setString("table.exec.state.ttl", retention + " ms");
-    config.setString("table.exec.mini-batch.enabled", "false");
+    config.setString("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
     @SuppressWarnings("unchecked")
     TypeSerializer<RowData> serializer =
         (TypeSerializer<RowData>)
@@ -1945,21 +2045,77 @@ final class StockCompiledPlanLowering {
               counts,
               recordCount,
               ttl.isEnabled(),
-              views);
+              views,
+              global);
     } catch (IllegalArgumentException unsupported) {
       return stock;
     }
     int maximum = stockMaximum(original);
-    var exchange =
-        (NativeColumnarExchangeExecNode)
-            canonicalJoinInput(
-                input,
+    boolean stringCaches =
+        java.util.stream.IntStream.range(0, kinds.length)
+            .anyMatch(i -> (kinds[i] == 10 || kinds[i] == 11) && types[i] == 3);
+    NativeColumnarExchangeExecNode exchange;
+    if (global) {
+      RowType partialType = (RowType) local.getOutputType();
+      if (partialType.getFieldCount() != localKeys.length + localKinds.size()) return stock;
+      for (int i = 0; i < actualTypes.length; i++)
+        if (!partialType
+            .getTypeAt(localKeys.length + i)
+            .copy(true)
+            .equals(actualTypes[i].copy(true))) return stock;
+      for (int i = 0; i < localKeys.length; i++)
+        if (!partialType.getTypeAt(i).equals(sourceType.getTypeAt(localKeys[i]))) return stock;
+      var localConfig = new Configuration(config);
+      ((ExecNodeBase<?>) local).getPersistedConfig().toMap().forEach(localConfig::setString);
+      localConfig.setString("table.exec.mini-batch.enabled", "true");
+      int[] localKindArray = localKinds.stream().mapToInt(Integer::intValue).toArray();
+      var localOwner =
+          new NativeColumnarLocalGroupAggExecNode(
+              localConfig,
+              InputProperty.DEFAULT,
+              partialType,
+              "NativeColumnarLocalGroupAggregate",
+              localKindArray,
+              localTypes.stream().mapToInt(Integer::intValue).toArray(),
+              localColumns.stream().mapToInt(Integer::intValue).toArray(),
+              localFilters.stream().mapToInt(Integer::intValue).toArray(),
+              localKeys,
+              new int[0],
+              FlinkKeyGroupUtils.stockKeyDescriptor(sourceType, localKeys));
+      var producer = local.getInputEdges().get(0).getSource();
+      ExecNode<?> entry;
+      if (stringCaches) {
+        entry =
+            new RowDataToArrowExecNode(
                 config,
-                inputType,
-                keys,
+                InputProperty.DEFAULT,
+                sourceType,
+                "RowDataToArrow",
                 true,
-                java.util.stream.IntStream.range(0, kinds.length)
-                    .anyMatch(i -> (kinds[i] == 10 || kinds[i] == 11) && types[i] == 3));
+                null,
+                false,
+                1024,
+                false,
+                true);
+        connect(producer, entry);
+      } else entry = arrowInput(producer, config, sourceType, true);
+      connect(entry, localOwner);
+      bindings.put(localOwner, new StockBinding(local.getId(), stockUids.get(local.getId()), null));
+      columnar.add(localOwner);
+      exchange =
+          new NativeColumnarExchangeExecNode(
+              config,
+              InputProperty.DEFAULT,
+              partialType,
+              "NativeColumnarExchange",
+              keys,
+              FlinkKeyGroupUtils.stockKeyDescriptor(partialType, keys),
+              keys.length == 0);
+      connect(localOwner, exchange);
+    } else
+      exchange =
+          (NativeColumnarExchangeExecNode)
+              canonicalJoinInput(input, config, inputType, keys, true, stringCaches);
     exchange.withStateMaxParallelism(maximum);
     var owner =
         new NativeColumnarGroupAggExecNode(
@@ -1972,7 +2128,11 @@ final class StockCompiledPlanLowering {
                 columns,
                 keys,
                 filters,
-                new int[0],
+                global
+                    ? java.util.stream.IntStream.range(0, kinds.length)
+                        .map(i -> kinds[i] == 4 ? columns[i] + 1 : -1)
+                        .toArray()
+                    : new int[0],
                 new int[0],
                 -1,
                 (Boolean) releasedField(function, "generateUpdateBefore"),

@@ -3336,8 +3336,8 @@ The preceding typed-extrema baseline passed all nine released stock GROUP BY con
 failed all nine native execution audits because the aggregates stayed stock-owned. The unchanged
 committed baseline reproduced those failures. The subsequent string-extrema addition below
 qualifies the simple and TTL-hint programs with actual state import and resumed native input;
-seven mini-batch, DISTINCT and UDF programs remain unqualified. Native Calc activity receives no
-aggregate-import credit.
+the scalar mini-batch extension below qualifies a third program. Six DISTINCT/UDF programs remain
+unqualified. Native Calc activity receives no aggregate-import credit.
 
 Wider retained types, keys, views/phases, connector delivery/failure and cross-version migrations
 remain open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
@@ -3388,8 +3388,8 @@ failing cohorts are retained separately, not added cumulatively. The unchanged r
 programs, `group-aggregate-simple` and `agg-with-state-ttl-hint`, additionally pass strict
 canonical-resume contracts: each imports two stock groups into the actual opened native handle
 and consumes three new native input rows. Their original queries, fixtures and sink assertions
-are unchanged. Seven other programs still fail their native execution gates; the full upstream
-suite remains red. Applied header batches count only after successful import, excluding
+are unchanged. The later scalar mini-batch extension below qualifies one more program; six
+DISTINCT/UDF programs still fail their native execution gates and the full upstream suite remains red. Applied header batches count only after successful import, excluding
 validation-only passes, and unknown program IDs cannot inherit the simple-program contract.
 The witness controls pass 143 cases and the independent Python report audit passes 49.
 Shared Flink 1.18 processing/accounting/ownership checks pass 34 cases without qualifying canonical
@@ -3408,3 +3408,71 @@ complete-job Unicode qualification. Broader string views, retractions, phases, T
 complete-job scenarios and the full connector,
 failure and version matrices remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.
+
+
+## Canonical scalar mini-batches (partial)
+
+Append-only scalar one-phase and local/global mini-batches bind the released stock
+accumulator contract during SQL and compiled-plan submission. The global stage retains
+`accState` under the original operator identity, key serializer and maximum parallelism.
+Its native configuration is rebound before canonical or ordinary native-checkpoint restore;
+no StreamFusion serializer or additional persistent state descriptor enters the savepoint.
+Retracting mini-batches and global DISTINCT/data-view/UDF layouts remain outside this adapter.
+
+The local stage produces stock partial fields directly. AVG carries its widened sum and
+independent BIGINT count, with the actual released accumulator type defining the sum carrier.
+The global bundle first combines incoming partials independently, then merges that result into
+retained state once, matching stock rounding and representation-sensitive string comparisons.
+Local partials and before/after output images preserve the existing optional Java-string
+companions. RocksDB clears the transient accumulator string cache once per logical bundle,
+matching the stock mini-batch function's state read boundary. Immediate aggregation retains
+its per-record boundary.
+
+Local and global buffers drain at savepoint barriers. Canonical capture then visits the
+consistent live accumulator directly through the stock writer; it never serializes a native
+snapshot first. An empty barrier before the first local input is valid. The private native
+local/exchange/global chain stays Arrow-based; perimeter transposes remain where stock producers
+or consumers require rows. The portable stock plan remains unchanged.
+
+The unchanged released `group-aggregate-simple-mini-batch` restore fixture passes with its
+original query and sink assertions. Its strict witness records two applied stock groups in
+the opened native global owner, two new global rows and three local input rows. The full
+released GROUP BY selection now passes all nine stock programs and three native programs;
+six DISTINCT/UDF programs still fail their native execution contracts. Witness controls pass
+152 Java cases and 51 independent Python audit cases. The independently built native suite
+passes 1,332 tests with two existing ignores.
+
+The expanded 390-case cohort passes 104 SQL/compiled planner checks, 208 repeated canonical
+round trips, 52 ordinary native-checkpoint recoveries and 26 exact stock/native local-partial
+comparisons. Thirteen SQL type declarations cover strings, six numeric types, DATE, TIME(0),
+TIME(3) and BOOLEAN. Numeric declarations also drive filtered SUM/AVG inputs; the other
+MIN/MAX declarations share INT arithmetic. State cases cover both phases, stores, initial
+engine orders and heap/RocksDB backend changes, with immediate re-export and exact stock
+accumulator/output bytes. Local cases split physical Arrow batches independently of the logical
+bundle and exercise an empty barrier before first input. A separate 40-case negative cohort rejects malformed counts, row kinds and foreign state across
+both phases/stores and STRING/DOUBLE fixtures. Corruption after 1,024 keys leaves every source
+entry intact and the native destination empty. Repaired sources remain retryable, reproduce exact
+exported bytes and continue with the stock changelog. The final library also passes all 1,560
+previous typed/string/negative aggregate regressions and 34 shared Flink 1.18 processing checks;
+the latter do not qualify canonical interchange on 1.18. Cohorts overlap earlier milestones and
+are not added cumulatively. These controls do not establish every TTL, key, floating-point edge
+or complete-job schema combination.
+
+Complete-job mini-batch controls compare external committed changelogs with a separate stock
+job stopped at the same checkpoint/savepoint cuts. Those barriers flush bundles and can change
+emission timing even in stock-to-stock execution; an uninterrupted stock changelog is therefore
+not an equivalent mini-batch boundary oracle. Independent final-table assertions remain in place.
+All 56 distinct complete-job scenarios pass across one-phase and local/global plans: sixteen
+continued-input cases, sixteen no-input returns, eight ordinary native-checkpoint recoveries and
+sixteen rescalings. They cover SQL/compiled submission, both native stores and initial engine
+orders, custom sources/committing sinks, clean stock workers without StreamFusion and both
+perimeter transposes. Rescale redistributes 64 actual keys through 1 → 3 → 2 global tasks at
+maximum parallelism 128; local stages and source/sink writers remain singleton. Global-task
+witnesses require positive input in every global task, independently of positive local input.
+The original full run passed 48 cases and failed eight two-phase rescale witness checks because
+they counted the local stage alongside global owners. A corrected eight-case run passes without
+changing production code, state comparisons or sink assertions. The original failed run remains
+part of the evidence; smoke cases overlap and are not added. These jobs use the independent
+ASCII lexical-extrema oracle, not a complete-job Unicode/TTL/schema matrix. Wider retractions,
+views, keys, TTL, connector/failure and version matrices remain open under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.

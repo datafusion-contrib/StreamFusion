@@ -159,7 +159,9 @@ class CanonicalJobRunner {
       Path baseline, Path switched, boolean nativeFirst, String backend, String mode, String family)
       throws Exception {
     var fixture = fixtureJar();
-    run(fixture, false, baseline, Integer.MAX_VALUE, "none", "baseline", 3, "hashmap");
+    if (Files.exists(baseline.resolve("same-cut-stock-reference")))
+      runStockAtSavepointCuts(fixture, baseline, mode);
+    else run(fixture, false, baseline, Integer.MAX_VALUE, "none", "baseline", 3, "hashmap");
     if (mode.equals("rescale")) {
       Files.createFile(switched.resolve("rescale"));
       Files.writeString(switched.resolve("native-rescale-family"), family);
@@ -229,6 +231,28 @@ class CanonicalJobRunner {
     assertTrue(
         Files.exists(
             switched.resolve((nativeFirst ? "middle" : "suffix") + "-stock-classpath-verified")));
+  }
+
+  private void runStockAtSavepointCuts(Path fixture, Path root, String mode) throws Exception {
+    if (mode.equals("rescale")) {
+      Files.createFile(root.resolve("rescale"));
+      Files.writeString(root.resolve("prefix-parallelism"), "1");
+      Files.writeString(root.resolve("middle-parallelism"), "3");
+      Files.writeString(root.resolve("suffix-parallelism"), "2");
+    }
+    if (mode.equals("checkpoint")) Files.createFile(root.resolve("prefix-native-checkpoint"));
+    run(fixture, false, root, mode.equals("rescale") ? 128 : 4, "none", "prefix", 3, "hashmap");
+    String restore = "prefix";
+    if (mode.equals("checkpoint")) {
+      run(fixture, false, root, 4, restore, "canonical", 3, "hashmap");
+      restore = "canonical";
+    } else if (mode.equals("no-input")) {
+      run(fixture, false, root, 4, restore, "no-input", 3, "hashmap");
+      run(fixture, false, root, 4, "no-input", "return", 3, "hashmap");
+      restore = "return";
+    }
+    run(fixture, false, root, mode.equals("rescale") ? 256 : 8, restore, "middle", 3, "hashmap");
+    run(fixture, false, root, Integer.MAX_VALUE, "middle", "suffix", 3, "hashmap");
   }
 
   Path fixtureJar() throws Exception {

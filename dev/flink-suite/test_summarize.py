@@ -423,6 +423,32 @@ class CanonicalRestoreSummaryTest(unittest.TestCase):
         self.assertEqual("native", observations[0]["observed_route"])
         self.assertEqual({self.FAMILY: 3}, observations[0]["native_canonical_import_rows"])
 
+    def test_two_phase_resume_requires_local_work_and_global_import_and_input(self):
+        local = "NativeColumnarLocalGroupAggregateOperator"
+        contract = "@resume:" + self.FAMILY + "&&" + local
+        for fields in ({"counts": self.FAMILY + "=2", "imported": self.FAMILY + "=3"},
+                       {"counts": local + "=2", "imported": self.FAMILY + "=3"},
+                       {"counts": self.FAMILY + "=2," + local + "=3"},
+                       {"counts": self.FAMILY + "=2," + local + "=0", "imported": self.FAMILY + "=3"},
+                       {"counts": self.FAMILY + "=2," + local + "=3", "imported": local + "=3"}):
+            with self.subTest(fields=fields):
+                self.assertTrue(self.check(contract, **fields)[0][2])
+        result, _ = self.check(contract, counts=self.FAMILY + "=2," + local + "=3", imported=self.FAMILY + "=3")
+        self.assertEqual((1, 0, []), result)
+
+    def test_resume_companion_grammar_is_loaded_and_rejects_malformed_clauses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "contracts.tsv"
+            for suffix, valid in (("&&LocalOperator", True), ("&&LocalOperator+ExchangeOperator", True),
+                                  ("&&", False), ("&&Local&&Other", False), ("&Local", False)):
+                with self.subTest(suffix=suffix):
+                    contract = "@resume:" + self.FAMILY + suffix
+                    path.write_text("Probe#testRestore\t*\t" + contract + "\n")
+                    if valid:
+                        self.assertEqual(contract, summarize.execution_contracts(path)["Probe#testRestore"]["*"])
+                    else:
+                        with self.assertRaises(ValueError): summarize.execution_contracts(path)
+
     def test_restore_only_proof_cannot_include_stock_input(self):
         result, _ = self.check("@restore:" + self.FAMILY, imported=self.FAMILY + "=3",
                                stock="StockSessionTableFunction=2")

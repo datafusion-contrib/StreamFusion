@@ -3,8 +3,10 @@ use crate::*;
 
 mod canonical;
 mod collection_agg;
+mod stock_merge;
 mod stock_typed;
 use collection_agg::{is_collection, CollectionState};
+use stock_merge::append_group_string_caches;
 mod decimal_map_order;
 mod distinct;
 mod distinct_retention;
@@ -485,6 +487,37 @@ impl GroupAggState {
         }
     }
 
+    fn accumulate_string(&mut self, candidate: &str, cache: Option<&[u16]>) {
+        let GroupAggState::Running {
+            agg:
+                RunningAgg::OverStringValue {
+                    value,
+                    java_utf16,
+                    kind,
+                },
+            non_null,
+        } = self
+        else {
+            unreachable!("running string extreme")
+        };
+        assert!(matches!(kind, 10 | 11), "append string extreme kind");
+        if value.as_deref().is_none_or(|current| {
+            let order = match (cache, java_utf16.as_deref()) {
+                (Some(candidate), Some(current)) => candidate.cmp(current),
+                _ => candidate.cmp(current),
+            };
+            if *kind == 10 {
+                order.is_lt()
+            } else {
+                order.is_gt()
+            }
+        }) {
+            *value = Some(Arc::from(candidate));
+            *java_utf16 = cache.map(Arc::from);
+        }
+        *non_null = non_null.wrapping_add(1);
+    }
+
     fn accumulate_typed_extreme(&mut self, column: &ArrayRef, row: usize, cache: Option<&[u16]>) {
         if matches!(
             column.data_type(),
@@ -492,34 +525,7 @@ impl GroupAggState {
         ) {
             let strings = StringColumn::new(column);
             let candidate = strings.at(row).expect("non-null running string");
-            let GroupAggState::Running {
-                agg:
-                    RunningAgg::OverStringValue {
-                        value,
-                        java_utf16,
-                        kind,
-                    },
-                non_null,
-            } = self
-            else {
-                unreachable!("running string extreme")
-            };
-            assert!(matches!(kind, 10 | 11), "append string extreme kind");
-            if value.as_deref().is_none_or(|current| {
-                let order = match (cache, java_utf16.as_deref()) {
-                    (Some(candidate), Some(current)) => candidate.cmp(current),
-                    _ => candidate.cmp(current),
-                };
-                if *kind == 10 {
-                    order.is_lt()
-                } else {
-                    order.is_gt()
-                }
-            }) {
-                *value = Some(Arc::from(candidate));
-                *java_utf16 = cache.map(Arc::from);
-            }
-            *non_null = non_null.wrapping_add(1);
+            self.accumulate_string(candidate, cache);
             return;
         }
         let value = match column.data_type() {
@@ -549,7 +555,8 @@ impl GroupAggState {
         if matches!(kind, 10 | 11)
             && !matches!(
                 value_type,
-                DataType::Int64
+                DataType::Utf8
+                    | DataType::Int64
                     | DataType::Int32
                     | DataType::Int16
                     | DataType::Int8
@@ -711,7 +718,7 @@ impl GroupAggState {
         match self {
             GroupAggState::Running { agg, non_null } => {
                 agg.fold(value);
-                *non_null += count;
+                *non_null = non_null.wrapping_add(count);
             }
             _ => unreachable!("merged accumulate on a non-running aggregate"),
         }
@@ -723,7 +730,7 @@ impl GroupAggState {
         match self {
             GroupAggState::Running { agg, non_null } => {
                 agg.retract(value);
-                *non_null -= count;
+                *non_null = non_null.wrapping_sub(count);
             }
             _ => unreachable!("merged retract on a non-running aggregate"),
         }
@@ -739,14 +746,22 @@ impl GroupAggState {
                 non_null,
             } => {
                 *overflow = true;
-                *non_null += if retract { -count } else { count };
+                *non_null = if retract {
+                    non_null.wrapping_sub(count)
+                } else {
+                    non_null.wrapping_add(count)
+                };
             }
             GroupAggState::Running {
                 agg: RunningAgg::SumDecimal { .. },
                 non_null,
             } => {
                 // SUM's merge ignores a NULL partial; its separate signed count still moves.
-                *non_null += if retract { -count } else { count };
+                *non_null = if retract {
+                    non_null.wrapping_sub(count)
+                } else {
+                    non_null.wrapping_add(count)
+                };
             }
             _ => unreachable!("a NULL sum partial is decimal-only"),
         }
@@ -932,7 +947,7 @@ impl GroupAggState {
             // its occurrences so the NULL-when-empty emit stays exact.
             GroupAggState::Running { agg, non_null } => {
                 agg.fold(distinct_num(&value));
-                *non_null += count;
+                *non_null = non_null.wrapping_add(count);
             }
         }
     }
@@ -1428,16 +1443,27 @@ impl GroupAggState {
 
 struct StagedGroupChange {
     old: Option<Vec<ScalarValue>>,
+    string_caches: Vec<Option<Arc<[u16]>>>,
     key_batch: usize,
     key_row: usize,
 }
 
-fn staged_group_change_bytes(key: &ByteKey, old: &Option<Vec<ScalarValue>>) -> usize {
+fn staged_group_change_bytes(
+    key: &ByteKey,
+    old: &Option<Vec<ScalarValue>>,
+    caches: &[Option<Arc<[u16]>>],
+) -> usize {
     byte_key_bytes(&key.0)
         + key.len()
         + std::mem::size_of::<ByteKey>()
         + std::mem::size_of::<StagedGroupChange>()
         + old.as_ref().map_or(0, |values| scalar_row_bytes(values))
+        + std::mem::size_of_val(caches)
+        + caches
+            .iter()
+            .flatten()
+            .map(|cache| cache.len() * 2 + 2 * std::mem::size_of::<usize>())
+            .sum::<usize>()
 }
 
 fn ordered_distinct_type(data_type: &DataType) -> bool {
@@ -1551,6 +1577,9 @@ pub(crate) struct GroupAggregator<S: KeyedStateStore<GroupKeyState> = MemoryGrou
     // the local's netted retractions — Flink's RecordCounter over indexOfCountStar.
     record_count_column: i64,
     stock_append_only: Option<bool>,
+    stock_global_merge: bool,
+    global_partials: HashMap<ByteKey, Vec<GroupAggState>>,
+    global_staging_bytes: usize,
     stock_extrema: bool,
     stock_distinct_counters: bool,
     key_columns: Vec<usize>,
@@ -1811,6 +1840,9 @@ impl GroupAggregator {
             distinct_view_columns,
             record_count_column: -1,
             stock_append_only: None,
+            stock_global_merge: false,
+            global_partials: HashMap::default(),
+            global_staging_bytes: 0,
             stock_extrema: false,
             stock_distinct_counters: false,
             memory: OperatorMemory::unaccounted(),
@@ -1851,6 +1883,9 @@ impl GroupAggregator {
             distinct_view_columns: self.distinct_view_columns,
             record_count_column: self.record_count_column,
             stock_append_only: self.stock_append_only,
+            stock_global_merge: self.stock_global_merge,
+            global_partials: self.global_partials,
+            global_staging_bytes: self.global_staging_bytes,
             stock_extrema: self.stock_extrema,
             stock_distinct_counters: self.stock_distinct_counters,
             key_columns: self.key_columns,
@@ -1918,7 +1953,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     }
 
     pub(crate) fn staging_bytes(&self) -> usize {
-        self.staged_bytes + self.deferred_bytes
+        self.staged_bytes + self.deferred_bytes + self.global_staging_bytes
     }
 
     pub(crate) fn with_key_timestamp_precisions(
@@ -2082,6 +2117,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         let stock_append_only = self.stock_append_only == Some(true);
+        let stock_global_merge = self.stock_global_merge;
         let stock_distinct_counters = self.stock_distinct_counters;
         let stock_extrema_inputs: Vec<_> = self
             .kinds
@@ -2582,13 +2618,17 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 self.memory.record(-expired_bytes);
             }
             let resident = self.store.contains(key);
+            let first_bundle_touch = self.mini_batch && !self.staged_changes.contains_key(key);
             let output_start = output.rows.len();
             let before = if track && resident {
                 group_key_state_bytes(self.store.get(key).expect("key present")) as isize
             } else {
                 0
             };
-            if self.store.serializes_values() && !string_slots.is_empty() {
+            if self.store.serializes_values()
+                && !string_slots.is_empty()
+                && (!self.mini_batch || first_bundle_touch)
+            {
                 if let Some(state) = self.store.get_mut(key) {
                     // Stock RocksDB deserializes accState for each record, including records
                     // within one Arrow batch. Its previous value has no Java string cache.
@@ -2604,7 +2644,6 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             // Immediate mode needs the preceding tuple for every input row. Mini-batch mode moves
             // it out only on the key's first touch and retains an Arrow row reference for the key;
             // intermediate rows then mutate state without materializing aggregate output.
-            let first_bundle_touch = self.mini_batch && !self.staged_changes.contains_key(key);
             if exists && ttl.enabled() {
                 let state = self.store.get_mut(key).expect("key present");
                 if first_bundle_touch {
@@ -2659,11 +2698,12 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 }
                 let owned = ByteKey::from(key);
                 self.staged_order.push(owned.clone());
-                staged_delta += staged_group_change_bytes(&owned, &prev);
+                staged_delta += staged_group_change_bytes(&owned, &prev, &previous_string_caches);
                 self.staged_changes.insert(
                     owned,
                     StagedGroupChange {
                         old: prev.take(),
+                        string_caches: previous_string_caches.clone(),
                         key_batch: staged_key_batch,
                         key_row: row,
                     },
@@ -2782,7 +2822,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     - before as isize;
             }
             for i in 0..num_agg {
-                if !sum_merges[i]
+                if self.stock_global_merge
+                    || !sum_merges[i]
                     || filter_cols[i]
                         .is_some_and(|filter| filter.is_null(row) || !filter.value(row))
                 {
@@ -2815,6 +2856,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 }
             }
             result_changed.fill(false);
+            if self.stock_global_merge {
+                self.stage_stock_partial(key, batch, row)?;
+            }
             let group_alive = {
                 let state = if resident {
                     self.store.get_mut(key).expect("key present")
@@ -2907,6 +2951,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     retained_touches.push((source, value, None));
                 }
                 for i in 0..num_agg {
+                    if stock_global_merge {
+                        continue;
+                    }
                     // FILTER: fold into this aggregate only where its filter is TRUE (NULL/FALSE skip).
                     if let Some(filter) = filter_cols[i] {
                         if filter.is_null(row) || !filter.value(row) {
@@ -3010,7 +3057,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                                 else {
                                     unreachable!("sum merge requires running state")
                                 };
-                                *non_null += count;
+                                *non_null = non_null.wrapping_add(count);
                                 continue;
                             }
                             match column.at(row) {
@@ -3416,9 +3463,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let mut out_results: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
         let mut out_kinds: Vec<i8> = Vec::new();
         let mut new_cache_bytes = 0usize;
+        let string_slots = self.string_slots();
+        let mut string_outputs: Vec<Vec<Option<Arc<[u16]>>>> =
+            string_slots.iter().map(|_| Vec::new()).collect();
 
-        let mut push = |kind: i8, staged: &StagedGroupChange, values: Vec<ScalarValue>| {
+        let mut push = |kind: i8,
+                        staged: &StagedGroupChange,
+                        values: Vec<ScalarValue>,
+                        caches: &[Option<Arc<[u16]>>]| {
             key_rows.push((staged.key_batch, staged.key_row));
+            for (column, cache) in string_outputs.iter_mut().zip(caches) {
+                column.push(cache.clone());
+            }
             for (i, value) in values.into_iter().enumerate() {
                 out_results[i].push(value);
             }
@@ -3435,6 +3491,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let mut sum_partials = std::mem::take(&mut self.sum_partials);
         let ttl = StateTtl::new(self.ttl_ms, self.last_input_ms);
         for key in order {
+            self.merge_stock_partial(&key)?;
             if let Some(buffers) = list_partials.remove(&key) {
                 let state = self.store.get_mut(&key.0).expect("staged LISTAGG key");
                 let before = if self.memory.tracking() {
@@ -3605,18 +3662,25 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 .get(&key.0)
                 .map(|state| output_of(state, &self.result_types))
                 .transpose()?;
+            let current_caches = group_string_caches(self.store.get(&key.0), &string_slots);
             match (&staged.old, &new) {
-                (None, Some(after)) => push(0, staged, after.clone()),
-                (Some(before), None) => push(3, staged, before.clone()),
+                (None, Some(after)) => push(0, staged, after.clone(), &current_caches),
+                (Some(before), None) => push(3, staged, before.clone(), &staged.string_caches),
                 // The same TTL rule as immediate mode: no-change transitions are suppressed only
                 // with retention off (Flink's MiniBatchGroupAggFunction gate).
                 (Some(before), Some(after))
-                    if !crate::flink_float::record_row_equal(before, after) || ttl_on =>
+                    if !group_row_equal(
+                        before,
+                        after,
+                        &string_slots,
+                        &staged.string_caches,
+                        &current_caches,
+                    ) || ttl_on =>
                 {
                     if self.generate_update_before {
-                        push(1, staged, before.clone());
+                        push(1, staged, before.clone(), &staged.string_caches);
                     }
-                    push(2, staged, after.clone());
+                    push(2, staged, after.clone(), &current_caches);
                 }
                 _ => {}
             }
@@ -3667,6 +3731,13 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 result_type,
             ));
         }
+        append_group_string_caches(
+            &mut fields,
+            &mut columns,
+            self.key_columns.len(),
+            &string_slots,
+            string_outputs,
+        );
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         columns.push(Arc::new(Int8Array::from(out_kinds)));
         self.memory.forget(self.staged_bytes);
@@ -4760,6 +4831,21 @@ impl LocalGroupAggregator {
         }
         let n = batch.num_rows();
         let num_agg = self.kinds.len();
+        let string_caches: Vec<_> = self
+            .value_columns
+            .iter()
+            .map(|&column| {
+                (column >= 0)
+                    .then(|| {
+                        streamfusion_bridge::string_cache::string_cache_column(
+                            batch,
+                            column as usize,
+                        )
+                    })
+                    .flatten()
+                    .map(streamfusion_bridge::string_cache::JavaStringCacheColumn::new)
+            })
+            .collect();
         let json_columns: Vec<_> = (0..num_agg)
             .map(|i| {
                 json_agg::is_object_merge(self.kinds[i]).then(|| {
@@ -5046,7 +5132,11 @@ impl LocalGroupAggregator {
                     if !column.is_null(row) {
                         if matches!(entry.states[i], GroupAggState::Running { .. }) {
                             assert!(!retract, "running local extrema require insert-only input");
-                            entry.states[i].accumulate_typed_extreme(column, row, None);
+                            entry.states[i].accumulate_typed_extreme(
+                                column,
+                                row,
+                                string_caches[i].as_ref().and_then(|cache| cache.value(row)),
+                            );
                             continue;
                         }
                         let scalar = ScalarValue::try_from_array(column, row)
@@ -5251,6 +5341,8 @@ impl LocalGroupAggregator {
             }
             columns
         };
+        let mut string_slots = Vec::new();
+        let mut string_outputs = Vec::new();
         for (i, rt) in self.result_types.iter().enumerate() {
             if list_agg::is_merge(self.kinds[i]) || self.kinds[i] == 33 {
                 let partials = list_agg::partials(order.iter().map(|key| {
@@ -5312,6 +5404,20 @@ impl LocalGroupAggregator {
                     true,
                 ));
                 columns.push(scalars_to_array(separators, &DataType::Utf8));
+            }
+            if matches!(self.kinds[i], 10 | 11) && *rt == DataType::Utf8 {
+                string_slots.push(columns.len() - self.key_types.len());
+                string_outputs.push(
+                    order
+                        .iter()
+                        .map(|key| match key {
+                            LocalGroupKey::Byte(key) => states[key].states[i].string_cache(),
+                            LocalGroupKey::Scalar(key) => {
+                                scalar_states[key].states[i].string_cache()
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                );
             }
             let scalars: Vec<ScalarValue> = order
                 .iter()
@@ -5464,6 +5570,13 @@ impl LocalGroupAggregator {
             );
             columns.push(Arc::new(list));
         }
+        append_group_string_caches(
+            &mut fields,
+            &mut columns,
+            self.key_columns.len(),
+            &string_slots,
+            string_outputs,
+        );
         // A keyless local aggregate may legitimately have no physical columns (for example a
         // count-only partial represented entirely by the downstream record-count contract). Arrow
         // cannot infer its row count from an empty column list, so preserve the number of groups

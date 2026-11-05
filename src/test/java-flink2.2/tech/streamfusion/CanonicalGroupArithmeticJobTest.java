@@ -49,7 +49,7 @@ class CanonicalGroupArithmeticJobTest {
     var switched = prepare("switched", mode, ordinary);
     configureBackend(baseline, backend);
     configureBackend(switched, backend);
-    runner.verifyJoinSwitch(baseline, switched, nativeFirst, backend, mode, "GroupAgg");
+    runner.verifyJoinSwitch(baseline, switched, nativeFirst, backend, mode, statefulFamily());
     var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
     var rows = CanonicalFixtureFactory.committedRows(switched.resolve("committed"), type);
     var materialized = new java.util.HashMap<String, String>();
@@ -67,7 +67,8 @@ class CanonicalGroupArithmeticJobTest {
       assertFalse(Files.exists(switched.resolve("plan.json")));
     } else {
       String portable = Files.readString(switched.resolve("plan.json"));
-      assertTrue(portable.contains("stream-exec-group-aggregate"));
+      assertTrue(
+          portable.contains(Files.readString(switched.resolve("required-plan-node")).trim()));
       assertFalse(portable.contains("tech.streamfusion"));
     }
   }
@@ -80,6 +81,10 @@ class CanonicalGroupArithmeticJobTest {
       return expected;
     }
     return java.util.Map.of("null", "null|null", "2", "11|11", "3", "11|5");
+  }
+
+  String statefulFamily() {
+    return "GroupAgg";
   }
 
   void configureBackend(Path root, String backend) throws Exception {}

@@ -2,6 +2,8 @@ use super::*;
 
 mod ffi;
 #[cfg(test)]
+mod merge_tests;
+#[cfg(test)]
 mod string_tests;
 #[cfg(test)]
 mod tests;
@@ -18,18 +20,19 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 .kinds
                 .iter()
                 .any(|kind| !matches!(kind, 0 | 3 | 4 | 7 | 10 | 11 | 22))
-            || self.mini_batch
             || self.record_count_column >= 0
             || self
                 .count_columns
                 .iter()
-                .chain(&self.distinct_view_columns)
-                .any(|&column| column >= 0)
+                .enumerate()
+                .any(|(i, &column)| column >= 0 && !(self.stock_global_merge && self.kinds[i] == 4))
+            || self.distinct_view_columns.iter().any(|&column| column >= 0)
+            || !self.global_partials.is_empty()
             || self.staged_keys() != 0
             || !self.deferred_batches.is_empty()
         {
             return Err(invalid(
-                "requires drained single-phase scalar or COUNT DISTINCT state",
+                "requires drained scalar or COUNT DISTINCT state with bound partial columns",
             ));
         }
         // Per-entry DISTINCT TTL requires its own retained view timestamps.
@@ -42,6 +45,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     fn configure_typed(&mut self, kinds: &[i64], append_only: bool) -> Result<(), DataFusionError> {
         self.typed_shape()?;
         if self.kinds != kinds
+            || self.stock_global_merge && !append_only
             || (!append_only && self.kinds.iter().any(|kind| matches!(kind, 10 | 11)))
             || self
                 .stock_append_only
