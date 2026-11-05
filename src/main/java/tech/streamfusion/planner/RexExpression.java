@@ -4601,7 +4601,8 @@ final class RexExpression {
         && java.time.ZoneId.of(sessionZoneId).normalized().equals(java.time.ZoneOffset.UTC)
         && (operand instanceof RexInputRef
             || operand instanceof RexLiteral
-            || !unnestOperand && nativeTotalEpochTimestamp(operand));
+            || !unnestOperand && (nativeTotalEpochTimestamp(operand)
+                || call.getKind() == SqlKind.FLOOR && nativeTotalDecimalEpochTimestamp(operand)));
   }
 
   private boolean nativeUtcDateFormat(RexCall call) {
@@ -4611,8 +4612,7 @@ final class RexExpression {
         && call.getOperands().size() == 2
         && (call.getOperands().get(0) instanceof RexInputRef
             || nativeTotalEpochTimestamp(call.getOperands().get(0))
-            || call.getOperands().get(0) instanceof RexCall
-                && nativeDecimalEpochTimestamp((RexCall) call.getOperands().get(0)) != 0)
+            || nativeTotalDecimalEpochTimestamp(call.getOperands().get(0)))
         && call.getOperands().get(0).getType().getSqlTypeName()
             == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
         && call.getOperands().get(1) instanceof RexLiteral
@@ -4629,6 +4629,10 @@ final class RexExpression {
         && (nativeEpochTimestamp(call) != 0
                 && nativeIntegralRoundingOperand(call.getOperands().get(0))
             || nativeRuntimeEpochTimestamp(call));
+  }
+
+  private static boolean nativeTotalDecimalEpochTimestamp(RexNode node) {
+    return node instanceof RexCall && nativeDecimalEpochTimestamp((RexCall) node) != 0;
   }
 
   private boolean isNativeUnnestTemporalCast(RexCall call) {

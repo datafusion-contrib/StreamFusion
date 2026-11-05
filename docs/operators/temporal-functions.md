@@ -18,7 +18,7 @@ unsupported `MATCH_RECOGNIZE` operator.
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
 | `TIMESTAMPADD`, `TIMESTAMPDIFF` | Planner rewrites can use native interval arithmetic and comparisons. Verified runtime MONTH/DAY addition, MONTH difference and LTZ SECOND difference have no generated children; other rewrites retain their existing expression admission. Month-end and precision rules follow Flink. |
-| `FLOOR(timepoint TO unit)`, `CEIL`, `CEILING` | DATE/plain-TIMESTAMP MONTH/YEAR and plain TIMESTAMP DAY/HOUR/MINUTE/SECOND/MILLISECOND use Rust kernels. Direct/literal LTZ FLOOR/CEIL to MONTH/YEAR also uses the existing kernel in fixed zero-offset zones. In the same zones, direct/literal LTZ FLOOR/CEIL uses Rust for DAY/HOUR on both releases and MINUTE/SECOND/MILLISECOND on 2.2; direct LTZ CEIL has its own remainder/overflow kernel. FLOOR/CEIL also accept the verified total integer epoch producers described below. Released 1.18 cannot compile those three sub-hour LTZ forms; its failure stays intact. Nonzero/regional zones, other computed inputs and other units retain their existing routes. Numeric FLOOR/CEIL admission is unchanged. |
+| `FLOOR(timepoint TO unit)`, `CEIL`, `CEILING` | DATE/plain-TIMESTAMP MONTH/YEAR and plain TIMESTAMP DAY/HOUR/MINUTE/SECOND/MILLISECOND use Rust kernels. Direct/literal LTZ FLOOR/CEIL to MONTH/YEAR also uses the existing kernel in fixed zero-offset zones. In the same zones, direct/literal LTZ FLOOR/CEIL uses Rust for DAY/HOUR on both releases and MINUTE/SECOND/MILLISECOND on 2.2; direct LTZ CEIL has its own remainder/overflow kernel. FLOOR/CEIL also accept the verified total integer epoch producers described below. FLOOR additionally accepts the verified total DECIMAL epoch subset below. Released 1.18 cannot compile those three sub-hour LTZ forms; its failure stays intact. Nonzero/regional zones, other computed inputs and other units retain their existing routes. Numeric FLOOR/CEIL admission is unchanged. |
 | Temporal `CAST`, date/time/timestamp/interval literals, interval arithmetic, temporal comparisons, `OVERLAPS` | Timestamp +/- day-time/year-month intervals, DATE +/- month intervals and verified day literals, and TIME +/- day-time intervals execute in Rust. Timestamp results preserve nanoseconds. Matching temporal GREATEST/LEAST operands use native null-propagating comparisons. OVERLAPS can rewrite to native comparisons, including the verified runtime plain-timestamp/day-time-interval form. Other casts, comparisons and interval computations retain their existing expression admission. |
 | `CURRENT_WATERMARK(time_attribute)` | Calc projections and predicates read the last watermark received by that operator; NULL before its first watermark. Join/UNNEST residuals without a Calc watermark context fall back. |
 | `SOURCE_WATERMARK()` | Source declaration, not a scalar calculation. Existing DataStream/source watermarks are forwarded into the native pipeline. Native connector scan admission is unchanged. |
@@ -221,7 +221,8 @@ does not qualify. Released Flink adds/subtracts no offset in these zones and use
 Julian-date arithmetic, including signed millisecond division, int overflow and the Gregorian
 cutover. Output fractions are zero and the declared SQL precision is retained.
 
-Computed inputs outside the verified integer epoch subsets below and nonzero/regional zones keep their existing paths; fixed-unit
+Computed inputs outside the verified integer FLOOR/CEIL and DECIMAL FLOOR epoch subsets below
+and nonzero/regional zones keep their existing paths; fixed-unit
 rounding has the separate verified subsets below.
 In particular, fixed-unit LTZ CEIL has different submillisecond/overflow behavior from plain
 TIMESTAMP CEIL, so the plain kernel is not a blanket replacement. Calendar admission adds
@@ -247,7 +248,7 @@ adds no new SQL kernel, JNI contract or transport. Fixed widths above one millis
 the internal millisecond buffer with Arrow unary and reuse the parent's sliced validity;
 result fractions are zero. Other fixed-width paths use capacity-sized timestamp component
 buffers instead of collecting and splitting a temporary vector. Arithmetic and validity
-semantics are unchanged. Computed operands outside the verified integer epoch subsets below and
+semantics are unchanged. Computed operands outside the verified integer/DECIMAL FLOOR epoch subsets below and
 nonzero/regional zones retain their preceding routes. LTZ CEIL ignores fractional nanos
 and uses different overflow arithmetic from plain TIMESTAMP CEIL; its separate kernel
 below preserves those rules.
@@ -258,7 +259,7 @@ retains bulk improvements, slower tiny controls and conversion-inclusive complet
 
 Direct/literal LTZ CEIL in a fixed-zero session zone uses a dedicated Rust kernel for
 DAY/HOUR on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The same source, zone
-and released-version safeguards as fixed-unit FLOOR apply. Computed operands outside the verified epoch subset below, nonzero/
+and released-version safeguards as fixed-unit FLOOR apply. Computed operands outside the verified integer CEIL epoch subset below, nonzero/
 regional zones and other units retain their existing evaluation routes.
 
 The kernel follows released `DateTimeUtils.timestampCeil`: take the original signed
@@ -304,6 +305,24 @@ division/remainder, unknown/stateful producers and other computed timestamp expr
 retain their preceding routes. Lazy failing branches and empty batches keep their
 existing semantics. The [qualification](../benchmarks/scalar-functions.md#utc-floor-over-integer-epochs)
 records stock/actual-previous/native results and conversion-inclusive complete jobs.
+
+## Native UTC FLOOR over DECIMAL epochs
+
+Ordinary Calc FLOOR composes the existing exact epoch and rounding kernels for genuine
+DECIMAL `TO_TIMESTAMP_LTZ` calls in session zones normalized to a fixed zero offset.
+Direct fields/literals, total ABS/negation chains and same-scale widening qualify at
+literal precision 0/3 or Flink 2.2's default precision. The decimal conversion retains
+truncation toward zero, low signed-long and seconds-multiplication wrapping, and the final
+millisecond bounds. YEAR/MONTH retain Flink's signed division and Julian/Gregorian calendar
+rules; DAY/HOUR and 2.2's MINUTE/SECOND/MILLISECOND retain exact fixed-unit rounding.
+NULLs, declared output precision, basic consumers and lazy/empty batches remain unchanged.
+
+Flink 1.18 retains its absent default-precision signature and sub-hour code-generation
+failures. Runtime DECIMAL precision, binary arithmetic, narrowing/rescaling, unknown or
+fallible producers, regional/nonzero zones, unsupported units and UNNEST retain their
+preceding routes. DECIMAL epoch CEIL/CEILING is separate and remains generated. The
+[independent qualification](../benchmarks/scalar-functions.md#utc-floor-over-verified-decimal-epochs-2026-11-05)
+records complete parity and the stock/previous/native release timings.
 
 ## Native UTC CEIL over integer epochs
 
