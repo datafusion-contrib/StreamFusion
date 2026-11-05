@@ -159,15 +159,15 @@ admitted query requires consumed NativeCalc work; safe mixed scalar/table chains
 operators. Flink 1.18 rejects untyped NULL in the verified nested CASE fixtures; explicit failure
 controls pin that validation, while typed NULLs verify successful short-circuiting on both lines.
 
-The consolidated local selection passes 2,101 checks on Flink 2.2.1 and 2,100 checks on
-1.18.1, with its one existing ARRAY_SORT capability skip. A further 176 mixed scalar/container
-cases pass on each line, exercising primitive/temporal arguments and scalar results alongside
-recursive arguments. The unchanged upstream Calc and table-function execution contracts remain
-part of the required full fork workflow.
+The consolidated local selection after integration with current production passes 2,277 checks
+on Flink 2.2.1 and 2,276 checks on 1.18.1, with its one existing ARRAY_SORT capability skip.
+This includes 176 mixed scalar/container cases per line, exercising primitive/temporal
+arguments and scalar results alongside recursive arguments. The unchanged upstream Calc and
+table-function execution contracts remain part of the required full fork workflow.
 
-The [complete-job record](../benchmarks/results/jvm-recursive-scalars-2026-11-04.json) retains
+The [complete-job record](../benchmarks/results/jvm-recursive-scalars-rebased-2026-11-04.json) retains
 all 168 trials, including warmups, and the separately paired stock controls for previous
-production `0f5fc167`. That checkout has unchanged production code and only the new fixture and
+production `624cbd7e`. That checkout has unchanged production code and only the new fixture and
 benchmark overlays. Both checkouts use the same release/mimalloc native library, Temurin 17,
 Apple M4, one task, 2 GiB heap, 1,024-row Arrow batches, Arrow IPC for local exchanges, JVM UTC
 and session America/New_York. Each case/revision/line runs in a separate serial JVM with two
@@ -180,18 +180,23 @@ Seconds are median (minimum–maximum):
 
 | Flink / boundary | Stock | Previous fallback | Candidate |
 | --- | ---: | ---: | ---: |
-| 1.18.1 / `list/row:default-STRING:both` | 0.826664 (0.753611–1.196849) | 0.715062 (0.457103–0.719493) | 1.527314 (1.159995–1.870238) |
-| 1.18.1 / `row/primitive:primitive-DOUBLE:both` | 0.902353 (0.862942–2.081795) | 0.570090 (0.516556–0.616783) | 1.172660 (1.079649–2.692082) |
-| 1.18.1 / `row/custom/map:default-DECIMAL(38,18):result` | 3.421496 (2.707775–3.602654) | 1.211093 (1.155310–1.233740) | 5.525051 (2.959729–5.667765) |
-| 2.2.1 / `list/row:default-STRING:both` | 0.466597 (0.465624–0.467678) | 0.564738 (0.525466–0.591056) | 0.678177 (0.671599–0.706590) |
-| 2.2.1 / `row/primitive:primitive-DOUBLE:both` | 0.486420 (0.477519–0.531254) | 0.583706 (0.568065–0.616323) | 0.613049 (0.611437–0.678321) |
-| 2.2.1 / `row/custom/map:default-DECIMAL(38,18):result` | 0.789192 (0.784858–0.802403) | 0.990376 (0.899710–1.069484) | 1.295298 (1.254490–1.305026) |
+| 1.18.1 / `list/row:default-STRING:both` | 0.461162 (0.455096–0.462044) | 0.453978 (0.447643–0.460726) | 0.684589 (0.680930–0.687352) |
+| 1.18.1 / `row/primitive:primitive-DOUBLE:both` | 0.478104 (0.476085–0.480573) | 0.479264 (0.469668–0.480655) | 0.613123 (0.610577–0.618799) |
+| 1.18.1 / `row/custom/map:default-DECIMAL(38,18):result` | 0.758683 (0.735057–0.799432) | 0.746120 (0.737385–0.766570) | 1.221537 (1.197329–1.521920) |
+| 2.2.1 / `list/row:default-STRING:both` | 0.469785 (0.463296–0.473863) | 0.450527 (0.444817–0.456875) | 0.705300 (0.697150–0.867304) |
+| 2.2.1 / `row/primitive:primitive-DOUBLE:both` | 0.486453 (0.476910–0.491680) | 0.486247 (0.481284–0.493673) | 0.634913 (0.633328–0.642800) |
+| 2.2.1 / `row/custom/map:default-DECIMAL(38,18):result` | 0.747586 (0.744495–0.754269) | 0.740942 (0.735807–0.749522) | 1.204868 (1.200834–1.207984) |
 
-All candidate medians are slower than stock and preceding fallback. Flink 1.18 also shows
-substantial within-run variability and drift between its candidate and previous paired stock
-controls; the raw revision ratio does not isolate the feature's cost. These short jobs retain
+All candidate medians are slower than stock and preceding fallback. These short jobs retain
 startup/JIT and all unfavorable samples. This is conversion coverage under the accepted UDF
-performance exception, with no standalone acceleration claim.
+performance exception, with no standalone acceleration claim. The record also retains total
+Maven invocation time separately from each complete-job interval; compilation, JVM launch and
+symmetric EXPLAIN/setup remain outside the trial timer.
+
+The [earlier record](../benchmarks/results/jvm-recursive-scalars-2026-11-04.json) retains all
+168 pre-integration trials against `0f5fc167`, including the substantial Flink 1.18 variability
+and drift between its paired stock controls. Those raw revision ratios do not isolate the
+feature's cost. Both records retain their original native-library and fixture hashes.
 
 Reproduce an individual candidate case after building the released native profile:
 
@@ -204,7 +209,7 @@ SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am \
 ```
 
 Use `-Pbench,flink-1.18` for the other released line. Overlay the same benchmark/fixtures onto
-`0f5fc167` and set `-Dboundary.expectNative=false` for the actual previous fallback control.
+`624cbd7e` and set `-Dboundary.expectNative=false` for the actual previous fallback control.
 Remaining JVM contracts stay in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
 
 A tagged nullable Int8 Arrow child carries each SQL ROW's `RowKind` outside its logical ordinals.
