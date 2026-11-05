@@ -10176,3 +10176,72 @@ full trials, independent controls, source/encoder/fixture/core bytecode and rele
 artifact hashes. The 800 pilot samples retain their pre-rebase provenance. Fifty
 unpaired ordinary-CAST probe samples are an already-native control, not a new-feature
 speedup. Hosted CI must qualify the exact final PR head separately.
+
+
+## Default numeric epoch precision
+
+Released Flink 2.2.1 single-argument `TO_TIMESTAMP_LTZ` over Number/DecimalData delegates
+to precision 3 in its unchanged bytecode. Ordinary Calc therefore reuses the existing
+integer and DECIMAL millisecond kernels for their separately verified total producers.
+The proof requires genuine built-in identity; omitted precision does not admit new
+producer families, floating/text overloads or UNNEST. Integer widths/NULLs/range and
+DECIMAL truncation/low-64-bit wrapping/final milliseconds retain their existing contracts.
+Flink 1.18.1 rejects this signature during SQL validation; both stock and native controls
+preserve that rejection, without skipped tests or a new SQL overload.
+
+All 192 fresh focused JVM invocations pass on released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java 11. The 2.2 matrix includes complete 5,003-row maps/schema,
+all signed integer widths, arithmetic/widening/rounding producers, seven DECIMAL
+precision/scale pairs, unary/widening producers, signed fractions/range/wrapping values,
+both NULL modes, New York/UTC sessions, lazy/empty consumers and UTC integer-epoch
+FLOOR/CEIL. Positive routes require consumed NativeCalc, no fallback and empty
+evaluators. Retained invalid/text/catalog/producer controls and existing double-argument,
+runtime-precision and UTC-rounding contracts pass separately.
+
+The actual preceding 2.2 encoder compares all eleven first-query maps/schema before its
+expected pure-route assertions fail; two retained controls pass per JDK. Later unreached
+queries are not preceding-parity evidence. Eight fresh unchanged released 2.2 temporal
+method oracles pass as stock-only evidence. A separate 1074-invocation
+parent-core matrix qualifies rebase onto main `9954a19c`, including incoming
+recursive UDF alias/validation and shared-state contracts. That frozen parent-core result
+is not relabeled as testing the later single-argument encoder. No runtime changes are
+made; its historical 925 Rust core tests retain their original hashes and are not rerun
+or relabeled as fresh tests. Candidate/previous encoders are freshly compiled and checked
+against their SQL/performance bytecode and complete parent-core compilation.
+
+Release prepared measurements use Flink 2.2.1/JDK 17, equivalent Generic/Binary RowData
+and Arrow, all four signed integer widths, integer multiplication, DECIMAL(18,3),
+(19,0), (38,0), (38,18), (38,38), ABS/negation, NULLs and epoch/wrap-boundary domains.
+Each trial processes 131,072 rows with 16 warmups and nine measurements. Native timing
+starts inside Rust after input setup/import and stops before export, retaining production
+Calc, allocation, intrinsic conversions and equivalent output consumption. Only this
+small-function gate excludes perimeter JNI/C Data and transposes. Previous behavior is
+its actual generated evaluator inside NativeCalc, not host fallback. Both processes retain
+independent stock controls.
+
+All 44 bulk cells beat stock **1.412-15.625x** and previous
+**11.349-21.918x**. 9/11 tiny cells
+lose to stock (stock/native 0.078-1.252x), and
+0/11 lose to previous. All small-batch losses and variability remain.
+
+Four complete million-row configurations retain startup/submission, JNI and both
+row/Arrow transposes, with two warmups and five alternating measurements per engine.
+Native/stock elapsed is 0.894-1.074;
+native/previous 0.612-0.866.
+2/4 medians lose to paired stock,
+2/4 to independent stock and
+0/4 to previous. A prepared gain is not a universal
+complete-job acceleration claim.
+
+| Input/producer | Stock seconds | Native seconds | Independent stock seconds | Previous seconds |
+|---|---:|---:|---:|---:|
+| int-square | 0.182350 | 0.181269 | 0.182687 | 0.219454 |
+| bigint-direct | 0.186902 | 0.192911 | 0.182297 | 0.222803 |
+| decimal-p18s3 | 0.187237 | 0.201149 | 0.191009 | 0.243453 |
+| decimal-abs-p38s18 | 0.249972 | 0.223394 | 0.250466 | 0.365267 |
+
+The [machine-readable qualification](results/default-precision-epoch-2026-11-05.json)
+and [5,500 raw prepared samples](results/default-precision-epoch-2026-11-05.csv.gz)
+retain all measurements, independent controls, exact source/encoder/fixture/runtime
+provenance and the separate parent rebase qualification. Historical results keep their
+original revisions. Hosted CI must qualify the exact final PR head separately.

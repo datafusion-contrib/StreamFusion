@@ -2276,6 +2276,7 @@ final class RexExpression {
     }
     int epochTimestamp = nativeEpochTimestamp(call);
     if (epochTimestamp != 0
+        && (!unnestOperand || call.getOperands().size() == 2)
         && (epochTimestamp == 173 && unnestOperand
                 && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.BIGINT
             || call.getOperands().get(0) instanceof RexInputRef
@@ -4540,28 +4541,33 @@ final class RexExpression {
 
   private static int nativeDecimalEpochTimestamp(RexCall call) {
     if (!tech.streamfusion.compat.FlinkCompat.isBuiltinEpochTimestamp(call.getOperator())
-        || call.getOperands().size() != 2
+        || call.getOperands().isEmpty()
         || call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.DECIMAL
         || !(nativeDecimalUnaryOperand(call.getOperands().get(0),
                 org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS)
             || nativeDecimalUnaryOperand(call.getOperands().get(0),
-                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS))
-        || !(call.getOperands().get(1) instanceof RexLiteral)) return 0;
-    BigDecimal precision = ((RexLiteral) call.getOperands().get(1)).getValueAs(BigDecimal.class);
+                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS)))
+        return 0;
+    BigDecimal precision = nativeEpochPrecision(call);
     if (precision == null) return 0;
     if (precision.compareTo(BigDecimal.valueOf(3)) == 0) return 251;
     return precision.signum() == 0 ? 252 : 0;
   }
 
   private static int nativeEpochTimestamp(RexCall call) {
-    if (!"TO_TIMESTAMP_LTZ".equals(call.getOperator().getName())
-        || call.getOperands().size() != 2
-        || !SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
-        || !(call.getOperands().get(1) instanceof RexLiteral)) return 0;
-    BigDecimal precision = ((RexLiteral) call.getOperands().get(1)).getValueAs(BigDecimal.class);
+    if (!tech.streamfusion.compat.FlinkCompat.isBuiltinEpochTimestamp(call.getOperator())
+        || call.getOperands().isEmpty()
+        || !SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())) return 0;
+    BigDecimal precision = nativeEpochPrecision(call);
     if (precision == null) return 0;
     if (precision.compareTo(BigDecimal.valueOf(3)) == 0) return 173;
     return precision.signum() == 0 ? 245 : 0;
+  }
+
+  private static BigDecimal nativeEpochPrecision(RexCall call) {
+    if (call.getOperands().size() == 1) return BigDecimal.valueOf(3);
+    return call.getOperands().size() == 2 && call.getOperands().get(1) instanceof RexLiteral
+        ? ((RexLiteral) call.getOperands().get(1)).getValueAs(BigDecimal.class) : null;
   }
 
   private static boolean nativeRuntimeEpochTimestamp(RexCall call) {

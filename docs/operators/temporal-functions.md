@@ -13,7 +13,7 @@ unsupported `MATCH_RECOGNIZE` operator.
 | `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. DATE/plain-TIMESTAMP calendar fields and HOUR/MINUTE/SECOND over DATE, plain TIMESTAMP and TIME execute in Rust, preserving Java signed arithmetic. Direct LTZ extraction uses the planning JDK's serialized fixed/finite offset history; recurring-DST zones retain Flink. Interval fields and unverified wrappers remain generated. |
 | `TO_DATE(text)`, `TO_DATE(text, format)` | The one-argument parser stays in Rust; formatted parsing uses Flink. Dynamic formats, NULL behavior and invalid-input failures follow Flink. |
 | `TO_TIMESTAMP(text[, format])` | Flink parsing, including dynamic formats and full-range timestamp results. |
-| `TO_TIMESTAMP_LTZ` | Direct/literal integer epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. Ordinary Calc also admits verified CASE precision trees whose results are 0, 3 or NULL. TINYINT/SMALLINT/INT widen losslessly to BIGINT first. Verified integer arithmetic, widening and rounding trees also execute in Rust; widening happens after the computed integer result. Direct/literal DECIMAL epochs and proven same-operator ABS/negation/same-scale-widening producers with literal precision 0/3 also execute in Rust in ordinary Calc, with the distinct released DECIMAL truncation/wrap contract below. Unverified precision/epoch producers, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. Existing UNNEST coverage is unchanged. Released Flink validates numeric precision (0 or 3). |
+| `TO_TIMESTAMP_LTZ` | Direct/literal integer epoch seconds or milliseconds with literal precision 0 or 3 execute in Rust. Ordinary Calc also admits verified CASE precision trees whose results are 0, 3 or NULL. TINYINT/SMALLINT/INT widen losslessly to BIGINT first. Verified integer arithmetic, widening and rounding trees also execute in Rust; widening happens after the computed integer result. Direct/literal DECIMAL epochs and proven same-operator ABS/negation/same-scale-widening producers with literal precision 0/3 also execute in Rust in ordinary Calc, with the distinct released DECIMAL truncation/wrap contract below. Unverified precision/epoch producers, other numeric signatures and string/format/explicit-zone overloads retain Flink evaluation. On Flink 2.2, omitted numeric precision uses the same verified integer/DECIMAL producer proofs with default precision 3. Flink 1.18 rejects this single-argument signature. Existing UNNEST coverage is unchanged. Released Flink validates explicit numeric precision (0 or 3). |
 | `DATE_FORMAT`, `UNIX_TIMESTAMP(text[, format])`, `CONVERT_TZ` | Flink evaluation supports dynamic patterns and zones. The existing literal numeric-pattern DATE_FORMAT fast path for plain timestamps remains in Rust. |
 | `FROM_UNIXTIME` | Constant numeric formats in fixed-offset zones execute in Rust; other forms retain Flink's evaluator. See the exact subset below. |
 | `UNIX_TIMESTAMP()` | Rust current Unix-seconds clock. |
@@ -117,6 +117,25 @@ The [independent release qualification](../benchmarks/scalar-functions.md#decima
 retains actual preceding controls, tiny/full-job losses and exact artifacts.
 The separate [unary producer qualification](../benchmarks/scalar-functions.md#decimal-unary-epoch-producers)
 records the bounded admission extension and its exact preceding encoder.
+
+## Default numeric epoch precision on Flink 2.2
+
+Released Flink 2.2 also accepts `TO_TIMESTAMP_LTZ(n)` and `TO_TIMESTAMP_LTZ(d)`.
+These genuine built-in overloads delegate to precision 3, so ordinary Calc uses
+the same integer/DECIMAL millisecond kernels and producer proofs described above.
+The result is TIMESTAMP_LTZ(3). Integer inputs retain their resolved width and
+millisecond range check; DECIMAL inputs retain truncation toward zero, low-signed-
+64-bit wrapping and the final millisecond range check. NULLs, regional display,
+lazy consumers and empty batches retain the same contracts. Verified integer
+epochs can also feed the existing UTC FLOOR/CEIL proof.
+
+Unverified numeric producers, floating inputs, text overloads and UNNEST keep
+their previous routes. A same-named catalog function cannot acquire this built-in
+proof. Flink 1.18 rejects the single-argument signature during SQL validation;
+StreamFusion preserves that rejection rather than adding a new SQL overload.
+The [separate release qualification](../benchmarks/scalar-functions.md#default-numeric-epoch-precision)
+retains current native SQL evidence, the actual preceding evaluator, complete-job/tiny
+losses and exact source/runtime provenance.
 
 ## Native computed integer epochs
 

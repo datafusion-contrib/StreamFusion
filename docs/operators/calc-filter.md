@@ -3561,6 +3561,9 @@ Same-operator DECIMAL ABS/negation chains and same-scale widening also execute n
 Mixed unary trees, arithmetic, narrowing/scale changes and runtime DECIMAL precision
 retain generated evaluation. The integer
 original-unit range check must not be applied to this distinct released DECIMAL overload.
+Flink 2.2 single-argument numeric `TO_TIMESTAMP_LTZ` uses the same verified integer/DECIMAL
+producer proofs at its released default precision 3. Flink 1.18's validation rejection,
+unverified producers and existing UNNEST routes remain intact.
 See the complete [temporal function inventory](temporal-functions.md).
 Direct/literal LTZ FLOOR/CEIL in fixed-zero session zones also runs in Rust for DAY/HOUR
 on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The latter three forms retain
