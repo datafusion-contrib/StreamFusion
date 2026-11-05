@@ -1,5 +1,7 @@
 use super::*;
 
+#[cfg(test)]
+mod distinct_sum_tests;
 mod ffi;
 #[cfg(test)]
 mod merge_tests;
@@ -19,7 +21,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             || self
                 .kinds
                 .iter()
-                .any(|kind| !matches!(kind, 0 | 3 | 4 | 7 | 10 | 11 | 22))
+                .any(|kind| !matches!(kind, 0 | 3 | 4 | 7 | 9 | 10 | 11 | 22))
             || self.record_count_column >= 0
             || self
                 .count_columns
@@ -32,11 +34,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             || !self.deferred_batches.is_empty()
         {
             return Err(invalid(
-                "requires drained scalar or COUNT DISTINCT state with bound partial columns",
+                "requires drained scalar or COUNT/SUM DISTINCT state with bound partial columns",
             ));
         }
         // Per-entry DISTINCT TTL requires its own retained view timestamps.
-        if self.ttl_ms > 0 && self.kinds.contains(&7) {
+        if self.ttl_ms > 0 && self.kinds.iter().any(|kind| matches!(kind, 7 | 9)) {
             return Err(invalid("DISTINCT entry TTL is not bound"));
         }
         Ok(())
@@ -46,7 +48,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         self.typed_shape()?;
         if self.kinds != kinds
             || self.stock_global_merge && !append_only
-            || (!append_only && self.kinds.iter().any(|kind| matches!(kind, 10 | 11)))
+            || (!append_only && self.kinds.iter().any(|kind| matches!(kind, 9 | 10 | 11)))
             || self
                 .stock_append_only
                 .is_some_and(|mode| mode != append_only)
@@ -56,7 +58,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         self.stock_append_only = Some(append_only);
         self.stock_distinct_counters = true;
         for (index, &kind) in self.kinds.iter().enumerate() {
-            if kind == 7 {
+            if matches!(kind, 7 | 9) {
                 self.preserve_distinct_state[index] = true;
             }
         }
@@ -104,7 +106,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     return Err(invalid("DISTINCT has no separate scalar count"));
                 }
                 if self.stock_append_only == Some(true)
-                    && matches!(kind, 0 | 10 | 11)
+                    && matches!(kind, 0 | 9 | 10 | 11)
                     && count.value(row) != i64::from(!scalar.is_null(row))
                 {
                     return Err(invalid("append scalar initialization presence differs"));
@@ -141,6 +143,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         GroupAggState::Running { agg, non_null } => {
                             agg.restore_value(&scalar);
                             *non_null = values[i].1.value(row);
+                        }
+                        GroupAggState::DistinctRunning { agg, live, .. } => {
+                            agg.restore_value(&scalar);
+                            *live = values[i].1.value(row);
                         }
                         GroupAggState::Distinct { live, .. } => {
                             let ScalarValue::Int64(Some(value)) = scalar else {
@@ -182,7 +188,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         batch: &'a RecordBatch,
     ) -> Result<(&'a BinaryArray, &'a ArrayRef, &'a Int64Array), DataFusionError> {
         self.typed_contract()?;
-        if self.kinds.get(slot) != Some(&7)
+        if !matches!(self.kinds.get(slot), Some(&7) | Some(&9))
             || batch.num_columns() != 3
             || batch.num_rows() > CHUNK_ROWS
         {
@@ -206,6 +212,22 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             }
         }
         Ok((keys, value, counts))
+    }
+}
+
+fn membership(state: &GroupAggState) -> Result<&DistinctSet, DataFusionError> {
+    match state {
+        GroupAggState::Distinct { set, .. }
+        | GroupAggState::DistinctRunning { counts: set, .. } => Ok(set),
+        _ => Err(invalid("invalid DISTINCT state")),
+    }
+}
+
+fn membership_mut(state: &mut GroupAggState) -> Result<&mut DistinctSet, DataFusionError> {
+    match state {
+        GroupAggState::Distinct { set, .. }
+        | GroupAggState::DistinctRunning { counts: set, .. } => Ok(set),
+        _ => Err(invalid("invalid DISTINCT state")),
     }
 }
 
@@ -277,10 +299,11 @@ fn headers(
         for (_, state) in groups {
             let (scalar, count) = match &state.aggs[i] {
                 GroupAggState::Running { agg, non_null } => (agg.emit(), *non_null),
+                GroupAggState::DistinctRunning { agg, live, .. } => (agg.emit(), *live),
                 GroupAggState::Distinct { live, .. } => (ScalarValue::Int64(Some(*live)), 0),
                 _ => return Err(invalid("unsupported retained accumulator")),
             };
-            counts.push(if append_only && matches!(kind, 0 | 10 | 11) {
+            counts.push(if append_only && matches!(kind, 0 | 9 | 10 | 11) {
                 i64::from(!scalar.is_null())
             } else {
                 count
@@ -328,14 +351,12 @@ impl GroupAggregator {
     ) -> Result<(), DataFusionError> {
         self.typed_contract()?;
         if let Some(slot) = slot {
-            if self.kinds.get(slot) != Some(&7) {
+            if !matches!(self.kinds.get(slot), Some(&7) | Some(&9)) {
                 return Err(invalid("invalid view slot"));
             }
             let mut rows = Vec::with_capacity(CHUNK_ROWS);
             for (key, state) in self.store.iter() {
-                let GroupAggState::Distinct { set, .. } = &state.aggs[slot] else {
-                    return Err(invalid("invalid DISTINCT state"));
-                };
+                let set = membership(&state.aggs[slot])?;
                 set.for_each_scalar(|scalar, count| {
                     rows.push((key.clone(), scalar, count));
                     if rows.len() == CHUNK_ROWS {
@@ -392,9 +413,7 @@ impl GroupAggregator {
                 .store
                 .get(keys.value(row))
                 .ok_or_else(|| invalid("orphan membership group"))?;
-            let GroupAggState::Distinct { set, .. } = &group.aggs[slot] else {
-                return Err(invalid("invalid target view"));
-            };
+            let set = membership(&group.aggs[slot])?;
             if set.scalar_entry(&scalar).is_some() {
                 return Err(invalid("duplicate retained membership"));
             }
@@ -402,9 +421,7 @@ impl GroupAggregator {
         self.snapshot_cache = None;
         for row in 0..batch.num_rows() {
             let group = self.store.get_mut(keys.value(row)).unwrap();
-            let GroupAggState::Distinct { set, .. } = &mut group.aggs[slot] else {
-                unreachable!()
-            };
+            let set = membership_mut(&mut group.aggs[slot])?;
             let old = set.capacity_bytes();
             set.insert_imported(ScalarValue::try_from_array(values, row)?, counts.value(row));
             self.memory
@@ -423,7 +440,7 @@ impl GroupAggregator<RocksGroupStore> {
     ) -> Result<(), DataFusionError> {
         self.typed_contract()?;
         if let Some(slot) = slot {
-            if self.kinds.get(slot) != Some(&7) {
+            if !matches!(self.kinds.get(slot), Some(&7) | Some(&9)) {
                 return Err(invalid("invalid view slot"));
             }
             let position = self

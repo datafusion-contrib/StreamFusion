@@ -209,6 +209,7 @@ public final class StockGroupDistinctView implements Serializable {
       RowType keyType,
       StockValueState<RowData> accumulators,
       int[] scalarFields,
+      int[] kinds,
       long handle,
       boolean persistent,
       boolean validating,
@@ -270,7 +271,7 @@ public final class StockGroupDistinctView implements Serializable {
           }
         }
       }
-      if (!counted) {
+      if (!counted && kinds[aggregates[slot]] == 7) {
         try (var stream = backend.getKeys("accState", VoidNamespace.INSTANCE)) {
           var iterator = stream.iterator();
           while (iterator.hasNext()) {

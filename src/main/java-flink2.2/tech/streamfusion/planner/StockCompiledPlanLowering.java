@@ -1919,10 +1919,14 @@ final class StockCompiledPlanLowering {
                       .LongSum0AggFunction.class;
       int kind, expected;
       if (call.isDistinct()) {
-        if (!count
-            || call.getAggregation().getKind() != SqlKind.COUNT
-            || info.argIndexes().length != 1) return stock;
-        kind = 7;
+        if (info.argIndexes().length != 1) return stock;
+        if (count && call.getAggregation().getKind() == SqlKind.COUNT) kind = 7;
+        else if (!retract
+            && call.getAggregation().getKind() == SqlKind.SUM
+            && type.getEnclosingClass()
+                == org.apache.flink.table.planner.functions.aggfunctions.SumAggFunction.class)
+          kind = 9;
+        else return stock;
         expected = 1;
       } else if (count) {
         kind =
@@ -2002,7 +2006,7 @@ final class StockCompiledPlanLowering {
       int[] slots = new int[distinct.aggIndexes().size()];
       for (int i = 0; i < slots.length; i++) {
         Integer index = nativeIndices.get((Integer) distinct.aggIndexes().apply(i));
-        if (index == null || kinds[index] != 7) return stock;
+        if (index == null || kinds[index] != 7 && kinds[index] != 9) return stock;
         slots[i] = index;
       }
       views.add(

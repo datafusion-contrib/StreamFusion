@@ -1737,3 +1737,12 @@ with six native DISTINCT/UDF failures retained. The whole selection remains red.
 witness selection passes 152 Java cases, and the Python report/parser controls pass 51 cases.
 Neither these protocol controls nor native Calc input qualify another state family. All broader
 #569 operator/connector/version requirements remain open; benchmarking remains deferred.
+
+
+The append SUM DISTINCT extension strengthens `group-aggregate-distinct` to require an actual
+canonical import and new input in `NativeColumnarGroupAggregateOperator`. Its unchanged released
+fixture passes with three applied stock groups and seven new native rows. The canonical agent
+selection passes 153 controls. All nine stock GROUP BY programs pass; four native programs pass
+and the five remaining local/global DISTINCT/UDF programs still fail their native gates. The
+whole native selection remains red. Original queries, fixtures and sink assertions remain
+unchanged, and unrelated native Calc work receives no aggregate-state credit.

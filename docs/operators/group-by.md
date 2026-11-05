@@ -3476,3 +3476,62 @@ part of the evidence; smoke cases overlap and are not added. These jobs use the 
 ASCII lexical-extrema oracle, not a complete-job Unicode/TTL/schema matrix. Wider retractions,
 views, keys, TTL, connector/failure and version matrices remain open under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+## Canonical shared SUM DISTINCT (partial)
+
+Append-only SUM DISTINCT over TINYINT, SMALLINT, INT, BIGINT, FLOAT and DOUBLE binds the
+released nullable raw sum and shared DISTINCT views during ordinary SQL and stock compiled-plan
+submission. Immediate and one-phase mini-batch owners are covered. Local/global DISTINCT,
+retracting SUM DISTINCT, decimal sums and independently expiring DISTINCT entries remain
+unqualified; their state cannot be inferred from this scalar contract.
+
+Each aggregate retains its own membership/filter bit even when COUNT and SUM share one stock
+MapView. Canonical export combines those native memberships into the released Long/long-array
+layout, retaining NULL markers separately without adding NULL to a scalar. The original key,
+accumulator and view serializers remain authoritative. Raw SUM state transfers independently
+from view contents; it is never recomputed from memberships or emitted result rows. COUNT's
+append cardinality consistency check remains active for COUNT slots, while SUM uses its own
+nullable scalar contract.
+
+Native memory and RocksDB visitors transfer the raw sum and initialization presence directly.
+Ordinary native checkpoints preserve those values and membership policy in the existing native
+format. Stock canonical capture visits live drained state without an intermediate native
+snapshot. Canonical import validates the complete source before mutation and keeps the actual
+stock operator identity and maximum parallelism.
+
+The focused qualification passes 124 cases: 96 repeated canonical switches, 24 ordinary native
+checkpoint returns and four controlled released-stock probes whose raw sums intentionally differ
+from membership totals. The latter preserve raw sums 999/777 through handoff and continue against
+the actual stock operator. Cases cover both stores/orders, heap/RocksDB changes, NULLs, filters,
+seven-row physical batches crossing five-row bundles, integer overflow, NaN payloads, signed
+zero and infinities. Per-key changelog order and every serialized stock state entry remain
+checked; only cross-key bundle output order is ignored. Another 52 planner/admission cases pass
+SQL/compiled submission, both UID policies, maximum parallelism 257 and rejection of unqualified
+contracts. All 34 existing COUNT corruption controls still pass.
+
+Six native tests cover both stores' direct transfers, independent scalars/NULL membership,
+wrapping arithmetic, bit-preserving floating values, ordinary recovery and invalid-state
+rejection. The full native suite passes 1,338 tests with two existing ignores. The unchanged
+released DISTINCT fixture now also passes: three stock accumulator groups are applied to the
+opened native owner, which consumes seven new native rows. The full released GROUP BY selection
+passes all nine stock programs and four native programs; local/global DISTINCT and four UDF
+programs still fail their strict native checks. Canonical witness controls pass 153 cases.
+
+All 56 immediate and one-phase mini-batch complete-job scenarios pass: sixteen continued-input
+cases, sixteen no-input returns, eight ordinary native-checkpoint recoveries and sixteen
+rescalings across SQL/compiled submission, both stores and initial engine orders. They retain
+custom sources/committing sinks, both transposes, clean stock workers and an independent
+set-based SUM/COUNT oracle. Rescaling redistributes 64 keys through 1 → 3 → 2 tasks at maximum
+parallelism 128. Mini-batch changelogs use a stock reference stopped at identical cuts. The two
+initial smoke cases overlap this matrix and are not additional coverage. These complete jobs
+use BIGINT values; floating-point edges and shared filtered views are covered by operator tests,
+not by this complete-job matrix.
+
+All 1,990 distinct prior aggregate regression scenarios are qualified across 1,983 positive
+results from the original run and a corrected 44-case run, with 37 overlapping scenarios. The
+original run had seven test-fixture reflection errors after an existing private helper overload
+was removed; restoring that delegating overload makes all 44 affected-class controls pass.
+The original failed run remains recorded rather than being called successful. Shared Flink 1.18
+processing/accounting checks pass 34 cases on the new library; this does not qualify canonical
+restore on that release. All broader #569 requirements remain open and benchmarking is deferred.

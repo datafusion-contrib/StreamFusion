@@ -196,8 +196,10 @@ impl<'a> DistinctColumn<'a> {
         retract: bool,
         append: bool,
     ) -> bool {
-        let GroupAggState::Distinct { set, live } = state else {
-            unreachable!("stock COUNT DISTINCT scalar")
+        let (set, live, aggregate) = match state {
+            GroupAggState::Distinct { set, live } => (set, live, None),
+            GroupAggState::DistinctRunning { counts, agg, live } => (counts, live, Some(agg)),
+            _ => unreachable!("stock COUNT/SUM DISTINCT scalar"),
         };
         let is_null = match self {
             Self::I64(a) => a.is_null(row),
@@ -238,7 +240,20 @@ impl<'a> DistinctColumn<'a> {
         }
         let changed = self.change(set, row, Change::Stock { retract, append });
         if changed {
-            *live = live.wrapping_add(if retract { -1 } else { 1 });
+            if let Some(aggregate) = aggregate {
+                if retract {
+                    aggregate.retract(self.num(row));
+                } else {
+                    aggregate.fold(self.num(row));
+                }
+                *live = if append {
+                    1
+                } else {
+                    live.wrapping_add(if retract { -1 } else { 1 })
+                };
+            } else {
+                *live = live.wrapping_add(if retract { -1 } else { 1 });
+            }
         }
         changed
     }

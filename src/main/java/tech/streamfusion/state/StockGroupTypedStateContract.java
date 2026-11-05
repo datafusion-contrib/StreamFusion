@@ -28,7 +28,7 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
-/** Projects released typed scalar accumulators and shared COUNT DISTINCT views. */
+/** Projects released typed scalar accumulators and shared DISTINCT views. */
 public final class StockGroupTypedStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
   private static final int CHUNK_ROWS = 1024;
@@ -112,7 +112,10 @@ public final class StockGroupTypedStateContract implements StockStateContract {
           && kinds[i] != 10
           && kinds[i] != 11
           && kinds[i] != 22
-          && kinds[i] != 7) throw new IllegalArgumentException("Unsupported scalar aggregate kind");
+          && kinds[i] != 7
+          && kinds[i] != 9) throw new IllegalArgumentException("Unsupported scalar aggregate kind");
+      if (kinds[i] == 9 && recordCountField >= 0)
+        throw new IllegalArgumentException("SUM DISTINCT requires append-only stock scalar state");
       if ((kinds[i] == 10 || kinds[i] == 11) && recordCountField >= 0)
         throw new IllegalArgumentException("Scalar MIN/MAX requires append-only input");
       cover(covered, scalarFields[i]);
@@ -164,7 +167,7 @@ public final class StockGroupTypedStateContract implements StockStateContract {
   }
 
   private static boolean nullableScalar(int kind) {
-    return kind == 0 || kind == 10 || kind == 11;
+    return kind == 0 || kind == 9 || kind == 10 || kind == 11;
   }
 
   private static void cover(boolean[] fields, int index) {
@@ -325,6 +328,7 @@ public final class StockGroupTypedStateContract implements StockStateContract {
           keyType,
           state(backend),
           scalarFields,
+          kinds,
           handle,
           persistent,
           true,
@@ -336,6 +340,7 @@ public final class StockGroupTypedStateContract implements StockStateContract {
           keyType,
           state(backend),
           scalarFields,
+          kinds,
           handle,
           persistent,
           false,

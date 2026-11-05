@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, and append scalar one/local-global mini-batches | Wider types/keys, retracting mini-batches, other views/phases and failures |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, and append scalar one/local-global mini-batches | Wider types/keys, retracting mini-batches, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -1540,3 +1540,13 @@ scenarios and exact released restore witnesses. Selected 64-key rescalings retai
 key-group space and preserve custom connector state. Wider phase/type/view/TTL/failure matrices
 remain under qualification in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.
+
+
+Shared append COUNT/SUM DISTINCT views retain each call's membership bit and NULL marker while
+exporting the independently stored raw sum. A SUM is not a membership cardinality; the COUNT
+consistency guard applies only to COUNT slots. Direct memory/RocksDB transfer and ordinary
+native recovery reuse the existing state format and stock serializers. The
+[SUM DISTINCT scope](../operators/group-by.md#canonical-shared-sum-distinct-partial) records the
+124 state/recovery controls, 52 planner/admission controls and remaining local/global, retraction,
+TTL, schema and full-job matrices. Released 2.2.1 qualification remains separate from shared
+1.18 processing checks. Benchmarking remains deferred.

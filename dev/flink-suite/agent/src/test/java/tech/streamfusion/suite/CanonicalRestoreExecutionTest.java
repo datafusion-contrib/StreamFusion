@@ -931,7 +931,7 @@ class CanonicalRestoreExecutionTest {
 
   @org.junit.jupiter.params.ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(
-      strings = {"group-aggregate-simple", "agg-with-state-ttl-hint"})
+      strings = {"group-aggregate-simple", "agg-with-state-ttl-hint", "group-aggregate-distinct"})
   void inheritedRestoreMethodUsesItsConcreteStateFamily(String program) {
     var scope = NativeExecution.beginRestore(GROUP, new Object(), program);
     assertNotNull(scope);

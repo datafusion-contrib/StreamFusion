@@ -67,3 +67,13 @@ snapshot. Buffers drain before barriers; direct stock export visits live durable
 existing moved C Data ownership applies to partials and their optional string companions.
 An empty local barrier before any key schema has been observed exports no rows. Ordinary
 native checkpoints retain their existing format and rebind the stock merge mode on restore.
+
+
+Shared append SUM DISTINCT extends the same raw-accumulator/membership separation. The sum is
+restored as a nullable scalar; membership import never refolds values into it. Stock COUNT
+cardinality validation is retained for COUNT calls, while SUM keeps an independent scalar. Each
+aggregate's filter bit and the shared NULL marker remain part of the released view contract.
+This follows Arroyo's accumulator/membership separation and Comet's existing moved Arrow C Data
+ownership without adding a wire format or an intermediate native snapshot. The bound mode
+preserves raw sums and presence through ordinary native checkpoints. Local/global DISTINCT
+merge, retractions and independently aged views still require their own qualified projections.
