@@ -10268,3 +10268,35 @@ Native/stock median elapsed is 0.744-0.960; native/previous is 0.926-1.001.
 The full timestamp pattern on Flink 2.2 is 0.07% slower than the preceding runtime;
 the trials are retained rather than presented as a universal speedup. These complete-job
 diagnostics do not qualify any additional pattern or timezone admission.
+
+## Java DATE_FORMAT literal syntax (2026-11-05)
+
+Numeric plain-TIMESTAMP patterns honor quoted literals and doubled quotes without
+copying Java syntax into the output. Optional sections and unsupported/invalid patterns
+keep Flink's generated evaluator. All 56 fresh JVM invocations pass on released
+Flink 1.18.1/2.2.1 and JDK 11/17, targeting Java 11. Runtime-source tests compare complete
+maps/schema, NULLs, native consumption, absent fallback and exact evaluator routes;
+reserved/malformed patterns preserve released failures and all-filtered laziness.
+The preceding encoder fails seven new tests and passes seven retained tests per
+released-line JDK 17 control. Later unreached queries are not preceding-parity evidence.
+
+Release prepared measurements cover TIMESTAMP(3/9), full signed-millisecond endpoints,
+pre-epoch/extended dates, Generic/Binary RowData, NULL modes and three quoted patterns.
+Stock starts on prebuilt RowData and native starts on equivalent Arrow; native timing
+starts inside Rust after input preparation/import and stops before export, retaining
+production Calc, allocation, intrinsic conversions and equivalent output consumption.
+The actual preceding path retains its generated JVM evaluator inside NativeCalc.
+Each trial processes 131,072 rows, with 16 warmups and nine measurements per engine.
+
+All 48 bulk cells beat stock **2.499-4.252x** and previous **3.433-5.541x**.
+Eleven of twelve 16-row cells lose to stock (stock/native **0.751-1.007x**); all beat
+the preceding generated path. These small-batch losses and all 6,000 raw samples are
+retained in the [qualification](results/date-format-pattern-2026-11-05.json) and
+[prepared trials](results/date-format-pattern-2026-11-05.csv.gz).
+
+Four complete million-row jobs retain both row/Arrow perimeter transposes, JNI,
+planning/submission and blackhole consumption, with two warmups and three measured
+trials per engine. Native/stock median elapsed is **0.783-0.990** and native/previous
+is **0.607-0.707**. The narrowest stock margin is the literal-prefix pattern on
+Flink 1.18 (0.270 versus 0.273 seconds); raw startup and measured trials remain in the
+qualification rather than being hidden by the prepared speedup.

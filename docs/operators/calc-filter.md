@@ -3676,6 +3676,9 @@ Flink rather than converting each one to an Arrow timestamp.
 `DATE_FORMAT` and `EXTRACT` retain their existing opt-in Rust LTZ paths. Dynamic patterns, additional
 extraction fields and other temporal functions use Flink's implementation. Timestamp-producing
 expressions run by default with the full Flink millisecond range and fractional nanos.
+Plain-TIMESTAMP numeric `DATE_FORMAT` also handles Java quoted literals, doubled quotes and
+escaped literal percents natively. Optional sections and unsupported or invalid Java pattern
+syntax keep generated Flink evaluation, preserving output, failures and empty-batch laziness.
 
 ## POWER and SQRT
 

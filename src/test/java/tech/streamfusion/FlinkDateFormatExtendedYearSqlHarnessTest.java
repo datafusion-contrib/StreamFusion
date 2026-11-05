@@ -39,6 +39,10 @@ class FlinkDateFormatExtendedYearSqlHarnessTest {
   }
 
   static void verify(int precision, String sql, int count) throws Exception {
+    verify(precision, sql, count, true);
+  }
+
+  static void verify(int precision, String sql, int count, boolean pure) throws Exception {
     Map<Integer, List<Object>> expected = null;
     Object expectedSchema = null;
     for (boolean nativeRun : new boolean[] {false, true}) {
@@ -77,8 +81,10 @@ class FlinkDateFormatExtendedYearSqlHarnessTest {
           assertEquals(expected, actual);
           assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
           assertFalse(scan.functionExecutions().isEmpty());
-          assertTrue(scan.functionExecutions().stream().allMatch(
-              entry -> entry.contains("DATE_FORMAT") && entry.contains("jvm=[]")),
+          assertTrue(scan.functionExecutions().stream().allMatch(entry -> entry.contains("DATE_FORMAT")),
+              scan.functionExecutions().toString());
+          assertEquals(pure,
+              scan.functionExecutions().stream().allMatch(entry -> entry.contains("jvm=[]")),
               scan.functionExecutions().toString());
           RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
         } else {

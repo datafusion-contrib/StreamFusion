@@ -7022,9 +7022,26 @@ final class RexExpression {
     }
     StringBuilder out = new StringBuilder();
     int i = 0;
+    boolean quoted = false;
     while (i < pattern.length()) {
       char c = pattern.charAt(i);
-      if (Character.isLetter(c)) {
+      if (Character.isSurrogate(c)) {
+        return null;
+      }
+      if (c == '\'') {
+        if (i + 1 < pattern.length() && pattern.charAt(i + 1) == '\'') {
+          out.append('\'');
+          i += 2;
+        } else {
+          quoted = !quoted;
+          i++;
+        }
+      } else if (quoted) {
+        out.append(c == '%' ? "%%" : String.valueOf(c));
+        i++;
+      } else if (c == '[' || c == ']' || c == '{' || c == '}' || c == '#') {
+        return null;
+      } else if (Character.isLetter(c)) {
         int j = i;
         while (j < pattern.length() && pattern.charAt(j) == c) {
           j++;
@@ -7065,7 +7082,7 @@ final class RexExpression {
         i++;
       }
     }
-    return out.toString();
+    return quoted ? null : out.toString();
   }
 
   /** A unary incompatible function, native only under its allowIncompatible flag. */

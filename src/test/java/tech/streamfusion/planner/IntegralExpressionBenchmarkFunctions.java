@@ -59,7 +59,8 @@ public final class IntegralExpressionBenchmarkFunctions {
         java.time.ZoneId.of(System.getProperty("sf.integral.zone", "UTC")));
     table.getConfig().set("table.exec.legacy-cast-behaviour",
         Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
-    String declaration = type + (nullable ? "" : " NOT NULL");
+    String declaration = ("plain-timestamp".equals(System.getenv("SF_INTEGRAL_CORPUS"))
+        ? type.replace("TIMESTAMP_LTZ(", "TIMESTAMP(") : type) + (nullable ? "" : " NOT NULL");
     String secondary = System.getProperty("sf.integral.secondaryType", "");
     if (!secondary.isEmpty() && !List.of("INT", "BIGINT").contains(secondary))
       throw new IllegalArgumentException("Unsupported secondary input " + secondary);
