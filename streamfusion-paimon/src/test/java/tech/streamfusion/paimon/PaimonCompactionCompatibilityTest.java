@@ -43,6 +43,64 @@ class PaimonCompactionCompatibilityTest {
   @TempDir java.nio.file.Path directory;
 
   @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"parquet", "orc"})
+  void firstRowProviderInstallsBeforeUnstartedLookupCompaction(String format) throws Exception {
+    var io = org.apache.paimon.fs.local.LocalFileIO.create();
+    var path = new Path(directory.resolve("first-row").toUri());
+    PaimonTestCompat.schemaManager(io, path)
+        .createTable(
+            new Schema(
+                DataTypes.ROW(
+                        DataTypes.FIELD(0, "id", DataTypes.INT().notNull()),
+                        DataTypes.FIELD(1, "v", DataTypes.INT()))
+                    .getFields(),
+                List.of(),
+                List.of("id"),
+                Map.of(
+                    "bucket",
+                    "1",
+                    "file.format",
+                    format,
+                    "merge-engine",
+                    "first-row",
+                    "write-only",
+                    "true"),
+                ""));
+    var table = org.apache.paimon.table.FileStoreTableFactory.create(io, path);
+    append(table, 1);
+    append(table, 2);
+    append(table, 3);
+    var selected = table.copy(Map.of("write-only", "false"));
+    StoreSinkWrite.Provider stock =
+        (resolved, user, state, spill, memory, group) ->
+            new StoreSinkWriteImpl(
+                resolved, user, state, spill, false, false, false, memory, group);
+    var provider = PaimonCompactionProvider.wrap(selected, stock, false, false, false);
+    assertNotSame(stock, provider);
+    var metrics = new Metrics();
+    try (var spill = new IOManagerAsync();
+        var commit = selected.newStreamWriteBuilder().withCommitUser("compact").newCommit()) {
+      var write = PaimonTestCompat.provide(provider, selected, spill, metrics);
+      try (AutoCloseable close = write::close) {
+        write.compact(BinaryRow.EMPTY_ROW, 0, true);
+        commit.commit(
+            1,
+            write.prepareCommit(true, 1).stream()
+                .map(PaimonTestCompat::message)
+                .collect(Collectors.toList()));
+        assertEquals(1, metrics.counters.get("nativeRewriteGroups").getCount());
+        assertEquals(0, metrics.counters.get("stockRewriteGroups").getCount());
+      }
+    }
+    var files =
+        table.store().newScan().plan().files().stream()
+            .map(org.apache.paimon.manifest.ManifestEntry::file)
+            .collect(Collectors.toList());
+    assertEquals(List.of("1:10", "2:11"), readFiles(table, 0, files));
+    assertEquals("", NativePaimon.liveNativeHandles());
+  }
+
+  @ParameterizedTest
   @CsvSource({"parquet,1", "orc,1", "parquet,-1", "orc,-1"})
   void appendRewriteKeepsStockMetadataAndFileOrder(String format, int buckets) throws Exception {
     try (var catalog =

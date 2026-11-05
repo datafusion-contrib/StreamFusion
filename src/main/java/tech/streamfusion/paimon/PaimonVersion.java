@@ -7,7 +7,6 @@ import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.runtime.io.disk.iomanager.IOManager;
 import org.apache.flink.streaming.api.operators.StreamOperatorFactory;
 import org.apache.paimon.CoreOptions;
-import org.apache.paimon.compact.CompactManager;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.data.Timestamp;
@@ -86,10 +85,6 @@ final class PaimonVersion {
     return original.getClass() == StoreCompactOperator.CoordinatedFactory.class
         ? new StoreCompactOperator.CoordinatedFactory(table, provider, user, full)
         : new StoreCompactOperator.Factory(table, provider, user, full);
-  }
-
-  static boolean compactNotCompleted(CompactManager manager) {
-    return manager.compactNotCompleted();
   }
 
   static StoreSinkWrite.Provider compactionProvider(

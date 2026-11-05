@@ -10,7 +10,6 @@ import org.apache.flink.runtime.io.disk.iomanager.IOManager;
 import org.apache.flink.streaming.api.operators.StreamOperatorFactory;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.KeyValueFileStore;
-import org.apache.paimon.compact.CompactManager;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.data.Timestamp;
@@ -91,10 +90,6 @@ final class PaimonVersion {
       String user,
       boolean full) {
     return new StoreCompactOperator.Factory(table, provider, user, full);
-  }
-
-  static boolean compactNotCompleted(CompactManager manager) {
-    return manager.isCompacting();
   }
 
   static StoreSinkWrite.Provider compactionProvider(

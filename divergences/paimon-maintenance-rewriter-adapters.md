@@ -18,6 +18,11 @@ This uses reflection into the released manager's private final callback. It is a
 dependency, not an upstream API: incompatible shapes decline installation. A manager with a pending
 stock task retains its original callback until the task has been collected. No running callback is replaced.
 
+Callback ownership checks the base manager's submitted task future, using the same checked field
+on all three releases. Paimon 2.0's public `compactNotCompleted()` also reports unstarted first-row
+lookup work; treating that as a submitted task would prevent installing the native full-compaction
+callback on restored L0 files. Completed but uncollected futures still retain their original callback.
+
 The constructor and restore paths in the matching canonical release sources create managers without
 submitting tasks. Tests require actual native rewrites both before and after replacement on each
 release, for both formats. The shared Rust crate and algorithms are identical across adapters; only

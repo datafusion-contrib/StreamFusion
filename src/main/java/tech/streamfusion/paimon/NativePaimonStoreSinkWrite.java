@@ -9,6 +9,7 @@ import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.runtime.io.disk.iomanager.IOManager;
 import org.apache.paimon.append.AppendOnlyWriter;
 import org.apache.paimon.append.BucketedAppendCompactManager;
+import org.apache.paimon.compact.CompactFutureManager;
 import org.apache.paimon.compact.CompactManager;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.flink.sink.Committable;
@@ -31,7 +32,7 @@ final class NativePaimonStoreSinkWrite extends StoreSinkWriteImpl {
 
   private static final class Access {
     final Method bucket;
-    final Field writers, manager, rewriter, appendManager, appendRewriter;
+    final Field writers, manager, rewriter, appendManager, appendRewriter, future;
 
     Access(
         Method bucket,
@@ -39,13 +40,15 @@ final class NativePaimonStoreSinkWrite extends StoreSinkWriteImpl {
         Field manager,
         Field rewriter,
         Field appendManager,
-        Field appendRewriter) {
+        Field appendRewriter,
+        Field future) {
       this.bucket = bucket;
       this.writers = writers;
       this.manager = manager;
       this.rewriter = rewriter;
       this.appendManager = appendManager;
       this.appendRewriter = appendRewriter;
+      this.future = future;
     }
   }
 
@@ -59,7 +62,10 @@ final class NativePaimonStoreSinkWrite extends StoreSinkWriteImpl {
       var rewriter = MergeTreeCompactManager.class.getDeclaredField("rewriter");
       var appendManager = AppendOnlyWriter.class.getDeclaredField("compactManager");
       var appendRewriter = BucketedAppendCompactManager.class.getDeclaredField("rewriter");
+      var future = CompactFutureManager.class.getDeclaredField("taskFuture");
       if (appendManager.getType() != CompactManager.class
+          || future.getType() != java.util.concurrent.Future.class
+          || !future.trySetAccessible()
           || appendRewriter.getType() != BucketedAppendCompactManager.CompactRewriter.class
           || !appendManager.trySetAccessible()
           || !appendRewriter.trySetAccessible()
@@ -70,7 +76,7 @@ final class NativePaimonStoreSinkWrite extends StoreSinkWriteImpl {
           || !writers.trySetAccessible()
           || !manager.trySetAccessible()
           || !rewriter.trySetAccessible()) return null;
-      return new Access(bucket, writers, manager, rewriter, appendManager, appendRewriter);
+      return new Access(bucket, writers, manager, rewriter, appendManager, appendRewriter, future);
     } catch (ReflectiveOperationException | RuntimeException | LinkageError unavailable) {
       return null;
     }
@@ -135,8 +141,8 @@ final class NativePaimonStoreSinkWrite extends StoreSinkWriteImpl {
       throws ReflectiveOperationException {
     if (writer instanceof AppendOnlyWriter) {
       var manager = ACCESS.appendManager.get(writer);
-      if (!(manager instanceof BucketedAppendCompactManager)
-          || PaimonVersion.compactNotCompleted((CompactManager) manager)) return;
+      if (!(manager instanceof BucketedAppendCompactManager) || ACCESS.future.get(manager) != null)
+        return;
       var original =
           (BucketedAppendCompactManager.CompactRewriter) ACCESS.appendRewriter.get(manager);
       if (original instanceof NativePaimonAppendRewriter) return;
@@ -147,7 +153,7 @@ final class NativePaimonStoreSinkWrite extends StoreSinkWriteImpl {
       var manager = ACCESS.manager.get(writer);
       if (!(manager instanceof MergeTreeCompactManager)) return;
       // Never replace a callback already captured by a running stock task.
-      if (PaimonVersion.compactNotCompleted((CompactManager) manager)) return;
+      if (ACCESS.future.get(manager) != null) return;
       var original = (CompactRewriter) ACCESS.rewriter.get(manager);
       if (original instanceof NativePaimonCompactRewriter) return;
       ACCESS.rewriter.set(
