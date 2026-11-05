@@ -59,3 +59,9 @@ Abrupt JVM termination separately bypasses normal cleanup and leaves real transa
 released writer's restore protocol. Its source offset and the externally committed prefix must
 agree before retrying older canonical state. Neither fixture adds a native snapshot intermediate
 or changes production memory/flush ownership. The exact partial scope remains on the Kafka page.
+
+Client-result loss after completion uses the completed artifact and the stock protocol unchanged.
+The tests first prove that new external effects committed, then restore that completed canonical
+cut on the other engine without new input. The subsequent return and new input must neither
+replay the earlier prefix nor lose pending state. Choosing an older snapshot after those commits
+would be an invalid rollback; no identity projection or state converter can make it safe.

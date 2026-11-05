@@ -341,8 +341,36 @@ The 70-check regression selection also includes `CanonicalGroupArithmeticIntJobT
 passes against the preceding worker sources and the same native libraries; it does not silently
 requalify every historical operator cohort against this newer fixture.
 
-Failures after external commits but before reporting a savepoint location, broker/coordinator
+Client failure after completed savepoints has the separate subset below. Broker/coordinator
 outages, capture/upload/finalization failures and the wider schema/security/discovery/version
 matrix remain open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 The production latency timer and ordinary native checkpoint paths are unchanged. Benchmarking
 remains deferred.
+
+## Client failure after canonical completion (partial)
+
+Sixteen additional real-broker cases pass when the client JVM dies after a canonical savepoint
+and the job finish, before reporting the savepoint location. Eight use the custom row source and
+eight use native Kafka decoding/encoding. Both submission forms, initial engine orders and
+transaction naming strategies retain the singleton tasks, schema and released versions above.
+The row-source cases also retain controlled partial batches before the canonical barrier.
+
+The tests require the original five-row prefix, then nine committed records at the completed
+cut. They find exactly one completed artifact in that stage's isolated output directory and use
+it for normal restore on the other engine, with no new input. That restore must process zero new
+records, preserve the saved positions and transaction ownership, and leave exactly nine external
+effects. Another switch and four new records must produce exactly thirteen effects. The original
+completed artifact is checked alongside the subsequent canonical artifacts for stable stock IDs,
+source/coordinator state, writer precommits and serializer dependencies. Stock workers exclude
+StreamFusion code throughout.
+
+Recovery uses the completed canonical cut after the nine effects committed. Restarting from the
+older five-row savepoint is not a safe response to losing the client's result. This lane checks
+client death after successful completion; it does not qualify every failure during commit or
+metadata publication, or an automatic search for the correct artifact in a deployment.
+
+The full 86-check cohort includes these sixteen cases and reruns the preceding 70 boundary,
+process-recovery, grouped-state and admission checks against the updated fixtures and the same
+verified native libraries. Run `CanonicalKafkaSinkCompletionFailureJobTest,CanonicalKafkaPipelineCompletionFailureJobTest`
+for all sixteen completion cases, or add `-Dsf.canonical.kafka.fixture.smoke=true` for two.
+Broader delivery/failure guarantees remain open under #569. Benchmarking remains deferred.

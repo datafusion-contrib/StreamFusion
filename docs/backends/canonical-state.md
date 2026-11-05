@@ -1469,3 +1469,11 @@ still pending in the transpose. The same 70-check cohort includes eight existing
 rescale jobs and 22 admission controls. See the [exact Kafka scope](../connectors/kafka.md#canonical-batch-boundaries-and-abrupt-process-recovery-partial).
 This adds no native snapshot intermediate, changes no production flush setting and leaves broader
 operator, connector and failure qualification open under #569.
+
+Sixteen additional Kafka complete-job cases qualify client death after canonical completion but
+before the location is reported. They verify committed effects, recover the completed artifact
+through the ordinary restore path on the other engine without new input, and switch back with
+more input. Recovery never rolls back to an older state after new effects committed. The full
+86-check cohort also reruns the preceding 70 checks on the updated fixture sources. See the
+[completion-failure scope](../connectors/kafka.md#client-failure-after-canonical-completion-partial).
+This does not qualify every failure during capture, publication, commit or broker outages.

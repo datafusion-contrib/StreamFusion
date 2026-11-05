@@ -105,6 +105,7 @@ class CanonicalKafkaSinkJobTest {
   void preservesExactlyOnceSinkEffectsAcrossRepeatedCanonicalSwitches(
       String mode, boolean ordinary, boolean nativeFirst, String naming) throws Exception {
     int batchRows = mode.equals("full-batch") ? 5 : 3;
+    boolean completedRecovery = mode.equals("completion-failure");
     String topic = "canonical-sink-" + UUID.randomUUID();
     String inputTopic = topic + "-input";
     var adminProperties = new Properties();
@@ -119,7 +120,7 @@ class CanonicalKafkaSinkJobTest {
     Files.createDirectories(root);
     Files.writeString(root.resolve("brokers"), kafka.getBootstrapServers());
     Files.writeString(root.resolve("output-topic"), topic);
-    if (strictBatchBoundaries() || mode.equals("process-failure"))
+    if (strictBatchBoundaries() || mode.equals("process-failure") || completedRecovery)
       Files.createFile(root.resolve("strict-batch-boundaries"));
     if (ordinary) Files.createFile(root.resolve("ordinary-sql"));
     if (mode.equals("checkpoint")) Files.createFile(root.resolve("prefix-native-checkpoint"));
@@ -190,7 +191,8 @@ class CanonicalKafkaSinkJobTest {
         java.util.Map.of(
             "fence", "fence-transactions",
             "task-failure", "terminate-task-manager",
-            "process-failure", "halt-process");
+            "process-failure", "halt-process",
+            "completion-failure", "halt-after-savepoint");
     if (failures.containsKey(mode)) {
       Files.createFile(root.resolve("failed-" + failures.get(mode)));
       runner.run(
@@ -202,7 +204,7 @@ class CanonicalKafkaSinkJobTest {
           "failed",
           batchRows,
           "hashmap",
-          mode.equals("process-failure") ? 42 : 0);
+          mode.equals("process-failure") || completedRecovery ? 42 : 0);
       assertFalse(Files.exists(root.resolve("failed-savepoint")));
       if (mode.equals("fence")) {
         assertTrue(Files.exists(root.resolve("failed-rejected-savepoint")));
@@ -223,8 +225,21 @@ class CanonicalKafkaSinkJobTest {
               kafkaInput() ? "4" : "3",
               Files.readString(root.resolve("failed-native-rows")),
               "The row source must retain one pending row; the Kafka pipeline has no transpose");
+      } else if (completedRecovery) {
+        assertEquals("FINISHED", Files.readString(root.resolve("failed-completion-reached")));
+        assertRows(topic, 9);
+        try (var files = Files.list(root.resolve("failed-completion-savepoints"))) {
+          var completed =
+              files
+                  .filter(path -> Files.isRegularFile(path.resolve("_metadata")))
+                  .collect(Collectors.toList());
+          assertEquals(
+              1, completed.size(), "Find the completed artifact after losing its response");
+          Files.writeString(root.resolve("failed-savepoint"), completed.get(0).toUri().toString());
+        }
+        restore = "failed";
       } else assertTrue(Files.exists(root.resolve("failed-expected-failure")));
-      assertRows(topic, 5);
+      if (!completedRecovery) assertRows(topic, 5);
       if (!nativeFirst)
         assertTrue(Long.parseLong(Files.readString(root.resolve("failed-native-rows"))) > 0);
       else assertTrue(Files.exists(root.resolve("failed-stock-classpath-verified")));
@@ -232,18 +247,34 @@ class CanonicalKafkaSinkJobTest {
         assertTrue(
             Long.parseLong(Files.readString(root.resolve("failed-native-source-output"))) > 0);
     }
-    runner.run(fixture, !nativeFirst, root, 9, restore, "middle", batchRows);
+    runner.run(
+        fixture,
+        completedRecovery ? nativeFirst : !nativeFirst,
+        root,
+        9,
+        restore,
+        "middle",
+        batchRows);
     assertRows(topic, 9);
     if (kafkaInput()) produce(inputTopic, 9, 13);
-    runner.run(fixture, nativeFirst, root, 13, "middle", "suffix", batchRows);
+    runner.run(
+        fixture,
+        completedRecovery ? !nativeFirst : nativeFirst,
+        root,
+        13,
+        "middle",
+        "suffix",
+        batchRows);
     assertRows(topic, 13);
     List<String> expectedIds = null;
     for (String stage :
-        mode.equals("checkpoint")
-            ? List.of("canonical", "middle", "suffix")
-            : mode.equals("no-input")
-                ? List.of("prefix", "no-input", "return", "middle", "suffix")
-                : List.of("prefix", "middle", "suffix")) {
+        completedRecovery
+            ? List.of("prefix", "failed", "middle", "suffix")
+            : mode.equals("checkpoint")
+                ? List.of("canonical", "middle", "suffix")
+                : mode.equals("no-input")
+                    ? List.of("prefix", "no-input", "return", "middle", "suffix")
+                    : List.of("prefix", "middle", "suffix")) {
       var inventory =
           Files.readAllLines(root.resolve(stage + "-inventory.tsv")).stream()
               .map(line -> line.split("\\t", -1))
@@ -256,7 +287,13 @@ class CanonicalKafkaSinkJobTest {
               .collect(Collectors.toList());
       if (expectedIds == null) expectedIds = stateIds;
       else assertEquals(expectedIds, stateIds, "Source/writer/committer IDs must survive switches");
-      int limit = stage.equals("middle") ? 9 : stage.equals("suffix") ? 13 : 5;
+      int limit =
+          stage.equals("middle") || stage.equals("failed") ? 9 : stage.equals("suffix") ? 13 : 5;
+      int incoming = 0;
+      if (stage.equals("prefix")) incoming = 5;
+      else if (stage.equals("failed")
+          || stage.equals("suffix")
+          || stage.equals("middle") && !completedRecovery) incoming = 4;
       assertEquals(
           mode.equals("rescale-uids") ? "ALWAYS" : "DISABLED",
           Files.readString(root.resolve(stage + "-uid-policy")));
@@ -321,7 +358,7 @@ class CanonicalKafkaSinkJobTest {
               .toString(),
           writerState.get(0)[6],
           "Saved transaction ownership must match the released rescaling contract");
-      if (stage.equals("prefix") || stage.equals("middle") || stage.equals("suffix"))
+      if (incoming > 0)
         assertTrue(
             Integer.parseInt(writerState.get(0)[7]) > 0,
             "The handoff must retain actual precommitted transaction state");
@@ -331,26 +368,24 @@ class CanonicalKafkaSinkJobTest {
               Files.readAllBytes(Path.of(java.net.URI.create(saved)).resolve("_metadata")),
               java.nio.charset.StandardCharsets.ISO_8859_1);
       assertFalse(metadata.contains("tech.streamfusion"), "Non-stock state class in metadata");
-      boolean nativeStage =
-          stage.equals("middle") || stage.equals("no-input") ? !nativeFirst : nativeFirst;
+      boolean nativeStage = nativeFirst;
+      if (stage.equals("failed") || stage.equals("no-input")) nativeStage = !nativeFirst;
+      else if (stage.equals("middle")) nativeStage = completedRecovery ? nativeFirst : !nativeFirst;
+      else if (stage.equals("suffix") && completedRecovery) nativeStage = !nativeFirst;
       if (nativeStage)
         assertEquals(
-            stage.equals("prefix") ? 5 : stage.equals("middle") || stage.equals("suffix") ? 4 : 0,
+            incoming,
             Long.parseLong(Files.readString(root.resolve(stage + "-native-rows"))),
             "Native encoder must process every row, including the partial barrier batch");
       else assertTrue(Files.exists(root.resolve(stage + "-stock-classpath-verified")));
       if (nativeStage && !kafkaInput() && Files.exists(root.resolve("strict-batch-boundaries"))) {
-        long incoming =
-            stage.equals("prefix") ? 5 : stage.equals("middle") || stage.equals("suffix") ? 4 : 0;
         long full = incoming - incoming % batchRows;
         assertEquals(
             incoming + "/" + full + "/" + (incoming - full),
             Files.readString(root.resolve(stage + "-batch-boundary")),
             "Actual transpose input and encoded rows must prove the batch boundary before saving");
       }
-      if (nativeStage
-          && kafkaInput()
-          && (stage.equals("prefix") || stage.equals("middle") || stage.equals("suffix")))
+      if (nativeStage && kafkaInput() && incoming > 0)
         assertTrue(
             Long.parseLong(Files.readString(root.resolve(stage + "-native-source-output"))) > 0,
             "Both native endpoints must actually process data");

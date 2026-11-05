@@ -41,6 +41,7 @@ public final class CanonicalKafkaSinkJobWorker {
     int limit = Integer.parseInt(args[2]);
     String restore = args[3], stage = args[4];
     boolean checkpoint = Files.exists(root.resolve(stage + "-native-checkpoint"));
+    boolean completionLoss = Files.exists(root.resolve(stage + "-halt-after-savepoint"));
     int sinkParallelism =
         Files.exists(root.resolve(stage + "-parallelism"))
             ? Integer.parseInt(Files.readString(root.resolve(stage + "-parallelism")).trim())
@@ -278,10 +279,25 @@ public final class CanonicalKafkaSinkJobWorker {
         saved =
             job.stopWithSavepoint(
                     false,
-                    root.resolve("savepoints").toUri().toString(),
+                    root.resolve(completionLoss ? stage + "-completion-savepoints" : "savepoints")
+                        .toUri()
+                        .toString(),
                     SavepointFormatType.CANONICAL)
                 .get(90, TimeUnit.SECONDS);
         job.getJobExecutionResult().get(30, TimeUnit.SECONDS);
+      }
+      if (completionLoss) {
+        if (job.getJobStatus().get(30, TimeUnit.SECONDS)
+                != org.apache.flink.api.common.JobStatus.FINISHED
+            || Reporter.failedCommittables() != 0)
+          throw new AssertionError("Cannot lose acknowledgement before successful completion");
+        saveInventory(root, stage, saved);
+        Files.writeString(root.resolve(stage + "-native-rows"), Long.toString(Reporter.rows()));
+        Files.writeString(
+            root.resolve(stage + "-native-source-output"), Long.toString(Reporter.sourceOutput()));
+        Files.writeString(root.resolve(stage + "-completion-reached"), "FINISHED");
+        Runtime.getRuntime().halt(42);
+        throw new AssertionError("Process halt returned after completed savepoint");
       }
       Files.writeString(root.resolve(stage + "-savepoint"), saved);
       Files.writeString(root.resolve(stage + "-native-rows"), Long.toString(Reporter.rows()));
