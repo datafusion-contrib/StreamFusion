@@ -174,11 +174,45 @@ use the stock identities. Eight existing grouped-aggregate INT-key rescale jobs 
 the updated isolated runner. Twenty-two shared Flink 1.18 processing/connector checks pass; these
 do not establish canonical compatibility on 1.18.
 
-This does not qualify native Kafka sink transactions, writer rescaling, new partition discovery,
-topic patterns, security/schema/format variations, broker/coordinator failures or cross-version
-migration. Source rescaling keeps the custom sink singleton and disables chaining for that test.
-Both-native Kafka source/sink coverage is qualified separately below.
+These fourteen scenarios do not qualify native Kafka sink transactions, writer rescaling, topic
+patterns, security/schema/format variations, broker/coordinator failures or cross-version migration.
+Source rescaling keeps the custom sink singleton and disables chaining for that test. Partition
+discovery and both-native source/sink pipelines have separate qualification below.
 Benchmarking remains deferred for #569.
+
+### Partition discovery across engine switches (partial)
+
+The combined source corpus now passes all 22 real-broker cases on the committed production tree:
+the original fourteen scenarios plus eight partition-discovery round trips. Discovery covers
+ordinary SQL and portable compiled plans, both initial engine orders and partitions added either
+between stopped jobs or while restored readers are already running. Reader parallelism changes
+1→3→2 while the topic grows from one to three to five partitions. In live cases the restored job
+must consume one probe from an old partition before any partition is added, so initial source
+startup cannot substitute for periodic discovery.
+
+The schema remains three nullable BIGINT fields in JSON on Flink 2.2.1, connector 5.0.0-2.2 and
+the Confluent Kafka 7.6.1 test broker. A custom committing sink stays at one task. Exact saved
+offsets use independent expectations: `0=5`, then `0=6,1=2,2=1`, then
+`0=7,1=2,2=1,3=2,4=1`. These require actual consumption on newly discovered partitions and
+preservation of prior positions. Each canonical artifact also retains every discovered split,
+nonempty coordinator state and stock identities, with no StreamFusion serializer dependency.
+Committed rows must match all thirteen input records after the repeated switches; native source
+output and stock worker classpaths are checked at each advancing stage. Enumeration and split
+serialization still delegate to the released connector without a conversion utility or a native
+snapshot intermediate.
+
+Run all 22 cases with:
+
+```sh
+SF_KAFKA_INTEGRATION=true mvn -Pcanonical-kafka -pl streamfusion-runtime -am \
+  -Dtest=CanonicalKafkaSourceJobTest,CanonicalKafkaPartitionDiscoveryJobTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+The new class alone runs eight; its one-case smoke is only a debugging subset. The corpus does not establish discovery through broker/coordinator
+outages, topic patterns/deletion, broader schemas/security/versions or simultaneous native Kafka
+reader/writer rescaling. Those remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
 
 The functional lane uses a real optional JSON artifact and an isolated stock classpath. With Docker
 available and the native core, Kafka and JSON libraries built, run from the repository root:
@@ -260,9 +294,9 @@ source/writer tasks. The ordinary-SQL planner-preview UID limitation above remai
 
 Run the sink command with `-Dtest=CanonicalKafkaPipelineJobTest` for this complete matrix. Generated
 hash rescaling disables chaining consistently; automatic-UID rescaling keeps normal chaining.
-Additional source/reader rescaling combinations, partition discovery, schemas/formats/security,
-upsert/CDC delivery and failures around broker/coordinator/transaction commits need their own
-qualification under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Additional combined reader/writer rescaling and partition discovery in this both-native pipeline,
+schemas/formats/security, upsert/CDC delivery and failures around broker/coordinator/transaction
+commits need their own qualification under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.
 
 ## Transaction ownership at handoff
