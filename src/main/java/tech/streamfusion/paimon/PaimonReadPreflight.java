@@ -26,6 +26,43 @@ final class PaimonReadPreflight {
     return false;
   }
 
+  static boolean rawWithinBudget(
+      FileStoreTable table,
+      List<DataFileMeta> files,
+      Schema input,
+      String[] names,
+      String bucketPath,
+      int batchRows)
+      throws IOException {
+    long budget = table.coreOptions().sortSpillBufferSize() / 2;
+    for (var file : files)
+      if (fileMemory(table, file, input, names, bucketPath, batchRows) > budget) return false;
+    return true;
+  }
+
+  private static long fileMemory(
+      FileStoreTable table,
+      DataFileMeta file,
+      Schema input,
+      String[] names,
+      String bucketPath,
+      int batchRows)
+      throws IOException {
+    try (var reader =
+        new NativePaimonFileReader(
+            PaimonCodecs.reader(
+                file.fileFormat(),
+                PaimonVersion.legacyOrcTimestamp(table.coreOptions().toConfiguration())),
+            table.fileIO(),
+            new Path(file.externalPath().orElse(bucketPath + "/" + file.fileName())),
+            file.fileSize(),
+            input,
+            names,
+            batchRows)) {
+      return reader.readerMemory();
+    }
+  }
+
   static boolean withinBudget(
       FileStoreTable table,
       List<List<SortedRun>> sections,
@@ -40,19 +77,7 @@ final class PaimonReadPreflight {
       for (SortedRun run : section) {
         long maximum = 0;
         for (var file : run.files()) {
-          try (var reader =
-              new NativePaimonFileReader(
-                  PaimonCodecs.reader(
-                      file.fileFormat(),
-                      PaimonVersion.legacyOrcTimestamp(table.coreOptions().toConfiguration())),
-                  table.fileIO(),
-                  new Path(file.externalPath().orElse(bucketPath + "/" + file.fileName())),
-                  file.fileSize(),
-                  input,
-                  names,
-                  batchRows)) {
-            maximum = Math.max(maximum, reader.readerMemory());
-          }
+          maximum = Math.max(maximum, fileMemory(table, file, input, names, bucketPath, batchRows));
         }
         if (maximum > budget / 2 - total) return false;
         total += maximum;

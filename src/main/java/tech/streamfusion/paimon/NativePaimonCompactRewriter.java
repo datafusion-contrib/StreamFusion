@@ -164,29 +164,21 @@ final class NativePaimonCompactRewriter implements CompactRewriter {
       return "changelog-producer";
     if (!options.sequenceField().isEmpty()) return "user-sequence";
     if (options.ignoreDelete()) return "ignore-delete";
-    if (options.snapshotSequenceOrdering()) return "snapshot-sequence-ordering";
+    if (PaimonVersion.snapshotSequenceOrdering(options)) return "snapshot-sequence-ordering";
     if (options.sortEngine() != CoreOptions.SortEngine.LOSER_TREE) return "sort-engine";
     if (options.deletionVectorsEnabled()) return "deletion-vectors";
     if (options.recordLevelExpireTime() != null) return "record-expiry";
-    if (options.rowTrackingEnabled()) return "row-tracking";
-    if (options.dataEvolutionEnabled()) return "data-evolution";
-    if (!CoreOptions.blobField(table.options()).isEmpty()) return "blob-fields";
-    if (!new FileIndexOptions(options).isEmpty()
-        || options.primaryKeyVectorIndexEnabled()
-        || options.primaryKeyFullTextIndexEnabled()
-        || options.primaryKeyFMIndexEnabled()
-        || !options.primaryKeyBTreeIndexColumns().isEmpty()
-        || !options.primaryKeyBitmapIndexColumns().isEmpty()
-        || !options.primaryKeyMultiValueIndexColumns().isEmpty()) return "file-index";
+    String features = PaimonVersion.compactionFeatures(options);
+    if (features != null) return features;
+    if (!new FileIndexOptions(options).isEmpty()) return "file-index";
     if (PaimonKeyValueLayout.unsupportedKeyReason(table) != null
         || PaimonArrowFields.unsupportedTypeReason(table.rowType()) != null) return "data-types";
-    if (!options.fileFormatString().equals("parquet")
-        || !options
-            .fileFormatPerLevel()
-            .getOrDefault(level, options.fileFormatString())
-            .equals("parquet")) return "output-format";
-    var format = FileFormat.fromIdentifier("parquet", options.toConfiguration());
-    if (!(format instanceof NativePaimonFileFormat) || !PaimonCodecs.available("parquet"))
+    String outputFormat =
+        options.fileFormatPerLevel().getOrDefault(level, options.fileFormatString());
+    if (!java.util.Set.of("parquet", "orc").contains(options.fileFormatString())
+        || !java.util.Set.of("parquet", "orc").contains(outputFormat)) return "output-format";
+    var format = FileFormat.fromIdentifier(outputFormat, options.toConfiguration());
+    if (!(format instanceof NativePaimonFileFormat) || !PaimonCodecs.available(outputFormat))
       return "native-format-unavailable";
     String writerReason =
         ((NativePaimonFileFormat) format)
@@ -199,8 +191,7 @@ final class NativePaimonCompactRewriter implements CompactRewriter {
       if (PaimonReadPreflight.overlappingSequences(section)) return "overlapping-sequences";
       for (var run : section)
         for (var file : run.files()) {
-          if (!file.fileFormat().equals("parquet") || !PaimonRustReader.supports(table, file))
-            return "input-format";
+          if (!PaimonRustReader.supports(table, file)) return "input-format";
           if (file.schemaId() != table.schema().id()) return "schema-evolution";
           if (file.minSequenceNumber() < 0
               || file.maxSequenceNumber() < file.minSequenceNumber()
@@ -208,8 +199,7 @@ final class NativePaimonCompactRewriter implements CompactRewriter {
             return "ambiguous-sequences";
           if (file.embeddedIndex() != null || !file.extraFiles().isEmpty())
             return "input-index-or-sidecar";
-          if (file.firstRowId() != null || file.writeCols() != null)
-            return "input-row-tracking-or-evolution";
+          if (PaimonVersion.specialFileMetadata(file)) return "input-row-tracking-or-evolution";
         }
     }
     return null;

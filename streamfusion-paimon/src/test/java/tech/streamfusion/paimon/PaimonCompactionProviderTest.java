@@ -11,13 +11,17 @@ import org.apache.flink.metrics.groups.UnregisteredMetricsGroup;
 import org.apache.flink.runtime.io.disk.iomanager.IOManagerAsync;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.util.InstantiationUtil;
+import org.apache.paimon.CoreOptions;
+import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.GenericRow;
 import org.apache.paimon.flink.sink.NoopStoreSinkWriteState;
 import org.apache.paimon.flink.sink.StoreSinkWrite;
+import org.apache.paimon.format.parquet.ParquetUtil;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.memory.HeapMemorySegmentPool;
 import org.apache.paimon.memory.MemoryPoolFactory;
+import org.apache.paimon.options.Options;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.types.DataTypes;
@@ -48,10 +52,7 @@ class PaimonCompactionProviderTest {
     checkpoints.setCheckpointInterval(1000);
     var original = StoreSinkWrite.createWriteProvider(table, checkpoints, true, false, false);
     var provider = PaimonCompactionProvider.wrap(table, original, true, false, false);
-    boolean nativeLine =
-        org.apache.flink.runtime.util.EnvironmentInformation.getVersion().startsWith("2.2.");
-    if (nativeLine) assertNotSame(original, provider);
-    else assertSame(original, provider);
+    assertNotSame(original, provider);
     assertSame(original, PaimonCompactionProvider.wrap(table, original, true, false, true));
     var unsupported = table.copy(Map.of("full-compaction.delta-commits", "3"));
     assertSame(original, PaimonCompactionProvider.wrap(unsupported, original, true, false, false));
@@ -86,14 +87,13 @@ class PaimonCompactionProviderTest {
             writer.prepareCommit(true, 2).stream()
                 .map(c -> c.commitMessage())
                 .collect(Collectors.toList()));
-        writer.compact(org.apache.paimon.data.BinaryRow.EMPTY_ROW, 0, true);
+        writer.compact(BinaryRow.EMPTY_ROW, 0, true);
         commit.commit(
             3,
             writer.prepareCommit(true, 3).stream()
                 .map(c -> c.commitMessage())
                 .collect(Collectors.toList()));
-        if (nativeLine) assertEquals(1, metrics.counters.get("nativeRewriteGroups").getCount());
-        else assertTrue(metrics.counters.isEmpty());
+        assertEquals(1, metrics.counters.get("nativeRewriteGroups").getCount());
         writer.write(GenericRow.of(1, 12));
         writer.write(GenericRow.of(3, 31));
         commit.commit(
@@ -113,29 +113,23 @@ class PaimonCompactionProviderTest {
                 Map.of(
                     "file.compression.per.level",
                     "2:zstd",
-                    org.apache.paimon.CoreOptions.METADATA_STATS_MODE_PER_LEVEL.key(),
+                    CoreOptions.METADATA_STATS_MODE_PER_LEVEL.key(),
                     "2:counts")));
-        writer.compact(org.apache.paimon.data.BinaryRow.EMPTY_ROW, 0, true);
+        writer.compact(BinaryRow.EMPTY_ROW, 0, true);
         commit.commit(
             6,
             writer.prepareCommit(true, 6).stream()
                 .map(c -> c.commitMessage())
                 .collect(Collectors.toList()));
-        if (nativeLine) {
-          assertEquals(2, metrics.counters.get("nativeRewriteGroups").getCount());
-          assertEquals(0, metrics.counters.get("stockRewriteGroups").getCount());
-        } else assertTrue(metrics.counters.isEmpty());
+        assertEquals(2, metrics.counters.get("nativeRewriteGroups").getCount());
+        assertEquals(0, metrics.counters.get("stockRewriteGroups").getCount());
       }
     }
     assertEquals(
         List.of("1|12", "2|21", "3|31", "4|40"), PaimonTestTables.readRows(table, table.rowType()));
-    if (nativeLine) NativeAppendSinkWriteTest.assertNativeFiles(table);
+    NativeAppendSinkWriteTest.assertNativeFiles(table);
     for (var bucketFiles : PaimonTestTables.dataFiles(table).values()) {
-      var paths =
-          table
-              .store()
-              .pathFactory()
-              .createDataFilePathFactory(org.apache.paimon.data.BinaryRow.EMPTY_ROW, 0);
+      var paths = table.store().pathFactory().createDataFilePathFactory(BinaryRow.EMPTY_ROW, 0);
       for (var file : bucketFiles) {
         assertEquals(2, file.level());
         assertEquals(2, file.valueStats().nullCounts().size());
@@ -144,11 +138,8 @@ class PaimonCompactionProviderTest {
           assertTrue(file.valueStats().maxValues().isNullAt(field));
         }
         try (var reader =
-            org.apache.paimon.format.parquet.ParquetUtil.getParquetReader(
-                table.fileIO(),
-                paths.toPath(file),
-                file.fileSize(),
-                new org.apache.paimon.options.Options())) {
+            ParquetUtil.getParquetReader(
+                table.fileIO(), paths.toPath(file), file.fileSize(), new Options())) {
           for (var block : reader.getFooter().getBlocks())
             for (var column : block.getColumns()) assertEquals("ZSTD", column.getCodec().name());
         }

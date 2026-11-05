@@ -49,7 +49,7 @@ class PaimonCompactionReadTest {
                 .column("v", DataTypes.INT())
                 .primaryKey("id")
                 .option("bucket", "1")
-                .option("file.format", "parquet")
+                .option("file.format", PaimonTestTables.fileFormat())
                 .option("data-file.thin-mode", Boolean.toString(thin))
                 .option("write-only", "true")
                 .build());
@@ -283,7 +283,7 @@ class PaimonCompactionReadTest {
                 .column("v", DataTypes.INT())
                 .primaryKey("id")
                 .option("bucket", "1")
-                .option("file.format", "parquet")
+                .option("file.format", PaimonTestTables.fileFormat())
                 .option("data-file.thin-mode", Boolean.toString(thin))
                 .option("write-only", "true")
                 .build());

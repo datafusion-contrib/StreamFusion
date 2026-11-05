@@ -10,6 +10,7 @@ import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.runtime.memory.MemoryManager;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.data.BinaryRow;
@@ -90,7 +91,7 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
     this.memory = new PaimonBufferMemory(options.writeBufferSize());
   }
 
-  void managedMemory(org.apache.flink.runtime.memory.MemoryManager manager, long budget) {
+  void managedMemory(MemoryManager manager, long budget) {
     memory.close();
     memory = new PaimonBufferMemory(budget, manager);
   }
@@ -185,6 +186,8 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
 
   private void writeDirect(BinaryRow partition, int bucket, VectorSchemaRoot root)
       throws Exception {
+    if (delegate instanceof NativePaimonStoreSinkWrite)
+      ((NativePaimonStoreSinkWrite) delegate).beforeBucket(partition, bucket);
     ((StoreSinkWriteImpl) delegate)
         .getWrite()
         .writeBundle(partition, bucket, new ArrowBatchBundle(root, rowType));

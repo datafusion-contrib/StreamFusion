@@ -31,10 +31,8 @@ public final class NativePaimonBucketSink extends FlinkWriteSink<BucketedArrowBa
   protected StoreSinkWrite.Provider createWriteProvider(
       CheckpointConfig checkpoints, boolean streaming, boolean materializer) {
     var stock = super.createWriteProvider(checkpoints, streaming, materializer);
-    return primaryKey
-        ? PaimonCompactionProvider.wrap(
-            table, stock, streaming, ignorePreviousFiles(), materializer)
-        : stock;
+    return PaimonCompactionProvider.wrap(
+        table, stock, streaming, ignorePreviousFiles(), materializer);
   }
 
   @Override

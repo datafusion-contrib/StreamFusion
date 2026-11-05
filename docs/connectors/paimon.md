@@ -1075,11 +1075,15 @@ Each of these declines at planning time with a reason visible in `NativePlanner.
 
 ## Compaction
 
-The modern adapter uses released Java Paimon 2.1's compaction rewriter factory on Flink 2.2.
+Primary-key compaction shares one rewriter and the same released Rust backend across Paimon 2.1
+on Flink 2.2, Paimon 2.0 on Flink 1.18, and the Paimon 1.0 module. Paimon 2.1 uses its public
+rewriter factory. The older releases use a checked adapter to install that same callback on a
+bucket's stock compaction manager before notification or submission. Running stock tasks are
+left on their original callback; unsupported private API shapes retain the stock provider.
 Java retains file selection, scheduling, output levels, delete retention, writer settings,
 metadata, commit messages, checkpoints and recovery. For admitted rewrites, the released
 paimon-rust 0.4 reader decodes and deduplicates Java's selected sections and the existing native
-Parquet writer encodes the result. Payloads stay columnar. Only file-boundary metadata keys,
+Parquet/ORC writer encodes the result. Payloads stay columnar. Only file-boundary metadata keys,
 stored sequence bounds and delete counts are assembled in Java.
 
 In-job maintenance installs the rewriter before bucket creation or restoration, including after
@@ -1094,22 +1098,32 @@ env.execute();
 
 The return value counts adapted workers, not successful native rewrites. The adapter preserves
 sources, coordinators, committers, transformation identities, partition filters and parallelism.
-An unadapted SQL `CALL sys.compact` uses the stock implementation. Modern Flink 1.18 and the
-legacy Paimon 1.0 module retain stock maintenance.
+An unadapted SQL `CALL sys.compact` uses the stock implementation.
 
 The initial scope is primary-key `deduplicate` tables with `none` or `input` changelog production,
-fixed or existing dynamic buckets, ordinary stored sequence numbers, current-schema Parquet input,
-and Parquet output. Both thin and full physical layouts are supported. Native Parquet settings,
+fixed or existing dynamic buckets, ordinary stored sequence numbers, current-schema Parquet/ORC input,
+and Parquet/ORC output. Both thin and full physical layouts are supported. Native format settings,
 per-level compression and statistics, target file size and asynchronous output retain their
 existing meanings. Compaction rolls across Arrow batches by file size; the write-time
 `target-file-row-num` limit does not apply, matching Java Paimon.
 
-A complete rewrite delegates to the original Java rewriter before opening output for:
+Append-only compaction uses the same released Rust raw reader, reading Java-selected files in
+order, and Paimon's configured append rolling-writer factory. Paimon retains sequence assignment,
+statistics, file sizing and commit construction. The 1.0 adapter advances the stock sequence counter
+for bundles; newer releases already do so. Fixed-bucket writers share the manager adapter. Unaware
+append jobs and dedicated single-table workers inherit the released worker lifecycle and decorate
+only the task's payload writer. Table refresh still resolves the writer and table through Paimon.
+Multi-table unaware workers, precommit append workers and unadapted SQL procedures currently retain
+stock rewriting; remaining integration and upstream validation are tracked in
+[#592](https://github.com/datafusion-contrib/StreamFusion/issues/592).
+
+A complete primary-key rewrite delegates to the original Java rewriter before opening output for:
 
 - Other merge engines or changelog producers; user sequence fields, ignored deletes, snapshot
   sequence ordering, or another sort engine.
 - Deletion vectors, record expiry, row tracking, data evolution, blob fields, or file indexes.
-- Unsupported key/value types or native Parquet writer settings; another input/default/output format;
+- Unsupported key/value types or native format writer settings; another input/default/output format;
+  ORC CHAR or unsafe/unknown timestamp bounds;
   historical schemas, index/sidecar files or specialized row metadata.
 - Overlapping or ambiguous stored sequence ranges, more than the smaller of 256 and the host
   sort-spill threshold in one section, or projected row-group decode memory exceeding half of
@@ -1117,7 +1131,7 @@ A complete rewrite delegates to the original Java rewriter before opening output
   it is a decode preflight, not a bound on all merge and output allocations.
 
 Metadata-only level upgrades always use Java. Providers for lookup, materialization, blobs or
-scheduled full-changelog maintenance keep their stock shape. Installation also retains stock
+scheduled full-changelog maintenance keep their stock shape. The public 2.1 installation also retains stock
 when the Paimon and StreamFusion bridge classes do not share a runtime classloader.
 
 After native processing starts, a failure aborts all unpublished output and propagates; it does
@@ -1128,10 +1142,21 @@ successful payload work from worker adaptation. Counters are shared across bucke
 Files and bytes count selected inputs; rows count written winners.
 Append buffer spilling and primary-key level-0 buffering retain their existing native paths.
 
-The [release comparison](../optimizations/paimon-compaction.md) covers 400k/2M input changes,
+Append rewrites likewise delegate before output for unavailable writer factories/codecs, unsupported
+writer shapes/settings/types, deletion vectors, expiry, row tracking/evolution, indexes/sidecars,
+historical schemas, unsafe ORC input or the projected decode budget. Append does not introduce a
+merge or sort policy. Its budget check covers one file at a time; PK checks the concurrent sorted runs.
+
+The [expanded 1.0 release diagnostic](../benchmarks/paimon-compaction-expanded-20261105/README.md)
+measures Parquet worker gains of 1.27–2.04× and ORC gains of 1.27–1.67× versus stock, with identical
+physical outputs. The ORC wide PK workload needs a larger configured budget for every engine;
+the smaller-budget case correctly retains Java. These are worker timings, not job-latency claims.
+
+The Flink 2.2/Paimon 2.1 Parquet [release comparison](../optimizations/paimon-compaction.md) covers 400k/2M input changes,
 unique and overlapping keys, nested values, file rolling and mixed levels. File-worker medians
 improved 1.39–1.94× versus stock Paimon; running-job publication-to-compacted-commit medians
 improved 1.13–1.43×. The report retains previous StreamFusion results, ranges and slower cold work.
+These measurements do not establish ORC or older-release compaction performance.
 The [unchanged upstream compaction fixtures](../upstream-flink-suite.md#paimon-compaction-fixtures)
 separately require parity and explicit native/fallback evidence.
 

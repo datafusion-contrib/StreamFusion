@@ -111,8 +111,12 @@ public final class NativePaimonKeyValueFileWriter {
     FormatWriterFactory factory =
         FileFormat.fromIdentifier(format, options.toConfiguration())
             .createWriterFactory(fileLayout.fileType);
+    FileStoreTable pathTable =
+        format.equals(options.fileFormatString()) && compression.equals(options.fileCompression())
+            ? table
+            : table.copy(java.util.Map.of("file.format", format, "file.compression", compression));
     DataFilePathFactory paths =
-        table.store().pathFactory().createDataFilePathFactory(partition, bucket);
+        pathTable.store().pathFactory().createDataFilePathFactory(partition, bucket);
     long targetRows =
         source == FileSource.COMPACT || changelog
             ? Long.MAX_VALUE

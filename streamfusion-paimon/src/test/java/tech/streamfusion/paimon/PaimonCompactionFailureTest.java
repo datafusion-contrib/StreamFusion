@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.apache.flink.metrics.groups.UnregisteredMetricsGroup;
+import org.apache.paimon.AppendOnlyFileStore;
 import org.apache.paimon.compact.CompactResult;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.GenericRow;
@@ -18,9 +19,11 @@ import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.mergetree.SortedRun;
 import org.apache.paimon.mergetree.compact.CompactRewriter;
+import org.apache.paimon.mergetree.compact.IntervalPartition;
 import org.apache.paimon.schema.Schema;
+import org.apache.paimon.table.CatalogEnvironment;
 import org.apache.paimon.table.FileStoreTable;
-import org.apache.paimon.table.PrimaryKeyFileStoreTable;
+import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.types.DataTypes;
 import org.junit.jupiter.api.io.TempDir;
@@ -31,10 +34,105 @@ class PaimonCompactionFailureTest {
   @TempDir java.nio.file.Path directory;
 
   @ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource({
+    "budget,projected-row-group-budget",
+    "deletions,deletion-vectors",
+    "format,output-format"
+  })
+  void unsupportedAppendRewriteDelegatesBeforeOpeningOutput(String variant, String reason)
+      throws Exception {
+    var io = new FailingIO();
+    var table = fixture(io, false);
+    var files =
+        table.newReadBuilder().newScan().plan().splits().stream()
+            .flatMap(split -> ((DataSplit) split).dataFiles().stream())
+            .collect(java.util.stream.Collectors.toList());
+    var options = new java.util.HashMap<>(table.options());
+    if (variant.equals("budget")) options.put("sort-spill-buffer-size", "1 b");
+    else if (variant.equals("deletions")) options.put("deletion-vectors.enabled", "true");
+    else options.put("file.format", "avro");
+    var selected = table.copy(table.schema().copy(options));
+    var counters = new NativePaimonCompactRewriter.Counters(new UnregisteredMetricsGroup());
+    var stock = new java.util.concurrent.atomic.AtomicInteger();
+    var write = ((org.apache.paimon.AppendOnlyFileStore) table.store()).newWrite("rewrite");
+    try (AutoCloseable close = write::close) {
+      var rewrite =
+          new NativePaimonAppendRewriter(
+              selected,
+              write,
+              BinaryRow.EMPTY_ROW,
+              0,
+              input -> {
+                stock.incrementAndGet();
+                return List.of();
+              },
+              counters);
+      io.stage = "observe";
+      assertTrue(rewrite.rewrite(files).isEmpty());
+      assertEquals(reason, rewrite.fallbackReason);
+      assertEquals(1, stock.get());
+      assertEquals(1, counters.stockGroups.getCount());
+      assertEquals(0, counters.nativeGroups.getCount());
+      assertTrue(io.created.isEmpty());
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"read", "write", "close", "cancel"})
+  void appendFailureAbortsClosedAndOpenOutputWithoutStockRetry(String stage) throws Exception {
+    var io = new FailingIO();
+    var table = fixture(io, false).copy(Map.of("target-file-size", "1 b"));
+    var files =
+        table.newReadBuilder().newScan().plan().splits().stream()
+            .flatMap(split -> ((DataSplit) split).dataFiles().stream())
+            .sorted(java.util.Comparator.comparingLong(DataFileMeta::minSequenceNumber))
+            .collect(java.util.stream.Collectors.toList());
+    var stock = new java.util.concurrent.atomic.AtomicInteger();
+    var counters = new NativePaimonCompactRewriter.Counters(new UnregisteredMetricsGroup());
+    var write = ((AppendOnlyFileStore) table.store()).newWrite("rewrite");
+    try (AutoCloseable close = write::close) {
+      var rewriter =
+          new NativePaimonAppendRewriter(
+              table,
+              write,
+              BinaryRow.EMPTY_ROW,
+              0,
+              selected -> {
+                stock.incrementAndGet();
+                return List.of();
+              },
+              counters);
+      io.stage = stage;
+      try {
+        Throwable failure = assertThrows(Exception.class, () -> rewriter.rewrite(files));
+        while (failure.getCause() != null) failure = failure.getCause();
+        assertTrue(failure instanceof IOException, failure.toString());
+      } finally {
+        Thread.interrupted();
+      }
+      assertTrue(io.created.size() >= (stage.equals("write") || stage.equals("close") ? 2 : 1));
+      for (var path : io.created)
+        assertFalse(io.exists(path), "unpublished append output survived: " + path);
+      assertEquals(0, stock.get());
+      assertEquals(0, counters.nativeGroups.getCount());
+      assertEquals(1, counters.errors.getCount());
+      assertEquals("", NativePaimon.liveNativeHandles());
+      io.stage = "observe";
+      io.created.clear();
+      var result = rewriter.rewrite(files);
+      assertEquals(6 * 512, result.stream().mapToLong(DataFileMeta::rowCount).sum());
+      assertEquals(1, counters.nativeGroups.getCount());
+      assertEquals(0, stock.get());
+      for (var path : io.created) assertTrue(io.exists(path));
+    }
+    assertEquals("", NativePaimon.liveNativeHandles());
+  }
+
+  @ParameterizedTest
   @ValueSource(strings = {"read", "write", "close", "cancel"})
   void failureAfterOutputStartsAbortsAllFilesWithoutStockRetry(String stage) throws Exception {
     var io = new FailingIO();
-    var table = fixture(io);
+    var table = fixture(io, true);
     var sections = sections(table);
     var selected = table.copy(Map.of("target-file-size", "1 b"));
     var stock = new Stock();
@@ -84,7 +182,7 @@ class PaimonCompactionFailureTest {
   @ValueSource(strings = {"merge", "sequence", "delete", "format", "budget", "ties"})
   void unsupportedWholeRewriteDelegatesBeforeOutput(String variant) throws Exception {
     var io = new FailingIO();
-    var table = fixture(io);
+    var table = fixture(io, true);
     var sections = sections(table);
     Map<String, String> changes;
     switch (variant) {
@@ -98,7 +196,7 @@ class PaimonCompactionFailureTest {
         changes = Map.of("ignore-delete", "true");
         break;
       case "format":
-        changes = Map.of("file.format.per.level", "2:orc");
+        changes = Map.of("file.format.per.level", "2:avro");
         break;
       case "budget":
         changes = Map.of("sort-spill-buffer-size", "1 b");
@@ -128,22 +226,29 @@ class PaimonCompactionFailureTest {
     assertEquals("", NativePaimon.liveNativeHandles());
   }
 
-  private FileStoreTable fixture(FailingIO io) throws Exception {
+  private FileStoreTable fixture(FailingIO io, boolean primaryKey) throws Exception {
     var path = new Path(directory.resolve("table").toUri());
     var schema =
         PaimonTestCompat.schemaManager(io, path)
             .createTable(
-                Schema.newBuilder()
-                    .column("id", DataTypes.INT().notNull())
-                    .column("v", DataTypes.INT())
-                    .primaryKey("id")
-                    .option("bucket", "1")
-                    .option("file.format", "parquet")
-                    .option("write-only", "true")
-                    .build());
-    var table =
-        new PrimaryKeyFileStoreTable(
-            io, path, schema, org.apache.paimon.table.CatalogEnvironment.empty());
+                new Schema(
+                    DataTypes.ROW(
+                            DataTypes.FIELD(0, "id", DataTypes.INT().notNull()),
+                            DataTypes.FIELD(1, "v", DataTypes.INT()))
+                        .getFields(),
+                    List.of(),
+                    primaryKey ? List.of("id") : List.of(),
+                    Map.of(
+                        "bucket",
+                        "1",
+                        "bucket-key",
+                        "id",
+                        "file.format",
+                        System.getenv().getOrDefault("SF_PAIMON_FILE_FORMAT", "parquet"),
+                        "write-only",
+                        "true"),
+                    ""));
+    var table = FileStoreTableFactory.create(io, path, schema, CatalogEnvironment.empty());
     try (var write = table.newWrite("seed");
         var commit = table.newCommit("seed")) {
       for (int section = 0; section < 3; section++) {
@@ -162,10 +267,7 @@ class PaimonCompactionFailureTest {
         table.newScan().plan().splits().stream()
             .flatMap(split -> ((DataSplit) split).dataFiles().stream())
             .collect(java.util.stream.Collectors.toList());
-    var result =
-        new org.apache.paimon.mergetree.compact.IntervalPartition(
-                files, PaimonVersion.keyComparator(table))
-            .partition();
+    var result = new IntervalPartition(files, PaimonVersion.keyComparator(table)).partition();
     assertEquals(3, result.size());
     return result;
   }
@@ -195,7 +297,7 @@ class PaimonCompactionFailureTest {
 
     @Override
     public SeekableInputStream newInputStream(Path path) throws IOException {
-      if (path.getName().endsWith(".parquet")
+      if ((path.getName().endsWith(".parquet") || path.getName().endsWith(".orc"))
           && !created.isEmpty()
           && ("read".equals(stage) || "cancel".equals(stage))) {
         if (stage.equals("cancel")) {
@@ -210,7 +312,9 @@ class PaimonCompactionFailureTest {
     @Override
     public PositionOutputStream newOutputStream(Path path, boolean overwrite) throws IOException {
       var output = super.newOutputStream(path, overwrite);
-      if (stage == null || !path.getName().endsWith(".parquet")) return output;
+      if (stage == null
+          || !(path.getName().endsWith(".parquet") || path.getName().endsWith(".orc")))
+        return output;
       created.add(path);
       boolean fail = created.size() > 1;
       return new PositionOutputStream() {

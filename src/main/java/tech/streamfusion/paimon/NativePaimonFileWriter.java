@@ -18,10 +18,10 @@ import tech.streamfusion.format.ColumnarFileCodec;
  * every later bundle is appended to it column-wise, while a plain row hands the whole file to
  * Paimon's stock file writer. Paimon's released append writer feeds a bundle to its format writer
  * one cursor row at a time, so the cursor path recognises each bundle once and encodes it whole; a
- * Paimon that passes the bundle through takes the direct path. Compaction rewrites arrive as plain
- * rows and take the stock path; the native append spill buffer drains Arrow bundles. The footer
- * stays a standard file footer, so Paimon extracts statistics from it exactly as from its own
- * files.
+ * Paimon that passes the bundle through takes the direct path. Admitted compaction rewrites and the
+ * native append spill buffer drain Arrow bundles; other compaction rewrites retain the stock row
+ * path. The footer stays a standard file footer, so Paimon extracts statistics from it exactly as
+ * from its own files.
  */
 public final class NativePaimonFileWriter implements BundleFormatWriter {
   private enum Mode {
@@ -162,13 +162,13 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
       case NATIVE:
         {
           {
-        try {
-          encoder.finish();
-        } finally {
-          encoder.close();
-          encoder = null;
-        }
-      }
+            try {
+              encoder.finish();
+            } finally {
+              encoder.close();
+              encoder = null;
+            }
+          }
           break;
         }
       case STOCK:

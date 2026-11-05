@@ -1,0 +1,9 @@
+{
+  "profile": "release",
+  "libraries_sha256": {
+    "libstreamfusion_parquet.dylib": "082e3563ad0ef9937964cdfe7220292deaf3dd8fab5da0db50627aaf037b8d2e",
+    "libstreamfusion_paimon.dylib": "c936a05636f25c12d48ab80c1aef2b7206613253c76cf549168409d6ad84b56a",
+    "libstreamfusion.dylib": "c736bdd94f4f6197f103cf70f21fa96fe56ea25092d5f1ee9862c75ddab1dfe8",
+    "libstreamfusion_orc.dylib": "529ef7493e8cf283c83f2cf70719250e1472843d89878754bad05c5ee414693b"
+  }
+}

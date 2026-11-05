@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import org.apache.flink.runtime.util.EnvironmentInformation;
+import org.apache.flink.api.common.RuntimeExecutionMode;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.paimon.data.GenericRow;
 import org.apache.paimon.flink.sink.CompactorSinkBuilder;
@@ -35,7 +35,7 @@ class PaimonMaintenanceTest {
   void boundedFullDataCompactionPreservesTheStockGraph(boolean coordinated) throws Exception {
     var table = table(coordinated);
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
-    env.setRuntimeMode(org.apache.flink.api.common.RuntimeExecutionMode.BATCH);
+    env.setRuntimeMode(RuntimeExecutionMode.BATCH);
     env.setParallelism(1);
     build(env, table, false, true);
     adapt(env);
@@ -111,7 +111,7 @@ class PaimonMaintenanceTest {
 
   private static void adapt(StreamExecutionEnvironment env) {
     var before = graph(env);
-    assertEquals(nativeLine() ? 1 : 0, NativePaimonMaintenance.accelerate(env));
+    assertEquals(1, NativePaimonMaintenance.accelerate(env));
     assertEquals(before, graph(env), "source, commit and state identities must be retained");
     assertEquals(0, NativePaimonMaintenance.accelerate(env), "adapting twice must be inert");
   }
@@ -151,10 +151,6 @@ class PaimonMaintenanceTest {
             .sorted()
             .collect(Collectors.toList()),
         PaimonTestTables.readRows(table, table.rowType()));
-    if (nativeLine()) NativeAppendSinkWriteTest.assertNativeFiles(table);
-  }
-
-  private static boolean nativeLine() {
-    return EnvironmentInformation.getVersion().startsWith("2.2.");
+    NativeAppendSinkWriteTest.assertNativeFiles(table);
   }
 }

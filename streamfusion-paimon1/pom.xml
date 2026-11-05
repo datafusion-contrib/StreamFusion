@@ -152,15 +152,15 @@
                                     </includes>
                                     <excludes>
                                         <exclude>tech/streamfusion/paimon/PaimonVersion.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonAppendCompactWrite.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonAppendTask.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonAppendWorkerCompat.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonSingleFileWriter.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativeAppendSinkWrite.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativeKeyValueSinkWrite.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonAppendSink.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonBucketAssigner.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonBucketSink.java</exclude>
-                                        <exclude>tech/streamfusion/paimon/NativePaimonCompactRewriter.java</exclude>
-                                        <exclude>tech/streamfusion/paimon/PaimonCompactionProvider.java</exclude>
-                                        <exclude>tech/streamfusion/paimon/NativePaimonMaintenance.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonCoordinatorCommitOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonDynamicPartitionOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonLocalMergeOperator.java</exclude>
@@ -208,6 +208,10 @@
                                         <include>**/PaimonOperatorDescriptionTest.java</include>
                                         <include>**/PaimonSplitWatermarksTest.java</include>
                                         <include>**/PaimonFetcherLifecycleTest.java</include>
+                                        <include>**/PaimonCompactionCompatibilityTest.java</include>
+                                        <include>**/PaimonCompactionFailureTest.java</include>
+                                        <include>**/PaimonCompactionBenchmark.java</include>
+                                        <include>**/PaimonCompactionTestAdapter.java</include>
                                         <include>**/PaimonTimestampSqlTest.java</include>
                                     </includes>
                                 </resource>

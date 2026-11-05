@@ -1,15 +1,20 @@
 # Columnar Paimon compaction
 
-Java Paimon 2.1 chooses compaction files, sections, output level and delete retention. This path
-uses Flink 2.2; Flink 1.18 keeps Paimon 2.0 and stock maintenance. A small
-rewriter decorator sends admitted deduplicate work through the released paimon-rust reader and
-the existing native Parquet encoder. It shares the source's authenticated FileIO and footer
-preflight, and the level-0 writer's Arrow and metadata boundary. Paimon's rolling writer owns
-file creation, close and abort. No payload row conversion, local comparator, reducer or compaction
-planner is added. [Coverage and fallback](../connectors/paimon.md#compaction) remain deliberately
-bounded; other maintenance uses Paimon.
+Java Paimon chooses compaction files, sections, output levels and delete retention. One shared
+payload implementation handles Parquet/ORC primary-key deduplication and append compaction across
+the released 2.1/Flink 2.2, 2.0/Flink 1.18 and 1.0/Flink 1.18 adapters. Released paimon-rust reads
+and merges the selected files; the existing native codecs encode Arrow bundles. Java retains
+metadata, rolling, abort, scheduling and commit/recovery. No comparator, reducer or compaction
+planner is added. [Coverage and fallback](../connectors/paimon.md#compaction) remain bounded.
 
-## Release comparison
+The [expanded release diagnostic](../benchmarks/paimon-compaction-expanded-20261105/README.md)
+retains 120 worker trials on Paimon 1.0: Parquet medians improve 1.27–2.04× versus stock and
+1.26–2.02× versus previous; ORC improves 1.27–1.67× versus stock and 1.30–1.69× versus previous.
+The ORC run uses the same larger sort-spill budget for all engines. The wide nested PK shape
+retains Java at the smaller budget. These figures do not establish the new combinations' complete-job
+latency or the other adapters' performance.
+
+## Original Flink 2.2 / Paimon 2.1 Parquet comparison
 
 Measured on 2026-11-04, Apple M4 (10 CPUs), 16 GiB RAM, JDK 17.0.17, Flink 2.2.1, Java Paimon
 2.1.0 and crates.io paimon 0.4.0. All native libraries use release/mimalloc builds. The JVM has
