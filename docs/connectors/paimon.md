@@ -1380,7 +1380,9 @@ The two adapters must not be installed together.
 
 The adapter shares the released paimon-rust source reader, Java FileIO bridge, native writer
 codecs and Arrow batch routing with the 2.1 integration. Its build stages shared Java sources and overlays the classes whose
-released APIs changed. The artifacts deliberately use the same package names: choose
+released APIs changed. From the Flink 1.18 compatibility directory it copies only the shared
+source-reader adapter; modern writer and coordinator compatibility classes stay out of the 1.0
+artifact. The artifacts deliberately use the same package names: choose
 one at deployment rather than mixing incompatible Paimon APIs in one classloader. Java uses the 1.0 append topology, writer memory pools, file
 metadata, hash indexes, commit messages, and checkpoint lifecycle. Streaming
 splits containing before-files retain Java's reverse-row-kind reader. Postpone

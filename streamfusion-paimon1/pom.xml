@@ -182,7 +182,7 @@
                                     <directory>${project.basedir}/../src/main/java-flink1.18</directory>
                                     <filtering>false</filtering>
                                     <includes>
-                                        <include>tech/streamfusion/paimon/**/*.java</include>
+                                        <include>tech/streamfusion/paimon/PaimonSourceReaderCompat.java</include>
                                     </includes>
                                 </resource>
                                 <resource>
