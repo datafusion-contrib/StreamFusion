@@ -805,7 +805,12 @@ The expanded 2.1 local qualification passes all 152 assertions in both modes wit
 and 242 native rewrite groups. Append action invocations now require native work rather than
 retaining their former PK-only selection expectation. The append schema-change invocation
 requires both native current-schema rewriting and the explicit `schema-evolution` fallback;
-either missing path or a different fallback reason fails its contract.
+either missing path or a different fallback reason fails its contract. The 1.0 corpus passes
+all 72 applicable invocations in each mode with zero skips and 384 native groups. The combined
+[448-invocation result inventory](benchmarks/paimon-merge-compaction-20261105/upstream-results.csv)
+retains each case, expected route, native/fallback counts and input formats. The shared focused
+regression inventory has 178 parameter invocations across the three released hosts, including
+positive first-row provider installation before unstarted lookup work.
 
 The test agent installs the production decorator through the public core writer factory and
 invokes the production graph adapter before a dedicated graph executes. Test-only reflection

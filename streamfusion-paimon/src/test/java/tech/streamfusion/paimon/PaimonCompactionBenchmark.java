@@ -45,6 +45,8 @@ class PaimonCompactionBenchmark {
         Integer.parseInt(System.getenv().getOrDefault("SF_PAIMON_COMPACTION_ROWS", "400000"));
     int repeats =
         Integer.parseInt(System.getenv().getOrDefault("SF_PAIMON_COMPACTION_REPEATS", "3"));
+    int warmups =
+        Integer.parseInt(System.getenv().getOrDefault("SF_PAIMON_COMPACTION_WARMUPS", "1"));
     String originalMode = System.getProperty("streamfusion.paimon.compaction.mode");
     try {
       for (String shape :
@@ -55,13 +57,23 @@ class PaimonCompactionBenchmark {
               .split(",")) {
         System.setProperty("streamfusion.paimon.compaction.mode", "stock");
         FileStoreTable table = fixture(shape, rows);
+        var inputs = table.store().newScan().plan().files();
+        System.out.printf(
+            "PAIMON_COMPACTION_INPUT shape=%s files=%d rows=%d levels=%s%n",
+            shape,
+            inputs.size(),
+            inputs.stream().mapToLong(entry -> entry.file().rowCount()).sum(),
+            inputs.stream()
+                .map(entry -> entry.file().level())
+                .collect(java.util.stream.Collectors.toList()));
         List<String> expected = null;
         var timings = new java.util.LinkedHashMap<String, List<Double>>();
         for (String engine : List.of("stock", "previous", "native"))
           timings.put(engine, new ArrayList<>());
-        for (int trial = 0; trial <= repeats; trial++) {
+        for (int trial = 1 - warmups; trial <= repeats; trial++) {
           for (int position = 0; position < 3; position++) {
-            String engine = List.of("stock", "previous", "native").get((position + trial) % 3);
+            String engine =
+                List.of("stock", "previous", "native").get(Math.floorMod(position + trial, 3));
             System.setProperty("streamfusion.paimon.compaction.mode", engine);
             var selected = table.copy(java.util.Map.of("write-only", "false"));
             var metrics = new Metrics();
@@ -91,7 +103,11 @@ class PaimonCompactionBenchmark {
             var outputPaths =
                 table.store().pathFactory().createDataFilePathFactory(BinaryRow.EMPTY_ROW, 0);
             if (engine.equals("native")) {
-              assertTrue(metrics.counters.get("nativeRewriteGroups").getCount() > 0);
+              assertTrue(
+                  metrics.counters.get("nativeRewriteGroups").getCount() > 0,
+                  () ->
+                      "No native payload group; stock groups="
+                          + metrics.counters.get("stockRewriteGroups").getCount());
               assertEquals(
                   0,
                   metrics.counters.get("stockRewriteGroups").getCount(),
@@ -168,7 +184,9 @@ class PaimonCompactionBenchmark {
     options.put("file.format", System.getenv().getOrDefault("SF_PAIMON_FILE_FORMAT", "parquet"));
     options.put("write-only", "true");
     if (!append) options.put("merge-engine", mergeEngine);
-    if (mergeEngine.equals("aggregation")) options.put("fields.v.aggregate-function", "sum");
+    if (mergeEngine.equals("aggregation"))
+      options.put(
+          "fields.v.aggregate-function", shape.startsWith("aggregation-min") ? "min" : "sum");
     options.put("write-buffer-size", "256 mb");
     options.put(
         "sort-spill-buffer-size",

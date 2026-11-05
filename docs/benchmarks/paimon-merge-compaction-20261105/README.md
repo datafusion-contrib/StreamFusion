@@ -13,7 +13,7 @@ read/merge, format encoding, metadata and close. Stock Paimon reopens every outp
 timer; row count and a SHA-256 over the complete physical KV rows, stored kinds and sequences
 must match. Native trials require positive rewrite groups, zero fallback and native encoder
 footers. These are file-worker timings, not running-job or startup-inclusive job speedups.
-All 288 observations, including warmups and output fingerprints, are in [worker-trials.csv](worker-trials.csv).
+All 648 observations across the original and additional host qualifications, including warmups and output fingerprints, are in [worker-trials.csv](worker-trials.csv).
 
 | Paimon | Format | Workload | Stock median ms | Previous median ms | Native median [min, max] ms | Stock/native |
 |---|---|---|---:|---:|---:|---:|
@@ -60,3 +60,32 @@ Reproduce with `PaimonCompactionBenchmark` under `-Pbench,paimon` or
 and `SF_PAIMON_FILE_FORMAT` to `parquet` or `orc`. Use UTC for ORC. Exclude the two wide field-merge
 ORC shapes when requiring positive native work on the final admitted implementation; their table
 rows retain the candidate measurements taken before that performance guard.
+
+## Additional modern Flink 1.18 / Paimon 2.0 qualification
+
+Paimon 2.0 always checks sum overflow, so sums retain Java; these aggregate workloads explicitly
+use BIGINT `min`. All engines receive the same settings. The initial one-warmup/three-measurement
+matrix is retained as `run=initial`, including the narrow ORC partial-update result of 0.99× stock.
+A separate 12-repeat [JFR diagnostic](profile-2.0-summary.json) showed substantial warmup drift.
+Qualification then used three warmups and five uninstrumented rotating measurements for every
+engine and workload. The extended-warmup measurements below and all earlier observations remain
+in the CSV; no engine, workload or unfavorable trial is discarded. These short worker timings
+remain sensitive to JIT and host variability, particularly the small scalar partial-update gains.
+
+| Format | Workload | Stock median ms | Previous median ms | Native median [min, max] ms | Stock/native |
+|---|---|---:|---:|---:|---:|
+| parquet | first-row | 100.41 | 97.92 | 65.49 [61.00, 70.29] | 1.53× |
+| parquet | first-row-wide | 171.58 | 169.28 | 98.09 [90.34, 101.07] | 1.75× |
+| parquet | partial-update | 112.15 | 102.85 | 96.16 [93.37, 105.02] | 1.17× |
+| parquet | partial-update-wide | 189.21 | 188.60 | 155.40 [153.53, 170.09] | 1.22× |
+| parquet | aggregation-min | 109.35 | 110.10 | 96.62 [95.66, 102.66] | 1.13× |
+| parquet | aggregation-min-wide | 210.24 | 210.56 | 176.42 [173.66, 179.61] | 1.19× |
+| orc | first-row | 96.92 | 94.50 | 52.79 [50.82, 62.07] | 1.84× |
+| orc | first-row-wide | 128.14 | 120.19 | 87.65 [83.32, 94.95] | 1.46× |
+| orc | partial-update | 93.17 | 94.96 | 89.84 [82.18, 94.02] | 1.04× |
+| orc | aggregation-min | 93.70 | 95.27 | 84.85 [79.23, 86.26] | 1.10× |
+
+Reproduce this additional matrix with `-Pflink-1.18,paimon,bench`,
+`SF_PAIMON_COMPACTION_WARMUPS=3`, and `SF_PAIMON_COMPACTION_REPEATS=5`. Use
+`aggregation-min,aggregation-min-wide` for the aggregate Parquet shapes and omit nested field-merge
+shapes for ORC. The input report records actual selected file/row counts and input levels.

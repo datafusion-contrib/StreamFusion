@@ -6,10 +6,12 @@ dynamic, or postpone buckets** on published Paimon `2.1.0` for Flink 2.2 and `2.
 The separate [Paimon 1.0.0 adapter](#paimon-100-on-flink-118) targets Flink 1.18.
 Paimon keeps every table-level responsibility:
 schema and catalog, bucket assignment rules, sequence numbering rules, file rolling, statistics,
-manifests, snapshots, commits, and compaction. StreamFusion replaces the per-row shuffle in front
+manifests, snapshots, commits, and compaction planning. StreamFusion replaces the per-row shuffle in front
 of the writers, append buffering and spilling, the Parquet/ORC encoding of each data file, and, for
 primary-key tables, the sort and merge that turns a bucket's changelog into a level-0 file. Postpone
 staging retains every accepted change for Paimon's separate compactor.
+For admitted [compactions](#compaction), the released Rust reader and native format writers also
+process the selected data files through the shared maintenance adapter.
 
 Both file formats share the same Java lifecycle, native routing and merge paths. ORC's physical
 encoding options and UTC timestamp restrictions are detailed on the [ORC page](orc.md).
@@ -1173,7 +1175,9 @@ merge or sort policy. Its budget check covers one file at a time; PK checks the 
 The [merge-engine worker comparison](../benchmarks/paimon-merge-compaction-20261105/README.md)
 records all three additional engines on both releases and formats, including the slower nested
 ORC candidate measurements that led to retaining Java for that combination. It includes physical
-output fingerprints, stock/previous/native trials and ranges; it does not establish job-latency gains.
+output fingerprints, stock/previous/native trials and ranges; it does not establish job-latency gains. The additional Paimon 2.0 qualification uses
+BIGINT min aggregation and retains both its initial measurements and extended warmup results;
+its checked sums remain stock.
 
 The [expanded 1.0 release diagnostic](../benchmarks/paimon-compaction-expanded-20261105/README.md)
 measures Parquet worker gains of 1.27–2.04× and ORC gains of 1.27–1.67× versus stock, with identical
