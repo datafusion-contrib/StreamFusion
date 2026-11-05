@@ -217,7 +217,7 @@ counters and any JVM diagnostics before assigning a cause. The job timeout remai
 
 ## Ordinary runtime test shards
 
-Each Flink/JDK pair runs two Java jobs. The complete reactor is compiled first with tests
+Each Flink/JDK pair runs three Java jobs. The complete reactor is compiled first with tests
 deferred; `bin/ci_runtime_test_shards.py` then partitions the compiled runtime classes matching
 Surefire's default `Test*`, `*Test`, `*Tests` and `*TestCase` names. SHA-256 of the relative
 class path assigns each candidate to one shard. Nested classes stay with their outer class,
@@ -226,7 +226,7 @@ indices fail before test execution rather than restoring an unfiltered Surefire 
 
 The `sf.runtime.testIncludesFile` property activates a runtime-only Maven profile with that
 shard's includes file. Both existing Surefire executions retain their ordinary/ORC tag filters and classpaths.
-The two main-suite selections therefore cover the same runtime tests once per Flink/JDK pair;
+The three main-suite selections therefore cover the same runtime tests once per Flink/JDK pair;
 the additional JVM-boundary/cache phase still runs once on JDK 17 for each Flink line, in
 shard 1. Deployment-module tests and bytecode/package checks repeat in each shard, preserving
 the complete reactor's assembly order and module-owned test selections. Local `mvn test`
@@ -239,14 +239,21 @@ recursive table-function and nested table-function bridge matrices also stay in 
 On the first recursive-scalar CI run, these four suites took 17.4 minutes together on
 Flink 2.2/JDK 11 in shard 2. That shard completed its 10,341 runtime cases without failures,
 then reached the 150-minute job limit during the later connector tests, while shard 1
-finished in about 115 minutes. Moving the four complete classes gives both shards room for
-the remaining reactor modules without reducing their test selection or raising the timeout.
+finished in about 115 minutes. Moving those four complete classes initially balanced the
+two partitions without reducing their test selection or raising the timeout.
+As the suite grew, run `42014164780` at `01c3c1418b55` reported 8,704 ordinary runtime
+cases (36 existing skips) and 24 ORC cases in Flink 2.2/JDK 11 shard 1 without failures or errors, but reached
+the same limit during the subsequent Fluss tests. The runtime phase alone took about
+141 minutes; the other seven Java jobs passed. Three partitions now distribute the complete
+runtime inventory across more jobs, leaving room for the remaining reactor modules and
+JDK 17 boundary checks under the unchanged timeout.
 Each job also uploads its selected classes and
 complete-inventory digest as a runtime-partition artifact; failure diagnostics have unique
-shard names. The aggregate gate requires all eight Java jobs across both Flink lines and JDKs.
+shard names and are also requested on cancellation, including job timeouts, when the runner
+can still upload artifacts. The aggregate gate requires all twelve Java jobs across both Flink lines and JDKs.
 
 Actual Maven regression fixtures compare the unpartitioned test cases with the combined
-shards, including ORC tags, nested classes, parameterized invocations and existing skips.
+two- and three-shard plans, including ORC tags, nested classes, parameterized invocations and existing skips.
 Duplicate executions fail through exclusive result creation, and an intentionally failing
 selected test must still fail Maven. Sharding retains the fresh-process memory boundary
 and distributes its startup cost across jobs under the unchanged 150-minute budget; it does not

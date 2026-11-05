@@ -116,7 +116,7 @@ jobs:
       matrix:
         line: ['2.2', '1.18']
         jdk: ['17', '11']
-        shard: [1, 2]
+        shard: [1, 2, 3]
         include:
           - line: '2.2'
             profile: ''
@@ -177,7 +177,7 @@ jobs:
           mvn -B -ntp ${{ matrix.profile }} test -DskipTests -Dnative.build.skip=true
           python3 bin/ci_runtime_test_shards.py \
             --classes streamfusion-runtime/target/test-classes \
-            --count 2 --index ${{ matrix.shard }} \
+            --count 3 --index ${{ matrix.shard }} \
             --output "$RUNNER_TEMP/runtime-test-includes.txt"
 
       - name: Run Java test suite
@@ -208,7 +208,7 @@ jobs:
           python3 bin/check-java-bytecode.py
 
       - name: Upload Java failure diagnostics
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: java-failure-diagnostics-${{ matrix.line }}${{ matrix.jdk == '11' && '-jdk11' || '' }}-shard${{ matrix.shard }}
