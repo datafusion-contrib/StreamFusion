@@ -27,12 +27,12 @@ flink,org.apache.paimon.flink.PartialUpdateITCase,testMergeCompaction,native,,Un
 flink,org.apache.paimon.flink.PreAggregationITCase$FieldsDefaultAggregationITCase,testMergeCompaction,native,,Unchanged upstream default first-non-null and date last-non-null forced compaction.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testBatchCompact,native,,Java partition/bucket/expiration selection with native file rewrite.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testHistoryPartitionCompact[1],native,,Java partition/bucket/expiration selection with native file rewrite.
-flink,org.apache.paimon.flink.action.CompactActionITCase,testHistoryPartitionCompact[2],no-rewrite,,Append/data-evolution worker is outside the PK rewriter boundary.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testHistoryPartitionCompact[2],native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testSpecifyNonPartitionField,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
 flink,org.apache.paimon.flink.action.CompactActionITCase,testStreamingCompact,fallback,changelog-producer,"Explicit full-compaction changelog remains Java, including refresh/evolution."
 flink,org.apache.paimon.flink.action.CompactActionITCase,testTableConf,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
-flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketBatchCompact,no-rewrite,,Append/data-evolution worker is outside the PK rewriter boundary.
-flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketStreamingCompact,no-rewrite,,Append/data-evolution worker is outside the PK rewriter boundary.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketBatchCompact,native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketStreamingCompact,native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testWrongUsage,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
 flink,org.apache.paimon.flink.action.MinorCompactActionITCase,testBatchFullCompactStrategy,native,,Java full/minor selection with native file rewrite.
 flink,org.apache.paimon.flink.action.MinorCompactActionITCase,testBatchMinorCompactStrategy,native,,Java full/minor selection with native file rewrite.

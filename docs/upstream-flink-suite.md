@@ -801,6 +801,12 @@ upgrade cases do not count as native coverage. The unchanged randomized restore 
 interrupt an attempt; successful selected rewrites must remain native, and other failures fail
 validation. Late callbacks retain their originating invocation.
 
+The expanded 2.1 local qualification passes all 152 assertions in both modes with zero skips
+and 242 native rewrite groups. Append action invocations now require native work rather than
+retaining their former PK-only selection expectation. The append schema-change invocation
+requires both native current-schema rewriting and the explicit `schema-evolution` fallback;
+either missing path or a different fallback reason fails its contract.
+
 The test agent installs the production decorator through the public core writer factory and
 invokes the production graph adapter before a dedicated graph executes. Test-only reflection
 constructs a resolved table view from the pinned core fixture's existing FileIO, schema and

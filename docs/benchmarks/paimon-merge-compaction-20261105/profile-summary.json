@@ -1,9 +1,6 @@
 {
-  "worker_sample_stages": {
-    "other": 256,
-    "native-reader": 26,
-    "native-writer": 7
-  },
+  "worker_samples_all_engines": 289,
+  "reader_next_samples": 26,
   "top_frames": [
     [
       "org/apache/paimon/utils/OffsetRow.isNullAt",
@@ -64,10 +61,6 @@
       26
     ],
     [
-      "tech.streamfusion.paimon.PaimonRustReader$$Lambda$1743+0x0000000801bd1310/1345827813.next",
-      26
-    ],
-    [
       "tech/streamfusion/paimon/NativePaimonFileReader.importBatch",
       26
     ],
@@ -104,5 +97,5 @@
       1
     ]
   ],
-  "note": "JFR diagnostic samples on compaction worker threads; not uninstrumented throughput measurements."
+  "note": "JFR diagnostic samples on compaction worker threads across all three engines. Reader JNI boundary samples do not resolve Rust frames and do not establish a per-stage CPU percentage. Instrumented timings are not used for throughput claims."
 }

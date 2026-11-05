@@ -65,24 +65,24 @@ flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testRowDeduplicateWi
 flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testUpdate(boolean)[1],stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
 flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testUpdate(boolean)[2],stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
 flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testCompactedScanMode,stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
-flink,org.apache.paimon.flink.action.CompactActionITCase,testLotsOfPartitionsCompact,no-rewrite,,Append/data-evolution worker is outside the PK rewriter boundary.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testLotsOfPartitionsCompact,native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testCompactWhenSkipLevel0,fallback,merge-engine|changelog-producer,Upstream chooses first-row or lookup/DV; both retain Java.
-flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketStreamingCompactWithWithAddingColumns,no-rewrite,,Append/data-evolution worker is outside the PK rewriter boundary.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketStreamingCompactWithWithAddingColumns,mixed,schema-evolution,Require native current-schema append work and whole-group Java fallback after the schema changes.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testCompactSpecifiedBucketRangesFromAction,native,,Java partition/bucket/expiration selection with native file rewrite.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testTableConf,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
 flink,org.apache.paimon.flink.action.CompactActionITCase,testDataEvolutionTableCompact,no-rewrite,,Append/data-evolution worker is outside the PK rewriter boundary.
-flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketStreamingCompactWithChangedExternalPath,no-rewrite,,Append/data-evolution worker is outside the PK rewriter boundary.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketStreamingCompactWithChangedExternalPath,native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testWrongUsage,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
 flink,org.apache.paimon.flink.action.CompactActionITCase,testSpecifyNonPartitionField,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
-flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketBatchCompact,no-rewrite,,Append/data-evolution worker is outside the PK rewriter boundary.
-flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketStreamingCompact,no-rewrite,,Append/data-evolution worker is outside the PK rewriter boundary.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketBatchCompact,native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketStreamingCompact,native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testStreamingCompactWithChangedExternalPath,fallback,changelog-producer,"Explicit full-compaction changelog remains Java, including refresh/evolution."
 flink,org.apache.paimon.flink.action.CompactActionITCase,testStreamingCompact,fallback,changelog-producer,"Explicit full-compaction changelog remains Java, including refresh/evolution."
 flink,org.apache.paimon.flink.action.CompactActionITCase,testStreamingCompactWithAddingColumns,fallback,changelog-producer,"Explicit full-compaction changelog remains Java, including refresh/evolution."
 flink,org.apache.paimon.flink.action.CompactActionITCase,testSkipExpiredPartitions,native,,Java partition/bucket/expiration selection with native file rewrite.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testStreamingCompactWithEmptyOverwriteUpgrade,no-rewrite,,Force-up-level-0 metadata promotions retain Java; upstream asserts empty-overwrite behavior.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testHistoryPartitionCompact(boolean)[1],native,,Java partition/bucket/expiration selection with native file rewrite.
-flink,org.apache.paimon.flink.action.CompactActionITCase,testHistoryPartitionCompact(boolean)[2],no-rewrite,,Append/data-evolution worker is outside the PK rewriter boundary.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testHistoryPartitionCompact(boolean)[2],native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testNotSkipExpiredPartitionsByDefault,native,,Java partition/bucket/expiration selection with native file rewrite.
 flink,org.apache.paimon.flink.action.CompactActionITCase,testBatchCompact,native,,Java partition/bucket/expiration selection with native file rewrite.
 flink,org.apache.paimon.flink.action.MinorCompactActionITCase,testBatchFullCompactStrategy,native,,Java full/minor selection with native file rewrite.

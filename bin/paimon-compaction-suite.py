@@ -57,16 +57,17 @@ def validate(expected, output, mode, version):
             assert not work, f"Stock baseline used the native decorator: {key}"
         else:
             expectation = contract["expectation"]
-            if expectation == "native":
+            if expectation in ("native", "mixed"):
                 assert native, f"Missing native rewrite: {key}"
-            if expectation == "fallback":
+            if expectation in ("fallback", "mixed"):
                 assert stock, f"Missing required Java delegation: {key}"
             if expectation == "no-rewrite":
                 assert not work, f"Unexpected payload rewrite in selection/upgrade fixture: {key}"
             if expectation in ("native", "selected-native"):
                 assert not stock, f"Unexpected fallback: {key}: {stock}"
-            if expectation in ("fallback", "stock-policy"):
-                assert not native, f"Unsupported policy ran natively: {key}"
+            if expectation in ("fallback", "stock-policy", "mixed"):
+                if expectation != "mixed":
+                    assert not native, f"Unsupported policy ran natively: {key}"
                 reasons = contract["fallback_reasons"].split("|")
                 assert all(item["fallback"] in reasons for item in stock), (key, stock)
             for item in native:
