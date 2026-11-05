@@ -2040,10 +2040,9 @@ impl CompiledFormat {
 
 /// Flink's `DATE_FORMAT(timestamp, format)`: format the timestamp's UTC wall-clock with the given
 /// pattern — `LocalDateTime.ofInstant(ts, UTC).format(DateTimeFormatter.ofPattern(format))`. The JVM
-/// encoder validates the (literal) Java pattern and passes the equivalent chrono strftime pattern as
-/// the second argument, admitting only patterns whose chrono translation is byte-identical; the native
-/// side just formats. The timestamp column is naive (TIMESTAMP, no zone), so its stored millis are the
-/// wall-clock at UTC — `from_timestamp_millis` recovers exactly the fields Flink formats.
+/// encoder passes a restricted numeric pattern using strftime tokens. Formatting uses Java's
+/// proleptic Gregorian calendar and year-of-era over the full millisecond range, independently of
+/// chrono's smaller supported date range. TIMESTAMP values already represent the UTC wall-clock.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct DateFormat {
     signature: datafusion::logical_expr::Signature,
@@ -2083,20 +2082,15 @@ impl datafusion::logical_expr::ScalarUDFImpl for DateFormat {
             .downcast_ref::<StringArray>()
             .expect("utf8 format");
         let mut builder = arrow::array::StringBuilder::new();
-        let mut compiled = CompiledFormat::new();
+        let mut compiled = crate::flink_functions::date_format::TimestampFormat::default();
         let mut buf = String::new();
         for row in 0..rows {
             if times.is_null(row) || formats.is_null(row) {
                 builder.append_null();
                 continue;
             }
-            match chrono::DateTime::from_timestamp_millis(times.value(row)) {
-                Some(instant) => {
-                    compiled.format_into(&mut buf, instant.naive_utc(), formats.value(row))?;
-                    builder.append_value(&buf);
-                }
-                None => builder.append_null(),
-            }
+            compiled.format_into(&mut buf, times.value(row), formats.value(row))?;
+            builder.append_value(&buf);
         }
         Ok(ColumnarValue::Array(Arc::new(builder.finish())))
     }

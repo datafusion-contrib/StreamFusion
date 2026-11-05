@@ -6903,8 +6903,9 @@ final class RexExpression {
   /**
    * Emits {@code DATE_FORMAT(timestamp, format)} (op 86). Admitted only for a plain {@code
    * TIMESTAMP} (not local-zoned, whose formatting would depend on the session zone) with a literal
-   * format whose Java pattern translates to a byte-identical chrono pattern (see {@link
-   * #toChronoFormat}); the translated pattern is passed to the native side. Other patterns use the
+   * format whose Java pattern translates to supported numeric tokens (see {@link
+   * #toChronoFormat}); the plain-timestamp kernel preserves Java year-of-era rather than Chrono's
+   * signed year semantics. Other patterns use the
    * generated temporal evaluator before reaching this method.
    */
   private boolean emitDateFormat(List<RexNode> args) {
@@ -7009,10 +7010,11 @@ final class RexExpression {
   }
 
   /**
-   * Translates a Java {@code DateTimeFormatter} pattern to the equivalent chrono strftime pattern,
+   * Translates a Java {@code DateTimeFormatter} pattern to restricted strftime tokens,
    * or null if it uses any field the translation can't reproduce byte-for-byte. Only zero-padded
    * numeric fields (the unambiguous ones) and literal separators are admitted; text fields,
-   * fractional seconds, am/pm, zones, and single-letter (non-padded) fields fall back.
+   * fractional seconds, am/pm, zones, and single-letter (non-padded) fields fall back. Plain
+   * timestamps use a Java-compatible numeric renderer; the opt-in LTZ path uses Chrono.
    */
   private static String toChronoFormat(String pattern) {
     if (pattern == null || pattern.isEmpty()) {

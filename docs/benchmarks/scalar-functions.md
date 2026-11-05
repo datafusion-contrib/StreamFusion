@@ -10245,3 +10245,26 @@ and [5,500 raw prepared samples](results/default-precision-epoch-2026-11-05.csv.
 retain all measurements, independent controls, exact source/encoder/fixture/runtime
 provenance and the separate parent rebase qualification. Historical results keep their
 original revisions. Hosted CI must qualify the exact final PR head separately.
+
+## Numeric DATE_FORMAT calendar correctness (2026-11-05)
+
+This repairs an already-enabled path rather than claiming a new accelerated signature.
+All 28 fresh JVM invocations pass on released Flink 1.18.1/2.2.1 and JDK 11/17, targeting
+Java 11. They cover complete runtime-source maps and schemas for TIMESTAMP(0/3/6/9),
+BCE/year-zero/extended dates, signed-millisecond endpoints, NULLs, filtering and empty
+batches. Admitted paths consume NativeCalc with no fallback and empty JVM evaluators.
+The actual preceding runtime fails all four new value tests on each released line's
+JDK 17 control, while the three existing tests pass. Twelve unchanged released temporal
+test-method oracles and all 927 release Rust core tests also pass.
+
+Six complete million-row configurations compare stock, the actual preceding native
+runtime and the repaired runtime on modern dates, where the preceding formatter is
+correct. Each engine has two warmups and three measured trials at parallelism one.
+Both row/Arrow perimeter transposes, planning/submission, JNI and blackhole consumption
+remain in the measured jobs. Raw elapsed and job-runtime trials, source/library hashes
+and correctness accounting are retained in the
+[qualification record](results/date-format-year-2026-11-05.json).
+Native/stock median elapsed is 0.744-0.960; native/previous is 0.926-1.001.
+The full timestamp pattern on Flink 2.2 is 0.07% slower than the preceding runtime;
+the trials are retained rather than presented as a universal speedup. These complete-job
+diagnostics do not qualify any additional pattern or timezone admission.
