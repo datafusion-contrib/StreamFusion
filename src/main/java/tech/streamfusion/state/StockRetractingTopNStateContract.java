@@ -181,7 +181,10 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
     if (row == null || row.getArity() != rowType.getFieldCount() || row.getRowKind() == null)
       throw new IllegalStateException("Invalid retracting retained row");
     for (int column = 0; column < rowType.getFieldCount(); column++)
-      if (!rowType.getTypeAt(column).isNullable() && row.isNullAt(column))
+      if (!rowType.getTypeAt(column).isNullable()
+          && row.isNullAt(column)
+          && !org.apache.flink.table.types.logical.utils.LogicalTypeChecks.isProctimeAttribute(
+              rowType.getTypeAt(column)))
         throw new IllegalStateException("NULL in a non-null retracting row");
     var keys = new StockKeyProjection(keyType);
     var sorts = new StockKeyProjection(sortType);

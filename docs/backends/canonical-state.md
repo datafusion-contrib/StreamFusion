@@ -1229,8 +1229,8 @@ Benchmarking is deferred.
 
 Normal Flink 2.2.1 SQL and portable stock compiled plans bind the released general retracting
 rank owner with its actual primary identity, selectors, key serializer, serializable comparator,
-maximum parallelism and before-image policy. Qualified retained types are INT/BIGINT/VARCHAR,
-with one/two sort fields, constant ranges including OFFSET/large limits, or non-null integral
+maximum parallelism and before-image policy. Qualified retained types are INT/BIGINT/VARCHAR
+and processing-time indicators retained as payload, with one/two sort fields, constant ranges including OFFSET/large limits, or non-null integral
 first-observed bounds. Per-record state semantics apply under table mini-batching too. Unknown
 upstream native state owners keep their stock template. A rejected binding also keeps stock rank
 state when a direct changelog source has no upstream aggregate to trigger that fallback.
@@ -1251,6 +1251,16 @@ Unsupported schemas, additional sort fields, nullable variable bounds, broader n
 full cross-version/failure/connector/delivery coverage remain in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
 
+
+The retained-indicator correction keeps PROCTIME physical NULLs while validating ordinary
+required fields. Native Calc also preserves the lazy marker until PROCTIME_MATERIALIZE observes
+the clock, so retractions match saved rows after an engine switch. This changes no serializer or
+checkpoint format and adds no native snapshot intermediate. The corrected component passes
+1,032 rank/clock checks, all 64 complete jobs, four unchanged released restore programs per engine
+and 199 audit controls. The jobs retain custom connectors, both transposes, generated identities,
+clean stock workers and exact external effects, including no-input returns, native checkpoints
+and selected 1→3→2 rescaling. All 37 shared Flink 1.18 controls pass without canonical qualification
+there. See the [exact retained-indicator scope](../operators/top-n.md#retained-processing-time-indicators-in-retracting-rank).
 
 ## Arithmetic grouped accumulator projection (partial)
 

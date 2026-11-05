@@ -629,7 +629,8 @@ Normal Flink 2.2.1 SQL and portable stock compiled plans bind the qualified cont
 The planner captures actual stock selectors, serializers, comparator, operator identities, maximum
 parallelism and before-image policy. General retracting ranks allow constant ranges including
 OFFSET and bounds above `Integer.MAX_VALUE`, or a non-null INT/BIGINT first-observed bound.
-Retained fields are INT/BIGINT/VARCHAR with one or two sort fields. Bound operators use per-record
+Retained fields are INT/BIGINT/VARCHAR, with one or two sort fields, plus the retained
+processing-time indicators qualified below. Bound operators use per-record
 semantics even under table mini-batching. Graphs with an unqualified upstream state owner retain
 its stock layout; failed rank binding rebuilds the captured stock template, including direct
 changelog sources without upstream aggregation. Unsupported payloads, three sort fields, nullable
@@ -775,3 +776,50 @@ SQL for keyed/global rank and first/last dedup. They also assert that the same s
 with the released processing-time-window rejection. Event-time canonical routing therefore leaves
 the existing native processing-time path intact; unrelated native Calc activity cannot satisfy
 these controls.
+
+
+## Retained processing-time indicators in retracting rank
+
+Released retracting rank can retain a projected PROCTIME indicator as a physical NULL even when
+its logical type is NOT NULL. That placeholder is materialized only when a downstream expression
+observes processing time. Canonical import accepts this specific placeholder while continuing to
+reject NULL in ordinary required payload fields and partition/sort keys. Original stock logical
+types, row/key serializers, IDs and state descriptors remain unchanged.
+
+Ordinary Flink 2.2.1 SQL and portable stock compiled plans bind this retracting payload case
+automatically. The additional admission is limited to retained processing-time indicators:
+ordinary timestamp payloads, indicator partition/sort keys and previously unqualified wider
+schemas receive no new native canonical qualification. Existing first-N and other time-ordered
+routes keep their own contracts.
+
+Native Calc preserves the same lazy marker: PROCTIME produces a typed physical NULL and
+PROCTIME_MATERIALIZE reads the execution clock. Materializing the marker before rank would make
+later retractions differ from the saved stock row. This corrects ordinary input processing as
+well as canonical handoffs; native checkpoints retain their existing format and export still
+visits live state directly.
+
+All 1,032 combined rank/clock checks pass on the corrected component. These include all 576 typed
+scenarios, 84 canonical/native-checkpoint traces, operator initialization, exact aggregate/rank
+binding sets, and 36 actual SQL clock observations. SQL-derived tests cover all four stock
+heap/RocksDB and native memory/RocksDB backend pairs with and without native-checkpoint recovery.
+A deliberately corrupted ordinary required payload must fail preflight without changing source
+bytes or installing target state; repair/retry succeeds. Immediate and continued state must match
+stock serialized state exactly, including the indicator placeholder.
+
+All 64 complete-job cases pass on the same production revision: 28 projected-clock cases and
+36 aggregate-plus-rank cases. Both ordinary SQL and portable compiled plans, both native stores
+and initial engine orders are covered. They comprise 16 continuation, 16 no-input, eight native
+checkpoint, 16 rescale and eight empty-prefix cases. Rescaling redistributes 64 keys through
+1→3→2/maxP128, while source and transactional sink tasks stay singleton. The multi-owner jobs
+require actual input through both native aggregate and rank. Custom source/coordinator and sink
+state, both transposes, generated UIDs, metadata and clean stock workers remain in the path.
+Committed deterministic changes and tables match stock plus an independent oracle; every observed
+processing-time value must fall within actual execution time. The valid DELETE/UPDATE_BEFORE
+inputs and oracle are unchanged from the archived failing regression.
+
+All four unchanged released rank restore programs pass per engine with 199 execution-audit
+controls. The retracting program imports six actual saved rows and processes two new native rows.
+Another 37 shared Flink 1.18.1 checks pass; they establish common compilation, processing,
+checkpoint and clock regressions, not 1.18 canonical interchange. Earlier cohorts overlap this
+proof and are not cumulative counts of state schemas. Broader qualification remains in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking stays deferred.

@@ -120,7 +120,7 @@ class CanonicalUpdateRankPlanTest {
                         .getConfiguration()
                         .getString("streamfusion.canonical.state-contracts", "")),
             getClass().getClassLoader());
-    assertEquals(1, registrations.size());
+    CanonicalRankPlanBindings.verifyAggregateAndRank(graph, registrations);
     var hashes = new StreamGraphHasherV2().traverseStreamGraphAndGenerateHashes(graph);
     assertTrue(registrations.containsKey(new OperatorID(hashes.get(owner.getId())).toString()));
     assertTrue(

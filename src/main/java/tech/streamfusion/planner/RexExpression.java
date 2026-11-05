@@ -59,7 +59,7 @@ final class RexExpression {
   private static final int KIND_LIT_TINY = 9;
   // A cast node: payload is the target type code, with one child (the casted expression).
   private static final int KIND_CAST = 11;
-  // PROCTIME materializes a volatile execution-time TIMESTAMP_LTZ(3) column.
+  // PROCTIME_MATERIALIZE observes the current execution-time TIMESTAMP_LTZ(3).
   private static final int KIND_PROCTIME = 12;
   // Field access: extract a named field from a ROW/struct-typed child. payload is the string-pool
   // index of the field name, with one child (the struct-typed expression). Nested access (a.b.c)
@@ -2314,8 +2314,14 @@ final class RexExpression {
       strings.add(clockField + "|" + zone);
       return true;
     }
-    // PROCTIME() / PROCTIME_MATERIALIZE(): a nullary current-processing-time column.
-    if ("PROCTIME".equals(functionName) || "PROCTIME_MATERIALIZE".equals(functionName)) {
+    if ("PROCTIME".equals(functionName)) {
+      add(KIND_LIT_TEMPORAL, longs.size(), 0);
+      longs.add((long) temporalTypeCode(call.getType()));
+      longs.add(0L);
+      longs.add(0L);
+      return true;
+    }
+    if ("PROCTIME_MATERIALIZE".equals(functionName)) {
       add(KIND_PROCTIME, 0, 0);
       return true;
     }

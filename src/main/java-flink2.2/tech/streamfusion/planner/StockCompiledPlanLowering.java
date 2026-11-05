@@ -3174,10 +3174,19 @@ final class StockCompiledPlanLowering {
             .anyMatch(
                 type ->
                     !java.util.Set.of(
-                            LogicalTypeRoot.BIGINT,
-                            LogicalTypeRoot.INTEGER,
-                            LogicalTypeRoot.VARCHAR)
-                        .contains(type.getTypeRoot()))) return stock;
+                                LogicalTypeRoot.BIGINT,
+                                LogicalTypeRoot.INTEGER,
+                                LogicalTypeRoot.VARCHAR)
+                            .contains(type.getTypeRoot())
+                        && !(retracting
+                            && org.apache.flink.table.types.logical.utils.LogicalTypeChecks
+                                .isProctimeAttribute(type)))) return stock;
+    if (java.util.stream.IntStream.concat(
+            Arrays.stream(keys), Arrays.stream(sort.getFieldIndices()))
+        .anyMatch(
+            index ->
+                org.apache.flink.table.types.logical.utils.LogicalTypeChecks.isProctimeAttribute(
+                    inputType.getTypeAt(index)))) return stock;
     if (retracting
         && bound >= 0
         && (bound >= inputType.getFieldCount()
