@@ -1973,11 +1973,13 @@ final class RexExpression {
       // Qualified primitive formatting/casing produces ASCII, so no UTF-16 identity is lost.
       return emitBuiltinCall(call, 52);
     }
-    if (isBuiltinDefinition(
-            call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.GREATEST)
-        && isCharacter(call) && call.getOperands().size() >= 2
+    int primitiveStringExtremum = isBuiltinDefinition(
+            call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.GREATEST) ? 109
+        : isBuiltinDefinition(
+            call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.LEAST) ? 110 : 0;
+    if (primitiveStringExtremum != 0 && isCharacter(call) && call.getOperands().size() >= 2
         && call.getOperands().stream().allMatch(RexExpression::nativePrimitiveAsciiResult)) {
-      return emitPrimitiveStringExtremum(call, 109);
+      return emitPrimitiveStringExtremum(call, primitiveStringExtremum);
     }
     boolean primitivePrintfComparison = nativePrimitivePrintfComparison(call);
     if (call.getOperands().stream()

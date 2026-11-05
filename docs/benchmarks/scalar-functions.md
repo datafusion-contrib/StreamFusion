@@ -9868,3 +9868,91 @@ intermediate comparison/zip arrays and generic integer formatting. A first build
 pass still lost bulk controls; direct output buffers, shared validity, BOOLEAN
 selection before text and uniform-winner reuse remove that work. Exact-head hosted
 CI is separate from this local qualification.
+
+
+## Primitive-text LEAST
+
+The built-in selects extrema of proven ASCII/NULL character literals, total verified
+integer/BOOLEAN casts to unbounded STRING, qualified primitive ASCII PRINTF and
+locale-independent UPPER/LOWER. Both released Flink lines retain their own types,
+NULLs and cast modes; PRINTF applies only to 2.2. Ordinary source strings, bounded
+casts, Unicode/unverified and fallible producers retain their prior routes. This
+does not remove the source-representation gate tracked in
+[#508](https://github.com/datafusion-contrib/StreamFusion/issues/508).
+
+```sql
+SELECT LEAST(CAST(v AS STRING), TRY_CAST(n AS STRING)) FROM inputs;
+```
+
+The same output has identical UTF-8 byte and Java UTF-16 ordering under this producer
+proof. A single typed selection writes the chosen slices once, with strict union
+validity. Uniform winners reuse their immutable input offsets/values. Equivalent
+BOOLEAN casts select the strict BOOLEAN extremum before formatting once; mixed
+casing never uses that rewrite. Integer text is written through a reusable itoa
+buffer, sharing input validity and preserving bounded truncation/CHAR padding.
+
+Release qualification uses 402 fresh JVM invocations on Flink 1.18.1/2.2.1
+and JDK 11/17 with zero skips, Java release 11, actual preceding-encoder controls,
+and unchanged released GreatestLeastFunctionsITCase stock oracles. The rebuilt
+native runtime passes all 921 Rust core tests, including independent sorting,
+sliced NULL bitmaps, scalar/array/empty controls, buffer ownership and formatting
+oracles. Admitted SQL consumes NativeCalc with empty evaluator descriptors. The
+previous prepared input falls back for unproven string representation; its complete
+job uses a generated evaluator because the external Row source proves Java-backed
+inputs. These actual routes are asserted separately.
+
+Prepared timing uses equivalent prebuilt Java Generic/Binary RowData and Arrow
+inputs, both NULL modes, modern/legacy casts, BOOLEAN/all signed widths and three DECIMAL truth precisions, 1,024/16-row
+batches, 131,072 rows per trial, 16 warmups and nine measurements. The native timer
+runs inside Rust after import and before export, retaining production Calc,
+formatting, allocations and output consumption. Only this prepared gate excludes
+perimeter JNI/import/export and transposes.
+
+All 108 bulk cells beat stock by 1.263-14.862x and actual previous by
+1.227-13.121x. 26/27 tiny cells remain slower than stock
+(stock/native 0.179-3.378x). No universal small-batch speedup is claimed.
+
+Nine complete million-row jobs retain submission/startup, JNI and both row/Arrow
+transposes, one thread, two warmups and five alternating measurements per engine.
+Native/stock elapsed is 0.416-1.096;
+native/previous is 0.397-0.922.
+2/9 complete medians lose to the candidate-process stock control,
+2/9 lose to the independent stock control, and
+0/9 lose to previous. Ranges and unfavorable results are retained;
+prepared admission is not a complete-pipeline acceleration claim.
+
+| Flink/shape | Stock seconds | Native seconds | Independent stock seconds | Previous seconds |
+|---|---:|---:|---:|---:|
+| 22-int-pair | 0.243379 | 0.232681 | 0.256746 | 0.300773 |
+| 22-bigint-literal | 0.225372 | 0.207914 | 0.231243 | 0.264847 |
+| 22-boolean-pair | 0.224270 | 0.230709 | 0.221438 | 0.268155 |
+| 22-boolean-integer | 0.242662 | 0.238090 | 0.244949 | 0.292659 |
+| 22-printf | 0.788043 | 0.327847 | 0.763934 | 0.824953 |
+| 118-int-pair | 0.260317 | 0.241753 | 0.251691 | 0.291510 |
+| 118-bigint-literal | 0.216809 | 0.210058 | 0.224630 | 0.265566 |
+| 118-boolean-pair | 0.228650 | 0.250603 | 0.226020 | 0.271904 |
+| 118-boolean-integer | 0.248352 | 0.243139 | 0.244889 | 0.295120 |
+
+The [machine-readable record](results/primitive-least-2026-11-05.json) and
+[all 17,100 raw prepared samples](results/primitive-least-2026-11-05.csv.gz)
+retain development controls, medians/ranges, actual routes, allocator bindings,
+source/bytecode/runtime hashes and full-job trials. The first eight-cell pilot lost its BOOLEAN pair to stock
+(stock/native 0.921x) and actual previous (0.914x). A five-second native process sample
+includes 1,243 zip frames; counts identify work, not elapsed-time percentages. The new
+typed Boolean extremum uses OR/AND over packed value bitmaps with strict union validity,
+reusing identities and avoiding generic comparison/zip arrays. It reuses the preceding
+string selection and integer formatting kernels. Both extrema rerun after this shared change. Exact-head hosted
+CI is separate from this local qualification.
+
+
+### Shared Boolean kernel controls
+
+A separate GREATEST replay isolates the shared bitmap change on an already JVM-free
+path. Both the actual preceding encoder/runtime and candidate require native GREATEST
+with empty evaluators; the old route is not relabeled as fallback. Encoder/fixture
+bytecodes match the independently qualified source records. Sixteen additional
+prepared bulk controls across both released lines, both NULL modes, Generic/Binary
+rows and modern/legacy casts beat stock 2.520-13.333x and actual previous 1.326-2.455x.
+All four 16-row controls still lose to stock (0.190-0.504x); their previous/native
+ratios are 1.711-1.838x. They remain prepared controls, not new complete-job timings.
+The same machine-readable record and raw CSV retain all 2,000 additional samples.

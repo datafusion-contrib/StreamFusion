@@ -2419,7 +2419,7 @@ type before the existing extrema kernel when every argument is a direct input or
 integer capacity is sufficient and no DECIMAL loses scale. A DECIMAL argument whose metadata
 changes must be NOT NULL: released Flink can dereference it before checking its NULL flag.
 Nullable DECIMAL metadata changes, scale reduction and unverified producers retain generated
-evaluation. Verified ASCII primitive-text GREATEST uses the Rust subset below. Other
+evaluation. Verified ASCII primitive-text GREATEST/LEAST use the Rust subset below. Other
 character results, mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
 Flink-generated expressions through the batch JVM bridge, preserving coercions and nanoseconds.
 Runtime strings use that bridge when the Calc reads an external DataStream whose conversion
@@ -2444,8 +2444,15 @@ records bulk gains, tiny/full-job losses and actual preceding routes.
 ### LEAST
 
 Uses the same numeric kernels, generated-expression paths and source string-representation
-gates as GREATEST, with strict NULL propagation and minimum comparison. The bounded ASCII
-primitive-text GREATEST admission above does not yet extend to LEAST. Verified mixed exact-numeric LEAST uses
+gates as GREATEST, with strict NULL propagation and minimum comparison. It also admits
+the same proven ASCII primitive-text producers, matching Boolean-word literals and
+locale-independent case results described above. BOOLEAN extrema combine Arrow value
+bitmaps directly while independently unioning argument NULLs; no comparison/zip arrays
+or per-row scalar expansion are needed. A scalar false absorbs LEAST and a scalar true
+absorbs GREATEST while preserving strict NULL propagation.
+The [independent LEAST qualification](../benchmarks/scalar-functions.md#primitive-text-least)
+compares its actual preceding encoder and runtime against stock, retains tiny/full-job
+losses, and reruns both extrema against released Flink. Verified mixed exact-numeric LEAST uses
 the same lossless casts to Flink's resolved DECIMAL type. It retains the same nullable-metadata,
 scale-reduction and producer guards; it does not remove Flink's nullable-conversion failures.
 The [separate qualification](../benchmarks/scalar-functions.md#mixed-exact-least) records

@@ -1,6 +1,6 @@
 use crate::HashMap;
 use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray, StringArray, StringBuilder};
-use arrow::buffer::{NullBuffer, OffsetBuffer};
+use arrow::buffer::{BooleanBuffer, NullBuffer, OffsetBuffer};
 use arrow::datatypes::{
     ArrowPrimitiveType, DataType, Decimal128Type, Int16Type, Int32Type, Int64Type, Int8Type,
 };
@@ -110,6 +110,7 @@ impl ScalarUDFImpl for FlinkExtremum {
             .any(|arg| matches!(arg, ColumnarValue::Array(_)))
         {
             let result = match args.return_type() {
+                DataType::Boolean => Some(boolean_extremum(&args.args, self.greatest)?),
                 DataType::Int8 => Some(primitive_extremum::<Int8Type>(&args.args, self.greatest)?),
                 DataType::Int16 => {
                     Some(primitive_extremum::<Int16Type>(&args.args, self.greatest)?)
@@ -151,6 +152,48 @@ impl ScalarUDFImpl for FlinkExtremum {
             (result, _) => Ok(result),
         }
     }
+}
+
+fn boolean_extremum(args: &[ColumnarValue], greatest: bool) -> Result<ArrayRef> {
+    let mut scalar = !greatest;
+    let mut arrays = Vec::new();
+    for arg in args {
+        match arg {
+            ColumnarValue::Scalar(ScalarValue::Boolean(Some(value))) => {
+                scalar = if greatest {
+                    scalar || *value
+                } else {
+                    scalar && *value
+                };
+            }
+            ColumnarValue::Array(array) => {
+                arrays.push(datafusion::common::cast::as_boolean_array(array)?);
+            }
+            _ => return exec_err!("Boolean extremum requires non-NULL BOOLEAN arguments"),
+        }
+    }
+    let Some((first, rest)) = arrays.split_first() else {
+        return exec_err!("Boolean extremum requires an array");
+    };
+    let nulls = arrays.iter().fold(None, |nulls, array| {
+        NullBuffer::union(nulls.as_ref(), array.nulls())
+    });
+    let values = if scalar == greatest {
+        if greatest {
+            BooleanBuffer::new_set(first.len())
+        } else {
+            BooleanBuffer::new_unset(first.len())
+        }
+    } else {
+        rest.iter().fold(first.values().clone(), |values, array| {
+            if greatest {
+                &values | array.values()
+            } else {
+                &values & array.values()
+            }
+        })
+    };
+    Ok(Arc::new(BooleanArray::new(values, nulls)))
 }
 
 fn primitive_extremum<T: ArrowPrimitiveType>(
@@ -948,6 +991,92 @@ mod tests {
                         .null_count(),
                     5
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn boolean_extrema_match_sorting_with_sliced_values_and_independent_nulls() {
+        let make = |shift: usize, nullable: bool| -> ArrayRef {
+            Arc::new(
+                BooleanArray::from_iter((0..181).map(|i| {
+                    (!nullable || (i + shift) % (11 + shift) != 0).then_some((i + shift) % 7 < 3)
+                }))
+                .slice(7 + shift, 137),
+            )
+        };
+        for nullable in [false, true] {
+            let first = make(0, nullable);
+            let second = make(3, nullable);
+            let scalar = |value| ColumnarValue::Scalar(ScalarValue::Boolean(value));
+            for args in [
+                vec![ColumnarValue::Array(first.clone()), scalar(Some(true))],
+                vec![ColumnarValue::Array(first.clone()), scalar(Some(false))],
+                vec![ColumnarValue::Array(first.clone()), scalar(None)],
+                vec![
+                    ColumnarValue::Array(first.clone()),
+                    ColumnarValue::Array(second.clone()),
+                ],
+                vec![
+                    ColumnarValue::Array(first.clone()),
+                    ColumnarValue::Array(second.clone()),
+                    ColumnarValue::Array(make(5, nullable)),
+                    scalar(Some(true)),
+                    scalar(Some(false)),
+                ],
+                vec![
+                    ColumnarValue::Array(first.clone()),
+                    ColumnarValue::Array(Arc::new(BooleanArray::new_null(137))),
+                    scalar(Some(false)),
+                ],
+                vec![scalar(Some(true)), scalar(Some(false))],
+            ] {
+                let inputs: Vec<_> = args.iter().map(|a| a.to_array(137).unwrap()).collect();
+                for (op, greatest) in [(109, true), (110, false)] {
+                    let expected: Vec<_> = (0..137)
+                        .map(|row| {
+                            let values: Option<Vec<_>> = inputs
+                                .iter()
+                                .map(|a| {
+                                    let a = datafusion::common::cast::as_boolean_array(a).unwrap();
+                                    a.is_valid(row).then(|| a.value(row))
+                                })
+                                .collect();
+                            values.map(|mut values| {
+                                values.sort_unstable();
+                                if greatest {
+                                    *values.last().unwrap()
+                                } else {
+                                    values[0]
+                                }
+                            })
+                        })
+                        .collect();
+                    let output = invoke(op, args.clone(), DataType::Boolean, 137)
+                        .into_array(137)
+                        .unwrap();
+                    assert_eq!(
+                        datafusion::common::cast::as_boolean_array(&output)
+                            .unwrap()
+                            .iter()
+                            .collect::<Vec<_>>(),
+                        expected
+                    );
+                    let empty_args = args
+                        .iter()
+                        .map(|a| match a {
+                            ColumnarValue::Array(a) => ColumnarValue::Array(a.slice(0, 0)),
+                            a => a.clone(),
+                        })
+                        .collect();
+                    assert_eq!(
+                        invoke(op, empty_args, DataType::Boolean, 0)
+                            .into_array(0)
+                            .unwrap()
+                            .len(),
+                        0
+                    );
+                }
             }
         }
     }

@@ -1520,7 +1520,7 @@ timings are not relabeled as measurements of the newer bitmap-sharing runtime.
 
 ## Proven ASCII string extrema
 
-GREATEST proves its primitive text producers before using UTF-8 byte ordering; arbitrary
+GREATEST/LEAST prove their primitive text producers before using UTF-8 byte ordering; arbitrary
 source strings retain Java representation semantics. A typed pass selects borrowed slices
 into one offset/value buffer, with the strict union NULL bitmap. When one input wins every
 valid row, the result shares that input's immutable payload and only changes validity.
@@ -1533,3 +1533,13 @@ The initial INT pair process sample has 927 extrema frames, including 681 zip fr
 and an integer-format subtree with 698 formatting frames. Counts locate work; they are
 not elapsed-time percentages. Initial builder/buffer attempts and slower controls remain in
 the [complete qualification](../benchmarks/scalar-functions.md#primitive-text-greatest).
+
+
+LEAST uses the same text producer proof. A measured BOOLEAN-pair loss prompted a
+native Boolean specialization: maximum is OR and minimum is AND over packed value
+bitmaps, with a separate union of argument NULLs. Constant identities reuse the input
+bitmap and absorbing constants construct only a constant value bitmap. Unlike the
+generic DataFusion comparison/zip route, this avoids selecting Boolean bits row by row.
+The [independent qualification](../benchmarks/scalar-functions.md#primitive-text-least)
+retains the initial loss, process profile, actual preceding controls and slower tiny/full-job
+results. It reruns both string extrema against released Flink after the shared kernel change.
