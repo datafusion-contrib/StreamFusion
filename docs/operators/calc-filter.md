@@ -2609,8 +2609,12 @@ STRING/integer/DECIMAL `%s`, signed integer `%d`, two's-complement `%x`/`%X`/`%o
 alignment and sign/zero padding. BIGINT character conversions retain the formatter, which
 rejects non-NULL Long arguments.
 BOOLEAN-object arguments outside the verified literal-format path retain their released evaluator.
-DECIMAL string conversion preserves scale and Java scientific notation. The released SQL
-evaluator passes internal `DecimalData`, so DECIMAL `%f` retains Flink's NULL result rather
+DECIMAL `%s`/`%S` conversion uses `DecimalData.toString()`'s plain fixed-scale text,
+including leading/trailing zeros: DECIMAL(19,19) with unscaled value 1 renders as
+`0.0000000000000000001`, and zero as `0.0000000000000000000`. Formatter string precision
+and width apply to that exact text; scientific notation would change both projections and
+predicates. The released SQL evaluator passes internal `DecimalData`, so DECIMAL numeric
+formats such as `%f`, `%d` and `%x` retain Flink's NULL result rather
 than introducing BigDecimal formatting. Non-ASCII, temporal/hash/floating formats and unverified
 flags retain Flink's Locale.US formatter; invalid formats still return NULL.
 
@@ -2618,6 +2622,13 @@ Certificates apply to complete batches. Retained evaluator descriptors indicate 
 **may** use Java, not that a certified batch performed an upcall. Unverified string consumers
 still fuse with PRINTF because character formatting can produce isolated UTF-16 surrogates. A sensitive
 string crossing another operator retains the existing representation-protection fallback.
+
+The [DECIMAL formatting regression record](../benchmarks/results/decimal-printf-plain-2026-11-05.json)
+compares 78 precision/scale combinations with released Flink 2.2.1 on JDK 11/17,
+including NULLs, dynamic formats, string precision/width and empty filtered batches.
+All 230 focused invocations and 920 release Rust core tests pass; the 1.18 controls
+verify that this release does not provide PRINTF. This repairs already admitted
+certified behavior without broadening JVM-free admission or claiming a new speedup.
 
 ### URL_DECODE
 

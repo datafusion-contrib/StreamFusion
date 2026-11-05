@@ -291,7 +291,7 @@ fn write_format<const BOOLEAN_OBJECTS: bool>(
     Some(())
 }
 
-fn fixed_decimal(value: i128, scale: i8) -> Option<String> {
+fn decimal_text(value: i128, scale: i8) -> Option<String> {
     if !(0..=38).contains(&scale) {
         return None;
     }
@@ -307,24 +307,6 @@ fn fixed_decimal(value: i128, scale: i8) -> Option<String> {
         digits.insert(0, '-');
     }
     Some(digits)
-}
-
-fn decimal_text(value: i128, scale: i8) -> Option<String> {
-    if !(0..=38).contains(&scale) {
-        return None;
-    }
-    let mut digits = value.unsigned_abs().to_string();
-    let exponent = digits.len() as i32 - i32::from(scale) - 1;
-    if exponent >= -6 {
-        return fixed_decimal(value, scale);
-    }
-    if digits.len() > 1 {
-        digits.insert(1, '.');
-    }
-    if value < 0 {
-        digits.insert(0, '-');
-    }
-    Some(format!("{digits}E{exponent}"))
 }
 
 #[cfg(test)]
@@ -446,12 +428,73 @@ mod tests {
     }
 
     #[test]
-    fn decimal_string_preserves_scale_and_scientific_notation() {
+    fn decimal_string_preserves_plain_notation_and_scale() {
         assert_eq!(decimal_text(12345, 3).as_deref(), Some("12.345"));
         assert_eq!(decimal_text(-1, 3).as_deref(), Some("-0.001"));
         assert_eq!(decimal_text(12345000, 6).as_deref(), Some("12.345000"));
-        assert_eq!(decimal_text(10, 8).as_deref(), Some("1.0E-7"));
-        assert_eq!(decimal_text(0, 7).as_deref(), Some("0E-7"));
+        assert_eq!(decimal_text(10, 8).as_deref(), Some("0.00000010"));
+        assert_eq!(decimal_text(0, 7).as_deref(), Some("0.0000000"));
+        assert_eq!(decimal_text(1, 0).as_deref(), Some("1"));
+        for scale in 1..=38 {
+            let zeros = "0".repeat(scale as usize);
+            let prefix = "0".repeat(scale as usize - 1);
+            assert_eq!(decimal_text(0, scale), Some(format!("0.{zeros}")));
+            assert_eq!(decimal_text(1, scale), Some(format!("0.{prefix}1")));
+            assert_eq!(decimal_text(-1, scale), Some(format!("-0.{prefix}1")));
+        }
+        assert!(decimal_text(1, -1).is_none());
+        assert!(decimal_text(1, 39).is_none());
+    }
+
+    #[test]
+    fn high_scale_decimal_certificates_preserve_slices_formats_and_rejection() {
+        let values: ArrayRef = Arc::new(
+            Decimal128Array::from(vec![Some(99), Some(1), Some(0), Some(-1), None])
+                .with_precision_and_scale(19, 19)
+                .unwrap()
+                .slice(1, 4),
+        );
+        let text = [
+            "0.0000000000000000001",
+            "0.0000000000000000000",
+            "-0.0000000000000000001",
+            "null",
+        ];
+        let args = [values.clone()];
+        for (row, expected) in text.iter().enumerate() {
+            assert_eq!(format("%s", &args, row).as_deref(), Some(*expected));
+            assert_eq!(
+                format("%S", &args, row),
+                Some(expected.to_ascii_uppercase())
+            );
+            assert_eq!(
+                format("%1$24.4s", &args, row),
+                Some(format!("{:>24}", &expected[..4]))
+            );
+            assert_eq!(format("%.0s", &args, row).as_deref(), Some(""));
+        }
+        for offset in 0..=4 {
+            let formats: ArrayRef = Arc::new(StringArray::from(vec!["%s"; 4 - offset]));
+            let output = evaluate(&[formats, values.slice(offset, 4 - offset)]).unwrap();
+            assert_eq!(
+                output.to_data(),
+                StringArray::from(text[offset..].to_vec()).to_data()
+            );
+        }
+        let formats: ArrayRef = Arc::new(StringArray::from(vec![
+            Some("%.4s"),
+            None,
+            Some("%S"),
+            Some("%s"),
+        ]));
+        assert_eq!(
+            evaluate(&[formats, values.clone()]).unwrap().to_data(),
+            StringArray::from(vec![Some("0.00"), None, Some(text[2]), Some("null")]).to_data()
+        );
+        for pattern in ["%f", "%d", "%x"] {
+            let formats: ArrayRef = Arc::new(StringArray::from(vec![pattern; 4]));
+            assert!(evaluate(&[formats, values.clone()]).is_none());
+        }
     }
 
     #[test]
