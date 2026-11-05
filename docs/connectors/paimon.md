@@ -120,7 +120,8 @@ without implementing a custom tie breaker. It can decline files whose actual key
 
 Basic `partial-update` selects the latest non-null cell for each column. Partial updates with
 `ignore-delete=true` retain Java when any file has stored or unknown retracts: released Java can
-initialize cells from the first retract, whereas the Rust reader skips it. On Paimon 2.1,
+initialize cells from the first retract, whereas the Rust reader skips it. The route oracle keeps
+Paimon 2.0's verified native delete-removal reads on Flink 1.18. On Paimon 2.1,
 `partial-update.remove-record-on-delete=true` also retains Java for those files because the
 released public readers differ on retained delete state. The 1.0 adapter keeps its previously
 verified remove-record behavior. Ordinary add-only partial-update files remain native.

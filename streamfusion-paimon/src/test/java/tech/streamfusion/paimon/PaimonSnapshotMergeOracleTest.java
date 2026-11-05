@@ -132,12 +132,12 @@ class PaimonSnapshotMergeOracleTest {
               assertEquals(
                   tied
                           || (partial
-                              && (ignore || remove)
+                              && (ignore || (remove && PaimonTestCompat.paimon21()))
                               && files.stream().anyMatch(f -> f.deleteRowCount().orElse(1L) != 0))
                       ? 0
                       : 1,
                   actual.merged(),
-                  "Overlapping file sequence ranges retain Java; proven reads must execute"
+                  "Unproven sequence or delete semantics retain Java; admitted reads must execute"
                       + " natively");
             }
           }
