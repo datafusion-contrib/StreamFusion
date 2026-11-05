@@ -9795,3 +9795,76 @@ epoch input properties. The record identifies the actual preceding encoder; an a
 older main/runtime is not an equivalent previous control. Full hosted checks qualify the
 exact pushed head separately. Broad [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504)
 remains open for other producers/zones, units and recurring-DST extraction.
+
+
+## Primitive-text GREATEST
+
+The built-in selects extrema of proven ASCII/NULL character literals, total verified
+integer/BOOLEAN casts to unbounded STRING, qualified primitive ASCII PRINTF and
+locale-independent UPPER/LOWER. Both released Flink lines retain their own types,
+NULLs and cast modes; PRINTF applies only to 2.2. Ordinary source strings, bounded
+casts, Unicode/unverified and fallible producers retain their prior routes. This
+does not remove the source-representation gate tracked in
+[#508](https://github.com/datafusion-contrib/StreamFusion/issues/508).
+
+```sql
+SELECT GREATEST(CAST(v AS STRING), TRY_CAST(n AS STRING)) FROM inputs;
+```
+
+The same output has identical UTF-8 byte and Java UTF-16 ordering under this producer
+proof. A single typed selection writes the chosen slices once, with strict union
+validity. Uniform winners reuse their immutable input offsets/values. Equivalent
+BOOLEAN casts select the strict BOOLEAN extremum before formatting once; mixed
+casing never uses that rewrite. Integer text is written through a reusable itoa
+buffer, sharing input validity and preserving bounded truncation/CHAR padding.
+
+Release qualification uses 348 fresh JVM invocations on Flink 1.18.1/2.2.1
+and JDK 11/17 with zero skips, Java release 11, actual preceding-encoder controls,
+and unchanged released GreatestLeastFunctionsITCase stock oracles. The rebuilt
+native runtime passes all 919 Rust core tests, including independent sorting,
+sliced NULL bitmaps, scalar/array/empty controls, buffer ownership and formatting
+oracles. Admitted SQL consumes NativeCalc with empty evaluator descriptors. The
+previous prepared input falls back for unproven string representation; its complete
+job uses a generated evaluator because the external Row source proves Java-backed
+inputs. These actual routes are asserted separately.
+
+Prepared timing uses equivalent prebuilt Java Generic/Binary RowData and Arrow
+inputs, both NULL modes, modern/legacy casts, BOOLEAN/all signed widths and three DECIMAL truth precisions, 1,024/16-row
+batches, 131,072 rows per trial, 16 warmups and nine measurements. The native timer
+runs inside Rust after import and before export, retaining production Calc,
+formatting, allocations and output consumption. Only this prepared gate excludes
+perimeter JNI/import/export and transposes.
+
+All 108 bulk cells beat stock by 1.071-11.929x and actual previous by
+1.096-12.888x. 26/27 tiny cells remain slower than stock
+(stock/native 0.106-3.489x). No universal small-batch speedup is claimed.
+
+Nine complete million-row jobs retain submission/startup, JNI and both row/Arrow
+transposes, one thread, two warmups and five alternating measurements per engine.
+Native/stock elapsed is 0.474-1.035;
+native/previous is 0.443-0.888.
+2/9 complete medians lose to the candidate-process stock control,
+2/9 lose to the independent stock control, and
+0/9 lose to previous. Ranges and unfavorable results are retained;
+prepared admission is not a complete-pipeline acceleration claim.
+
+| Flink/shape | Stock seconds | Native seconds | Independent stock seconds | Previous seconds |
+|---|---:|---:|---:|---:|
+| 22-int-pair | 0.252068 | 0.235734 | 0.259810 | 0.294924 |
+| 22-bigint-literal | 0.224076 | 0.206773 | 0.225453 | 0.260644 |
+| 22-boolean-pair | 0.227179 | 0.235179 | 0.223270 | 0.266883 |
+| 22-boolean-integer | 0.250538 | 0.247003 | 0.251650 | 0.278111 |
+| 22-printf | 0.695091 | 0.329240 | 0.699164 | 0.743174 |
+| 118-int-pair | 0.257102 | 0.241080 | 0.255740 | 0.290259 |
+| 118-bigint-literal | 0.250537 | 0.208740 | 0.231161 | 0.271153 |
+| 118-boolean-pair | 0.225301 | 0.229217 | 0.223491 | 0.260773 |
+| 118-boolean-integer | 0.228776 | 0.222973 | 0.236081 | 0.255155 |
+
+The [machine-readable record](results/primitive-greatest-2026-11-05.json) and
+[all 28,900 raw prepared samples](results/primitive-greatest-2026-11-05.csv.gz)
+retain initial losing attempts, medians/ranges, actual routes, allocator bindings,
+source/bytecode/runtime hashes and full-job trials. Initial process profiling found
+intermediate comparison/zip arrays and generic integer formatting. A first builder
+pass still lost bulk controls; direct output buffers, shared validity, BOOLEAN
+selection before text and uniform-winner reuse remove that work. Exact-head hosted
+CI is separate from this local qualification.

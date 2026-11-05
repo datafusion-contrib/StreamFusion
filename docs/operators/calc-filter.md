@@ -1507,7 +1507,8 @@ can compose natively. NOT NULL sink enforcement remains Flink's ERROR/DROP polic
 Native integer-parse failures preserve Flink's `NumberFormatException` and parse message
 through JNI. Successful results and NULL-on-error policies match as well.
 
-Integer formatting uses canonical decimal text, including signed minima and zero.
+Integer formatting writes canonical decimal text from a reusable stack buffer directly into
+Arrow offsets/values, sharing sliced input validity. It preserves signed minima and zero.
 `VARCHAR(n)` truncates to `n` characters; `CHAR(n)` also pads shorter results with spaces.
 Legacy mode leaves the formatted text unchanged regardless of the declared length, matching
 Flink. Other TRY_CAST pairs, except the integer, BOOLEAN and temporal forms described here and
@@ -2418,7 +2419,8 @@ type before the existing extrema kernel when every argument is a direct input or
 integer capacity is sufficient and no DECIMAL loses scale. A DECIMAL argument whose metadata
 changes must be NOT NULL: released Flink can dereference it before checking its NULL flag.
 Nullable DECIMAL metadata changes, scale reduction and unverified producers retain generated
-evaluation. Character results, other mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
+evaluation. Verified ASCII primitive-text GREATEST uses the Rust subset below. Other
+character results, mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
 Flink-generated expressions through the batch JVM bridge, preserving coercions and nanoseconds.
 Runtime strings use that bridge when the Calc reads an external DataStream whose conversion
 produces Java-backed strings. Unknown or binary-backed input representations retain fallback:
@@ -2428,10 +2430,22 @@ extrema retain fallback.
 [Release qualification](../benchmarks/scalar-functions.md#mixed-exact-greatest) retains
 stock/previous/native comparisons, slower tiny batches and complete jobs with both transposes.
 
+The genuine built-in also executes in Rust when every character operand is an ASCII/NULL
+literal, a total verified integer/BOOLEAN cast to unbounded STRING, qualified primitive
+ASCII PRINTF (2.2), or qualified locale-independent UPPER/LOWER of those producers. Both
+modern and legacy cast spellings are preserved. Matching Boolean-text casts select their
+strict Boolean extremum before formatting once; mixed casing keeps text comparison.
+The typed UTF-8 kernel propagates any argument NULL and shares buffers for uniform winners.
+This proof does not admit bounded/unverified/fallible producers, ordinary source strings,
+Unicode literals, or same-name catalog functions. The
+[primitive-text qualification](../benchmarks/scalar-functions.md#primitive-text-greatest)
+records bulk gains, tiny/full-job losses and actual preceding routes.
+
 ### LEAST
 
-Uses the same kernels, generated-expression paths and string-representation gates as GREATEST,
-with strict NULL propagation and minimum comparison. Verified mixed exact-numeric LEAST uses
+Uses the same numeric kernels, generated-expression paths and source string-representation
+gates as GREATEST, with strict NULL propagation and minimum comparison. The bounded ASCII
+primitive-text GREATEST admission above does not yet extend to LEAST. Verified mixed exact-numeric LEAST uses
 the same lossless casts to Flink's resolved DECIMAL type. It retains the same nullable-metadata,
 scale-reduction and producer guards; it does not remove Flink's nullable-conversion failures.
 The [separate qualification](../benchmarks/scalar-functions.md#mixed-exact-least) records

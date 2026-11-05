@@ -1516,3 +1516,20 @@ path, retaining both transposes and JNI. The earlier
 [FLOOR qualification](../benchmarks/scalar-functions.md#utc-floor-over-integer-epochs)
 preserves its own builder/constant-width measurements and artifacts. Those historical
 timings are not relabeled as measurements of the newer bitmap-sharing runtime.
+
+
+## Proven ASCII string extrema
+
+GREATEST proves its primitive text producers before using UTF-8 byte ordering; arbitrary
+source strings retain Java representation semantics. A typed pass selects borrowed slices
+into one offset/value buffer, with the strict union NULL bitmap. When one input wins every
+valid row, the result shares that input's immutable payload and only changes validity.
+Matching Boolean-text casts select the Boolean extremum first and format once. Integer
+formatting uses the existing itoa stack-buffer pattern and shares sliced input validity,
+preserving bounded truncation and CHAR padding. This removes intermediate comparison/zip
+arrays, redundant Boolean strings, generic Display formatting and per-row bitmap rebuilding.
+
+The initial INT pair process sample has 927 extrema frames, including 681 zip frames,
+and an integer-format subtree with 698 formatting frames. Counts locate work; they are
+not elapsed-time percentages. Initial builder/buffer attempts and slower controls remain in
+the [complete qualification](../benchmarks/scalar-functions.md#primitive-text-greatest).

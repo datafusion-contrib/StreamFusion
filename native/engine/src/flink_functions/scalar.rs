@@ -1,6 +1,6 @@
 use crate::HashMap;
 use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray, StringArray, StringBuilder};
-use arrow::buffer::NullBuffer;
+use arrow::buffer::{NullBuffer, OffsetBuffer};
 use arrow::datatypes::{
     ArrowPrimitiveType, DataType, Decimal128Type, Int16Type, Int32Type, Int64Type, Int8Type,
 };
@@ -124,6 +124,7 @@ impl ScalarUDFImpl for FlinkExtremum {
                     &args.args,
                     self.greatest,
                 )?),
+                DataType::Utf8 => Some(string_extremum(&args.args, self.greatest)?),
                 _ => None,
             };
             if let Some(result) = result {
@@ -191,6 +192,100 @@ where
     }
     // Arrow's generic arithmetic constructors use a default decimal scale; retain the coerced type.
     Ok(Arc::new(result.with_data_type(first.data_type().clone())))
+}
+
+fn string_extremum(args: &[ColumnarValue], greatest: bool) -> Result<ArrayRef> {
+    let choose = |a, b| {
+        if greatest {
+            std::cmp::max(a, b)
+        } else {
+            std::cmp::min(a, b)
+        }
+    };
+    let mut scalar = None;
+    let mut arrays = Vec::new();
+    for arg in args {
+        match arg {
+            ColumnarValue::Scalar(ScalarValue::Utf8(Some(value))) => {
+                scalar = Some(scalar.map_or(value.as_str(), |s| choose(s, value.as_str())));
+            }
+            ColumnarValue::Array(array) => {
+                arrays.push(datafusion::common::cast::as_string_array(array)?);
+            }
+            _ => return exec_err!("String extremum requires non-NULL UTF8 arguments"),
+        }
+    }
+    let Some((first, rest)) = arrays.split_first() else {
+        return exec_err!("String extremum requires an array");
+    };
+    let nulls = arrays.iter().fold(None, |nulls, array| {
+        NullBuffer::union(nulls.as_ref(), array.nulls())
+    });
+    if let ([second], None) = (rest, scalar) {
+        let (mut left, mut right) = (true, true);
+        for row in 0..first.len() {
+            if nulls.as_ref().is_some_and(|n| n.is_null(row)) {
+                continue;
+            }
+            let order = first.value(row).cmp(second.value(row));
+            left &= !order.is_lt();
+            right &= !order.is_gt();
+            if !left && !right {
+                break;
+            }
+        }
+        if left || right {
+            // A uniform winner needs only the strict NULL mask, not another payload copy.
+            let selected = if left == greatest { first } else { second };
+            return Ok(Arc::new(StringArray::new(
+                selected.offsets().clone(),
+                selected.values().clone(),
+                nulls,
+            )));
+        }
+    }
+    let mut offsets = Vec::with_capacity(first.len() + 1);
+    offsets.push(0_i32);
+    let mut bytes = Vec::with_capacity(string_bytes(first));
+    let mut append = |row: usize, value: &str| -> Result<()> {
+        if nulls.as_ref().is_none_or(|n| n.is_valid(row)) {
+            let value = scalar.map_or(
+                value,
+                |s| if greatest { value.max(s) } else { value.min(s) },
+            );
+            super::check_string_capacity(bytes.len(), value.len())?;
+            bytes.extend_from_slice(value.as_bytes());
+        }
+        offsets.push(bytes.len() as i32);
+        Ok(())
+    };
+    // Select borrowed slices once instead of materializing comparison/zip arrays per argument.
+    match rest {
+        [] => {
+            for row in 0..first.len() {
+                append(row, first.value(row))?;
+            }
+        }
+        [second] => {
+            for row in 0..first.len() {
+                append(row, choose(first.value(row), second.value(row)))?;
+            }
+        }
+        _ => {
+            for row in 0..first.len() {
+                let mut value = first.value(row);
+                for array in rest {
+                    value = choose(value, array.value(row));
+                }
+                append(row, value)?;
+            }
+        }
+    }
+    Ok(Arc::new(StringArray::new(
+        OffsetBuffer::new(offsets.into()),
+        bytes.into(),
+        nulls,
+    )))
 }
 
 pub(super) fn initcap(args: &[ArrayRef]) -> Result<ArrayRef> {
@@ -856,6 +951,169 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn string_extrema_match_sorting_with_strict_nulls_and_sliced_inputs() {
+        let pool = [
+            "",
+            "-1",
+            "0",
+            "10",
+            "2",
+            "false",
+            "true",
+            "\0",
+            "\u{e000}",
+            "\u{1f600}",
+        ];
+        let make = |shift: usize, null_period: usize| -> ArrayRef {
+            let input: Vec<_> = (0..180)
+                .map(|i| {
+                    (null_period == 0 || (i + shift) % null_period != 0)
+                        .then_some(pool[(i + shift) % pool.len()])
+                })
+                .collect();
+            strings(input).slice(7 + shift, 137)
+        };
+        for nullable in [false, true] {
+            let first = make(0, if nullable { 11 } else { 0 });
+            let second = make(3, if nullable { 17 } else { 0 });
+            let third = make(5, if nullable { 23 } else { 0 });
+            let scalar = |value: Option<&str>| {
+                ColumnarValue::Scalar(ScalarValue::Utf8(value.map(str::to_owned)))
+            };
+            let cases = vec![
+                vec![ColumnarValue::Array(first.clone()), scalar(Some("0"))],
+                vec![
+                    ColumnarValue::Array(first.clone()),
+                    ColumnarValue::Array(second.clone()),
+                ],
+                vec![
+                    ColumnarValue::Array(first.clone()),
+                    scalar(Some("false")),
+                    scalar(Some("2")),
+                ],
+                vec![
+                    ColumnarValue::Array(first.clone()),
+                    scalar(Some("0")),
+                    ColumnarValue::Array(second.clone()),
+                    ColumnarValue::Array(third),
+                    scalar(Some("true")),
+                ],
+                vec![ColumnarValue::Array(first.clone()), scalar(None)],
+                vec![
+                    ColumnarValue::Array(first.clone()),
+                    ColumnarValue::Array(strings(vec![None; first.len()])),
+                ],
+                vec![scalar(Some("2")), scalar(Some("10"))],
+                vec![
+                    ColumnarValue::Array(first.clone()),
+                    ColumnarValue::Array(first.clone()),
+                ],
+            ];
+            for args in cases {
+                let inputs: Vec<_> = args
+                    .iter()
+                    .map(|a| a.to_array(first.len()).unwrap())
+                    .collect();
+                for (op, greatest) in [(109, true), (110, false)] {
+                    let expected: Vec<_> = (0..first.len())
+                        .map(|row| {
+                            let values: Option<Vec<_>> = inputs
+                                .iter()
+                                .map(|a| {
+                                    let a = datafusion::common::cast::as_string_array(a).unwrap();
+                                    a.is_valid(row).then(|| a.value(row))
+                                })
+                                .collect();
+                            values.map(|mut v| {
+                                v.sort_unstable();
+                                if greatest {
+                                    *v.last().unwrap()
+                                } else {
+                                    v[0]
+                                }
+                            })
+                        })
+                        .collect();
+                    let result = invoke(op, args.clone(), DataType::Utf8, first.len())
+                        .into_array(first.len())
+                        .unwrap();
+                    assert_eq!(values(&result), expected);
+                    let empty_args = args
+                        .iter()
+                        .map(|a| match a {
+                            ColumnarValue::Array(a) => ColumnarValue::Array(a.slice(0, 0)),
+                            a => a.clone(),
+                        })
+                        .collect();
+                    let empty = invoke(op, empty_args, DataType::Utf8, 0)
+                        .into_array(0)
+                        .unwrap();
+                    assert_eq!(empty.len(), 0);
+                    assert_eq!(empty.data_type(), &DataType::Utf8);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn string_extrema_output_owns_selected_values() {
+        let result = {
+            let first = strings(vec![Some("unused"), Some("winner"), None]).slice(1, 2);
+            let second = strings(vec![Some("other"), Some("other")]);
+            invoke(
+                109,
+                vec![ColumnarValue::Array(first), ColumnarValue::Array(second)],
+                DataType::Utf8,
+                2,
+            )
+            .into_array(2)
+            .unwrap()
+        };
+        assert_eq!(values(&result), vec![Some("winner"), None]);
+    }
+
+    #[test]
+    fn uniformly_ordered_strings_share_values_but_union_independent_nulls() {
+        let first = strings(vec![
+            Some("unused"),
+            Some("true"),
+            None,
+            Some("false"),
+            Some("true"),
+        ])
+        .slice(1, 4);
+        let second = strings(vec![Some("0"), Some("1"), None, Some("2")]);
+        for (op, selected, expected) in [
+            (109, &first, vec![Some("true"), None, None, Some("true")]),
+            (110, &second, vec![Some("0"), None, None, Some("2")]),
+        ] {
+            let result = invoke(
+                op,
+                vec![
+                    ColumnarValue::Array(first.clone()),
+                    ColumnarValue::Array(second.clone()),
+                ],
+                DataType::Utf8,
+                4,
+            )
+            .into_array(4)
+            .unwrap();
+            assert_eq!(values(&result), expected);
+            assert_eq!(
+                datafusion::common::cast::as_string_array(&result)
+                    .unwrap()
+                    .values()
+                    .as_ptr(),
+                datafusion::common::cast::as_string_array(selected)
+                    .unwrap()
+                    .values()
+                    .as_ptr()
+            );
+        }
+    }
+
     #[test]
     fn jdk25_url_escape_rules_reject_signed_and_unicode_digits() {
         let input = strings(vec![

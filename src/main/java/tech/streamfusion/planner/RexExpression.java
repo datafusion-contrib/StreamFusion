@@ -1973,6 +1973,12 @@ final class RexExpression {
       // Qualified primitive formatting/casing produces ASCII, so no UTF-16 identity is lost.
       return emitBuiltinCall(call, 52);
     }
+    if (isBuiltinDefinition(
+            call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.GREATEST)
+        && isCharacter(call) && call.getOperands().size() >= 2
+        && call.getOperands().stream().allMatch(RexExpression::nativePrimitiveAsciiResult)) {
+      return emitPrimitiveStringExtremum(call, 109);
+    }
     boolean primitivePrintfComparison = nativePrimitivePrintfComparison(call);
     if (call.getOperands().stream()
         .anyMatch(
@@ -4819,17 +4825,66 @@ final class RexExpression {
         || !(call.getOperands().get(0) instanceof RexCall)) return 0;
     var input = (RexCall) call.getOperands().get(0);
     if (nativePrintfIntegerText(input) != null) return op;
-    if ((input.getOperator()
-                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CAST
-            || input.getOperator()
-                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST)
-        && input.getType().getSqlTypeName() == SqlTypeName.VARCHAR
-        && input.getType().getPrecision() == Integer.MAX_VALUE
-        && nativeBooleanCharacterCast(input)) return op;
+    if (nativePrimitiveBooleanText(input)) return op;
     // Primitive conversions cannot write i/I. Exclude literals that observe Turkish/Azeri casing.
     return nativePrintf(input) != 0
         && ((RexLiteral) input.getOperands().get(0)).getValueAs(String.class)
             .indexOf(op == 50 ? 'i' : 'I') < 0 ? op : 0;
+  }
+
+  private static boolean nativePrimitiveBooleanText(RexCall call) {
+    return (call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CAST
+            || call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST)
+        && call.getType().getSqlTypeName() == SqlTypeName.VARCHAR
+        && call.getType().getPrecision() == Integer.MAX_VALUE
+        && nativeBooleanCharacterCast(call);
+  }
+
+  private static boolean nativePrimitiveAsciiResult(RexNode node) {
+    if (!isCharacter(node)) return false;
+    if (node instanceof RexLiteral) return isAsciiLiteralResult(node);
+    if (!(node instanceof RexCall)) return false;
+    var call = (RexCall) node;
+    return nativePrintfIntegerText(call) != null || nativePrimitiveBooleanText(call)
+        || nativePrintf(call) != 0 || nativePrimitiveCase(call) != 0;
+  }
+
+  private boolean emitPrimitiveStringExtremum(RexCall call, int opcode) {
+    if (legacyCastBehaviour == null || !call.getOperands().stream()
+        .allMatch(operand -> operand instanceof RexCall
+                && nativePrimitiveBooleanText((RexCall) operand)
+            || primitiveBooleanTextLiteral(operand, legacyCastBehaviour) != null)) {
+      return emitBuiltinCall(call, opcode);
+    }
+    // Both Boolean spellings order false before true. Select before allocating their text.
+    add(KIND_CALL, 244, 3);
+    add(KIND_CALL, opcode, call.getOperands().size());
+    for (RexNode operand : call.getOperands()) {
+      if (operand instanceof RexCall) {
+        if (!emit(((RexCall) operand).getOperands().get(0))) return false;
+      } else {
+        add(KIND_LIT_BOOL, longs.size(), 0);
+        longs.add(primitiveBooleanTextLiteral(operand, legacyCastBehaviour) ? 1L : 0L);
+      }
+    }
+    add(KIND_LIT_BOOL, longs.size(), 0);
+    longs.add(legacyCastBehaviour ? 1L : 0L);
+    add(KIND_LIT_INT, longs.size(), 0);
+    longs.add((long) Integer.MAX_VALUE);
+    return true;
+  }
+
+  private static Boolean primitiveBooleanTextLiteral(RexNode operand, boolean lowercase) {
+    if (!(operand instanceof RexLiteral) || !isCharacter(operand)
+        || ((RexLiteral) operand).isNull()) return null;
+    String value = ((RexLiteral) operand).getValueAs(String.class);
+    if (operand.getType().getSqlTypeName() == SqlTypeName.CHAR
+        && operand.getType().getPrecision() != value.length()) return null;
+    if (value.equals(lowercase ? "true" : "TRUE")) return true;
+    if (value.equals(lowercase ? "false" : "FALSE")) return false;
+    return null;
   }
 
   private static boolean nativePrimitivePrintfComparison(RexCall call) {
