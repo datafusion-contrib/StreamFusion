@@ -10515,3 +10515,66 @@ See the [qualification, raw full-job trials and exact provenance](results/decima
 and [8,000 prepared samples](results/decimal-unary-arithmetic-try-cast-2026-11-05.csv.gz).
 Remaining character conversions stay tracked in
 [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## UTC DATE_FORMAT over verified integer epochs (2026-11-05)
+
+DATE_FORMAT now composes the verified total integer TO_TIMESTAMP_LTZ producer proof
+in ordinary Calc, for supported literal numeric patterns and session zones normalized
+to a fixed zero offset. This includes direct integers, admitted wrapping arithmetic
+and rounding, literal precision 0/3 and verified runtime INT CASE precision 0/3/NULL.
+Flink 2.2's single-argument numeric epoch uses its released default precision three;
+Flink 1.18 retains its validation rejection. For example,
+`DATE_FORMAT(TO_TIMESTAMP_LTZ(n*n,3),'yyyy-MM-dd')` now stays in Arrow without a
+generated temporal evaluator. Resolved integer widths, original-unit epoch bounds,
+overflow wrapping, NULLs and the existing exact numeric calendar formatter are reused.
+No production Rust/JNI change, new opcode or performance switch is added.
+
+Both released DateTimeUtils implementations format TimestampData through its Instant,
+the session ZoneId and cached Java DateTimeFormatter. The fixed-zero proof avoids
+introducing a second timezone database. Regional/nonzero zones, DECIMAL epochs,
+unverified producers, unsupported/dynamic patterns and existing UNNEST contexts retain
+their separate routes. Arbitrary timestamp CASE/casts are not admitted by this proof.
+
+All **314 fresh JVM invocations** pass on released Flink 1.18.1/2.2.1 and JDK 11/17,
+targeting Java 11: 62 new SQL invocations and 252 related regressions, no skips or
+aborts. Complete 5,003-row maps/schema cover all four integer widths, nullable/NOT NULL
+fields, signed bounds, wrapping arithmetic/rounding, runtime precision, quoted patterns,
+IS NULL/CHAR_LENGTH/LIKE/CASE consumers, UTC aliases, retained regional zones and
+all-filtered batches. Pure routes consume NativeCalc, have no fallback and have empty
+JVM evaluator descriptors. Narrowing, division, DECIMAL, unsupported patterns and
+unverified precision controls retain generated evaluation. Lazy failing branches and
+all-filtered divide-by-zero inputs remain harmless. Twelve fresh unchanged released
+TemporalTypesTest DATE_FORMAT/Shanghai/LosAngeles method oracles pass as separate stock
+evidence. The byte-identical runtime retains its historical 927-core-test qualification.
+
+Actual preceding encoder `284ebb1a2` compares each first query's full maps/schema and
+then fails fifteen expected pure-route assertions on 2.2/JDK17 and eleven on 1.18/JDK17.
+Two retained controls pass on both lines; the 1.18 absent-signature control also passes.
+Later unreached queries are not preceding-parity evidence. Qualified and performance
+encoder instructions match on both lines; current and preceding benchmark fixture
+classes are byte-identical.
+
+Prepared release measurements output character values directly and consume equivalent
+UTF-8 checksums. Six shapes cover TINYINT seconds, SMALLINT millisecond addition, INT
+millisecond multiplication, BIGINT seconds, BIGINT millisecond addition and BIGINT
+runtime precision. Each uses nullable/nonnullable and Generic/Binary RowData controls,
+1,024-row batches and an additional 16-row nullable/Binary control on each release.
+Stock starts on equivalent prebuilt RowData, native on prebuilt Arrow. The timer runs
+inside Rust after setup/import and before export; production Calc, allocation and
+intrinsic conversions/callbacks remain timed. The actual preceding route is a generated
+temporal evaluator inside NativeCalc. Both encoders use the same release runtime and
+fixture. Each trial processes 131,072 rows, with sixteen warmups, nine measurements
+and 1 GiB prepared JVM heaps. No other tests or benchmarks run concurrently.
+
+All **48 bulk cells** beat stock **2.942-4.855x** and previous **4.190-6.704x**.
+All **12 tiny controls lose to stock**, with stock/native **0.382-0.591x**; all beat
+previous. Six complete million-row jobs retain submission/startup, production JNI
+and both RowData/Arrow transposes. At parallelism one and 2 GiB heaps for every engine,
+each has two warmups and five measured repetitions. All six beat paired stock and
+the actual preceding evaluator: native/stock elapsed **0.651-0.692**, native/previous
+**0.583-0.643**. These results do not establish universal tiny-batch or complete-job gains.
+
+See the [qualification, full-job trials and exact provenance](results/epoch-date-format-2026-11-05.json)
+and [6,000 raw prepared samples](results/epoch-date-format-2026-11-05.csv.gz).
+Remaining temporal signatures stay open in
+[#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).

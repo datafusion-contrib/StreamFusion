@@ -4609,7 +4609,8 @@ final class RexExpression {
         && call.getOperator()
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.DATE_FORMAT
         && call.getOperands().size() == 2
-        && call.getOperands().get(0) instanceof RexInputRef
+        && (call.getOperands().get(0) instanceof RexInputRef
+            || nativeTotalEpochTimestamp(call.getOperands().get(0)))
         && call.getOperands().get(0).getType().getSqlTypeName()
             == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
         && call.getOperands().get(1) instanceof RexLiteral

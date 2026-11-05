@@ -29,13 +29,18 @@ unsupported `MATCH_RECOGNIZE` operator.
 Flink still rejects invalid signatures, invalid units and expressions outside their SQL context.
 The inventory describes Flink's functions, not extra overloads supplied by other SQL dialects.
 
-`DATE_FORMAT` also uses the exact numeric renderer for a direct TIMESTAMP_LTZ input column in
-ordinary Calc when the session zone normalizes to a fixed zero offset. UTC, UTC aliases and
+`DATE_FORMAT` also uses the exact numeric renderer for a direct TIMESTAMP_LTZ input column or
+verified total integer `TO_TIMESTAMP_LTZ` producer in ordinary Calc when the session zone
+normalizes to a fixed zero offset. UTC, UTC aliases and
 zero-offset sessions therefore preserve the full millisecond range and Java year-of-era without
 a JVM evaluator or a timezone database conversion. This admits only the genuine released builtin
-and supported literal numeric patterns, including quoted literals. Nonzero/regional zones,
-derived timestamp producers, dynamic/unsupported patterns and existing UNNEST contexts retain
-their generated routes. The explicit incompatible LTZ formatter remains unchanged.
+and supported literal numeric patterns, including quoted literals. The integer epoch proof keeps
+resolved widths, original-unit bounds and NULLs through admitted arithmetic/rounding producers,
+literal precision 0/3, verified runtime INT CASE precision 0/3/NULL, and the released 2.2 default
+precision. Flink 1.18 still rejects that single-argument epoch signature. Nonzero/regional zones,
+other derived timestamp producers (including DECIMAL epochs), dynamic/unsupported patterns
+and existing UNNEST contexts retain their generated routes. The explicit incompatible LTZ
+formatter remains unchanged.
 
 DATE `HOUR(d)`/`MINUTE(d)`/`SECOND(d)` and their EXTRACT aliases follow released Flink's physical-integer
 arithmetic: `(epochDays % 86400000) / 3600000` for HOUR and

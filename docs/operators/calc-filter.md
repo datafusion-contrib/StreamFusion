@@ -3703,8 +3703,13 @@ expressions run by default with the full Flink millisecond range and fractional 
 Plain-TIMESTAMP numeric `DATE_FORMAT` also handles Java quoted literals, doubled quotes and
 escaped literal percents natively. Optional sections and unsupported or invalid Java pattern
 syntax keep generated Flink evaluation, preserving output, failures and empty-batch laziness.
-Direct TIMESTAMP_LTZ columns in ordinary Calc reuse this exact renderer in fixed zero-offset
-sessions; other zones and unverified derived producers keep their existing generated routes.
+Direct TIMESTAMP_LTZ columns and verified total integer epoch producers in ordinary Calc reuse
+this exact renderer in fixed zero-offset sessions. The latter composes the existing integer
+width, arithmetic/rounding and original-unit bounds proof at literal precision 0/3, verified
+runtime INT CASE precision 0/3/NULL, and Flink 2.2's default precision. Other zones and unverified
+derived producers keep their existing generated routes, including DECIMAL epochs and general
+timestamp CASE/casts. Flink 1.18 retains its validation rejection of single-argument numeric
+epochs. See the [composition qualification](../benchmarks/scalar-functions.md#utc-date_format-over-verified-integer-epochs-2026-11-05).
 
 ## POWER and SQRT
 
