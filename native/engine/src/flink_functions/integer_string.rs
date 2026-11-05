@@ -1,4 +1,5 @@
-use arrow::array::{Array, ArrayRef, PrimitiveBuilder, StringBuilder};
+use arrow::array::{Array, ArrayRef, PrimitiveBuilder, StringArray};
+use arrow::buffer::OffsetBuffer;
 use arrow::datatypes::{ArrowPrimitiveType, DataType, Int16Type, Int32Type, Int64Type, Int8Type};
 use datafusion::common::{
     cast::{as_int64_array, as_string_array},
@@ -7,7 +8,6 @@ use datafusion::common::{
 use datafusion::logical_expr::{
     ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
 };
-use std::fmt::Write;
 use std::sync::Arc;
 
 pub(crate) fn parse_function(target: DataType, null_on_error: bool) -> ScalarUDF {
@@ -162,22 +162,27 @@ fn parse(value: &str) -> std::result::Result<i64, &'static str> {
 
 fn format_array(input: &ArrayRef, length: usize, pad: bool) -> Result<ArrayRef> {
     let input = as_int64_array(input)?;
-    let mut result = StringBuilder::with_capacity(input.len(), input.len().saturating_mul(8));
-    let mut text = String::with_capacity(20);
+    let mut offsets = Vec::with_capacity(input.len() + 1);
+    offsets.push(0_i32);
+    let mut bytes = Vec::with_capacity(input.len().saturating_mul(8));
+    let mut digits = itoa::Buffer::new();
     for value in input {
-        let Some(value) = value else {
-            result.append_null();
-            continue;
-        };
-        text.clear();
-        write!(&mut text, "{value}").unwrap();
-        text.truncate(length);
-        if pad && text.len() < length {
-            text.extend(std::iter::repeat_n(' ', length - text.len()));
+        if let Some(value) = value {
+            let text = digits.format(value);
+            let text = &text[..text.len().min(length)];
+            let width = if pad { length } else { text.len() };
+            super::check_string_capacity(bytes.len(), width)?;
+            let end = bytes.len() + width;
+            bytes.extend_from_slice(text.as_bytes());
+            bytes.resize(end, b' ');
         }
-        result.append_value(&text);
+        offsets.push(bytes.len() as i32);
     }
-    Ok(Arc::new(result.finish()))
+    Ok(Arc::new(StringArray::new(
+        OffsetBuffer::new(offsets.into()),
+        bytes.into(),
+        input.nulls().cloned(),
+    )))
 }
 
 #[cfg(test)]
@@ -263,6 +268,57 @@ mod tests {
             let result = parse_array::<Int16Type>(&input, false).unwrap();
             assert_eq!(result.data_type(), &DataType::Int16);
             assert_eq!(result.null_count(), len);
+        }
+    }
+
+    #[test]
+    fn formatting_matches_display_truncation_and_padding_with_shared_sliced_nulls() {
+        let domain = [i64::MIN, i64::MAX, -1, 0, 1, -128, 127, -32768, 32767];
+        let source = Int64Array::from_iter(
+            (0..151).map(|i| (i % 11 != 0).then_some(domain[i % domain.len()])),
+        )
+        .slice(7, 137);
+        let input: ArrayRef = Arc::new(source.clone());
+        for width in [0, 1, 4, 19, 20, 25, 256, usize::MAX] {
+            for pad in [false, true] {
+                if pad && width == usize::MAX {
+                    continue;
+                }
+                let expected: Vec<_> = source
+                    .iter()
+                    .map(|value| {
+                        value.map(|value| {
+                            let mut text = value.to_string();
+                            text.truncate(width);
+                            if pad {
+                                text.extend(std::iter::repeat_n(' ', width - text.len()));
+                            }
+                            text
+                        })
+                    })
+                    .collect();
+                let output = format_array(&input, width, pad).unwrap();
+                let output = as_string_array(&output).unwrap();
+                assert_eq!(
+                    output
+                        .iter()
+                        .map(|v| v.map(str::to_owned))
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+                assert_eq!(output.nulls(), source.nulls());
+                assert_eq!(
+                    output.nulls().unwrap().buffer().as_ptr(),
+                    source.nulls().unwrap().buffer().as_ptr()
+                );
+            }
+        }
+        for len in [0, 137] {
+            let input: ArrayRef = Arc::new(Int64Array::new_null(len));
+            let output = format_array(&input, 25, true).unwrap();
+            assert_eq!(output.len(), len);
+            assert_eq!(output.null_count(), len);
+            assert_eq!(output.data_type(), &DataType::Utf8);
         }
     }
 }

@@ -1189,8 +1189,10 @@ DECIMAL SIGN uses a typed Decimal128 kernel for `p > s`, and for precision 19 th
 when `p = s`. Direct inputs, typed literals/NULLs, same-scale lossless precision widening
 and nested admitted SIGN calls retain the resolved precision and scale without JVM evaluation.
 DECIMAL-only addition/subtraction/multiplication trees over those producers also remain
-native through SIGN. Every arithmetic node retains its resolved precision/scale and overflow
-NULL. This SIGN-specific proof still excludes compact `DECIMAL(p,p)` intermediates even if
+native through SIGN. Verified ABS/unary-minus producers, including alternating unary trees
+and their admitted arithmetic, also compose through SIGN. Every arithmetic node retains its
+resolved precision/scale and overflow NULL. This SIGN-specific proof still excludes compact
+`DECIMAL(p,p)` intermediates even if
 an enclosing arithmetic operation or widening could normalize them.
 For `p > s`, the result is scaled `-1`, `0` or `1`. For noncompact `DECIMAL(p,p)`, nonzero
 values become NULL, zero remains scaled zero, and input NULLs remain NULL, matching released
@@ -1200,7 +1202,7 @@ instead of exposing the intermediate NULL. Nullable consumers and retained NULL/
 keep their existing native rules; direct DECIMAL results still reach ERROR/DROP enforcement.
 This repairs [#584](https://github.com/datafusion-contrib/StreamFusion/issues/584) without
 changing the SIGN kernel or claiming new acceleration. Division, remainder, mixed numeric
-operands, precision narrowing, rescaling, ABS/negation and other unverified producers and compact
+operands, precision narrowing, rescaling and other unverified producers and compact
 `DECIMAL(p,p)` SIGN keep complete generated evaluation. Widening a compact SIGN intermediate
 does not make it eligible. Array evaluation allocates result values without mutating the
 input; ordinary-decimal validity is shared and noncompact `p = s` derives result validity.
@@ -1209,6 +1211,9 @@ The [arithmetic-producer qualification](../benchmarks/scalar-functions.md#decima
 also covers noncompact zero-integral-width inputs, nullable BOOLEAN consumers and complete
 jobs with both transposes. Character CAST/TRY_CAST retain their separate producer proof;
 the new arithmetic SIGN admission does not make every enclosing conversion JVM-free.
+The separate [unary-producer qualification](../benchmarks/scalar-functions.md#decimal-sign-over-verified-unary-producers-2026-11-05)
+retains compact SIGN guards, final defaults/NULL flags and NOT NULL enforcement while
+comparing stock and the actual preceding generated evaluator.
 
 For compact `DECIMAL(p,p)` with precision 1 through 18, STRING/CHAR/VARCHAR CAST
 and DECIMAL CASE/IF consumers keep SIGN and its enclosing scalar expression in one generated
@@ -1318,7 +1323,7 @@ Native, unconditionally, with no host involvement:
   while computing an operand. Both CAST and TRY_CAST also admit direct DECIMAL inputs/literals to bounded
   VARCHAR/CHAR: modern mode truncates or pads the ASCII decimal text through native LEFT/RPAD;
   legacy mode ignores target length. CHAR with maximum INT length is not padded, matching
-  released Flink. Both casts also admit verified DECIMAL ABS and unary minus, same-operator nesting,
+  released Flink. Both casts also admit verified alternating DECIMAL ABS and unary-minus trees,
   and same-scale precision widening before or after those operators. Their released-Flink result
   precision/scale stays unchanged, so the same formatter and ASCII width kernels apply. This
   computed-operand proof excludes failures while evaluating the operand; TRY_CAST does not catch
@@ -1327,6 +1332,11 @@ Native, unconditionally, with no host involvement:
   resolved precision/scale, and overflow stays SQL NULL. CAST requires a nullable computed source
   and character result. TRY_CAST's character result is nullable, so it also admits NOT NULL
   arithmetic inputs and retains overflow NULL instead of CAST's empty projection default.
+  TRY_CAST additionally admits verified ABS/unary-minus wrappers over these arithmetic trees,
+  including alternating unary trees and arithmetic containing those wrappers. Its nullable
+  character result normalizes arithmetic NULLs before consumers such as IS NULL observe them;
+  this verified boundary does not require the whole projection's default-value evaluator.
+  Ordinary CAST keeps its existing arithmetic/unary producer and final-default rules.
   NOT NULL arithmetic CAST retains the generated projection contract described below;
   division/remainder, mixed numeric operands and other producers keep their preceding routes.
   Unknown length configuration and other computed DECIMAL operands retain their existing
@@ -1507,7 +1517,8 @@ can compose natively. NOT NULL sink enforcement remains Flink's ERROR/DROP polic
 Native integer-parse failures preserve Flink's `NumberFormatException` and parse message
 through JNI. Successful results and NULL-on-error policies match as well.
 
-Integer formatting uses canonical decimal text, including signed minima and zero.
+Integer formatting writes canonical decimal text from a reusable stack buffer directly into
+Arrow offsets/values, sharing sliced input validity. It preserves signed minima and zero.
 `VARCHAR(n)` truncates to `n` characters; `CHAR(n)` also pads shorter results with spaces.
 Legacy mode leaves the formatted text unchanged regardless of the declared length, matching
 Flink. Other TRY_CAST pairs, except the integer, BOOLEAN and temporal forms described here and
@@ -1670,9 +1681,31 @@ SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
   -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
 ```
 
+### DECIMAL from proven integer text
+
+In ordinary Calc, `CAST(CAST(n AS STRING) AS DECIMAL(p,s))` and the corresponding
+TRY_CAST combinations use the exact numeric decimal kernel when the inner CAST/TRY_CAST
+formats a verified total signed integer producer and `p-s` is at least 3, 5, 10 or 19
+for its resolved TINYINT, SMALLINT, INT or BIGINT width. For example, BIGINT text fits
+`DECIMAL(22,3)`. Integer arithmetic, lossless widening and admitted integer rounding
+producers retain their resolved widths before conversion. NULLs, declared scale,
+nullable result schemas, modern/legacy mode, conditional consumers and empty batches
+remain exact; the intermediate text and released parser are not evaluated.
+
+This proof requires unbounded STRING. Ordinary source strings, bounded CHAR/VARCHAR,
+insufficient integral capacity, fallible/stateful or unverified producers and UNNEST
+keep their preceding routes. The released decimal parser has precision- and byte-length-
+dependent behavior, so this does not admit arbitrary text parsing or DECIMAL text
+roundtrips. Some ordinary CAST forms already simplify to native numeric casts in Flink;
+they are existing controls, not newly accelerated signatures. Unreduced TRY_CAST forms
+require the explicit producer/capacity proof.
+The [separate qualification](../benchmarks/scalar-functions.md#decimal-from-proven-integer-text)
+retains actual preceding routes, tiny/full-job losses and exact source/runtime provenance.
+
 ### DECIMAL TRY_CAST
 
-`TRY_CAST` from STRING/VARCHAR/CHAR to DECIMAL uses Flink's generated conversion through the
+Outside the proven integer-text subset, `TRY_CAST` from STRING/VARCHAR/CHAR to DECIMAL
+uses Flink's generated conversion through the
 existing columnar callback. Malformed text and conversion failures become NULL; failures in
 operand expressions still propagate. Default and legacy modes follow the configured host rules.
 DECIMAL-to-DECIMAL TRY_CAST reuses the native exact rescaling kernel, including HALF_UP and
@@ -1684,7 +1717,8 @@ native formatter described above. It preserves scale, plain notation and NULLs i
 and legacy modes without a JVM evaluator. Modern bounded targets truncate/pad; legacy ignores length.
 Verified ABS/unary-minus trees and same-scale precision widening also stay native. The DECIMAL-only
 addition/subtraction/multiplication proof also formats through TRY_CAST with nullable or NOT NULL
-sources. Its character result remains nullable and arithmetic overflow remains SQL NULL. Other
+sources, including verified ABS/unary-minus wrappers over those arithmetic trees. Its character
+result remains nullable and arithmetic overflow remains SQL NULL. Other
 computed DECIMAL operands keep their previous rules; in particular, TRY_CAST does not catch an
 error raised while computing its input. See the direct [TRY_CAST comparison](../benchmarks/scalar-functions.md#decimal-to-string-try_cast)
 and [arithmetic qualification](../benchmarks/scalar-functions.md#decimal-arithmetic-try_cast-to-character).
@@ -1707,6 +1741,8 @@ cast, with the rest of the expression tree still evaluated natively around it:
   Both casts also keep verified ABS/unary-minus trees and same-scale precision widening native;
   CAST also keeps the nullable DECIMAL-only addition/subtraction/multiplication proof above native;
   TRY_CAST admits the same arithmetic proof with nullable or NOT NULL inputs.
+  TRY_CAST also admits verified ABS/unary-minus wrappers over that arithmetic and resolves
+  overflow NULLs before basic consumers; ordinary CAST keeps its separate default/producer rules.
   Other computed DECIMAL producers retain the host route or their existing fallback.
   For CAST of an unverified NOT NULL computed DECIMAL, the complete enclosing projection or
   condition stays in one generated evaluator. This retains Flink's separate value and NULL flag
@@ -1769,7 +1805,7 @@ the cached expression's error path in the second job.
 
 With `table.exec.legacy-cast-behaviour=ENABLED`, the verified basic pairs remain native:
 STRING/CHAR/VARCHAR to DECIMAL; BOOLEAN or DECIMAL to CHAR/VARCHAR; and character to
-character. STRING to DECIMAL uses Flink's complete generated expression, including
+character. Other STRING-to-DECIMAL inputs use Flink's complete generated expression, including
 its catch-on-conversion-failure contract: malformed strings and overflow become NULL.
 Setting only the cast executor's legacy flag would still throw for malformed strings.
 BOOLEAN uses the native formatter's legacy lowercase spelling within its verified operand scope.
@@ -2055,7 +2091,7 @@ the declared precision (1 through 38), scale, NULLs and sliced validity; it neve
 through floating point. Like Comet's decimal ABS, the kernel transforms the unscaled i128
 and explicitly retains its Arrow decimal type. Each arithmetic node retains its own
 resolved precision/scale and overflow NULL. Division, remainder, mixed numeric operands,
-rescaling, precision narrowing, mixed ABS/negation chains and other unverified producers
+rescaling, precision narrowing and other unverified producers
 retain the enclosing generated expression. Existing
 value-dependent FLOOR/CEIL and runtime-scale rounding guards still apply before this matcher.
 The [DECIMAL ABS measurements](../benchmarks/scalar-functions.md#decimal-abs) compare
@@ -2068,13 +2104,30 @@ Character CAST/TRY_CAST keep their separate producer whitelist: admitting arithm
 ABS does not by itself make every enclosing character conversion JVM-free. Remaining
 conversion signatures are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
 
+ABS also admits verified negative DECIMAL producers, including `ABS(-d)`, negative
+subtrees of the existing arithmetic proof and same-scale widening. Leading verified
+negations are omitted: every valid DECIMAL coefficient has an exact negation, so ABS
+retains the same value, precision, scale and NULL without the intermediate array.
+The same verified proof also admits negation over ABS, such as `-ABS(d)` and
+`ABS(-ABS(d))`, and alternating trees of both operators. Fallible/unverified producers
+retain generated evaluation. STRING and numeric-epoch
+consumers retain their own separate proofs; the latter accepts total unary/widening
+trees but excludes arithmetic. The [release qualification](../benchmarks/scalar-functions.md#decimal-abs-over-negative-producers-2026-11-05)
+records prepared and complete-job comparisons against stock and the preceding evaluator.
+The separate [negation-over-ABS qualification](../benchmarks/scalar-functions.md#decimal-negation-over-absolute-values-2026-11-05)
+records the later alternating-tree admission. Character-consumer guards remain separate:
+`TRY_CAST(-ABS(d*d) AS CHAR(48))` now uses the verified arithmetic formatter, while
+ordinary CAST over unverified unary/arithmetic producers retains generated evaluation.
+The separate [TRY_CAST qualification](../benchmarks/scalar-functions.md#decimal-unary-arithmetic-try_cast-to-character-2026-11-05)
+records the nullable-result boundary and its stock/preceding fallback comparisons.
+
 DECIMAL unary minus admits direct inputs/literals, recursive same-scale precision widening,
-nested admitted negation and DECIMAL-only addition/subtraction/multiplication over those
+nested admitted negation/ABS and DECIMAL-only addition/subtraction/multiplication over those
 producers. Every arithmetic node retains its own resolved precision/scale and overflow NULL.
 It uses Arrow's decimal numeric negation for arrays and direct i128 scalar dispatch,
 retaining precision, scale and NULL without a JVM evaluator. All legal DECIMAL extrema
 have a representable negation. Division, remainder, mixed numeric operands, rescaling,
-narrowing, mixed ABS/negation chains and other producers retain their whole generated expression; existing rounding
+narrowing and other unverified producers retain their whole generated expression; existing rounding
 metadata guards remain unchanged. See the
 [DECIMAL unary-minus controls](../benchmarks/scalar-functions.md#decimal-unary-minus).
 The [arithmetic-producer controls](../benchmarks/scalar-functions.md#decimal-negation-over-arithmetic)
@@ -2418,7 +2471,8 @@ type before the existing extrema kernel when every argument is a direct input or
 integer capacity is sufficient and no DECIMAL loses scale. A DECIMAL argument whose metadata
 changes must be NOT NULL: released Flink can dereference it before checking its NULL flag.
 Nullable DECIMAL metadata changes, scale reduction and unverified producers retain generated
-evaluation. Character results, other mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
+evaluation. Verified ASCII primitive-text GREATEST/LEAST use the Rust subset below. Other
+character results, mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
 Flink-generated expressions through the batch JVM bridge, preserving coercions and nanoseconds.
 Runtime strings use that bridge when the Calc reads an external DataStream whose conversion
 produces Java-backed strings. Unknown or binary-backed input representations retain fallback:
@@ -2428,10 +2482,29 @@ extrema retain fallback.
 [Release qualification](../benchmarks/scalar-functions.md#mixed-exact-greatest) retains
 stock/previous/native comparisons, slower tiny batches and complete jobs with both transposes.
 
+The genuine built-in also executes in Rust when every character operand is an ASCII/NULL
+literal, a total verified integer/BOOLEAN cast to unbounded STRING, qualified primitive
+ASCII PRINTF (2.2), or qualified locale-independent UPPER/LOWER of those producers. Both
+modern and legacy cast spellings are preserved. Matching Boolean-text casts select their
+strict Boolean extremum before formatting once; mixed casing keeps text comparison.
+The typed UTF-8 kernel propagates any argument NULL and shares buffers for uniform winners.
+This proof does not admit bounded/unverified/fallible producers, ordinary source strings,
+Unicode literals, or same-name catalog functions. The
+[primitive-text qualification](../benchmarks/scalar-functions.md#primitive-text-greatest)
+records bulk gains, tiny/full-job losses and actual preceding routes.
+
 ### LEAST
 
-Uses the same kernels, generated-expression paths and string-representation gates as GREATEST,
-with strict NULL propagation and minimum comparison. Verified mixed exact-numeric LEAST uses
+Uses the same numeric kernels, generated-expression paths and source string-representation
+gates as GREATEST, with strict NULL propagation and minimum comparison. It also admits
+the same proven ASCII primitive-text producers, matching Boolean-word literals and
+locale-independent case results described above. BOOLEAN extrema combine Arrow value
+bitmaps directly while independently unioning argument NULLs; no comparison/zip arrays
+or per-row scalar expansion are needed. A scalar false absorbs LEAST and a scalar true
+absorbs GREATEST while preserving strict NULL propagation.
+The [independent LEAST qualification](../benchmarks/scalar-functions.md#primitive-text-least)
+compares its actual preceding encoder and runtime against stock, retains tiny/full-job
+losses, and reruns both extrema against released Flink. Verified mixed exact-numeric LEAST uses
 the same lossless casts to Flink's resolved DECIMAL type. It retains the same nullable-metadata,
 scale-reduction and producer guards; it does not remove Flink's nullable-conversion failures.
 The [separate qualification](../benchmarks/scalar-functions.md#mixed-exact-least) records
@@ -2595,8 +2668,12 @@ STRING/integer/DECIMAL `%s`, signed integer `%d`, two's-complement `%x`/`%X`/`%o
 alignment and sign/zero padding. BIGINT character conversions retain the formatter, which
 rejects non-NULL Long arguments.
 BOOLEAN-object arguments outside the verified literal-format path retain their released evaluator.
-DECIMAL string conversion preserves scale and Java scientific notation. The released SQL
-evaluator passes internal `DecimalData`, so DECIMAL `%f` retains Flink's NULL result rather
+DECIMAL `%s`/`%S` conversion uses `DecimalData.toString()`'s plain fixed-scale text,
+including leading/trailing zeros: DECIMAL(19,19) with unscaled value 1 renders as
+`0.0000000000000000001`, and zero as `0.0000000000000000000`. Formatter string precision
+and width apply to that exact text; scientific notation would change both projections and
+predicates. The released SQL evaluator passes internal `DecimalData`, so DECIMAL numeric
+formats such as `%f`, `%d` and `%x` retain Flink's NULL result rather
 than introducing BigDecimal formatting. Non-ASCII, temporal/hash/floating formats and unverified
 flags retain Flink's Locale.US formatter; invalid formats still return NULL.
 
@@ -2604,6 +2681,13 @@ Certificates apply to complete batches. Retained evaluator descriptors indicate 
 **may** use Java, not that a certified batch performed an upcall. Unverified string consumers
 still fuse with PRINTF because character formatting can produce isolated UTF-16 surrogates. A sensitive
 string crossing another operator retains the existing representation-protection fallback.
+
+The [DECIMAL formatting regression record](../benchmarks/results/decimal-printf-plain-2026-11-05.json)
+compares 78 precision/scale combinations with released Flink 2.2.1 on JDK 11/17,
+including NULLs, dynamic formats, string precision/width and empty filtered batches.
+All 230 focused invocations and 920 release Rust core tests pass; the 1.18 controls
+verify that this release does not provide PRINTF. This repairs already admitted
+certified behavior without broadening JVM-free admission or claiming a new speedup.
 
 ### URL_DECODE
 
@@ -3500,15 +3584,37 @@ widening. Ordinary Calc also evaluates verified runtime INT precision CASE trees
 a batch kernel selecting seconds/milliseconds when every result is 0, 3 or NULL and conditions
 are total admitted BOOLEAN/integer trees. Arbitrary precision columns, invalid/unverified
 leaves, fallible conditions, division, narrowing, unknown producers and string/formatted signatures retain
-their existing routes, as does UNNEST admission. See the complete [temporal function inventory](temporal-functions.md).
+their existing routes, as does UNNEST admission. Ordinary Calc also admits direct/literal
+DECIMAL epochs at literal precision 0/3: truncate toward zero, wrap to signed 64 bits,
+wrap seconds-to-milliseconds multiplication, then check the final millisecond range.
+Verified alternating DECIMAL ABS/negation chains and same-scale widening also execute natively.
+Arithmetic, narrowing/scale changes and runtime DECIMAL precision retain generated evaluation. The integer
+original-unit range check must not be applied to this distinct released DECIMAL overload.
+Flink 2.2 single-argument numeric `TO_TIMESTAMP_LTZ` uses the same verified integer/DECIMAL
+producer proofs at its released default precision 3. Flink 1.18's validation rejection,
+unverified producers and existing UNNEST routes remain intact.
+See the complete [temporal function inventory](temporal-functions.md).
 Direct/literal LTZ FLOOR/CEIL in fixed-zero session zones also runs in Rust for DAY/HOUR
 on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The latter three forms retain
 released 1.18's code-generation failure. LTZ CEIL uses a dedicated signed-remainder
 kernel that discards fractional nanos; ordinary TIMESTAMP rounding stays unchanged.
 UTC FLOOR also consumes verified total built-in integer epoch conversions, with literal
 0/3 or separately proven runtime CASE precision 0/3/NULL, using those same release-supported
-units and the existing Rust kernels. Computed CEIL, other computed timestamp producers and
+units and the existing Rust kernels. CEIL/CEILING accepts the same producer proof; fixed-unit
+CEIL reuses plain-timestamp rounding only because numeric epochs have zero fractions and
+bounded milliseconds that exclude its differing overflow cases. General LTZ inputs retain
+their dedicated kernel. Other computed timestamp producers and
 nonzero/regional zones retain their existing routes. See [computed UTC FLOOR](temporal-functions.md#native-utc-floor-over-integer-epochs).
+
+In fixed zero-offset sessions, ordinary Calc FLOOR additionally composes genuine verified
+DECIMAL epochs: direct fields/literals, total ABS/negation chains and same-scale widening
+at literal precision 0/3 or the 2.2 default. Decimal truncation, signed-long/seconds wrapping
+and final millisecond bounds remain distinct from integer bounds. YEAR/MONTH/DAY/HOUR
+qualify on both releases, with MINUTE/SECOND/MILLISECOND on 2.2. The 1.18 default-signature
+rejection and sub-hour initialization failures remain unchanged. CEIL/CEILING over DECIMAL
+epochs, runtime DECIMAL precision, binary arithmetic/narrowing/rescaling, unverified
+producers, other zones/units and UNNEST keep their existing routes. See
+[DECIMAL UTC FLOOR](temporal-functions.md#native-utc-floor-over-decimal-epochs).
 
 ### LTRIM
 
@@ -3609,6 +3715,21 @@ Flink rather than converting each one to an Arrow timestamp.
 `DATE_FORMAT` and `EXTRACT` retain their existing opt-in Rust LTZ paths. Dynamic patterns, additional
 extraction fields and other temporal functions use Flink's implementation. Timestamp-producing
 expressions run by default with the full Flink millisecond range and fractional nanos.
+Plain-TIMESTAMP numeric `DATE_FORMAT` also handles Java quoted literals, doubled quotes and
+escaped literal percents natively. Optional sections and unsupported or invalid Java pattern
+syntax keep generated Flink evaluation, preserving output, failures and empty-batch laziness.
+Direct TIMESTAMP_LTZ columns and verified total integer/DECIMAL epoch producers in ordinary Calc reuse
+this exact renderer in fixed zero-offset sessions. Integer producers compose the existing
+width, arithmetic/rounding and original-unit bounds proof at literal precision 0/3, verified
+runtime INT CASE precision 0/3/NULL, and Flink 2.2's default precision. Verified DECIMAL fields,
+literals, total ABS/negation chains and same-scale widening compose at literal precision 0/3
+or the 2.2 default, preserving DECIMAL truncation, signed-long/seconds wrapping and final
+millisecond bounds. Runtime DECIMAL precision, other zones and unverified
+derived producers keep their existing generated routes, including arithmetic DECIMAL epochs and general
+timestamp CASE/casts. Flink 1.18 retains its validation rejection of single-argument numeric
+epochs. See the [composition qualification](../benchmarks/scalar-functions.md#utc-date_format-over-verified-integer-epochs-2026-11-05).
+The [DECIMAL qualification](../benchmarks/scalar-functions.md#utc-date_format-over-verified-decimal-epochs-2026-11-05)
+records its independent correctness/performance scope and retained small-batch and complete-job costs.
 
 ## POWER and SQRT
 

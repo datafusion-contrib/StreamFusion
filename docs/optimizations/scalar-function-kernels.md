@@ -1474,6 +1474,25 @@ million-row jobs retain both transposes with native/stock elapsed **0.309-0.640*
 qualification retains full variability, previous runtimes, tiny controls and slower prototypes.
 
 
+## Elide proven integer text before DECIMAL conversion
+
+The same total integer-text producer proof used by PRINTF also avoids the
+format/parse roundtrip before an exact decimal cast when the resolved decimal's
+integral capacity covers the complete signed integer width. Both released parser
+branches are equivalent for these canonical ASCII integer strings; arbitrary source
+text is deliberately outside this proof. The existing typed numeric kernel scales
+the integer directly, retaining its original width and NULLs without allocating
+an intermediate string or calling a generated JVM evaluator. No bridge/runtime
+changes or performance switches are introduced.
+
+The [independent qualification](../benchmarks/scalar-functions.md#decimal-from-proven-integer-text)
+replays the actual preceding encoder on the same release runtime. All 96 bulk cells
+beat stock 6.574-23.579x and previous
+12.440-35.978x. Tiny/full-job losses, independent
+stock controls, previous-native descriptors and complete artifact provenance remain
+in the record; these results do not imply gains for generic text parsing.
+
+
 ## Map primitive integer casts without widening
 
 The shared integer narrowing kernel uses Arrow's typed unary value mapping directly from
@@ -1497,14 +1516,49 @@ in the [full qualification](../benchmarks/scalar-functions.md#integer-try_cast).
 
 ## Compose verified epoch rounding
 
-Verified UTC FLOOR also keeps the integer epoch conversion and timestamp round in
+Verified UTC FLOOR/CEIL keeps the integer epoch conversion and timestamp round in
 Arrow instead of materializing the nested temporal result through a generated evaluator.
 A total producer/precision proof and released built-in identity allow the existing kernels
-to compose; fixed-unit results write directly to a capacity-sized Arrow timestamp builder,
-avoiding temporary Option vectors and repeated component-buffer growth. Specializing the
-five verified scalar widths avoids runtime division and scalar-column broadcasts;
-nonzero/regional zones and unverified inputs keep Flink. All 32 prepared
-bulk cells beat stock by 1.017-1.985x and previous by
-2.552-5.131x. All tiny controls and six complete jobs, including their
-remaining losses and both transposes, are retained in the
-[computed-epoch FLOOR qualification](../benchmarks/scalar-functions.md#utc-floor-over-integer-epochs).
+to compose. Fixed component widths above one millisecond map values with Arrow unary and
+reuse parent validity, avoiding per-row NULL/fraction appends. Other paths retain
+capacity-sized component builders. Specializing the five verified scalar widths avoids
+runtime division and scalar-column broadcasts; nonzero/regional zones and unverified
+inputs keep Flink. This follows Comet's timestamp unary/bitmap pattern while preserving
+Flink's millisecond/nanosecond representation and rounding arithmetic.
+
+The [CEIL qualification](../benchmarks/scalar-functions.md#utc-ceil-over-integer-epochs)
+retains a profiled initial bulk loss (0.943x stock) before bitmap reuse. All 32 final bulk
+cells beat stock by 1.085-3.083x and actual previous behavior by 2.614-8.457x. A representative
+batch drops from 92 allocation requests/39,541 bytes to 88/39,165 bytes. All eight tiny
+controls and six complete jobs still lose to stock; complete jobs beat the prior evaluator
+path, retaining both transposes and JNI. The earlier
+[FLOOR qualification](../benchmarks/scalar-functions.md#utc-floor-over-integer-epochs)
+preserves its own builder/constant-width measurements and artifacts. Those historical
+timings are not relabeled as measurements of the newer bitmap-sharing runtime.
+
+
+## Proven ASCII string extrema
+
+GREATEST/LEAST prove their primitive text producers before using UTF-8 byte ordering; arbitrary
+source strings retain Java representation semantics. A typed pass selects borrowed slices
+into one offset/value buffer, with the strict union NULL bitmap. When one input wins every
+valid row, the result shares that input's immutable payload and only changes validity.
+Matching Boolean-text casts select the Boolean extremum first and format once. Integer
+formatting uses the existing itoa stack-buffer pattern and shares sliced input validity,
+preserving bounded truncation and CHAR padding. This removes intermediate comparison/zip
+arrays, redundant Boolean strings, generic Display formatting and per-row bitmap rebuilding.
+
+The initial INT pair process sample has 927 extrema frames, including 681 zip frames,
+and an integer-format subtree with 698 formatting frames. Counts locate work; they are
+not elapsed-time percentages. Initial builder/buffer attempts and slower controls remain in
+the [complete qualification](../benchmarks/scalar-functions.md#primitive-text-greatest).
+
+
+LEAST uses the same text producer proof. A measured BOOLEAN-pair loss prompted a
+native Boolean specialization: maximum is OR and minimum is AND over packed value
+bitmaps, with a separate union of argument NULLs. Constant identities reuse the input
+bitmap and absorbing constants construct only a constant value bitmap. Unlike the
+generic DataFusion comparison/zip route, this avoids selecting Boolean bits row by row.
+The [independent qualification](../benchmarks/scalar-functions.md#primitive-text-least)
+retains the initial loss, process profile, actual preceding controls and slower tiny/full-job
+results. It reruns both string extrema against released Flink after the shared kernel change.

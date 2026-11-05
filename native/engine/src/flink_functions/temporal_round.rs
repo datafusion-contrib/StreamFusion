@@ -1,4 +1,4 @@
-use arrow::array::{Array, ArrayRef, BooleanArray, Int64Array};
+use arrow::array::{Array, ArrayRef, BooleanArray, Int32Array, Int64Array, StructArray};
 use arrow::datatypes::DataType;
 use datafusion::common::{exec_err, Result, ScalarValue};
 use datafusion::logical_expr::{
@@ -6,8 +6,8 @@ use datafusion::logical_expr::{
 };
 use std::sync::Arc;
 use streamfusion_bridge::timestamp::{
-    is_timestamp, timestamp_array, timestamp_type, TimestampBuilder, TimestampColumn,
-    TimestampValue,
+    is_component_timestamp, is_timestamp, timestamp_array, timestamp_type, TimestampBuilder,
+    TimestampColumn, TimestampValue,
 };
 
 pub(crate) fn function() -> ScalarUDF {
@@ -125,6 +125,29 @@ fn round_fixed_values<const WIDTH: i64, const CEILING: bool>(
     values: &ArrayRef,
 ) -> Result<ArrayRef> {
     let timestamps = TimestampColumn::try_new(values.as_ref())?;
+    if WIDTH > 1 && is_component_timestamp(values.data_type()) {
+        // Whole-millisecond rounding drops fractions and preserves the parent's sliced validity.
+        let millis: Int64Array = timestamps.to_millis()?.unary(|millis| {
+            let shifted = if CEILING {
+                millis.wrapping_add(WIDTH - 1)
+            } else {
+                millis
+            };
+            shifted.wrapping_sub(shifted.rem_euclid(WIDTH))
+        });
+        let (_, buffer, nulls) = millis.into_parts();
+        let DataType::Struct(fields) = timestamp_type() else {
+            unreachable!()
+        };
+        return Ok(Arc::new(StructArray::new(
+            fields,
+            vec![
+                Arc::new(Int64Array::new(buffer, None)),
+                Arc::new(Int32Array::from(vec![0; values.len()])),
+            ],
+            nulls,
+        )));
+    }
     let mut result = TimestampBuilder::with_capacity(timestamps.len());
     for row in 0..timestamps.len() {
         if timestamps.is_null(row) {
@@ -185,6 +208,44 @@ mod tests {
     use super::*;
     use arrow::datatypes::Field;
     use datafusion::common::{config::ConfigOptions, ScalarValue};
+
+    #[test]
+    fn fixed_component_round_keeps_shared_sliced_validity_and_zeroes_fractions() {
+        let input = timestamp_array((0..137).map(|i| {
+            (i % 11 != 0).then(|| {
+                TimestampValue::new([i64::MIN, i64::MAX, -1001, -1, 0, 1, 1001][i % 7], 999_999)
+                    .unwrap()
+            })
+        }));
+        for offset in [0, 1, 7, 65] {
+            for len in [0, 1, 65] {
+                let input: ArrayRef = Arc::new(input.slice(offset, len));
+                for ceiling in [false, true] {
+                    let output = round_fixed::<3_600_000>(&input, ceiling).unwrap();
+                    let expected = round(&[
+                        input.clone(),
+                        Arc::new(Int64Array::from(vec![3_600_000; len])),
+                        Arc::new(BooleanArray::from(vec![ceiling; len])),
+                    ])
+                    .unwrap();
+                    assert_eq!(output.as_ref(), expected.as_ref());
+                    assert_eq!(
+                        output.nulls(),
+                        input.nulls().filter(|nulls| nulls.null_count() > 0)
+                    );
+                    if let (Some(actual), Some(original)) = (output.nulls(), input.nulls()) {
+                        assert_eq!(
+                            actual.inner().inner().as_ptr(),
+                            original.inner().inner().as_ptr()
+                        );
+                    }
+                    let output = output.as_any().downcast_ref::<StructArray>().unwrap();
+                    assert_eq!(output.column(0).null_count(), 0);
+                    assert_eq!(output.column(1).null_count(), 0);
+                }
+            }
+        }
+    }
 
     #[test]
     fn fixed_scalar_dispatch_matches_array_rounding_at_extrema_nulls_and_slices() {

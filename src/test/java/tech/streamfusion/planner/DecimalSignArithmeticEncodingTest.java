@@ -41,6 +41,24 @@ class DecimalSignArithmeticEncodingTest {
   }
 
   @Test
+  void verifiedUnaryProducersKeepSignNativeWithoutAdmittingCompactResults() {
+    for (int precision = 1; precision <= 38; precision++) {
+      for (int scale = 0; scale <= precision; scale++) {
+        var type = types.createSqlType(SqlTypeName.DECIMAL, precision, scale);
+        RexNode input = rex.makeInputRef(type, 0);
+        for (var operator : List.of(FlinkSqlOperatorTable.ABS, FlinkSqlOperatorTable.UNARY_MINUS)) {
+          var unary = rex.makeCall(type, operator, List.of(input));
+          var call = rex.makeCall(type, FlinkSqlOperatorTable.SIGN, List.of(unary));
+          var encoded = RexExpression.encodeProjections(List.of(call), List.of("v"));
+          assertNotNull(encoded, call.toString());
+          assertEquals(precision <= 18 && precision == scale,
+              encoded.jvmFunctionCalls().contains("SIGN"), call.toString());
+        }
+      }
+    }
+  }
+
+  @Test
   void unverifiedAndCompactSignProducersStayGenerated() {
     var type = types.createSqlType(SqlTypeName.DECIMAL, 18, 3);
     RexNode input = rex.makeInputRef(type, 0);
@@ -53,8 +71,6 @@ class DecimalSignArithmeticEncodingTest {
         rex.makeCall(type, FlinkSqlOperatorTable.MOD, List.of(input, input)),
         rex.makeCall(type, FlinkSqlOperatorTable.PLUS,
             List.of(input, rex.makeInputRef(types.createSqlType(SqlTypeName.INTEGER), 2))),
-        rex.makeCall(type, FlinkSqlOperatorTable.ABS, List.of(input)),
-        rex.makeCall(type, FlinkSqlOperatorTable.UNARY_MINUS, List.of(input)),
         rex.makeCast(types.createSqlType(SqlTypeName.DECIMAL, 18, 2), input),
         rex.makeCast(types.createSqlType(SqlTypeName.DECIMAL, 17, 3), input),
         widenedCompact,

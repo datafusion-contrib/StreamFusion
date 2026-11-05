@@ -57,6 +57,10 @@ class IntegralExpressionPipelineBenchmark {
           table.getConfig().set("table.exec.legacy-cast-behaviour",
               Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
           BigInteger maximum = BigInteger.TEN.pow(decimalPrecision).subtract(BigInteger.ONE);
+          var decimalEpochs = decimalPrecision > 0
+                  && "decimal-epoch".equals(System.getenv("SF_INTEGRAL_CORPUS"))
+              ? tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions
+                  .decimalEpochCoefficients(decimalPrecision, decimalScale) : null;
           var source = env.fromSequence(0, count - 1).map(i -> {
             Object value;
             if (epochSecondsInput) {
@@ -68,7 +72,10 @@ class IntegralExpressionPipelineBenchmark {
                   tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.temporalMillis(i))
                   .plusNanos(timestampPrecision > 3 ? i % 1024 * 7919 % 1000000 : 0);
             } else if (decimalPrecision > 0) {
-              BigInteger unscaled = decimalTruth && i % 17 == 2 ? BigInteger.ZERO
+              BigInteger unscaled;
+              if (decimalEpochs != null) {
+                unscaled = decimalEpochs.get((int) (i % decimalEpochs.size()));
+              } else unscaled = decimalTruth && i % 17 == 2 ? BigInteger.ZERO
                   : i % 17 == 0 ? maximum : i % 17 == 1 ? maximum.negate()
                   : BigInteger.valueOf((i % 2 == 0 ? -1L : 1L)
                       * (decimalPrecision == 4 ? i * 7919L % 10000 : 9007199254740993L + i * 7919L));

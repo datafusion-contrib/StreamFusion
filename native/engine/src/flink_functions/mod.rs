@@ -17,6 +17,7 @@ mod calendar_round;
 pub(crate) mod certified;
 pub(crate) mod clock;
 pub(crate) mod decimal;
+mod decimal_epoch;
 pub(crate) mod decimal_float;
 pub(crate) mod decimal_round_text;
 pub(crate) mod decode;
@@ -61,6 +62,7 @@ mod charset;
 mod chr;
 pub(crate) mod collection_cast;
 mod collection_string;
+pub(crate) mod date_format;
 pub(crate) mod decimal_string;
 mod element;
 mod from_base64;
@@ -318,6 +320,8 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         248 => integer_printf::function(),
         249 => unnest_temporal::function(unnest_temporal::Operation::EpochPrecision),
         250 => integer_printf::boolean_arguments(),
+        251 => decimal_epoch::function(false),
+        252 => decimal_epoch::function(true),
         _ => return None,
     })
 }

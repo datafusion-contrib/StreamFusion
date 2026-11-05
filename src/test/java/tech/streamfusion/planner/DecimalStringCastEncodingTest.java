@@ -108,6 +108,37 @@ class DecimalStringCastEncodingTest {
   }
 
   @Test
+  void tryCastAdmitsUnaryArithmeticWithoutChangingOrdinaryCast() throws Exception {
+    var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
+    var rex = new RexBuilder(types);
+    for (int[] pair : new int[][] {{1, 0}, {4, 2}, {18, 3}, {18, 18}, {19, 0}, {38, 18}, {38, 38}}) {
+      for (boolean nullable : new boolean[] {false, true}) {
+        var type = types.createTypeWithNullability(
+            types.createSqlType(SqlTypeName.DECIMAL, pair[0], pair[1]), nullable);
+        var input = rex.makeInputRef(type, 0);
+        var product = rex.makeCall(type, FlinkSqlOperatorTable.MULTIPLY, List.of(input, input));
+        for (var unary : List.of(FlinkSqlOperatorTable.ABS, FlinkSqlOperatorTable.UNARY_MINUS)) {
+          var operand = rex.makeCall(type, unary, List.of(product));
+          for (boolean legacy : new boolean[] {false, true}) {
+            for (var name : List.of(SqlTypeName.CHAR, SqlTypeName.VARCHAR)) {
+              for (int length : new int[] {1, 8, 48, Integer.MAX_VALUE}) {
+                var target = types.createTypeWithNullability(types.createSqlType(name, length), true);
+                for (var operator : List.of(FlinkSqlOperatorTable.CAST, FlinkSqlOperatorTable.TRY_CAST)) {
+                  var call = rex.makeCall(target, operator, List.of(operand));
+                  var encoded = BooleanStringCastEncodingTest.configured(call, legacy);
+                  assertNotNull(encoded, call.toString());
+                  assertEquals(operator == FlinkSqlOperatorTable.TRY_CAST,
+                      encoded.jvmFunctionCalls().isEmpty(), call.toString());
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  @Test
   void computedDecimalsKeepTheirExistingEvaluator() throws Exception {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);

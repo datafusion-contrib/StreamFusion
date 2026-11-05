@@ -33,12 +33,13 @@ class RuntimeTestShardsTest(unittest.TestCase):
                 path = root / "tech/streamfusion" / (name + ".class")
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.touch()
-            plan = shards.partition(root, 2)
-            self.assertEqual(plan, shards.partition(root, 2))
-            self.assertEqual({"tech/streamfusion/" + name for name in names},
-                             set(plan[0]) | set(plan[1]))
-            self.assertFalse(set(plan[0]) & set(plan[1]))
-            self.assertTrue(shards.FIRST_SHARD_CLASSES <= set(plan[0]))
+            for count in (2, 3):
+                with self.subTest(count=count):
+                    plan = shards.partition(root, count)
+                    self.assertEqual(plan, shards.partition(root, count))
+                    self.assertEqual(Counter("tech/streamfusion/" + name for name in names),
+                                     Counter(name for shard in plan for name in shard))
+                    self.assertTrue(shards.FIRST_SHARD_CLASSES <= set(plan[0]))
 
     def test_invalid_or_empty_selection_cannot_restore_default_tests(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -125,15 +126,17 @@ void repeated(int value) throws Exception { ''' + body('"parameter-" + value') +
             self.assertEqual(1, sum(count for (_, _, skipped), count in baseline.items() if skipped))
             selected = root / "target/selected"
             expected_markers = {path.name for path in selected.iterdir()}
-            for path in selected.iterdir():
-                path.unlink()
-            actual = Counter()
-            for index in (1, 2):
-                output = root / f"shard-{index}.txt"
-                shards.write_selection(root / "target/test-classes", 2, index, output)
-                actual.update(run(f"-Dsf.runtime.testIncludesFile={output}"))
-            self.assertEqual(baseline, actual)
-            self.assertEqual(expected_markers, {path.name for path in selected.iterdir()})
+            for count in (2, 3):
+                with self.subTest(count=count):
+                    for path in selected.iterdir():
+                        path.unlink()
+                    actual = Counter()
+                    for index in range(1, count + 1):
+                        output = root / f"shard-{count}-{index}.txt"
+                        shards.write_selection(root / "target/test-classes", count, index, output)
+                        actual.update(run(f"-Dsf.runtime.testIncludesFile={output}"))
+                    self.assertEqual(baseline, actual)
+                    self.assertEqual(expected_markers, {path.name for path in selected.iterdir()})
 
             for path in selected.iterdir():
                 path.unlink()
@@ -142,7 +145,7 @@ class FlinkPortableSqlAuditTest {
 @org.junit.jupiter.api.Test void selected() { throw new AssertionError("partition-sentinel"); }
 }''')
             result = subprocess.run(["mvn", "-B", "-ntp", "test",
-                                     f"-Dsf.runtime.testIncludesFile={root / 'shard-1.txt'}"],
+                                     f"-Dsf.runtime.testIncludesFile={root / 'shard-3-1.txt'}"],
                                     cwd=root, capture_output=True, text=True, timeout=120)
             self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
             report = root / "target/surefire-reports/TEST-tech.streamfusion.FlinkPortableSqlAuditTest.xml"
