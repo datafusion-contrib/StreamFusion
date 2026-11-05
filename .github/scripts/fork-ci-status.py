@@ -117,6 +117,9 @@ def mirror(repository, pr, *, wait_for_runs=False):
             check = next((check for check in checks
                           if check['name'] == name and check['app']['slug'] == 'github-actions'
                           and check.get('external_id') == external_id), None)
+            # Requeuing a completed check can retain its old conclusion in the Checks API.
+            if check and check.get('status') == 'completed' and result['status'] != 'completed':
+                check = None
             if check:
                 if not unchanged(check, owned_result):
                     api('PATCH', f'repos/{repository}/check-runs/{check["id"]}', owned_result)

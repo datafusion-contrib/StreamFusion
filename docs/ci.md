@@ -55,7 +55,11 @@ boundaries; active-run tracking does not depend on that schedule.
 Each watcher uses a short `ubuntu-slim` job and dispatches a follow-up on the trusted default
 branch before its six-minute polling window ends. Continuations retain the original six-hour
 deadline. They fetch the current PR head on every poll and stop when both suites are terminal
-or the PR closes. Unchanged results do not generate repeated check writes. A brief startup grace
+or the PR closes. Unchanged results do not generate repeated check writes. If a previously
+completed check needs to show an active fork run, the reporter creates a new check attempt;
+requeuing the completed check can retain its old conclusion. An active attempt can pass only
+after the exact-head workflow succeeds. This also prevents an earlier successful attempt from
+satisfying the gate during a rerun. A brief startup grace
 allows fork runs to appear after a PR update; absent/disabled workflows still report action
 required. Temporary network/server failures retry within the same deadline; permission failures
 remain visible. Deadline exhaustion fails the watcher without passing unfinished checks.

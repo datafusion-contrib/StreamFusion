@@ -247,6 +247,41 @@ class ForkCiStatusTest(unittest.TestCase):
             with self.subTest(change=change):
                 self.assertFalse(STATUS.unchanged(check, {**check, **change}))
 
+    def test_completed_checks_start_a_new_attempt_when_the_fork_run_is_active(self):
+        for conclusion in ('action_required', 'failure', 'success'):
+            for state in ('queued', 'in_progress'):
+                with self.subTest(conclusion=conclusion, state=state):
+                    result = {'status': state, 'details_url': RUN['html_url'],
+                              'output': {'title': state, 'summary': 'waiting'}}
+                    checks = [
+                        {'id': index, 'name': name, 'app': {'slug': 'github-actions'},
+                         'external_id': f'streamfusion:fork-ci:v1:42:{workflow}:{name}',
+                         'status': 'completed', 'conclusion': conclusion}
+                        for index, (workflow, name) in enumerate(
+                            (workflow, name) for workflow, names in STATUS.WORKFLOWS.items()
+                            for name in names)
+                    ]
+                    with patch.object(STATUS, 'api', return_value={'check_runs': checks}) as api, \
+                            patch.object(STATUS, 'payload', return_value=result):
+                        self.assertTrue(STATUS.mirror('datafusion-contrib/StreamFusion', PR))
+                    writes = [call for call in api.call_args_list if call.args[0] != 'GET']
+                    self.assertEqual(len(checks), len(writes))
+                    active = []
+                    for previous, call in zip(checks, writes):
+                        self.assertEqual(('POST', 'repos/datafusion-contrib/StreamFusion/check-runs'),
+                                         call.args[:2])
+                        created = call.args[2]
+                        self.assertEqual(PR['head']['sha'], created['head_sha'])
+                        self.assertEqual(previous['external_id'], created['external_id'])
+                        self.assertEqual(state, created['status'])
+                        self.assertNotIn('conclusion', created)
+                        active.append({'id': 100 + previous['id'],
+                                       'app': {'slug': 'github-actions'}, **created})
+                    with patch.object(STATUS, 'api', return_value={'check_runs': active + checks}) as api, \
+                            patch.object(STATUS, 'payload', return_value=result):
+                        self.assertTrue(STATUS.mirror('datafusion-contrib/StreamFusion', PR))
+                    self.assertEqual(['GET'], [call.args[0] for call in api.call_args_list])
+
     def test_missing_runs_get_a_startup_grace_without_becoming_successful(self):
         result = {'status': 'completed', 'conclusion': 'action_required'}
         with patch.object(STATUS, 'api', return_value={'check_runs': []}) as api, \
