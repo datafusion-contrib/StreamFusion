@@ -733,6 +733,93 @@ public final class CanonicalFixtureFactory
     public void close() {}
   }
 
+  public static final class MergeHistoryAccumulator {
+    public long sum;
+    public long rows;
+    public org.apache.flink.table.api.dataview.MapView<Long, Long> counts =
+        new org.apache.flink.table.api.dataview.MapView<>();
+    public org.apache.flink.table.api.dataview.ListView<
+            org.apache.flink.api.java.tuple.Tuple2<Long, Long>>
+        history = new org.apache.flink.table.api.dataview.ListView<>();
+  }
+
+  public static final class MergeHistoryAggregate
+      extends org.apache.flink.table.functions.AggregateFunction<Long, MergeHistoryAccumulator> {
+    @Override
+    public MergeHistoryAccumulator createAccumulator() {
+      return new MergeHistoryAccumulator();
+    }
+
+    @Override
+    public Long getValue(MergeHistoryAccumulator accumulator) {
+      try {
+        long distinct = 0, mappedSum = 0, mappedCount = 0, listedSum = 0, listedCount = 0;
+        var entries = accumulator.counts.entries();
+        if (entries != null)
+          for (var entry : entries) {
+            if (entry.getValue() > 0) distinct++;
+            mappedSum += entry.getKey() * entry.getValue();
+            mappedCount += entry.getValue();
+          }
+        var history = accumulator.history.get();
+        if (history != null)
+          for (var entry : history) {
+            listedSum += entry.f0 * entry.f1;
+            listedCount += entry.f1;
+          }
+        if (mappedSum != accumulator.sum
+            || listedSum != accumulator.sum
+            || listedCount != mappedCount)
+          throw new IllegalStateException("Signed accumulator and managed views disagree");
+        return accumulator.sum + accumulator.rows + 1000L * distinct;
+      } catch (Exception failure) {
+        throw new IllegalStateException(failure);
+      }
+    }
+
+    public void accumulate(MergeHistoryAccumulator accumulator, Long value) throws Exception {
+      change(accumulator, value, 1);
+    }
+
+    public void retract(MergeHistoryAccumulator accumulator, Long value) throws Exception {
+      change(accumulator, value, -1);
+    }
+
+    private void change(MergeHistoryAccumulator accumulator, Long value, long delta)
+        throws Exception {
+      accumulator.rows += delta;
+      if (value == null) return;
+      accumulator.sum += value * delta;
+      // A local bundle can retract a value owned by an earlier global bundle.
+      accumulator.history.add(org.apache.flink.api.java.tuple.Tuple2.of(value, delta));
+      Long previous = accumulator.counts.get(value);
+      long next = (previous == null ? 0 : previous) + delta;
+      if (next == 0) accumulator.counts.remove(value);
+      else accumulator.counts.put(value, next);
+    }
+
+    public void merge(
+        MergeHistoryAccumulator accumulator, Iterable<MergeHistoryAccumulator> partials)
+        throws Exception {
+      for (var partial : partials) {
+        accumulator.sum += partial.sum;
+        accumulator.rows += partial.rows;
+        var history = partial.history.get();
+        if (history != null)
+          for (var entry : history)
+            accumulator.history.add(org.apache.flink.api.java.tuple.Tuple2.of(entry.f0, entry.f1));
+        var entries = partial.counts.entries();
+        if (entries != null)
+          for (var entry : entries) {
+            Long previous = accumulator.counts.get(entry.getKey());
+            long next = (previous == null ? 0 : previous) + entry.getValue();
+            if (next == 0) accumulator.counts.remove(entry.getKey());
+            else accumulator.counts.put(entry.getKey(), next);
+          }
+      }
+    }
+  }
+
   public static final class HistoryAccumulator {
     public long sum;
     public long rows;

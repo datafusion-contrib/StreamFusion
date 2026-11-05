@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured one-phase managed UDFs | Wider types/keys, retracting and local/global UDF mini-batches, other views/phases and failures |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured one-phase managed UDFs | Wider types/keys, retracting mini-batches, wider UDF contracts, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -1581,3 +1581,9 @@ The [qualified one-phase scope](../operators/group-by.md#captured-one-phase-udf-
 eight released native aggregate resumes. These overlapping cohorts do not qualify the two-stage
 UDF contract or the wider connector/version matrix. All bundles and optional cached writes drain
 before the direct stock canonical writer runs; ordinary checkpoints retain their existing path.
+
+
+Captured local/global UDFs retain stock managed global state while original local serializers
+carry private Arrow partial events between the two captured handlers. The [two-stage scope](../operators/group-by.md#captured-localglobal-udf-canonical-handoffs-partial) records all nine released aggregate resumes, strict stage ownership, 144 state cases,
+56 complete jobs and regression results. This does not qualify all user-function
+types, keys or connector failure combinations.

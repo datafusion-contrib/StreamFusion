@@ -118,8 +118,19 @@ class CanonicalManagedUdfGroupPlanTest {
     }
   }
 
-  private static StreamGraph graph(
+  static StreamGraph graph(
       boolean nativeRun, boolean compiled, boolean append, String uid, boolean mini)
+      throws Exception {
+    return graph(nativeRun, compiled, append, uid, mini, false);
+  }
+
+  static StreamGraph graph(
+      boolean nativeRun,
+      boolean compiled,
+      boolean append,
+      String uid,
+      boolean mini,
+      boolean twoPhase)
       throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", Boolean.toString(nativeRun));
@@ -130,9 +141,14 @@ class CanonicalManagedUdfGroupPlanTest {
     table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(mini));
     table.getConfig().set("table.exec.mini-batch.size", "5");
     table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
-    table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+    table
+        .getConfig()
+        .set("table.optimizer.agg-phase-strategy", twoPhase ? "TWO_PHASE" : "ONE_PHASE");
     table.createTemporarySystemFunction(
-        "fixture_history", CanonicalFixtureFactory.HistoryAggregate.class);
+        "fixture_history",
+        twoPhase
+            ? CanonicalFixtureFactory.MergeHistoryAggregate.class
+            : CanonicalFixtureFactory.HistoryAggregate.class);
     table.registerCatalog(
         "fixture",
         new org.apache.flink.table.catalog.GenericInMemoryCatalog("fixture", "db") {

@@ -216,7 +216,9 @@ public final class CanonicalJobWorker {
       if (Files.exists(root.resolve("history-aggregate"))) {
         table.executeSql(
             "CREATE TEMPORARY SYSTEM FUNCTION fixture_history AS '"
-                + CanonicalFixtureFactory.HistoryAggregate.class.getName()
+                + (Files.exists(root.resolve("merge-history-aggregate"))
+                    ? CanonicalFixtureFactory.MergeHistoryAggregate.class.getName()
+                    : CanonicalFixtureFactory.HistoryAggregate.class.getName())
                 + "'");
       }
       registerInput(

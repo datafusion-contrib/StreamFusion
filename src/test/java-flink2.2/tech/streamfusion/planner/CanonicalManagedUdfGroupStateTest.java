@@ -12,6 +12,11 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.*;
 
 class CanonicalManagedUdfGroupStateTest {
+  ManagedUdfGroupStockFixture fixture(
+      boolean nativeRun, boolean mini, boolean rocks, int cache, long ttl) throws Exception {
+    return new ManagedUdfGroupStockFixture(nativeRun, mini, rocks, cache, ttl);
+  }
+
   static Stream<Arguments> switches() {
     return Stream.of(false, true)
         .flatMap(
@@ -46,14 +51,14 @@ class CanonicalManagedUdfGroupStateTest {
     for (int stage = 0; stage < 3; stage++) {
       boolean store = cross && stage % 2 == 1 ? !rocks : rocks;
       boolean nativeRun = stage % 2 == 0 ? first : !first;
-      try (var reference = new ManagedUdfGroupStockFixture(false, mini, store, 0, 0);
-          var receiver = new ManagedUdfGroupStockFixture(nativeRun, mini, store, cache, 0)) {
+      try (var reference = fixture(false, mini, store, 0, 0);
+          var receiver = fixture(nativeRun, mini, store, cache, 0)) {
         reference.open(referenceSaved, 1000 + stage * 100);
         receiver.open(saved, 1000 + stage * 100);
         if (saved != null) {
           assertEquals(reference.rawState(), receiver.rawState(), "raw state before any new input");
           saved = receiver.canonical();
-          try (var immediate = new ManagedUdfGroupStockFixture(!nativeRun, mini, store, cache, 0)) {
+          try (var immediate = fixture(!nativeRun, mini, store, cache, 0)) {
             immediate.open(saved, 1000 + stage * 100);
             assertEquals(
                 reference.rawState(),
@@ -100,8 +105,8 @@ class CanonicalManagedUdfGroupStateTest {
       boolean mini, boolean rocks, boolean first, int cache) throws Exception {
     OperatorSubtaskState saved, referenceSaved;
     Map<String, String> original;
-    try (var reference = new ManagedUdfGroupStockFixture(false, mini, rocks, 0, 1000);
-        var receiver = new ManagedUdfGroupStockFixture(first, mini, rocks, cache, 1000)) {
+    try (var reference = fixture(false, mini, rocks, 0, 1000);
+        var receiver = fixture(first, mini, rocks, cache, 1000)) {
       reference.open(null, 1000);
       receiver.open(null, 1000);
       var initial = List.<RowData>of(row(1L, 7L, 0), row(1L, null, 0), row(2L, 5L, 0));
@@ -112,8 +117,7 @@ class CanonicalManagedUdfGroupStateTest {
       referenceSaved = reference.canonical();
     }
     for (int stage = 0; stage < 2; stage++) {
-      try (var receiver =
-          new ManagedUdfGroupStockFixture(stage == 0 ? !first : first, mini, rocks, cache, 1000)) {
+      try (var receiver = fixture(stage == 0 ? !first : first, mini, rocks, cache, 1000)) {
         receiver.open(saved, stage == 0 ? 1500 : 1999);
         if (receiver.nativeOwner != null)
           assertNull(
@@ -124,8 +128,8 @@ class CanonicalManagedUdfGroupStateTest {
         saved = receiver.canonical();
       }
     }
-    try (var reference = new ManagedUdfGroupStockFixture(false, mini, rocks, 0, 1000);
-        var receiver = new ManagedUdfGroupStockFixture(!first, mini, rocks, cache, 1000)) {
+    try (var reference = fixture(false, mini, rocks, 0, 1000);
+        var receiver = fixture(!first, mini, rocks, cache, 1000)) {
       reference.open(referenceSaved, 2001);
       receiver.open(saved, 2001);
       var fresh = List.<RowData>of(row(1L, 3L, 0), row(2L, 4L, 0));
@@ -150,12 +154,12 @@ class CanonicalManagedUdfGroupStateTest {
   void failedUserFunctionCannotReplaceTheLastSuccessfulSavepoint(
       boolean mini, boolean rocks, int cache) throws Exception {
     OperatorSubtaskState saved;
-    try (var initial = new ManagedUdfGroupStockFixture(false, mini, rocks, 0, 0)) {
+    try (var initial = fixture(false, mini, rocks, 0, 0)) {
       initial.open(null, 1000);
       initial.feed(List.of(row(1L, 7L, 0)), false);
       saved = initial.canonical();
     }
-    try (var failing = new ManagedUdfGroupStockFixture(true, mini, rocks, cache, 0)) {
+    try (var failing = fixture(true, mini, rocks, cache, 0)) {
       failing.open(saved, 1100);
       var failure =
           assertThrows(Exception.class, () -> failing.feed(List.of(row(1L, 17L, 3)), false));
@@ -165,8 +169,8 @@ class CanonicalManagedUdfGroupStateTest {
       assertTrue(expected, failure.toString());
       failing.cancel();
     }
-    try (var reference = new ManagedUdfGroupStockFixture(false, mini, rocks, 0, 0);
-        var recovered = new ManagedUdfGroupStockFixture(true, mini, rocks, cache, 0)) {
+    try (var reference = fixture(false, mini, rocks, 0, 0);
+        var recovered = fixture(true, mini, rocks, cache, 0)) {
       reference.open(saved, 1200);
       recovered.open(saved, 1200);
       assertEquals(reference.rawState(), recovered.rawState());
@@ -177,7 +181,7 @@ class CanonicalManagedUdfGroupStateTest {
     }
   }
 
-  private static List<RowData> seeds(int stage) {
+  static List<RowData> seeds(int stage) {
     switch (stage) {
       case 0:
         return List.of(

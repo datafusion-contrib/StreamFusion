@@ -10,7 +10,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.runtime.keyselector.RowDataKeySelector;
 import org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction;
-import org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction;
+import org.apache.flink.table.runtime.operators.bundle.MapBundleFunction;
 import org.apache.flink.table.runtime.operators.bundle.trigger.BundleTrigger;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
@@ -21,39 +21,52 @@ final class CapturedJvmGroupExecNode extends ExecNodeBase<ArrowBatch>
     implements StreamExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
   private final RowType inputType;
   private final GroupAggFunction function;
-  private final MiniBatchGroupAggFunction bundleFunction;
+  private final MapBundleFunction<RowData, ?, RowData, RowData> bundleFunction;
+  private final JvmGroupPartialTransport inputPartials, outputPartials;
   private final BundleTrigger<RowData> bundleTrigger;
   private final RowDataKeySelector selector;
   private final int[] grouping;
   private final int maximum;
   private final long retention;
+  private Integer parallelism;
 
   CapturedJvmGroupExecNode(
       ReadableConfig config,
       RowType inputType,
       RowType outputType,
       GroupAggFunction function,
-      MiniBatchGroupAggFunction bundleFunction,
+      MapBundleFunction<RowData, ?, RowData, RowData> bundleFunction,
       BundleTrigger<RowData> bundleTrigger,
       RowDataKeySelector selector,
       int[] grouping,
       int maximum,
-      long retention) {
+      long retention,
+      JvmGroupPartialTransport inputPartials,
+      JvmGroupPartialTransport outputPartials) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-jvm-group_1"),
         config,
         List.of(InputProperty.DEFAULT),
         outputType,
-        "NativeColumnarJvmGroupAggregate");
+        outputPartials == null
+            ? "NativeColumnarJvmGroupAggregate"
+            : "NativeColumnarLocalJvmGroupAggregate");
     this.inputType = inputType;
     this.function = function;
     this.bundleFunction = bundleFunction;
+    this.inputPartials = inputPartials;
+    this.outputPartials = outputPartials;
     this.bundleTrigger = bundleTrigger;
     this.selector = selector;
     this.grouping = grouping.clone();
     this.maximum = maximum;
     this.retention = retention;
+  }
+
+  CapturedJvmGroupExecNode withParallelism(int parallelism) {
+    if (parallelism > 0) this.parallelism = parallelism;
+    return this;
   }
 
   @Override
@@ -67,30 +80,50 @@ final class CapturedJvmGroupExecNode extends ExecNodeBase<ArrowBatch>
         && key != LogicalTypeRoot.BIGINT
         && key != LogicalTypeRoot.VARCHAR) key = null;
     var operator =
-        new NativeColumnarJvmGroupOperator(
-            inputType,
-            (RowType) getOutputType(),
-            function,
-            bundleFunction,
-            bundleTrigger,
-            selector,
-            NativeConfig.transposeBatchRows(config),
-            Integer.getInteger("streamfusion.experimental.jvmAccumulatorCacheEntries", 0),
-            key,
-            grouping.length == 1 ? grouping[0] : -1,
-            retention);
+        outputPartials != null
+            ? new NativeColumnarLocalJvmGroupOperator(
+                inputType,
+                (RowType) getOutputType(),
+                (org.apache.flink.table.runtime.operators.aggregate.MiniBatchLocalGroupAggFunction)
+                    bundleFunction,
+                bundleTrigger,
+                selector,
+                NativeConfig.transposeBatchRows(config),
+                outputPartials)
+            : new NativeColumnarJvmGroupOperator(
+                inputType,
+                (RowType) getOutputType(),
+                function,
+                bundleFunction,
+                bundleTrigger,
+                selector,
+                NativeConfig.transposeBatchRows(config),
+                Integer.getInteger("streamfusion.experimental.jvmAccumulatorCacheEntries", 0),
+                key,
+                grouping.length == 1 ? grouping[0] : -1,
+                retention,
+                inputPartials,
+                null);
     var result =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(
-                "native-jvm-group", getDescription(), "NativeColumnarJvmGroupAggregate", config),
+                outputPartials == null ? "native-jvm-group" : "native-local-jvm-group",
+                getDescription(),
+                outputPartials == null
+                    ? "NativeColumnarJvmGroupAggregate"
+                    : "NativeColumnarLocalJvmGroupAggregate",
+                config),
             operator,
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);
+    if (parallelism != null) result.setParallelism(parallelism);
     result.setMaxParallelism(maximum);
-    result.setStateKeySelector(new ArrowBatchRowKeySelector(inputType, selector));
-    result.setStateKeyType(selector.getProducedType());
+    if (outputPartials == null) {
+      result.setStateKeySelector(new ArrowBatchRowKeySelector(inputType, selector));
+      result.setStateKeyType(selector.getProducedType());
+    }
     return result;
   }
 }

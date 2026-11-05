@@ -3683,3 +3683,54 @@ The exact one-phase source also passes 36 shared Flink 1.18 processing, allocato
 and TTL/checkpoint controls; canonical interchange on that release remains unqualified.
 Broader type/key/view and connector delivery/version combinations remain partial. Benchmarking
 is explicitly deferred.
+
+
+## Captured local/global UDF canonical handoffs (partial)
+
+Two-stage UDF lowering keeps the actual released local and global MapBundleFunctions, their
+triggers and the local partial serializer. Local Arrow bundles have no retained keyed state and
+drain before barriers. Their complex user accumulators travel as original stock serialized
+partials in a private Arrow binary column beside typed exchange keys. The global Arrow owner
+checks payload framing and key equality, then calls the original merge handler. Retained global
+accumulators, TTL wrappers and data views remain stock managed state with their original
+serializers and identities. Private partials do not become a canonical state format or an
+intermediate native snapshot. Unsupported execution contracts retain their stock owners.
+
+The unchanged released aggregate restore suite passes all nine stock and all nine native
+programs with zero failures, errors or skips. The two-stage UDF imports three global groups,
+consumes seven local rows and five global partial rows in the matching owners; an unrelated
+Calc cannot satisfy the strict global-import-and-both-stage contract. All 199 canonical Java
+audit controls and 51 Python summary controls pass. The original upstream assertions remain.
+
+Qualification also passes 16 new global planner cases, the preceding 32 immediate/one-phase
+planner cases, 12 private partial codec controls and uncached/cached compiled stock-first heap
+continuation smokes. Codec controls retain RAW serializers, NULL/Unicode values, empty and
+multiple key prefixes and row kinds, rejecting trailing, truncated or rekeyed payloads. The job
+fixture supports signed local deltas with independent raw fields, MapView counts and structured
+ListView entries, retaining retractions, custom source/committer state, both transposes, clean
+stock workers, positive pending-bundle witnesses and an independent external result oracle.
+
+The full 2,471-check aggregate/UDF regression selection passes on this candidate. It includes
+the earlier aggregate state/planner/corruption/recovery cases and current UDF and companion-index
+controls; overlapping cohorts are not cumulative coverage. A separate 119-case existing UDF suite passes typed arguments, results and accumulators,
+lifecycle, DISTINCT/FILTER, cache and repeated-recovery checks. Its earlier targeted 26-key/TTL
+selection overlaps and is not additive coverage. Sixty shared Flink 1.18 processing, native
+checkpoint and ownership checks pass; that is not canonical qualification on 1.18.
+
+All 144 state cases pass, adding 56 two-stage cases to the earlier 88 controls: 32 repeated
+switch/backend/cache/batch-shape cases, eight TTL age/expiry cases, eight checkpoint returns
+and eight local/global UDF fault recoveries. They compare every retained canonical KV byte,
+including structured ListView entries and MapView counts, before new input and after immediate
+re-export. A standalone user fixture injects failures without changing the normal job fixture.
+
+All 56 two-stage complete-job scenarios pass: cached/uncached execution, SQL/compiled submission,
+both stores and initial engine orders, sixteen continuation and sixteen no-input returns,
+eight native checkpoint recoveries and sixteen 64-key rescalings through 1→3→2 at fixed maximum
+parallelism 128. Both native stages must consume input; partial bundles must reach the canonical
+barrier and drain. Custom source/coordinator and committer state, both transposes, clean stock
+workers, exact external changelogs at identical cuts and an independent final-state oracle remain
+checked. The initial smokes overlap. This qualifies the nullable BIGINT key/value fixtures and
+their user accumulator contracts, not arbitrary user serializers or all key/type combinations.
+Wider key/type/view/TTL/failure, connector delivery and version combinations remain in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains explicitly deferred.

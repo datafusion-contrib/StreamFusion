@@ -333,3 +333,10 @@ Captured one-phase mini-batch UDFs retain this same managed RocksDB delegate and
 serializers. Their transient bundles and optional cached accumulators drain before canonical
 barriers; the [one-phase qualification](../operators/group-by.md#captured-one-phase-udf-mini-batches-partial) includes both stores, backend changes, TTL ages and ordinary recovery. This is separate from
 the native grouped-table codec and from the unfinished two-stage UDF matrix.
+
+
+Captured local/global UDFs use the same released managed backend at the global owner. Local
+partials are transient Arrow events serialized with the original stock local serializer and
+drain before canonical barriers; they do not use the native grouped-table codec. The
+[two-stage qualification](../operators/group-by.md#captured-localglobal-udf-canonical-handoffs-partial) includes heap/RocksDB, backend changes, original TTL ages, checkpoint returns, local/global UDF
+fault recovery and 56 complete-job handoffs. Wider user/key/type and failure matrices remain open.

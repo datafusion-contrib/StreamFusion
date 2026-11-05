@@ -130,3 +130,15 @@ count triggers, watermarks and barriers drain it into original managed accumulat
 This preserves generated bookkeeping and avoids replacing a mini-batch UDF with immediate
 row-at-a-time evaluation. The optional JVM cache flushes before capture and remains disabled
 for TTL. Conversion benchmarks are deferred; local/global partial transport remains separate.
+
+
+## Private user-accumulator partials
+
+Unlike Arroyo's typed builtin accumulators, a released Flink user accumulator may contain RAW
+objects and generated data-view carriers. Keep the actual local and global MapBundleFunctions
+and their released RowData serializer. The local Arrow UDF owner emits typed key prefixes and a
+private serialized partial; the global Arrow owner validates the prefix/framing and merges the
+decoded original partial with the captured handler. This preserves arbitrary user serializer
+meaning without adding those transient partials to canonical state or serializing a native
+snapshot first. Local/global bundles drain in barrier order, while the stock backend writes
+retained accumulators/views directly. Conversion-cost optimization is explicitly deferred.

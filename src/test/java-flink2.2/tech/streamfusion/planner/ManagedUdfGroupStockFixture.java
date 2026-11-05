@@ -33,9 +33,25 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
   final KeyedOneInputStreamOperatorTestHarness<RowData, ArrowBatch, ArrowBatch> nativeOwner;
   final Object function;
   private boolean cancelled;
+  private final OneInputStreamOperatorTestHarness<RowData, RowData> stockLocal;
+  private final OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> nativeLocal;
+  private final RowDataSerializer partialSerializer;
 
   @SuppressWarnings("unchecked")
   ManagedUdfGroupStockFixture(boolean nativeRun, boolean mini, boolean rocks, int cache, long ttl)
+      throws Exception {
+    this(nativeRun, mini, rocks, cache, ttl, false, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  ManagedUdfGroupStockFixture(
+      boolean nativeRun,
+      boolean mini,
+      boolean rocks,
+      int cache,
+      long ttl,
+      boolean global,
+      boolean faulting)
       throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "false");
@@ -44,10 +60,15 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
     table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(mini));
     table.getConfig().set("table.exec.mini-batch.size", "5");
     table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
-    table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+    table.getConfig().set("table.optimizer.agg-phase-strategy", global ? "TWO_PHASE" : "ONE_PHASE");
     table.getConfig().set("table.exec.state.ttl", ttl + " ms");
     table.createTemporarySystemFunction(
-        "fixture_history", CanonicalFixtureFactory.HistoryAggregate.class);
+        "fixture_history",
+        faulting
+            ? org.example.canonical.FaultingMergeHistoryAggregate.class
+            : global
+                ? CanonicalFixtureFactory.MergeHistoryAggregate.class
+                : CanonicalFixtureFactory.HistoryAggregate.class);
     table.registerCatalog(
         "fixture",
         new org.apache.flink.table.catalog.GenericInMemoryCatalog("fixture", "db") {
@@ -94,24 +115,75 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
             ? field(original, "function")
             : ((KeyedProcessOperator<?, ?, ?>) original).getUserFunction();
     var selector = (RowDataKeySelector) node.getStatePartitioners()[0];
+    JvmGroupPartialTransport transport = null;
+    if (global) {
+      var localNode =
+          graph.getStreamNodes().stream()
+              .filter(
+                  n ->
+                      n.getOperatorFactory() instanceof SimpleOperatorFactory
+                          && ((SimpleOperatorFactory<?>) n.getOperatorFactory())
+                                  .getOperator()
+                                  .getClass()
+                              == org.apache.flink.table.runtime.operators.bundle.MapBundleOperator
+                                  .class)
+              .findFirst()
+              .orElseThrow();
+      var localOperator =
+          (OneInputStreamOperator<RowData, RowData>)
+              ((SimpleOperatorFactory<?>) localNode.getOperatorFactory()).getOperator();
+      var localSelector = (RowDataKeySelector) field(localOperator, "keySelector");
+      partialSerializer = (RowDataSerializer) localNode.getTypeSerializerOut();
+      var partialType = RowType.of((LogicalType[]) field(partialSerializer, "types"));
+      transport = new JvmGroupPartialTransport(partialSerializer, partialType, 1);
+      if (nativeRun) {
+        nativeLocal =
+            new OneInputStreamOperatorTestHarness<>(
+                new NativeColumnarLocalJvmGroupOperator(
+                    INPUT,
+                    transport.type(),
+                    (MiniBatchLocalGroupAggFunction) field(localOperator, "function"),
+                    (BundleTrigger<RowData>) field(localOperator, "bundleTrigger"),
+                    localSelector,
+                    3,
+                    transport));
+        nativeLocal.setup(new ArrowBatchSerializer());
+        stockLocal = null;
+      } else {
+        stockLocal = new OneInputStreamOperatorTestHarness<>(localOperator);
+        stockLocal.setup(partialSerializer);
+        nativeLocal = null;
+      }
+    } else {
+      stockLocal = null;
+      nativeLocal = null;
+      partialSerializer = null;
+    }
+    var physicalInput = global ? transport.type() : INPUT;
     if (nativeRun) {
       var owner =
           new NativeColumnarJvmGroupOperator(
-              INPUT,
+              physicalInput,
               OUTPUT,
               mini ? null : (GroupAggFunction) function,
-              mini ? (MiniBatchGroupAggFunction) function : null,
+              mini
+                  ? (org.apache.flink.table.runtime.operators.bundle.MapBundleFunction<
+                          RowData, ?, RowData, RowData>)
+                      function
+                  : null,
               mini ? (BundleTrigger<RowData>) field(original, "bundleTrigger") : null,
               selector,
               3,
               cache,
               LogicalTypeRoot.BIGINT,
               0,
-              ttl);
+              ttl,
+              transport,
+              null);
       nativeOwner =
           new KeyedOneInputStreamOperatorTestHarness<>(
               owner,
-              new ArrowBatchRowKeySelector(INPUT, selector),
+              new ArrowBatchRowKeySelector(physicalInput, selector),
               selector.getProducedType(),
               128,
               1,
@@ -135,17 +207,42 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
   void open(OperatorSubtaskState saved, long time) throws Exception {
     clock(time);
     if (saved != null) harness.initializeState(saved);
+    if (stockLocal != null) stockLocal.open();
+    if (nativeLocal != null) nativeLocal.open();
     harness.open();
   }
 
   void clock(long time) throws Exception {
     harness.setProcessingTime(time);
     harness.setStateTtlProcessingTime(time);
+    if (stockLocal != null) {
+      stockLocal.setProcessingTime(time);
+      stockLocal.setStateTtlProcessingTime(time);
+    }
+    if (nativeLocal != null) {
+      nativeLocal.setProcessingTime(time);
+      nativeLocal.setStateTtlProcessingTime(time);
+    }
   }
 
   Map<String, List<String>> feed(List<RowData> rows, boolean split) throws Exception {
     harness.getOutput().clear();
-    if (stock != null) {
+    if (stockLocal != null) {
+      var copy = new RowDataSerializer(INPUT);
+      for (var row : rows) stockLocal.processElement(new StreamRecord<>(copy.copy(row)));
+      flushLocal();
+    } else if (nativeLocal != null) {
+      var batches =
+          split
+              ? rows.stream().map(List::of).collect(java.util.stream.Collectors.toList())
+              : List.of(rows);
+      for (var batch : batches)
+        nativeLocal.processElement(
+            new StreamRecord<>(
+                new ArrowBatch(
+                    RowDataArrowConverter.write(batch, INPUT, NativeAllocator.SHARED, true))));
+      flushLocal();
+    } else if (stock != null) {
       var copy = new RowDataSerializer(INPUT);
       for (var row : rows) stock.processElement(new StreamRecord<>(copy.copy(row)));
     } else {
@@ -186,11 +283,41 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
         .add(Base64.getEncoder().encodeToString(bytes.getCopyOfBuffer()));
   }
 
+  private void flushLocal() throws Exception {
+    if (stockLocal != null) {
+      stockLocal.prepareSnapshotPreBarrier(1);
+      Object element;
+      while ((element = stockLocal.getOutput().poll()) != null)
+        if (element instanceof StreamRecord)
+          stock.processElement(
+              new StreamRecord<>(
+                  partialSerializer.copy((RowData) ((StreamRecord<?>) element).getValue())));
+      assertTrue(((Map<?, ?>) field(stockLocal.getOperator(), "bundle")).isEmpty());
+    }
+    if (nativeLocal != null) {
+      nativeLocal.prepareSnapshotPreBarrier(1);
+      Object element;
+      while ((element = nativeLocal.getOutput().poll()) != null)
+        if (element instanceof StreamRecord)
+          nativeOwner.processElement(
+              new StreamRecord<>((ArrowBatch) ((StreamRecord<?>) element).getValue()));
+      assertTrue(((Map<?, ?>) field(nativeLocal.getOperator(), "bundle")).isEmpty());
+    }
+  }
+
+  OperatorSubtaskState checkpoint() throws Exception {
+    flushLocal();
+    harness.prepareSnapshotPreBarrier(1);
+    return harness.snapshot(1, 0);
+  }
+
   OperatorSubtaskState canonical() throws Exception {
+    flushLocal();
     return CanonicalGroupArithmeticInitializationTest.snapshot(harness);
   }
 
   Map<String, String> rawState() throws Exception {
+    flushLocal();
     harness.prepareSnapshotPreBarrier(1);
     var backend =
         (org.apache.flink.runtime.state.CheckpointableKeyedStateBackend<RowData>)
@@ -215,12 +342,29 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
 
   @Override
   public void close() throws Exception {
-    if (!cancelled) harness.close();
+    if (!cancelled) {
+      try {
+        if (stockLocal != null) stockLocal.close();
+        if (nativeLocal != null) nativeLocal.close();
+      } finally {
+        harness.close();
+      }
+    }
   }
 
   void cancel() throws Exception {
     // The released harness's normal close calls finish, which a failed task must not execute.
     cancelled = true;
+    try {
+      if (stockLocal != null) cancelHarness(stockLocal);
+      if (nativeLocal != null) cancelHarness(nativeLocal);
+    } finally {
+      cancelHarness(harness);
+    }
+  }
+
+  private static void cancelHarness(OneInputStreamOperatorTestHarness<?, ?> harness)
+      throws Exception {
     harness.getProcessingTimeService().shutdownService();
     try {
       harness.getOperator().close();

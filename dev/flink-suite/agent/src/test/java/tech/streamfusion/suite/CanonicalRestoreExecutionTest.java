@@ -1231,23 +1231,42 @@ class CanonicalRestoreExecutionTest {
   private static final class NativeColumnarWindowRankOperator {}
 
   static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> managedGroupCases() {
-    return java.util.stream.Stream.of(
-            "group-aggregate-udf-with-merge",
-            "group-aggregate-udf-without-merge",
-            "group-aggregate-udf-without-merge-mini-batch")
-        .flatMap(
-            program ->
-                java.util.stream.Stream.of(
-                        "complete",
-                        "missingImport",
-                        "missingInput",
-                        "unopened",
-                        "otherOwner",
-                        "otherState",
-                        "brokenBackend",
-                        "duplicateInput",
-                        "unrelatedCalc")
-                    .map(mode -> org.junit.jupiter.params.provider.Arguments.of(program, mode)));
+    var single =
+        java.util.stream.Stream.of(
+                "group-aggregate-udf-with-merge",
+                "group-aggregate-udf-without-merge",
+                "group-aggregate-udf-without-merge-mini-batch")
+            .flatMap(
+                program ->
+                    java.util.stream.Stream.of(
+                            "complete",
+                            "missingImport",
+                            "missingInput",
+                            "unopened",
+                            "otherOwner",
+                            "otherState",
+                            "brokenBackend",
+                            "duplicateInput",
+                            "unrelatedCalc")
+                        .map(
+                            mode -> org.junit.jupiter.params.provider.Arguments.of(program, mode)));
+    var global =
+        java.util.stream.Stream.of(
+                "complete",
+                "missingImport",
+                "missingInput",
+                "unopened",
+                "otherOwner",
+                "otherState",
+                "brokenBackend",
+                "duplicateInput",
+                "unrelatedCalc",
+                "missingLocal")
+            .map(
+                mode ->
+                    org.junit.jupiter.params.provider.Arguments.of(
+                        "group-aggregate-udf-with-merge-mini-batch", mode));
+    return java.util.stream.Stream.concat(single, global);
   }
 
   @org.junit.jupiter.params.ParameterizedTest
@@ -1255,6 +1274,12 @@ class CanonicalRestoreExecutionTest {
   void managedGroupRequiresRestoredStateAndNewInputInTheSameOpenedOwner(
       String program, String mode) {
     var scope = NativeExecution.beginRestore(GROUP, new Object(), program);
+    if (program.equals("group-aggregate-udf-with-merge-mini-batch")
+        && !mode.equals("missingLocal")) {
+      var local = new NativeColumnarLocalJvmGroupOperator();
+      NativeExecution.opened(local);
+      NativeExecution.completed(local, 7);
+    }
     var owner =
         new NativeColumnarJvmGroupOperator(
             mode.equals("missingImport") ? 0 : 3,
@@ -1292,6 +1317,8 @@ class CanonicalRestoreExecutionTest {
       assertTrue(text.contains("NativeColumnarJvmGroupOperator=3"));
     } else assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
   }
+
+  private static final class NativeColumnarLocalJvmGroupOperator {}
 
   public static final class NativeColumnarJvmGroupOperator {
     final ManagedGroupBackend backend;
