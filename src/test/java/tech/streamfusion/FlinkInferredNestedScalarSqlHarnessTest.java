@@ -70,7 +70,7 @@ class FlinkInferredNestedScalarSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"delegating", "retaining", "named", "shared"})
+  @ValueSource(strings = {"delegating", "retaining", "named", "shared", "list-child"})
   void ownedInputsResultsAndSharedCallsRetainReleasedSemantics(String mode) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       assertValues(
@@ -82,7 +82,7 @@ class FlinkInferredNestedScalarSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"internal", "list-child"})
+  @ValueSource(strings = {"internal"})
   void nonDefaultInferenceConversionsRetainExplicitFallback(String mode) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =

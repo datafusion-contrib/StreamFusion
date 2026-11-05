@@ -1,24 +1,15 @@
 package tech.streamfusion.planner;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rex.RexCall;
-import org.apache.calcite.rex.RexCallBinding;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.flink.table.functions.SpecializedFunction;
 import org.apache.flink.table.functions.TableFunction;
 import org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction;
-import org.apache.flink.table.planner.functions.inference.OperatorBindingCallContext;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCorrelate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
-import org.apache.flink.table.types.DataType;
-import org.apache.flink.table.types.inference.TypeInferenceUtil;
-import org.apache.flink.table.types.logical.LogicalTypeRoot;
-import org.apache.flink.types.Row;
 
 /** Admission for released Flink JVM table-function generation inside a columnar boundary. */
 final class TableFunctionMatcher {
@@ -57,202 +48,19 @@ final class TableFunctionMatcher {
   private static boolean verifiedConversions(StreamPhysicalCorrelate node) {
     RexCall call = (RexCall) node.scan().getCall();
     boolean scalar = scalarBoundary(node);
-    if (scalar && !aliasedProducer(node.getInput())) return true;
+    if (scalar && !JvmFunctionConversions.aliasedProducer(node.getInput())) return true;
     try {
-      var inferred = conversions(call);
+      var inferred = JvmFunctionConversions.infer(call);
       return (scalar
               || (inferred.getExpectedArgumentTypes().stream()
-                      .allMatch(TableFunctionMatcher::verifiedArgumentConversion)
-                  && verifiedOutputConversion(inferred.getOutputDataType())))
+                      .allMatch(JvmFunctionConversions::verifiedArgumentConversion)
+                  && JvmFunctionConversions.verifiedResultConversion(inferred.getOutputDataType())))
           && (inferred.getExpectedArgumentTypes().stream()
-                  .noneMatch(TableFunctionMatcher::argumentAliases)
-              || !aliasedProducer(node.getInput()));
+                  .noneMatch(JvmFunctionConversions::argumentAliases)
+              || !JvmFunctionConversions.aliasedProducer(node.getInput()));
     } catch (RuntimeException failure) {
       return false;
     }
-  }
-
-  private static boolean verifiedArgumentConversion(DataType type) {
-    return verifiedConversion(type, false);
-  }
-
-  private static boolean temporalConversion(DataType type) {
-    Class<?> conversion = type.getConversionClass();
-    switch (type.getLogicalType().getTypeRoot()) {
-      case DATE:
-        return conversion == Integer.class
-            || conversion == java.sql.Date.class
-            || (!type.getLogicalType().isNullable() && conversion == int.class);
-      case TIME_WITHOUT_TIME_ZONE:
-        return conversion == Integer.class
-            || conversion == Long.class
-            || conversion == java.sql.Time.class
-            || (!type.getLogicalType().isNullable()
-                && (conversion == int.class || conversion == long.class));
-      case TIMESTAMP_WITHOUT_TIME_ZONE:
-        return conversion == java.sql.Timestamp.class;
-      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
-        return conversion == Integer.class
-            || conversion == Long.class
-            || conversion == java.sql.Timestamp.class
-            || (!type.getLogicalType().isNullable()
-                && (conversion == int.class || conversion == long.class));
-      case INTERVAL_YEAR_MONTH:
-        return conversion == Integer.class
-            || (!type.getLogicalType().isNullable() && conversion == int.class);
-      case INTERVAL_DAY_TIME:
-        return conversion == Long.class
-            || (!type.getLogicalType().isNullable() && conversion == long.class);
-      default:
-        return false;
-    }
-  }
-
-  private static boolean verifiedOutputConversion(DataType type) {
-    if (type.getLogicalType().is(LogicalTypeRoot.ROW) && type.getConversionClass() == Row.class)
-      return type.getChildren().stream().allMatch(TableFunctionMatcher::verifiedResultConversion);
-    return verifiedResultConversion(type);
-  }
-
-  private static boolean verifiedResultConversion(DataType type) {
-    return verifiedConversion(type, true);
-  }
-
-  private static boolean verifiedConversion(DataType type, boolean result) {
-    return verifiedConversion(type, result, false);
-  }
-
-  private static boolean verifiedConversion(DataType type, boolean result, boolean encoded) {
-    Class<?> conversion = type.getConversionClass();
-    switch (type.getLogicalType().getTypeRoot()) {
-      case ROW:
-        if (conversion != Row.class) return false;
-        break;
-      case MAP:
-        if (conversion != Map.class) return false;
-        break;
-      case ARRAY:
-        if (!conversion.isArray()
-            && !(result ? List.class.isAssignableFrom(conversion) : conversion == List.class))
-          return false;
-        if (conversion.isArray() && conversion.getComponentType().isPrimitive()) {
-          var element = type.getChildren().get(0);
-          if (!primitiveConversion(element)
-              && !(primitiveTemporalArray(element) && (!result || encoded))) return false;
-        }
-        break;
-      default:
-        return conversion == type.getLogicalType().getDefaultConversion()
-            || primitiveConversion(type)
-            || temporalConversion(type);
-    }
-    // Non-identity nested converters materialize arrays/maps in Flink's binary writers.
-    boolean copied =
-        encoded
-            || type.getLogicalType().is(LogicalTypeRoot.ARRAY)
-            || type.getLogicalType().is(LogicalTypeRoot.MAP);
-    return type.getChildren().stream().allMatch(child -> verifiedConversion(child, result, copied));
-  }
-
-  private static boolean argumentAliases(DataType type) {
-    if (type.getLogicalType().is(LogicalTypeRoot.BINARY)
-        || type.getLogicalType().is(LogicalTypeRoot.VARBINARY)) return true;
-    if (type.getLogicalType().is(LogicalTypeRoot.ARRAY)
-        && type.getConversionClass().isArray()
-        && identity(type.getChildren().get(0))) return true;
-    return type.getChildren().stream().anyMatch(TableFunctionMatcher::argumentAliases);
-  }
-
-  private static boolean resultAliases(DataType type) {
-    switch (type.getLogicalType().getTypeRoot()) {
-      case ARRAY:
-        var child = type.getChildren().get(0);
-        // Non-identity elements are serialized; List.toArray copies the outer List itself.
-        if (!identity(child)) return false;
-        return type.getConversionClass().isArray() || resultAliases(child);
-      case MAP:
-        if (type.getChildren().stream().anyMatch(field -> !identity(field))) return false;
-        break;
-      default:
-        break;
-    }
-    if (type.getLogicalType().is(LogicalTypeRoot.BINARY)
-        || type.getLogicalType().is(LogicalTypeRoot.VARBINARY)) return true;
-    return type.getChildren().stream().anyMatch(TableFunctionMatcher::resultAliases);
-  }
-
-  private static boolean identity(DataType type) {
-    return org.apache.flink.table.data.conversion.DataStructureConverters.getConverter(type)
-        .isIdentityConversion();
-  }
-
-  private static boolean aliasedProducer(RelNode node) {
-    if (node instanceof StreamPhysicalNativeTableFunction
-        && ((StreamPhysicalNativeTableFunction) node).returnsAliasedValues()) return true;
-    return node.getInputs().stream().anyMatch(TableFunctionMatcher::aliasedProducer);
-  }
-
-  static boolean returnsAliasedValues(RexCall call) {
-    try {
-      return resultAliases(conversions(call).getOutputDataType());
-    } catch (RuntimeException failure) {
-      return true;
-    }
-  }
-
-  private static TypeInferenceUtil.Result conversions(RexCall call) {
-    var function = (BridgingSqlFunction) call.getOperator();
-    var context =
-        new OperatorBindingCallContext(
-            function.getDataTypeFactory(),
-            function.getDefinition(),
-            RexCallBinding.create(function.getTypeFactory(), call, null, Collections.emptyList()),
-            call.getType());
-    return TypeInferenceUtil.runTypeInference(function.getTypeInference(), context, null);
-  }
-
-  private static boolean primitiveTemporalArray(DataType element) {
-    switch (element.getLogicalType().getTypeRoot()) {
-      case DATE:
-      case TIME_WITHOUT_TIME_ZONE:
-      case INTERVAL_YEAR_MONTH:
-        return element.getConversionClass() == int.class && temporalConversion(element);
-      case INTERVAL_DAY_TIME:
-        return element.getConversionClass() == long.class && temporalConversion(element);
-      default:
-        return false;
-    }
-  }
-
-  private static boolean primitiveConversion(DataType type) {
-    if (type.getLogicalType().isNullable()) return false;
-    Class<?> primitive;
-    switch (type.getLogicalType().getTypeRoot()) {
-      case BOOLEAN:
-        primitive = boolean.class;
-        break;
-      case TINYINT:
-        primitive = byte.class;
-        break;
-      case SMALLINT:
-        primitive = short.class;
-        break;
-      case INTEGER:
-        primitive = int.class;
-        break;
-      case BIGINT:
-        primitive = long.class;
-        break;
-      case FLOAT:
-        primitive = float.class;
-        break;
-      case DOUBLE:
-        primitive = double.class;
-        break;
-      default:
-        return false;
-    }
-    return type.getConversionClass() == primitive;
   }
 
   private static final class ProjectedSource {

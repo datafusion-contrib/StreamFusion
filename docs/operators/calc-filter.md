@@ -82,27 +82,26 @@ retains the preceding transport and whole-query fallback. Computed ROW-valued pr
 including SQL ROW constructors and comparisons, so physical metadata never becomes a logical SQL
 field. Input-reference columns carried beside unrelated scalar work keep the existing native path;
 whole-Calc generation is required when an expression produces or consumes a ROW value. Recursive
-ROW/ARRAY values use the existing verified primitive bridge types; string-to-string MAP fields
-are supported. Nested fixed BINARY uses the transport described below. Custom type inference
-is admitted when released inference selects default external Java conversions recursively
-for every argument and result. An override that delegates to Flink's default inference is
-also admitted. The existing logical-type, expression and consumer guards still apply.
-Specialization, non-default custom inference and internal Java conversion classes retain
-whole-query fallback. The gate covers the existing external `Row`, ARRAY and MAP signature
-whitelists; it does not widen their logical types or Java method signatures.
+external ROW/ARRAY/List/MAP conversions, including primitive and ROW-array results, use the
+[verified conversion boundary](#recursive-external-scalar-conversions) below. Nested fixed BINARY
+uses the transport described below. Custom inference may select those verified conversions;
+explicit and delegating default inference remain admitted. Specialization, internal Java
+conversion classes and signatures outside that whitelist retain whole-query fallback.
+Existing logical-type, expression and producer/consumer guards continue to apply.
 
-The custom-inference increment changes planning admission, not runtime conversion or ownership.
+The earlier default-inference increment changed planning admission, not runtime conversion or ownership.
 The released Calc generator retains resolved types, NULLs, named Row field mapping, nested
 RowKinds, Java STRING contents, callback order and immediate ownership of mutable results.
-The selection passes 48 checks on released Flink 2.2.1 and 47 on Flink 1.18.1 with JDK 17
+Its initial selection passed 48 checks on released Flink 2.2.1 and 47 on Flink 1.18.1 with JDK 17
 and the release/mimalloc native library. One existing ARRAY_SORT check is N/A on 1.18;
-all 18 new checks pass on both lines. These cover explicit/delegating inference,
+all 18 checks passed on both lines. These cover explicit/delegating inference,
 shared-call, retention, failure and heap/RocksDB recovery alongside the existing nested
 scalar controls. Populated admitted cases require consumed native Calc input. Custom internal
-RowData and alternate List children remain explicit whole-query fallback controls.
+RowData remains an explicit whole-query fallback control; alternate external List children now
+use the recursive conversion qualification below.
 `InferredNestedScalarBenchmark` retains complete stock/previous/native jobs and both transposes;
 this coverage uses the accepted UDF performance exception without an acceleration claim.
-The combined temporal/primitive/inference selection passes 255 checks on 2.2.1 and 254
+The earlier combined temporal/primitive/inference selection passed 255 checks on 2.2.1 and 254
 on 1.18.1, plus the existing ARRAY_SORT N/A, with zero failures/errors.
 Existing delegating ARRAY/MAP inference regressions also require native Calc input with
 matching values and resolved types; their internal `MapData` alternative retains fallback.
@@ -111,6 +110,107 @@ Flink's released converters own external callback inputs and normalize mutable r
 next invocation. This retains named-row field mapping, reusable ROW/array results, NULLs, Java
 string conversion and callback failures. No generic-array conversion shortcut is enabled: a
 profiled experiment reduced allocations but changed Unicode ARRAY_SORT results.
+
+### Recursive external scalar conversions
+
+Synchronous scalar calls use the actual argument and result DataTypes selected by released
+Flink inference. Generated calls delegate method/overload/varargs validation, external conversion
+and evaluation to Flink, including when the Java method returns `Object` or an annotated List.
+The verified directions match the JVM table-function conversion rules:
+
+- External `Row` and `Map` interface conversions recurse through every field, key and value.
+- ARRAY arguments/results admit Java object arrays and supported primitive arrays. Arguments
+  also admit the `List` interface; results additionally admit List implementations, including
+  nested custom implementations and their actual `toArray` behavior.
+- Children may be ARRAY/List/ROW/MAP recursively, with the documented boolean, signed numeric,
+  decimal, character, binary, date/time/timestamp and interval leaves. Verified primitive and
+  JDBC/boxed temporal bridges may occur beneath these containers. Primitive leaves require
+  the released NOT NULL signature.
+
+Before the released argument converter, the shared adapter repairs copied `Object[]` into the
+required internal array class, recursively through ROW and aligned MAP key/value arrays. It
+preserves actual NULL slots and RowKinds and does not replace Flink's converters. ROW calls
+select preserving collection transport only when their nested logical types require it;
+existing nullable scalar-array field projections retain their preceding native route.
+
+Primitive DATE/TIME int[] and interval int[]/long[] results require an enclosing ARRAY/List or
+MAP converter that serializes them first. Results reached only through ROW retain fallback
+because later released copies can reject that backing. TIME/long[] and LTZ/int[]/long[] retain
+matching released failure controls on fallback. Concrete List arguments retain released planning
+rejection; internal ArrayData/MapData/RowData, MULTISET/STRUCTURED/RAW signatures and specialized
+functions remain outside this whitelist.
+
+Within a generated Calc, Flink retains external values until all predicates and projections
+finish, including shared calls and nested functions. Across operators, a producer may retain
+primitive/boxed array backing or binary leaves that a later callback can also retain. Owned
+Arrow output cannot reproduce those Java aliases. Scalar/table chains therefore use the shared
+producer/argument guard and retain whole-query fallback for such aliases. ARRAY/List/MAP
+converters that serialize non-identity children establish the verified copying boundary;
+paired retaining-consumer controls require native work for those admitted chains. Unverified
+stateful consumers, exchanges and columnar sinks retain the existing representation guards.
+
+The conversion matrix checks 1,134 signatures on each released Flink line with independent
+stock/native values and resolved types, NULLs, empty containers, nested RowKinds and mutable
+results. Additional checks cover concrete signatures, overloads/varargs, exact floating-bit
+observers, shared/retained calls, short-circuiting, lifecycle/failures, every changelog kind,
+repeated heap/native-RocksDB recovery and task-JVM deployment. The shared adapter is also
+serialized into a fresh worker without Flink planner or Calcite artifacts. Each populated
+admitted query requires consumed NativeCalc work; safe mixed scalar/table chains require both
+operators. Flink 1.18 rejects untyped NULL in the verified nested CASE fixtures; explicit failure
+controls pin that validation, while typed NULLs verify successful short-circuiting on both lines.
+
+The consolidated local selection after integration with current production passes 2,277 checks
+on Flink 2.2.1 and 2,276 checks on 1.18.1, with its one existing ARRAY_SORT capability skip.
+This includes 176 mixed scalar/container cases per line, exercising primitive/temporal
+arguments and scalar results alongside recursive arguments. The unchanged upstream Calc and
+table-function execution contracts remain part of the required full fork workflow.
+
+The [complete-job record](../benchmarks/results/jvm-recursive-scalars-rebased-2026-11-04.json) retains
+all 168 trials, including warmups, and the separately paired stock controls for previous
+production `624cbd7e`. That checkout has unchanged production code and only the new fixture and
+benchmark overlays. Both checkouts use the same release/mimalloc native library, Temurin 17,
+Apple M4, one task, 2 GiB heap, 1,024-row Arrow batches, Arrow IPC for local exchanges, JVM UTC
+and session America/New_York. Each case/revision/line runs in a separate serial JVM with two
+warmup pairs and five measured alternating engine pairs. All 262,144 runtime payloads are
+fresh, cycling 48 logical shapes; source generation is included in timing. EXPLAIN is symmetric
+and outside timing. Both transposes, released conversions, JNI, owned output and the blackhole
+row sink remain in the complete job.
+
+Seconds are median (minimum–maximum):
+
+| Flink / boundary | Stock | Previous fallback | Candidate |
+| --- | ---: | ---: | ---: |
+| 1.18.1 / `list/row:default-STRING:both` | 0.461162 (0.455096–0.462044) | 0.453978 (0.447643–0.460726) | 0.684589 (0.680930–0.687352) |
+| 1.18.1 / `row/primitive:primitive-DOUBLE:both` | 0.478104 (0.476085–0.480573) | 0.479264 (0.469668–0.480655) | 0.613123 (0.610577–0.618799) |
+| 1.18.1 / `row/custom/map:default-DECIMAL(38,18):result` | 0.758683 (0.735057–0.799432) | 0.746120 (0.737385–0.766570) | 1.221537 (1.197329–1.521920) |
+| 2.2.1 / `list/row:default-STRING:both` | 0.469785 (0.463296–0.473863) | 0.450527 (0.444817–0.456875) | 0.705300 (0.697150–0.867304) |
+| 2.2.1 / `row/primitive:primitive-DOUBLE:both` | 0.486453 (0.476910–0.491680) | 0.486247 (0.481284–0.493673) | 0.634913 (0.633328–0.642800) |
+| 2.2.1 / `row/custom/map:default-DECIMAL(38,18):result` | 0.747586 (0.744495–0.754269) | 0.740942 (0.735807–0.749522) | 1.204868 (1.200834–1.207984) |
+
+All candidate medians are slower than stock and preceding fallback. These short jobs retain
+startup/JIT and all unfavorable samples. This is conversion coverage under the accepted UDF
+performance exception, with no standalone acceleration claim. The record also retains total
+Maven invocation time separately from each complete-job interval; compilation, JVM launch and
+symmetric EXPLAIN/setup remain outside the trial timer.
+
+The [earlier record](../benchmarks/results/jvm-recursive-scalars-2026-11-04.json) retains all
+168 pre-integration trials against `0f5fc167`, including the substantial Flink 1.18 variability
+and drift between its paired stock controls. Those raw revision ratios do not isolate the
+feature's cost. Both records retain their original native-library and fixture hashes.
+
+Reproduce an individual candidate case after building the released native profile:
+
+```bash
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am \
+  -Dtest=RecursiveScalarBenchmark -Dsf.testForks=1 \
+  '-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC' \
+  -Dboundary.rows=262144 -Dboundary.warmups=2 -Dboundary.runs=5 \
+  '-Drecursive.scalar.bench.signatures=list/row:default-STRING:both' test
+```
+
+Use `-Pbench,flink-1.18` for the other released line. Overlay the same benchmark/fixtures onto
+`624cbd7e` and set `-Dboundary.expectNative=false` for the actual previous fallback control.
+Remaining JVM contracts stay in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
 
 A tagged nullable Int8 Arrow child carries each SQL ROW's `RowKind` outside its logical ordinals.
 Missing/NULL metadata reads as INSERT; nested non-INSERT kinds remain visible to Java callbacks.
@@ -526,8 +626,8 @@ Java `ScalarFunction` calls use the existing columnar JVM bridge: Arrow argument
 the function once per batch and an Arrow result column returns to the native island. Supported
 external Java types are `String`, boxed/primitive numeric and boolean values, `BigDecimal` for
 `DECIMAL(p,s)`, and `byte[]` for `VARBINARY`/`BYTES`. Overload resolution must be unambiguous.
-External Java `Row`, `Map` and verified Java-array signatures use the default-enabled generated paths described
-below. Fixed-size `BINARY`, root MULTISET, and alternate Java
+External Java `Row`, `Map`, List and verified Java-array signatures use the default-enabled generated paths described
+below. Scalar-only fixed-size `BINARY`, root MULTISET, and alternate Java
 conversion classes outside the verified mappings retain fallback. TIMESTAMP/TIMESTAMP_LTZ
 and DATE/TIME signatures have the default-enabled generated path described below.
 
@@ -572,10 +672,10 @@ This complete-row path executes on the JVM, including sibling expressions. It ad
 inputs and outputs supported by the scalar bridge: primitive numeric/boolean, character,
 BINARY/VARBINARY, DECIMAL, date/time/timestamp and interval values. Fixed BINARY result
 projections use this row path to retain their declared Arrow width. Collection and nested ROW inputs
-or outputs retain fallback by default; the nested scalar option above extends its verified
-ROW/ARRAY boundary. Unsupported UDF signatures and specialized functions still fall back. Temporal
-columns and builtin expressions are supported here; temporal **user-function signatures** require
-the separate opt-in below. The path preserves columnar operator boundaries and avoids a separate
+or outputs use the default-enabled nested scalar option above and its verified recursive
+ROW/ARRAY/List/MAP boundary. Unsupported UDF signatures and specialized functions still fall back. Temporal
+columns and builtin expressions are supported here; temporal **user-function signatures** retain
+the separate signature checks below. The path preserves columnar operator boundaries and avoids a separate
 host Calc between native operators; it does not turn Java UDFs into Rust kernels.
 
 The release/mimalloc diagnostic for `SELECT id, shared(id), shared(id + 1)` measured
@@ -3861,11 +3961,11 @@ retained-row carriage alone does not expand callback conversion coverage.
 ### Java ARRAY scalar signatures
 
 The default-enabled `streamfusion.experimental.nestedScalarUdfs` option admits top-level
-external Java ARRAY scalar arguments and results with basic element types and recursively
-nested ARRAYs. The resolved external class must be the released default (for example
-`Integer[]`, `Long[]`, `String[]`, `BigDecimal[]` or `Integer[][]`). Primitive Java arrays,
-custom inference/conversion classes, fixed BINARY leaves and ARRAYs containing ROW/MAP/MULTISET
-retain fallback. Their independent nested ROW/MAP coverage is unchanged.
+external Java ARRAY scalar arguments and results with verified scalar leaves and recursive
+ARRAY/List/ROW/MAP children. Java object arrays, supported primitive arrays, external List
+arguments and List implementation results use the [recursive whitelist](#recursive-external-scalar-conversions).
+Custom inference and annotations may select those conversions. MULTISET/STRUCTURED/RAW,
+internal classes, specialized functions and unverified conversion classes retain fallback.
 
 On released Flink 1.18.1, CASE selecting a `byte[][]` ARRAY-of-BYTES UDF result or the input
 array fails in the host's generated Java allocation (`'{' expected instead of '['`). The
@@ -3875,7 +3975,7 @@ positive NativeCalc work on both lines; the CASE fixture also executes natively 
 
 The complete Calc uses the existing generated Arrow batch callback. Flink's copy of a nullable
 columnar array can have an `Object[]` backing even when the user method expects `Integer[]`.
-The converter restores the typed internal backing, recursively for ARRAY elements, before
+The converter restores the typed internal backing, recursively through ARRAY/ROW/MAP, before
 invoking the released external converter. It retains NULL versus empty arrays, NULL elements,
 Java string code units, owned retained arguments and the released result conversion. It does
 not replace array evaluation with Rust user-function execution.
@@ -3968,7 +4068,8 @@ pre-epoch nanoseconds and nested RowKinds are covered. These are resolved Flink 
 nested TIME resolves to TIME(0), and the interval fixture uses INTERVAL MONTH/SECOND(3).
 Runtime millisecond TIME values are preserved. Root DATE/TIME UDF signatures use the temporal
 path. NOT NULL fixed BINARY map leaves use the verified generated boundary on Flink 2.2 and retain
-fallback on 1.18. Arbitrary Java conversion classes and custom type inference retain their separate gates.
+fallback on 1.18. Custom inference may select the verified recursive external conversions;
+arbitrary conversion classes and internal classes retain their signature gates.
 
 Scalar results from MAP arguments can feed native aggregation. MAP results can compose with
 lookup, CARDINALITY, CASE, predicates and a final row sink, including callbacks lifted above

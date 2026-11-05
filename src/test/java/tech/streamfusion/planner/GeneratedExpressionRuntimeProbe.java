@@ -49,8 +49,40 @@ public final class GeneratedExpressionRuntimeProbe {
       restored = input.readObject();
     }
     if (args[0].equals("sql")) executeSqlFactory((Configuration) restored);
+    else if (args[0].equals("containers")) executeContainers((ExternalContainerConverter) restored);
     else executeFunction(args[0], (FlinkExpressionFunction) restored);
     System.out.println("ISOLATED_RUNTIME_OK " + args[0]);
+  }
+
+  private static void executeContainers(ExternalContainerConverter converter) {
+    converter.open(GeneratedExpressionRuntimeProbe.class.getClassLoader());
+    var key = new org.apache.flink.table.data.GenericArrayData(new Object[] {1, 2});
+    var child =
+        GenericRowData.ofKind(
+            RowKind.DELETE, org.apache.flink.table.data.StringData.fromString("é🙂"));
+    var values = new org.apache.flink.table.data.GenericArrayData(new Object[] {child, null});
+    var map = new org.apache.flink.table.data.GenericMapData(java.util.Map.of(key, values));
+    var input = GenericRowData.ofKind(RowKind.UPDATE_BEFORE, map);
+    var external = (org.apache.flink.types.Row) converter.toExternal(input);
+    assertEquals(RowKind.UPDATE_BEFORE, external.getKind());
+    var result = (java.util.Map<?, ?>) external.getField(0);
+    assertEquals(1, result.size());
+    var entry = result.entrySet().iterator().next();
+    assertArrayEquals(new int[] {1, 2}, (int[]) entry.getKey());
+    var rows = (List<?>) entry.getValue();
+    assertEquals(2, rows.size());
+    var row = (org.apache.flink.types.Row) rows.get(0);
+    assertEquals(RowKind.DELETE, row.getKind());
+    assertEquals("é🙂", row.getField("n"));
+    assertNull(rows.get(1));
+    var owned = (RowData) converter.toInternal(external);
+    ((int[]) entry.getKey())[0] = -1;
+    row.setField("n", "mutated");
+    assertEquals(1, owned.getMap(0).keyArray().getArray(0).getInt(0));
+    assertEquals(
+        RowKind.DELETE, owned.getMap(0).valueArray().getArray(0).getRow(0, 1).getRowKind());
+    assertEquals(
+        "é🙂", owned.getMap(0).valueArray().getArray(0).getRow(0, 1).getString(0).toString());
   }
 
   private static FunctionContext context() {

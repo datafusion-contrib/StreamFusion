@@ -57,13 +57,13 @@ internal-to-external arguments. The admission check applies this direction at ev
 
 Flink's nullable columnar copies can place internal array elements in `Object[]`, whereas
 its primitive-array converters require typed backing even when nested beneath Lists or
-external ROW/MAP conversions. A table-function-specific extension of the existing typed-array
-repair restores that backing recursively before the released argument converter. It does
+external ROW/MAP conversions. The shared recursive extension of the existing typed-array
+repair restores that backing before released table and scalar argument converters. It does
 not implement Java container conversion, change JNI or introduce a second Arrow encoding.
 A replacement ROW retains its kind; MAP repair retains aligned key/value arrays, including
 NULL/duplicate keys, until the released converter applies its own map semantics. No child
-buffer or borrowed row is retained past the synchronous callback. Existing scalar-function
-conversions and representation-sensitive producer/consumer admission stay in place.
+buffer or borrowed row is retained past the synchronous callback. Scalar calls reuse the same released conversion directions and retain representation-sensitive
+producer/consumer admission.
 
 Released primitive DATE/TIME and interval array results are admitted only beneath an
 external ARRAY/List or MAP converter that first serializes them into binary storage. A
@@ -77,10 +77,10 @@ expose primitive/boxed array backing and binary buffers owned by an upstream use
 If a later function retains those arguments, stock chaining can observe the producer's next
 mutation. Arrow output ownership deliberately copies the produced value immediately, so
 that alias relationship cannot survive the batch boundary. Chaining therefore falls back
-when an upstream function may return mutable aliases and a later argument converter may
+when an upstream scalar or table function may return mutable aliases and a later argument converter may
 expose them. The conservative check includes upstream functions across intervening plans,
 without pretending to prove field lineage or stateless user code. ARRAY/List/MAP converters
 that binary-serialize non-identity children establish the verified copying boundary; paired
-retained-argument tests keep those native routes. Existing flat primitive-array chains gain
+retained-argument tests keep those native routes. Existing flat primitive/boxed-array and binary-leaf chains gain
 the same required fallback. Broader alias-preserving producer/consumer contracts remain in
 [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
