@@ -5302,7 +5302,7 @@ final class RexExpression {
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    if (nativeDecimalSign(call)) return true;
+    if (nativeDecimalSign(call) || nativeDecimalAbs(call) || nativeDecimalNegate(call)) return true;
     if (isDecimalArithmetic(call)
         && (call.getKind() == SqlKind.PLUS || call.getKind() == SqlKind.MINUS
             || call.getKind() == SqlKind.TIMES)) {

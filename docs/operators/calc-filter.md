@@ -1189,8 +1189,10 @@ DECIMAL SIGN uses a typed Decimal128 kernel for `p > s`, and for precision 19 th
 when `p = s`. Direct inputs, typed literals/NULLs, same-scale lossless precision widening
 and nested admitted SIGN calls retain the resolved precision and scale without JVM evaluation.
 DECIMAL-only addition/subtraction/multiplication trees over those producers also remain
-native through SIGN. Every arithmetic node retains its resolved precision/scale and overflow
-NULL. This SIGN-specific proof still excludes compact `DECIMAL(p,p)` intermediates even if
+native through SIGN. Verified ABS/unary-minus producers, including alternating unary trees
+and their admitted arithmetic, also compose through SIGN. Every arithmetic node retains its
+resolved precision/scale and overflow NULL. This SIGN-specific proof still excludes compact
+`DECIMAL(p,p)` intermediates even if
 an enclosing arithmetic operation or widening could normalize them.
 For `p > s`, the result is scaled `-1`, `0` or `1`. For noncompact `DECIMAL(p,p)`, nonzero
 values become NULL, zero remains scaled zero, and input NULLs remain NULL, matching released
@@ -1200,7 +1202,7 @@ instead of exposing the intermediate NULL. Nullable consumers and retained NULL/
 keep their existing native rules; direct DECIMAL results still reach ERROR/DROP enforcement.
 This repairs [#584](https://github.com/datafusion-contrib/StreamFusion/issues/584) without
 changing the SIGN kernel or claiming new acceleration. Division, remainder, mixed numeric
-operands, precision narrowing, rescaling, ABS/negation and other unverified producers and compact
+operands, precision narrowing, rescaling and other unverified producers and compact
 `DECIMAL(p,p)` SIGN keep complete generated evaluation. Widening a compact SIGN intermediate
 does not make it eligible. Array evaluation allocates result values without mutating the
 input; ordinary-decimal validity is shared and noncompact `p = s` derives result validity.
@@ -1209,6 +1211,9 @@ The [arithmetic-producer qualification](../benchmarks/scalar-functions.md#decima
 also covers noncompact zero-integral-width inputs, nullable BOOLEAN consumers and complete
 jobs with both transposes. Character CAST/TRY_CAST retain their separate producer proof;
 the new arithmetic SIGN admission does not make every enclosing conversion JVM-free.
+The separate [unary-producer qualification](../benchmarks/scalar-functions.md#decimal-sign-over-verified-unary-producers-2026-11-05)
+retains compact SIGN guards, final defaults/NULL flags and NOT NULL enforcement while
+comparing stock and the actual preceding generated evaluator.
 
 For compact `DECIMAL(p,p)` with precision 1 through 18, STRING/CHAR/VARCHAR CAST
 and DECIMAL CASE/IF consumers keep SIGN and its enclosing scalar expression in one generated

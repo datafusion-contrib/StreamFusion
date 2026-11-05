@@ -10578,3 +10578,63 @@ See the [qualification, full-job trials and exact provenance](results/epoch-date
 and [6,000 raw prepared samples](results/epoch-date-format-2026-11-05.csv.gz).
 Remaining temporal signatures stay open in
 [#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
+
+## DECIMAL SIGN over verified unary producers (2026-11-05)
+
+SIGN now composes verified DECIMAL ABS/unary-minus producers, their alternating unary
+trees and admitted arithmetic through existing typed kernels. For example,
+`SIGN(ABS(d))`, `SIGN(-ABS(d))` and `SIGN(ABS(d*d))` no longer need a generated
+evaluator when their result/producer types satisfy the existing SIGN proof. Released
+ABS/negation preserve precision and scale over valid coefficients. This does not admit
+SIGN as an ABS/negation producer or remove the SIGN-specific representation guards.
+
+Released SIGN directly constructs compact scaled +/-1, which can exceed a declared
+compact DECIMAL(p,p) precision. Its noncompact branch reconstructs through BigDecimal
+and returns NULL for nonzero DECIMAL(p,p) values. Those contracts remain distinct:
+compact SIGN and compact SIGN intermediates under widening/arithmetic stay generated;
+noncompact zero/NULL results, final defaults versus NULL flags and NOT NULL ERROR/DROP
+enforcement remain unchanged. Narrowing, rescaling, division/remainder and unverified
+producers retain their existing routes. Character CAST/TRY_CAST keep separate proofs;
+`TRY_CAST(SIGN(ABS(d)) AS STRING)` retains its explicit fallback and matches stock.
+No production Rust/JNI change, new opcode or performance switch is added.
+
+All **448 fresh JVM invocations** pass across released Flink 1.18.1/2.2.1 and
+JDK 11/17, targeting Java 11: 60 new SQL invocations and 388 related invocations,
+with no skips or aborts. Full 5,003-row maps/schema cover nine admitted precision/scale
+pairs, nullable/NOT NULL fields, same-scale widening, alternating/arithmetic trees,
+overflow, lazy/all-filtered paths and retained compact/consumer routes. Admitted pure
+queries consume NativeCalc, have no fallback and have empty JVM evaluators. Encoding
+controls cover every DECIMAL precision/scale, retaining the compact result restriction.
+Four fresh unchanged released ScalarFunctionsTest.testSign stock-oracle runs pass
+separately. Actual preceding encoder `902876488` matches each first-query map/schema
+before nine expected new pure-route failures per released-line JDK17 run; six retained
+controls pass. Later unreached queries are not preceding-parity evidence. Final parity
+and performance encoder instructions match on both lines, and candidate/previous
+fixture classes are byte-identical. The unchanged runtime retains its historical
+927-core-test qualification, not a fresh Rust run.
+
+Prepared release measurements consume `(SIGN(...)>0 OR CAST(NULL AS BOOLEAN))` with
+equivalent nullable BOOLEAN checksums. Five shapes cover ABS at DECIMAL(18,3), negation
+at (19,0), negative ABS at (38,18), alternating unary trees at (38,38), and ABS of a
+product at (18,3). Each uses nullable/nonnullable and Generic/Binary RowData controls
+with 1,024-row batches, plus a 16-row nullable/Binary control on each released line.
+Stock starts on equivalent prebuilt RowData; native starts on prebuilt Arrow. The Rust
+timer runs after setup/import and before export, retaining production Calc, allocation
+and intrinsic conversions/callbacks. Actual previous behavior uses generated evaluation
+inside NativeCalc. Each trial processes 131,072 rows, with sixteen warmups and nine
+measurements. Prepared JVM heaps match at 1 GiB. No other tests or benchmarks run
+concurrently; independent stock controls and all variability remain in the records.
+
+All **40 bulk cells** beat stock **1.503-12.203x** and previous **5.932-19.853x**.
+All **10 tiny controls lose to stock**, with stock/native **0.088-0.462x**; all beat
+previous. Six complete million-row jobs output DECIMAL directly and retain submission,
+production JNI and both RowData/Arrow transposes. At parallelism one and 2 GiB heaps
+for every engine, each has two warmups and five measured repetitions. Four of six
+lose to paired stock: native/stock elapsed **0.936-1.107**, native/previous
+**0.767-0.880**. All six beat previous. The conversion-inclusive stock losses remain
+material; these prepared-function gains do not establish universal job acceleration.
+
+See the [qualification, complete-job trials and exact provenance](results/decimal-sign-unary-2026-11-05.json)
+and [5,000 raw prepared samples](results/decimal-sign-unary-2026-11-05.csv.gz).
+Remaining exact numeric work stays open in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
