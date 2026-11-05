@@ -19,7 +19,7 @@ identities; their state can be restored without StreamFusion on the stock classp
 snapshot intermediate is introduced.
 
 The real-broker source subset and remaining transaction/failure/format/version limits are tracked
-on [the Kafka coverage page](../docs/connectors/kafka.md). Broader sink variants and both-native pipelines
+on [the Kafka coverage page](../docs/connectors/kafka.md). Broader sink variants and both-native pipeline combinations
 still require independent qualification under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred by the maintainer.
 
@@ -36,3 +36,11 @@ admission and constraint gate inspect exactly that contract. It is never transla
 the native sink receives the actual lowered input edge. Existing materialization, metadata,
 constraints and changelog repartitioning exclusions continue to apply. The core planner uses the
 optional extension API and does not depend on Kafka classes.
+
+
+The qualified both-native source/sink cohort uses the same stock state and logical identities
+without representation boundaries. Its startup exposed Arrow buffers created before the process
+budget was known; the [shared-memory authority](16-task-off-heap-memory-authority.md) now adopts
+that early live balance before publishing capacity. This is lifetime accounting, not another
+snapshot format or a connector-specific state converter. Broader transaction-failure and connector
+variants remain under #569.

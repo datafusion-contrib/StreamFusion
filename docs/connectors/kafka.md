@@ -177,7 +177,7 @@ do not establish canonical compatibility on 1.18.
 This does not qualify native Kafka sink transactions, writer rescaling, new partition discovery,
 topic patterns, security/schema/format variations, broker/coordinator failures or cross-version
 migration. Source rescaling keeps the custom sink singleton and disables chaining for that test.
-Both-native Kafka source/sink jobs without transpose boundaries require their own handoff evidence.
+Both-native Kafka source/sink coverage is qualified separately below.
 Benchmarking remains deferred for #569.
 
 The functional lane uses a real optional JSON artifact and an isolated stock classpath. With Docker
@@ -229,11 +229,10 @@ can change the subsequent ordinary-SQL UID namespace differently between engines
 that planning history remains unfinished in #569. A portable compiled plan retains its original
 UID namespace. No failed restore enables unmatched-state acceptance or drops source/writer state.
 
-Both-native Kafka endpoints have separate continued-input and unchained rescale evidence, but their
-full qualification is unfinished. Startup testing exposed an Arrow allocation made before task
-budget initialization and released afterward against an uncharged owner. The fix and complete
-both-endpoint matrix are being qualified separately; the custom-source sink matrix above does not
-establish that broader startup/delivery guarantee.
+The separate both-native matrix below also exercises independently starting source/sink tasks.
+Its decoder schema can allocate Arrow buffers before another task publishes the memory budget.
+Startup adopts those live buffers into the shared budget before publication, preserving their
+release balance; an insufficient initial cap still fails normally.
 
 Broker/coordinator failures, failures around external commits, further formats/schemas/security,
 upsert/CDC delivery, source partition discovery and both-native source/sink handoffs remain open
@@ -242,3 +241,26 @@ is qualified only on the released Flink/connector versions stated above. Benchma
 
 Use the source handoff command above with `-Dtest=CanonicalKafkaSinkJobTest` for the sink lane.
 `-Dsf.canonical.kafka.sink.mode=checkpoint` selects checkpoint recovery; omit it for all cases.
+
+
+## Canonical native source and sink pipelines (partial)
+
+A separate 36-case matrix passes with a three-partition Kafka source replacing the custom source
+in the sink matrix above. It repeats both submission forms, initial engine orders, transaction
+naming strategies, no-input returns, native-job checkpoint recovery and both writer-rescale
+policies. The schema is three nullable BIGINT fields in JSON on released Flink 2.2.1 and Kafka
+connector 5.0.0-2.2. Reader parallelism stays one; writer parallelism changes 1→3→2.
+
+Every claimed native leg checks the actual submitted job graph and output counters for native
+Kafka decoding and encoding, with no RowData/Arrow transpose operators. Saved split offsets and
+nonempty coordinator state, writer transaction ownership and precommits, stock identities and
+exact `read_committed` effects are checked after the switches. Stock workers cannot load
+StreamFusion classes. This also qualifies the startup memory-accounting fix with real independent
+source/writer tasks. The ordinary-SQL planner-preview UID limitation above remains open.
+
+Run the sink command with `-Dtest=CanonicalKafkaPipelineJobTest` for this complete matrix. Generated
+hash rescaling disables chaining consistently; automatic-UID rescaling keeps normal chaining.
+Additional source/reader rescaling combinations, partition discovery, schemas/formats/security,
+upsert/CDC delivery and failures around broker/coordinator/transaction commits need their own
+qualification under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.

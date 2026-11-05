@@ -133,7 +133,7 @@ public final class CanonicalKafkaSinkJobWorker {
       var result = compiled ? plan.execute() : table.executeSql(query);
       var job = result.getJobClient().orElseThrow();
       long deadline = System.nanoTime() + Duration.ofSeconds(90).toNanos();
-      if (kafkaInput) awaitKafkaOutput(root, limit);
+      if (kafkaInput) awaitKafkaOutput(root, limit, job.getJobExecutionResult());
       while (!kafkaInput && !Files.exists(ready)) {
         if (job.getJobExecutionResult().isDone()) {
           job.getJobExecutionResult().get();
@@ -202,7 +202,12 @@ public final class CanonicalKafkaSinkJobWorker {
     }
   }
 
-  private static void awaitKafkaOutput(Path root, int limit) throws Exception {
+  private static void awaitKafkaOutput(
+      Path root,
+      int limit,
+      java.util.concurrent.CompletableFuture<org.apache.flink.api.common.JobExecutionResult>
+          execution)
+      throws Exception {
     var properties = new Properties();
     properties.setProperty("bootstrap.servers", Files.readString(root.resolve("brokers")));
     properties.setProperty("group.id", java.util.UUID.randomUUID().toString());
@@ -229,6 +234,11 @@ public final class CanonicalKafkaSinkJobWorker {
       long deadline = System.nanoTime() + Duration.ofSeconds(90).toNanos();
       var json = new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper();
       while (observed.size() < limit) {
+        if (execution.isDone()) {
+          execution.get();
+          throw new AssertionError("Job ended before all Kafka input reached the output boundary");
+        }
+
         for (var record : consumer.poll(Duration.ofMillis(100))) {
           int id = json.readTree(record.value()).get("k").asInt();
           if (id >= 0 && id < limit) observed.add(id);

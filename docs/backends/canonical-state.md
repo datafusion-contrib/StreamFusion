@@ -1443,3 +1443,11 @@ ownership, no-input/checkpoint returns and writer redistribution. The [Kafka sin
 separates that broker continuation evidence from planner checks and unfinished transaction,
 rescaling, failure, schema and version combinations. Native checkpoints retain their ordinary
 recovery path. The full #569 acceptance criteria remain open; benchmarking is deferred.
+
+
+The separate 36-case native Kafka source/sink cohort now passes the same handoff/recovery/writer-
+rescale modes with actual native decoding and encoding and no row/Arrow transposes. It verifies
+released split/coordinator state and transaction ownership alongside exact external committed
+records. The source remains singleton; the [connector scope](../connectors/kafka.md#canonical-native-source-and-sink-pipelines-partial)
+keeps wider source redistribution, failure, schema and version guarantees separate. The full
+fifteen-family and ten-criterion acceptance matrix remains unfinished in #569.
