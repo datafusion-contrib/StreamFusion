@@ -127,6 +127,31 @@ class SqlInventoryTest {
 
   public static class NativeCalcOperator {}
 
+  @Test
+  void lateCompactionCompletionStaysWithItsOriginalInvocation() throws Exception {
+    System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
+    try {
+      var identifier = new Identifier();
+      SqlInventory.started(identifier);
+      Object owner = SqlInventory.compactionScope();
+      SqlInventory.finished(identifier, new Result());
+      SqlInventory.started(identifier);
+      SqlInventory.compaction(owner, Map.of("native", true, "before_rows", 42));
+      SqlInventory.finished(identifier, new Result());
+      try (var paths = Files.list(directory)) {
+        var reports = paths.map(path -> {
+          try { return Files.readString(path); }
+          catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
+        }).toList();
+        org.junit.jupiter.api.Assertions.assertEquals(2, reports.size());
+        assertTrue(reports.stream().anyMatch(json -> json.contains("\"before_rows\":42")));
+        assertTrue(reports.stream().anyMatch(json -> json.contains("\"compactions\":[]")));
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+    }
+  }
+
   public static class Batch {
     public int getRowCount() {
       return 7;

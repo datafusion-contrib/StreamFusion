@@ -1,0 +1,153 @@
+suite,class,case,expectation,fallback_reasons,note
+core,org.apache.paimon.mergetree.compact.ForceUpLevel0CompactionTest,testForceCompaction0,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.ForceUpLevel0CompactionTest,testForceCompaction0ConsidersLevel2,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerFactoryTest,testCloseFailureDoesNotReplaceFactoryFailure,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerFactoryTest,testFailedFactoryClosesDefaultRewriter(boolean)[1],no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerFactoryTest,testFailedFactoryClosesDefaultRewriter(boolean)[2],no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerFactoryTest,testLookupValueProjection,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerTest,testIsCompacting,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerTest,testCompactWithKeepDelete,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerTest,testCompactToPenultimateLayer,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerTest,testOutputToZeroLevel,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerTest,testUpgrade,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerTest,testSmallInComplex,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerTest,testSmallFiles,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerTest,testComplex,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerTest,testSmallFilesCrossLevel,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerTest,testNormal,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerTest,testNoCompaction,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.MergeTreeCompactManagerTest,testSmallFilesNoCompact,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.UniversalCompactionTest,testOptimizedCompactionInterval,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.UniversalCompactionTest,testOutputLevel,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.UniversalCompactionTest,testForcePickL0,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.UniversalCompactionTest,testPick,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.UniversalCompactionTest,testSizeAmplification,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.UniversalCompactionTest,testFileNumCompactionConsidersLevel2,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.UniversalCompactionTest,testTotalSizeThreshold,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.UniversalCompactionTest,testNoOutputLevel0,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.UniversalCompactionTest,testSizeRatioThreshold,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.UniversalCompactionTest,testSizeRatio,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.UniversalCompactionTest,testExtremeCaseNoOutputLevel0,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.mergetree.compact.UniversalCompactionTest,testLookup,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.operation.KeyValueFileStoreWriteTest,testRadicalLookupCompactStrategy,no-rewrite,,"Avro fixture tests initialization and strategy selection, outside native Parquet scope."
+core,org.apache.paimon.operation.KeyValueFileStoreWriteTest,testSnapshotSequenceNumberInitUsesWriterCreationSnapshot,no-rewrite,,"Avro fixture tests initialization and strategy selection, outside native Parquet scope."
+core,org.apache.paimon.operation.KeyValueFileStoreWriteTest,testForceUpLevel0CompactStrategy,no-rewrite,,"Avro fixture tests initialization and strategy selection, outside native Parquet scope."
+core,org.apache.paimon.operation.KeyValueFileStoreWriteTest,testGentleLookupCompactStrategy,no-rewrite,,"Avro fixture tests initialization and strategy selection, outside native Parquet scope."
+core,org.apache.paimon.operation.KeyValueFileStoreWriteTest,testSnapshotSequenceNumberInitRestoresFromSnapshotProperties,no-rewrite,,"Avro fixture tests initialization and strategy selection, outside native Parquet scope."
+core,org.apache.paimon.operation.KeyValueFileStoreWriteTest,testSnapshotSequenceNumberInitBootstrapsGlobalMaxSequenceNumber,no-rewrite,,"Avro fixture tests initialization and strategy selection, outside native Parquet scope."
+core,org.apache.paimon.table.sink.CompactRewriterFactoryTest,testAppendWriterRejectsFactory,no-rewrite,,Upstream installs its own tracking factory and asserts exact stock delegate classes and close/upgrade behavior.
+core,org.apache.paimon.table.sink.CompactRewriterFactoryTest,"testRewriteAndUpgradeAcrossReopenedWriters(String, boolean)[1]",no-rewrite,,Upstream installs its own tracking factory and asserts exact stock delegate classes and close/upgrade behavior.
+core,org.apache.paimon.table.sink.CompactRewriterFactoryTest,"testRewriteAndUpgradeAcrossReopenedWriters(String, boolean)[2]",no-rewrite,,Upstream installs its own tracking factory and asserts exact stock delegate classes and close/upgrade behavior.
+core,org.apache.paimon.table.sink.CompactRewriterFactoryTest,"testRewriteAndUpgradeAcrossReopenedWriters(String, boolean)[3]",no-rewrite,,Upstream installs its own tracking factory and asserts exact stock delegate classes and close/upgrade behavior.
+core,org.apache.paimon.table.sink.CompactRewriterFactoryTest,"testRewriteAndUpgradeAcrossReopenedWriters(String, boolean)[4]",no-rewrite,,Upstream installs its own tracking factory and asserts exact stock delegate classes and close/upgrade behavior.
+core,org.apache.paimon.table.sink.CompactRewriterFactoryTest,"testRewriteAndUpgradeAcrossReopenedWriters(String, boolean)[5]",no-rewrite,,Upstream installs its own tracking factory and asserts exact stock delegate classes and close/upgrade behavior.
+core,org.apache.paimon.table.sink.CompactRewriterFactoryTest,"testRewriteAndUpgradeAcrossReopenedWriters(String, boolean)[6]",no-rewrite,,Upstream installs its own tracking factory and asserts exact stock delegate classes and close/upgrade behavior.
+core,org.apache.paimon.table.sink.CompactRewriterFactoryTest,"testRewriteAndUpgradeAcrossReopenedWriters(String, boolean)[7]",no-rewrite,,Upstream installs its own tracking factory and asserts exact stock delegate classes and close/upgrade behavior.
+core,org.apache.paimon.table.sink.CompactRewriterFactoryTest,testWriteOnlyDoesNotCreateRewritersAndLateInstallationIsRejected,no-rewrite,,Upstream installs its own tracking factory and asserts exact stock delegate classes and close/upgrade behavior.
+core,org.apache.paimon.table.sink.TableWriteTest,testPartialUpdateDeleteRequiresNonKeyFields,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.table.sink.TableWriteTest,testDeleteRequiresSequenceField,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.table.sink.TableWriteTest,testDeduplicateDeleteWithPrimaryKeyOnly,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.table.sink.TableWriteTest,testExtractAndRecoverState,selected-native,,Unchanged randomized prepare/restore schedule; selected completed rewrites must be native; cancellation may interrupt attempts.
+core,org.apache.paimon.table.sink.TableWriteTest,testLookupDeleteWithPrimaryKeyOnly,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.table.sink.TableWriteTest,testCrossPartitionDeleteRequiresPartitionField,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.table.sink.TableWriteTest,testPartitionTimestampValidation,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.table.sink.TableWriteTest,testChangelogWhenNotWaitForCompaction,stock-policy,changelog-producer,Asynchronous lookup changelog remains Java; selection may upgrade without rewrite.
+core,org.apache.paimon.table.sink.TableWriteTest,testWaitAllSnapshotsOfSpecificIdentifier,native,,Actual deduplicate rewrite and commit waiting.
+core,org.apache.paimon.table.sink.TableWriteTest,testGeneratedDeleteWithPrimaryKeyOnly,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.table.sink.TableWriteTest,testUpgradeToMaxLevel,fallback,changelog-producer,Full-compaction changelog remains Java.
+flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testStreamingRead,stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
+flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testIgnoreUpdateBeforeAndDeleteAuditLog,stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
+flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testStreamingReadOfArray,stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
+flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testUpdateAuditLog,stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
+flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testIgnoreUpdateBeforeAuditLog,stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
+flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testIgnoreDeleteAuditLog,stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
+flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testRowDeduplicateWithArrayRow,stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
+flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testUpdate(boolean)[1],stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
+flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testUpdate(boolean)[2],stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
+flink,org.apache.paimon.flink.FullCompactionFileStoreITCase,testCompactedScanMode,stock-policy,changelog-producer,Full-compaction changelog fixture remains Java.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testLotsOfPartitionsCompact,native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testCompactWhenSkipLevel0,fallback,merge-engine|changelog-producer,Upstream chooses first-row or lookup/DV; both retain Java.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketStreamingCompactWithWithAddingColumns,mixed,schema-evolution,Require native current-schema append work and whole-group Java fallback after the schema changes.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testCompactSpecifiedBucketRangesFromAction,native,,Java partition/bucket/expiration selection with native file rewrite.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testTableConf,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.action.CompactActionITCase,testDataEvolutionTableCompact,no-rewrite,,Append/data-evolution worker is outside the PK rewriter boundary.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketStreamingCompactWithChangedExternalPath,native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testWrongUsage,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.action.CompactActionITCase,testSpecifyNonPartitionField,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketBatchCompact,native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testUnawareBucketStreamingCompact,native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testStreamingCompactWithChangedExternalPath,fallback,changelog-producer,"Explicit full-compaction changelog remains Java, including refresh/evolution."
+flink,org.apache.paimon.flink.action.CompactActionITCase,testStreamingCompact,fallback,changelog-producer,"Explicit full-compaction changelog remains Java, including refresh/evolution."
+flink,org.apache.paimon.flink.action.CompactActionITCase,testStreamingCompactWithAddingColumns,fallback,changelog-producer,"Explicit full-compaction changelog remains Java, including refresh/evolution."
+flink,org.apache.paimon.flink.action.CompactActionITCase,testSkipExpiredPartitions,native,,Java partition/bucket/expiration selection with native file rewrite.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testStreamingCompactWithEmptyOverwriteUpgrade,no-rewrite,,Force-up-level-0 metadata promotions retain Java; upstream asserts empty-overwrite behavior.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testHistoryPartitionCompact(boolean)[1],native,,Java partition/bucket/expiration selection with native file rewrite.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testHistoryPartitionCompact(boolean)[2],native,,Java selects and commits unaware append work; the shared native payload rewriter must execute.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testNotSkipExpiredPartitionsByDefault,native,,Java partition/bucket/expiration selection with native file rewrite.
+flink,org.apache.paimon.flink.action.CompactActionITCase,testBatchCompact,native,,Java partition/bucket/expiration selection with native file rewrite.
+flink,org.apache.paimon.flink.action.MinorCompactActionITCase,testBatchFullCompactStrategy,native,,Java full/minor selection with native file rewrite.
+flink,org.apache.paimon.flink.action.MinorCompactActionITCase,testCompactStrategyWithWrongUsage,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.action.MinorCompactActionITCase,testStreamingFullCompactStrategy,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.action.MinorCompactActionITCase,testBatchMinorCompactStrategy,native,,Java full/minor selection with native file rewrite.
+flink,org.apache.paimon.flink.procedure.CompactProcedureITCase,testDynamicBucketSortCompact,no-rewrite,,Unadapted SQL CALL must remain stock; neither core nor graph fixture adaptation applies.
+flink,org.apache.paimon.flink.procedure.CompactProcedureITCase,testBatchFullCompactStrategy,no-rewrite,,Unadapted SQL CALL must remain stock; neither core nor graph fixture adaptation applies.
+flink,org.apache.paimon.flink.procedure.CompactProcedureITCase,testForceCompactToExternalPath,no-rewrite,,Unadapted SQL CALL must remain stock; neither core nor graph fixture adaptation applies.
+flink,org.apache.paimon.flink.procedure.CompactProcedureITCase,testFailWhenSchemaChanged,no-rewrite,,Unadapted SQL CALL must remain stock; neither core nor graph fixture adaptation applies.
+flink,org.apache.paimon.flink.procedure.CompactProcedureITCase,testStreamFullCompactStrategy,no-rewrite,,Unadapted SQL CALL must remain stock; neither core nor graph fixture adaptation applies.
+flink,org.apache.paimon.flink.procedure.CompactProcedureITCase,testStreamingCompact,no-rewrite,,Unadapted SQL CALL must remain stock; neither core nor graph fixture adaptation applies.
+flink,org.apache.paimon.flink.procedure.CompactProcedureITCase,testCompactSpecifiedBucketRanges,no-rewrite,,Unadapted SQL CALL must remain stock; neither core nor graph fixture adaptation applies.
+flink,org.apache.paimon.flink.procedure.CompactProcedureITCase,testHistoryPartitionCompact,no-rewrite,,Unadapted SQL CALL must remain stock; neither core nor graph fixture adaptation applies.
+flink,org.apache.paimon.flink.procedure.CompactProcedureITCase,testBatchMinorCompactStrategy,no-rewrite,,Unadapted SQL CALL must remain stock; neither core nor graph fixture adaptation applies.
+flink,org.apache.paimon.flink.procedure.CompactProcedureITCase,testBatchCompact,no-rewrite,,Unadapted SQL CALL must remain stock; neither core nor graph fixture adaptation applies.
+flink,org.apache.paimon.flink.sink.CompactRefresherTest,testRefreshFieldsAndConfigs,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.sink.CompactRefresherTest,testRefreshOnlyFields,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.sink.CompactRefresherTest,testRefreshOnlyConfigs,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.sink.CompactorSinkITCase,testCompactParallelism,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.sink.CompactorSinkITCase,testCompact(boolean)[1],native,,"Real dedicated worker, both coordinated and ordinary factories."
+flink,org.apache.paimon.flink.sink.CompactorSinkITCase,testCompact(boolean)[2],native,,"Real dedicated worker, both coordinated and ordinary factories."
+flink,org.apache.paimon.flink.sink.StoreCompactOperatorTest,testStreamingCompactConflictWithOverwrite,native,,Real worker rewrite retains overwrite-conflict/recovery assertions.
+flink,org.apache.paimon.flink.sink.StoreCompactOperatorTest,testCompactExactlyOnce(boolean)[1],no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.sink.StoreCompactOperatorTest,testCompactExactlyOnce(boolean)[2],no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.sink.StoreCompactOperatorTest,testCoordinatorProvider,no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.sink.StoreCompactOperatorTest,testCompactWithCoordinator(boolean)[1],no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+flink,org.apache.paimon.flink.sink.StoreCompactOperatorTest,testCompactWithCoordinator(boolean)[2],no-rewrite,,"Selection, validation, mock writer, or metadata upgrade; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testDeleteRatio,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testBatchScanEmptyTable,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testDeleteRatioNoCompact,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testDeleteRatioMergeTask,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testForCompactPlan,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testCompactGroupSplit2,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testEliminatePartitionCoordinator,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testMinSizeCompactTask,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testCompactGroupSplit,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testCompactLessFile,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testNoCompactTask,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testFilterMiddleFile,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactCoordinatorTest,testAgeGrowUp,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactTaskTest,testAppendCompactionWithDeletionVectors(boolean)[1],no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendCompactTaskTest,testAppendCompactionWithDeletionVectors(boolean)[2],no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendOnlyTableCompactionTest,testBatchScanFileNumLimitNoRemainingFiles,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendOnlyTableCompactionTest,testScanSkipBigFiles,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendOnlyTableCompactionTest,testBatchScanFileNumLimitExactMatch,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendOnlyTableCompactionTest,testBatchScanFileNumLimitWithRemainingFiles,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendOnlyTableCompactionTest,noCompaction,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendOnlyTableCompactionTest,testBatchScanAllFilesFilteredOut,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.AppendOnlyTableCompactionTest,compactionTaskTest,native,,"Real append task payload rewrite; Java retains selection, commits and worker cleanup."
+core,org.apache.paimon.append.AppendOnlyTableCompactionTest,testCompactionLot,native,,"Real append task payload rewrite; Java retains selection, commits and worker cleanup."
+core,org.apache.paimon.append.AppendOnlyTableCompactionTest,testBatchScanEmptyTableBatchRemainFiles,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.BucketedAppendCompactManagerTest,testPickEmptyAndNotRelease,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.append.BucketedAppendCompactManagerTest,testPickEmptyAndRelease,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+flink,org.apache.paimon.flink.sink.AppendOnlySingleTableCompactionWorkerOperatorTest,testAsyncCompactionFileDeletedWhenShutdown,native,,"Real append task payload rewrite; Java retains selection, commits and worker cleanup."
+flink,org.apache.paimon.flink.sink.AppendOnlySingleTableCompactionWorkerOperatorTest,testAsyncCompactionWorks,native,,"Real append task payload rewrite; Java retains selection, commits and worker cleanup."
+core,org.apache.paimon.operation.BucketedAppendFileStoreWriteTest,testWritesInBatchWithNoExtraFiles,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.operation.BucketedAppendFileStoreWriteTest,testScanFilterWithAllNullPartitionWrite,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.operation.BucketedAppendFileStoreWriteTest,testIgnorePreviousFilesChecksPartitionBucketNumber,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.operation.BucketedAppendFileStoreWriteTest,testSharedShreddingForceBufferSpill(String)[1],no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.operation.BucketedAppendFileStoreWriteTest,testSharedShreddingForceBufferSpill(String)[2],no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.operation.BucketedAppendFileStoreWriteTest,testScanFilterWithMixedPartitionWrite,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.operation.BucketedAppendFileStoreWriteTest,testScanFilterWithNoneNullPartitionWrite,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+core,org.apache.paimon.operation.BucketedAppendFileStoreWriteTest,testWritesInBatch,no-rewrite,,"Upstream selection, mock deletion-vector task, ingestion or scan contract; no payload rewrite expected."
+flink,org.apache.paimon.flink.PartialUpdateITCase,testMergeCompaction,native,,Unchanged upstream basic partial-update forced compaction.
+flink,org.apache.paimon.flink.aggregation.FieldsDefaultAggregationITCase,testMergeCompaction,native,,Unchanged upstream default first-non-null and date last-non-null forced compaction.
+flink,org.apache.paimon.flink.aggregation.SumAggregationITCase,testMergeCompaction,fallback,aggregate-type,Unchanged numeric schema includes unadmitted decimal/float sums; whole rewrite retains Java.
+flink,org.apache.paimon.flink.FirstRowITCase,testBatchQueryNoChangelog,stock-policy,first-row-history,Unchanged upstream single-run first-row upgrade keeps its stock history lookup.

@@ -8,7 +8,6 @@ import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.KeyValue;
 import org.apache.paimon.flink.LogicalTypeConversion;
-import org.apache.paimon.fs.Path;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.mergetree.SortedRun;
 import org.apache.paimon.mergetree.compact.IntervalPartition;
@@ -30,7 +29,6 @@ public final class NativePaimonSnapshotReader implements AutoCloseable {
   private PaimonRustReader reader;
   private final String[] names;
   private final int batchRows;
-  private final long budget;
   private long peakBytes;
 
   /** Returns null before emission when the split retains Java snapshot semantics. */
@@ -71,7 +69,10 @@ public final class NativePaimonSnapshotReader implements AutoCloseable {
                         || f.minSequenceNumber() < 0
                         || f.maxSequenceNumber() < f.minSequenceNumber()
                         || f.rowCount() - 1 > f.maxSequenceNumber() - f.minSequenceNumber()
-                        || (partial && options.ignoreDelete() && f.deleteRowCount().orElse(1L) != 0)
+                        || (partial
+                            && (options.ignoreDelete()
+                                || (removeOnDelete && PaimonVersion.partialUpdateDeleteRemovalNeedsJava()))
+                            && f.deleteRowCount().orElse(1L) != 0)
                         || ((options.mergeEngine() == CoreOptions.MergeEngine.FIRST_ROW
                                 || (partial && !removeOnDelete))
                             && !options.ignoreDelete()
@@ -98,7 +99,7 @@ public final class NativePaimonSnapshotReader implements AutoCloseable {
         new IntervalPartition(split.dataFiles(), PaimonVersion.keyComparator(table)).partition();
     for (List<SortedRun> section : sections) {
       if (section.size() > Math.min(256, options.sortSpillThreshold())
-          || overlappingSequences(section)) {
+          || PaimonReadPreflight.overlappingSequences(section)) {
         return null;
       }
     }
@@ -110,19 +111,6 @@ public final class NativePaimonSnapshotReader implements AutoCloseable {
     return reader;
   }
 
-  private static boolean overlappingSequences(List<SortedRun> section) {
-    var files =
-        section.stream()
-            .flatMap(run -> run.files().stream())
-            .sorted(java.util.Comparator.comparingLong(DataFileMeta::minSequenceNumber))
-            .collect(java.util.stream.Collectors.toList());
-    long maximum = -1;
-    for (DataFileMeta file : files) {
-      if (file.minSequenceNumber() <= maximum) return true;
-      maximum = Math.max(maximum, file.maxSequenceNumber());
-    }
-    return false;
-  }
 
   private static boolean comparable(org.apache.paimon.types.DataType type) {
     return PaimonKeyValueLayout.comparableNatively(type)
@@ -162,7 +150,6 @@ public final class NativePaimonSnapshotReader implements AutoCloseable {
     this.split = split;
     this.sections = sections;
     this.batchRows = batchRows;
-    this.budget = table.coreOptions().sortSpillBufferSize();
     RowType keys =
         new RowType(
             PrimaryKeyTableUtils.PrimaryKeyFieldsExtractor.EXTRACTOR.keyFields(table.schema()));
@@ -182,36 +169,9 @@ public final class NativePaimonSnapshotReader implements AutoCloseable {
     names = internal.getFieldNames().toArray(String[]::new);
   }
 
-  private NativePaimonFileReader open(DataFileMeta file) throws IOException {
-    return new NativePaimonFileReader(
-        PaimonCodecs.reader(
-            file.fileFormat(),
-            PaimonVersion.legacyOrcTimestamp(table.coreOptions().toConfiguration())),
-        table.fileIO(),
-        new Path(file.externalPath().orElse(split.bucketPath() + "/" + file.fileName())),
-        file.fileSize(),
-        input,
-        names,
-        batchRows);
-  }
-
   private boolean withinRowGroupBudget() throws IOException {
-    for (List<SortedRun> section : sections) {
-      long total = 0;
-      for (SortedRun run : section) {
-        long maximum = 0;
-        for (DataFileMeta file : run.files()) {
-          try (NativePaimonFileReader reader = open(file)) {
-            maximum = Math.max(maximum, reader.readerMemory());
-          }
-        }
-        if (maximum > budget / 2 - total) {
-          return false;
-        }
-        total += maximum;
-      }
-    }
-    return true;
+    return PaimonReadPreflight.withinBudget(
+        table, sections, input, names, split.bucketPath(), batchRows);
   }
 
   public VectorSchemaRoot next() throws IOException {

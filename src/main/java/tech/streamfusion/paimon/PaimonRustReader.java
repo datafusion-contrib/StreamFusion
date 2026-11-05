@@ -87,11 +87,42 @@ final class PaimonRustReader implements AutoCloseable {
 
   PaimonRustReader(FileStoreTable table, DataSplit split, RowType output, int rows, boolean raw)
       throws IOException {
+    this(table, split, output, output, rows, raw, null, false);
+  }
+
+  static PaimonRustReader compaction(
+      FileStoreTable table,
+      DataSplit split,
+      PaimonKeyValueLayout layout,
+      int rows,
+      boolean dropDelete)
+      throws IOException {
+    return new PaimonRustReader(
+        table,
+        split,
+        LogicalTypeConversion.toLogicalType(table.rowType()),
+        layout.flinkWriteType,
+        rows,
+        false,
+        layout.keyColumns,
+        dropDelete);
+  }
+
+  private PaimonRustReader(
+      FileStoreTable table,
+      DataSplit split,
+      RowType projection,
+      RowType output,
+      int rows,
+      boolean raw,
+      int[] physicalKeys,
+      boolean dropDelete)
+      throws IOException {
     io = new Input(table.fileIO());
     boolean kinds = !table.primaryKeys().isEmpty();
     List<Field> fields =
         new ArrayList<>(ArrowFileBatch.schema(ArrowConversion.toArrowSchema(output)).getFields());
-    if (kinds)
+    if (kinds && physicalKeys == null)
       fields.add(Field.nullable(RowDataArrowConverter.ROW_KIND_COLUMN, new ArrowType.Int(8, true)));
     try (ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportSchema(
@@ -99,7 +130,7 @@ final class PaimonRustReader implements AutoCloseable {
       handle =
           NativePaimon.createReader(
               io,
-              descriptor(table, split, output, raw),
+              descriptor(table, split, projection, raw, physicalKeys, dropDelete),
               schema.memoryAddress(),
               rows,
               table.coreOptions().sortSpillBufferSize(),
@@ -132,7 +163,12 @@ final class PaimonRustReader implements AutoCloseable {
   }
 
   private static String descriptor(
-      FileStoreTable table, DataSplit split, RowType output, boolean raw) {
+      FileStoreTable table,
+      DataSplit split,
+      RowType output,
+      boolean raw,
+      int[] physicalKeys,
+      boolean dropDelete) {
     Map<String, Object> value = new LinkedHashMap<>();
     Map<String, Object> schema = JsonSerdeUtil.fromJson(table.schema().toString(), Map.class);
     schema.putIfAbsent("timeMillis", 0L);
@@ -154,6 +190,8 @@ final class PaimonRustReader implements AutoCloseable {
     value.put("bucketPath", split.bucketPath());
     value.put("streaming", split.isStreaming());
     value.put("raw", raw);
+    if (physicalKeys != null)
+      value.put("physical", Map.of("keys", physicalKeys, "dropDelete", dropDelete));
     value.put(
         "files",
         split.dataFiles().stream().map(file -> file(file, split)).collect(Collectors.toList()));

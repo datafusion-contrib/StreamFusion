@@ -31,7 +31,6 @@ import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.memory.HeapMemorySegmentPool;
 import org.apache.paimon.memory.MemoryPoolFactory;
 import org.apache.paimon.schema.Schema;
-import org.apache.paimon.schema.SchemaManager;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.table.sink.CommitMessage;
@@ -45,6 +44,7 @@ import org.apache.paimon.types.RowType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
 class PaimonMergeEngineTest {
@@ -300,6 +300,7 @@ class PaimonMergeEngineTest {
       } else if (mode.equals("overflow")) {
         options.put("merge-engine", "aggregation");
         options.put("fields.v.aggregate-function", "sum");
+        options.put("fields.v.sum.fail-on-overflow", "true");
       } else {
         options.put("merge-engine", mode);
         if (mode.equals("aggregation")) {
@@ -337,6 +338,44 @@ class PaimonMergeEngineTest {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"sum", "product"})
+  void numericOverflowUsesReleasedDefaultPolicy(String function) throws Exception {
+    List<List<String>> contents = new ArrayList<>();
+    for (boolean nativeWriter : new boolean[] {false, true}) {
+      var table =
+          table(options("merge-engine", "aggregation", "fields.v.aggregate-function", function));
+      GenericRow first = (GenericRow) rows(2, false).get(1);
+      first.setField(0, 1);
+      first.setField(3, Long.MAX_VALUE);
+      GenericRow second = (GenericRow) rows(2, false).get(1);
+      second.setField(0, 1);
+      second.setField(3, function.equals("sum") ? 1L : 2L);
+      try (var writer =
+          new Writer(table, nativeWriter, new PaimonChangelogSinkWriteTest.MemoryState(), 7)) {
+        if (!PaimonTestCompat.paimon21()) {
+          assertThrows(
+              Exception.class,
+              () -> {
+                writer.write(List.of(first, second));
+                writer.commit(1);
+              });
+          continue;
+        }
+        writer.write(List.of(first, second));
+        writer.commit(1);
+      }
+      contents.add(PaimonTestTables.readRows(table, TYPE));
+      assertEquals(1, contents.get(contents.size() - 1).size());
+      assertTrue(
+          contents
+              .get(contents.size() - 1)
+              .get(0)
+              .contains("|" + (function.equals("sum") ? Long.MIN_VALUE : -2L) + "|"));
+    }
+    if (PaimonTestCompat.paimon21()) assertEquals(contents.get(0), contents.get(1));
+  }
+
   static FileStoreTable table(Map<String, String> mode) throws Exception {
     return table(mode, TYPE);
   }
@@ -348,7 +387,7 @@ class PaimonMergeEngineTest {
     options.put("num-sorted-run.compaction-trigger", "100");
     options.put("commit.force-compact", "true");
     Path path = new Path(Files.createTempDirectory("paimon-merge").toUri());
-    new SchemaManager(LocalFileIO.create(), path)
+    PaimonTestCompat.schemaManager(LocalFileIO.create(), path)
         .createTable(new Schema(type.getFields(), List.of(), List.of("id"), options, null));
     return FileStoreTableFactory.create(LocalFileIO.create(), path);
   }

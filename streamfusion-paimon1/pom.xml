@@ -152,6 +152,10 @@
                                     </includes>
                                     <excludes>
                                         <exclude>tech/streamfusion/paimon/PaimonVersion.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonAppendCompactWrite.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonAppendTask.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonAppendWorkerCompat.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonSingleFileWriter.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativeAppendSinkWrite.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativeKeyValueSinkWrite.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonAppendSink.java</exclude>
@@ -159,14 +163,12 @@
                                         <exclude>tech/streamfusion/paimon/NativePaimonBucketSink.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonCoordinatorCommitOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonDynamicPartitionOperator.java</exclude>
-                                        <exclude>tech/streamfusion/paimon/NativePaimonKeyValueFileWriter.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonLocalMergeOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonOrcFormat.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonParquetFormat.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonPostponeSink.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonWriteOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonDynamicBucketIndex.java</exclude>
-                                        <exclude>tech/streamfusion/paimon/PaimonKeyValueLayout.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonMergeOptions.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonParquetFloatingStats.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonPostponeFileOrder.java</exclude>
@@ -179,7 +181,7 @@
                                     <directory>${project.basedir}/../src/main/java-flink1.18</directory>
                                     <filtering>false</filtering>
                                     <includes>
-                                        <include>tech/streamfusion/paimon/**/*.java</include>
+                                        <include>tech/streamfusion/paimon/PaimonSourceReaderCompat.java</include>
                                     </includes>
                                 </resource>
                                 <resource>
@@ -206,6 +208,12 @@
                                         <include>**/PaimonOperatorDescriptionTest.java</include>
                                         <include>**/PaimonSplitWatermarksTest.java</include>
                                         <include>**/PaimonFetcherLifecycleTest.java</include>
+                                        <include>**/PaimonCompactionCompatibilityTest.java</include>
+                                        <include>**/PaimonCompactionMergeEngineTest.java</include>
+                                        <include>**/PaimonMaintenanceTest.java</include>
+                                        <include>**/PaimonCompactionFailureTest.java</include>
+                                        <include>**/PaimonCompactionBenchmark.java</include>
+                                        <include>**/PaimonCompactionTestAdapter.java</include>
                                         <include>**/PaimonTimestampSqlTest.java</include>
                                     </includes>
                                 </resource>
@@ -418,6 +426,7 @@
                             </excludes>
                             <dependenciesToScan>
                                 <dependency>org.apache.paimon:paimon-flink-common</dependency>
+                                <dependency>org.apache.paimon:paimon-core:test-jar:tests</dependency>
                             </dependenciesToScan>
                             <systemPropertyVariables>
                                 <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>

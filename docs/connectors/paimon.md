@@ -2,14 +2,16 @@
 
 **Status:** experimental. The optional `streamfusion-paimon` module accelerates streaming
 `SELECT` reads and `INSERT INTO` jobs on Paimon **append-only tables** and **primary-key tables with fixed,
-dynamic, or postpone buckets** on the published Paimon `2.0.0` Flink 2.2 connector.
+dynamic, or postpone buckets** on published Paimon `2.1.0` for Flink 2.2 and `2.0.0` for Flink 1.18.
 The separate [Paimon 1.0.0 adapter](#paimon-100-on-flink-118) targets Flink 1.18.
 Paimon keeps every table-level responsibility:
 schema and catalog, bucket assignment rules, sequence numbering rules, file rolling, statistics,
-manifests, snapshots, commits, and compaction. StreamFusion replaces the per-row shuffle in front
+manifests, snapshots, commits, and compaction planning. StreamFusion replaces the per-row shuffle in front
 of the writers, append buffering and spilling, the Parquet/ORC encoding of each data file, and, for
 primary-key tables, the sort and merge that turns a bucket's changelog into a level-0 file. Postpone
 staging retains every accepted change for Paimon's separate compactor.
+For admitted [compactions](#compaction), the released Rust reader and native format writers also
+process the selected data files through the shared maintenance adapter.
 
 Both file formats share the same Java lifecycle, native routing and merge paths. ORC's physical
 encoding options and UTC timestamp restrictions are detailed on the [ORC page](orc.md).
@@ -118,11 +120,14 @@ non-overlapping, and a file must have at least as many sequence positions as phy
 This conservative metadata gate avoids the released readers' different equal-sequence traversal
 without implementing a custom tie breaker. It can decline files whose actual keys never tie.
 
-Basic `partial-update` selects the latest non-null cell for each column. It supports `ignore-delete`
-and `partial-update.remove-record-on-delete`, including stored historical retracts and later
-reinsertion for the remove-record policy. Partial updates with `ignore-delete=true` retain Java
-when any file has stored or unknown retracts: released Java can initialize cells from the first
-retract, whereas the Rust reader skips it. Ordinary add-only partial-update files remain native. Without either delete policy, files must have a known zero delete count. Multi-record
+Basic `partial-update` selects the latest non-null cell for each column. Partial updates with
+`ignore-delete=true` retain Java when any file has stored or unknown retracts: released Java can
+initialize cells from the first retract, whereas the Rust reader skips it. The route oracle keeps
+Paimon 2.0's verified native delete-removal reads on Flink 1.18. On Paimon 2.1,
+`partial-update.remove-record-on-delete=true` also retains Java for those files because the
+released public readers differ on retained delete state. The 1.0 adapter keeps its previously
+verified remove-record behavior. Ordinary add-only partial-update files remain native.
+Without either delete policy, files must have a known zero delete count. Multi-record
 partial reductions emit inserts or remove the key; singleton groups preserve their original row
 kind, matching Java's reducer wrapper. Nested values are selected as whole cells, preserving their
 internal nulls. The upstream reader returns Arrow batches without Java payload rows; its internal allocation
@@ -142,7 +147,7 @@ last-negative-second alias, and for non-leading fractional timestamp keys; see t
   types; and specialized split representations.
 - First-row files with nonzero or unknown delete counts when `ignore-delete` is false, and basic
   partial-update files with those counts when neither supported delete policy is enabled; stored/unknown retracts also retain Java for
-  partial updates with `ignore-delete=true`.
+  partial updates with `ignore-delete=true`, or with remove-record-on-delete on Paimon 2.1.
 - Potential sequence ties; ORC schemas containing CHAR because released padding differs from Java.
 - Sections exceeding the smaller of 256 runs and `sort-spill-threshold`, or the encoded row-group admission budget below.
 
@@ -753,6 +758,10 @@ SQL writes and reopened jobs, released Java buffer boundaries, and Arrow ownersh
   `first_non_null_value` (also `first_not_null_value`), and `last_non_null_value` on all supported
   value types, including nested columns. Paimon's default aggregate selection,
   `fields.<column>.ignore-retract`, and `aggregation.remove-record-on-delete` are preserved.
+  Paimon 2.0 on Flink 1.18 keeps checked integer arithmetic. Paimon 2.1 on Flink 2.2
+  uses wrapping integer `sum` and `product` by default and honors each field's
+  `sum.fail-on-overflow` or `product.fail-on-overflow` setting. Paimon 2.1's partial-update delete state
+  survives older or unrelated sequence-group updates until an eligible add replaces it.
 - Specialized `collect`, `merge_map`, `merge_map_with_keytime`, `nested_update`,
   `nested_partial_update`, `hll_sketch`, `theta_sketch`, `rbm32`, and `rbm64` use the released Java
   field aggregators. Rust retains key grouping and ordinary field reductions, and passes each
@@ -997,8 +1006,11 @@ streaming planner; batch range clustering and separate clustering jobs remain st
 
 ### Writer and commit coordinators
 
-Both coordinator options retain Paimon 2.0.0's Java implementations while the data writer consumes
-Arrow batches. No coordinator logic is implemented in Rust.
+Both coordinator options retain the matching released Java implementation while the data writer
+consumes Arrow batches. Flink 2.2 uses Paimon 2.1.0; Flink 1.18 keeps Paimon 2.0.0. Paimon 2.1's
+commit operator overrides a method that is final in Flink 1.18, so upgrading that host would break
+even stock coordinator commits. The compatibility sources call each release's constructors and
+retain its lifecycle. No coordinator logic is implemented in Rust.
 
 `sink.writer-coordinator.enabled = true` selects Paimon's coordinated restore factory for fixed
 and dynamic buckets. The JobManager serves restored files through Paimon's paged requests and
@@ -1008,11 +1020,14 @@ As in stock Paimon, unaware append and postpone writers do not use the writer re
 
 `sink.coordinator-commit.enabled = true` selects Paimon's committing writer coordinator for
 bucket-unaware append tables. Its existing writer lifecycle owns pending committables, checkpoint
-events, watermark and idle status, replay, and the deliberate restart after recovering an
-uncommitted snapshot. The native subclass replaces only record ingestion with bundle ingestion.
+events, watermark and idle status, and replay. Released 2.1 continues after recovering an
+uncommitted snapshot. Flink 1.18 retains Paimon 2.0's deliberate restart after that recovery.
+The native subclass replaces only record ingestion with bundle ingestion.
 Paimon's sink builder removes the downstream global committer and retains its configuration checks:
 streaming checkpointing must be enabled, `write-only = true`, `precommit-compact = false`,
-`sink.savepoint.auto-tag = false`, and at most one checkpoint may run concurrently. This does
+and at most one checkpoint may run concurrently. Savepoint auto-tagging uses Paimon's
+released coordinator tagger when enabled on Flink 2.2; Paimon 2.0 on Flink 1.18 rejects that
+combination as before. This does
 not add bounded end-input commit support beyond the released connector. The option is ignored by
 Paimon's fixed-bucket and primary-key sinks, and StreamFusion preserves that behavior.
 
@@ -1060,9 +1075,123 @@ Each of these declines at planning time with a reason visible in `NativePlanner.
   multithreaded zstd, and any per-column (`parquet.*#column`) or unrecognised writer key.
 - The selected format identifier resolving to Paimon's own factory (see deployment below).
 
-Compaction rewrites (in-job or from a dedicated compaction job) still use Paimon's stock Parquet
-writer. Append buffer spilling retains native encoding as described above. Primary-key buckets
-use their existing native buffers, which flush by size into level-0 files.
+## Compaction
+
+Primary-key compaction shares one rewriter and the same released Rust backend across Paimon 2.1
+on Flink 2.2, Paimon 2.0 on Flink 1.18, and the Paimon 1.0 module. Paimon 2.1 uses its public
+rewriter factory. The older releases use a checked adapter to install that same callback on a
+bucket's stock compaction manager before notification or submission. Running stock tasks are
+left on their original callback; unsupported private API shapes retain the stock provider.
+Java retains file selection, scheduling, output levels, delete retention, writer settings,
+metadata, commit messages, checkpoints and recovery. For admitted rewrites, the released
+paimon-rust 0.4 reader decodes and merges Java's selected sections and the existing native
+Parquet/ORC writer encodes the result. Payloads stay columnar. Only file-boundary metadata keys,
+stored sequence bounds and delete counts are assembled in Java.
+
+In-job maintenance installs the rewriter before bucket creation or restoration, including after
+a table refresh. Dedicated full and minor compaction jobs can adapt the stock worker after building
+the graph and before execution:
+
+```java
+// Build the ordinary Paimon CompactorSourceBuilder / CompactorSinkBuilder graph first.
+NativePaimonMaintenance.accelerate(env);
+env.execute();
+```
+
+The return value counts adapted workers, not successful native rewrites. The adapter preserves
+sources, coordinators, committers, transformation identities, partition filters and parallelism.
+An unadapted SQL `CALL sys.compact` uses the stock implementation.
+
+The scope is primary-key `deduplicate`, `first-row`, basic `partial-update`, and bounded
+`aggregation` tables with `none` or `input` changelog production,
+fixed or existing dynamic buckets, ordinary stored sequence numbers, current-schema Parquet/ORC input,
+and Parquet/ORC output. Both thin and full physical layouts are supported. Native format settings,
+per-level compression and statistics, target file size and asynchronous output retain their
+existing meanings. Compaction rolls across Arrow batches by file size; the write-time
+`target-file-row-num` limit does not apply, matching Java Paimon.
+
+The three additional merge engines use the same released Rust reader and shared Java adapter on
+both Flink 2.2/Paimon 2.1 and Flink 1.18/Paimon 1.0; modern Flink 1.18/Paimon 2.0 uses that code too.
+They require every selected file to report zero retract records. Basic partial updates exclude
+sequence groups and configured field aggregates. Bounded aggregation admits `sum`, `min`, and
+`max` on integer types, plus `first_value`, `first_non_null_value`, `last_value`, and
+`last_non_null_value` on otherwise supported value types. The default last-non-null aggregation
+is included. Partial-update and aggregation with nested values retain Java when reading or writing
+ORC: the measured released reader path does not consistently beat stock on those workloads. Explicit `sum.fail-on-overflow` options retain Java because the released hosts differ
+in their interpretation. Paimon 2.0 always checks sum overflow, so its sum compactions retain Java;
+its min/max and value-picking functions use the shared native implementation. Paimon 1.0 and 2.1
+retain their wrapping sums. No StreamFusion reducer is added. Physical-state tests compare stock
+and native output, stored sequence/kind, bounds and statistics, then commit the output, write more
+data and compact again for both formats and both delete-retention modes.
+First-row rewrites containing L0 files must target the highest configured level. At lower output
+levels, Java can look up an older first row in an unselected higher-level file; that path retains
+the stock rewriter. Rewrites containing only higher-level files use the ordinary merge path.
+First-row remote lookup-file generation also retains Java. Paimon permits first-row with
+`none` or `lookup` changelogs; only `none` is accelerated here.
+
+Append-only compaction uses the same released Rust raw reader, reading Java-selected files in
+order, and Paimon's configured append rolling-writer factory. Paimon retains sequence assignment,
+statistics, file sizing and commit construction. The 1.0 adapter advances the stock sequence counter
+for bundles; newer releases already do so. Fixed-bucket writers share the manager adapter. Unaware
+append jobs and dedicated single-table workers inherit the released worker lifecycle and decorate
+only the task's payload writer. Table refresh still resolves the writer and table through Paimon.
+Multi-table unaware workers, precommit append workers and unadapted SQL procedures currently retain
+stock rewriting; remaining integration and upstream validation are tracked in
+[#592](https://github.com/datafusion-contrib/StreamFusion/issues/592).
+
+A complete primary-key rewrite delegates to the original Java rewriter before opening output for:
+
+- Unsupported merge-engine configurations or changelog producers; user sequence fields, ignored deletes, snapshot
+  sequence ordering, or another sort engine.
+- Retract-containing or unknown-delete-count files for first-row, partial-update or aggregation;
+  partial-update sequence groups/field aggregates; unlisted aggregation functions/types/options;
+  nested ORC values in field-merge engines.
+- Deletion vectors, record expiry, row tracking, data evolution, blob fields, or file indexes.
+- Unsupported key/value types or native format writer settings; another input/default/output format;
+  ORC CHAR or unsafe/unknown timestamp bounds;
+  historical schemas, index/sidecar files or specialized row metadata.
+- Overlapping or ambiguous stored sequence ranges, more than the smaller of 256 and the host
+  sort-spill threshold in one section, or projected row-group decode memory exceeding half of
+  `sort-spill-buffer-size`. The last check sums each sorted run's largest row-group estimate;
+  it is a decode preflight, not a bound on all merge and output allocations.
+
+Metadata-only level upgrades always use Java. Providers for lookup, materialization, blobs or
+scheduled full-changelog maintenance keep their stock shape. The public 2.1 installation also retains stock
+when the Paimon and StreamFusion bridge classes do not share a runtime classloader.
+
+After native processing starts, a failure aborts all unpublished output and propagates; it does
+not retry the rewrite in Java. The stock rolling writer owns output creation and cleanup, and the
+original rewriter is closed once. Task counters `nativeRewriteGroups`, `stockRewriteGroups`,
+`nativeRewriteRows`, `nativeRewriteFiles`, `nativeRewriteBytes` and `nativeRewriteErrors` distinguish
+successful payload work from worker adaptation. Counters are shared across buckets and refreshes.
+Files and bytes count selected inputs; rows count written winners.
+Append buffer spilling and primary-key level-0 buffering retain their existing native paths.
+
+Append rewrites likewise delegate before output for unavailable writer factories/codecs, unsupported
+writer shapes/settings/types, deletion vectors, expiry, row tracking/evolution, indexes/sidecars,
+historical schemas, unsafe ORC input or the projected decode budget. Append does not introduce a
+merge or sort policy. Its budget check covers one file at a time; PK checks the concurrent sorted runs.
+
+The [merge-engine worker comparison](../benchmarks/paimon-merge-compaction-20261105/README.md)
+records all three additional engines on both releases and formats, including the slower nested
+ORC candidate measurements that led to retaining Java for that combination. It includes physical
+output fingerprints, stock/previous/native trials and ranges; it does not establish job-latency gains. The additional Paimon 2.0 qualification uses
+BIGINT min aggregation and retains both its initial measurements and extended warmup results;
+its checked sums remain stock.
+
+The [expanded 1.0 release diagnostic](../benchmarks/paimon-compaction-expanded-20261105/README.md)
+measures Parquet worker gains of 1.27–2.04× and ORC gains of 1.27–1.67× versus stock, with identical
+physical outputs. The ORC wide PK workload needs a larger configured budget for every engine;
+the smaller-budget case correctly retains Java. These are worker timings, not job-latency claims.
+
+The Flink 2.2/Paimon 2.1 Parquet [release comparison](../optimizations/paimon-compaction.md) covers 400k/2M input changes,
+unique and overlapping keys, nested values, file rolling and mixed levels. File-worker medians
+improved 1.39–1.94× versus stock Paimon; running-job publication-to-compacted-commit medians
+improved 1.13–1.43×. The report retains previous StreamFusion results, ranges and slower cold work.
+These measurements do not establish ORC or older-release compaction performance.
+The [unchanged upstream compaction fixtures](../upstream-flink-suite.md#paimon-compaction-fixtures)
+separately require parity and explicit native/fallback evidence.
+
 
 ## Benchmark
 
@@ -1253,7 +1382,7 @@ The source and changelog diagnostics accept the same environment variable with `
 
 ## Deployment
 
-Install the published `paimon-flink-2.2-2.0.0.jar`, the selected `streamfusion-parquet` or `streamfusion-orc` module, and
+Install the published `paimon-flink-2.2-2.1.0.jar`, the selected `streamfusion-parquet` or `streamfusion-orc` module, and
 `streamfusion-paimon` in Flink's `lib/`. Paimon resolves a file format by taking the **first**
 `FileFormatFactory` on the classpath that claims the identifier, and Flink adds `lib/` JARs in
 sorted name order, so the StreamFusion JAR must sort before `paimon-flink-*`: name it
@@ -1275,8 +1404,8 @@ work beyond the small ports and released-kernel reuse chosen for this implementa
 
 [A Paimon bundle entry for the merge-tree writer](https://github.com/datafusion-contrib/StreamFusion/issues/49)
 would remove the compaction hand-off and the idle-writer rescan.
-Released Paimon 2.0.0 walks a bundle row by row before the format writer; a Paimon release that
-passes bundles through takes the same writer's direct path with no change here
+Released Paimon 2.1.0 passes bundles through its rolling and single-file writers to the
+format writer's direct entry. The separate 1.0 adapter retains its host's rowwise bundle walk
 ([#39](https://github.com/datafusion-contrib/StreamFusion/issues/39)). The jar-ordering requirement
 goes away once Paimon's format discovery gains a priority, which
 [#38](https://github.com/datafusion-contrib/StreamFusion/issues/38) proposes upstream. Remaining streaming
@@ -1301,21 +1430,26 @@ environment from that configuration.
 
 The `paimon1` profile builds a separate `streamfusion-paimon1-flink1.18` adapter
 against the released Paimon **1.0.0** connector. Build it together with `flink-1.18`;
-the build rejects other Flink lines. Install this adapter instead of the Paimon 2.0
+the build rejects other Flink lines. Install this adapter instead of the modern Paimon
 adapter, alongside `paimon-flink-1.18-1.0.0.jar` and the selected StreamFusion
 Parquet/ORC modules. Keep the same `01-streamfusion-paimon.jar` classpath ordering.
 The two adapters must not be installed together.
 
 The adapter shares the released paimon-rust source reader, Java FileIO bridge, native writer
-codecs and Arrow batch routing with the 2.0 integration. Its build stages shared Java sources and overlays the classes whose
-released APIs changed. The artifacts deliberately use the same package names: choose
+codecs, key-value file layout, batch/rolling writer and Arrow routing with the modern integration.
+Released API adapters translate statistics extraction, rolling-writer construction and file metadata;
+the payload, bounds and cleanup algorithms are shared. Its build stages shared Java sources and overlays the classes whose
+released APIs changed. From the Flink 1.18 compatibility directory it copies only the shared
+source-reader adapter; modern writer and coordinator compatibility classes stay out of the 1.0
+artifact. The artifacts deliberately use the same package names: choose
 one at deployment rather than mixing incompatible Paimon APIs in one classloader. Java uses the 1.0 append topology, writer memory pools, file
 metadata, hash indexes, commit messages, and checkpoint lifecycle. Streaming
 splits containing before-files retain Java's reverse-row-kind reader. Postpone
 buckets and newer coordinator/partition-routing modes do not exist in this release.
 External log systems retain the stock source and sink.
 Numeric aggregation preserves 1.0's wrapping integer arithmetic and empty-accumulator
-product retractions; the 2.0 adapter keeps its checked arithmetic. ORC timestamp
+product retractions; Paimon 2.0 on Flink 1.18 keeps checked integer arithmetic, while the
+2.1/Flink 2.2 adapter follows that release's per-field overflow settings. ORC timestamp
 writes reproduce 1.0's historical `java.sql.Timestamp` calendar conversion for both
 TIMESTAMP and TIMESTAMP_LTZ, while retaining timestamp-instant physical storage for LTZ.
 Field defaults retain the stock source because Paimon 1.0 applies them on reads,

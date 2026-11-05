@@ -149,6 +149,7 @@ nav:
       - Columnar flow, transposes at edges: optimizations/columnar-flow-transposes-at-edges.md
       - Native columnar exchange: optimizations/native-columnar-exchange.md
       - Paimon append spill: optimizations/paimon-append-spill.md
+      - Columnar Paimon compaction: optimizations/paimon-compaction.md
       - Arrow columns into ORC vectors: optimizations/arrow-orc-vectors.md
       - Zero-copy local shuffle: optimizations/zero-copy-local-shuffle.md
       - Columnar changelog operators: optimizations/columnar-changelog-operators.md

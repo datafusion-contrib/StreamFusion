@@ -16,7 +16,6 @@ import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.SeekableInputStream;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.schema.Schema;
-import org.apache.paimon.schema.SchemaManager;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.table.source.DataSplit;
@@ -176,7 +175,7 @@ class PaimonRustReaderTest {
 
   private FileStoreTable table(TrackingIO io) throws Exception {
     var root = new Path(directory.toUri());
-    new SchemaManager(io, root)
+    PaimonTestCompat.schemaManager(io, root)
         .createTable(
             Schema.newBuilder()
                 .column("id", DataTypes.INT())

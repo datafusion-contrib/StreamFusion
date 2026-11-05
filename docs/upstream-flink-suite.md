@@ -191,8 +191,8 @@ must execute in a full run; a missing or skipped case fails the summary. This po
 does not include the separate `FlinkSqlIntTest`, which requires remote Databricks and Unity
 Catalog credentials.
 
-The runner clones Flink `release-2.2.1`, Kafka connector `v5.0.0`, and Paimon `2.0.0` (its
-`release-2.0.0-rc10` tag), plus Delta `v4.4.0` for its SQL tests, under `.flink-suite/2.2`, verifies that each checkout is clean, builds and
+The runner clones Flink `release-2.2.1`, Kafka connector `v5.0.0`, and Paimon `2.1.0` (its
+`release-2.1.0` tag, commit `3a5ffe7870697e2c2605e63413fb5ac5800aae7e`), plus Delta `v4.4.0` for its SQL tests, under `.flink-suite/2.2`, verifies that each checkout is clean, builds and
 installs StreamFusion and its supported format/connector modules, and builds the required upstream
 reactors with tests skipped. The suite runs on JDK 17 and selects Flink 2.2's released
 `java11-target` build profile so its isolated dependencies meet StreamFusion's Java 11
@@ -207,7 +207,8 @@ starts a fresh fork per class; the 2.2 planner reuses its fork, as configured up
 keeps concurrently created MiniClusters from exhausting a developer machine or CI runner.
 
 The experimental 1.18 runner selects Flink `release-1.18.1`, Kafka connector `v3.2.0-rc1`, and
-Paimon's `flink1` profile. The 1.18 Paimon suite runs its complete version-specific module plus the explicitly listed shared compatibility regressions described below. Shared fixtures compile against their declared 1.20.1 API; both test sets execute with released 1.18.1 dependencies and the matching StreamFusion payload. Kafka 3.2 has no Maven wrapper, so both its compile and test invocations use the pinned Flink wrapper (Maven 3.8.6) with the Kafka POM passed explicitly. This keeps released sources untouched and avoids the host's Maven version: Maven 3.10 rejects duplicate dependency-plugin declarations in the released Python module while constructing the reactor, before the selected Java tests can run. Kafka releases that provide their own wrapper continue to use it. Kafka's final candidate tag (`d12f73c8`) matches the
+Paimon `release-2.0.0` with its `flink1` profile. Paimon 2.1's coordinator operator is binary
+incompatible with Flink 1.18, so this host keeps the working released 2.0 connector. The 1.18 Paimon suite runs its complete version-specific module plus the explicitly listed shared compatibility regressions described below. Shared fixtures compile against their declared 1.20.1 API; both test sets execute with released 1.18.1 dependencies and the matching StreamFusion payload. Kafka 3.2 has no Maven wrapper, so both its compile and test invocations use the pinned Flink wrapper (Maven 3.8.6) with the Kafka POM passed explicitly. This keeps released sources untouched and avoids the host's Maven version: Maven 3.10 rejects duplicate dependency-plugin declarations in the released Python module while constructing the reactor, before the selected Java tests can run. Kafka releases that provide their own wrapper continue to use it. Kafka's final candidate tag (`d12f73c8`) matches the
 [official 3.2.0 source archive](https://archive.apache.org/dist/flink/flink-connector-kafka-3.2.0/);
 that release has no `v3.2.0` tag. The Kafka suite compiles and runs directly from the
 Java connector module POM, selecting its artifact ID for test execution. This keeps
@@ -765,6 +766,82 @@ the upstream cleanup failure, disable failure injection, or retry random outcome
 All invocations' reports contribute to the result and native execution checks; any Maven
 failure remains blocking, including a process timeout without a finished JUnit report.
 Explicit `FLINK_SUITE_TEST` selectors keep their requested grouping for diagnosis.
+
+## Paimon compaction fixtures
+
+The modern maintenance corpus includes **152 unchanged compaction invocations** from the canonical released
+Paimon **2.1.0** test JARs on Flink **2.2.1**. This is a separate maintenance corpus, covering core
+selection/rewriter contracts, writer state recovery, dedicated workers, actions, refresh and SQL
+procedures. The [case manifest](https://github.com/datafusion-contrib/StreamFusion/blob/main/dev/flink-suite/paimon-compaction-cases.csv)
+pins every method and parameter invocation and states its expected native, stock-policy or
+selection/upgrade behavior. No upstream test body, assertion, option or scheduling decision is changed.
+
+```bash
+python3 bin/paimon-compaction-suite.py
+# With matching libraries already built:
+python3 bin/paimon-compaction-suite.py --skip-native-build
+# Use release libraries for a local diagnostic:
+python3 bin/paimon-compaction-suite.py --release --skip-native-build
+```
+
+The runner verifies these SHA-256 hashes before executing the published fixtures. They correspond
+to canonical `release-2.1.0`, commit `3a5ffe7870697e2c2605e63413fb5ac5800aae7e`:
+
+| Test JAR | SHA-256 |
+| --- | --- |
+| `paimon-core-2.1.0-tests.jar` | `3f9ef9505f84c837bd015fb6a494d0309bca1f35716d66e48f360b8e82b1e076` |
+| `paimon-flink-common-2.1.0-tests.jar` | `b7e83358fa1df5ce7c7a215f979fa91ecf8b904fd12a70689bb5d503babfe3b1` |
+
+Both stock and native runs must report the exact 152 invocations with zero failures, errors or
+skips. Reports under `streamfusion-paimon/target/upstream-compaction/{stock,native}` retain JUnit
+XML, per-invocation JSON and a result CSV. Native records include selected input files/bytes,
+output rows, output level, delete retention and explicit fallback reasons. Required payload cases
+must complete real native groups with positive input files and bytes; selection-only and metadata
+upgrade cases do not count as native coverage. The unchanged randomized restore fixture may
+interrupt an attempt; successful selected rewrites must remain native, and other failures fail
+validation. Late callbacks retain their originating invocation.
+
+The expanded 2.1 local qualification passes all 152 assertions in both modes with zero skips
+and 242 native rewrite groups. Append action invocations now require native work rather than
+retaining their former PK-only selection expectation. The append schema-change invocation
+requires both native current-schema rewriting and the explicit `schema-evolution` fallback;
+either missing path or a different fallback reason fails its contract. The 1.0 corpus passes
+all 72 applicable invocations in each mode with zero skips and 384 native groups. The combined
+[448-invocation result inventory](benchmarks/paimon-merge-compaction-20261105/upstream-results.csv)
+retains each case, expected route, native/fallback counts and input formats. The shared focused
+regression inventory has 178 parameter invocations across the three released hosts, including
+positive first-row provider installation before unstarted lookup work.
+
+The test agent installs the production decorator through the public core writer factory and
+invokes the production graph adapter before a dedicated graph executes. Test-only reflection
+constructs a resolved table view from the pinned core fixture's existing FileIO, schema and
+catalog environment. Fixtures that install their own factory retain it, preserving their exact
+stock-delegate and ownership assertions. Unadapted `CompactProcedureITCase` calls remain stock
+and bypass both adapters. The stock mode resolves canonical format factories and retains Java
+planning; benchmark `previous` mode retains the prior StreamFusion format shim and stock compaction.
+These modes exist only in the test agent, with no production performance switch.
+
+The append additions cover the released append coordinator/task, table compaction, fixed-bucket
+manager/write and dedicated single-table worker fixtures. The upstream-disabled
+`BucketedAppendCompactManagerTest.testPick` is recorded explicitly in the release metadata;
+its enabled sibling methods remain in the corpus. Release metadata pins fixture hashes and host
+profiles. The additional engine invocations retain upstream forced partial-update and aggregate compactions,
+unsupported numeric-type delegation and first-row history/upgrade behavior. Paimon 1.0/Flink 1.18 runs **72 applicable unchanged invocations** with
+`--paimon-version 1.0.0`, including its renamed aggregate fixture and the matching released
+core/worker/action tests. A broader unchanged stock probe attempted 79 maintenance invocations:
+69 passed and 10 could not run on this host. Seven common SQL procedure cases require named
+arguments unsupported by Flink 1.18, and three common append-worker cases call a newer host
+constructor absent on 1.18. Each is recorded individually, with its stock failure reason, in the
+release metadata; these are not counted as passing or skipped acceptance cases. The three
+engine integration cases bring the applicable inventory to 72. Shared host-specific worker
+harnesses still require native append work on 1.0, including shutdown/refresh coverage. The shared `PaimonCompactionMergeEngineTest` additionally verifies first-row, basic
+partial-update and bounded aggregation physical output against the stock rewriter on both
+modern and legacy releases; it supplements the unchanged upstream fixtures.
+
+The Flink 2.2/JDK 17 Paimon Parquet CI job runs both modes and retains the reports. This validation
+is independent of the general upstream SQL corpus and of release performance measurements. CI
+resolves the maintenance profile and agent dependencies with bounded download retries before
+running either mode; test failures are never retried by that preparation step.
 
 ## Shared builds and runtime shards
 

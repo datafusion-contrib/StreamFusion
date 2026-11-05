@@ -87,7 +87,7 @@ class PaimonSourceReadTest {
       }
       commit.commit(1, writer.prepareCommit(true, 1));
     }
-    new org.apache.paimon.schema.SchemaManager(table.fileIO(), table.location())
+    PaimonTestCompat.schemaManager(table.fileIO(), table.location())
         .commitChanges(
             List.of(org.apache.paimon.schema.SchemaChange.renameColumn("name", "renamed")));
     table = org.apache.paimon.table.FileStoreTableFactory.create(table.fileIO(), table.location());

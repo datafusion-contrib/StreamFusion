@@ -28,6 +28,7 @@ public final class NativePaimonBucketSink extends FlinkWriteSink<BucketedArrowBa
   @Override
   protected OneInputStreamOperatorFactory<BucketedArrowBatch, Committable>
       createWriteOperatorFactory(StoreSinkWrite.Provider writeProvider, String commitUser) {
+    writeProvider = PaimonCompactionProvider.wrap(table, writeProvider, true, false, false);
     StoreSinkWrite.Provider provider =
         primaryKey
             ? keyValueWriteProvider(writeProvider)

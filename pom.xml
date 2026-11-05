@@ -74,7 +74,8 @@
         <protobuf.version>4.32.1</protobuf.version>
         <iceberg.version>1.12.0</iceberg.version>
         <delta.version>4.4.0</delta.version>
-        <paimon.version>2.0.0</paimon.version>
+        <paimon.version>2.1.0</paimon.version>
+        <paimon.flink.test.module>paimon-flink2-common</paimon.flink.test.module>
         <!-- Native build: debug by default for a fast correctness loop. The `bench` profile flips
              both of these to a release build, which benchmarks must use (debug Rust is far slower). -->
         <native.profile>debug</native.profile>
@@ -667,6 +668,9 @@
             <properties>
                 <flink.version>1.18.1</flink.version>
                 <flink.line>1.18</flink.line>
+                <!-- Paimon 2.1 coordinator overrides a final Flink 1.18 method. -->
+                <paimon.version>2.0.0</paimon.version>
+                <paimon.flink.test.module>paimon-flink1-common</paimon.flink.test.module>
                 <streamfusion.artifact.suffix>-flink1.18</streamfusion.artifact.suffix>
                 <flink.dependency.range>[1.18.0,1.19.0)</flink.dependency.range>
                 <flink.connector.kafka.version>3.2.0-1.18</flink.connector.kafka.version>

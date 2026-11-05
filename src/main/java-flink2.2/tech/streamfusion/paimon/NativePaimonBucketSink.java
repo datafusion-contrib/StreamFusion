@@ -1,5 +1,6 @@
 package tech.streamfusion.paimon;
 
+import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperatorFactory;
 import org.apache.paimon.flink.FlinkConnectorOptions;
 import org.apache.paimon.flink.sink.Committable;
@@ -24,6 +25,14 @@ public final class NativePaimonBucketSink extends FlinkWriteSink<BucketedArrowBa
   public NativePaimonBucketSink(FileStoreTable table, boolean primaryKey) {
     super(table, null);
     this.primaryKey = primaryKey;
+  }
+
+  @Override
+  protected StoreSinkWrite.Provider createWriteProvider(
+      CheckpointConfig checkpoints, boolean streaming, boolean materializer) {
+    var stock = super.createWriteProvider(checkpoints, streaming, materializer);
+    return PaimonCompactionProvider.wrap(
+        table, stock, streaming, ignorePreviousFiles(), materializer);
   }
 
   @Override

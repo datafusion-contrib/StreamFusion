@@ -37,14 +37,12 @@ import org.apache.paimon.data.GenericRow;
 import org.apache.paimon.flink.sink.Committable;
 import org.apache.paimon.flink.sink.CommittableTypeInfo;
 import org.apache.paimon.flink.sink.CoordinatorCommittingRowDataStoreWriteOperator;
-import org.apache.paimon.flink.sink.StoreCommitter;
 import org.apache.paimon.flink.sink.StoreSinkWrite;
 import org.apache.paimon.flink.sink.coordinator.CommittingWriteOperatorCoordinator;
 import org.apache.paimon.flink.sink.coordinator.RestoredCommittableEvent;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.schema.Schema;
-import org.apache.paimon.schema.SchemaManager;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.types.DataTypes;
@@ -114,7 +112,9 @@ class PaimonCoordinatorCommitRecoveryTest {
       events.clear();
       assertFalse(context.isJobFailed(), String.valueOf(context.getJobFailureReason()));
     }
-    for (int attempt = 0; attempt < (committedBeforeFailure ? 1 : 2); attempt++) {
+    for (int attempt = 0;
+        attempt < (committedBeforeFailure || PaimonTestCompat.paimon21() ? 1 : 2);
+        attempt++) {
       MockOperatorCoordinatorContext restoredContext =
           new MockOperatorCoordinatorContext(new OperatorID(), 1);
       try (var coordinator = coordinator(table, restoredContext);
@@ -132,8 +132,7 @@ class PaimonCoordinatorCommitRecoveryTest {
         assertInstanceOf(RestoredCommittableEvent.class, events.get(0));
         deliver(coordinator, events);
         assertEquals(2, PaimonTestTables.readRows(table, table.rowType()).size());
-        if (!committedBeforeFailure && attempt == 0) {
-          // Paimon deliberately restarts once after recovering a previously uncommitted snapshot.
+        if (!committedBeforeFailure && !PaimonTestCompat.paimon21() && attempt == 0) {
           assertTrue(restoredContext.isJobFailed());
           assertTrue(
               restoredContext
@@ -163,16 +162,7 @@ class PaimonCoordinatorCommitRecoveryTest {
 
   private static CommittingWriteOperatorCoordinator coordinator(
       FileStoreTable table, MockOperatorCoordinatorContext context) {
-    return new CommittingWriteOperatorCoordinator(
-        context,
-        commitContext ->
-            new StoreCommitter(
-                table,
-                table.newCommit(commitContext.commitUser()).ignoreEmptyCommit(false),
-                commitContext),
-        true,
-        COMMIT_USER,
-        true);
+    return PaimonTestCompat.coordinator(table, context, COMMIT_USER);
   }
 
   private static void deliver(
@@ -220,7 +210,7 @@ class PaimonCoordinatorCommitRecoveryTest {
 
   private static FileStoreTable createTable() throws Exception {
     Path path = new Path(Files.createTempDirectory("paimon-coordinator-recovery").toUri());
-    new SchemaManager(LocalFileIO.create(), path)
+    PaimonTestCompat.schemaManager(LocalFileIO.create(), path)
         .createTable(
             Schema.newBuilder()
                 .column("id", DataTypes.INT())
@@ -278,8 +268,7 @@ class PaimonCoordinatorCommitRecoveryTest {
           (nativeWriter
               ? new NativePaimonCoordinatorCommitOperator(
                   parameters, table, provider, COMMIT_USER, gateway)
-              : new CoordinatorCommittingRowDataStoreWriteOperator(
-                  parameters, table, provider, COMMIT_USER, gateway));
+              : PaimonTestCompat.operator(parameters, table, provider, COMMIT_USER, gateway));
     }
 
     @Override

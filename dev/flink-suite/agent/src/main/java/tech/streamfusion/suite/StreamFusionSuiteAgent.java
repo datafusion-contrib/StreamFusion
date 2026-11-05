@@ -1,11 +1,13 @@
 package tech.streamfusion.suite;
 
 import static net.bytebuddy.matcher.ElementMatchers.isAnnotatedWith;
+import static net.bytebuddy.matcher.ElementMatchers.isBridge;
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
 import static net.bytebuddy.matcher.ElementMatchers.nameEndsWith;
 import static net.bytebuddy.matcher.ElementMatchers.nameStartsWith;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 import static net.bytebuddy.matcher.ElementMatchers.namedOneOf;
+import static net.bytebuddy.matcher.ElementMatchers.not;
 import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 import static net.bytebuddy.matcher.ElementMatchers.takesArguments;
 
@@ -242,6 +244,7 @@ public final class StreamFusionSuiteAgent {
             (builder, type, classLoader, module, protectionDomain) ->
                 builder
                     .visit(Advice.to(RecordSubmittedJob.class).on(named("executeAsync")))
+                    .visit(Advice.to(AdaptPaimonCompactionGraph.class).on(named("getStreamGraph")))
                     .visit(
                         Advice.to(InstallNativeRocksDB.class)
                             .on(named("configure").and(takesArguments(2))))
@@ -266,6 +269,43 @@ public final class StreamFusionSuiteAgent {
                 builder.visit(
                     Advice.to(PreferNativePaimonFormat.class)
                         .on(named("discoverFactory").and(takesArguments(2)))))
+        .type(
+            namedOneOf(
+                "org.apache.paimon.KeyValueFileStore", "org.apache.paimon.AppendOnlyFileStore"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(
+                    Advice.to(InstallPaimonCompactionFixture.class)
+                        .on(named("newWrite").and(takesArguments(2)).and(not(isBridge())))))
+        .type(named("org.apache.paimon.operation.AbstractFileStoreWrite"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(
+                    Advice.to(InstallPaimonCompactionBucket.class).on(named("getWriterWrapper"))))
+        .type(
+            namedOneOf(
+                "org.apache.paimon.append.AppendCompactTask",
+                "org.apache.paimon.append.UnawareAppendCompactionTask"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(Advice.to(AdaptPaimonAppendTask.class).on(named("doCompact"))))
+        .type(named("tech.streamfusion.paimon.NativePaimonMaintenance"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(
+                    Advice.to(SelectPaimonMaintenanceBaseline.class).on(named("accelerate"))))
+        .type(named("tech.streamfusion.paimon.PaimonCompactionProvider"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(Advice.to(SelectPaimonCompactionBaseline.class).on(named("wrap"))))
+        .type(named("tech.streamfusion.paimon.NativePaimonCompactRewriter"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(Advice.to(RecordPaimonCompaction.class).on(named("rewrite"))))
+        .type(named("tech.streamfusion.paimon.NativePaimonAppendRewriter"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(Advice.to(RecordPaimonAppendCompaction.class).on(named("rewrite"))))
         .type(
             namedOneOf(
                 "tech.streamfusion.doris.DorisArrowReader",
@@ -402,6 +442,112 @@ public final class StreamFusionSuiteAgent {
         @Advice.Enter Object scope, @Advice.Return Object client, @Advice.Thrown Throwable failure)
         throws Exception {
       SqlInventory.submitted(scope, client, failure);
+    }
+  }
+
+  public static final class InstallPaimonCompactionFixture {
+    @Advice.OnMethodExit
+    static void exit(@Advice.This Object store, @Advice.Return Object write) throws Exception {
+      PaimonCompactionFixtures.install(store, write);
+    }
+  }
+
+  public static final class InstallPaimonCompactionBucket {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.This Object write,
+        @Advice.Argument(0) Object partition,
+        @Advice.Argument(1) int bucket,
+        @Advice.Return Object container)
+        throws Exception {
+      PaimonCompactionFixtures.bucket(write, partition, bucket, container);
+    }
+  }
+
+  public static final class AdaptPaimonAppendTask {
+    @Advice.OnMethodEnter
+    static Object enter(
+        @Advice.Argument(0) Object table,
+        @Advice.Argument(value = 1, readOnly = false, typing = Assigner.Typing.DYNAMIC)
+            Object write)
+        throws Exception {
+      Object adapted = PaimonCompactionFixtures.appendWrite(table, write);
+      if (adapted == write) return null;
+      write = adapted;
+      return adapted;
+    }
+
+    @Advice.OnMethodExit(onThrowable = Throwable.class)
+    static void exit(@Advice.Enter Object adapted, @Advice.Thrown Throwable failure)
+        throws Exception {
+      PaimonCompactionFixtures.closeAppend(adapted, failure);
+    }
+  }
+
+  public static final class RecordPaimonAppendCompaction {
+    @Advice.OnMethodEnter
+    static Object enter(@Advice.This Object rewriter) throws Exception {
+      return PaimonCompactionFixtures.started(rewriter);
+    }
+
+    @Advice.OnMethodExit(onThrowable = Throwable.class)
+    static void exit(
+        @Advice.This Object rewriter,
+        @Advice.Enter Object token,
+        @Advice.Argument(0) Object before,
+        @Advice.Return Object after,
+        @Advice.Thrown Throwable failure)
+        throws Exception {
+      if (token != null)
+        PaimonCompactionFixtures.completedAppend(rewriter, token, before, after, failure);
+    }
+  }
+
+  public static final class AdaptPaimonCompactionGraph {
+    @Advice.OnMethodEnter
+    static void enter(@Advice.This Object env) throws Exception {
+      PaimonCompactionFixtures.adaptEnvironment(env);
+    }
+  }
+
+  public static final class SelectPaimonMaintenanceBaseline {
+    @Advice.OnMethodEnter(skipOn = Advice.OnNonDefaultValue.class)
+    static boolean skip() {
+      String mode = PaimonCompactionFixtures.mode();
+      return mode.equals("stock") || mode.equals("previous");
+    }
+  }
+
+  public static final class SelectPaimonCompactionBaseline {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(1) Object stock,
+        @Advice.Return(readOnly = false, typing = Assigner.Typing.DYNAMIC) Object provider) {
+      if (PaimonCompactionFixtures.mode().equals("stock")
+          || PaimonCompactionFixtures.mode().equals("previous")
+          || (PaimonCompactionFixtures.mode().equals("native")
+              && SqlInventory.activeTestSource().contains("CompactProcedureITCase")))
+        provider = stock;
+    }
+  }
+
+  public static final class RecordPaimonCompaction {
+    @Advice.OnMethodEnter
+    static Object enter(@Advice.This Object rewriter) throws Exception {
+      return PaimonCompactionFixtures.started(rewriter);
+    }
+
+    @Advice.OnMethodExit(onThrowable = Throwable.class)
+    static void exit(
+        @Advice.This Object rewriter,
+        @Advice.Enter Object before,
+        @Advice.Argument(0) int level,
+        @Advice.Argument(1) boolean dropDelete,
+        @Advice.Return Object result,
+        @Advice.Thrown Throwable failure)
+        throws Exception {
+      if (before != null)
+        PaimonCompactionFixtures.completed(rewriter, before, level, dropDelete, result, failure);
     }
   }
 
@@ -542,9 +688,13 @@ public final class StreamFusionSuiteAgent {
     try {
       Object factory =
           Class.forName(
-                  identifier.equals("orc")
-                      ? "tech.streamfusion.paimon.NativePaimonOrcFormatFactory"
-                      : NATIVE_PAIMON_FORMAT_FACTORY,
+                  PaimonCompactionFixtures.mode().equals("stock")
+                      ? (identifier.equals("orc")
+                          ? "org.apache.paimon.format.orc.OrcFileFormatFactory"
+                          : "org.apache.paimon.format.parquet.ParquetFileFormatFactory")
+                      : identifier.equals("orc")
+                          ? "tech.streamfusion.paimon.NativePaimonOrcFormatFactory"
+                          : NATIVE_PAIMON_FORMAT_FACTORY,
                   true,
                   classLoader)
               .getConstructor()
@@ -553,7 +703,9 @@ public final class StreamFusionSuiteAgent {
         System.err.println(
             "StreamFusion upstream Paimon suite resolved "
                 + identifier
-                + " to the native format factory");
+                + " to the "
+                + (PaimonCompactionFixtures.mode().equals("stock") ? "stock" : "native")
+                + " format factory");
       }
       return factory;
     } catch (ClassNotFoundException e) {
@@ -668,6 +820,7 @@ public final class StreamFusionSuiteAgent {
     }
 
     public static boolean requiresUnmodifiedFlinkPlan() {
+      if (PaimonCompactionFixtures.mode().equals("stock")) return true;
       if (Boolean.TRUE.equals(UNMODIFIED_PLAN_SETUP.get())) {
         return true;
       }
