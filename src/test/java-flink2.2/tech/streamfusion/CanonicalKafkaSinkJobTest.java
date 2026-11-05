@@ -93,6 +93,8 @@ class CanonicalKafkaSinkJobTest {
     }
     Path root = directory.resolve("switched");
     Files.createDirectories(root);
+    Files.writeString(root.resolve("brokers"), kafka.getBootstrapServers());
+    Files.writeString(root.resolve("output-topic"), topic);
     if (ordinary) Files.createFile(root.resolve("ordinary-sql"));
     if (mode.equals("checkpoint")) Files.createFile(root.resolve("prefix-native-checkpoint"));
     if (mode.startsWith("rescale")) {
@@ -158,6 +160,32 @@ class CanonicalKafkaSinkJobTest {
       restore = "return";
     }
     if (kafkaInput()) produce(inputTopic, 5, 9);
+    if (mode.equals("fence") || mode.equals("task-failure")) {
+      Files.createFile(
+          root.resolve(
+              mode.equals("fence")
+                  ? "failed-fence-transactions"
+                  : "failed-terminate-task-manager"));
+      runner.run(fixture, !nativeFirst, root, 9, restore, "failed", 3);
+      assertFalse(Files.exists(root.resolve("failed-savepoint")));
+      if (mode.equals("fence")) {
+        assertTrue(Files.exists(root.resolve("failed-rejected-savepoint")));
+        assertTrue(
+            Long.parseLong(Files.readString(root.resolve("failed-failed-committables"))) > 0);
+        assertFalse(Files.readAllLines(root.resolve("failed-fenced-transactions")).isEmpty());
+        assertTrue(
+            Files.readString(root.resolve("failed-inventory.tsv"))
+                .contains(kafkaInput() ? "[0=3, 1=3, 2=3]" : "[9]"),
+            "Fenced savepoint advances source positions despite missing external effects");
+      } else assertTrue(Files.exists(root.resolve("failed-expected-failure")));
+      assertRows(topic, 5);
+      if (!nativeFirst)
+        assertTrue(Long.parseLong(Files.readString(root.resolve("failed-native-rows"))) > 0);
+      else assertTrue(Files.exists(root.resolve("failed-stock-classpath-verified")));
+      if (!nativeFirst && kafkaInput())
+        assertTrue(
+            Long.parseLong(Files.readString(root.resolve("failed-native-source-output"))) > 0);
+    }
     runner.run(fixture, !nativeFirst, root, 9, restore, "middle", 3);
     assertRows(topic, 9);
     if (kafkaInput()) produce(inputTopic, 9, 13);

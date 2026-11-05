@@ -44,3 +44,11 @@ budget was known; the [shared-memory authority](16-task-off-heap-memory-authorit
 that early live balance before publishing capacity. This is lifetime accounting, not another
 snapshot format or a connector-specific state converter. Broader transaction-failure and connector
 variants remain under #569.
+
+Failure qualification retains the same stock-owned protocol. Real TaskManager termination tests
+verify the last valid canonical savepoint against external committed rows before retry. A fenced
+writer is a distinct negative boundary: the released committer can mark a transaction failed
+without failing savepoint completion. Its advanced source positions cannot stand in for successful
+delivery. Tests reject that artifact, retain the original prefix and retry earlier state only
+after proving there were no new committed effects. No state converter or permissive restore mode
+can repair competing ownership. See the [Kafka failure coverage](../docs/connectors/kafka.md#canonical-task-manager-recovery-partial).

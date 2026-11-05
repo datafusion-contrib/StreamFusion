@@ -133,7 +133,20 @@ public final class CanonicalKafkaSinkJobWorker {
       var result = compiled ? plan.execute() : table.executeSql(query);
       var job = result.getJobClient().orElseThrow();
       long deadline = System.nanoTime() + Duration.ofSeconds(90).toNanos();
-      if (kafkaInput) awaitKafkaOutput(root, limit, job.getJobExecutionResult());
+      if (kafkaInput) {
+        long previousRows = restore.equals("none") ? 0 : savedSourceRows(root, restore);
+        long expectedRows = limit - previousRows;
+        while ((nativeRun ? Reporter.rows() : Reporter.stockSourceOutput()) < expectedRows) {
+          if (job.getJobExecutionResult().isDone()) {
+            job.getJobExecutionResult().get();
+            throw new AssertionError("Kafka job ended before processing its new input");
+          }
+          if (System.nanoTime() > deadline)
+            throw new AssertionError("Current attempt did not process its Kafka input");
+          Thread.sleep(10);
+        }
+        awaitKafkaOutput(root, limit, job.getJobExecutionResult());
+      }
       while (!kafkaInput && !Files.exists(ready)) {
         if (job.getJobExecutionResult().isDone()) {
           job.getJobExecutionResult().get();
@@ -172,6 +185,51 @@ public final class CanonicalKafkaSinkJobWorker {
                           + vertex.getMaxParallelism())
               .collect(java.util.stream.Collectors.toList()));
 
+      if (Files.exists(root.resolve(stage + "-fence-transactions"))) {
+        fenceTransactions(root, stage);
+        String rejected =
+            job.stopWithSavepoint(
+                    false,
+                    root.resolve("fenced-savepoints").toUri().toString(),
+                    SavepointFormatType.CANONICAL)
+                .get(90, TimeUnit.SECONDS);
+        job.getJobExecutionResult().get(30, TimeUnit.SECONDS);
+        if (Reporter.failedCommittables() == 0)
+          throw new AssertionError("Fenced transaction was not reported by the stock committer");
+        Files.writeString(root.resolve(stage + "-rejected-savepoint"), rejected);
+        Files.writeString(
+            root.resolve(stage + "-failed-committables"),
+            Long.toString(Reporter.failedCommittables()));
+        saveInventory(root, stage, rejected);
+        Files.writeString(root.resolve(stage + "-native-rows"), Long.toString(Reporter.rows()));
+        Files.writeString(
+            root.resolve(stage + "-native-source-output"), Long.toString(Reporter.sourceOutput()));
+        return;
+      }
+
+      if (Files.exists(root.resolve(stage + "-terminate-task-manager"))) {
+        int emitted = limit;
+        if (nativeRun && !kafkaInput) {
+          long previousRows = restore.equals("none") ? 0 : savedSourceRows(root, restore);
+          emitted -= (limit - previousRows) % Integer.parseInt(args[5]);
+        }
+        awaitKafkaOutput(root, emitted, job.getJobExecutionResult());
+        cluster.terminateTaskManager(0).get(30, TimeUnit.SECONDS);
+        try {
+          job.getJobExecutionResult().get(60, TimeUnit.SECONDS);
+          throw new AssertionError("Job survived loss of its only task manager without restart");
+        } catch (java.util.concurrent.ExecutionException failed) {
+          Files.writeString(root.resolve(stage + "-expected-failure"), stackTrace(failed));
+        }
+        if (job.getJobStatus().get(30, TimeUnit.SECONDS)
+            != org.apache.flink.api.common.JobStatus.FAILED)
+          throw new AssertionError("Lost task manager did not fail the job");
+        Files.writeString(root.resolve(stage + "-native-rows"), Long.toString(Reporter.rows()));
+        Files.writeString(
+            root.resolve(stage + "-native-source-output"), Long.toString(Reporter.sourceOutput()));
+        return;
+      }
+
       String saved;
       if (checkpoint) {
         saved = cluster.triggerCheckpoint(job.getJobID()).get(90, TimeUnit.SECONDS);
@@ -200,6 +258,62 @@ public final class CanonicalKafkaSinkJobWorker {
     } finally {
       Thread.currentThread().setContextClassLoader(previous);
     }
+  }
+
+  private static String stackTrace(Throwable failure) {
+    var text = new java.io.StringWriter();
+    failure.printStackTrace(new java.io.PrintWriter(text));
+    return text.toString();
+  }
+
+  private static long savedSourceRows(Path root, String restore) throws Exception {
+    var source =
+        Files.readAllLines(root.resolve(restore + "-inventory.tsv")).stream()
+            .map(line -> line.split("\\t", -1))
+            .filter(cells -> cells[1].contains("SourceReaderState"))
+            .findFirst()
+            .orElseThrow();
+    String offsets = source[2].substring(1, source[2].length() - 1);
+    long total = 0;
+    for (String offset : offsets.split(",")) {
+      String value = offset.trim();
+      total += Long.parseLong(value.substring(value.indexOf('=') + 1));
+    }
+    return total;
+  }
+
+  private static void fenceTransactions(Path root, String stage) throws Exception {
+    var properties = new Properties();
+    properties.setProperty("bootstrap.servers", Files.readString(root.resolve("brokers")));
+    String prefix = Files.readString(root.resolve("output-topic"));
+    var transactions = new ArrayList<String>();
+    try (var admin = org.apache.kafka.clients.admin.Admin.create(properties)) {
+      long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+      while (transactions.isEmpty()) {
+        for (var transaction : admin.listTransactions().all().get(30, TimeUnit.SECONDS))
+          if (transaction.transactionalId().startsWith(prefix + "-")
+              && transaction.state() == org.apache.kafka.clients.admin.TransactionState.ONGOING)
+            transactions.add(transaction.transactionalId());
+        if (System.nanoTime() > deadline)
+          throw new AssertionError("No active Kafka transaction to fence");
+        if (transactions.isEmpty()) Thread.sleep(10);
+      }
+    }
+    properties.setProperty(
+        "key.serializer",
+        org.apache.kafka.common.serialization.ByteArraySerializer.class.getName());
+    properties.setProperty(
+        "value.serializer",
+        org.apache.kafka.common.serialization.ByteArraySerializer.class.getName());
+    properties.setProperty("transaction.timeout.ms", "60000");
+    for (String transaction : transactions) {
+      properties.setProperty("transactional.id", transaction);
+      try (var fencer =
+          new org.apache.kafka.clients.producer.KafkaProducer<byte[], byte[]>(properties)) {
+        fencer.initTransactions();
+      }
+    }
+    Files.write(root.resolve(stage + "-fenced-transactions"), transactions);
   }
 
   private static void awaitKafkaOutput(
@@ -365,6 +479,8 @@ public final class CanonicalKafkaSinkJobWorker {
   public static final class Reporter implements org.apache.flink.metrics.reporter.MetricReporter {
     static final Map<String, Counter> counters = new ConcurrentHashMap<>();
     static final Map<String, Counter> sources = new ConcurrentHashMap<>();
+    static final Map<String, Counter> stockSources = new ConcurrentHashMap<>();
+    static final Map<String, Counter> failed = new ConcurrentHashMap<>();
 
     public void open(org.apache.flink.metrics.MetricConfig config) {}
 
@@ -376,10 +492,17 @@ public final class CanonicalKafkaSinkJobWorker {
         org.apache.flink.metrics.MetricGroup group) {
       if (name.equals("nativeKafkaSerializationRows") && metric instanceof Counter)
         counters.put(group.getMetricIdentifier(name), (Counter) metric);
+      if (name.equals("failedCommittables") && metric instanceof Counter)
+        failed.put(group.getMetricIdentifier(name), (Counter) metric);
       if (name.equals("numRecordsOut")
           && group.getAllVariables().getOrDefault("<operator_name>", "").contains("NativeSource")
           && metric instanceof Counter)
         sources.put(group.getMetricIdentifier(name), (Counter) metric);
+      if (name.equals("numRecordsOut")
+          && metric instanceof Counter
+          && group.getAllVariables().getOrDefault("<operator_name>", "").contains("Source:")
+          && !group.getAllVariables().getOrDefault("<operator_name>", "").contains("NativeSource"))
+        stockSources.put(group.getMetricIdentifier(name), (Counter) metric);
     }
 
     public void notifyOfRemovedMetric(
@@ -393,6 +516,14 @@ public final class CanonicalKafkaSinkJobWorker {
 
     static long sourceOutput() {
       return sources.values().stream().mapToLong(Counter::getCount).sum();
+    }
+
+    static long stockSourceOutput() {
+      return stockSources.values().stream().mapToLong(Counter::getCount).sum();
+    }
+
+    static long failedCommittables() {
+      return failed.values().stream().mapToLong(Counter::getCount).sum();
     }
   }
 }

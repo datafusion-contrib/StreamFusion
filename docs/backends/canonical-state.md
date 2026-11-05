@@ -1451,3 +1451,12 @@ released split/coordinator state and transaction ownership alongside exact exter
 records. The source remains singleton; the [connector scope](../connectors/kafka.md#canonical-native-source-and-sink-pipelines-partial)
 keeps wider source redistribution, failure, schema and version guarantees separate. The full
 fifteen-family and ten-criterion acceptance matrix remains unfinished in #569.
+
+The separate Kafka failure lane verifies recovery from the last valid canonical savepoint after
+terminating the only TaskManager before the next savepoint. Sixteen custom-source/fully-native
+pipeline scenarios preserve exact external committed effects across retry and another engine
+switch. Conflicting transaction owners are checked separately: the stock committer can report
+failed commits while savepoint creation succeeds, so those artifacts receive no handoff credit.
+See [Kafka recovery and ownership scope](../connectors/kafka.md#canonical-task-manager-recovery-partial).
+Normal TaskManager shutdown is distinct from abrupt process death, and broader failure and
+delivery guarantees remain unfinished under #569.

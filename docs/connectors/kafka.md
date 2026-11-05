@@ -235,7 +235,7 @@ Startup adopts those live buffers into the shared budget before publication, pre
 release balance; an insufficient initial cap still fails normally.
 
 Broker/coordinator failures, failures around external commits, further formats/schemas/security,
-upsert/CDC delivery, source partition discovery and both-native source/sink handoffs remain open
+upsert/CDC delivery, source partition discovery and wider both-native source/sink combinations remain open
 under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Canonical interchange
 is qualified only on the released Flink/connector versions stated above. Benchmarking is deferred.
 
@@ -264,3 +264,45 @@ Additional source/reader rescaling combinations, partition discovery, schemas/fo
 upsert/CDC delivery and failures around broker/coordinator/transaction commits need their own
 qualification under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.
+
+## Transaction ownership at handoff
+
+Keep the original transactional prefix across an engine switch, and stop the previous owner before
+starting its replacement. Other running applications must use distinct prefixes. Configure the
+transaction timeout to exceed the maximum checkpoint and restart duration, as required by
+[Flink's Kafka delivery contract](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/connectors/datastream/kafka/#fault-tolerance).
+Canonical state conversion preserves the connector's protocol and cannot repair transactions
+aborted by a competing producer or expired by the broker.
+
+The released Kafka connector reports a fenced commit as a known failed committable. Flink can
+therefore complete a stop/savepoint even though the corresponding records were not committed.
+A successful savepoint pointer alone does not establish delivery under conflicting ownership.
+Do not treat such an artifact as a successful handoff, reset the transactional prefix, or roll
+back to an older savepoint after new effects have already committed.
+
+## Canonical task-manager recovery (partial)
+
+Sixteen real-broker scenarios pass after terminating the only TaskManager before another
+savepoint: eight use the custom row source and eight use native Kafka decoding and encoding.
+Both SQL/compiled submissions, initial engine orders and transaction naming strategies are
+covered at singleton parallelism, with the three nullable BIGINT fields and released versions
+above. The worker waits for actual output at the broker before termination, requires a FAILED
+job and no new savepoint pointer, and checks that only the previous prefix was committed.
+Restoring its last valid canonical savepoint then commits the remaining input exactly once,
+followed by another engine switch and exact external-output checks. The row-source fixture
+retains its transpose boundary; the Kafka pipeline verifies that neither transpose executes.
+
+The separate sixteen-case conflicting-owner lane checks the fencing boundary above. It requires
+actual failed-committable metrics, advanced saved source positions and missing committed effects;
+it rejects that savepoint. Its retry uses the earlier valid savepoint only after an independent
+check proves that no new effects committed. These are negative ownership controls, not a delivery
+guarantee with competing owners. Current-attempt input counters prevent aborted broker records
+from satisfying retry readiness. Native execution, stock classpath exclusion and exact saved
+reader/writer state checks remain mandatory.
+
+TaskManager termination runs normal shutdown code. Abrupt process death, broker/coordinator
+outages, failures during savepoint upload/finalization and additional external-commit boundaries
+require separate qualification. The wider connector/type/version matrix remains open under #569.
+Run `CanonicalKafkaSinkFailureJobTest,CanonicalKafkaPipelineFailureJobTest` for task-manager
+recovery and `CanonicalKafkaSinkFencingJobTest,CanonicalKafkaPipelineFencingJobTest` for the
+ownership controls, using the functional Kafka command above. Benchmarking remains deferred.
