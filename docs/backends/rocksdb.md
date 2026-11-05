@@ -332,7 +332,7 @@ coverage does not qualify user accumulator state or its full restore matrix.
 Captured one-phase mini-batch UDFs retain this same managed RocksDB delegate and released
 serializers. Their transient bundles and optional cached accumulators drain before canonical
 barriers; the [one-phase qualification](../operators/group-by.md#captured-one-phase-udf-mini-batches-partial) includes both stores, backend changes, TTL ages and ordinary recovery. This is separate from
-the native grouped-table codec and from the unfinished two-stage UDF matrix.
+the native grouped-table codec and from the global owner's separately qualified two-stage contract.
 
 
 Captured local/global UDFs use the same released managed backend at the global owner. Local
@@ -340,3 +340,13 @@ partials are transient Arrow events serialized with the original stock local ser
 drain before canonical barriers; they do not use the native grouped-table codec. The
 [two-stage qualification](../operators/group-by.md#captured-localglobal-udf-canonical-handoffs-partial) includes heap/RocksDB, backend changes, original TTL ages, checkpoint returns, local/global UDF
 fault recovery and 56 complete-job handoffs. Wider user/key/type and failure matrices remain open.
+
+
+Captured managed UDF key qualification additionally compares the original canonical key and view
+bytes through heap/RocksDB backend changes for wide decimal, nanosecond timestamp and selected
+composite/nested/container keys. These operators use the released managed backend and key
+serializer, not a new native RocksDB key format. The combined component passes 1,190 focused
+checks and 168 full-job handoffs, including selected heap/RocksDB changes, no-input returns,
+native checkpoint recovery and 1→3→2 key redistribution. Original nested binary-row key payloads
+survive the managed Arrow boundaries. See the [exact key scope and remaining requirements](../operators/group-by.md#captured-managed-udf-key-layouts-partial).
+Benchmarking remains deferred.

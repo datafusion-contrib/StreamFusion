@@ -3734,3 +3734,61 @@ their user accumulator contracts, not arbitrary user serializers or all key/type
 Wider key/type/view/TTL/failure, connector delivery and version combinations remain in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains explicitly deferred.
+
+
+## Captured managed UDF key layouts (partial)
+
+Captured managed UDF owners retain the released key selector, key type and serializer. Their
+admission does not inherit the scalar native-state adapter's DECIMAL(18) / millisecond timestamp
+restriction. The columnar exchange uses the existing recursive stock projection and original
+precision. Independent native state adapters retain their existing admission checks, and these
+key kinds keep the existing accumulator-cache bypass.
+
+Focused qualification covers 36 key layouts: DECIMAL precisions 19..38 at scale 2,
+TIMESTAMP/TIMESTAMP_LTZ precisions 4..9, composite/nested decimal-timestamp keys, a nullable
+wide-decimal array and binary keys. It includes negative epochs, timestamp distinctions within
+one millisecond, NULL parents/elements and zero/non-ASCII binary bytes. Three-stage state controls
+compare every stock canonical key/value byte for accumulators, MapView and ListView entries,
+including backend changes, no-input returns and original TTL ages/expiry. Native projection
+controls compare actual binary keys, stock hashes and owners at 1, 3 and 2 tasks/maxP128.
+
+Ordinary SQL retains the first captured stock execution graph as its identity anchor. Building
+another equivalent graph changes generated UIDs, including expanded source/writer/committer roles.
+Reusing the original graph preserves complete stock identities without manual mapping or changing
+production node counters. The 108 identity cases cover three key types, three aggregate phases,
+three UID policies, SQL/compiled submission and Calc boundaries.
+
+The combined released Flink 2.2.1 component passes all 1,190 checks: 420 planner/identity, 720 state,
+38 projection/routing and twelve partial-codec cases. All nine unchanged released aggregate
+restore programs pass on stock and strict native execution, retaining matching-owner state-import
+and new-input assertions; 199 Java audit controls pass. Earlier component cohorts overlap this
+selection and are not added cumulatively. No native serializer or persisted format is introduced.
+
+All 168 isolated full-job cases pass on the same combined source/library. Eight boundary/structured
+key fixtures each cover immediate, one-phase mini-batch and local/global UDFs: 96 continuation,
+24 no-input re-export, 24 ordinary native-checkpoint handoffs and 24 rescale cases. The selection
+covers SQL/compiled submission, both engine orders and heap/RocksDB with generated UIDs ALWAYS;
+it does not run every Cartesian combination. Rescaling moves 64 keys through 1→3→2/maxP128.
+The jobs retain the actual user accumulator/MapView/ListView, checkpointed custom source and
+coordinator, transactional committer, both transposes, positive native work, clean stock workers,
+a same-cut stock changelog reference and an independent final-state oracle. Intermediate precision
+checks are state/planner/routing tests, not full jobs for every precision or decimal scale.
+
+### Preserve generated nested ROW key bytes
+
+A generated nested binary ROW can reserve variable slots for NULL wide decimals and timestamps.
+Reconstructing its logical fields can shorten a 64-byte all-NULL key to 40 bytes and lose a later
+key deletion after restore. The managed boundary therefore carries the original owned binary
+payload through Arrow entry, exchange and local/global partials. Canonical state still uses the
+original Flink serializers; this payload is transient input representation.
+
+Two focused regressions compare 65 actual stock projections each, including that all-NULL key;
+with eight existing routing controls all ten pass. The corrected structured shard passes all
+42 complete jobs, including the 21 formerly failing nested-row cases, within the 168-case matrix.
+The earlier failed shard and full external changelogs are retained as regression evidence; its
+passing cases are not added to the current counts.
+
+Broader user serializer contracts, key/value schemas, view/phase/TTL/failure combinations,
+connector delivery and cross-version qualification remain in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Every family remains partial.
+Benchmarking remains explicitly deferred.

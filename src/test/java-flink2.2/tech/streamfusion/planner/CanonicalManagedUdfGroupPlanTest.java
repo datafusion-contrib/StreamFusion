@@ -132,6 +132,26 @@ class CanonicalManagedUdfGroupPlanTest {
       boolean mini,
       boolean twoPhase)
       throws Exception {
+    return graph(
+        nativeRun,
+        compiled,
+        append,
+        uid,
+        mini,
+        twoPhase,
+        org.apache.flink.table.types.logical.RowType.of(
+            new org.apache.flink.table.types.logical.BigIntType()));
+  }
+
+  static StreamGraph graph(
+      boolean nativeRun,
+      boolean compiled,
+      boolean append,
+      String uid,
+      boolean mini,
+      boolean twoPhase,
+      org.apache.flink.table.types.logical.RowType keys)
+      throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", Boolean.toString(nativeRun));
     config.setString("parallelism.default", "2");
@@ -159,16 +179,22 @@ class CanonicalManagedUdfGroupPlanTest {
         });
     table.useCatalog("fixture");
     table.executeSql(
-        "CREATE TABLE input_table(k BIGINT,v BIGINT) WITH ('connector'='canonical-fixture',"
+        "CREATE TABLE input_table("
+            + ManagedUdfGroupStockFixture.keyDdl(keys)
+            + ",v BIGINT) WITH ('connector'='canonical-fixture',"
             + "'input'='unused.csv','ready'='unused.ready','insert-only'='"
             + append
             + "')");
     table.useCatalog("default_catalog");
     table.executeSql(
-        "CREATE TABLE output_table(k BIGINT,h BIGINT,n BIGINT) WITH ('connector'='blackhole')");
+        "CREATE TABLE output_table("
+            + ManagedUdfGroupStockFixture.keyDdl(keys)
+            + ",h BIGINT,n BIGINT) WITH ('connector'='blackhole')");
     String sql =
-        "INSERT INTO output_table SELECT k,fixture_history(v),COUNT(*) FROM fixture.db.input_table"
-            + " GROUP BY k";
+        "INSERT INTO output_table SELECT "
+            + ManagedUdfGroupStockFixture.keyColumns(keys)
+            + ",fixture_history(v),COUNT(*) FROM fixture.db.input_table GROUP BY "
+            + ManagedUdfGroupStockFixture.keyColumns(keys);
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var portable = compiled ? table.compilePlanSql(sql) : null;
     String json = portable == null ? "" : portable.asJsonString();

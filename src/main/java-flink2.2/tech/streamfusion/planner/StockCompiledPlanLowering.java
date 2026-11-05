@@ -1764,8 +1764,7 @@ final class StockCompiledPlanLowering {
     if (!Boolean.parseBoolean(
         System.getProperty("streamfusion.experimental.jvmGroupAggregates", "true"))) return stock;
     var transformation = stockTransformations.get(stock.getId());
-    if (!(transformation instanceof OneInputTransformation) || !ordinaryKeyLayout(transformation))
-      return stock;
+    if (!(transformation instanceof OneInputTransformation)) return stock;
     var original = (OneInputTransformation<?, ?>) transformation;
     if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)
         || !(original.getStateKeySelector()
@@ -1812,7 +1811,8 @@ final class StockCompiledPlanLowering {
     int maximum = stockMaximum(original);
     var exchange =
         (NativeColumnarExchangeExecNode)
-            canonicalJoinInput(input, config, inputType, grouping, true);
+            canonicalJoinInput(
+                input, config, inputType, grouping, true, false, rowKeys(inputType, grouping));
     exchange.withStateMaxParallelism(maximum);
     long retention;
     if (miniBatch) retention = ((Number) releasedField(function, "stateRetentionTime")).longValue();
@@ -1921,8 +1921,7 @@ final class StockCompiledPlanLowering {
     var globalTransformation = stockTransformations.get(stock.getId());
     var localTransformation = stockTransformations.get(local.getId());
     if (!(globalTransformation instanceof OneInputTransformation)
-        || !(localTransformation instanceof OneInputTransformation)
-        || !ordinaryKeyLayout(globalTransformation)) return stock;
+        || !(localTransformation instanceof OneInputTransformation)) return stock;
     var original = (OneInputTransformation<?, ?>) globalTransformation;
     var localOriginal = (OneInputTransformation<?, ?>) localTransformation;
     if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)
@@ -2011,7 +2010,14 @@ final class StockCompiledPlanLowering {
                 null,
                 transport)
             .withParallelism(localOriginal.getParallelism());
-    var entry = arrowInput(input, config, inputType, true);
+    ExecNode<?> entry;
+    if (rowKeys(inputType, localGrouping)) {
+      entry =
+          new RowDataToArrowExecNode(
+                  config, InputProperty.DEFAULT, inputType, "RowDataToArrow", true, null)
+              .withBinaryRowKeys();
+      connect(input, entry);
+    } else entry = arrowInput(input, config, inputType, true);
     connect(entry, localOwner);
     var exchange =
         new NativeColumnarExchangeExecNode(
@@ -4057,6 +4063,21 @@ final class StockCompiledPlanLowering {
       int[] keys,
       boolean changelog,
       boolean preserveStringCaches) {
+    return canonicalJoinInput(input, config, type, keys, changelog, preserveStringCaches, false);
+  }
+
+  private static boolean rowKeys(RowType type, int[] keys) {
+    return Arrays.stream(keys).anyMatch(key -> containsRow(type.getTypeAt(key)));
+  }
+
+  private ExecNode<?> canonicalJoinInput(
+      ExecNode<?> input,
+      Configuration config,
+      RowType type,
+      int[] keys,
+      boolean changelog,
+      boolean preserveStringCaches,
+      boolean binaryRowKeys) {
     var source =
         input instanceof StreamExecExchange ? input.getInputEdges().get(0).getSource() : input;
     var exchange =
@@ -4069,7 +4090,7 @@ final class StockCompiledPlanLowering {
             FlinkKeyGroupUtils.stockKeyDescriptor(type, keys),
             keys.length == 0);
     ExecNode<?> columnarInput;
-    if (preserveStringCaches) {
+    if (preserveStringCaches || binaryRowKeys) {
       columnarInput =
           new RowDataToArrowExecNode(
               config,
@@ -4081,7 +4102,8 @@ final class StockCompiledPlanLowering {
               false,
               1024,
               false,
-              true);
+              preserveStringCaches);
+      if (binaryRowKeys) ((RowDataToArrowExecNode) columnarInput).withBinaryRowKeys();
       connect(source, columnarInput);
     } else columnarInput = arrowInput(source, config, type, changelog);
     connect(columnarInput, exchange);

@@ -28,6 +28,7 @@ import tech.streamfusion.operator.*;
 final class ManagedUdfGroupStockFixture implements AutoCloseable {
   static final RowType INPUT = RowType.of(new BigIntType(), new BigIntType());
   static final RowType OUTPUT = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
+  private final RowType inputType, outputType, keyType;
   final OneInputStreamOperatorTestHarness<?, ?> harness;
   final KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> stock;
   final KeyedOneInputStreamOperatorTestHarness<RowData, ArrowBatch, ArrowBatch> nativeOwner;
@@ -53,6 +54,26 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
       boolean global,
       boolean faulting)
       throws Exception {
+    this(nativeRun, mini, rocks, cache, ttl, global, faulting, RowType.of(new BigIntType()));
+  }
+
+  @SuppressWarnings("unchecked")
+  ManagedUdfGroupStockFixture(
+      boolean nativeRun,
+      boolean mini,
+      boolean rocks,
+      int cache,
+      long ttl,
+      boolean global,
+      boolean faulting,
+      RowType keyType)
+      throws Exception {
+    this.keyType = keyType;
+    var inputFields = new ArrayList<LogicalType>(keyType.getChildren());
+    inputFields.add(new BigIntType());
+    inputType = RowType.of(inputFields.toArray(new LogicalType[0]));
+    inputFields.add(new BigIntType());
+    outputType = RowType.of(inputFields.toArray(new LogicalType[0]));
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "false");
     config.setString("pipeline.max-parallelism", "128");
@@ -79,11 +100,15 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
         });
     table.useCatalog("fixture");
     table.executeSql(
-        "CREATE TABLE input_table(k BIGINT,v BIGINT) WITH"
+        "CREATE TABLE input_table("
+            + keyDdl(keyType)
+            + ",v BIGINT) WITH"
             + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready','insert-only'='false')");
     table.useCatalog("default_catalog");
     table.executeSql(
-        "CREATE TABLE output_table(k BIGINT,h BIGINT,n BIGINT) WITH ('connector'='blackhole')");
+        "CREATE TABLE output_table("
+            + keyDdl(keyType)
+            + ",h BIGINT,n BIGINT) WITH ('connector'='blackhole')");
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var graph =
         CanonicalRegularJoinPlanTest.graph(
@@ -91,8 +116,10 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
             table,
             CanonicalRegularJoinPlanTest.translate(
                 planner,
-                "INSERT INTO output_table SELECT k,fixture_history(v),COUNT(*) FROM"
-                    + " fixture.db.input_table GROUP BY k"));
+                "INSERT INTO output_table SELECT "
+                    + keyColumns(keyType)
+                    + ",fixture_history(v),COUNT(*) FROM fixture.db.input_table GROUP BY "
+                    + keyColumns(keyType)));
     var node =
         graph.getStreamNodes().stream()
             .filter(
@@ -135,12 +162,13 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
       var localSelector = (RowDataKeySelector) field(localOperator, "keySelector");
       partialSerializer = (RowDataSerializer) localNode.getTypeSerializerOut();
       var partialType = RowType.of((LogicalType[]) field(partialSerializer, "types"));
-      transport = new JvmGroupPartialTransport(partialSerializer, partialType, 1);
+      transport =
+          new JvmGroupPartialTransport(partialSerializer, partialType, keyType.getFieldCount());
       if (nativeRun) {
         nativeLocal =
             new OneInputStreamOperatorTestHarness<>(
                 new NativeColumnarLocalJvmGroupOperator(
-                    INPUT,
+                    inputType,
                     transport.type(),
                     (MiniBatchLocalGroupAggFunction) field(localOperator, "function"),
                     (BundleTrigger<RowData>) field(localOperator, "bundleTrigger"),
@@ -159,12 +187,12 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
       nativeLocal = null;
       partialSerializer = null;
     }
-    var physicalInput = global ? transport.type() : INPUT;
+    var physicalInput = global ? transport.type() : inputType;
     if (nativeRun) {
       var owner =
           new NativeColumnarJvmGroupOperator(
               physicalInput,
-              OUTPUT,
+              outputType,
               mini ? null : (GroupAggFunction) function,
               mini
                   ? (org.apache.flink.table.runtime.operators.bundle.MapBundleFunction<
@@ -175,7 +203,14 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
               selector,
               3,
               cache,
-              LogicalTypeRoot.BIGINT,
+              keyType.getFieldCount() == 1
+                      && java.util.Set.of(
+                              LogicalTypeRoot.INTEGER,
+                              LogicalTypeRoot.BIGINT,
+                              LogicalTypeRoot.VARCHAR)
+                          .contains(keyType.getTypeAt(0).getTypeRoot())
+                  ? keyType.getTypeAt(0).getTypeRoot()
+                  : null,
               0,
               ttl,
               transport,
@@ -198,10 +233,22 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
           new KeyedOneInputStreamOperatorTestHarness<>(
               original, selector, selector.getProducedType(), 128, 1, 0);
       stock.setStateBackend(rocks ? new EmbeddedRocksDBStateBackend() : new HashMapStateBackend());
-      stock.setup(new RowDataSerializer(OUTPUT));
+      stock.setup(new RowDataSerializer(outputType));
       nativeOwner = null;
       harness = stock;
     }
+  }
+
+  static String keyColumns(RowType keys) {
+    return java.util.stream.IntStream.range(0, keys.getFieldCount())
+        .mapToObj(i -> "k" + i)
+        .collect(java.util.stream.Collectors.joining(","));
+  }
+
+  static String keyDdl(RowType keys) {
+    return java.util.stream.IntStream.range(0, keys.getFieldCount())
+        .mapToObj(i -> "k" + i + " " + keys.getTypeAt(i).asSerializableString())
+        .collect(java.util.stream.Collectors.joining(","));
   }
 
   void open(OperatorSubtaskState saved, long time) throws Exception {
@@ -228,7 +275,7 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
   Map<String, List<String>> feed(List<RowData> rows, boolean split) throws Exception {
     harness.getOutput().clear();
     if (stockLocal != null) {
-      var copy = new RowDataSerializer(INPUT);
+      var copy = new RowDataSerializer(inputType);
       for (var row : rows) stockLocal.processElement(new StreamRecord<>(copy.copy(row)));
       flushLocal();
     } else if (nativeLocal != null) {
@@ -240,10 +287,10 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
         nativeLocal.processElement(
             new StreamRecord<>(
                 new ArrowBatch(
-                    RowDataArrowConverter.write(batch, INPUT, NativeAllocator.SHARED, true))));
+                    RowDataArrowConverter.write(batch, inputType, NativeAllocator.SHARED, true))));
       flushLocal();
     } else if (stock != null) {
-      var copy = new RowDataSerializer(INPUT);
+      var copy = new RowDataSerializer(inputType);
       for (var row : rows) stock.processElement(new StreamRecord<>(copy.copy(row)));
     } else {
       var batches =
@@ -254,28 +301,39 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
         nativeOwner.processElement(
             new StreamRecord<>(
                 new ArrowBatch(
-                    RowDataArrowConverter.write(batch, INPUT, NativeAllocator.SHARED, true))));
+                    RowDataArrowConverter.write(batch, inputType, NativeAllocator.SHARED, true))));
     }
     harness.prepareSnapshotPreBarrier(1);
     var result = new TreeMap<String, List<String>>();
-    var serializer = new RowDataSerializer(OUTPUT);
+    var serializer = new RowDataSerializer(outputType);
     Object element;
     while ((element = harness.getOutput().poll()) != null) {
       if (!(element instanceof StreamRecord)) continue;
       Object value = ((StreamRecord<?>) element).getValue();
       if (value instanceof ArrowBatch) {
         try (var root = ((ArrowBatch) value).root()) {
-          for (var row : RowDataArrowConverter.read(root, OUTPUT)) record(result, row, serializer);
+          for (var row : RowDataArrowConverter.read(root, outputType))
+            record(result, row, serializer);
         }
       } else record(result, (RowData) value, serializer);
     }
     return result;
   }
 
-  private static void record(
-      Map<String, List<String>> result, RowData row, RowDataSerializer serializer)
+  private void record(Map<String, List<String>> result, RowData row, RowDataSerializer serializer)
       throws Exception {
-    String key = row.isNullAt(0) ? "null" : Long.toString(row.getLong(0));
+    String key;
+    if (keyType.getFieldCount() == 1 && keyType.getTypeAt(0).is(LogicalTypeRoot.BIGINT))
+      key = row.isNullAt(0) ? "null" : Long.toString(row.getLong(0));
+    else {
+      var projected = new org.apache.flink.table.data.GenericRowData(keyType.getFieldCount());
+      for (int i = 0; i < keyType.getFieldCount(); i++)
+        projected.setField(
+            i, RowData.createFieldGetter(keyType.getTypeAt(i), i).getFieldOrNull(row));
+      var keyBytes = new DataOutputSerializer(64);
+      new RowDataSerializer(keyType).serialize(projected, keyBytes);
+      key = Base64.getEncoder().encodeToString(keyBytes.getCopyOfBuffer());
+    }
     var bytes = new DataOutputSerializer(64);
     serializer.serialize(row, bytes);
     result

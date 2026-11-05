@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured one-phase managed UDFs | Wider types/keys, retracting mini-batches, wider UDF contracts, other views/phases and failures |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured immediate/mini-batch/local-global managed UDFs | Wider types/keys, retracting mini-batches, wider UDF contracts, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -1612,3 +1612,32 @@ The independent native suite passes 1,360 checks with two existing ignores. Its 
 passes 206 Java transfer/callback/recovery controls, including 16 actual released 2.2.1 callback
 comparisons. This is component evidence; the [remaining OVER adapter/planner/job work](../operators/over.md#event-time-cleanup-callback-component)
 remains part of #569. Every family stays partial and benchmarking remains deferred.
+
+
+
+## Captured managed UDF key schemas (partial)
+
+Managed UDF bindings retain the actual stock key selector and serializer rather than applying
+native scalar-state precision restrictions. The exchange uses the existing recursive stock key
+projection. Nested ROW keys preserve their original owned binary payload across Arrow and
+local/global partial boundaries, including reserved NULL decimal/timestamp slots. No new native
+state codec, canonical serializer or checkpoint format is added.
+
+The combined released Flink 2.2.1 selection passes 1,190 checks and all nine unchanged released
+aggregate restore programs on each engine. Its full 168-job boundary/structured-key matrix passes
+continuation, no-input re-export, ordinary native recovery and selected 1→3→2 rescaling with
+maxP128. Both transposes, custom source/coordinator and transactional sink effects remain in the
+jobs; stock workers exclude StreamFusion. See the [exact managed UDF key scope and remaining
+requirements](../operators/group-by.md#captured-managed-udf-key-layouts-partial). Wider serializer,
+view/type/TTL/failure/version matrices remain open; all fifteen families stay partial.
+Benchmarking is deferred.
+
+## Ordinary-SQL generated identities
+
+If an ordinary physical plan initially retains stock owners, subsequent lowering uses the
+original captured stock graph. Creating a second execution graph changes generated UIDs and can
+make original source, aggregate, writer or committer state unresolvable on the other engine.
+The corrected path passes 108 complete-identity planner cases and the combined 1,190-check
+managed-UDF selection. All 168 complete jobs retain generated UIDs, including ordinary SQL and
+compiled-plan continuations, native checkpoints and rescaling. Tests preserve native execution
+and complete stock metadata checks; production counters are unchanged.

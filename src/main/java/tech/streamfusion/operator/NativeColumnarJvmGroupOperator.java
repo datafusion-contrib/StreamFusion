@@ -44,6 +44,7 @@ public class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<ArrowBat
   private final int keyColumn;
   private final long stateRetentionTime;
   private transient JvmAccumulatorCache accumulatorCache;
+  private transient boolean binaryRowKeys;
   private transient KeyedProcessFunction<RowData, RowData, RowData>.Context context;
   private transient Collector<RowData> collector;
   private transient VectorSchemaRoot result;
@@ -168,7 +169,14 @@ public class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<ArrowBat
                                 element ->
                                     element.is(LogicalTypeRoot.MAP)
                                         || element.is(LogicalTypeRoot.MULTISET)));
-    outputSchema = ArrowConversion.toArrowSchema(outputType, temporalArrays || nestedCollections);
+    binaryRowKeys =
+        java.util.Arrays.stream(keySelector.getProducedType().toRowFieldTypes())
+            .anyMatch(NativeColumnarJvmGroupOperator::containsRow);
+    outputSchema =
+        binaryRowKeys
+            ? tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(
+                ArrowConversion.toArrowSchema(outputType, true))
+            : ArrowConversion.toArrowSchema(outputType, temporalArrays || nestedCollections);
     collector =
         new Collector<RowData>() {
           @Override
@@ -240,13 +248,20 @@ public class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<ArrowBat
     else coalescer.add(input);
   }
 
+  private static boolean containsRow(org.apache.flink.table.types.logical.LogicalType type) {
+    return type instanceof RowType
+        || type.getChildren().stream().anyMatch(NativeColumnarJvmGroupOperator::containsRow);
+  }
+
   private void ingest(VectorSchemaRoot input) {
     try (input) {
       var reader = ArrowConversion.createArrowReader(input, inputType);
       var keyReader =
-          keyType == LogicalTypeRoot.VARCHAR
-              ? ArrowConversion.createBorrowedStringReader(input, inputType)
-              : reader;
+          binaryRowKeys
+              ? ArrowConversion.createArrowReader(input, inputType, true)
+              : keyType == LogicalTypeRoot.VARCHAR
+                  ? ArrowConversion.createBorrowedStringReader(input, inputType)
+                  : reader;
       var inputKinds = (TinyIntVector) input.getVector(RowDataArrowConverter.ROW_KIND_COLUMN);
       for (int index = 0; index < input.getRowCount(); index++) {
         var row = reader.read(index);

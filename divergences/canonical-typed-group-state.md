@@ -142,3 +142,33 @@ decoded original partial with the captured handler. This preserves arbitrary use
 meaning without adding those transient partials to canonical state or serializing a native
 snapshot first. Local/global bundles drain in barrier order, while the stock backend writes
 retained accumulators/views directly. Conversion-cost optimization is explicitly deferred.
+
+
+## Stock-owned UDF key precision
+
+Arroyo's accumulator/retained-entry separation still applies to the native typed adapters.
+Captured JVM UDF owners instead retain Flink's actual managed state and generated key selector.
+Their key admission therefore must not inherit the scalar adapter's decimal/millisecond guard.
+The existing recursive stock projection supplies columnar exchange hashes; the original Flink
+serializer supplies canonical metadata and key bytes. Comet's existing Arrow ownership handoff
+is unchanged. No serializer, key-group identity, native snapshot intermediate or wire format is
+added. Independent native state adapters keep their existing admission checks; broader job/type
+qualification remains on the operator page and in #569. Benchmarking stays deferred.
+
+
+Ordinary-SQL fallback lowering keeps the first captured stock execution graph as its identity
+anchor. Re-translating the equivalent physical plan allocates new execution-node numbers and
+changes generated UIDs, including expanded connector writer/committer roles. Reusing the original
+graph follows Flink's own identity generation; it adds no guessed name mapping, counter rewinding
+or manual user translation. Fresh-worker tests reset the released counter only in the fixture
+and compare the complete projected stock identity set. The production counter is unchanged.
+
+
+Generated nested ROW keys also preserve their original binary section across the managed Arrow
+boundary. Field-wise reconstruction can omit reserved NULL decimal/timestamp slots and choose a
+different key after restore. Reuse the existing owned nested-row payload, stock key selector and
+native binary-key reader instead of adding another canonical serializer or reconstructing state.
+The local/global partial carrier retains those original key bytes alongside its stock accumulator
+payload. This follows Comet's copied/moved Arrow ownership; no borrowed upstream row survives a
+boundary. The operator page records the combined byte/routing and full-job qualification and
+remaining user-serializer/type/failure requirements. Benchmarking is deferred.

@@ -38,6 +38,7 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
   private final RowType sourceType;
   private final byte[] arrowSchema;
   private final boolean preserveStringCaches;
+  private boolean binaryRowKeys;
 
   public RowDataToArrowExecNode(
       ReadableConfig tableConfig,
@@ -77,13 +78,30 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
       RowType sourceType,
       boolean preserveCollections,
       int preferredBatchRows) {
-    this(tableConfig, inputProperty, rowType, description, carryRowKind, sourceType,
-        preserveCollections, preferredBatchRows, false, false);
+    this(
+        tableConfig,
+        inputProperty,
+        rowType,
+        description,
+        carryRowKind,
+        sourceType,
+        preserveCollections,
+        preferredBatchRows,
+        false,
+        false);
   }
 
-  RowDataToArrowExecNode(ReadableConfig tableConfig, InputProperty inputProperty, RowType rowType,
-      String description, boolean carryRowKind, RowType sourceType, boolean preserveCollections,
-      int preferredBatchRows, boolean jsonDocuments, boolean preserveStringCaches) {
+  RowDataToArrowExecNode(
+      ReadableConfig tableConfig,
+      InputProperty inputProperty,
+      RowType rowType,
+      String description,
+      boolean carryRowKind,
+      RowType sourceType,
+      boolean preserveCollections,
+      int preferredBatchRows,
+      boolean jsonDocuments,
+      boolean preserveStringCaches) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-row-to-arrow_1"),
@@ -98,19 +116,32 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
     this.preserveStringCaches = preserveStringCaches;
     var schema = ArrowConversion.toArrowInputSchema(rowType, preserveCollections);
     if (jsonDocuments) {
-      var fields = schema.getFields().stream()
-          .map(field -> {
-            if (!NestedRepresentation.isString(field)) return field;
-            var metadata = new HashMap<>(field.getMetadata());
-            metadata.put(NestedRepresentation.JSON_DOCUMENT, "1");
-            return new Field(field.getName(),
-                new FieldType(field.isNullable(), field.getType(), field.getDictionary(), metadata),
-                field.getChildren());
-          })
-          .collect(Collectors.toList());
+      var fields =
+          schema.getFields().stream()
+              .map(
+                  field -> {
+                    if (!NestedRepresentation.isString(field)) return field;
+                    var metadata = new HashMap<>(field.getMetadata());
+                    metadata.put(NestedRepresentation.JSON_DOCUMENT, "1");
+                    return new Field(
+                        field.getName(),
+                        new FieldType(
+                            field.isNullable(), field.getType(), field.getDictionary(), metadata),
+                        field.getChildren());
+                  })
+              .collect(Collectors.toList());
       schema = new Schema(fields, schema.getCustomMetadata());
     }
     this.arrowSchema = schema.serializeAsMessage();
+  }
+
+  public RowDataToArrowExecNode withBinaryRowKeys() {
+    binaryRowKeys = true;
+    return this;
+  }
+
+  static Schema binaryRowKeySchema(RowType type) {
+    return NestedRepresentation.withBinaryRows(ArrowConversion.toArrowInputSchema(type, true));
   }
 
   @Override
@@ -123,7 +154,12 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
         SynchronousArrowInput.forTranspose(input, sourceType == null ? rowType : sourceType),
         createTransformationMeta(TRANSFORMATION, config),
         new RowDataToArrowOperator(
-            rowType, batchRows, carryRowKind, sourceType, preserveStringCaches, arrowSchema),
+            rowType,
+            batchRows,
+            carryRowKind,
+            sourceType,
+            preserveStringCaches,
+            binaryRowKeys ? binaryRowKeySchema(rowType).serializeAsMessage() : arrowSchema),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);
