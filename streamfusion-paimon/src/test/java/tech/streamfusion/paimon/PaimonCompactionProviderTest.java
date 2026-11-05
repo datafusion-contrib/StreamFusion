@@ -14,12 +14,10 @@ import org.apache.flink.util.InstantiationUtil;
 import org.apache.paimon.data.GenericRow;
 import org.apache.paimon.flink.sink.NoopStoreSinkWriteState;
 import org.apache.paimon.flink.sink.StoreSinkWrite;
-import org.apache.paimon.flink.sink.StreamFusionStoreSinkWrite;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.memory.HeapMemorySegmentPool;
 import org.apache.paimon.memory.MemoryPoolFactory;
-import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.types.DataTypes;
@@ -33,7 +31,7 @@ class PaimonCompactionProviderTest {
   void serializedProviderInstallsBeforeBucketCreationAndReplacement() throws Exception {
     var io = LocalFileIO.create();
     var path = new Path(directory.resolve("table").toUri());
-    new FileSystemSchemaManager(io, path)
+    PaimonTestCompat.schemaManager(io, path)
         .createTable(
             Schema.newBuilder()
                 .column("id", DataTypes.INT().notNull())
@@ -157,31 +155,6 @@ class PaimonCompactionProviderTest {
       }
     }
     assertEquals("", NativePaimon.liveNativeHandles());
-  }
-
-  @Test
-  void splitRuntimePackagesDeclineThePackagePrivateConstructor() throws Exception {
-    var name = StreamFusionStoreSinkWrite.class.getName();
-    var resource = "/" + name.replace('.', '/') + ".class";
-    byte[] bytes;
-    try (var input = getClass().getResourceAsStream(resource)) {
-      assertNotNull(input);
-      bytes = input.readAllBytes();
-    }
-    var loader =
-        new ClassLoader(getClass().getClassLoader()) {
-          @Override
-          protected Class<?> loadClass(String target, boolean resolve)
-              throws ClassNotFoundException {
-            if (!target.equals(name)) return super.loadClass(target, resolve);
-            var type = findLoadedClass(target);
-            if (type == null) type = defineClass(target, bytes, 0, bytes.length);
-            if (resolve) resolveClass(type);
-            return type;
-          }
-        };
-    assertTrue(StreamFusionStoreSinkWrite.available());
-    assertEquals(false, loader.loadClass(name).getMethod("available").invoke(null));
   }
 
   private static final class Metrics extends UnregisteredMetricsGroup {

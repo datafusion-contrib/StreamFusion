@@ -16,7 +16,6 @@ import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.io.CompactIncrement;
 import org.apache.paimon.io.DataIncrement;
-import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.FileStoreTableFactory;
@@ -141,7 +140,7 @@ class PaimonCompactionJobBenchmark {
     var options = new java.util.HashMap<>(input.options());
     options.remove("path");
     options.putAll(Map.of("write-only", "false", "continuous.discovery-interval", "50 ms"));
-    new FileSystemSchemaManager(io, path)
+    PaimonTestCompat.schemaManager(io, path)
         .createTable(
             new Schema(
                 input.schema().fields(), input.partitionKeys(), input.primaryKeys(), options, ""));

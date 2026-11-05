@@ -18,7 +18,6 @@ import org.apache.paimon.flink.source.FileStoreSourceSplit;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.schema.Schema;
-import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.types.DataTypes;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -32,7 +31,7 @@ class PaimonCalendarWatermarkReadTest {
   void decodedBatchesAndResumedOffsetsRetainCalendarCandidates(String format) throws Exception {
     var path = new Path(Files.createTempDirectory("paimon-calendar-watermark").toUri());
     var io = LocalFileIO.create();
-    new FileSystemSchemaManager(io, path)
+    PaimonTestCompat.schemaManager(io, path)
         .createTable(
             Schema.newBuilder()
                 .column("id", DataTypes.INT())

@@ -93,7 +93,7 @@ def source_config(line, suite):
     if suite == 'kafka':
         return 'kafka', 'apache/flink-connector-kafka', 'v3.2.0-rc1' if line == '1.18' else 'v5.0.0'
     if suite == 'paimon':
-        return 'paimon', 'apache/paimon', 'release-2.1.0'
+        return 'paimon', 'apache/paimon', 'release-2.0.0' if line == '1.18' else 'release-2.1.0'
     if suite == 'delta':
         return 'delta', 'delta-io/delta', 'v4.4.0'
     return 'flink', 'apache/flink', 'release-1.18.1' if line == '1.18' else 'release-2.2.1'

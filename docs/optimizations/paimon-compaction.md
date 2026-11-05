@@ -1,6 +1,7 @@
 # Columnar Paimon compaction
 
-Java Paimon 2.1 chooses compaction files, sections, output level and delete retention. A small
+Java Paimon 2.1 chooses compaction files, sections, output level and delete retention. This path
+uses Flink 2.2; Flink 1.18 keeps Paimon 2.0 and stock maintenance. A small
 rewriter decorator sends admitted deduplicate work through the released paimon-rust reader and
 the existing native Parquet encoder. It shares the source's authenticated FileIO and footer
 preflight, and the level-0 writer's Arrow and metadata boundary. Paimon's rolling writer owns

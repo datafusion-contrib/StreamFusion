@@ -272,7 +272,6 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
     return write(row);
   }
 
-  @Override
   public SinkRecord write(InternalRow row, int bucket, int numBuckets) {
     return write(row);
   }

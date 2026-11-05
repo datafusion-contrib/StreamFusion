@@ -35,7 +35,8 @@ Several details intentionally follow the released writer rather than a simplifie
 - Aggregate state resets per key. Removing a record resets the values, but retains stateful
   first-value aggregator initialization, matching Java.
 - Integer arithmetic follows Paimon 2.1's per-field sum/product overflow setting: wrapping by
-  default, checked when requested. The 1.0 adapter retains its released arithmetic behavior.
+  default, checked when requested on Flink 2.2. Flink 1.18 stays on released 2.0 and keeps
+  checked integer arithmetic; the 1.0 adapter retains its released arithmetic behavior.
   Decimal sum preserves Java's compact-long fast path and
   its precision-checked BigDecimal fallback. Unsupported function/type combinations decline.
 

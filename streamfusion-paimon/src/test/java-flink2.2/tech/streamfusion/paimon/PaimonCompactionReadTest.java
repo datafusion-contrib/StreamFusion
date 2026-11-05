@@ -20,7 +20,6 @@ import org.apache.paimon.manifest.FileSource;
 import org.apache.paimon.mergetree.compact.CompactRewriter;
 import org.apache.paimon.mergetree.compact.IntervalPartition;
 import org.apache.paimon.reader.RecordReaderIterator;
-import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.FileStoreTableFactory;
@@ -43,7 +42,7 @@ class PaimonCompactionReadTest {
       throws Exception {
     var path = new Path(directory.resolve("table").toUri());
     var io = LocalFileIO.create();
-    new FileSystemSchemaManager(io, path)
+    PaimonTestCompat.schemaManager(io, path)
         .createTable(
             Schema.newBuilder()
                 .column("id", DataTypes.INT().notNull())
@@ -277,7 +276,7 @@ class PaimonCompactionReadTest {
   private FileStoreTable smallTable(String name, boolean thin) throws Exception {
     var path = new Path(directory.resolve(name).toUri());
     var io = LocalFileIO.create();
-    new FileSystemSchemaManager(io, path)
+    PaimonTestCompat.schemaManager(io, path)
         .createTable(
             Schema.newBuilder()
                 .column("id", DataTypes.INT().notNull())

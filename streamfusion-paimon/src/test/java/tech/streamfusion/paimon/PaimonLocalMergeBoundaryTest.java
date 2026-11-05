@@ -22,7 +22,6 @@ import org.apache.paimon.flink.utils.InternalRowTypeSerializer;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.schema.Schema;
-import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.types.DataTypes;
 import org.apache.paimon.types.RowKind;
@@ -59,7 +58,7 @@ class PaimonLocalMergeBoundaryTest {
             .column("v", fixed ? DataTypes.INT() : DataTypes.STRING());
     if (!fixed) schema.column("op", DataTypes.STRING());
     var path = new Path(Files.createTempDirectory("paimon-local-boundary").toUri());
-    new FileSystemSchemaManager(LocalFileIO.create(), path)
+    PaimonTestCompat.schemaManager(LocalFileIO.create(), path)
         .createTable(
             schema.primaryKey("id").options(PaimonTestTables.fileOptions(options)).build());
     var table = FileStoreTableFactory.create(LocalFileIO.create(), path);

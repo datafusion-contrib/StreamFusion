@@ -20,7 +20,6 @@ import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.mergetree.compact.IntervalPartition;
 import org.apache.paimon.schema.Schema;
-import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.table.PrimaryKeyFileStoreTable;
@@ -224,7 +223,7 @@ class PaimonSnapshotMergeTest {
                 new DataField(3, "v", DataTypes.ARRAY(DataTypes.INT()))));
     var io = LocalFileIO.create();
     var path = new Path(Files.createTempDirectory("snapshot-keys").toUri());
-    new FileSystemSchemaManager(io, path)
+    PaimonTestCompat.schemaManager(io, path)
         .createTable(
             new Schema(
                 fields.getFields(),

@@ -138,7 +138,7 @@ class OrcReaderComparisonBenchmark {
                 new org.apache.paimon.types.DataField(1, "value", valueType)));
     var path = new Path(Files.createTempDirectory(directory, "scalar").toUri());
     var io = org.apache.paimon.fs.local.LocalFileIO.create();
-    new org.apache.paimon.schema.FileSystemSchemaManager(io, path)
+    PaimonTestCompat.schemaManager(io, path)
         .createTable(
             new org.apache.paimon.schema.Schema(
                 type.getFields(),

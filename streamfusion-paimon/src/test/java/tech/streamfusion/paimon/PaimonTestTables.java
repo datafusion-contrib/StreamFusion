@@ -47,7 +47,6 @@ import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.options.Options;
 import org.apache.paimon.schema.Schema;
-import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.shade.org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.paimon.shade.org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.paimon.shade.org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -146,7 +145,7 @@ final class PaimonTestTables {
   static FileStoreTable createPrimaryKeyTable(java.nio.file.Path dir, Map<String, String> options)
       throws Exception {
     Path path = new Path(dir.toUri());
-    new FileSystemSchemaManager(LocalFileIO.create(), path).createTable(primaryKeySchema(options));
+    PaimonTestCompat.schemaManager(LocalFileIO.create(), path).createTable(primaryKeySchema(options));
     return FileStoreTableFactory.create(LocalFileIO.create(), path);
   }
 
@@ -262,7 +261,7 @@ final class PaimonTestTables {
   static FileStoreTable createTable(java.nio.file.Path dir, Map<String, String> options)
       throws Exception {
     Path path = new Path(dir.toUri());
-    new FileSystemSchemaManager(LocalFileIO.create(), path).createTable(paimonSchema(options));
+    PaimonTestCompat.schemaManager(LocalFileIO.create(), path).createTable(paimonSchema(options));
     return FileStoreTableFactory.create(LocalFileIO.create(), path);
   }
 

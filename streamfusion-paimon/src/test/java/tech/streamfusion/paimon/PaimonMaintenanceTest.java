@@ -17,7 +17,6 @@ import org.apache.paimon.flink.sink.CompactorSinkBuilder;
 import org.apache.paimon.flink.source.CompactorSourceBuilder;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
-import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.FileStoreTableFactory;
@@ -74,7 +73,7 @@ class PaimonMaintenanceTest {
   private FileStoreTable table(boolean coordinated) throws Exception {
     var io = LocalFileIO.create();
     var path = new Path(directory.resolve("table").toUri());
-    new FileSystemSchemaManager(io, path)
+    PaimonTestCompat.schemaManager(io, path)
         .createTable(
             Schema.newBuilder()
                 .column("id", DataTypes.INT().notNull())

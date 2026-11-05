@@ -2,7 +2,7 @@
 
 **Status:** experimental. The optional `streamfusion-paimon` module accelerates streaming
 `SELECT` reads and `INSERT INTO` jobs on Paimon **append-only tables** and **primary-key tables with fixed,
-dynamic, or postpone buckets** on the published Paimon `2.1.0` connector for Flink 2.2 and 1.18.
+dynamic, or postpone buckets** on published Paimon `2.1.0` for Flink 2.2 and `2.0.0` for Flink 1.18.
 The separate [Paimon 1.0.0 adapter](#paimon-100-on-flink-118) targets Flink 1.18.
 Paimon keeps every table-level responsibility:
 schema and catalog, bucket assignment rules, sequence numbering rules, file rolling, statistics,
@@ -755,8 +755,9 @@ SQL writes and reopened jobs, released Java buffer boundaries, and Arrow ownersh
   `first_non_null_value` (also `first_not_null_value`), and `last_non_null_value` on all supported
   value types, including nested columns. Paimon's default aggregate selection,
   `fields.<column>.ignore-retract`, and `aggregation.remove-record-on-delete` are preserved.
-  Paimon 2.1's integer `sum` and `product` wrap by default and honor each field's
-  `sum.fail-on-overflow` or `product.fail-on-overflow` setting. Partial-update delete state
+  Paimon 2.0 on Flink 1.18 keeps checked integer arithmetic. Paimon 2.1 on Flink 2.2
+  uses wrapping integer `sum` and `product` by default and honors each field's
+  `sum.fail-on-overflow` or `product.fail-on-overflow` setting. Paimon 2.1's partial-update delete state
   survives older or unrelated sequence-group updates until an eligible add replaces it.
 - Specialized `collect`, `merge_map`, `merge_map_with_keytime`, `nested_update`,
   `nested_partial_update`, `hll_sketch`, `theta_sketch`, `rbm32`, and `rbm64` use the released Java
@@ -1002,8 +1003,11 @@ streaming planner; batch range clustering and separate clustering jobs remain st
 
 ### Writer and commit coordinators
 
-Both coordinator options retain Paimon 2.1.0's Java implementations while the data writer consumes
-Arrow batches. No coordinator logic is implemented in Rust.
+Both coordinator options retain the matching released Java implementation while the data writer
+consumes Arrow batches. Flink 2.2 uses Paimon 2.1.0; Flink 1.18 keeps Paimon 2.0.0. Paimon 2.1's
+commit operator overrides a method that is final in Flink 1.18, so upgrading that host would break
+even stock coordinator commits. The compatibility sources call each release's constructors and
+retain its lifecycle. No coordinator logic is implemented in Rust.
 
 `sink.writer-coordinator.enabled = true` selects Paimon's coordinated restore factory for fixed
 and dynamic buckets. The JobManager serves restored files through Paimon's paged requests and
@@ -1014,12 +1018,13 @@ As in stock Paimon, unaware append and postpone writers do not use the writer re
 `sink.coordinator-commit.enabled = true` selects Paimon's committing writer coordinator for
 bucket-unaware append tables. Its existing writer lifecycle owns pending committables, checkpoint
 events, watermark and idle status, and replay. Released 2.1 continues after recovering an
-uncommitted snapshot; the 2.0 deliberate restart is no longer part of this lifecycle.
+uncommitted snapshot. Flink 1.18 retains Paimon 2.0's deliberate restart after that recovery.
 The native subclass replaces only record ingestion with bundle ingestion.
 Paimon's sink builder removes the downstream global committer and retains its configuration checks:
 streaming checkpointing must be enabled, `write-only = true`, `precommit-compact = false`,
 and at most one checkpoint may run concurrently. Savepoint auto-tagging uses Paimon's
-released coordinator tagger when enabled. This does
+released coordinator tagger when enabled on Flink 2.2; Paimon 2.0 on Flink 1.18 rejects that
+combination as before. This does
 not add bounded end-input commit support beyond the released connector. The option is ignored by
 Paimon's fixed-bucket and primary-key sinks, and StreamFusion preserves that behavior.
 
@@ -1367,7 +1372,7 @@ environment from that configuration.
 
 The `paimon1` profile builds a separate `streamfusion-paimon1-flink1.18` adapter
 against the released Paimon **1.0.0** connector. Build it together with `flink-1.18`;
-the build rejects other Flink lines. Install this adapter instead of the Paimon 2.1
+the build rejects other Flink lines. Install this adapter instead of the modern Paimon
 adapter, alongside `paimon-flink-1.18-1.0.0.jar` and the selected StreamFusion
 Parquet/ORC modules. Keep the same `01-streamfusion-paimon.jar` classpath ordering.
 The two adapters must not be installed together.
@@ -1381,7 +1386,8 @@ splits containing before-files retain Java's reverse-row-kind reader. Postpone
 buckets and newer coordinator/partition-routing modes do not exist in this release.
 External log systems retain the stock source and sink.
 Numeric aggregation preserves 1.0's wrapping integer arithmetic and empty-accumulator
-product retractions; the modern 2.1 adapter follows that release's per-field overflow settings. ORC timestamp
+product retractions; Paimon 2.0 on Flink 1.18 keeps checked integer arithmetic, while the
+2.1/Flink 2.2 adapter follows that release's per-field overflow settings. ORC timestamp
 writes reproduce 1.0's historical `java.sql.Timestamp` calendar conversion for both
 TIMESTAMP and TIMESTAMP_LTZ, while retaining timestamp-instant physical storage for LTZ.
 Field defaults retain the stock source because Paimon 1.0 applies them on reads,

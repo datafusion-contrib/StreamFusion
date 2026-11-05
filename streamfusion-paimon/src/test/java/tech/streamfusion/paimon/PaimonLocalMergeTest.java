@@ -103,7 +103,7 @@ class PaimonLocalMergeTest {
                     Map.of("bucket", "1", "local-merge-buffer-size", "10 mb")))
             .build();
     var path = new org.apache.paimon.fs.Path(Files.createTempDirectory("local-partitions").toUri());
-    new org.apache.paimon.schema.FileSystemSchemaManager(
+    PaimonTestCompat.schemaManager(
             org.apache.paimon.fs.local.LocalFileIO.create(), path)
         .createTable(schema);
     var table =

@@ -16,7 +16,6 @@ import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.reader.RecordReaderIterator;
-import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.FileStoreTableFactory;
@@ -148,7 +147,7 @@ class PaimonCompactionBenchmark {
       schema
           .column("payload", DataTypes.STRING())
           .column("nested", DataTypes.ARRAY(DataTypes.INT()));
-    new FileSystemSchemaManager(fileIO, path).createTable(schema.build());
+    PaimonTestCompat.schemaManager(fileIO, path).createTable(schema.build());
     var table = FileStoreTableFactory.create(fileIO, path);
     try (var io = IOManager.create(directory.resolve("seed-spill").toString());
         var write = table.newWrite("seed").withIOManager(io);

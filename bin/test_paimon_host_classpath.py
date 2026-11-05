@@ -32,7 +32,7 @@ class PaimonHostClasspathTest(unittest.TestCase):
                     for d in selected)
                 fragments = (fragments.replace("${flink.version}", version)
                              .replace("${flink.line}", line)
-                             .replace("${paimon.version}", "2.1.0"))
+                             .replace("${paimon.version}", "2.0.0" if line == "1.18" else "2.1.0"))
                 (directory / "pom.xml").write_text(
                     '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>'
                     '<groupId>test</groupId><artifactId>host-api-probe</artifactId><version>1</version>'
@@ -49,7 +49,7 @@ class PaimonHostClasspathTest(unittest.TestCase):
                 if line == "1.18":
                     # Reproduce the original failure by letting the fat connector shadow the host.
                     entries = cp.split(os.pathsep)
-                    connector = next(entry for entry in entries if entry.endswith("paimon-flink-1.18-2.1.0.jar"))
+                    connector = next(entry for entry in entries if entry.endswith("paimon-flink-1.18-2.0.0.jar"))
                     wrong_cp = os.pathsep.join([connector] + [entry for entry in entries if entry != connector])
                     wrong = subprocess.run(["javac", "-encoding", "UTF-8", "-cp", wrong_cp, "-d", str(directory),
                                             str(compatibility), str(projector)], text=True,

@@ -162,7 +162,8 @@ public final class NativePaimonKeyValueFileWriter {
               targetSize,
               targetRows) {
             @Override
-            protected void onCurrentWriterClosed() {
+            protected void closeCurrentWriter() throws IOException {
+              super.closeCurrentWriter();
               fileRows = 0;
             }
           };
@@ -278,7 +279,7 @@ public final class NativePaimonKeyValueFileWriter {
       SimpleStats keyStats = fileLayout.keyStatsConverter.toBinaryAllMode(keyColumns);
       Pair<List<String>, SimpleStats> valueStats =
           fileLayout.valueStatsConverter.toBinary(valueColumns);
-      return DataFileMeta.create(
+      return PaimonApiCompat.fileMeta(
           path.getName(),
           size,
           recordCount(),
@@ -290,16 +291,11 @@ public final class NativePaimonKeyValueFileWriter {
           maxSequence,
           table.schema().id(),
           level,
-          Collections.emptyList(),
           creationTime.get(),
           deleteRows,
-          null,
           source,
           valueStats.getLeft(),
-          paths.isExternalPath() ? path.toString() : null,
-          null,
-          null,
-          null);
+          paths.isExternalPath() ? path.toString() : null);
     }
   }
 

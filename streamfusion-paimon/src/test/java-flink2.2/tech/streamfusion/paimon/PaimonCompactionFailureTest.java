@@ -18,7 +18,6 @@ import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.mergetree.SortedRun;
 import org.apache.paimon.mergetree.compact.CompactRewriter;
-import org.apache.paimon.schema.FileSystemSchemaManager;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.PrimaryKeyFileStoreTable;
@@ -132,7 +131,7 @@ class PaimonCompactionFailureTest {
   private FileStoreTable fixture(FailingIO io) throws Exception {
     var path = new Path(directory.resolve("table").toUri());
     var schema =
-        new FileSystemSchemaManager(io, path)
+        PaimonTestCompat.schemaManager(io, path)
             .createTable(
                 Schema.newBuilder()
                     .column("id", DataTypes.INT().notNull())

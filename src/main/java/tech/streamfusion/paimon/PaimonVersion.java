@@ -42,7 +42,7 @@ final class PaimonVersion {
   }
 
   static boolean partialUpdateDeleteRemovalNeedsJava() {
-    return true;
+    return PaimonApiCompat.retainsPartialDelete();
   }
 
   static Object writerMetadata(FormatWriter writer) {

@@ -430,7 +430,6 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
     return write(row);
   }
 
-  @Override
   public SinkRecord write(InternalRow row, int bucket, int numBuckets) {
     return write(row);
   }

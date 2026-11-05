@@ -125,7 +125,15 @@
                         <phase>generate-sources</phase>
                         <goals><goal>add-source</goal></goals>
                         <configuration><sources>
-                            <source>${project.basedir}/src/main/java</source>
+                            <source>${project.basedir}/src/main/java-flink${flink.line}</source>
+                        </sources></configuration>
+                    </execution>
+                    <execution>
+                        <id>paimon-compaction-tests</id>
+                        <phase>generate-test-sources</phase>
+                        <goals><goal>add-test-source</goal></goals>
+                        <configuration><sources>
+                            <source>${project.basedir}/src/test/java-flink${flink.line}</source>
                         </sources></configuration>
                     </execution>
                 </executions>
