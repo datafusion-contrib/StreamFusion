@@ -4,6 +4,7 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import math
 from pathlib import Path
 
 
@@ -19,9 +20,10 @@ FIRST_SHARD_CLASSES = AUDIT_CLASSES | {
     "tech/streamfusion/FlinkRecursiveTableFunctionSqlHarnessTest",
     "tech/streamfusion/FlinkNestedBridgeTableFunctionSqlHarnessTest",
 }
+DURATIONS = Path(__file__).resolve().parents[1] / "dev/ci/runtime-durations.json"
 
 
-def partition(classes, count):
+def partition(classes, count, durations=None):
     if count < 1:
         raise ValueError("Shard count must be positive")
     candidates = sorted(
@@ -32,15 +34,23 @@ def partition(classes, count):
     )
     if not candidates:
         raise ValueError("No compiled Surefire test candidates found")
+    if durations is None:
+        durations = json.loads(DURATIONS.read_text())["seconds"]
+    if any(not isinstance(value, (int, float)) or isinstance(value, bool)
+           or not math.isfinite(value) or value < 0 for value in durations.values()):
+        raise ValueError("Class duration estimates must be finite nonnegative numbers")
+    def cost(name):
+        return max(0.001, durations.get(name, 1.0))
     shards = [[] for _ in range(count)]
-    for name in candidates:
-        # Keep audit artifacts together and balance the recursive conversion matrices.
-        index = 0 if name in FIRST_SHARD_CLASSES else int.from_bytes(
-            hashlib.sha256(name.encode("utf-8")).digest(), "big") % count
+    loads = [0.0] * count
+    for name in sorted(candidates, key=lambda name: (name not in FIRST_SHARD_CLASSES, -cost(name), name)):
+        index = 0 if name in FIRST_SHARD_CLASSES else min(
+            range(count), key=lambda index: (loads[index], len(shards[index]), index))
         shards[index].append(name)
+        loads[index] += cost(name)
     if any(not shard for shard in shards):
         raise ValueError("An empty includes file would restore Surefire's default selection")
-    return shards
+    return [sorted(shard) for shard in shards]
 
 
 def write_selection(classes, count, index, output):
