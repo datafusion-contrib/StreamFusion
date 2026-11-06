@@ -383,7 +383,20 @@ class CanonicalKafkaSinkJobTest {
       if (incoming > 0)
         assertTrue(
             Integer.parseInt(writerState.get(0)[7]) > 0,
-            "The handoff must retain actual precommitted transaction state");
+            "The handoff must retain actual precommitted transaction state: stage="
+                + stage
+                + ", mode="
+                + mode
+                + ", ordinary="
+                + ordinary
+                + ", nativeFirst="
+                + nativeFirst
+                + ", naming="
+                + naming
+                + ", committedBeforeSavepoint="
+                + Files.readString(root.resolve(stage + "-committed-before-savepoint"))
+                + ", inventory="
+                + Files.readString(root.resolve(stage + "-inventory.tsv")));
       String saved = Files.readString(root.resolve(stage + "-savepoint")).trim();
       String metadata =
           new String(

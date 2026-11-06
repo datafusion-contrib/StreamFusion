@@ -22,40 +22,35 @@ import org.junit.jupiter.params.provider.MethodSource;
 class CanonicalOrdinarySqlRegressionTest {
   static Stream<Arguments> queries() {
     return Stream.of(
-        Arguments.of("GroupAgg", "SELECT g,SUM(v),COUNT(*) FROM src GROUP BY g", true),
-        Arguments.of("UpdatingJoin", "SELECT a.k,a.v,b.v FROM src a JOIN src b ON a.k=b.k", true),
+        Arguments.of("GroupAgg", "SELECT g,SUM(v),COUNT(*) FROM src GROUP BY g"),
+        Arguments.of("UpdatingJoin", "SELECT a.k,a.v,b.v FROM src a JOIN src b ON a.k=b.k"),
         Arguments.of(
             "TopN",
             "SELECT g,k,v FROM (SELECT g,k,v,ROW_NUMBER() OVER"
-                + " (PARTITION BY g ORDER BY v DESC,k DESC) rn FROM src) WHERE rn<=2",
-            false),
+                + " (PARTITION BY g ORDER BY v DESC,k DESC) rn FROM src) WHERE rn<=2"),
         Arguments.of(
             "Deduplicate",
             "SELECT g,k,v FROM (SELECT g,k,v,ROW_NUMBER() OVER"
-                + " (PARTITION BY g ORDER BY rt ASC) rn FROM src) WHERE rn=1",
-            true),
-        Arguments.of(
-            "OverAgg", "SELECT g,v,SUM(v) OVER (PARTITION BY g ORDER BY rt) FROM src", false),
+                + " (PARTITION BY g ORDER BY rt ASC) rn FROM src) WHERE rn=1"),
+        Arguments.of("OverAgg", "SELECT g,v,SUM(v) OVER (PARTITION BY g ORDER BY rt) FROM src"),
         Arguments.of(
             "WindowAgg",
             "SELECT g,window_start,window_end,SUM(v) FROM TABLE(TUMBLE(TABLE src,"
-                + "DESCRIPTOR(rt),INTERVAL '4' SECOND)) GROUP BY g,window_start,window_end",
-            false),
-        Arguments.of("Unnest", "SELECT k,x FROM src CROSS JOIN UNNEST(ARRAY[k,v]) AS u(x)", false),
-        Arguments.of("Calc", "SELECT k,v*2 FROM src WHERE MOD(k,2)=0", true));
+                + "DESCRIPTOR(rt),INTERVAL '4' SECOND)) GROUP BY g,window_start,window_end"),
+        Arguments.of("Unnest", "SELECT k,x FROM src CROSS JOIN UNNEST(ARRAY[k,v]) AS u(x)"),
+        Arguments.of("Calc", "SELECT k,v*2 FROM src WHERE MOD(k,2)=0"));
   }
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("queries")
-  void ordinarySqlKeepsNativeExecutionAndHostResults(
-      String family, String query, boolean bindingSupported) throws Exception {
-    var stock = execute(false, family, query, bindingSupported);
+  void ordinarySqlKeepsNativeExecutionAndHostResults(String family, String query) throws Exception {
+    var stock = execute(false, family, query);
     assertFalse(stock.isEmpty());
-    assertEquals(stock, execute(true, family, query, bindingSupported));
+    assertEquals(stock, execute(true, family, query));
   }
 
-  private static Map<List<Object>, Long> execute(
-      boolean nativeRun, String family, String query, boolean bindingSupported) throws Exception {
+  private static Map<List<Object>, Long> execute(boolean nativeRun, String family, String query)
+      throws Exception {
     var reporter = InMemoryReporter.createWithRetainedMetrics();
     var config = reporter.addToConfiguration(new Configuration());
     config.setString("rest.port", "0");
@@ -120,37 +115,19 @@ class CanonicalOrdinarySqlRegressionTest {
                 .anyMatch(entry -> entry.getKey().contains(family) && entry.getValue() > 0),
             () -> "No positive native input for " + family + ": " + inputs + "\n" + actualPlan);
       } else assertTrue(inputs.isEmpty(), inputs.toString());
-      if (nativeRun
-          && (family.equals("UpdatingJoin")
-              || family.equals("Deduplicate")
-              || family.equals("GroupAgg"))) {
-        assertFalse(
-            table
-                .getConfig()
-                .getConfiguration()
-                .getString("streamfusion.canonical.state-contracts", "")
-                .isEmpty());
-        assertTrue(
-            Boolean.parseBoolean(
-                table
-                    .getConfig()
-                    .getConfiguration()
-                    .getString("streamfusion.canonical.metadata-projection-active", "false")));
-      }
-      if (!bindingSupported) {
-        assertEquals(
-            "",
-            table
-                .getConfig()
-                .getConfiguration()
-                .getString("streamfusion.canonical.state-contracts", ""));
-        assertFalse(
-            Boolean.parseBoolean(
-                table
-                    .getConfig()
-                    .getConfiguration()
-                    .getString("streamfusion.canonical.metadata-projection-active", "false")));
-      }
+      assertEquals(
+          "",
+          table
+              .getConfig()
+              .getConfiguration()
+              .getString("streamfusion.canonical.state-contracts", ""),
+          "Collect's nonserializable catalog sink must retain physical execution");
+      assertFalse(
+          Boolean.parseBoolean(
+              table
+                  .getConfig()
+                  .getConfiguration()
+                  .getString("streamfusion.canonical.metadata-projection-active", "false")));
       assertTrue(counts.values().stream().allMatch(count -> count > 0), counts.toString());
       return counts;
     } finally {

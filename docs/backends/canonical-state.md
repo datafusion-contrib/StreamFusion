@@ -1723,8 +1723,10 @@ not forced through portable-plan serialization or claimed as cross-engine canoni
 Serializable custom SQL connector factories remain covered by the isolated handoff tests.
 
 External inline tables used by `fromDataStream` and `TableResult.collect()` also retain their
-physical execution route: Flink cannot serialize their catalog-table origins. Capturing a
-serializable stock template copies connector instances before runtime-provider translation,
+physical execution route: Flink cannot serialize their catalog-table origins. The eight-family
+ordinary SQL collect regression requires this physical route, positive native operator input and
+stock result parity; it must not expect canonical backend metadata for the nonserializable collect
+sink. Capturing a serializable stock template copies connector instances before runtime-provider translation,
 so planning the template cannot mutate the source or sink used for actual execution.
 
 Connector factories that depend on a custom in-memory catalog-table implementation also retain

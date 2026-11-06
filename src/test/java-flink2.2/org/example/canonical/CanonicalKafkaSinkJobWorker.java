@@ -267,6 +267,9 @@ public final class CanonicalKafkaSinkJobWorker {
       }
 
       String saved;
+      Files.writeString(
+          root.resolve(stage + "-committed-before-savepoint"),
+          Integer.toString(committedKafkaRows(root, limit)));
       if (checkpoint) {
         saved = cluster.triggerCheckpoint(job.getJobID()).get(90, TimeUnit.SECONDS);
         job.cancel().get(30, TimeUnit.SECONDS);
@@ -411,6 +414,49 @@ public final class CanonicalKafkaSinkJobWorker {
         if (System.nanoTime() > deadline)
           throw new AssertionError("Kafka input did not reach output boundary");
       }
+    }
+  }
+
+  private static int committedKafkaRows(Path root, int limit) throws Exception {
+    var properties = new Properties();
+    properties.setProperty("bootstrap.servers", Files.readString(root.resolve("brokers")));
+    properties.setProperty("group.id", java.util.UUID.randomUUID().toString());
+    properties.setProperty("enable.auto.commit", "false");
+    properties.setProperty("isolation.level", "read_committed");
+    properties.setProperty(
+        "key.deserializer",
+        org.apache.kafka.common.serialization.StringDeserializer.class.getName());
+    properties.setProperty(
+        "value.deserializer",
+        org.apache.kafka.common.serialization.StringDeserializer.class.getName());
+    String topic = Files.readString(root.resolve("output-topic"));
+    try (var consumer =
+        new org.apache.kafka.clients.consumer.KafkaConsumer<String, String>(properties)) {
+      var partitions =
+          consumer.partitionsFor(topic).stream()
+              .map(
+                  partition ->
+                      new org.apache.kafka.common.TopicPartition(topic, partition.partition()))
+              .collect(java.util.stream.Collectors.toList());
+      consumer.assign(partitions);
+      consumer.seekToBeginning(partitions);
+      var ends = consumer.endOffsets(partitions);
+      var observed = new java.util.HashSet<Integer>();
+      var json = new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper();
+      long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+      while (partitions.stream()
+          .anyMatch(partition -> consumer.position(partition) < ends.get(partition))) {
+        for (var record : consumer.poll(Duration.ofMillis(100))) {
+          var partition =
+              new org.apache.kafka.common.TopicPartition(record.topic(), record.partition());
+          if (record.offset() >= ends.get(partition)) continue;
+          int id = json.readTree(record.value()).get("k").asInt();
+          if (id >= 0 && id < limit) observed.add(id);
+        }
+        if (System.nanoTime() > deadline)
+          throw new AssertionError("Could not inspect the committed Kafka boundary before saving");
+      }
+      return observed.size();
     }
   }
 

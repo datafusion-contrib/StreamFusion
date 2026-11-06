@@ -309,6 +309,10 @@ automatic UIDs and normal chaining. Source maximum parallelism remains 128. The 
 three nullable BIGINT fields in JSON, with three existing input partitions, on released Flink
 2.2.1, Kafka connector 5.0.0-2.2 and the Confluent Kafka 7.6.1 test broker.
 
+Workers also record an independent `read_committed` scan before requesting the savepoint.
+A failed precommit assertion reports that boundary, the engine order and the complete saved
+writer inventory; the precommit and external exactly-once assertions remain required.
+
 Every savepoint checks actual reader and writer parallelism, exact offsets for all three splits,
 nonempty coordinator state, writer prefixes/ownership/precommitted transactions and stable stock
 state identities. External `read_committed` results must contain exactly the expected five, nine
