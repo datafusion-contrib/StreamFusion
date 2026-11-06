@@ -241,8 +241,10 @@ counters and any JVM diagnostics before assigning a cause. The job timeout remai
 
 Each Flink/JDK pair runs three Java jobs. The complete reactor is compiled first with tests
 deferred; `bin/ci_runtime_test_shards.py` then partitions the compiled runtime classes matching
-Surefire's default `Test*`, `*Test`, `*Tests` and `*TestCase` names. SHA-256 of the relative
-class path assigns each candidate to one shard. Nested classes stay with their outer class,
+Surefire's default `Test*`, `*Test`, `*Tests` and `*TestCase` names. Recorded class durations
+from `dev/ci/runtime-durations.json` place the longest classes first into the least-loaded
+partition. New classes receive a one-second estimate; timing estimates affect placement only,
+never selection. Nested classes stay with their outer class,
 and all parameterized invocations stay together. Empty inventories, empty shards and invalid
 indices fail before test execution rather than restoring an unfiltered Surefire run.
 
@@ -269,6 +271,11 @@ the same limit during the subsequent Fluss tests. The runtime phase alone took a
 141 minutes; the other seven Java jobs passed. Three partitions now distribute the complete
 runtime inventory across more jobs, leaving room for the remaining reactor modules and
 JDK 17 boundary checks under the unchanged timeout.
+The [retained scheduling model](benchmarks/ci-latency-20261106.json) uses the original
+773-class Flink 2.2/JDK 11 inventory and observed maximum report times from all host variants.
+Its largest estimated partition falls from 92.19 to 81.26 minutes with the same classes.
+This is a scheduling estimate, not a measured CI speedup: the source run also contains failed
+and interrupted jobs, and real elapsed time includes setup, queueing and test variability.
 Each job also uploads its selected classes and
 complete-inventory digest as a runtime-partition artifact; failure diagnostics have unique
 shard names and are also requested on cancellation, including job timeouts, when the runner

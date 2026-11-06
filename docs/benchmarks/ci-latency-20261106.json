@@ -1,0 +1,27 @@
+{
+  "source_commit": "e825aa28740392e3f643a5ebc729613a948f92bb",
+  "source_run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42210778705",
+  "model": "Three Flink 2.2/JDK 11 runtime partitions; maximum observed class times across hosts, including failed/interrupted runs. Scheduling estimates only, not measured speedup or passing-test evidence.",
+  "classes": 773,
+  "classes_with_observed_timings": 770,
+  "old_estimated_minutes": [
+    92.19,
+    74.42,
+    77.17
+  ],
+  "new_estimated_minutes": [
+    81.26,
+    81.26,
+    81.26
+  ],
+  "old_class_counts": [
+    255,
+    255,
+    263
+  ],
+  "new_class_counts": [
+    252,
+    254,
+    267
+  ]
+}
