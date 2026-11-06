@@ -3550,7 +3550,14 @@ or complete-job schema combination.
 Complete-job mini-batch controls compare external committed changelogs with a separate stock
 job stopped at the same checkpoint/savepoint cuts. Those barriers flush bundles and can change
 emission timing even in stock-to-stock execution; an uninterrupted stock changelog is therefore
-not an equivalent mini-batch boundary oracle. Independent final-table assertions remain in place.
+not an equivalent mini-batch boundary oracle. Independent final-table assertions remain in place. Stock-bound
+native bundles preserve released Flink's projected BinaryRow HashMap order and retain its table
+capacity across drains. This matters when a downstream rank consumes changes from competing
+aggregate keys: first-touch order can change its intermediate changelog while preserving the
+final table. Four exact ordered-output controls compare three successive drains on both stores
+and whole/split Arrow batches, including NULL keys. The 290-case state/local/checkpoint cohort
+passes alongside eight isolated SQL/compiled mini-batch rank handoffs with all original full
+changelog assertions retained. These tests add no state descriptors or snapshot formats.
 All 56 distinct complete-job scenarios pass across one-phase and local/global plans: sixteen
 continued-input cases, sixteen no-input returns, eight ordinary native-checkpoint recoveries and
 sixteen rescalings. They cover SQL/compiled submission, both native stores and initial engine

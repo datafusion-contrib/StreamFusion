@@ -682,13 +682,20 @@ cover empty and no-input returns, native checkpoint recovery and rescaling 1→3
 parallelism 128. Rescale distributes 64 partition keys with one aggregate key each; competing rows
 are exercised separately. Every advancing native leg requires actual Top-N input, both transposes
 remain in the plan, custom source offsets and sink committed effects survive, and stock processes
-exclude StreamFusion. Grouped aggregation retains its stock state owner.
+exclude StreamFusion. The mini-batch grouped aggregate uses a native owner bound to the stock
+accumulator contract.
 
-Final qualification combines 160 passing original cases and eight passing targeted reruns after
-the reference correction below; it is not a single clean rerun of all 168. Production code and the
-native library are identical across these runs. The initial eight failures remain archived. The
+The original 168-case qualification combined 160 passing cases and eight targeted reruns after
+the reference correction below. A subsequent rerun exposed two mini-batch changelog mismatches
+and required the native aggregate bundle-order correction. All eight mini-batch handoffs pass
+on the corrected library across both submission forms, engine orders and stores; the 290-case
+aggregate state and ordered-output cohort also passes. Earlier failed diagnostics remain archived.
+These targeted reruns overlap the 168-case matrix rather than adding new job coverage. The
 mini-batch fixture's stock baseline uses the same barrier cuts because barriers legitimately flush
-pending aggregate changes. TTL job cases configure one-hour retention; controlled expiry and
+pending aggregate changes. Its latency exceeds the test timeout so only count and barrier drains
+contribute to this deterministic comparison. Stock-bound native aggregate bundles drain in the
+released BinaryRow HashMap order, including retained table capacity between drains; first-touch
+order can otherwise alter the downstream rank changelog even when its final table agrees. TTL job cases configure one-hour retention; controlled expiry and
 independent ages are verified in the direct/lifecycle cases. The combined distinct Flink 2.2
 operator/planner/job selection has 1,548 passing cases, including the twelve stock-only reference
 checks below. Component/smoke/upstream selections overlap and are not added to this count. All 15

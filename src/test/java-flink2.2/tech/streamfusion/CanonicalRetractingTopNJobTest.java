@@ -223,7 +223,10 @@ class CanonicalRetractingTopNJobTest {
     }
     Files.write(root.resolve("input.csv"), input);
     if (variant.equals("ttl")) Files.writeString(root.resolve("state-ttl"), "1 h");
-    if (variant.equals("mini-rank")) Files.writeString(root.resolve("one-phase-mini-batch"), "3");
+    if (variant.equals("mini-rank")) {
+      Files.writeString(root.resolve("one-phase-mini-batch"), "3");
+      Files.writeString(root.resolve("mini-batch-latency"), "1000000 d");
+    }
     Files.writeString(
         root.resolve("query.sql"),
         "INSERT INTO output_table SELECT k,v,"

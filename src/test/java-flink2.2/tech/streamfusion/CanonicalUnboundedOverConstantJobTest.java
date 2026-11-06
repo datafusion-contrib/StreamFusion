@@ -2,6 +2,7 @@ package tech.streamfusion;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.params.provider.Arguments;
@@ -33,6 +34,12 @@ class CanonicalUnboundedOverConstantJobTest extends CanonicalUnboundedOverJobTes
 
   @Override
   Map<String, String> expectedTable(String kind, String mode) {
-    return global() ? Map.of("0", "11|77") : Map.of("1", "6|42", "2", "3|21", "null", "2|14");
+    if (!mode.equals("rescale"))
+      return global() ? Map.of("0", "11|77") : Map.of("1", "6|42", "2", "3|21", "null", "2|14");
+    if (global()) return Map.of("0", "384|2688");
+    var expected = new HashMap<String, String>();
+    for (int key = 0; key < 64; key++)
+      expected.put(key == 0 ? "null" : Integer.toString(key), "6|42");
+    return expected;
   }
 }

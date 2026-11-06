@@ -1659,10 +1659,12 @@ storage, both transposes execute, stock workers exclude StreamFusion, and metada
 StreamFusion types. Complete committed changes and independent SUM/AVG tables match stock.
 These job cases use BIGINT values; FLOAT/DOUBLE qualification remains at operator/planner level.
 
-Sixteen additional COUNT(*)/literal jobs pass for keyed/global state, both frame/submission forms
-and both stores. Their native-first round trips exercise both conversion directions and prove
-that NULL-valued input still increments COUNT(*) and the literal sum. These sixteen cases do not
-claim constant-query checkpoint/no-input/rescaling qualification. A separate 32-job harness
+The COUNT(*)/literal cohort covers 96 keyed/global jobs across both frame/submission forms and
+both stores: sixteen continuation switches, 32 no-input round trips, sixteen native-checkpoint
+recoveries and 32 rescalings. Continuation and checkpoint cases start native; no-input and rescale
+cases start in either engine. NULL-valued input still increments COUNT(*) and the literal sum.
+Rescaling retains all 384 input rows: each of 64 keyed partitions finishes at count 6 and literal
+sum 42, while the singleton global owner finishes at count 384 and sum 2688. A separate 32-job harness
 regression passes 24 bounded OVER continuations and eight global GROUP BY rescalings.
 Native connector transactions, sink-writer rescaling and the wider failure/version matrix remain
 unfinished; the custom fixtures establish their stock connector protocols only.

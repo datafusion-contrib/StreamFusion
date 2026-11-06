@@ -172,3 +172,14 @@ The local/global partial carrier retains those original key bytes alongside its 
 payload. This follows Comet's copied/moved Arrow ownership; no borrowed upstream row survives a
 boundary. The operator page records the combined byte/routing and full-job qualification and
 remaining user-serializer/type/failure requirements. Benchmarking is deferred.
+
+
+Stock-bound mini-batches also preserve released Flink's bundle key order. Arroyo's incremental
+aggregator drains its updated-key collection, whereas Flink's bundle operator traverses a Java
+HashMap of projected BinaryRow keys and clears it without shrinking. StreamFusion reuses its
+existing Java map-order implementation with those projected hashes and preserves table capacity
+between drains. This is transient execution state: a newly restored operator starts a fresh
+bundle map, just as stock Flink does. Arrival-order drains can change a downstream retracting
+rank's intermediate changelog despite matching final tables. No canonical or native checkpoint
+format changes, extra JNI handoff, or intermediate native snapshot are introduced. Benchmarking
+remains deferred.

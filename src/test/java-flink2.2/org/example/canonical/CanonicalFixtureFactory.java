@@ -379,9 +379,7 @@ public final class CanonicalFixtureFactory
     }
 
     @Override
-    public void addReader(int subtask) {
-      assign(subtask);
-    }
+    public void addReader(int subtask) {}
 
     private void assign(int subtask) {
       if (pending >= 0) {
@@ -445,7 +443,8 @@ public final class CanonicalFixtureFactory
         return noMoreSplits && limit >= rows.size()
             ? InputStatus.END_OF_INPUT
             : InputStatus.NOTHING_AVAILABLE;
-      if (split.offset >= rows.size()) return InputStatus.END_OF_INPUT;
+      if (split.offset >= rows.size())
+        return noMoreSplits ? InputStatus.END_OF_INPUT : InputStatus.NOTHING_AVAILABLE;
       if (split.offset >= limit) {
         markReady();
         return InputStatus.NOTHING_AVAILABLE;
@@ -485,7 +484,9 @@ public final class CanonicalFixtureFactory
       if (split.offset == limit && limit < rows.size()) markReady();
       return split.offset < Math.min(limit, rows.size())
           ? InputStatus.MORE_AVAILABLE
-          : split.offset == rows.size() ? InputStatus.END_OF_INPUT : InputStatus.NOTHING_AVAILABLE;
+          : split.offset == rows.size() && noMoreSplits
+              ? InputStatus.END_OF_INPUT
+              : InputStatus.NOTHING_AVAILABLE;
     }
 
     private void markReady() throws IOException {
@@ -503,7 +504,7 @@ public final class CanonicalFixtureFactory
     @Override
     public CompletableFuture<Void> isAvailable() {
       if (split != null && split.offset < Math.min(limit, rows.size())
-          || split != null && split.offset >= rows.size()
+          || split != null && split.offset >= rows.size() && noMoreSplits
           || split == null && noMoreSplits && limit >= rows.size()) {
         return CompletableFuture.completedFuture(null);
       }

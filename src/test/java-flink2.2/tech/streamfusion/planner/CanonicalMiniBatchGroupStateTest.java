@@ -72,6 +72,66 @@ class CanonicalMiniBatchGroupStateTest {
     }
   }
 
+  static Stream<Arguments> bundleOrders() {
+    return Stream.of(false, true)
+        .flatMap(rocks -> Stream.of(false, true).map(split -> Arguments.of(rocks, split)));
+  }
+
+  @ParameterizedTest(name = "rocks={0},split={1}")
+  @MethodSource("bundleOrders")
+  void completeBundleOrderMatchesReleasedHashMapAcrossRepeatedDrains(boolean rocks, boolean split)
+      throws Exception {
+    try (var reference = new MiniBatchGroupStockFixture("BIGINT", false, rocks);
+        var fixture = new MiniBatchGroupStockFixture("BIGINT", false, rocks);
+        var owner = fixture.nativeHarness()) {
+      reference.openStock(null);
+      owner.open();
+      for (var keys :
+          List.of(
+              Arrays.asList(17L, 3L, null, 2L),
+              Arrays.asList(2L, null, 17L, 3L),
+              Arrays.asList(40L, 30L, 10L, null))) {
+        var input = new ArrayList<RowData>();
+        for (var key : keys) input.add(reference.seed(key, 7, "1", false));
+        reference.stockBundle(input);
+        var physical =
+            split
+                ? input.stream().map(List::of).collect(java.util.stream.Collectors.toList())
+                : List.of(input);
+        for (var batch : physical)
+          owner.processElement(
+              new StreamRecord<>(
+                  new ArrowBatch(
+                      RowDataArrowConverter.write(
+                          batch, fixture.inputType, NativeAllocator.SHARED, true, true))));
+        owner.prepareSnapshotPreBarrier(1);
+        var actual = new ArrayList<RowData>();
+        Object element;
+        while ((element = owner.getOutput().poll()) != null)
+          if (element instanceof StreamRecord)
+            try (var root = ((ArrowBatch) ((StreamRecord<?>) element).getValue()).root()) {
+              for (var row : RowDataArrowConverter.read(root, fixture.outputType))
+                actual.add(new RowDataSerializer(fixture.outputType).copy(row));
+            }
+        assertEquals(
+            orderedBytes(reference.harness.extractOutputValues(), fixture.outputType),
+            orderedBytes(actual, fixture.outputType));
+      }
+    }
+  }
+
+  private static List<String> orderedBytes(
+      List<RowData> rows, org.apache.flink.table.types.logical.RowType type) throws Exception {
+    var serializer = new RowDataSerializer(type);
+    var result = new ArrayList<String>();
+    for (var row : rows) {
+      var bytes = new org.apache.flink.core.memory.DataOutputSerializer(64);
+      serializer.serialize(row, bytes);
+      result.add(Base64.getEncoder().encodeToString(bytes.getCopyOfBuffer()));
+    }
+    return result;
+  }
+
   static Stream<Arguments> checkpoints() {
     return MiniBatchGroupStockFixture.types()
         .flatMap(

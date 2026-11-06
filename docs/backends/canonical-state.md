@@ -1356,7 +1356,7 @@ native-checkpoint recovery before canonical backend changes, and automatic plann
 The operator page separates that evidence from complete-job qualification and remaining gaps.
 
 
-Separate complete-job cohorts pass 112 unbounded arithmetic cases and sixteen COUNT(*)/literal
+Separate complete-job cohorts pass 112 unbounded arithmetic cases and 96 COUNT(*)/literal
 cases, retaining custom stock source/committer state, both transposes, clean stock workers and
 external committed effects. The arithmetic matrix includes immediate returns, native-checkpoint
 recovery and keyed/global rescaling with the original singleton/global constraints. Another
@@ -1753,3 +1753,11 @@ Stock sink timestamp helpers are matched by their exact released operator class,
 index and timestamp precision, with the complete surrounding topology still checked. Fresh
 planner display IDs do not change that role. Changed field indexes or precisions remain errors,
 including when their display names happen to match. These helpers are preserved, not omitted.
+
+
+The custom source fixture follows released Flink's pull-based completion protocol: reader
+registration does not assign work, split requests deliver the assignment and completion event,
+and an exhausted reader waits for `NoMoreSplits` before ending. Eight focused protocol controls
+include exhausted restored splits and idle readers; four fail against the previous fixture.
+All eight global GROUP BY rescale regressions pass with this source correction. Source offset
+serialization and canonical state schemas are unchanged.

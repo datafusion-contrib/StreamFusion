@@ -1648,6 +1648,7 @@ pub(crate) struct GroupAggregator<S: KeyedStateStore<GroupKeyState> = MemoryGrou
     mini_batch: bool,
     single_pending: single_append::SingleAppendBuffer,
     staged_order: Vec<ByteKey>,
+    stock_bundle_capacity: usize,
     staged_changes: HashMap<ByteKey, StagedGroupChange>,
     staged_key_batches: Vec<RecordBatch>,
     staged_bytes: usize,
@@ -1864,6 +1865,7 @@ impl GroupAggregator {
             mini_batch: false,
             single_pending: single_append::SingleAppendBuffer::default(),
             staged_order: Vec::new(),
+            stock_bundle_capacity: 16,
             staged_changes: HashMap::default(),
             staged_key_batches: Vec::new(),
             staged_bytes: 0,
@@ -1940,6 +1942,7 @@ impl GroupAggregator {
             mini_batch: self.mini_batch,
             single_pending: self.single_pending,
             staged_order: self.staged_order,
+            stock_bundle_capacity: self.stock_bundle_capacity,
             staged_changes: self.staged_changes,
             staged_key_batches: self.staged_key_batches,
             staged_bytes: self.staged_bytes,
@@ -3505,7 +3508,44 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         if !self.mini_batch || self.staged_order.is_empty() {
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
-        let order = std::mem::take(&mut self.staged_order);
+        let mut order = std::mem::take(&mut self.staged_order);
+        // Stock bundles iterate a cleared-but-not-shrunk HashMap of projected BinaryRow keys.
+        // Arrival order can change a downstream rank's changelog even when final tables agree.
+        let mut reservation = self.memory.temporary_reservation();
+        if self.stock_append_only.is_some() {
+            let mut hashes: Vec<_> = self
+                .staged_key_batches
+                .iter()
+                .map(|batch| {
+                    BinaryRowBatchEncoder::new(
+                        batch,
+                        &self.key_columns,
+                        &self.key_timestamp_precisions,
+                    )
+                    .projected()
+                })
+                .collect();
+            let mut map = JavaMapOrder::with_capacity(self.stock_bundle_capacity);
+            for (index, key) in order.iter().enumerate() {
+                let change = &self.staged_changes[key];
+                let hash = hashes[change.key_batch].hash(change.key_row) as u32;
+                map.insert(index, (hash ^ (hash >> 16)) as i32);
+            }
+            if let Some(reservation) = &mut reservation {
+                reservation.try_grow(
+                    map.bytes()
+                        + order.len()
+                            * (std::mem::size_of::<Option<ByteKey>>()
+                                + std::mem::size_of::<ByteKey>()),
+                )?;
+            }
+            self.stock_bundle_capacity = map.capacity();
+            let mut keys: Vec<_> = order.into_iter().map(Some).collect();
+            order = map
+                .iter()
+                .map(|index| keys[index].take().unwrap())
+                .collect();
+        }
         let changes = std::mem::take(&mut self.staged_changes);
         let key_batches = std::mem::take(&mut self.staged_key_batches);
         let num_agg = self.kinds.len();
