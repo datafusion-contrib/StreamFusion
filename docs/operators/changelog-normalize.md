@@ -65,7 +65,8 @@ shared stateful roles and unqualified consumers remain partial under
 ## ROW-key handoff behavior
 
 ROW-bearing unique keys retain their exact stock binary representation through the input exchange
-and direct canonical bridge, including nested row kinds and reserved bytes. Stock key serializers,
+and direct canonical bridge, including nested row kinds and reserved bytes. Both paths use the
+same input schema, including representation-preserving nested strings. Stock key serializers,
 key groups and the retained row descriptor remain unchanged. Duplicate detection compares row
 content through the shared stock-compatible equaliser instead of treating Java representation
 flags as changed data. TTL refresh behavior retains its existing rules.

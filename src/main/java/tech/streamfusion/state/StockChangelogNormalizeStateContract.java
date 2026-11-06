@@ -89,11 +89,10 @@ public final class StockChangelogNormalizeStateContract implements StockStateCon
   }
 
   private org.apache.arrow.vector.types.pojo.Schema arrowSchema(RowType type) {
-    var schema = ArrowConversion.toArrowSchema(type);
     return keyType.getChildren().stream()
             .anyMatch(StockChangelogNormalizeStateContract::containsRow)
-        ? tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(schema)
-        : schema;
+        ? ArrowConversion.toBinaryRowKeySchema(type)
+        : ArrowConversion.toArrowSchema(type);
   }
 
   private static boolean containsRow(org.apache.flink.table.types.logical.LogicalType type) {

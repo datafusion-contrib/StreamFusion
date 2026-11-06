@@ -333,9 +333,7 @@ class CanonicalNormalizerRowKeyTest {
       List<RowData> rows, RowType type) {
     var root =
         org.apache.arrow.vector.VectorSchemaRoot.create(
-            tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(
-                ArrowConversion.toArrowSchema(type)),
-            NativeAllocator.SHARED);
+            ArrowConversion.toBinaryRowKeySchema(type), NativeAllocator.SHARED);
     var kinds = new TinyIntVector(RowDataArrowConverter.ROW_KIND_COLUMN, NativeAllocator.SHARED);
     try {
       var writer = ArrowConversion.createRowDataArrowWriter(root, type);

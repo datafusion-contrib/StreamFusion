@@ -141,7 +141,7 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
   }
 
   static Schema binaryRowKeySchema(RowType type) {
-    return NestedRepresentation.withBinaryRows(ArrowConversion.toArrowInputSchema(type, true));
+    return ArrowConversion.toBinaryRowKeySchema(type);
   }
 
   @Override

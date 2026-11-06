@@ -150,6 +150,10 @@ public final class ArrowConversion {
     return schema(rowType, preserve, true);
   }
 
+  public static Schema toBinaryRowKeySchema(RowType rowType) {
+    return NestedRepresentation.withBinaryRows(toArrowInputSchema(rowType, true));
+  }
+
   private static Schema schema(RowType rowType, boolean preserve, boolean input) {
     List<Field> fields =
         rowType.getFields().stream()
