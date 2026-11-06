@@ -458,6 +458,28 @@ final class StockCompiledPlanLowering {
     return true;
   }
 
+  static boolean hasUnqualifiedConnectorState(
+      SqlPlanOrigins.RuntimeGraph graph, ClassLoader loader) {
+    Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    collectOrdinaryNodes(graph.getRootNodes(), nodes);
+    var extensions =
+        ServiceLoader.load(NativePlannerExtension.class, loader).stream()
+            .map(ServiceLoader.Provider::get)
+            .collect(java.util.stream.Collectors.toList());
+    for (ExecNode<?> node : nodes) {
+      if (ordinaryHelper(node) || !node.getClass().getName().startsWith("tech.streamfusion."))
+        continue;
+      ExecNode<?> original = graph.originals.get(node);
+      if (original instanceof StreamExecTableSourceScan
+          && extensions.stream().noneMatch(extension -> extension.preservesStockSourceState(node)))
+        return true;
+      if (original instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink
+          && extensions.stream().noneMatch(extension -> extension.preservesStockSinkState(node)))
+        return true;
+    }
+    return false;
+  }
+
   ExecNodeGraph bindOrdinary(SqlPlanOrigins.RuntimeGraph graph) {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);

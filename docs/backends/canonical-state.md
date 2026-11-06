@@ -1701,3 +1701,11 @@ ROW-key normalization also accepts Arrow Java's network-only rename of the inter
 UTF-16 list child (`unit` to `$data$`). Decoded retained rows are reconciled with their emitted
 schema, including update-before rows after a rescale. This does not relax logical field types,
 nullability or representation metadata, and it does not change stock key or state bytes.
+
+A private graph containing a native connector without a qualified stock state contract keeps
+its complete native execution route. It must not be partially rebuilt from the stock template
+for a neighboring window or other state owner: that would discard the admitted connector and
+its shared Arrow edges. Such graphs keep their existing native checkpoint/savepoint dependency.
+
+Representation-only helpers are excluded when identifying native connector state. A transpose
+may inherit its input's captured source identity without becoming a source-state owner.

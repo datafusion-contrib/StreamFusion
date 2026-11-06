@@ -1902,3 +1902,8 @@ exporting a stock Flink JSON/Smile plan. Exporting that plan does not change the
 `execute()` or `explain()`. Paimon reader and writer state remain outside the qualified
 cross-engine canonical-savepoint contracts; persisted stock plans use the documented
 restore-time planner admission rather than claiming native Paimon state interchange.
+
+A private graph containing a native connector without a qualified stock state contract keeps
+its complete native execution route. It must not be partially rebuilt from the stock template
+for a neighboring window or other state owner: that would discard the admitted connector and
+its shared Arrow edges. Such graphs keep their existing native checkpoint/savepoint dependency.
