@@ -177,7 +177,7 @@ jobs:
           mvn -B -ntp ${{ matrix.profile }} test -DskipTests -Dnative.build.skip=true
           python3 bin/ci_runtime_test_shards.py \
             --classes streamfusion-runtime/target/test-classes \
-            --count 3 --index ${{ matrix.shard }} \
+            --suite runtime --count 3 --index ${{ matrix.shard }} \
             --output "$RUNNER_TEMP/runtime-test-includes.txt"
 
       - name: Run Java test suite
@@ -237,6 +237,60 @@ jobs:
           name: portable-sql-audit-${{ matrix.line }}${{ matrix.jdk == '11' && '-jdk11' || '' }}
           path: streamfusion-runtime/target/sql-audit/*.json
           if-no-files-found: error
+
+  canonical-job-tests:
+    needs: native-build
+    name: Canonical savepoint jobs (JDK ${{ matrix.jdk }}) (shard ${{ matrix.shard }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        jdk: ['17', '11']
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+    env:
+      SF_KAFKA_INTEGRATION: 'true'
+    steps:
+      - uses: actions/checkout@v6
+      - name: Free disk space
+        run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+          cache: maven
+      - uses: actions/download-artifact@v5
+        with:
+          name: debug-native-${{ github.sha }}
+          path: native/target/debug
+      - name: Resolve Java dependencies before tests
+        run: |
+          python3 bin/ci-maven-dependencies.py --profile canonical-kafka --projects streamfusion-runtime
+          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
+      - name: Compile and partition complete canonical jobs
+        run: |
+          mvn -B -ntp -Pcanonical-kafka -pl streamfusion-runtime -am test -DskipTests -Dnative.build.skip=true
+          python3 bin/ci_runtime_test_shards.py \
+            --classes streamfusion-runtime/target/test-classes \
+            --suite canonical --count 32 --index ${{ matrix.shard }} \
+            --output "$RUNNER_TEMP/canonical-job-includes.txt"
+      - name: Run every selected canonical job
+        run: >-
+          mvn -B -ntp -Pcanonical-kafka -pl streamfusion-runtime -am test
+          -Dnative.build.skip=true
+          "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/canonical-job-includes.txt"
+          -Dsf.testForks=1 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx4g"
+      - name: Retain canonical job selection and outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-job-results-jdk${{ matrix.jdk }}-shard${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/canonical-job-includes.*
+            streamfusion-runtime/target/surefire-reports/*
+            **/hs_err_pid*.log
+          if-no-files-found: error
+          retention-days: 7
 
   lake-module-tests:
     needs: native-build
@@ -497,7 +551,7 @@ jobs:
   all-tests:
     name: All CI tests
     if: ${{ (always() && !cancelled()) && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
-    needs: [native-build, native-tests, java-tests, lake-module-tests, image-integration, doris-tests]
+    needs: [native-build, native-tests, java-tests, canonical-job-tests, lake-module-tests, image-integration, doris-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

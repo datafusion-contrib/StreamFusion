@@ -2,6 +2,7 @@
 
 from collections import Counter
 import copy
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -23,6 +24,26 @@ def plain(element):
 
 
 class RuntimeTestShardsTest(unittest.TestCase):
+    def test_canonical_jobs_and_runtime_are_a_complete_disjoint_bounded_partition(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            names = {f"CanonicalCase{index}JobTest" for index in range(118)}
+            names.update(f"Case{index}Test" for index in range(20))
+            names.add("CanonicalStateContractTest")
+            for name in names | {"Helper", "CanonicalCase0JobTest$Nested"}:
+                path = root / "tech/streamfusion" / (name + ".class")
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+            canonical = shards.partition(root, 32, "canonical")
+            runtime = shards.partition(root, 3, "runtime")
+            self.assertEqual(Counter("tech/streamfusion/" + n for n in names),
+                             Counter(n for part in canonical + runtime for n in part))
+            self.assertLessEqual(max(map(len, canonical)), 4)
+            self.assertEqual(118, sum(map(len, canonical)))
+            self.assertEqual(canonical, shards.partition(root, 32, "canonical"))
+            with self.assertRaises(ValueError):
+                shards.partition(root, 3, "unknown")
+
     def test_default_names_are_complete_disjoint_stable_and_pinned_suites_stay_together(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -107,6 +128,18 @@ class RuntimeTestShardsTest(unittest.TestCase):
 class SuffixTests {
 @org.junit.jupiter.params.ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(ints={1,2})
 void repeated(int value) throws Exception { ''' + body('"parameter-" + value') + " } }")
+            (source / "CanonicalParentJobTest.java").write_text('''package tech.streamfusion;
+class CanonicalParentJobTest {
+@org.junit.jupiter.params.ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(ints={1,2})
+void inherited(int value) throws Exception { ''' + body('getClass().getSimpleName() + value') + ''' }
+@org.junit.jupiter.api.Nested class Context {
+@org.junit.jupiter.api.Test void nested() throws Exception { ''' + body('CanonicalParentJobTest.this.getClass().getSimpleName() + "-nested"') + ''' }
+}
+}''')
+            (source / "CanonicalChildJobTest.java").write_text('''package tech.streamfusion;
+class CanonicalChildJobTest extends CanonicalParentJobTest {
+@org.junit.jupiter.api.Test void own() throws Exception { ''' + body('"child-only"') + ''' }
+}''')
 
             def run(*options):
                 result = subprocess.run(["mvn", "-B", "-ntp", "test", *options], cwd=root,
@@ -137,6 +170,21 @@ void repeated(int value) throws Exception { ''' + body('"parameter-" + value') +
                         actual.update(run(f"-Dsf.runtime.testIncludesFile={output}"))
                     self.assertEqual(baseline, actual)
                     self.assertEqual(expected_markers, {path.name for path in selected.iterdir()})
+
+            for path in selected.iterdir():
+                path.unlink()
+            actual = Counter()
+            inventories = set()
+            for suite in ("runtime", "canonical"):
+                for index in (1, 2):
+                    output = root / f"{suite}-{index}.txt"
+                    shards.write_selection(root / "target/test-classes", 2, index, output, suite)
+                    inventories.add(json.loads(output.with_suffix(".json").read_text())[
+                        "complete_inventory_sha256"])
+                    actual.update(run(f"-Dsf.runtime.testIncludesFile={output}"))
+            self.assertEqual(1, len(inventories))
+            self.assertEqual(baseline, actual)
+            self.assertEqual(expected_markers, {path.name for path in selected.iterdir()})
 
             for path in selected.iterdir():
                 path.unlink()

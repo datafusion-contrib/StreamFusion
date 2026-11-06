@@ -469,3 +469,24 @@ inventory and nonempty Arrow source-read witnesses are audited. One stale upstre
 timestamp assertion is accepted only after reproducing and matching its exact failure with
 StreamFusion disabled; all original test SQL and assertions still execute. The incremental reader has unit coverage; a compatible Doris 5.0 server is not
 yet available as a released CI fixture.
+
+## Complete canonical job matrix
+
+Flink 2.2 canonical handoff jobs run in 32 additional required shards on each of JDK 11 and 17.
+The existing three runtime shards retain all other default Surefire classes on both Flink lines.
+Both selections are computed from the compiled test inventory: their union is the original
+selection and their intersection is empty. Sorted round-robin allocation bounds the number of
+complete-job classes per canonical shard; test methods, inherited parameterized cases, nested
+classes and ORC tag handling are unchanged. Every canonical shard is required by `All CI tests`.
+
+These jobs share the exact-commit debug native artifact, retain their selection manifests and
+Surefire reports, and enable the existing Docker-backed Kafka canonical cases with
+`SF_KAFKA_INTEGRATION=true`. The canonical Kafka profile supplies the JSON module used by those
+jobs. Native execution and clean stock-worker classpath assertions remain active. Benchmarking
+for the canonical delivery is deferred by the maintainer.
+
+The separate schedule is necessary for the existing complete-job tests: retained local XML for
+62 of the 118 classes alone totals median shard work of roughly 260, 382 and 467 minutes under
+the previous three-way hash partition. Those observations are scheduling evidence, not a
+throughput benchmark. The ordinary 150-minute job limit cannot accommodate that selection.
+Canonical shards have a 180-minute limit; no test is removed to make a shard pass.
