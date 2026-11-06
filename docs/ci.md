@@ -46,6 +46,13 @@ canceled, skipped or neutral workflows cannot satisfy the gates; missing or disa
 report action required. Existing GitHub rulesets stay in place. The reporter checks out only
 trusted default-branch code and never executes PR code with its write-capable token.
 
+Each mirrored check includes individual job links, start delays and execution times from the
+fork. Start delay includes prerequisite builds as well as runner queueing; it is not labelled
+as pure runner wait. Queued jobs do not acquire a fictitious execution time from GitHub's
+preallocated start timestamp. The ordinary Java jobs are named **Runtime, connectors and
+formats** because their selection includes all three; Doris's real-server suite remains a
+separate job. Full workflow results continue to control the required gates.
+
 GitHub cron is best effort: a requested fifteen-minute schedule can be delayed or dropped for
 hours. Fork workflow completions do not trigger `workflow_run` in the canonical repository,
 so a single PR-event refresh followed only by cron can leave successful tests displayed as

@@ -110,7 +110,7 @@ jobs:
 
   java-tests:
     needs: native-build
-    name: Java tests (debug native build)${{ matrix.suffix }}${{ matrix.jdk == '11' && ' (JDK 11)' || '' }} (shard ${{ matrix.shard }})
+    name: Runtime, connectors and formats${{ matrix.suffix }} (JDK ${{ matrix.jdk }}, shard ${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
