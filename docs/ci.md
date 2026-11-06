@@ -140,6 +140,14 @@ only metric-name recognition; workloads, timing and the pinned baseline stay unc
 
 ## Shared debug native libraries
 
+Host and Darwin release builds compile the selected native packages together in one Cargo
+invocation per target, then stage their individual libraries. Previously the host-only image
+path invoked Cargo separately for every package on each Flink line, allowing different feature
+graphs to rebuild shared dependencies. Package selection, mimalloc, platform staging and JNI
+export checks are unchanged. The shell regression verifies both Flink lines, both Darwin
+architectures, every staged library and propagation of native build failures. This removes
+repeated compiler invocations; hosted elapsed-time improvement still needs measurement.
+
 Ordinary CI builds all workspace debug native libraries once in a dedicated Ubuntu 24.04
 job. That job verifies the package dependencies and JNI export boundaries, then uploads only
 the shared libraries as a commit-specific artifact. The eight Java and eleven lake-module
@@ -166,6 +174,13 @@ Flink suite keep their own build configurations. The debug artifact is scoped to
 workflow run and commit; it is not a release payload or a cache of test outcomes. This replaces
 the independent debug library builds with one without changing test selection or test concurrency.
 Actual elapsed-time savings must be measured in GitHub Actions after this change runs.
+
+Personal-fork branch pushes also save their Cargo dependency caches and prepared pinned Flink
+checkout/Maven caches. Restricting saves to `main` left normal fork development branches unable
+to warm their own caches for subsequent pushes. GitHub keeps those caches scoped to the branch;
+canonical development branches remain read-only and canonical `main` retains its normal writes.
+Native libraries and test results still come from the exact current commit, not the dependency
+cache. The debug-library producer remains the only writer of its shared cache.
 
 Iceberg Rust 0.11 requires Rust 1.95, so the shared toolchain is 1.95.0.
 All Rust workflows, including the consolidated JVM aggregate and nested-scalar diagnostics,

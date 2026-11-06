@@ -35,7 +35,7 @@ jobs:
         with:
           workspaces: native
           shared-key: debug-jvm
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
 
       - name: Build all debug native libraries once
         working-directory: native
@@ -82,7 +82,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
 
       - name: Test fork result reporting
         run: python3 -m unittest discover -s bin -p test_fork_ci_status.py
@@ -154,6 +154,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_runtime_test_shards.py'
           python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
           python3 -m unittest discover -s bin -p 'test_package_release.py'
+          python3 -m unittest discover -s bin -p 'test_build_release.py'
 
       - name: Test Flink 1.18 native and fallback contract selection
         if: matrix.line == '1.18' && matrix.jdk == '17' && matrix.shard == 1
@@ -413,7 +414,7 @@ jobs:
         with:
           key: ubuntu-22.04-glibc-2.35
           workspaces: native -> target/release-staging
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
 
       - name: Resolve image dependencies before builds and tests
         run: python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profile }}"
