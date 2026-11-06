@@ -1715,3 +1715,9 @@ each explanation or submission. Rebinding an already modified private graph can 
 a previously attached state contract without its matching canonical backend. Private native
 graphs are retained only where execution requires the existing native-only route. Repeated
 `explain()`/`execute()` therefore preserves canonical backend installation and original identities.
+
+The stock-template path requires Flink's own JSON-serde support for every execution node.
+DataStream-backed table scans, legacy sources/sinks and table-aggregate nodes that Flink marks
+nonserializable keep their existing physical execution and native checkpoint route. They are
+not forced through portable-plan serialization or claimed as cross-engine canonical coverage.
+Serializable custom SQL connector factories remain covered by the isolated handoff tests.

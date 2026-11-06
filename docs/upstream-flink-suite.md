@@ -1876,3 +1876,9 @@ Route scopes cover each released heap/RocksDB parameter and preserve the existin
 and Flink 1.18 changelog-state fallback variants. These fixtures supplement the typed,
 controlled-clock bundle and checkpoint/savepoint-rescaling checks; unrelated native work
 cannot satisfy either phase contract.
+
+Ordinary DataStream-backed table programs retain their original execution route when Flink's
+released execution-node metadata declares the graph nonserializable. Canonical stock-template
+binding must not force these programs through JSON serialization. Unchanged upstream aggregate,
+nested-table Calc and OVER assertions still run with their original native-execution contracts;
+this boundary does not add DataStream-bridge canonical interchange coverage.

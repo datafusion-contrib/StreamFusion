@@ -458,6 +458,16 @@ final class StockCompiledPlanLowering {
     return true;
   }
 
+  static boolean canSerializeStockTemplate(ExecNodeGraph graph) {
+    Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    collectOrdinaryNodes(graph.getRootNodes(), nodes);
+    return nodes.stream()
+        .noneMatch(
+            node ->
+                org.apache.flink.table.planner.plan.utils.ExecNodeMetadataUtil.isUnsupported(
+                    node.getClass()));
+  }
+
   static boolean hasUnqualifiedConnectorState(
       SqlPlanOrigins.RuntimeGraph graph, ClassLoader loader) {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());

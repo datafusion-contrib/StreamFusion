@@ -48,7 +48,8 @@ final class NativeStreamPlanner extends StreamPlanner {
       var stock = captured.stock;
       var loader = getFlinkContext().getClassLoader();
       boolean nativeOnly =
-          StockCompiledPlanLowering.hasUnqualifiedConnectorState(captured, loader)
+          !StockCompiledPlanLowering.canSerializeStockTemplate(stock)
+              || StockCompiledPlanLowering.hasUnqualifiedConnectorState(captured, loader)
               || !StockCompiledPlanLowering.canBindOrdinary(captured, loader)
                   && !StockCompiledPlanLowering.requiresStockTemplate(captured);
       ExecNodeGraph execution = nativeOnly ? graph : stock;
@@ -124,7 +125,9 @@ final class NativeStreamPlanner extends StreamPlanner {
     if (graph instanceof SqlPlanOrigins.RuntimeGraph)
       return ordinaryRuntimeGraph((SqlPlanOrigins.RuntimeGraph) graph);
     resetInterop();
-    if (!NativeConfig.nativeEnabled() || StockCompiledPlanLowering.containsNativeNodes(graph)) {
+    if (!NativeConfig.nativeEnabled()
+        || StockCompiledPlanLowering.containsNativeNodes(graph)
+        || !StockCompiledPlanLowering.canSerializeStockTemplate(graph)) {
       return graph;
     }
     var stockTransformations = super.translateToPlan(graph);
@@ -153,7 +156,8 @@ final class NativeStreamPlanner extends StreamPlanner {
 
   private ExecNodeGraph ordinaryRuntimeGraph(SqlPlanOrigins.RuntimeGraph graph) {
     resetInterop();
-    if (!NativeConfig.nativeEnabled()) return graph;
+    if (!NativeConfig.nativeEnabled()
+        || !StockCompiledPlanLowering.canSerializeStockTemplate(graph.stock)) return graph;
     if (!StockCompiledPlanLowering.containsNativeNodes(graph)) return runtimeGraph(graph.stock);
     if (StockCompiledPlanLowering.hasUnqualifiedConnectorState(
         graph, getFlinkContext().getClassLoader())) return graph;
