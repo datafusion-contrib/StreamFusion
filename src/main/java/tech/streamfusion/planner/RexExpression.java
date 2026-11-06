@@ -4602,7 +4602,7 @@ final class RexExpression {
         && (operand instanceof RexInputRef
             || operand instanceof RexLiteral
             || !unnestOperand && (nativeTotalEpochTimestamp(operand)
-                || call.getKind() == SqlKind.FLOOR && nativeTotalDecimalEpochTimestamp(operand)));
+                || nativeTotalDecimalEpochTimestamp(operand)));
   }
 
   private boolean nativeUtcDateFormat(RexCall call) {

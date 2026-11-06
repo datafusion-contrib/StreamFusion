@@ -3606,15 +3606,18 @@ bounded milliseconds that exclude its differing overflow cases. General LTZ inpu
 their dedicated kernel. Other computed timestamp producers and
 nonzero/regional zones retain their existing routes. See [computed UTC FLOOR](temporal-functions.md#native-utc-floor-over-integer-epochs).
 
-In fixed zero-offset sessions, ordinary Calc FLOOR additionally composes genuine verified
+In fixed zero-offset sessions, ordinary Calc FLOOR/CEIL/CEILING additionally compose genuine verified
 DECIMAL epochs: direct fields/literals, total ABS/negation chains and same-scale widening
 at literal precision 0/3 or the 2.2 default. Decimal truncation, signed-long/seconds wrapping
 and final millisecond bounds remain distinct from integer bounds. YEAR/MONTH/DAY/HOUR
 qualify on both releases, with MINUTE/SECOND/MILLISECOND on 2.2. The 1.18 default-signature
-rejection and sub-hour initialization failures remain unchanged. CEIL/CEILING over DECIMAL
-epochs, runtime DECIMAL precision, binary arithmetic/narrowing/rescaling, unverified
+rejection and sub-hour initialization failures remain unchanged. CEIL preserves the
+calendar rules and reuses bounded-epoch fixed-unit rounding because verified DECIMAL
+epochs have zero fractional nanos and final milliseconds far from long overflow.
+Runtime DECIMAL precision, binary arithmetic/narrowing/rescaling, unverified
 producers, other zones/units and UNNEST keep their existing routes. See
-[DECIMAL UTC FLOOR](temporal-functions.md#native-utc-floor-over-decimal-epochs).
+[DECIMAL UTC FLOOR](temporal-functions.md#native-utc-floor-over-decimal-epochs) and
+[DECIMAL UTC CEIL](temporal-functions.md#native-utc-ceil-over-decimal-epochs).
 
 ### LTRIM
 

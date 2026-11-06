@@ -10767,3 +10767,71 @@ See the [qualification, complete-job trials and exact provenance](results/decima
 and [4,000 raw prepared samples](results/decimal-epoch-floor-2026-11-05.csv.gz).
 Other temporal/calendar signatures remain open in
 [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
+
+## UTC CEIL over verified DECIMAL epochs (2026-11-06)
+
+Ordinary Calc CEIL/CEILING composes verified DECIMAL TO_TIMESTAMP_LTZ producers with
+existing native calendar/fixed-width kernels in session zones normalized by the planning
+JDK to fixed zero offset. Genuine builtins over direct fields/literals, total ABS/negation
+chains and same-scale widening qualify at literal precision 0/3 or released Flink 2.2
+default precision. YEAR/MONTH/DAY/HOUR qualify on both releases; MINUTE/SECOND/MILLISECOND
+are 2.2-only. Runtime precision, arithmetic/narrowing/rescaling, unknown/fallible producers,
+other zones/units and UNNEST retain preceding routes. Released 1.18 retains its absent
+default signature and sub-hour initialization failures. No configuration switch, Rust
+opcode, JNI boundary or timestamp transport is added.
+
+Released decimal conversion truncates toward zero through BigDecimal, wraps signed-long
+conversion and seconds multiplication, then bounds the final milliseconds. Its admitted
+non-NULL outputs have zero fractional nanos and milliseconds in
+`[-62167219200000,253402300799999]`. At fixed zero offset the existing CEIL kernels retain
+fixed-width rounding and signed-day/int-Julian calendar behavior. Adding at most one DAY
+cannot overflow long for this bounded producer. Direct/literal LTZ CEIL keeps the separate
+remainder/overflow kernel required for arbitrary signed-long milliseconds and fractions.
+
+All **640 test invocations across four fresh JVM processes** pass
+on released Flink 1.18.1/2.2.1 and JDK 11/17, with Java release 11 and no skips/aborts:
+**68 new harness and 572 related invocations**.
+Complete 5,003-row maps/schema cover ten precision/scale pairs, nullable/NOT NULL fields,
+truncation, wrapping and range bounds, total unary/widening trees, pre-epoch and calendar
+cutover values, exact fixed-unit boundaries, all supported units, CEILING, consumers,
+zero-offset aliases, lazy/all-filtered batches and retained routes. Pure paths require
+consumed NativeCalc work, no fallback and empty JVM evaluator descriptors. The latest
+canonical-base release native library and example are rebuilt; **927 fresh release Rust
+core tests pass**. Preliminary runs against older frozen libraries are excluded.
+
+Four separate unchanged released `ScalarFunctionsTest.testTemporalFloor` oracle runs pass
+across both releases/JDKs; despite its name, that upstream method asserts both FLOOR and
+CEIL behavior. These stock runs supplement the native parity tests. Actual preceding main
+`a9f7c3589` compares each first-query full map/schema, then fails sixteen expected pure-route
+assertions on 2.2/JDK17 and thirteen on 1.18/JDK17. The retained controls pass. Later
+unreached queries are not preceding-parity evidence. Focused/performance encoder instructions
+match, including nested classes; candidate/preceding benchmark fixtures are byte-identical.
+Both timing engines use the same freshly built canonical-base native runtime.
+
+Release prepared timing consumes YEAR(CEIL(...)) as an integer with equivalent checksums.
+Four shapes cover compact DECIMAL(18,3) seconds/YEAR, noncompact (19,0) millis/MONTH,
+wrapping (38,0) seconds/DAY and negative ABS (38,18) millis/HOUR. Stock starts on prebuilt
+Generic/Binary RowData; native starts on prebuilt Arrow RecordBatch. The native timer starts
+inside Rust after setup/import and stops before export; production Calc, allocation and
+intrinsic conversions remain timed. Actual previous behavior retains generated temporal
+evaluation inside NativeCalc. Each release has nullable/nonnullable and Generic/Binary
+controls at 1,024 rows plus four 16-row nullable/Binary controls. Each trial processes
+131,072 rows with sixteen warmups, nine measurements, matched 1 GiB heaps and explicit UTC.
+Independent stock measurements, min/max variability and every raw trial are retained.
+No other performance workload runs concurrently with these measurements.
+
+All **32 bulk cells** beat stock **1.121-4.472x** and actual previous
+behavior **2.681-7.882x**. **8/8 tiny controls lose
+to stock**, **0/8 lose to previous**. Six complete million-row jobs
+emit TIMESTAMP_LTZ(3) directly and retain submission/startup, JNI and both transposes.
+Every engine uses parallelism one, 2 GiB heaps, two warmups and five measured repetitions.
+**4/6 lose to stock**, **0/6 lose to
+previous**; native/stock elapsed is **0.914-1.126**, native/previous
+**0.694-0.923**. These are bounded prepared-function gains;
+the measurements do not establish universal complete-job acceleration. Slower jobs and
+small-batch controls remain in the record.
+
+See the [qualification, complete-job trials and exact provenance](results/decimal-epoch-ceil-2026-11-06.json)
+and [4,000 raw prepared samples](results/decimal-epoch-ceil-2026-11-06.csv.gz).
+Remaining temporal signatures stay open in
+[#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
