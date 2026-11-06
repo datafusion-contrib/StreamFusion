@@ -1894,3 +1894,11 @@ reader projections contain only declared fields; Arrow file writes retain the or
 value buffers while excluding these execution sidecars. Nested ROWs loaded from files have
 INSERT kind, matching Flink. Top-level changelog columns retain their existing contract.
 See [nested Java scalar results](../operators/calc-filter.md#nested-java-scalar-results).
+
+### Compiled SQL plans
+
+Compiling SQL retains the existing native source-sharing execution graph in memory while
+exporting a stock Flink JSON/Smile plan. Exporting that plan does not change the graph used by
+`execute()` or `explain()`. Paimon reader and writer state remain outside the qualified
+cross-engine canonical-savepoint contracts; persisted stock plans use the documented
+restore-time planner admission rather than claiming native Paimon state interchange.

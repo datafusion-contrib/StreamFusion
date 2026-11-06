@@ -65,6 +65,8 @@ class PaimonSourceSharingTest {
                   + " DESCRIPTOR(ts), INTERVAL '10' SECOND)) GROUP BY window_start, window_end");
         }
         var compiled = statements.compilePlan();
+        assertTrue(compiled.asJsonString().contains("stream-exec-table-source-scan"));
+        assertFalse(compiled.asJsonString().contains("stream-exec-native"));
         if (nativePlanner) {
           String plan =
               compiled.explain()
@@ -81,7 +83,8 @@ class PaimonSourceSharingTest {
           try {
             SharingCaptureFactory.awaitSize(4);
           } catch (AssertionError failure) {
-            throw new AssertionError("Watermark progress with nativePlanner=" + nativePlanner, failure);
+            throw new AssertionError(
+                "Watermark progress with nativePlanner=" + nativePlanner, failure);
           }
           twins.add(SharingCaptureFactory.rows());
         } finally {
@@ -219,6 +222,8 @@ class PaimonSourceSharingTest {
                 + (fallback ? FALLBACK_ID_EXPRESSION : "ABS(id)")
                 + " + n, v FROM t");
         var compiled = statements.compilePlan();
+        assertTrue(compiled.asJsonString().contains("stream-exec-table-source-scan"));
+        assertFalse(compiled.asJsonString().contains("stream-exec-native"));
         String plan = compiled.explain();
         if (nativePlanner) {
           assertTrue(plan.contains("NativeShare(consumers=[" + (fallback ? 2 : 3) + "]"), plan);

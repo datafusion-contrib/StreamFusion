@@ -1685,3 +1685,19 @@ edge is rebuilt from the same template, preserving its nested representation aft
 native identities or drop unmatched savepoint state. ROW keys use owned binary companions to
 preserve the original serialized key bytes; canonical export still writes directly from live
 state into stock schemas without an intermediate native snapshot.
+
+### Portable plans and existing compiled execution
+
+Newly compiled SQL keeps the stock JSON/Smile plan and a separate private execution graph,
+just as ordinary SQL retains its original stock identities. Serializing a compiled plan must
+not replace its in-memory native graph. Qualified state owners bind their stock contracts;
+connector paths without a qualified state contract retain their existing native execution and
+native checkpoint requirements. In particular, Paimon compiled source-sharing jobs continue to
+execute their native scans and shared Arrow branches. This does not qualify Paimon state for
+cross-engine canonical restore. Loading a serialized stock plan still uses the documented
+restore-time admission policy.
+
+ROW-key normalization also accepts Arrow Java's network-only rename of the internal non-null
+UTF-16 list child (`unit` to `$data$`). Decoded retained rows are reconciled with their emitted
+schema, including update-before rows after a rescale. This does not relax logical field types,
+nullability or representation metadata, and it does not change stock key or state bytes.

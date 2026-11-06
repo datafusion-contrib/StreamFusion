@@ -1,12 +1,16 @@
 package tech.streamfusion.planner;
 
+import java.io.IOException;
 import java.util.List;
 import org.apache.calcite.rel.RelNode;
+import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.delegation.InternalPlan;
 import org.apache.flink.table.delegation.PlannerFactory;
 import org.apache.flink.table.operations.ModifyOperation;
 import org.apache.flink.table.planner.delegation.StreamPlanner;
+import org.apache.flink.table.planner.plan.ExecNodeGraphInternalPlan;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeGraph;
+import org.apache.flink.table.planner.plan.nodes.exec.serde.CompiledPlanSerdeUtil;
 import org.apache.flink.table.planner.plan.optimize.Optimizer;
 import org.apache.flink.table.planner.plan.optimize.StreamCommonSubGraphBasedOptimizer;
 import org.apache.flink.table.planner.plan.reuse.ScanReuser;
@@ -37,7 +41,37 @@ final class NativeStreamPlanner extends StreamPlanner {
   public InternalPlan compilePlan(List<ModifyOperation> operations) {
     compilingPortablePlan = true;
     try {
-      return super.compilePlan(operations);
+      InternalPlan plan = super.compilePlan(operations);
+      var graph = ((ExecNodeGraphInternalPlan) plan).getExecNodeGraph();
+      if (!(graph instanceof SqlPlanOrigins.RuntimeGraph)) return plan;
+      var stock = ((SqlPlanOrigins.RuntimeGraph) graph).stock;
+      var context = createSerdeContext();
+      var portable =
+          new ExecNodeGraphInternalPlan(
+              () -> {
+                try {
+                  return CompiledPlanSerdeUtil.createJsonObjectWriter(context)
+                      .withDefaultPrettyPrinter()
+                      .writeValueAsString(stock);
+                } catch (IOException failure) {
+                  throw new TableException("Cannot serialize the portable stock plan", failure);
+                }
+              },
+              () -> {
+                try {
+                  return CompiledPlanSerdeUtil.createSmileObjectWriter(context)
+                      .writeValueAsBytes(stock);
+                } catch (IOException failure) {
+                  throw new TableException("Cannot serialize the portable stock plan", failure);
+                }
+              },
+              stock);
+      return new ExecNodeGraphInternalPlan(portable::asJsonString, portable::asSmileBytes, graph) {
+        @Override
+        public List<String> getSinkIdentifiers() {
+          return portable.getSinkIdentifiers();
+        }
+      };
     } finally {
       compilingPortablePlan = false;
     }
@@ -53,14 +87,15 @@ final class NativeStreamPlanner extends StreamPlanner {
 
   @Override
   public ExecNodeGraph translateToExecNodeGraph(Seq<RelNode> roots, boolean compiled) {
-    if (compiled || sqlOrigins == null) return super.translateToExecNodeGraph(roots, compiled);
+    if (sqlOrigins == null) return super.translateToExecNodeGraph(roots, compiled);
     var captured = sqlOrigins.captureRuntime(JavaScalaConversionUtil.toJava(roots));
     return sqlOrigins.runtimeGraph(
-        super.translateToExecNodeGraph(JavaScalaConversionUtil.toScala(captured), false));
+        super.translateToExecNodeGraph(JavaScalaConversionUtil.toScala(captured), compiled));
   }
 
   private ExecNodeGraph stockSqlGraph(List<RelNode> roots) {
-    return super.translateToExecNodeGraph(JavaScalaConversionUtil.toScala(roots), false);
+    return super.translateToExecNodeGraph(
+        JavaScalaConversionUtil.toScala(roots), compilingPortablePlan);
   }
 
   @Override
@@ -68,9 +103,9 @@ final class NativeStreamPlanner extends StreamPlanner {
       InternalPlan plan, Seq<org.apache.flink.table.api.ExplainDetail> details) {
     try (NativeConfig.Scope ignored =
         NativeConfig.usePlannerConfig(getTableConfig().getConfiguration())) {
-      var portable = (org.apache.flink.table.planner.plan.ExecNodeGraphInternalPlan) plan;
+      var portable = (ExecNodeGraphInternalPlan) plan;
       var runtime =
-          new org.apache.flink.table.planner.plan.ExecNodeGraphInternalPlan(
+          new ExecNodeGraphInternalPlan(
               plan::asJsonString, plan::asSmileBytes, runtimeGraph(portable.getExecNodeGraph()));
       return super.explainPlan(runtime, details);
     }
@@ -167,7 +202,7 @@ final class NativeStreamPlanner extends StreamPlanner {
         }
         try (NativeConfig.Scope ignored =
             NativeConfig.usePlannerConfig(getTableConfig().getConfiguration())) {
-          if (NativeConfig.nativeEnabled() && !compilingPortablePlan) {
+          if (NativeConfig.nativeEnabled()) {
             var shuttle = new org.apache.flink.table.planner.plan.utils.SameRelObjectShuttle();
             var copied =
                 roots.stream()
@@ -192,9 +227,6 @@ final class NativeStreamPlanner extends StreamPlanner {
                         ShortcutUtils.unwrapContext(roots.get(0)),
                         ShortcutUtils.unwrapTypeFactory(roots.get(0)))
                     .reuseDuplicatedScan(roots);
-          }
-          if (compilingPortablePlan) {
-            return JavaScalaConversionUtil.toScala(roots);
           }
           return JavaScalaConversionUtil.toScala(scan.optimizeRoots(roots));
         }
