@@ -825,7 +825,7 @@ dependencies = [
  "bitflags 2.13.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "regex",
@@ -2899,7 +2899,8 @@ dependencies = [
 [[package]]
 name = "iceberg"
 version = "0.11.0"
-source = "git+https://github.com/apache/iceberg-rust.git?tag=v0.11.0-rc.3#20eb0feddac8f40bb9e9108a0744b7f356d69480"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25dd5d1aa2fa92d2c9bc426f72bc16717a27eb73255805beb8845afcca31e58d"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2958,7 +2959,8 @@ dependencies = [
 [[package]]
 name = "iceberg-property-macro"
 version = "0.11.0"
-source = "git+https://github.com/apache/iceberg-rust.git?tag=v0.11.0-rc.3#20eb0feddac8f40bb9e9108a0744b7f356d69480"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6de7eea6577fed2290867f7604483e3649297514b873cdac108e0cc7f783c9e1"
 dependencies = [
  "proc-macro2",
  "quote",

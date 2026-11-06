@@ -26,11 +26,10 @@ stock SQL sink. The dynamic DataStream API is described below.
 The optional `streamfusion-iceberg` module targets the published Iceberg 1.12.0
 Flink 2.2 runtime and requires Java 17 or later. Build it with `-Piceberg`.
 It is separate from connector-neutral core and uses Apache iceberg-rust
-0.11.0 RC3 with Arrow/Parquet 58.4. The maintainer explicitly authorized the temporary
-Git tag `v0.11.0-rc.3` (commit `20eb0feddac8f40bb9e9108a0744b7f356d69480`) because
-0.11 is not yet on crates.io. This is an exception to the registry-only dependency
-policy; replace it with the canonical registry release when available. Rust 1.95 is
-required. No sibling Iceberg build is required.
+0.11.0 from crates.io with Arrow/Parquet 58.4. The published release replaces the
+temporary RC3 Git dependency and contains the same upstream source commit
+(`20eb0feddac8f40bb9e9108a0744b7f356d69480`). Rust 1.95 is required.
+No sibling Iceberg build is required.
 The normal Flink 2.2 release build stages and packages its own platform native
 library, includes the connector in deployment archives and Maven publication,
 and checks package/JNI isolation. The ordinary optional-module CI matrix runs its
@@ -227,7 +226,7 @@ metrics. SQL admission covers plaintext v1/v2/v3 tables, verified scalar leaves 
 struct/list/map payloads, pruned nested projection (including zero columns), case
 sensitivity, top-level scalar source filters and partition constants. Nested layouts evolve
 by Iceberg field ID through rename, reorder, nullable additions and supported primitive
-promotions. RC3's decoder retains the physical nested shape; a columnar adapter then
+promotions. The 0.11.0 decoder retains the physical nested shape; a columnar adapter then
 aligns it to the requested logical Arrow schema. Null struct parents mask child validity
 before nested equality/sort expressions read the children. Value buffers remain shared
 where no cast or gather is needed. Legacy name mappings remain admitted for flat schemas. Host split watermarks retain the original emitter and ordered assigner.
@@ -262,7 +261,7 @@ all transient codec allocations. The released iceberg-rust writer hides this mem
 API, so encoding uses its underlying parquet-rs Arrow writer directly; byte-for-byte
 fixtures compare file bytes, rolling-size estimates, NaN counts and split offsets with
 the released wrapper across codecs/page versions. Iceberg schema conversion, FileIO
-and source task decoding use the pinned Apache 0.11 RC3. Shared Arrow allocations use the same
+and source task decoding use the pinned Apache 0.11.0 release. Shared Arrow allocations use the same
 budget; internal decoder retention remains opaque. Queued batches and native handles
 have explicit cleanup. Supported paths accelerate by default; the standard per-operator
 switches remain available for controlled comparisons. The source follows
@@ -309,7 +308,7 @@ appender. Sequence-number applicability is decided by Iceberg's planned tasks.
 For integer, long or string equality keys, maintenance uses the existing Iceberg
 decoder plus DataFusion's static membership filter, including composite tuples and
 struct-descendant leaves. Composite arrays form Arrow struct views; inner nulls compare
-equal, including null parent structs. This avoids RC3's large per-delete predicate
+equal, including null parent structs. This avoids 0.11.0's large per-delete predicate
 tree without converting payload rows. Nested-schema source tasks use the same filter.
 Flat sources and other admitted flat key types retain Iceberg's normal delete path.
 Keys inside lists/maps and other nested-key types retain the stock task reader. Null matching and delete-sequence applicability remain

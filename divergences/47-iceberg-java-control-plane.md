@@ -63,8 +63,8 @@ rewrite scan handoff informed the task descriptor; StreamFusion keeps Iceberg's
 existing Flink planner, grouping and commit manager and substitutes the rewrite
 worker. Java views over Arrow retain stock partition/rolling decisions, while
 Parquet decode, delete application and encoding remain Rust-owned. V3 lineage is
-carried as Arrow columns through filtering and sorting. The maintainer approved the
-official 0.11 RC3 Git tag until a registry release provides deletion-vector reads.
+carried as Arrow columns through filtering and sorting. The published 0.11.0 registry
+release provides deletion-vector reads and replaces the temporary official RC3 Git pin.
 
 Arroyo's filesystem Iceberg sink was consulted for this extension. It has no matching
 external rewrite-sort operator; StreamFusion therefore composes DataFusion's existing
