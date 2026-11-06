@@ -76,8 +76,10 @@ class CanonicalGroupArithmeticAdmissionTest {
               GroupAggregateStockTestFixture.field(nativeOwners.get(0), "stockStateContract"));
       assertArrayEquals(
           new int[] {3, 38}, (int[]) GroupAggregateStockTestFixture.field(contract, "kinds"));
-      assertEquals(
-          1, ((String[]) GroupAggregateStockTestFixture.field(contract, "mapNames")).length);
+      var mapNames = (String[]) GroupAggregateStockTestFixture.field(contract, "mapNames");
+      assertEquals(2, mapNames.length);
+      assertNull(mapNames[0]);
+      assertNotNull(mapNames[1]);
     } else if (java.util.Set.of("distinct", "filter", "composite", "floating", "integer")
         .contains(mode)) {
       assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
