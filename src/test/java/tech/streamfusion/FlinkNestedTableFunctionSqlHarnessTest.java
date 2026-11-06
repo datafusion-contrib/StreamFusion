@@ -94,8 +94,14 @@ class FlinkNestedTableFunctionSqlHarnessTest {
             "SELECT s.id, u.v FROM src s, LATERAL TABLE(nested_rows(s.id, s.p)) AS t(v, pos), "
                 + "LATERAL TABLE(nested_rows(t.pos, t.v)) AS u(v, pos)")) {
       try (var metrics = new RecoveryExecutionMetrics()) {
-        NativeParity.assertOrderedKindedParity(() -> environment(name, 1031, metrics), sql);
-        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
+        var runs = NativeFailureParity.run(() -> environment(name, 1031, metrics), sql);
+        boolean fallback = name.equals("array_int") && sql.contains(" u.v ");
+        runs.assertSuccess(
+            fallback ? NativeFailureParity.Route.FALLBACK : NativeFailureParity.Route.NATIVE);
+        assertEquals(runs.host().rows(), runs.nativeRun().rows());
+        if (fallback) assertTrue(metrics.nativeOperators().isEmpty());
+        else
+          RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
       }
     }
   }

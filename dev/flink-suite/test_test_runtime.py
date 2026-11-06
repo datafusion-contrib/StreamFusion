@@ -19,9 +19,10 @@ class TestRuntimePreparationTest(unittest.TestCase):
     def test_real_providers_start_offline_after_isolated_resolution(self):
         settings = str(ROOT / "dev/flink-suite/settings.xml")
         with tempfile.TemporaryDirectory() as directory:
-            for line, surefire, junit, original_opentest in (
-                    ("2.2", "3.2.2", "5.11.4", "1.2.0"),
-                    ("1.18", "3.0.0-M5", "5.9.1", "1.1.1")):
+            for line, surefire, junit, platform, original_opentest in (
+                    ("2.2", "3.2.2", "5.11.4", "1.11.4", "1.2.0"),
+                    ("1.18", "3.0.0-M5", "5.9.1", "1.9.1", "1.1.1"),
+                    ("kafka-5.0", "3.2.5", "5.13.3", "1.13.3", "1.2.0")):
                 with self.subTest(line=line):
                     root = Path(directory) / line
                     source = root / "src/test/java"
@@ -63,23 +64,26 @@ class TestRuntimePreparationTest(unittest.TestCase):
                         return result.stdout + result.stderr
 
                     run(base + ["-DskipTests", "test"])
-                    # Model the previous provider pin and the missing artifact observed in CI.
+                    # Model missing runtime artifacts after a successful skipped-test build.
                     run(base + ["org.apache.maven.plugins:maven-dependency-plugin:3.11.0:get",
-                                "-Dartifact=org.apache.maven.surefire:surefire-junit-platform:3.2.2",
+                                "-Dartifact=org.apache.maven.surefire:surefire-junit-platform:" +
+                                (surefire if line == "kafka-5.0" else "3.2.2"),
                                 "-Dtransitive=true"])
                     if line == "2.2":
                         shutil.rmtree(repository / f"org/opentest4j/opentest4j/{original_opentest}")
+                    elif line == "kafka-5.0":
+                        self.assertFalse((repository / f"org/junit/platform/junit-platform-launcher/{platform}"
+                                          / f"junit-platform-launcher-{platform}.jar").exists())
                     else:
                         self.assertFalse((repository / f"org/apache/maven/surefire/surefire-junit-platform/{surefire}"
                                           / f"surefire-junit-platform-{surefire}.jar").exists())
                     failure = run(base + ["-o", "surefire:test@integration-tests"], succeeds=False)
-                    self.assertRegex(failure, "opentest4j" if line == "2.2" else
-                                     "surefire-junit-platform|JUnitPlatformProvider")
+                    missing = {"2.2": "opentest4j", "kafka-5.0": "junit-platform-launcher"}
+                    self.assertRegex(failure, missing.get(line, "surefire-junit-platform|JUnitPlatformProvider"))
                     run([sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"),
                          "--maven", "mvn", "--repository", str(repository),
                          "--artifact", f"org.apache.maven.surefire:surefire-junit-platform:{surefire}",
-                         "--artifact", "org.junit.platform:junit-platform-launcher:" +
-                         ("1.11.4" if line == "2.2" else "1.9.1"),
+                         "--artifact", "org.junit.platform:junit-platform-launcher:" + platform,
                          "--artifact", "org.apache.httpcomponents:httpclient:4.4.1"])
                     self.assertTrue((repository / f"org/opentest4j/opentest4j/{original_opentest}"
                                      / f"opentest4j-{original_opentest}.jar").exists())
@@ -128,6 +132,7 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                  "CALLS": str(calls), "DOWNLOAD_STATUS": str(status),
                                  "PROBE_STATUS": str(probe_status), "MAVEN_SETTINGS": "settings",
                                  "SUITE_MODE": "prepare", "FLINK_LINE": line, "FLINK_VERSION": "test",
+                                 "PAIMON_VERSION": "2.0.0",
                                  "FLINK_TARGET_PROFILE": "java11-target" if line == "2.2" else "",
                                  "REPO_ROOT": str(RUNNER.parents[1]), "SUITE_ROOT": str(suite),
                                  "SUITE_MAVEN_REPO": str(suite / "m2"),
@@ -145,11 +150,16 @@ class TestRuntimePreparationTest(unittest.TestCase):
                         self.assertNotIn("--projects", arguments)
                         self.assertNotIn("--pom", arguments)
                         artifacts = [arguments[i + 1] for i, value in enumerate(arguments) if value == "--artifact"]
-                        self.assertEqual(["org.apache.maven.surefire:surefire-junit-platform:" +
-                                          ("3.0.0-M5" if line == "1.18" else "3.2.2"),
-                                          "org.junit.platform:junit-platform-launcher:" +
-                                          ("1.9.1" if line == "1.18" else "1.11.4"),
-                                          "org.apache.httpcomponents:httpclient:4.4.1"], artifacts)
+                        expected = ["org.apache.maven.surefire:surefire-junit-platform:" +
+                                    ("3.0.0-M5" if line == "1.18" else "3.2.2"),
+                                    "org.junit.platform:junit-platform-launcher:" +
+                                    ("1.9.1" if line == "1.18" else "1.11.4"),
+                                    "org.apache.httpcomponents:httpclient:4.4.1",
+                                    "org.apache.paimon:paimon-vfs-hadoop:2.0.0"]
+                        if line == "2.2":
+                            expected.extend(["org.apache.maven.surefire:surefire-junit-platform:3.2.5",
+                                             "org.junit.platform:junit-platform-launcher:1.13.3"])
+                        self.assertEqual(expected, artifacts)
                         self.assertEqual(1 if status or probe_status else 2, len(invocations))
                         self.assertEqual(not (status or probe_status), "build is ready" in result.stdout)
                         if status:

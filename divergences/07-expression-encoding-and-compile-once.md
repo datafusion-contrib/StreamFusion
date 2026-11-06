@@ -244,7 +244,7 @@ strict NULL propagation applied to `CONCAT` below.
 - **`TO_BASE64`:** Uses released SIMD standard padded Base64, computes output offsets with checked sizes, and writes ASCII directly into the final Arrow buffer. Unlike Spark's MIME form modeled by Comet, Flink does not wrap lines. Checked offsets and guaranteed ASCII permit omitting a redundant UTF-8 scan; regression tests perform complete Arrow validation. See the Calc page for admission, semantics, and individual measurements.
 - **`FROM_BASE64`:** Follows Arroyo's DataFusion ScalarUDF registration and Comet's scalar/array byte-output structure. Flink uses the JDK basic decoder, while Comet models Spark's MIME decoder: whitespace and other nonalphabet bytes must fail, and data after padding must fail. SIMD handles complete groups; a JDK-compatible tail accepts omitted padding and unused nonzero bits. Cold Rust validation preserves the typed Java exception and diagnostic. Final projections retain the existing Arrow Binary-to-StringData boundary, because arbitrary decoded bytes cannot be Arrow Utf8. Sensitive consumers and relational boundaries keep their existing generated/fallback contracts; no JNI ownership changes or new callbacks are introduced.
 - **`UNHEX`:** Follows Comet's nibble lookup table and combined invalid-digit check, while retaining Flink's odd-length rule. Validation and decoding share a pass into the final Arrow binary buffer. Invalid rows roll back partial output. Capacity uses the active slice, offsets stay checked, and the constructor remains safe; no per-row temporary output copy is needed. DataFusion's strict decoder errors on invalid input and does not implement Flink's odd-leading-zero rule. VARBINARY literals use a dedicated literal kind, carrying length and byte values in the existing long pool; -1 denotes NULL. Like Comet BytesVal literals, they become ScalarValue::Binary directly, without a synthetic function call or a new JNI payload. See the Calc page for admission, semantics, and individual measurements.
-- **`GREATEST`:** Integer and matching-scale Decimal extrema use primitive Arrow comparison loops, folding constants once and combining validity masks. Boolean and ASCII-provable string extrema reuse DataFusion with Flink's strict NULL mask. This avoids intermediate Boolean selection arrays and expanded scalar arrays. Arroyo's registry structure is retained. DataFusion skips NULLs; Flink requires strict NULL propagation. Floating point and mixed decimal scales remain unverified. See the Calc page for admission, semantics, and individual measurements.
+- **`GREATEST`:** Integer and matching-scale Decimal extrema use primitive Arrow comparison loops, folding constants once and combining validity masks. BOOLEAN combines packed value bitmaps with a separate strict NULL mask. Verified primitive ASCII text uses typed selection into one output buffer; uniform winners share immutable Arrow buffers. Equivalent Boolean-text producers select their Boolean extremum before formatting once. This avoids comparison/zip arrays and repeated formatting. Arroyo's registry structure is retained. DataFusion and Spark skip NULLs; Flink requires strict NULL propagation. Floating point and mixed decimal scales remain unverified. See the Calc page for admission, semantics, and individual measurements.
 - **`LEAST`:** Reuses the shared extremum kernel with minimum comparison, including primitive Arrow loops, folded constants, and strict NULL masking. Matching decimal scale is preserved on the output. DataFusion skips NULLs; Flink requires strict NULL propagation, with floating point and mixed decimal scales still unverified. See the Calc page for admission, semantics, and individual measurements.
 - **`INITCAP`:** A Flink-specific column kernel changes only ASCII case bits, preserving other UTF-8 bytes and word boundaries. See the Calc page for admission, semantics, and individual measurements.
 - **`TRANSLATE`:** ASCII mappings use direct lookup; non-ASCII codepoints use the project's ahash map. Consecutive equal alphabets reuse the mapping. Duplicate source positions retain their first mapping, including deletion mappings. Comet explicitly marks DataFusion's grapheme-based translation as incompatible. Flink requires codepoint mappings and its own duplicate/NULL rules. See the Calc page for admission, semantics, and individual measurements.
@@ -301,6 +301,11 @@ strict NULL propagation applied to `CONCAT` below.
   to the INT/BIGINT range, `NaN`→0); byte/short targets then keep the low bits of that INT.
   A dedicated kernel uses staged Rust `as` casts to reproduce the two-step Java conversion; parity is
   tested at the `2³¹`/`2³²+1` integer boundaries and the `NaN`/`±∞`/`±1e20` float boundaries.
+  Integer inputs use Arrow typed unary conversion directly from the source width and retain the
+  immutable validity buffer, following Comet's legacy integer-cast structure. Both Flink cast
+  modes wrap integer overflow; Spark's ANSI/try overflow policy is not applied. Verified integer
+  TRY_CAST producers reuse these total conversions, while potentially failing producers retain
+  their preceding route rather than catching failures outside the conversion itself.
   Integer/string conversions use a Flink-compatible native parser/formatter. As in Comet's cast
   dispatcher, semantics and error mode travel with the expression; Comet's Spark grammar is not
   reused because Flink trims only ASCII spaces and accepts fractional text (even `.`) as an
@@ -322,7 +327,13 @@ strict NULL propagation applied to `CONCAT` below.
   HALF_UP, then a HALF_UP rescale to the declared `DECIMAL(p, s)` (NULL on overflow) — since that
   intermediate quotient can need more digits than fit in a fixed-width `i128` before it is rescaled back
   down. A `CAST` to `DECIMAL` from an exact source (another decimal or an integer) is likewise
-  byte-exact. Legacy float/double casts also admit a conservative native batch fast path:
+  byte-exact. Proven unbounded integer text can also feed this numeric kernel directly
+  when the target integral capacity covers the complete resolved integer width. This
+  elides formatting/parsing only for a total producer; ordinary CAST forms already
+  simplified by Flink remain existing controls. Arbitrary source text, DECIMAL text
+  roundtrips and insufficient capacity retain the released parser, whose short-byte
+  grammar and precision checks differ from BigDecimal and Spark's casts.
+  Legacy float/double casts also admit a conservative native batch fast path:
   adjacent binary values bound the host's round-tripping decimal rendering, and outward-rounded
   multiplication by an exact power of ten bounds the scaled decimal. The result is used only
   when both bounds round to the same HALF_UP integer below magnitude 2^52, for scales 0 through
@@ -429,6 +440,19 @@ Timestamp inputs and results use the lossless millisecond/fraction pair across n
 Timestamp-producing expressions run by default without a range opt-in, including years 0001 and
 9999. See [the coverage and range contract](../docs/operators/temporal-functions.md).
 
+Direct/literal DECIMAL epoch conversion at literal precision 0/3 uses Arroyo's typed
+ScalarUDF registration and Arrow unary structure, as does Comet's DECIMAL timestamp cast.
+The semantics differ from Spark's fractional-microsecond conversion: released Flink first
+truncates toward zero, wraps the integral value to signed 64 bits, then wraps multiplication
+by 1,000 for seconds and checks the resulting millisecond bounds. It cannot reuse the
+integer-seconds overload's original-unit range check. The existing millisecond/fraction
+timestamp builder retains parent NULL/range validity and immutable child buffers. Other
+DECIMAL arithmetic and precision expressions retain generated evaluation until separately
+verified. Same-operator ABS/negation chains and same-scale widening are proven total and
+reuse the existing unary/cast kernels before epoch conversion; mixed unary, narrowing and
+scale-changing trees remain outside this proof. This introduces no new JNI transport or
+configuration switch.
+
 ### QUARTER
 
 Fuses Flink's timestamp-to-day conversion and integer Julian-calendar extraction in one Arrow primitive-array pass. Epoch milliseconds divide towards zero, including before 1970. The integer algorithm also preserves Flink's overflow behavior across the full DATE range.
@@ -487,9 +511,14 @@ this PR retain their existing decoder behavior.
 
 Flink's `BinaryStringData.compareTo` uses UTF-16 String.compareTo for Java-backed strings and
 byte order for binary-backed strings. There is no single Unicode order that reproduces both
-plan shapes. GREATEST/LEAST therefore admit only ASCII-provable string literals and CASE results;
-unrestricted string columns fall back. The existing string comparison operators predate this
-change and share that limitation; this PR does not claim to fix their Unicode ordering.
+plan shapes. In addition to the existing proven literals/CASE results, GREATEST/LEAST now admit
+verified primitive ASCII producers: total integer/BOOLEAN casts to unbounded STRING, qualified
+PRINTF, and locale-independent UPPER/LOWER. Comet's Spark string ordering cannot replace
+this Flink representation proof. Unlike its
+generic pairwise selection, this bounded UTF-8 path copies selected slices once or shares
+uniform winners, without intermediate comparison/zip arrays. Unproven source strings retain
+fallback, while proven Java-backed generated paths preserve their existing route. Neither
+this extension nor direct ASCII formatter comparisons remove the general Unicode-order gate.
 
 Flink's binary-backed `isSpaceString` can treat a trim set beginning with a space as space-only.
 BTRIM/LTRIM/RTRIM consequently admit literal sets only. The benchmarks use literal trim sets

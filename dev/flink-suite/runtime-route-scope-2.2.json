@@ -697,6 +697,348 @@
       "display_name": "LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB, EnableAsyncState=false",
       "count": 1,
       "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=OFF, StateBackend=ROCKSDB, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
+      "count": 1,
+      "display_name": "LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
+      "count": 1,
+      "display_name": "LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP, EnableAsyncState=true",
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=OFF, StateBackend=ROCKSDB, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP, EnableAsyncState=true",
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=OFF, StateBackend=ROCKSDB, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB, EnableAsyncState=false",
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy",
+      "count": 1,
+      "display_name": "LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP, EnableAsyncState=true",
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeUnBoundedPartitionedRowOver",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeUnBoundedPartitionedRowOver",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testOverWindowWithConstant",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testOverWindowWithConstant",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOver",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOver",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOverWithJavaAPI",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOverWithJavaAPI",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRowOver",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "mixed",
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRowOver",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "mixed",
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRangeOver",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "mixed",
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRangeOver",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "mixed",
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+      "display_name": "StateBackend=HEAP, unboundedOverVersion2=1",
+      "count": 1,
+      "route": "mixed",
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+      "display_name": "StateBackend=HEAP, unboundedOverVersion2=2",
+      "count": 1,
+      "route": "mixed",
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+      "display_name": "StateBackend=ROCKSDB, unboundedOverVersion2=1",
+      "count": 1,
+      "route": "mixed",
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+      "display_name": "StateBackend=ROCKSDB, unboundedOverVersion2=2",
+      "count": 1,
+      "route": "mixed",
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver",
+      "display_name": "StateBackend=HEAP, unboundedOverVersion2=1",
+      "count": 1,
+      "route": "mixed",
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver",
+      "display_name": "StateBackend=HEAP, unboundedOverVersion2=2",
+      "count": 1,
+      "route": "mixed",
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver",
+      "display_name": "StateBackend=ROCKSDB, unboundedOverVersion2=1",
+      "count": 1,
+      "route": "mixed",
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver",
+      "display_name": "StateBackend=ROCKSDB, unboundedOverVersion2=2",
+      "count": 1,
+      "route": "mixed",
+      "forbidden_operators_on_native_routes": [
+        "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
+      ]
     }
   ]
 }

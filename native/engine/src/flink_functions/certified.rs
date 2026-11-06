@@ -11,6 +11,20 @@ mod printf;
 mod trim;
 mod url;
 
+pub(super) fn integer_printf(pattern: &str, args: &[ArrayRef], rows: usize) -> Option<ArrayRef> {
+    if !pattern.is_ascii() {
+        return None;
+    }
+    printf::primitive_literal::<false>(pattern, args, rows)
+}
+
+pub(super) fn boolean_printf(pattern: &str, args: &[ArrayRef], rows: usize) -> Option<ArrayRef> {
+    if !pattern.is_ascii() {
+        return None;
+    }
+    printf::primitive_literal::<true>(pattern, args, rows)
+}
+
 pub(crate) fn evaluate(
     operation: i64,
     arrays: &[ArrayRef],

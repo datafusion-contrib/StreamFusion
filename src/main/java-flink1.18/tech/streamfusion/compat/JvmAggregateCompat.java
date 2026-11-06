@@ -3,9 +3,27 @@ package tech.streamfusion.compat;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction;
 
-/** Uses the released rich-function opening contract for this Flink line. */
+/** Released aggregate lifecycle and bundle creation for this Flink line. */
 public final class JvmAggregateCompat {
   private JvmAggregateCompat() {}
+
+  public static void openOver(
+      org.apache.flink.streaming.api.functions.KeyedProcessFunction<
+              org.apache.flink.table.data.RowData,
+              org.apache.flink.table.data.RowData,
+              org.apache.flink.table.data.RowData>
+          function,
+      RuntimeContext context)
+      throws Exception {
+    function.setRuntimeContext(context);
+    function.open(new org.apache.flink.configuration.Configuration());
+  }
+
+  public static org.apache.flink.table.runtime.operators.bundle.trigger.BundleTrigger<
+          org.apache.flink.table.data.RowData>
+      miniBatchTrigger(org.apache.flink.configuration.ReadableConfig config) {
+    return org.apache.flink.table.planner.plan.utils.AggregateUtil.createMiniBatchTrigger(config);
+  }
 
   public static void open(GroupAggFunction function, RuntimeContext context) throws Exception {
     function.setRuntimeContext(context);

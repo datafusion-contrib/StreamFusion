@@ -17,6 +17,7 @@ case "${FLINK_VERSION}" in
     STREAMFUSION_ARTIFACT_SUFFIX=""
     KAFKA_DEFAULT_VERSION=5.0.0
     PAIMON_FLINK_PROFILE=flink2
+    PAIMON_DEFAULT_VERSION=2.1.0
     ;;
   1.18.1)
     FLINK_LINE=1.18
@@ -25,6 +26,7 @@ case "${FLINK_VERSION}" in
     STREAMFUSION_ARTIFACT_SUFFIX=-flink1.18
     KAFKA_DEFAULT_VERSION=3.2.0
     PAIMON_FLINK_PROFILE=flink1
+    PAIMON_DEFAULT_VERSION=2.0.0
     ;;
   *) echo "Unsupported Flink suite version: ${FLINK_VERSION}" >&2; exit 2 ;;
 esac
@@ -37,9 +39,8 @@ else
   KAFKA_CONNECTOR_TAG="v${KAFKA_CONNECTOR_VERSION}"
 fi
 readonly KAFKA_CONNECTOR_TAG
-readonly PAIMON_VERSION="${PAIMON_VERSION:-2.0.0}"
-# Paimon publishes its releases from the final release-candidate tag; 2.0.0 is release-2.0.0-rc10.
-readonly PAIMON_TAG="${PAIMON_TAG:-release-${PAIMON_VERSION}-rc10}"
+readonly PAIMON_VERSION="${PAIMON_VERSION:-${PAIMON_DEFAULT_VERSION}}"
+readonly PAIMON_TAG="${PAIMON_TAG:-release-${PAIMON_VERSION}}"
 readonly DELTA_VERSION="${DELTA_VERSION:-4.4.0}"
 readonly SUITE_BASE_ROOT="${FLINK_SUITE_ROOT:-${REPO_ROOT}/.flink-suite}"
 readonly SUITE_ROOT="${SUITE_BASE_ROOT}/${FLINK_LINE}"
@@ -353,6 +354,13 @@ else
   mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${AGENT_ROOT}/pom.xml" "-Dsuite.agent.output=${AGENT_OUTPUT}" package || exit $?
 
   echo "Building the pinned Flink planner and its reactor dependencies..."
+  (
+    cd "${FLINK_ROOT}" &&
+      MAVEN_USER_HOME="${SUITE_MAVEN_USER_HOME}" python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
+        --maven "${FLINK_ROOT}/mvnw" --pom "${FLINK_ROOT}/pom.xml" \
+        --repository "${SUITE_MAVEN_REPO}" --profile "${FLINK_TARGET_PROFILE}" \
+        --projects flink-table/flink-table-planner --also-make --model-only
+  ) || exit $?
   flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
     -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
     -T "${FLINK_SUITE_BUILD_THREADS:-1}" \
@@ -468,14 +476,24 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
     test_runtime_surefire_version=3.0.0-M5
     test_runtime_platform_version=1.9.1
   fi
+  test_runtime_artifacts=(
+    --artifact "org.apache.maven.surefire:surefire-junit-platform:${test_runtime_surefire_version}"
+    --artifact "org.junit.platform:junit-platform-launcher:${test_runtime_platform_version}"
+    --artifact "org.apache.httpcomponents:httpclient:4.4.1"
+    --artifact "org.apache.paimon:paimon-vfs-hadoop:${PAIMON_VERSION}"
+  )
+  if [[ "${FLINK_LINE}" == "2.2" ]]; then
+    test_runtime_artifacts+=(
+      --artifact "org.apache.maven.surefire:surefire-junit-platform:3.2.5"
+      --artifact "org.junit.platform:junit-platform-launcher:1.13.3"
+    )
+  fi
   (
     cd "${FLINK_ROOT}" &&
       MAVEN_USER_HOME="${SUITE_MAVEN_USER_HOME}" python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
         --maven "${FLINK_ROOT}/mvnw" \
         --repository "${SUITE_MAVEN_REPO}" \
-        --artifact "org.apache.maven.surefire:surefire-junit-platform:${test_runtime_surefire_version}" \
-        --artifact "org.junit.platform:junit-platform-launcher:${test_runtime_platform_version}" \
-        --artifact "org.apache.httpcomponents:httpclient:4.4.1"
+        "${test_runtime_artifacts[@]}"
   ) || exit $?
   echo "Verifying the prepared upstream test runtime without downloads..."
   flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} -B -ntp -o -s "${MAVEN_SETTINGS}" \

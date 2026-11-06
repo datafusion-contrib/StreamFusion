@@ -137,6 +137,14 @@ must be clean. SQL, test methods and assertions are preserved. One prepared sour
 the Guava `Cache` import to the connector's published shaded package; a hash manifest records
 both versions. Existing upstream ignores remain visible in Surefire reports.
 
+The suite also runs the released timestamp-projection and table-overwrite methods
+without the StreamFusion agent, retaining both parameter variants in `stock-baseline`
+and `stock-baseline.log`. This distinguishes connector/server failures from native
+execution failures. Only the existing exact timestamp discrepancy can qualify for
+the stock-matched expected-failure rule; an overwrite result mismatch still fails
+the suite. An overwrite job that reports FINISHED but exposes zero of three expected
+rows must retain its assertions and execution graph while the stock control is checked.
+
 The CI Doris job runs the same script and retains server logs, SQL plans, Surefire assertions
 and the agent's SQL inventory. An upstream run without StreamFusion activation fails the job. Each upstream streaming SQL source
 method also requires a positive nonempty Arrow-read witness for its selected Flight/Thrift

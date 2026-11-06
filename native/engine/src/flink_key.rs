@@ -908,6 +908,7 @@ pub(crate) struct BinaryRowBatchEncoder<'a> {
     columns: Vec<&'a ArrayRef>,
     schemas: Vec<KeyTypeSchema>,
     writer: BinaryRowWriter,
+    projected_keys: bool,
 }
 
 impl<'a> BinaryRowBatchEncoder<'a> {
@@ -945,13 +946,34 @@ impl<'a> BinaryRowBatchEncoder<'a> {
                 .collect(),
             schemas,
             writer: BinaryRowWriter::new(key_columns.len()),
+            projected_keys: false,
         }
+    }
+
+    /// Generated JVM key projections retain NULL decimal and timestamp variable slots.
+    /// Native keyed state continues to use the existing serializer layout.
+    pub(crate) fn projected(mut self) -> Self {
+        self.projected_keys = true;
+        self
     }
 
     /// The encoded key of one row, valid until the next call.
     pub(crate) fn encode(&mut self, row: usize) -> &[u8] {
         self.writer.reset();
         for (pos, (column, schema)) in self.columns.iter().zip(&self.schemas).enumerate() {
+            if self.projected_keys && column.is_null(row) {
+                if matches!(column.data_type(), DataType::Decimal128(precision, _) if *precision > 18)
+                {
+                    self.writer.set_null(pos);
+                    self.writer.write_variable(pos, &[], 16);
+                    continue;
+                }
+                if is_timestamp(column.data_type()) && schema.timestamp_precision > 3 {
+                    self.writer.set_null(pos);
+                    self.writer.write_variable(pos, &[], 8);
+                    continue;
+                }
+            }
             write_value(&mut self.writer, pos, column, row, schema);
         }
         self.writer.row_bytes()

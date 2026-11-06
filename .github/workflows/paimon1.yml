@@ -22,6 +22,8 @@ on:
       - 'native/bridge/**'
       - 'bin/ci-free-disk.py'
       - 'bin/paimon1-suite.sh'
+      - 'bin/paimon-compaction-suite.py'
+      - 'dev/flink-suite/paimon-compaction*'
       - 'bin/test_paimon1_ci.py'
       - 'pom.xml'
       - '.github/workflows/paimon1.yml'
@@ -63,8 +65,10 @@ jobs:
         run: >-
           mvn -B -ntp -Pflink-1.18,paimon1,bench -pl streamfusion-paimon1 -am
           -Dnative.build.skip=true
-          -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonSourceSqlTest,PaimonSplitWatermarksTest,PaimonFetcherLifecycleTest'
+          -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonSourceSqlTest,PaimonSplitWatermarksTest,PaimonFetcherLifecycleTest,PaimonCompaction*Test,PaimonMaintenanceTest'
           -Dsurefire.failIfNoSpecifiedTests=false '-Dsf.extraJvmArgs=-Xmx2g -XX:ActiveProcessorCount=2 --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED' test
+      - name: Released upstream merge-engine compaction fixtures
+        run: python3 bin/paimon-compaction-suite.py --paimon-version 1.0.0 --release --skip-native-build
       - name: Upstream SQL tests (reuse release libraries)
         env:
           SF_PAIMON1_TEST_FORKS: '1'
@@ -82,4 +86,5 @@ jobs:
             streamfusion-paimon1/target/upstream-suite/inventory/
             streamfusion-paimon1/target/upstream-suite/diagnostics/
             streamfusion-paimon1/target/native-reports/
+            streamfusion-paimon1/target/upstream-compaction/
             native/target/cargo-timings/

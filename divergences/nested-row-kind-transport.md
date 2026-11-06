@@ -6,7 +6,7 @@ function can inspect that kind. Carrying only the SQL fields changes observable 
 the nested-kind fixture computed different BIGINT values from stock Flink for UPDATE_BEFORE,
 UPDATE_AFTER and DELETE inputs.
 
-The default-off `streamfusion.experimental.nestedScalarUdfs` investigation appends a nullable Int8 child
+The default-enabled `streamfusion.experimental.nestedScalarUdfs` boundary appends a nullable Int8 child
 tagged `streamfusion.nested-row-kind=1` to each SQL ROW's Arrow struct. Readers/writers keep it
 outside logical field ordinals. The field name is made unique when user fields use the internal
 prefix. NULL parents remain NULL, and the marker follows nested structs and array elements through
@@ -28,8 +28,8 @@ in an ARRAY_SORT regression and were rejected.
 This differs from Comet because Spark structs have no corresponding per-value changelog kind.
 The existing outer record RowKind column is unchanged. The experiment must be configured
 consistently in the planner and task JVMs because the flag also selects this physical struct
-schema. Default schemas remain unchanged. Distributed configuration and performance admission
-remain part of the investigation before enabling the feature by default.
+schema. Disabling the flag restores the earlier schema and admission. Correct UDF coverage is admitted
+under the accepted performance exception, with complete-job costs reported separately.
 
 ## Binary payload lengths
 
@@ -38,7 +38,7 @@ Flink ROW callback declared `ROW<payload BINARY(4)>` retains byte arrays of leng
 five and 4,097 without padding or truncation. FixedSizeBinary storage would change or reject
 those values. Keeping the logical SQL width separate from physical storage preserves them through
 ROW/ARRAY boundaries and subsequent field projections. Native fixed-size outputs remain readable
-as bytes, and default schemas/admission stay unchanged when the flag is disabled.
+as bytes, and the earlier schemas/admission remain available when the flag is disabled.
 
 This follows [Comet's binary reader](https://github.com/apache/datafusion-comet/blob/4897161704b7b8b7dfa909f4bf897c6508b11117/spark/src/main/java/org/apache/comet/vector/CometPlainVector.java#L169):
 the physical vector supplies its actual byte extent, and the Java result owns its bytes. Released
@@ -57,3 +57,26 @@ while the logical SQL width and nested-scalar admission flag remain independent.
 Arrow readers and writers retain that ownership pattern. No new JNI/memory handoff or
 Rust selection kernel is introduced. Binary ELT default admission uses the agreed
 Rust/Arrow versus Java/RowData small-functionality gate; complete-job costs remain documented.
+
+
+## Recursive external Java conversions
+
+Arroyo's synchronous UDF host (`arroyo-udf-host/src/lib.rs`) passes Arrow arrays through the
+native ABI; it does not define Flink's external Java containers. Comet's JVM UDF expression
+(`native/spark-expr/src/jvm_udf/mod.rs`) keeps imports live during synchronous evaluation and
+imports owned results through the release callback. StreamFusion retains that batch ownership
+model and uses the released Flink 1.18.1/2.2.1 inference and converters for scalar callbacks.
+
+Scalar and table calls share recursive conversion and mutable-alias admission. Generated scalar
+calls use Flink's own method validation and external-expression reuse, retaining overloads,
+varargs, shared instances and per-row conditional/projection order. Copied internal arrays are
+repaired only before the released external converter; result conversion stays delegated. No
+new JNI protocol, Arrow encoding or independent Java-container evaluator is introduced.
+
+The preserving ROW transport is selected for nested types that require it, including NOT NULL
+array elements and otherwise unrepresentable nullable-key maps. Enabling it for every ROW with
+an array would unnecessarily reject an already verified field projection, so ordinary nullable
+scalar-array ROWs retain their existing route. Chained user values with observable mutable
+aliases retain fallback across scalar/table operators. Serialized non-identity container children
+retain their verified native route. The [Calc page](../docs/operators/calc-filter.md#recursive-external-scalar-conversions)
+records the exact coverage, failure controls, deployment checks and measured costs.

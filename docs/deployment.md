@@ -205,7 +205,7 @@ native build requirements. See [ORC](connectors/orc.md) for deployment and confi
 | `native/parquet` | Parquet format encoding and decoding, including reads through host FileIO. |
 | `native/orc` | orc-rust decoding, with host-owned I/O and Arrow C Data. Java ORC writing lives in the format/connector JARs. |
 | `native/iceberg` | Optional Iceberg task decode, Parquet data-file encode and external rewrite sort; Java retains file/table lifecycle and delete encoding. |
-| `native/paimon` | Optional Paimon snapshot merge, bundled in `streamfusion-paimon`; consumes the selected file codec's Arrow C Data output. |
+| `native/paimon` | Released paimon-rust source decoding and supported snapshot merging over Java FileIO, bundled in either Paimon adapter. Upstream includes its formats in this DSO; writer codecs remain separate. |
 | `native/json`, `native/csv`, `native/raw`, `native/avro`, `native/protobuf` | One decoder library per format JAR. Avro and Avro-Confluent-Registry continue to share the Avro native library. |
 | `native/native-build` | Shared build dependency for library-local mimalloc aliases and the checked free/realloc shim. |
 | `native/integration-tests` | Rust round trips that exercise both connector encoding and format decoding. |

@@ -58,7 +58,21 @@ final class FlinkExpressionGenerator {
             config,
             classLoader,
             binaryStringResult,
-            exactDoubleTruncate),
+            exactDoubleTruncate,
+            false),
+        argumentTypes,
+        config,
+        classLoader);
+  }
+
+  static FlinkExpressionFunction generateProjection(
+      RexNode expression,
+      LogicalType[] argumentTypes,
+      ReadableConfig config,
+      ClassLoader classLoader,
+      boolean binaryStringResult) {
+    return generate(
+        scalarBody(expression, argumentTypes, config, classLoader, binaryStringResult, true, true),
         argumentTypes,
         config,
         classLoader);
@@ -182,7 +196,8 @@ final class FlinkExpressionGenerator {
       ReadableConfig config,
       ClassLoader classLoader,
       boolean binaryStringResult,
-      boolean exactDoubleTruncate) {
+      boolean exactDoubleTruncate,
+      boolean projection) {
     var context = new Context(config, classLoader);
     String decimalCode = decimalRoundingText(expression);
     if (decimalCode != null) return new Body(context, decimalCode, null);
@@ -194,16 +209,24 @@ final class FlinkExpressionGenerator {
     String temporal = temporalBody(expression, generator, context, config);
     if (temporal != null) return new Body(context, temporal, null);
     var result = generator.generateExpression(expression);
+    boolean projectionDefault = projection && !result.resultType().isNullable();
+    String value = result.resultTerm();
+    if (binaryStringResult) {
+      value =
+          projectionDefault
+              ? "(" + value + " == null ? null : " + value + ".toBytes())"
+              : value + ".toBytes()";
+    }
     return new Body(
         context,
         canonicalTemporalPrefix(expression, context, config)
             + context.reuseInputUnboxingCode()
             + result.code()
-            + "\nif ("
-            + result.nullTerm()
-            + ") { return null; }\nreturn "
-            + result.resultTerm()
-            + (binaryStringResult ? ".toBytes()" : "")
+            // Flink's non-nullable RowData projection writes the result term, not its null flag.
+            + (projectionDefault
+                ? "\nreturn "
+                : "\nif (" + result.nullTerm() + ") { return null; }\nreturn ")
+            + value
             + ";\n",
         null);
   }
@@ -542,7 +565,7 @@ final class FlinkExpressionGenerator {
         new java.util.LinkedHashMap<>();
 
     Context(ReadableConfig config, ClassLoader classLoader) {
-      super(config, classLoader, "context.getUserCodeClassLoader()");
+      super(config, classLoader, "context.getUserCodeClassLoader()", true);
     }
 
     @Override

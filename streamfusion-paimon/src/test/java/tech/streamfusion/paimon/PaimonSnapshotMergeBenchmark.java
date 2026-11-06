@@ -182,6 +182,10 @@ class PaimonSnapshotMergeBenchmark {
             }
           }
           double seconds = (System.nanoTime() - start) / 1e9;
+          System.out.printf(
+              "PAIMON_SNAPSHOT_SAMPLE key=%s rows=%d commits=%d iteration=%d native=%s seconds=%.6f"
+                  + " count=%d checksum=%d merged=%d%n",
+              keyType, rows, runs, iteration, nativeRead == 1, seconds, count, checksum, merged);
           if (iteration > 0) {
             best[nativeRead] = Math.min(best[nativeRead], seconds);
           }

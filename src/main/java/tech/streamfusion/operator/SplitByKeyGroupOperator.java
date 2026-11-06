@@ -27,6 +27,7 @@ public class SplitByKeyGroupOperator extends FlinkStreamOperator<ArrowBatch>
   private final int[] compactTimestampColumns;
   private final int maxParallelism;
   private final boolean recoverable;
+  private final boolean projectedKeys;
 
   private transient int parallelism;
   private transient BufferAllocator allocator;
@@ -56,11 +57,28 @@ public class SplitByKeyGroupOperator extends FlinkStreamOperator<ArrowBatch>
       int maxParallelism,
       boolean recoverable,
       int[] compactTimestampColumns) {
+    this(
+        keyColumns,
+        timestampPrecisions,
+        maxParallelism,
+        recoverable,
+        compactTimestampColumns,
+        false);
+  }
+
+  public SplitByKeyGroupOperator(
+      int[] keyColumns,
+      int[] timestampPrecisions,
+      int maxParallelism,
+      boolean recoverable,
+      int[] compactTimestampColumns,
+      boolean projectedKeys) {
     this.keyColumns = keyColumns;
     this.timestampPrecisions = timestampPrecisions;
     this.compactTimestampColumns = compactTimestampColumns;
     this.maxParallelism = maxParallelism;
     this.recoverable = recoverable;
+    this.projectedKeys = projectedKeys;
   }
 
   @Override
@@ -131,14 +149,23 @@ public class SplitByKeyGroupOperator extends FlinkStreamOperator<ArrowBatch>
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
       long repartStarted = System.nanoTime();
       handle =
-          Native.splitByKey(
-              inArray.memoryAddress(),
-              inSchema.memoryAddress(),
-              keyColumns,
-              timestampPrecisions,
-              maxParallelism,
-              parallelism,
-              recoverable);
+          projectedKeys
+              ? Native.splitByProjectedKey(
+                  inArray.memoryAddress(),
+                  inSchema.memoryAddress(),
+                  keyColumns,
+                  timestampPrecisions,
+                  maxParallelism,
+                  parallelism,
+                  recoverable)
+              : Native.splitByKey(
+                  inArray.memoryAddress(),
+                  inSchema.memoryAddress(),
+                  keyColumns,
+                  timestampPrecisions,
+                  maxParallelism,
+                  parallelism,
+                  recoverable);
       repartTime.inc(System.nanoTime() - repartStarted);
     } finally {
       in.close(); // the input batch is consumed by the split

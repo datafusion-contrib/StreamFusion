@@ -159,35 +159,39 @@ class FlinkArrayScalarUdfSqlHarnessTest {
   }
 
   @Test
-  void customArrayInferenceKeepsExplicitFallback() {
-    var runs =
-        NativeFailureParity.run(
-            () -> {
-              var table = environment("int", 32, null);
-              table.createTemporarySystemFunction("array_custom", new CustomArray());
-              return table;
-            },
-            "SELECT array_custom(p) FROM src");
-    runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-    assertTrue(
-        runs.nativeRun().fallbackReasons().stream()
-            .anyMatch(reason -> reason.contains("custom type inference")),
-        runs::toString);
-  }
-
-  @Test
-  void primitiveAndRowArrayResultsKeepExplicitFallback() {
-    for (boolean primitive : new boolean[] {true, false}) {
+  void customArrayInferenceUsesItsVerifiedDefaultConverters() {
+    try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
               () -> {
-                var table = environment("int", 32, null);
-                table.createTemporarySystemFunction(
-                    "unverified_array", primitive ? new PrimitiveResult() : new RowResult());
+                var table = environment("int", 32, metrics);
+                table.createTemporarySystemFunction("array_custom", new CustomArray());
                 return table;
               },
-              "SELECT unverified_array(id) FROM src");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+              "SELECT array_custom(p) FROM src");
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+    }
+  }
+
+  @Test
+  void primitiveAndRowArrayResultsKeepReleasedValuesTypesAndNativeWork() {
+    for (boolean primitive : new boolean[] {true, false}) {
+      try (var metrics = new RecoveryExecutionMetrics()) {
+        var runs =
+            NativeFailureParity.run(
+                () -> {
+                  var table = environment("int", 32, metrics);
+                  table.createTemporarySystemFunction(
+                      "verified_array", primitive ? new PrimitiveResult() : new RowResult());
+                  return table;
+                },
+                "SELECT verified_array(id) FROM src");
+        runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+        assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+      }
     }
   }
 

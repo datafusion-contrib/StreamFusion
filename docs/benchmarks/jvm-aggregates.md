@@ -450,3 +450,113 @@ retain the independent prior controls and positive native/fallback assertions. R
 -Dboundary.rows=262144 -Dboundary.warmups=2 -Dboundary.runs=5
 -Dstreamfusion.exchange.zeroCopyLocal=false test`. Previous production copies only the test
 fixtures and sets `-Dboundary.expectNative=false`.
+
+## Single-phase JVM mini-batches (2026-11-01)
+
+The scalar JVM group now retains released Flink's single-phase map-bundle function, count
+trigger and managed state inside Arrow boundaries. Low-cardinality integer groups improve
+in these short local jobs; the three-task STRING case remains slower than paired stock on
+both lines. This is UDF coverage under the accepted performance exception, without a general
+acceleration claim.
+
+These release/mimalloc, Temurin 17 jobs use nullable BIGINT values, heap state, a 3 GiB heap,
+1,024-row mini-batches, one-hour latency and ONE_PHASE. INT keys use one task; STRING keys
+use three tasks and a 16-character prefix. Symmetric EXPLAIN preflight precedes timing from
+submission through completion. Both row/Arrow conversions, production JNI, managed state,
+UDF conversions and the blackhole sink remain inside. Each engine has two warmups and five
+measured trials in alternating order; revisions run serially with no overlapping local
+build/test/benchmark. The previous production revision is PR #578's `2a613b07`, with only the
+candidate benchmark fixture copied in and the preceding native library retained. It requires
+whole-query host fallback; every candidate job requires consumed JVM group input, all input
+rows in `jvmMiniBatchRows`, and positive `jvmMiniBatchBundles`.
+
+All medians are seconds. Separate JVMs show stock drift, especially the 1.18 STRING control,
+so before/after differences do not isolate an operator-only effect. Startup remains part of
+these short jobs.
+
+| Flink | Key / rows / cardinality | Candidate stock | Previous stock | Previous fallback | Candidate |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | INT / 262,144 / 64 | 0.123509 | 0.115897 | 0.111883 | 0.111227 |
+| 2.2.1 | INT / 1,048,576 / 64 | 0.300714 | 0.285661 | 0.276371 | 0.226552 |
+| 2.2.1 | STRING / 262,144 / 65,536 | 0.162909 | 0.159053 | 0.163815 | 0.179887 |
+| 1.18.1 | INT / 262,144 / 64 | 0.152258 | 0.152880 | 0.155772 | 0.141107 |
+| 1.18.1 | INT / 1,048,576 / 64 | 0.444934 | 0.420427 | 0.423209 | 0.359163 |
+| 1.18.1 | STRING / 262,144 / 65,536 | 0.268163 | 0.413125 | 0.445980 | 0.315859 |
+
+[All trials, warmups, ranges, native work, commands and source/library fingerprints](results/jvm-mini-batches-2026-11-01.json)
+retain unfavorable results. For example, 2.2 STRING candidate trials range from 0.162021 to
+0.244198 s against stock's 0.155811–0.179261 s; its preceding fallback spans
+0.158821–0.180676 s.
+
+Reproduce the three configurations with `SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime
+-Dtest=JvmAggregateBenchmark -Djvmagg.cases=udaf -Djvmagg.miniBatchRows=1024
+-Djvmagg.expectNative=true -Djvmagg.warmup=2 -Djvmagg.runs=5
+-Dsf.testForks=1 '-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false'
+test`, setting `jvmagg.rows`, `jvmagg.keys`, `jvmagg.keyType` and `jvmagg.parallelism` from the
+table. Use `-Pbench,flink-1.18` for 1.18.1. For the preceding revision, copy only the matching
+benchmark source, rebuild Java against its unchanged production sources, use its release
+native library and set `-Djvmagg.expectNative=false`.
+
+
+## Two-phase scalar JVM aggregates (2026-11-02)
+
+The local/global JVM route is correctness coverage under the accepted UDF performance
+exception. Released Flink retains local accumulation/retraction, partial merging, DISTINCT
+DataViews, managed global state, TTL and changelog generation. Complex internal partial
+fields travel in Arrow binary columns through Flink's declared serializers; public inputs
+and results remain within the verified scalar boundary. This does not establish a general
+throughput improvement.
+
+[All trials and phase-specific consumed-work evidence](results/jvm-two-phase-aggregates-2026-11-02.json)
+compare stock Flink, actual preceding production `76b1e46f`, and the candidate on each
+released line. The preceding runtime uses unchanged production sources with only the
+identical benchmark harness overlaid to request TWO_PHASE; every preceding native-enabled
+trial verifies zero native operators. Native source is unchanged, so both revisions use the
+same release library.
+
+Each complete job has 1,000,000 logical rows, a BIGINT JVM aggregate and INT or VARCHAR
+keys, 1,024-row logical mini-batches, zero accumulator-cache entries, two warmups and five
+measured trials. INT runs use one task; VARCHAR runs use three and a 16-character key
+prefix. Candidate stock/native order alternates within each trial. The row source, row
+blackhole sink, both perimeter transposes, production JNI, Arrow IPC exchange, accumulator
+serialization and managed state remain inside the measured job. Both intended JVM phases
+must consume input in every candidate trial. Previous-runtime trials run in separate JVMs
+and retain their control drift.
+
+Median elapsed seconds:
+
+| Flink | Key / keys / tasks | Stock | Previous | Native |
+| --- | --- | ---: | ---: | ---: |
+| 1.18 | INT / 4,096 / 1 | 0.445887 | 0.450591 | 0.456226 |
+| 1.18 | INT / 64 / 1 | 0.252916 | 0.251976 | 0.241026 |
+| 1.18 | STRING / 4,096 / 3 | 0.330804 | 0.348089 | 0.353647 |
+| 1.18 | STRING / 64 / 3 | 0.173796 | 0.202867 | 0.194745 |
+| 2.2 | INT / 4,096 / 1 | 0.477134 | 1.027444 | 0.477267 |
+| 2.2 | INT / 64 / 1 | 0.257568 | 0.567482 | 0.243623 |
+| 2.2 | STRING / 4,096 / 3 | 0.337723 | 1.362176 | 0.367445 |
+| 2.2 | STRING / 64 / 3 | 0.197558 | 0.804563 | 0.200454 |
+
+Results remain mixed: some medians improve and others regress against stock and/or the
+preceding runtime. These subsecond-to-second jobs include startup and JIT, and several
+trial ranges overlap; the large preceding-runtime VARCHAR drift is retained rather than
+treated as a reliable optimization win. UDF callbacks, accumulator serialization,
+allocation and columnar-exchange costs remain follow-up performance work. No optimization
+pass or general acceleration claim is made by this coverage change.
+
+After building the release runtime and test classes with `mvn -Pbench test-compile`,
+reproduce one comparison with:
+
+```sh
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime surefire:test@default-test \
+  '-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes' \
+  -Djvmagg.cases=udaf -Djvmagg.twoPhase=true -Djvmagg.miniBatchRows=1024 \
+  -Djvmagg.rows=1000000 -Djvmagg.keys=64 -Djvmagg.keyType=int \
+  -Djvmagg.parallelism=1 -Djvmagg.expectNative=true -Djvmagg.expectCache=false \
+  -Djvmagg.warmup=2 -Djvmagg.runs=5 \
+  -Dsf.extraJvmArgs=-Dstreamfusion.experimental.jvmAccumulatorCacheEntries=0
+```
+
+Use `-Pbench,flink-1.18` for Flink 1.18.1, and select the key count/type and parallelism
+from the table. The preceding-runtime control uses `jvmagg.expectNative=false` and
+`jvmagg.engine=native`; its all-zero stock array is an unmeasured engine, not a zero-second
+observation. The retained result artifact includes only its measured fallback trials.

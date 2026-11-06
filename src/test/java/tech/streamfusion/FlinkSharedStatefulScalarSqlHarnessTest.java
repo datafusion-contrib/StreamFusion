@@ -36,6 +36,10 @@ class FlinkSharedStatefulScalarSqlHarnessTest {
         "SELECT id, tick(a), tick(b) FROM src WHERE tick(a) > 0",
         "SELECT id, CASE WHEN MOD(id, 2) = 0 THEN tick(a) ELSE tick(b) END, tick(a) FROM src",
         "SELECT id, COALESCE(tick(a), tick(b), 0), tick(a) FROM src",
+        "SELECT id, tick(a), NOT(CAST(COALESCE(id,0) AS DECIMAL(1,0))>0), tick(b) FROM src",
+        "SELECT id, tick(a), CAST(CAST(COALESCE(id,0) AS DECIMAL(38,18)) * "
+            + "CAST('99999999999999999999.999999999999999999' AS DECIMAL(38,18)) "
+            + "AS STRING), tick(b) FROM src",
         "SELECT id, tick(a), other_tick(b), tick(b) FROM src",
         "SELECT id, tick(a), tick(b) FROM src WHERE tick(a) < 0"
       })
@@ -47,6 +51,38 @@ class FlinkSharedStatefulScalarSqlHarnessTest {
   @Test
   void originalCounterExampleKeepsItsExactCallSequence() throws Exception {
     compare("SELECT tick(a), tick(b) FROM src", 3, false);
+  }
+
+  @Test
+  void booleanFormattingDoesNotDiscardStatefulArguments() throws Exception {
+    for (String operator : List.of("CAST", "TRY_CAST")) {
+      compare("SELECT id,CAST(tick(a)>0 AS STRING),tick(b) FROM src"
+          .replace("CAST(", operator + "("), 5003, false);
+      compare("SELECT id,CASE WHEN MOD(id,2)=0 THEN CAST(tick(a)>0 AS CHAR(8)) ELSE 'skip' END,tick(b) FROM src"
+          .replace("CAST(", operator + "("), 2051, true);
+      compare("SELECT id,CAST(NOT(tick(a)>0) AS CHAR(8)),tick(b) FROM src"
+          .replace("CAST(", operator + "("), 2051, true);
+    }
+  }
+
+  @Test
+  void decimalFormattingDoesNotDiscardStatefulArguments() throws Exception {
+    for (String operator : List.of("CAST", "TRY_CAST")) {
+      compare(("SELECT id,$CAST(ABS(CAST(tick(a) AS DECIMAL(18,3))) AS CHAR(8)),tick(b) FROM src")
+          .replace("$CAST", operator), 5003, false);
+      compare(("SELECT id,CASE WHEN MOD(id,2)=0 "
+          + "THEN $CAST(-CAST(tick(a) AS DECIMAL(18,3)) AS STRING) ELSE 'skip' END,tick(b) FROM src")
+          .replace("$CAST", operator), 2051, true);
+    }
+  }
+
+  @Test
+  void numericClassificationDoesNotDiscardStatefulArguments() throws Exception {
+    for (String function : List.of("IS_ALPHA", "IS_DIGIT", "IS_DECIMAL")) {
+      compare("SELECT id, IS_ALPHA(tick(a)), tick(b) FROM src".replace("IS_ALPHA", function), 5003, false);
+      compare(("SELECT id, CASE WHEN MOD(id,2)=0 THEN IS_ALPHA(tick(a)) ELSE FALSE END, tick(b) FROM src")
+          .replace("IS_ALPHA", function), 2051, true);
+    }
   }
 
   @Test

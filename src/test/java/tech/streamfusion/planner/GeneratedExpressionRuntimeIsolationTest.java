@@ -39,7 +39,7 @@ class GeneratedExpressionRuntimeIsolationTest {
   @TempDir Path directory;
 
   @ParameterizedTest
-  @ValueSource(strings = {"scalar", "cast", "row", "clock", "time", "sql"})
+  @ValueSource(strings = {"scalar", "cast", "row", "clock", "time", "sql", "containers"})
   void workersRestoreAndExecuteWithoutPlannerOrCalcite(String mode) throws Exception {
     Path input = directory.resolve("function.bin");
     try (var output = new ObjectOutputStream(Files.newOutputStream(input))) {
@@ -90,6 +90,22 @@ class GeneratedExpressionRuntimeIsolationTest {
 
   private Object fixture(String mode) throws Exception {
     if (mode.equals("sql")) return sqlFactory();
+    if (mode.equals("containers")) {
+      var ints =
+          org.apache.flink.table.api.DataTypes.ARRAY(
+                  org.apache.flink.table.api.DataTypes.INT().notNull())
+              .bridgedTo(int[].class);
+      var rows =
+          org.apache.flink.table.api.DataTypes.ARRAY(
+                  org.apache.flink.table.api.DataTypes.ROW(
+                      org.apache.flink.table.api.DataTypes.FIELD(
+                          "n", org.apache.flink.table.api.DataTypes.STRING())))
+              .bridgedTo(java.util.List.class);
+      return new ExternalContainerConverter(
+          org.apache.flink.table.api.DataTypes.ROW(
+              org.apache.flink.table.api.DataTypes.FIELD(
+                  "m", org.apache.flink.table.api.DataTypes.MAP(ints, rows))));
+    }
     if (mode.equals("clock")) return GeneratedProcessingTimeTest.scalar(3);
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);

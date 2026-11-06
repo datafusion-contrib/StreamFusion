@@ -90,6 +90,24 @@ pub(crate) fn partition_batch(
     max_parallelism: usize,
     parallelism: usize,
 ) -> Vec<(usize, RecordBatch)> {
+    partition_batch_with_layout(
+        batch,
+        key_columns,
+        timestamp_precisions,
+        max_parallelism,
+        parallelism,
+        false,
+    )
+}
+
+fn partition_batch_with_layout(
+    batch: &RecordBatch,
+    key_columns: &[usize],
+    timestamp_precisions: &[i32],
+    max_parallelism: usize,
+    parallelism: usize,
+    projected_keys: bool,
+) -> Vec<(usize, RecordBatch)> {
     let serialized;
     let batch = if has_string_caches(batch) {
         serialized = cold_string_caches(batch);
@@ -101,6 +119,9 @@ pub(crate) fn partition_batch(
     // descriptor; the encoder validates that it is consumed exactly.
     let mut channels: Vec<Option<(usize, Vec<u32>)>> = vec![None; parallelism];
     let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions);
+    if projected_keys {
+        encoder = encoder.projected();
+    }
     for row in 0..batch.num_rows() {
         let key_group = flink_key_group(encoder.hash(row), max_parallelism);
         let channel = key_group * parallelism / max_parallelism;
@@ -141,6 +162,22 @@ pub(crate) fn partition_batch_by_key_group(
     timestamp_precisions: &[i32],
     max_parallelism: usize,
 ) -> Vec<(usize, Vec<i32>, RecordBatch)> {
+    partition_batch_by_key_group_with_layout(
+        batch,
+        key_columns,
+        timestamp_precisions,
+        max_parallelism,
+        false,
+    )
+}
+
+fn partition_batch_by_key_group_with_layout(
+    batch: &RecordBatch,
+    key_columns: &[usize],
+    timestamp_precisions: &[i32],
+    max_parallelism: usize,
+    projected_keys: bool,
+) -> Vec<(usize, Vec<i32>, RecordBatch)> {
     let serialized;
     let batch = if has_string_caches(batch) {
         serialized = cold_string_caches(batch);
@@ -150,6 +187,9 @@ pub(crate) fn partition_batch_by_key_group(
     };
     let mut rows_by_key_group: Vec<Vec<u32>> = vec![Vec::new(); max_parallelism];
     let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions);
+    if projected_keys {
+        encoder = encoder.projected();
+    }
     for row in 0..batch.num_rows() {
         let key_group = flink_key_group(encoder.hash(row), max_parallelism);
         rows_by_key_group[key_group].push(row as u32);
@@ -210,6 +250,55 @@ pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
     parallelism: jint,
     recoverable: jboolean,
 ) -> jlong {
+    split_by_key(
+        env,
+        in_array_address,
+        in_schema_address,
+        key_columns,
+        timestamp_precisions,
+        max_parallelism,
+        parallelism,
+        recoverable,
+        false,
+    )
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_splitByProjectedKey<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    key_columns: JIntArray<'local>,
+    timestamp_precisions: JIntArray<'local>,
+    max_parallelism: jint,
+    parallelism: jint,
+    recoverable: jboolean,
+) -> jlong {
+    split_by_key(
+        env,
+        in_array_address,
+        in_schema_address,
+        key_columns,
+        timestamp_precisions,
+        max_parallelism,
+        parallelism,
+        recoverable,
+        true,
+    )
+}
+
+fn split_by_key<'local>(
+    env: JNIEnv<'local>,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    key_columns: JIntArray<'local>,
+    timestamp_precisions: JIntArray<'local>,
+    max_parallelism: jint,
+    parallelism: jint,
+    recoverable: jboolean,
+    projected_keys: bool,
+) -> jlong {
     crate::bridge::jni_guard(env, move |env| {
         let batch = import_record_batch(in_array_address, in_schema_address);
         let keys: Vec<usize> = read_int_array(&env, &key_columns)
@@ -218,21 +307,28 @@ pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
             .collect();
         let precisions = read_i32_array(&env, &timestamp_precisions);
         let parts: Vec<SplitPart> = if recoverable != 0 {
-            partition_batch_by_key_group(&batch, &keys, &precisions, max_parallelism as usize)
-                .into_iter()
-                .map(|(key_group, ordinals, batch)| SplitPart {
-                    key_group,
-                    ordinals,
-                    batch,
-                })
-                .collect()
+            partition_batch_by_key_group_with_layout(
+                &batch,
+                &keys,
+                &precisions,
+                max_parallelism as usize,
+                projected_keys,
+            )
+            .into_iter()
+            .map(|(key_group, ordinals, batch)| SplitPart {
+                key_group,
+                ordinals,
+                batch,
+            })
+            .collect()
         } else {
-            partition_batch(
+            partition_batch_with_layout(
                 &batch,
                 &keys,
                 &precisions,
                 max_parallelism as usize,
                 parallelism as usize,
+                projected_keys,
             )
             .into_iter()
             .map(|(key_group, batch)| SplitPart {

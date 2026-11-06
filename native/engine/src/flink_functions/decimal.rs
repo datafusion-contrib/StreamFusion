@@ -70,6 +70,91 @@ impl ScalarUDFImpl for DecimalCast {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
+pub(crate) struct DecimalIf {
+    precision: u8,
+    scale: i8,
+    signature: Signature,
+}
+
+impl DecimalIf {
+    pub(crate) fn new(precision: u8, scale: i8) -> Self {
+        Self {
+            precision,
+            scale,
+            signature: Signature::any(3, Volatility::Immutable),
+        }
+    }
+}
+
+impl ScalarUDFImpl for DecimalIf {
+    fn name(&self) -> &str {
+        "flink_exact_decimal_if"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, args: &[DataType]) -> Result<DataType> {
+        let [DataType::Boolean, left, right] = args else {
+            return exec_err!("decimal IF requires a condition and two exact numeric branches");
+        };
+        for source in [left, right] {
+            DecimalRescale::new(source_scale(source)? as i16, self.precision, self.scale)?;
+        }
+        Ok(DataType::Decimal128(self.precision, self.scale))
+    }
+
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let [condition, left, right] = args.args.as_slice() else {
+            return exec_err!("decimal IF requires three arguments");
+        };
+        let scalar = args
+            .args
+            .iter()
+            .all(|arg| matches!(arg, ColumnarValue::Scalar(_)));
+        let rows = if scalar { 1 } else { args.number_rows };
+        check_lengths(&args.args, rows)?;
+        let mask = condition.to_array(rows)?;
+        let mask = datafusion::common::cast::as_boolean_array(&mask)?;
+        let left_rescale = DecimalRescale::new(
+            source_scale(&left.data_type())? as i16,
+            self.precision,
+            self.scale,
+        )?;
+        let right_rescale = DecimalRescale::new(
+            source_scale(&right.data_type())? as i16,
+            self.precision,
+            self.scale,
+        )?;
+        let left = DecimalInput::new(left)?;
+        let right = DecimalInput::new(right)?;
+        // Admission proves branch leaves and lossless casts; no filtered batches are needed.
+        let select = |row| {
+            if mask.is_valid(row) && mask.value(row) {
+                left.value(row).and_then(|value| left_rescale.narrow(value))
+            } else {
+                right
+                    .value(row)
+                    .and_then(|value| right_rescale.narrow(value))
+            }
+        };
+        if scalar {
+            return Ok(ColumnarValue::Scalar(ScalarValue::Decimal128(
+                select(0),
+                self.precision,
+                self.scale,
+            )));
+        }
+        let output = (0..rows)
+            .map(select)
+            .collect::<Decimal128Array>()
+            .with_precision_and_scale(self.precision, self.scale)?;
+        Ok(ColumnarValue::Array(Arc::new(output)))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct DecimalRound {
     precision: u8,
     scale: i8,
@@ -255,6 +340,17 @@ impl ScalarUDFImpl for DecimalBinary {
             source_scale(&right.data_type())?,
         )?;
         let inputs = (DecimalInput::new(left)?, DecimalInput::new(right)?);
+        if let (DecimalInput::Decimal(left), DecimalInput::Decimal(right)) = &inputs {
+            // Decimal arrays cannot fail legacy integer casts. Retain the exact iterator
+            // length so Arrow reserves once, without per-row type/error dispatch.
+            let output = left
+                .iter()
+                .zip(right.iter())
+                .map(|(left, right)| prepared.evaluate(left?, right?))
+                .collect::<Decimal128Array>()
+                .with_precision_and_scale(self.precision, self.scale)?;
+            return Ok(ColumnarValue::Array(Arc::new(output)));
+        }
         let limits = [left, right].map(|input| {
             legacy_integer_limit(
                 self.legacy_integer_cast,
@@ -446,6 +542,126 @@ mod tests {
     use super::*;
     use arrow::datatypes::Field;
     use datafusion::common::config::ConfigOptions;
+
+    #[test]
+    fn decimal_if_selects_nullable_sliced_branches_and_treats_null_conditions_as_false() {
+        use arrow::array::BooleanArray;
+        let mask = BooleanArray::from(vec![
+            Some(false),
+            Some(true),
+            Some(false),
+            None,
+            Some(true),
+            Some(false),
+            Some(true),
+            None,
+        ])
+        .slice(1, 7);
+        let left = Decimal128Array::from(vec![
+            Some(9999),
+            Some(123),
+            Some(-456),
+            Some(789),
+            None,
+            Some(9999),
+            Some(0),
+            Some(1),
+        ])
+        .with_precision_and_scale(4, 2)
+        .unwrap()
+        .slice(1, 7);
+        let right = Int32Array::from(vec![
+            Some(7),
+            Some(8),
+            Some(i32::MIN),
+            Some(2),
+            None,
+            Some(4),
+            Some(5),
+            Some(6),
+            Some(i32::MAX),
+        ])
+        .slice(2, 7);
+        let ColumnarValue::Array(output) = invoke(
+            &DecimalIf::new(12, 2),
+            vec![
+                ColumnarValue::Array(Arc::new(mask)),
+                ColumnarValue::Array(Arc::new(left)),
+                ColumnarValue::Array(Arc::new(right)),
+            ],
+            7,
+        )
+        .unwrap() else {
+            panic!("expected array");
+        };
+        let expected = Decimal128Array::from(vec![
+            Some(123),
+            Some(200),
+            None,
+            None,
+            Some(500),
+            Some(0),
+            Some(214748364700),
+        ])
+        .with_precision_and_scale(12, 2)
+        .unwrap();
+        output.to_data().validate_full().unwrap();
+        assert_eq!(output.as_ref(), &expected);
+    }
+
+    #[test]
+    fn decimal_if_preserves_scalar_metadata_and_bigints_without_double_conversion() {
+        for condition in [Some(true), Some(false), None] {
+            for left in [Some(123), None] {
+                let output = invoke(
+                    &DecimalIf::new(38, 19),
+                    vec![
+                        ColumnarValue::Scalar(ScalarValue::Boolean(condition)),
+                        ColumnarValue::Scalar(ScalarValue::Decimal128(left, 4, 2)),
+                        ColumnarValue::Scalar(ScalarValue::Int64(Some(i64::MAX))),
+                    ],
+                    1024,
+                )
+                .unwrap();
+                let expected = if condition == Some(true) {
+                    left.map(|value| value * 100_000_000_000_000_000)
+                } else {
+                    Some(92_233_720_368_547_758_070_000_000_000_000_000_000)
+                };
+                let ColumnarValue::Scalar(output) = output else {
+                    panic!("expected scalar");
+                };
+                assert_eq!(output, ScalarValue::Decimal128(expected, 38, 19));
+            }
+        }
+    }
+
+    #[test]
+    fn decimal_if_accepts_empty_batches_and_rejects_unverified_branch_types() {
+        use arrow::array::BooleanArray;
+        let output = invoke(
+            &DecimalIf::new(12, 2),
+            vec![
+                ColumnarValue::Array(Arc::new(BooleanArray::from(Vec::<Option<bool>>::new()))),
+                ColumnarValue::Array(Arc::new(
+                    Decimal128Array::from(Vec::<Option<i128>>::new())
+                        .with_precision_and_scale(4, 2)
+                        .unwrap(),
+                )),
+                ColumnarValue::Scalar(ScalarValue::Int32(Some(1))),
+            ],
+            0,
+        )
+        .unwrap();
+        let ColumnarValue::Array(output) = output else {
+            panic!("expected array");
+        };
+        assert_eq!(output.len(), 0);
+        assert_eq!(output.data_type(), &DataType::Decimal128(12, 2));
+        assert!(DecimalIf::new(12, 2)
+            .return_type(&[DataType::Boolean, DataType::Utf8, DataType::Int32])
+            .is_err());
+    }
 
     #[test]
     fn legacy_integer_conversion_overflow_is_checked_after_both_null_guards() {
@@ -739,6 +955,9 @@ mod tests {
                     for output_scale in [0, 6, 38] {
                         let function = DecimalBinary::new(op, 38, output_scale);
                         let prepared = PreparedBinary::new(&function, s1, s2).unwrap();
+                        let mut left_values = vec![Some(42)];
+                        let mut right_values = vec![Some(42)];
+                        let mut expected_values = Vec::new();
                         for a in [-max, -15, 0, 15, max] {
                             for b in [-max, -1, 0, 1, max] {
                                 let (raw, scale) = match op {
@@ -761,12 +980,59 @@ mod tests {
                                         )
                                     }
                                 };
+                                let expected = rescale_half_up(raw, scale, 38, output_scale);
                                 assert_eq!(
                                     prepared.evaluate(a, b),
-                                    rescale_half_up(raw, scale, 38, output_scale),
+                                    expected,
                                     "{op:?}: ({a}, {s1}), ({b}, {s2}) -> (38, {output_scale})"
                                 );
+                                left_values.push(Some(a));
+                                right_values.push(Some(b));
+                                expected_values.push(expected);
                             }
+                        }
+                        left_values.extend([None, Some(15), None]);
+                        right_values.extend([Some(15), None, None]);
+                        expected_values.extend([None, None, None]);
+                        let rows = expected_values.len();
+                        let left = Decimal128Array::from(left_values)
+                            .with_precision_and_scale(38, s1)
+                            .unwrap()
+                            .slice(1, rows);
+                        let right = Decimal128Array::from(right_values)
+                            .with_precision_and_scale(38, s2)
+                            .unwrap()
+                            .slice(1, rows);
+                        let expected = Decimal128Array::from(expected_values)
+                            .with_precision_and_scale(38, output_scale)
+                            .unwrap();
+                        for legacy in [false, true] {
+                            let function = DecimalBinary::new(op, 38, output_scale)
+                                .with_legacy_integer_cast(legacy);
+                            let arrays = |len| {
+                                vec![
+                                    ColumnarValue::Array(Arc::new(left.slice(0, len))),
+                                    ColumnarValue::Array(Arc::new(right.slice(0, len))),
+                                ]
+                            };
+                            let ColumnarValue::Array(output) =
+                                invoke(&function, arrays(rows), rows).unwrap()
+                            else {
+                                panic!("expected array")
+                            };
+                            output.to_data().validate_full().unwrap();
+                            assert_eq!(
+                                output.as_ref(),
+                                &expected,
+                                "{op:?}: scales {s1}, {s2} -> {output_scale}, legacy={legacy}"
+                            );
+                            let ColumnarValue::Array(empty) =
+                                invoke(&function, arrays(0), 0).unwrap()
+                            else {
+                                panic!("expected empty array")
+                            };
+                            assert_eq!(empty.len(), 0);
+                            assert_eq!(empty.data_type(), expected.data_type());
                         }
                     }
                 }

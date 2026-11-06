@@ -498,7 +498,7 @@ class FlinkJvmAggregateSqlHarnessTest {
   }
 
   @Test
-  void unsupportedStateModesAndOperatorDisableKeepWholeIslandFallback() {
+  void miniBatchUsesNativeAndOperatorDisableKeepsWholeIslandFallback() {
     for (var settings :
         java.util.List.of(
             Map.of(
@@ -517,13 +517,15 @@ class FlinkJvmAggregateSqlHarnessTest {
         // The released host's processing-time trigger may emit different intermediate batches.
         assertNull(comparison.host().failure());
         assertNull(comparison.nativeRun().failure());
-        assertEquals(NativeFailureParity.Route.FALLBACK, comparison.nativeRun().route());
+        assertEquals(NativeFailureParity.Route.NATIVE, comparison.nativeRun().route());
         assertEquals(comparison.host().resultTypes(), comparison.nativeRun().resultTypes());
         var expected = Map.of(java.util.List.of("A", 27L), 1L, java.util.List.of("B", 8L), 1L);
         assertEquals(expected, SqlAuditHarness.materialized(comparison.host().rows()));
         assertEquals(expected, SqlAuditHarness.materialized(comparison.nativeRun().rows()));
       } else comparison.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertFalse(comparison.nativeRun().plan().contains("NativeJvmGroup"));
+      assertEquals(
+          "true".equals(settings.get("table.exec.mini-batch.enabled")),
+          comparison.nativeRun().plan().contains("NativeJvmGroup"));
     }
   }
 

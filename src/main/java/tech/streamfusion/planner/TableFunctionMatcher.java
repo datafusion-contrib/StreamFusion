@@ -1,25 +1,15 @@
 package tech.streamfusion.planner;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rex.RexCall;
-import org.apache.calcite.rex.RexCallBinding;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.flink.table.functions.SpecializedFunction;
 import org.apache.flink.table.functions.TableFunction;
 import org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction;
-import org.apache.flink.table.planner.functions.inference.OperatorBindingCallContext;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCorrelate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
-import org.apache.flink.table.types.DataType;
-import org.apache.flink.table.types.inference.TypeInferenceUtil;
-import org.apache.flink.table.types.logical.LogicalTypeFamily;
-import org.apache.flink.table.types.logical.LogicalTypeRoot;
-import org.apache.flink.types.Row;
 
 /** Admission for released Flink JVM table-function generation inside a columnar boundary. */
 final class TableFunctionMatcher {
@@ -57,97 +47,20 @@ final class TableFunctionMatcher {
 
   private static boolean verifiedConversions(StreamPhysicalCorrelate node) {
     RexCall call = (RexCall) node.scan().getCall();
-    if (scalarBoundary(node)) return true;
-    var function = (BridgingSqlFunction) call.getOperator();
+    boolean scalar = scalarBoundary(node);
+    if (scalar && !JvmFunctionConversions.aliasedProducer(node.getInput())) return true;
     try {
-      var context =
-          new OperatorBindingCallContext(
-              function.getDataTypeFactory(),
-              function.getDefinition(),
-              RexCallBinding.create(function.getTypeFactory(), call, null, Collections.emptyList()),
-              call.getType());
-      var inferred = TypeInferenceUtil.runTypeInference(function.getTypeInference(), context, null);
-      return inferred.getExpectedArgumentTypes().stream()
-              .allMatch(TableFunctionMatcher::verifiedArgumentConversion)
-          && verifiedOutputConversion(inferred.getOutputDataType());
+      var inferred = JvmFunctionConversions.infer(call);
+      return (scalar
+              || (inferred.getExpectedArgumentTypes().stream()
+                      .allMatch(JvmFunctionConversions::verifiedArgumentConversion)
+                  && JvmFunctionConversions.verifiedResultConversion(inferred.getOutputDataType())))
+          && (inferred.getExpectedArgumentTypes().stream()
+                  .noneMatch(JvmFunctionConversions::argumentAliases)
+              || !JvmFunctionConversions.aliasedProducer(node.getInput()));
     } catch (RuntimeException failure) {
       return false;
     }
-  }
-
-  private static boolean verifiedArgumentConversion(DataType type) {
-    return verifiedConversion(type) || primitiveConversion(type) || epochDayConversion(type);
-  }
-
-  private static boolean epochDayConversion(DataType type) {
-    return type.getLogicalType().is(LogicalTypeRoot.DATE)
-        && !type.getLogicalType().isNullable()
-        && type.getConversionClass() == int.class;
-  }
-
-  private static boolean verifiedOutputConversion(DataType type) {
-    if (type.getLogicalType().is(LogicalTypeRoot.ROW) && type.getConversionClass() == Row.class)
-      return type.getChildren().stream().allMatch(TableFunctionMatcher::verifiedResultConversion);
-    return verifiedResultConversion(type);
-  }
-
-  private static boolean verifiedResultConversion(DataType type) {
-    if (verifiedConversion(type) || primitiveConversion(type) || epochDayConversion(type))
-      return true;
-    if (!type.getLogicalType().is(LogicalTypeRoot.ARRAY)
-        || type.getConversionClass() != ArrayList.class) return false;
-    var element = type.getChildren().get(0);
-    return defaultScalarConversion(element);
-  }
-
-  private static boolean verifiedConversion(DataType type) {
-    if (defaultConversions(type)) return true;
-    if (!type.getLogicalType().is(LogicalTypeRoot.ARRAY)) return false;
-    var element = type.getChildren().get(0);
-    if (type.getConversionClass() == List.class) return defaultScalarConversion(element);
-    return type.getConversionClass().isArray()
-        && type.getConversionClass().getComponentType().isPrimitive()
-        && primitiveConversion(element);
-  }
-
-  private static boolean defaultScalarConversion(DataType type) {
-    return type.getLogicalType().is(LogicalTypeFamily.PREDEFINED) && defaultConversions(type);
-  }
-
-  private static boolean primitiveConversion(DataType type) {
-    if (type.getLogicalType().isNullable()) return false;
-    Class<?> primitive;
-    switch (type.getLogicalType().getTypeRoot()) {
-      case BOOLEAN:
-        primitive = boolean.class;
-        break;
-      case TINYINT:
-        primitive = byte.class;
-        break;
-      case SMALLINT:
-        primitive = short.class;
-        break;
-      case INTEGER:
-        primitive = int.class;
-        break;
-      case BIGINT:
-        primitive = long.class;
-        break;
-      case FLOAT:
-        primitive = float.class;
-        break;
-      case DOUBLE:
-        primitive = double.class;
-        break;
-      default:
-        return false;
-    }
-    return type.getConversionClass() == primitive;
-  }
-
-  private static boolean defaultConversions(DataType type) {
-    return type.getConversionClass() == type.getLogicalType().getDefaultConversion()
-        && type.getChildren().stream().allMatch(TableFunctionMatcher::defaultConversions);
   }
 
   private static final class ProjectedSource {
@@ -223,10 +136,10 @@ final class TableFunctionMatcher {
     return "correlate: only non-specialized JVM table functions with INNER/LEFT and CHAR/VARCHAR,"
         + " numeric, boolean, binary, interval, temporal or recursively verified"
         + " ARRAY/MAP/ROW input, output and argument types with verified external Java"
-        + " conversions (default containers, scalar Lists, scalar ArrayList results,"
-        + " non-null primitive arrays or direct non-null boolean/numeric primitive scalar"
-        + " arguments or results, or non-null DATE/int arguments or results) and input"
-        + " representation are verified";
+        + " conversions (recursive external arrays, Lists, ROW/MAP, List implementation results,"
+        + " non-null primitive arrays and verified primitive/temporal scalar bridges),"
+        + " verified input representation and safe ownership (chained mutable aliases and"
+        + " unencoded temporal-array results excluded) are supported";
   }
 
   static RelNode substitute(StreamPhysicalCorrelate node, PlanContext context) {

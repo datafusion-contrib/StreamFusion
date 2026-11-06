@@ -1,0 +1,3748 @@
+{
+  "date": "2026-11-05",
+  "issue": 503,
+  "canonical_base": "9954a19c",
+  "parent": "284ebb1a2f8002591e10ae42a5e6d7ba25339e7b",
+  "platform": "26.5 arm64",
+  "scope": "Ordinary Calc DATE_FORMAT over verified total integer epoch producers, with a genuine builtin, supported literal numeric patterns and a planning zone normalized to fixed zero offset. Preserve source widths, wrapping arithmetic, original-unit epoch bounds, NULLs, literal 0/3 and verified runtime INT CASE 0/3/NULL precision. Flink 2.2 default precision composes the same proof; 1.18 retains its validation rejection. DECIMAL epochs, other producers/zones/patterns and UNNEST retain their separate routes.",
+  "reference": "Both released DateTimeUtils formatTimestamp bytecodes use TimestampData.toInstant, LocalDateTime.ofInstant with the session ZoneId, and the cached DateTimeFormatter. The zero-offset producer proof reuses existing epoch and full-range numeric formatting kernels without introducing a second timezone database, JNI path or opcode.",
+  "method": "Production release prepared Calc with direct character output and equivalent UTF-8 checksum consumption. Stock starts on prebuilt Generic/Binary RowData; native starts on Arrow RecordBatch. Rust timer starts after setup/import and stops before export; intrinsic allocations/conversions remain timed. Actual preceding encoder keeps its generated temporal evaluator inside NativeCalc. Complete jobs retain submission/startup, JNI and both perimeter transposes.",
+  "configuration": {
+    "flink": [
+      "1.18.1",
+      "2.2.1"
+    ],
+    "jdk": "17 for timing; 11/17 for focused parity",
+    "java_release": 11,
+    "rust": "release --no-default-features; unchanged System-allocator runtime",
+    "batch_sizes": [
+      1024,
+      16
+    ],
+    "nullable": [
+      false,
+      true
+    ],
+    "binary_rowdata": [
+      false,
+      true
+    ],
+    "session_zone": "UTC",
+    "prepared_rows_per_trial": 131072,
+    "prepared_jvm_heap": "-Xmx1g",
+    "warmups": 16,
+    "measurements": 9,
+    "input": "Equivalent signed integer/epoch corpora across four widths, source-width wrapping arithmetic, original-unit epoch bounds, year-zero/extended date boundaries and independent NULLs.",
+    "pipeline_rows": 1000000,
+    "pipeline_parallelism": 1,
+    "pipeline_heap": "-Xmx2g for all engines",
+    "pipeline_warmups": 2,
+    "pipeline_measurements": 5
+  },
+  "correctness": {
+    "focused": {
+      "22-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=86 succeeded=86 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "22-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=86 succeeded=86 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=71 succeeded=71 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=71 succeeded=71 aborted=0 skipped=0 failed=0"
+        ]
+      }
+    },
+    "preceding": {
+      "22-17": {
+        "exit": 1,
+        "result": [
+          "RESULT found=17 succeeded=2 aborted=0 skipped=0 failed=15"
+        ]
+      },
+      "118-17": {
+        "exit": 1,
+        "result": [
+          "RESULT found=14 succeeded=3 aborted=0 skipped=0 failed=11"
+        ]
+      }
+    },
+    "stock_temporal_oracles": {
+      "testDateFormat-22-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-2.2.1-tests.jar",
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "testDateFormatShanghai-22-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-2.2.1-tests.jar",
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "testDateFormatLosAngeles-22-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-2.2.1-tests.jar",
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "testDateFormat-22-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-2.2.1-tests.jar",
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "testDateFormatShanghai-22-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-2.2.1-tests.jar",
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "testDateFormatLosAngeles-22-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-2.2.1-tests.jar",
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "testDateFormat-118-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-1.18.1-tests.jar",
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      },
+      "testDateFormatShanghai-118-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-1.18.1-tests.jar",
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      },
+      "testDateFormatLosAngeles-118-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-1.18.1-tests.jar",
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      },
+      "testDateFormat-118-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-1.18.1-tests.jar",
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      },
+      "testDateFormatShanghai-118-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-1.18.1-tests.jar",
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      },
+      "testDateFormatLosAngeles-118-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-1.18.1-tests.jar",
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      }
+    },
+    "new_sql_invocations": 62,
+    "related_invocations": 252,
+    "evidence": "Complete 5003-row maps/schema over TINYINT/SMALLINT/INT/BIGINT, nullable/NOT NULL sources, wrapping arithmetic/rounding, literal/runtime precision, quoted patterns, IS NULL/CHAR_LENGTH/LIKE/CASE consumers, UTC aliases, regional/nonzero zones and all-filtered batches. Pure admitted SQL consumes NativeCalc, has no fallback and empty JVM evaluators. Retained narrowing, division, DECIMAL, timestamp CASE, unsupported patterns and invalid precision proofs keep generated evaluation. Lazy failing branches and all-filtered divide-by-zero inputs remain harmless.",
+    "preceding_scope": "Actual preceding encoder matches the first-query full map/schema then fails fifteen expected pure-route assertions on 2.2/JDK17 and eleven on 1.18/JDK17. Two retained controls pass on both lines; the 1.18 absent-signature control also passes. Later unreached queries are not preceding-parity evidence.",
+    "stock_oracle_scope": "Twelve fresh unchanged released TemporalTypesTest DATE_FORMAT/Shanghai/LosAngeles method-oracle runs across both releases/JDKs. These are separate stock evidence, not native route qualification.",
+    "unchanged_runtime": "No production Rust/JNI/runtime change. The byte-identical calendar-repair runtime retains its historical 927-core-test qualification; that count is not a fresh run.",
+    "bytecode_equivalence": "Final performance and focused-parity encoder javap -c -p output, including nested classes, is byte-identical on both released lines."
+  },
+  "provenance": {
+    "source_sha256": {
+      "src/main/java/tech/streamfusion/planner/RexExpression.java": "701caf22cd425d0b51aa1cbce445dae55af156fa0ba7d5744812c3e4469b7614",
+      "src/main/java/tech/streamfusion/planner/IntegerPrintfFormat.java": "2f162f0abf50cf8e6ab3ec3f6a6150aae99f247875ad892164e6aaa838abc4d7",
+      "src/main/java/tech/streamfusion/planner/JvmFunctionCodeGeneratorContext.java": "ac3caaa7129ff0db3c92c2fa53e4a3d505a7bc84d7ad0a6899693177ffd718c6",
+      "src/main/java/tech/streamfusion/planner/ExternalContainerConverter.java": "ccb1b66bed74cd6746bb4543677b74ae192584350b88798ea60be9b65c86a7d7",
+      "src/test/java/tech/streamfusion/FlinkDecimalAbsNegateSqlHarnessTest.java": "a5a3f968b6271d153e99b2a5c31d521d1e366e80025898a5c022f7021c2af73d",
+      "src/test/java/tech/streamfusion/planner/DecimalAbsEncodingTest.java": "4755ac7354fd77c7f13fb815ee56c2be7010019ba6ebdf2e7b73ac0c1a1e1c4b",
+      "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "8ae2e1dc1acecdc6ce33027c6ea1cbd3ebddedc46bc52b1974e7c3c23517ac46",
+      "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "9fc17670a6d9a5c629c453b8b57a85910cdfe27f7f5105396e8c3faaf22bdd00",
+      "native/engine/src/flink_functions/date_format.rs": "61c159f18451e1a796c5fcc38a8bdfc1d20993f31cc91f3a5aa9c1d57cc41984",
+      "native/engine/src/flink_functions/mod.rs": "911e6eabfcb0fe4d4cba21b56b0abfc0a32f0bd68c878f758d23a17d478de214",
+      "native/engine/examples/integral_expression.rs": "8f432b84d68bc502e9778e5d76a6fe12940fb69c0cf362205cf0a2d4d7aa1583",
+      "src/test/java/tech/streamfusion/FlinkDecimalNegateAbsSqlHarnessTest.java": "e81670e88e6a8d08ab5807cf4b7a14cac8c5d5f15ab3a3810a69055c0ad635df",
+      "src/test/java/tech/streamfusion/FlinkDecimalNegateAbsConsumersSqlHarnessTest.java": "3771f2395a00e19963ede3a847de50b34357008e54617128c3a63072fe18ebef",
+      "src/test/java/tech/streamfusion/FlinkDecimalUnaryEpochSqlHarnessTest.java": "06d7a578b3f172994120610725b61974bf697ea1e27be4e1153aa6c5c9eb3aee",
+      "src/test/java/tech/streamfusion/FlinkDefaultPrecisionEpochSqlHarnessTest.java": "bdb4b81ba71821daace4feedefc372e74b8fe912538c6f8a836d573b8235845a",
+      "src/test/java/tech/streamfusion/planner/DecimalNegateEncodingTest.java": "c746c894e1bfa9c136a709f7d233ab0fdf5c3c4f59221b5e5af7de1c25a6159b",
+      "src/test/java/tech/streamfusion/planner/DecimalStringCastEncodingTest.java": "f3acffdb57ccf1389130d71db42099e84c654e953877a8c360e94b24317806df",
+      "src/test/java/tech/streamfusion/FlinkDecimalUnaryArithmeticTryCastSqlHarnessTest.java": "69a90dfc0eeff9b499d6cf01c94e161cbd795dcb9ee34f152a2b5fdf383a8f4c",
+      "src/test/java/tech/streamfusion/FlinkDecimalStringCastSqlHarnessTest.java": "14e36a0802334e764a294223e0183d36fc8704080307e3e39f97fcedf423d29d",
+      "src/test/java/tech/streamfusion/FlinkEpochDateFormatSqlHarnessTest.java": "00a49be508513ba24825dde26c7fbdfcd2f482074575ecdbfea741f52e15c72c",
+      "src/test/java/tech/streamfusion/FlinkUtcDateFormatSqlHarnessTest.java": "6c6c9d8e86f61e52310d5ba4e4173063bd680e0ccc5b7c3090bd810550b0022a",
+      "src/test/java/tech/streamfusion/FlinkComputedIntegralEpochSqlHarnessTest.java": "80e8d1aa06474d4a4913ac98ca7b94929d3ba3e3dc72e79e047c159a06e68910",
+      "src/test/java/tech/streamfusion/FlinkIntegralEpochSqlHarnessTest.java": "24303a978d8f6261fe0257a9f7849aa436d9b2525687c9b73becfd6f2f8ef7da",
+      "src/test/java/tech/streamfusion/FlinkRuntimeEpochPrecisionSqlHarnessTest.java": "4ffb7e273b9c2073283b448b86f4ed12204269167d1a1070712231bb3ae9893b",
+      "src/test/java/tech/streamfusion/FlinkDateFormatPatternSqlHarnessTest.java": "6cf71850fe5fe697f229cdcd385cb599bcca4dbd70128fccb288f22488c55d36",
+      "src/test/java/tech/streamfusion/FlinkDateFormatExtendedYearSqlHarnessTest.java": "653f12d615e0e27adb739c2dd7911d05be16dce8885308cdb57f41c2d3f3c8ec",
+      "src/test/java/tech/streamfusion/FlinkEpochLtzRoundSqlHarness.java": "a2fbd4ce957603b60015f5ebb8c322d46073e00e31c45b2f42cbc8903b81aaa1",
+      "src/test/java/tech/streamfusion/FlinkEpochLtzCeilSqlHarnessTest.java": "0362483176252b7540bce893a912bae6fd6b3a974f1091d02a07eb7787d47bae",
+      "src/main/java-flink1.18/tech/streamfusion/compat/FlinkCompat.java": "98806146fee25504ab74d5fa04e74de4993be05eac8bb49d7ab1015ad51ad78e",
+      "src/main/java-flink2.2/tech/streamfusion/compat/FlinkCompat.java": "e0eff6bec850d7b9dadd5734d24696dc216441f9c3e2ee3628bc5cdc8e3bad1c"
+    },
+    "encoder_instruction_sha256": {
+      "22": {
+        "tech.streamfusion.planner.RexExpression$1": "2d9b482027a2a28f87b9254285c8c1cfd2e3837e645dff78cc25918f13770ef4",
+        "tech.streamfusion.planner.RexExpression$2": "53cc33acb677be4c4afbd1471bd71a782531e5e360d06f9d97036ef6869911e7",
+        "tech.streamfusion.planner.RexExpression$3": "9dc530cdc58cdbed52160f5e266b132a6361978db25bcec14f809a7349d6a950",
+        "tech.streamfusion.planner.RexExpression$4": "c0629ac6fb226c7f7c35e355b39793061e901ceacc1fdc8da672cfa8e66bb3aa",
+        "tech.streamfusion.planner.RexExpression$5": "2dc84337d264e586a34701cd133995b2c224fc8788704cd16180a2ae8520d139",
+        "tech.streamfusion.planner.RexExpression$6": "4a135cabb0cca61ddcd540d0ca08cf438d695815056097155c26881a26b9048e",
+        "tech.streamfusion.planner.RexExpression$7": "4cfb098b8d1a7d43333656ec842c0fe9f14f974d4f30007df0529f0e5af3200a",
+        "tech.streamfusion.planner.RexExpression$8": "5db64084c43a3e074569bf51712bc90ef101ba6988d58eba54abb59cf6c51b88",
+        "tech.streamfusion.planner.RexExpression$9": "a665a94d8cbda37de84feee93ffaa0f88604556c17798bd370f4a00a555ac830",
+        "tech.streamfusion.planner.RexExpression$CalcEncoding": "9adc163617ce1fcebbd0ff0f28951b31c9739eb9dd6f972727fe72b7c68ee134",
+        "tech.streamfusion.planner.RexExpression$IntegralPositionRange": "3b72c33c79136de212aedf4d1f94aaad7450ffd1f4b67143f0c0ce372c1b1e02",
+        "tech.streamfusion.planner.RexExpression": "26d6e836ef99c7d78c0e9527fe5bf6e45dda346c228c02bd7f3c7e440732cfca"
+      },
+      "118": {
+        "tech.streamfusion.planner.RexExpression$1": "2d9b482027a2a28f87b9254285c8c1cfd2e3837e645dff78cc25918f13770ef4",
+        "tech.streamfusion.planner.RexExpression$2": "53cc33acb677be4c4afbd1471bd71a782531e5e360d06f9d97036ef6869911e7",
+        "tech.streamfusion.planner.RexExpression$3": "9dc530cdc58cdbed52160f5e266b132a6361978db25bcec14f809a7349d6a950",
+        "tech.streamfusion.planner.RexExpression$4": "c0629ac6fb226c7f7c35e355b39793061e901ceacc1fdc8da672cfa8e66bb3aa",
+        "tech.streamfusion.planner.RexExpression$5": "2dc84337d264e586a34701cd133995b2c224fc8788704cd16180a2ae8520d139",
+        "tech.streamfusion.planner.RexExpression$6": "4a135cabb0cca61ddcd540d0ca08cf438d695815056097155c26881a26b9048e",
+        "tech.streamfusion.planner.RexExpression$7": "4cfb098b8d1a7d43333656ec842c0fe9f14f974d4f30007df0529f0e5af3200a",
+        "tech.streamfusion.planner.RexExpression$8": "5db64084c43a3e074569bf51712bc90ef101ba6988d58eba54abb59cf6c51b88",
+        "tech.streamfusion.planner.RexExpression$9": "a665a94d8cbda37de84feee93ffaa0f88604556c17798bd370f4a00a555ac830",
+        "tech.streamfusion.planner.RexExpression$CalcEncoding": "9adc163617ce1fcebbd0ff0f28951b31c9739eb9dd6f972727fe72b7c68ee134",
+        "tech.streamfusion.planner.RexExpression$IntegralPositionRange": "3b72c33c79136de212aedf4d1f94aaad7450ffd1f4b67143f0c0ce372c1b1e02",
+        "tech.streamfusion.planner.RexExpression": "97bb458b3426a0e21500418e9b4082b347439ca0a7f65d9e556a43122dcc3215"
+      }
+    },
+    "fixture_class_sha256": {
+      "22": {
+        "candidate": {
+          "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "f080242c9eb99e82b7a34a2bbb3fb0a242f3853e6b51c2c37c43af0cffd0d8cb",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$1.class": "5ca56fbc66e56f76b01726dbd8afce80617630b79932c0f3c727a1e3162b2180",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$2.class": "8b54f58a8322a69894d36d3790d0fa8b81c9bc280bcc4bcfd88c69d5ff21f419",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "30437fd588801d80b3269e6932fd72cbec7754bf293683137da63f8b1ee21187"
+        },
+        "previous": {
+          "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "f080242c9eb99e82b7a34a2bbb3fb0a242f3853e6b51c2c37c43af0cffd0d8cb",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$1.class": "5ca56fbc66e56f76b01726dbd8afce80617630b79932c0f3c727a1e3162b2180",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$2.class": "8b54f58a8322a69894d36d3790d0fa8b81c9bc280bcc4bcfd88c69d5ff21f419",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "30437fd588801d80b3269e6932fd72cbec7754bf293683137da63f8b1ee21187"
+        }
+      },
+      "118": {
+        "candidate": {
+          "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "f080242c9eb99e82b7a34a2bbb3fb0a242f3853e6b51c2c37c43af0cffd0d8cb",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$1.class": "5ca56fbc66e56f76b01726dbd8afce80617630b79932c0f3c727a1e3162b2180",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$2.class": "8b54f58a8322a69894d36d3790d0fa8b81c9bc280bcc4bcfd88c69d5ff21f419",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "30437fd588801d80b3269e6932fd72cbec7754bf293683137da63f8b1ee21187"
+        },
+        "previous": {
+          "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "f080242c9eb99e82b7a34a2bbb3fb0a242f3853e6b51c2c37c43af0cffd0d8cb",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$1.class": "5ca56fbc66e56f76b01726dbd8afce80617630b79932c0f3c727a1e3162b2180",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$2.class": "8b54f58a8322a69894d36d3790d0fa8b81c9bc280bcc4bcfd88c69d5ff21f419",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "30437fd588801d80b3269e6932fd72cbec7754bf293683137da63f8b1ee21187"
+        }
+      }
+    },
+    "runtime": {
+      "integral_expression": "a1824a3f3b22a2bfbeccbe2463d3598e11bdf00e1f7f16ef747e7d45c267e9ba",
+      "libstreamfusion.dylib": "1d7c4479a2e1251c762d6de89cc4e41de2a5eb2b8e38d9ca88ec8203c7b1db41",
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/planner/RexExpression.java": "901c583ce0ecf3824a6736c0c4f5edd185f5ce95e9b2726ddfd2ae06094466e5",
+        "native/engine/src/expr.rs": "02a70ce847bd4577809742215d552f98038c4c360bff0038570277eeed00fa3e",
+        "native/engine/src/flink_functions/date_format.rs": "61c159f18451e1a796c5fcc38a8bdfc1d20993f31cc91f3a5aa9c1d57cc41984",
+        "native/engine/src/flink_functions/mod.rs": "911e6eabfcb0fe4d4cba21b56b0abfc0a32f0bd68c878f758d23a17d478de214",
+        "src/test/java/tech/streamfusion/FlinkDateFormatExtendedYearSqlHarnessTest.java": "6aed7df2a24e6bb57d2ab78c0dcbd7f64e135ad8502c74bc0f8171f9d2275a93"
+      }
+    },
+    "released_date_time_utils_bytecode_sha256": {
+      "22": "89416415523793807cd6efa816e372c84f785f27b60c61cbad6b1d1ee0f2fe1f",
+      "118": "a6c76a4b711c85765ee9da16db40510a42b04339e6b60fd42c48c99db344b910"
+    }
+  },
+  "prepared": {
+    "22": {
+      "0": {
+        "shape": "tiny-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd')",
+        "type": "TINYINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 86.31229400634766,
+            "min": 78.5039291381836,
+            "max": 95.54100036621094
+          },
+          "native": {
+            "median": 22.712387084960938,
+            "min": 22.197723388671875,
+            "max": 24.47795867919922
+          },
+          "prior-stock": {
+            "median": 77.59825134277344,
+            "min": 75.31292724609375,
+            "max": 82.3211669921875
+          },
+          "previous": {
+            "median": 99.19483947753906,
+            "min": 97.93281555175781,
+            "max": 101.99705505371094
+          }
+        }
+      },
+      "1": {
+        "shape": "tiny-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd')",
+        "type": "TINYINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 88.80265808105469,
+            "min": 80.48661804199219,
+            "max": 91.26599884033203
+          },
+          "native": {
+            "median": 23.262344360351562,
+            "min": 21.998085021972656,
+            "max": 24.042762756347656
+          },
+          "prior-stock": {
+            "median": 82.8663558959961,
+            "min": 78.8736343383789,
+            "max": 97.99130249023438
+          },
+          "previous": {
+            "median": 103.85608673095703,
+            "min": 97.10565948486328,
+            "max": 107.85865783691406
+          }
+        }
+      },
+      "2": {
+        "shape": "tiny-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd')",
+        "type": "TINYINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 78.50360870361328,
+            "min": 72.3272933959961,
+            "max": 104.88033294677734
+          },
+          "native": {
+            "median": 22.99785614013672,
+            "min": 22.333465576171875,
+            "max": 24.583816528320312
+          },
+          "prior-stock": {
+            "median": 78.6275863647461,
+            "min": 73.82266235351562,
+            "max": 120.02881622314453
+          },
+          "previous": {
+            "median": 102.45641326904297,
+            "min": 99.40496826171875,
+            "max": 120.8184585571289
+          }
+        }
+      },
+      "3": {
+        "shape": "tiny-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd')",
+        "type": "TINYINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 74.8421401977539,
+            "min": 72.32347869873047,
+            "max": 82.0948257446289
+          },
+          "native": {
+            "median": 23.07415008544922,
+            "min": 22.399261474609375,
+            "max": 23.63140869140625
+          },
+          "prior-stock": {
+            "median": 76.94181060791016,
+            "min": 76.3365478515625,
+            "max": 82.84632110595703
+          },
+          "previous": {
+            "median": 96.68763732910156,
+            "min": 94.88677978515625,
+            "max": 102.80895233154297
+          }
+        }
+      },
+      "4": {
+        "shape": "small-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS SMALLINT),3),'yyyy-MM-dd')",
+        "type": "SMALLINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 85.68985748291016,
+            "min": 74.6603012084961,
+            "max": 108.3364486694336
+          },
+          "native": {
+            "median": 23.31987762451172,
+            "min": 22.077560424804688,
+            "max": 24.588897705078125
+          },
+          "prior-stock": {
+            "median": 79.35174560546875,
+            "min": 77.8077392578125,
+            "max": 84.13314819335938
+          },
+          "previous": {
+            "median": 114.1341552734375,
+            "min": 107.66156768798828,
+            "max": 123.32661437988281
+          }
+        }
+      },
+      "5": {
+        "shape": "small-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS SMALLINT),3),'yyyy-MM-dd')",
+        "type": "SMALLINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 79.69442749023438,
+            "min": 76.432861328125,
+            "max": 86.85302734375
+          },
+          "native": {
+            "median": 23.041725158691406,
+            "min": 22.37732696533203,
+            "max": 23.89844512939453
+          },
+          "prior-stock": {
+            "median": 92.30518341064453,
+            "min": 89.7032470703125,
+            "max": 95.36616516113281
+          },
+          "previous": {
+            "median": 111.98743438720703,
+            "min": 106.4596176147461,
+            "max": 117.94757843017578
+          }
+        }
+      },
+      "6": {
+        "shape": "small-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS SMALLINT),3),'yyyy-MM-dd')",
+        "type": "SMALLINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 71.19878387451172,
+            "min": 66.81600952148438,
+            "max": 79.6655044555664
+          },
+          "native": {
+            "median": 23.283958435058594,
+            "min": 22.971473693847656,
+            "max": 23.500442504882812
+          },
+          "prior-stock": {
+            "median": 72.09333038330078,
+            "min": 70.49211120605469,
+            "max": 77.46537780761719
+          },
+          "previous": {
+            "median": 107.15866088867188,
+            "min": 102.06063842773438,
+            "max": 119.46455383300781
+          }
+        }
+      },
+      "7": {
+        "shape": "small-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS SMALLINT),3),'yyyy-MM-dd')",
+        "type": "SMALLINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 75.93218231201172,
+            "min": 72.8006362915039,
+            "max": 109.69003295898438
+          },
+          "native": {
+            "median": 24.03990936279297,
+            "min": 22.576332092285156,
+            "max": 25.363922119140625
+          },
+          "prior-stock": {
+            "median": 73.05208587646484,
+            "min": 70.9676742553711,
+            "max": 79.26750183105469
+          },
+          "previous": {
+            "median": 102.7959213256836,
+            "min": 98.01864624023438,
+            "max": 110.8404769897461
+          }
+        }
+      },
+      "8": {
+        "shape": "int-millis-product",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v*v,3),'yyyy-MM-dd HH:mm:ss')",
+        "type": "INT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 154.802001953125,
+            "min": 153.4001007080078,
+            "max": 162.26482391357422
+          },
+          "native": {
+            "median": 34.06333923339844,
+            "min": 33.27146911621094,
+            "max": 35.22809600830078
+          },
+          "prior-stock": {
+            "median": 150.9974822998047,
+            "min": 148.71788024902344,
+            "max": 157.39727020263672
+          },
+          "previous": {
+            "median": 172.1506118774414,
+            "min": 167.9697036743164,
+            "max": 176.9835205078125
+          }
+        }
+      },
+      "9": {
+        "shape": "int-millis-product",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v*v,3),'yyyy-MM-dd HH:mm:ss')",
+        "type": "INT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 156.75989532470703,
+            "min": 146.59532165527344,
+            "max": 165.7756118774414
+          },
+          "native": {
+            "median": 33.56329345703125,
+            "min": 32.61216735839844,
+            "max": 34.53254699707031
+          },
+          "prior-stock": {
+            "median": 154.3696746826172,
+            "min": 150.89956665039062,
+            "max": 164.2322540283203
+          },
+          "previous": {
+            "median": 170.65938568115234,
+            "min": 166.71276092529297,
+            "max": 188.07538604736328
+          }
+        }
+      },
+      "10": {
+        "shape": "int-millis-product",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v*v,3),'yyyy-MM-dd HH:mm:ss')",
+        "type": "INT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 138.6588363647461,
+            "min": 130.6133270263672,
+            "max": 151.77440643310547
+          },
+          "native": {
+            "median": 32.69672393798828,
+            "min": 32.054901123046875,
+            "max": 34.08050537109375
+          },
+          "prior-stock": {
+            "median": 131.08539581298828,
+            "min": 127.10603332519531,
+            "max": 136.72447204589844
+          },
+          "previous": {
+            "median": 154.1738510131836,
+            "min": 143.93392944335938,
+            "max": 173.13416290283203
+          }
+        }
+      },
+      "11": {
+        "shape": "int-millis-product",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v*v,3),'yyyy-MM-dd HH:mm:ss')",
+        "type": "INT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 139.33245086669922,
+            "min": 130.09103393554688,
+            "max": 144.0289764404297
+          },
+          "native": {
+            "median": 33.176109313964844,
+            "min": 32.753944396972656,
+            "max": 34.32591247558594
+          },
+          "prior-stock": {
+            "median": 135.79877471923828,
+            "min": 134.13397216796875,
+            "max": 145.25572204589844
+          },
+          "previous": {
+            "median": 159.82627868652344,
+            "min": 156.78437042236328,
+            "max": 171.86578369140625
+          }
+        }
+      },
+      "12": {
+        "shape": "long-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 94.22906494140625,
+            "min": 89.6021499633789,
+            "max": 116.56348419189453
+          },
+          "native": {
+            "median": 25.5616455078125,
+            "min": 25.455154418945312,
+            "max": 25.863327026367188
+          },
+          "prior-stock": {
+            "median": 92.92157745361328,
+            "min": 91.95105743408203,
+            "max": 100.08462524414062
+          },
+          "previous": {
+            "median": 114.959716796875,
+            "min": 110.46123504638672,
+            "max": 125.46698760986328
+          }
+        }
+      },
+      "13": {
+        "shape": "long-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 96.58622741699219,
+            "min": 93.87525177001953,
+            "max": 113.74791717529297
+          },
+          "native": {
+            "median": 26.411056518554688,
+            "min": 25.118515014648438,
+            "max": 27.848556518554688
+          },
+          "prior-stock": {
+            "median": 100.02708435058594,
+            "min": 95.21643829345703,
+            "max": 117.72314453125
+          },
+          "previous": {
+            "median": 116.84544372558594,
+            "min": 113.04219055175781,
+            "max": 125.34110260009766
+          }
+        }
+      },
+      "14": {
+        "shape": "long-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 84.97747039794922,
+            "min": 78.02995300292969,
+            "max": 92.12589263916016
+          },
+          "native": {
+            "median": 24.61846923828125,
+            "min": 24.080276489257812,
+            "max": 24.906471252441406
+          },
+          "prior-stock": {
+            "median": 90.75292205810547,
+            "min": 86.67278289794922,
+            "max": 92.1487808227539
+          },
+          "previous": {
+            "median": 114.34173583984375,
+            "min": 108.89371490478516,
+            "max": 119.38762664794922
+          }
+        }
+      },
+      "15": {
+        "shape": "long-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 83.72720336914062,
+            "min": 79.84193420410156,
+            "max": 92.1026840209961
+          },
+          "native": {
+            "median": 24.40643310546875,
+            "min": 23.976959228515625,
+            "max": 24.86705780029297
+          },
+          "prior-stock": {
+            "median": 90.29483795166016,
+            "min": 85.22733306884766,
+            "max": 95.37824249267578
+          },
+          "previous": {
+            "median": 111.32113647460938,
+            "min": 107.64376068115234,
+            "max": 125.55217742919922
+          }
+        }
+      },
+      "16": {
+        "shape": "long-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS BIGINT),3),'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 105.14481353759766,
+            "min": 97.54721069335938,
+            "max": 111.18602752685547
+          },
+          "native": {
+            "median": 28.069496154785156,
+            "min": 27.528762817382812,
+            "max": 30.303001403808594
+          },
+          "prior-stock": {
+            "median": 113.31875610351562,
+            "min": 105.36924743652344,
+            "max": 115.22674560546875
+          },
+          "previous": {
+            "median": 131.84833526611328,
+            "min": 127.88899993896484,
+            "max": 150.6977081298828
+          }
+        }
+      },
+      "17": {
+        "shape": "long-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS BIGINT),3),'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 110.92218017578125,
+            "min": 102.8436050415039,
+            "max": 115.34404754638672
+          },
+          "native": {
+            "median": 28.30982208251953,
+            "min": 27.762413024902344,
+            "max": 29.33979034423828
+          },
+          "prior-stock": {
+            "median": 104.9931869506836,
+            "min": 100.32209014892578,
+            "max": 107.00607299804688
+          },
+          "previous": {
+            "median": 134.36666870117188,
+            "min": 131.120361328125,
+            "max": 141.9407501220703
+          }
+        }
+      },
+      "18": {
+        "shape": "long-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS BIGINT),3),'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 91.90908813476562,
+            "min": 89.13072204589844,
+            "max": 97.2789077758789
+          },
+          "native": {
+            "median": 26.081085205078125,
+            "min": 25.771461486816406,
+            "max": 26.441261291503906
+          },
+          "prior-stock": {
+            "median": 93.19114685058594,
+            "min": 90.54151916503906,
+            "max": 98.11782836914062
+          },
+          "previous": {
+            "median": 122.0833511352539,
+            "min": 116.8801040649414,
+            "max": 127.7354507446289
+          }
+        }
+      },
+      "19": {
+        "shape": "long-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS BIGINT),3),'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 97.64575958251953,
+            "min": 93.02902221679688,
+            "max": 134.8244400024414
+          },
+          "native": {
+            "median": 26.184402465820312,
+            "min": 25.531455993652344,
+            "max": 26.725448608398438
+          },
+          "prior-stock": {
+            "median": 105.66075134277344,
+            "min": 102.65222930908203,
+            "max": 109.0062484741211
+          },
+          "previous": {
+            "median": 129.49752807617188,
+            "min": 119.55960845947266,
+            "max": 132.54610443115234
+          }
+        }
+      },
+      "20": {
+        "shape": "runtime-precision",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 112.60636901855469,
+            "min": 100.67367553710938,
+            "max": 118.68254089355469
+          },
+          "native": {
+            "median": 28.44365692138672,
+            "min": 27.724899291992188,
+            "max": 29.34868621826172
+          },
+          "prior-stock": {
+            "median": 141.83616638183594,
+            "min": 136.6306915283203,
+            "max": 148.99158477783203
+          },
+          "previous": {
+            "median": 156.88610076904297,
+            "min": 149.6416778564453,
+            "max": 162.70065307617188
+          }
+        }
+      },
+      "21": {
+        "shape": "runtime-precision",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 112.11267852783203,
+            "min": 102.74823760986328,
+            "max": 123.91376495361328
+          },
+          "native": {
+            "median": 28.50341796875,
+            "min": 27.872726440429688,
+            "max": 28.688751220703125
+          },
+          "prior-stock": {
+            "median": 123.13207244873047,
+            "min": 117.35185241699219,
+            "max": 127.93096160888672
+          },
+          "previous": {
+            "median": 152.38031005859375,
+            "min": 146.1331024169922,
+            "max": 159.56401824951172
+          }
+        }
+      },
+      "22": {
+        "shape": "runtime-precision",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 101.60255432128906,
+            "min": 95.37029266357422,
+            "max": 115.15076446533203
+          },
+          "native": {
+            "median": 25.93103790283203,
+            "min": 25.60870361328125,
+            "max": 28.208099365234375
+          },
+          "prior-stock": {
+            "median": 115.97379302978516,
+            "min": 113.2043228149414,
+            "max": 121.8407974243164
+          },
+          "previous": {
+            "median": 137.79512786865234,
+            "min": 135.73137664794922,
+            "max": 144.31126403808594
+          }
+        }
+      },
+      "23": {
+        "shape": "runtime-precision",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 104.020751953125,
+            "min": 94.98373413085938,
+            "max": 122.04583740234375
+          },
+          "native": {
+            "median": 27.12409210205078,
+            "min": 25.84203338623047,
+            "max": 27.7283935546875
+          },
+          "prior-stock": {
+            "median": 104.22897338867188,
+            "min": 101.76594543457031,
+            "max": 111.07318115234375
+          },
+          "previous": {
+            "median": 137.60216522216797,
+            "min": 131.0586929321289,
+            "max": 145.6584930419922
+          }
+        }
+      },
+      "24": {
+        "shape": "tiny-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd')",
+        "type": "TINYINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 65.9300537109375,
+            "min": 63.08714294433594,
+            "max": 76.29330444335938
+          },
+          "native": {
+            "median": 126.15044403076172,
+            "min": 123.4566421508789,
+            "max": 131.66332244873047
+          },
+          "prior-stock": {
+            "median": 62.59123229980469,
+            "min": 61.571434020996094,
+            "max": 63.65489959716797
+          },
+          "previous": {
+            "median": 627.4903564453125,
+            "min": 624.1080017089844,
+            "max": 644.1084594726562
+          }
+        }
+      },
+      "25": {
+        "shape": "small-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS SMALLINT),3),'yyyy-MM-dd')",
+        "type": "SMALLINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 67.8720474243164,
+            "min": 61.322845458984375,
+            "max": 71.41748809814453
+          },
+          "native": {
+            "median": 169.96034240722656,
+            "min": 163.70519256591797,
+            "max": 171.7068328857422
+          },
+          "prior-stock": {
+            "median": 66.15415954589844,
+            "min": 62.819480895996094,
+            "max": 68.16864013671875
+          },
+          "previous": {
+            "median": 691.3728713989258,
+            "min": 669.0142974853516,
+            "max": 727.2987365722656
+          }
+        }
+      },
+      "26": {
+        "shape": "int-millis-product",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v*v,3),'yyyy-MM-dd HH:mm:ss')",
+        "type": "INT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 114.26067352294922,
+            "min": 107.65425109863281,
+            "max": 119.71282958984375
+          },
+          "native": {
+            "median": 193.4814453125,
+            "min": 190.07492065429688,
+            "max": 196.13520050048828
+          },
+          "prior-stock": {
+            "median": 107.88663482666016,
+            "min": 104.86030578613281,
+            "max": 111.41363525390625
+          },
+          "previous": {
+            "median": 714.7966995239258,
+            "min": 706.3185348510742,
+            "max": 753.7638320922852
+          }
+        }
+      },
+      "27": {
+        "shape": "long-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 65.05584716796875,
+            "min": 61.493560791015625,
+            "max": 70.21871948242188
+          },
+          "native": {
+            "median": 130.98367309570312,
+            "min": 127.71160888671875,
+            "max": 134.02526092529297
+          },
+          "prior-stock": {
+            "median": 67.31796264648438,
+            "min": 63.34400177001953,
+            "max": 70.52803039550781
+          },
+          "previous": {
+            "median": 621.9107284545898,
+            "min": 612.6095428466797,
+            "max": 640.1812286376953
+          }
+        }
+      },
+      "28": {
+        "shape": "long-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS BIGINT),3),'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 79.32758331298828,
+            "min": 76.85884094238281,
+            "max": 83.98056030273438
+          },
+          "native": {
+            "median": 170.04871368408203,
+            "min": 166.5188446044922,
+            "max": 178.55707550048828
+          },
+          "prior-stock": {
+            "median": 81.7101821899414,
+            "min": 77.89325714111328,
+            "max": 90.32694244384766
+          },
+          "previous": {
+            "median": 712.9726409912109,
+            "min": 688.7184753417969,
+            "max": 736.8351593017578
+          }
+        }
+      },
+      "29": {
+        "shape": "runtime-precision",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 73.40304565429688,
+            "min": 69.59215545654297,
+            "max": 81.07154083251953
+          },
+          "native": {
+            "median": 192.26360321044922,
+            "min": 187.70790100097656,
+            "max": 195.53438568115234
+          },
+          "prior-stock": {
+            "median": 74.33351135253906,
+            "min": 70.76072692871094,
+            "max": 82.20704650878906
+          },
+          "previous": {
+            "median": 825.5427703857422,
+            "min": 810.4181289672852,
+            "max": 832.7353820800781
+          }
+        }
+      }
+    },
+    "118": {
+      "0": {
+        "shape": "tiny-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd')",
+        "type": "TINYINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 79.65946197509766,
+            "min": 76.00816345214844,
+            "max": 106.34326934814453
+          },
+          "native": {
+            "median": 22.331871032714844,
+            "min": 21.907806396484375,
+            "max": 23.543357849121094
+          },
+          "prior-stock": {
+            "median": 83.33270263671875,
+            "min": 78.60406494140625,
+            "max": 87.45034790039062
+          },
+          "previous": {
+            "median": 116.88105773925781,
+            "min": 107.14403533935547,
+            "max": 121.48412322998047
+          }
+        }
+      },
+      "1": {
+        "shape": "tiny-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd')",
+        "type": "TINYINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 83.70748901367188,
+            "min": 77.43994140625,
+            "max": 102.13724517822266
+          },
+          "native": {
+            "median": 22.123023986816406,
+            "min": 21.45099639892578,
+            "max": 22.746719360351562
+          },
+          "prior-stock": {
+            "median": 85.26483917236328,
+            "min": 81.85799407958984,
+            "max": 88.95683288574219
+          },
+          "previous": {
+            "median": 111.81322479248047,
+            "min": 109.80288696289062,
+            "max": 142.5374298095703
+          }
+        }
+      },
+      "2": {
+        "shape": "tiny-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd')",
+        "type": "TINYINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 68.87023162841797,
+            "min": 65.68717956542969,
+            "max": 75.1196517944336
+          },
+          "native": {
+            "median": 22.61798095703125,
+            "min": 22.060073852539062,
+            "max": 23.39012908935547
+          },
+          "prior-stock": {
+            "median": 75.2248764038086,
+            "min": 71.49283599853516,
+            "max": 102.09115600585938
+          },
+          "previous": {
+            "median": 106.69295501708984,
+            "min": 101.66263580322266,
+            "max": 131.28662109375
+          }
+        }
+      },
+      "3": {
+        "shape": "tiny-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd')",
+        "type": "TINYINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 76.12991333007812,
+            "min": 69.6554183959961,
+            "max": 85.69590759277344
+          },
+          "native": {
+            "median": 22.687911987304688,
+            "min": 22.408485412597656,
+            "max": 23.020111083984375
+          },
+          "prior-stock": {
+            "median": 77.4698257446289,
+            "min": 72.58828735351562,
+            "max": 108.80787658691406
+          },
+          "previous": {
+            "median": 101.28433990478516,
+            "min": 99.36363983154297,
+            "max": 123.43692779541016
+          }
+        }
+      },
+      "4": {
+        "shape": "small-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS SMALLINT),3),'yyyy-MM-dd')",
+        "type": "SMALLINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 77.30484008789062,
+            "min": 71.211181640625,
+            "max": 79.81014251708984
+          },
+          "native": {
+            "median": 22.475555419921875,
+            "min": 22.212982177734375,
+            "max": 23.0849609375
+          },
+          "prior-stock": {
+            "median": 77.13572692871094,
+            "min": 74.81607055664062,
+            "max": 77.88912200927734
+          },
+          "previous": {
+            "median": 108.03921508789062,
+            "min": 105.75834655761719,
+            "max": 111.03789520263672
+          }
+        }
+      },
+      "5": {
+        "shape": "small-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS SMALLINT),3),'yyyy-MM-dd')",
+        "type": "SMALLINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 83.16866302490234,
+            "min": 76.1391372680664,
+            "max": 100.89683532714844
+          },
+          "native": {
+            "median": 22.61321258544922,
+            "min": 22.353805541992188,
+            "max": 23.157760620117188
+          },
+          "prior-stock": {
+            "median": 82.4896469116211,
+            "min": 77.58712768554688,
+            "max": 86.37619018554688
+          },
+          "previous": {
+            "median": 120.79524993896484,
+            "min": 117.30162048339844,
+            "max": 134.90899658203125
+          }
+        }
+      },
+      "6": {
+        "shape": "small-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS SMALLINT),3),'yyyy-MM-dd')",
+        "type": "SMALLINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 67.84439086914062,
+            "min": 66.99848175048828,
+            "max": 74.57192993164062
+          },
+          "native": {
+            "median": 23.056983947753906,
+            "min": 22.654212951660156,
+            "max": 24.124465942382812
+          },
+          "prior-stock": {
+            "median": 74.55984497070312,
+            "min": 70.55950164794922,
+            "max": 77.66532897949219
+          },
+          "previous": {
+            "median": 103.9724349975586,
+            "min": 99.78929901123047,
+            "max": 110.52291107177734
+          }
+        }
+      },
+      "7": {
+        "shape": "small-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS SMALLINT),3),'yyyy-MM-dd')",
+        "type": "SMALLINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 72.14736938476562,
+            "min": 69.46785736083984,
+            "max": 79.36128234863281
+          },
+          "native": {
+            "median": 23.59294891357422,
+            "min": 23.311614990234375,
+            "max": 24.039588928222656
+          },
+          "prior-stock": {
+            "median": 75.19245147705078,
+            "min": 71.23661041259766,
+            "max": 80.9774398803711
+          },
+          "previous": {
+            "median": 99.3932113647461,
+            "min": 96.57160186767578,
+            "max": 105.7586669921875
+          }
+        }
+      },
+      "8": {
+        "shape": "int-millis-product",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v*v,3),'yyyy-MM-dd HH:mm:ss')",
+        "type": "INT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 154.64083862304688,
+            "min": 150.78194427490234,
+            "max": 168.38487243652344
+          },
+          "native": {
+            "median": 33.78105163574219,
+            "min": 32.239280700683594,
+            "max": 35.52436828613281
+          },
+          "prior-stock": {
+            "median": 151.90982818603516,
+            "min": 146.8509063720703,
+            "max": 157.86266326904297
+          },
+          "previous": {
+            "median": 226.4715805053711,
+            "min": 225.0677719116211,
+            "max": 230.96815490722656
+          }
+        }
+      },
+      "9": {
+        "shape": "int-millis-product",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v*v,3),'yyyy-MM-dd HH:mm:ss')",
+        "type": "INT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 165.26953125,
+            "min": 158.83287048339844,
+            "max": 174.85523223876953
+          },
+          "native": {
+            "median": 34.040138244628906,
+            "min": 32.20208740234375,
+            "max": 34.36787414550781
+          },
+          "prior-stock": {
+            "median": 158.24508666992188,
+            "min": 156.40799713134766,
+            "max": 166.0648956298828
+          },
+          "previous": {
+            "median": 202.49112701416016,
+            "min": 192.66001892089844,
+            "max": 207.65908813476562
+          }
+        }
+      },
+      "10": {
+        "shape": "int-millis-product",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v*v,3),'yyyy-MM-dd HH:mm:ss')",
+        "type": "INT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 127.5949478149414,
+            "min": 123.05133056640625,
+            "max": 139.70121002197266
+          },
+          "native": {
+            "median": 32.117530822753906,
+            "min": 31.80567169189453,
+            "max": 32.98155212402344
+          },
+          "prior-stock": {
+            "median": 127.95066833496094,
+            "min": 125.0314712524414,
+            "max": 134.70140838623047
+          },
+          "previous": {
+            "median": 172.43003845214844,
+            "min": 164.88107299804688,
+            "max": 184.7941131591797
+          }
+        }
+      },
+      "11": {
+        "shape": "int-millis-product",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v*v,3),'yyyy-MM-dd HH:mm:ss')",
+        "type": "INT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 139.95774841308594,
+            "min": 136.25843811035156,
+            "max": 150.90528869628906
+          },
+          "native": {
+            "median": 32.99077606201172,
+            "min": 32.12992858886719,
+            "max": 34.023284912109375
+          },
+          "prior-stock": {
+            "median": 133.08397674560547,
+            "min": 129.45429229736328,
+            "max": 146.16966247558594
+          },
+          "previous": {
+            "median": 169.7193832397461,
+            "min": 161.84107208251953,
+            "max": 177.82465362548828
+          }
+        }
+      },
+      "12": {
+        "shape": "long-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 94.46843719482422,
+            "min": 91.68498229980469,
+            "max": 100.71690368652344
+          },
+          "native": {
+            "median": 26.74547576904297,
+            "min": 26.26068878173828,
+            "max": 27.435302734375
+          },
+          "prior-stock": {
+            "median": 103.2263412475586,
+            "min": 101.29388427734375,
+            "max": 106.03809356689453
+          },
+          "previous": {
+            "median": 138.6836395263672,
+            "min": 134.53038787841797,
+            "max": 144.36753845214844
+          }
+        }
+      },
+      "13": {
+        "shape": "long-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 99.6424331665039,
+            "min": 95.69358825683594,
+            "max": 111.07158660888672
+          },
+          "native": {
+            "median": 26.507057189941406,
+            "min": 25.555923461914062,
+            "max": 29.500961303710938
+          },
+          "prior-stock": {
+            "median": 101.35841369628906,
+            "min": 97.34375762939453,
+            "max": 103.07788848876953
+          },
+          "previous": {
+            "median": 128.37728118896484,
+            "min": 124.69322967529297,
+            "max": 136.72764587402344
+          }
+        }
+      },
+      "14": {
+        "shape": "long-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 82.46358489990234,
+            "min": 81.27180480957031,
+            "max": 92.9422378540039
+          },
+          "native": {
+            "median": 23.941360473632812,
+            "min": 23.527786254882812,
+            "max": 24.582542419433594
+          },
+          "prior-stock": {
+            "median": 82.94486999511719,
+            "min": 80.5501937866211,
+            "max": 96.7108383178711
+          },
+          "previous": {
+            "median": 114.46094512939453,
+            "min": 111.0213623046875,
+            "max": 121.94410705566406
+          }
+        }
+      },
+      "15": {
+        "shape": "long-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 88.41832733154297,
+            "min": 82.29954528808594,
+            "max": 96.91810607910156
+          },
+          "native": {
+            "median": 23.913063049316406,
+            "min": 23.550033569335938,
+            "max": 24.270057678222656
+          },
+          "prior-stock": {
+            "median": 88.15670013427734,
+            "min": 85.55635070800781,
+            "max": 101.62734985351562
+          },
+          "previous": {
+            "median": 128.3553466796875,
+            "min": 120.41886138916016,
+            "max": 135.25550079345703
+          }
+        }
+      },
+      "16": {
+        "shape": "long-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS BIGINT),3),'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 102.189697265625,
+            "min": 100.80020141601562,
+            "max": 115.24581909179688
+          },
+          "native": {
+            "median": 28.450332641601562,
+            "min": 27.56023406982422,
+            "max": 28.950057983398438
+          },
+          "prior-stock": {
+            "median": 107.44539642333984,
+            "min": 103.54582214355469,
+            "max": 124.66144561767578
+          },
+          "previous": {
+            "median": 133.87107849121094,
+            "min": 128.50443267822266,
+            "max": 165.9526824951172
+          }
+        }
+      },
+      "17": {
+        "shape": "long-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS BIGINT),3),'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 113.26949310302734,
+            "min": 107.0404052734375,
+            "max": 129.22382354736328
+          },
+          "native": {
+            "median": 28.580352783203125,
+            "min": 28.29424285888672,
+            "max": 29.146194458007812
+          },
+          "prior-stock": {
+            "median": 104.55989837646484,
+            "min": 102.1865234375,
+            "max": 110.55023956298828
+          },
+          "previous": {
+            "median": 129.6526641845703,
+            "min": 124.6048583984375,
+            "max": 140.22476959228516
+          }
+        }
+      },
+      "18": {
+        "shape": "long-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS BIGINT),3),'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 94.62419891357422,
+            "min": 86.0741958618164,
+            "max": 122.06268310546875
+          },
+          "native": {
+            "median": 27.756370544433594,
+            "min": 26.46796417236328,
+            "max": 28.662681579589844
+          },
+          "prior-stock": {
+            "median": 92.35572814941406,
+            "min": 89.78843688964844,
+            "max": 97.68867492675781
+          },
+          "previous": {
+            "median": 123.48493194580078,
+            "min": 118.90792846679688,
+            "max": 130.86637115478516
+          }
+        }
+      },
+      "19": {
+        "shape": "long-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS BIGINT),3),'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 95.81915283203125,
+            "min": 90.90010070800781,
+            "max": 101.57331085205078
+          },
+          "native": {
+            "median": 26.5655517578125,
+            "min": 26.163734436035156,
+            "max": 27.96173095703125
+          },
+          "prior-stock": {
+            "median": 96.3309555053711,
+            "min": 94.0713882446289,
+            "max": 111.99188232421875
+          },
+          "previous": {
+            "median": 133.74742126464844,
+            "min": 127.4388656616211,
+            "max": 142.93193817138672
+          }
+        }
+      },
+      "20": {
+        "shape": "runtime-precision",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 114.08805847167969,
+            "min": 105.05867004394531,
+            "max": 118.39675903320312
+          },
+          "native": {
+            "median": 27.944244384765625,
+            "min": 27.52812957763672,
+            "max": 28.38739013671875
+          },
+          "prior-stock": {
+            "median": 114.96671295166016,
+            "min": 112.16036224365234,
+            "max": 119.84761810302734
+          },
+          "previous": {
+            "median": 169.45394134521484,
+            "min": 165.61508178710938,
+            "max": 172.2742691040039
+          }
+        }
+      },
+      "21": {
+        "shape": "runtime-precision",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 110.94920349121094,
+            "min": 101.02621459960938,
+            "max": 118.73308563232422
+          },
+          "native": {
+            "median": 28.624534606933594,
+            "min": 27.45946502685547,
+            "max": 29.221847534179688
+          },
+          "prior-stock": {
+            "median": 138.63532257080078,
+            "min": 133.57067108154297,
+            "max": 147.5957260131836
+          },
+          "previous": {
+            "median": 171.09235382080078,
+            "min": 167.4814224243164,
+            "max": 172.97935485839844
+          }
+        }
+      },
+      "22": {
+        "shape": "runtime-precision",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 93.54718780517578,
+            "min": 88.21964263916016,
+            "max": 96.90158081054688
+          },
+          "native": {
+            "median": 27.347244262695312,
+            "min": 26.649154663085938,
+            "max": 27.62762451171875
+          },
+          "prior-stock": {
+            "median": 94.80825805664062,
+            "min": 88.70951080322266,
+            "max": 101.40800476074219
+          },
+          "previous": {
+            "median": 166.0715789794922,
+            "min": 161.06002044677734,
+            "max": 169.830322265625
+          }
+        }
+      },
+      "23": {
+        "shape": "runtime-precision",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 95.02728271484375,
+            "min": 87.29362487792969,
+            "max": 98.81655883789062
+          },
+          "native": {
+            "median": 26.28199005126953,
+            "min": 25.901473999023438,
+            "max": 26.732444763183594
+          },
+          "prior-stock": {
+            "median": 119.47282409667969,
+            "min": 115.79513549804688,
+            "max": 126.31002807617188
+          },
+          "previous": {
+            "median": 160.23731231689453,
+            "min": 156.63846588134766,
+            "max": 166.46543884277344
+          }
+        }
+      },
+      "24": {
+        "shape": "tiny-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd')",
+        "type": "TINYINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 66.00379943847656,
+            "min": 60.657501220703125,
+            "max": 68.07772064208984
+          },
+          "native": {
+            "median": 123.95032501220703,
+            "min": 122.30427551269531,
+            "max": 127.4709701538086
+          },
+          "prior-stock": {
+            "median": 63.490867614746094,
+            "min": 62.77783966064453,
+            "max": 64.42801666259766
+          },
+          "previous": {
+            "median": 628.213249206543,
+            "min": 622.4492340087891,
+            "max": 642.7195816040039
+          }
+        }
+      },
+      "25": {
+        "shape": "small-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS SMALLINT),3),'yyyy-MM-dd')",
+        "type": "SMALLINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 71.39460754394531,
+            "min": 63.85295104980469,
+            "max": 73.2132568359375
+          },
+          "native": {
+            "median": 173.87708282470703,
+            "min": 167.90707397460938,
+            "max": 177.4587631225586
+          },
+          "prior-stock": {
+            "median": 64.36983489990234,
+            "min": 61.11017608642578,
+            "max": 67.38916778564453
+          },
+          "previous": {
+            "median": 703.0579299926758,
+            "min": 668.0078506469727,
+            "max": 715.1664123535156
+          }
+        }
+      },
+      "26": {
+        "shape": "int-millis-product",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v*v,3),'yyyy-MM-dd HH:mm:ss')",
+        "type": "INT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 110.05560302734375,
+            "min": 103.79759216308594,
+            "max": 116.70875549316406
+          },
+          "native": {
+            "median": 193.61559295654297,
+            "min": 189.94522094726562,
+            "max": 197.51199340820312
+          },
+          "prior-stock": {
+            "median": 105.66329956054688,
+            "min": 102.08892822265625,
+            "max": 109.41600799560547
+          },
+          "previous": {
+            "median": 739.1258926391602,
+            "min": 729.3411865234375,
+            "max": 759.2267990112305
+          }
+        }
+      },
+      "27": {
+        "shape": "long-seconds",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 64.62701416015625,
+            "min": 61.88678741455078,
+            "max": 71.25345611572266
+          },
+          "native": {
+            "median": 125.83732604980469,
+            "min": 123.19278717041016,
+            "max": 127.41470336914062
+          },
+          "prior-stock": {
+            "median": 67.72136688232422,
+            "min": 61.85563659667969,
+            "max": 69.35437774658203
+          },
+          "previous": {
+            "median": 621.031120300293,
+            "min": 607.086181640625,
+            "max": 652.6416091918945
+          }
+        }
+      },
+      "28": {
+        "shape": "long-millis-add",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS BIGINT),3),'yyyy-MM-dd''T''HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-millis",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 82.83106994628906,
+            "min": 76.4118881225586,
+            "max": 92.53501892089844
+          },
+          "native": {
+            "median": 166.15518188476562,
+            "min": 163.46485900878906,
+            "max": 181.36056518554688
+          },
+          "prior-stock": {
+            "median": 83.69636535644531,
+            "min": 79.13494110107422,
+            "max": 85.5391845703125
+          },
+          "previous": {
+            "median": 707.1059494018555,
+            "min": 688.1869659423828,
+            "max": 723.4694137573242
+          }
+        }
+      },
+      "29": {
+        "shape": "runtime-precision",
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END),'yyyy-MM-dd HH:mm:ss')",
+        "type": "BIGINT",
+        "secondary": "",
+        "corpus": "epoch-seconds",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 75.02460479736328,
+            "min": 67.78081512451172,
+            "max": 85.49467468261719
+          },
+          "native": {
+            "median": 189.99671936035156,
+            "min": 185.40223693847656,
+            "max": 192.6107406616211
+          },
+          "prior-stock": {
+            "median": 71.8367919921875,
+            "min": 67.26837158203125,
+            "max": 78.61518859863281
+          },
+          "previous": {
+            "median": 787.0861740112305,
+            "min": 779.0190353393555,
+            "max": 821.5936050415039
+          }
+        }
+      }
+    }
+  },
+  "complete_job": {
+    "22": {
+      "long-seconds": {
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd HH:mm:ss')",
+        "secondary": "",
+        "type": "BIGINT",
+        "corpus": "epoch-seconds",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.639950875
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.37077175
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.233592834
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.304271916
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.315067625
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.22501075
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.218375459
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.322516542
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.308433833
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.218189125
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.218651667
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.315531333
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.317419916
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.2149445
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.315531333,
+                "min": 0.308433833,
+                "max": 0.322516542
+              },
+              "native": {
+                "median": 0.218375459,
+                "min": 0.2149445,
+                "max": 0.22501075
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.574248584
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.557511958
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.334023458
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.29383725
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.326352167
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.353581291
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.35939325
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.308877167
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.306856
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.350986708
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.345260417
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.299042458
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.3008375
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.34559425
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.306856,
+                "min": 0.299042458,
+                "max": 0.326352167
+              },
+              "previous": {
+                "median": 0.350986708,
+                "min": 0.345260417,
+                "max": 0.35939325
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.6920880310799434,
+        "native_over_previous": 0.6221758659874949
+      },
+      "long-millis-add": {
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS BIGINT),3),'yyyy-MM-dd''T''HH:mm:ss')",
+        "secondary": "",
+        "type": "BIGINT",
+        "corpus": "epoch-millis",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.595358542
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.38594875
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.249972291
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.305576583
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.342257708
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.228585167
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.224114167
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.338856625
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.327717458
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.219559625
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.220235208
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.31840175
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.324109375
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.224774875
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.327717458,
+                "min": 0.31840175,
+                "max": 0.342257708
+              },
+              "native": {
+                "median": 0.224114167,
+                "min": 0.219559625,
+                "max": 0.228585167
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.603657792
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.526055583
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.34922575
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.295875917
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.317473666
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.3487985
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.358875166
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.319569625
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.341581792
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.342663708
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.346261792
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.325373125
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.32092
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.35333925
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.32092,
+                "min": 0.317473666,
+                "max": 0.341581792
+              },
+              "previous": {
+                "median": 0.3487985,
+                "min": 0.342663708,
+                "max": 0.358875166
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.6838639856653593,
+        "native_over_previous": 0.642531911691134
+      },
+      "runtime-precision": {
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END),'yyyy-MM-dd HH:mm:ss')",
+        "secondary": "",
+        "type": "BIGINT",
+        "corpus": "epoch-seconds",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.635470542
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.385208
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.239265084
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.339687791
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.332473875
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.225742209
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.22812525
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.340249083
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.336291333
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.221471917
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.21572925
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.320961667
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.328205541
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.227361458
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.332473875,
+                "min": 0.320961667,
+                "max": 0.340249083
+              },
+              "native": {
+                "median": 0.225742209,
+                "min": 0.21572925,
+                "max": 0.22812525
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.617565167
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.591705083
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.387592583
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.316293958
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.328918625
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.398993084
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.387647542
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.333819167
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.345824834
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.387286459
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.384136042
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.331702334
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.334750208
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.384381167
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.333819167,
+                "min": 0.328918625,
+                "max": 0.345824834
+              },
+              "previous": {
+                "median": 0.387286459,
+                "min": 0.384136042,
+                "max": 0.398993084
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.6789772850573598,
+        "native_over_previous": 0.5828817500691393
+      }
+    },
+    "118": {
+      "long-seconds": {
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,0),'yyyy-MM-dd HH:mm:ss')",
+        "secondary": "",
+        "type": "BIGINT",
+        "corpus": "epoch-seconds",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.546742833
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.377415
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.233335
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.31020875
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.320221375
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.212806709
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.221338125
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.373247625
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.344962042
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.216406166
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.220732708
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.319103667
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.305597
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.212906916
+              }
+            ],
+            "stats": {
+              "native": {
+                "median": 0.216406166,
+                "min": 0.212806709,
+                "max": 0.221338125
+              },
+              "stock": {
+                "median": 0.320221375,
+                "min": 0.305597,
+                "max": 0.373247625
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.561475666
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.577431667
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.348925542
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.302357
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.330203875
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.352884959
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.363873
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.313444542
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.317560125
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.348494666
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.352069875
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.335823792
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.308783417
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.345254834
+              }
+            ],
+            "stats": {
+              "previous": {
+                "median": 0.352069875,
+                "min": 0.345254834,
+                "max": 0.363873
+              },
+              "stock": {
+                "median": 0.317560125,
+                "min": 0.308783417,
+                "max": 0.335823792
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.6758017512103932,
+        "native_over_previous": 0.614668227436386
+      },
+      "long-millis-add": {
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v+CAST(1 AS BIGINT),3),'yyyy-MM-dd''T''HH:mm:ss')",
+        "secondary": "",
+        "type": "BIGINT",
+        "corpus": "epoch-millis",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.568005083
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.41029
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.233396167
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.313446792
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.319486
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.228068958
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.223967958
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.351731667
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.325333916
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.213795458
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.218765417
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.318043959
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.320771625
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.211701708
+              }
+            ],
+            "stats": {
+              "native": {
+                "median": 0.218765417,
+                "min": 0.211701708,
+                "max": 0.228068958
+              },
+              "stock": {
+                "median": 0.320771625,
+                "min": 0.318043959,
+                "max": 0.351731667
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.56135025
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.560045875
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.351663083
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.313996792
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.345110166
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.363393584
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.360733084
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.327991416
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.32384125
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.365914833
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.353144125
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.338604458
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.329071667
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.351394542
+              }
+            ],
+            "stats": {
+              "previous": {
+                "median": 0.360733084,
+                "min": 0.351394542,
+                "max": 0.365914833
+              },
+              "stock": {
+                "median": 0.329071667,
+                "min": 0.32384125,
+                "max": 0.345110166
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.6819974085924838,
+        "native_over_previous": 0.6064467793588902
+      },
+      "runtime-precision": {
+        "expression": "DATE_FORMAT(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END),'yyyy-MM-dd HH:mm:ss')",
+        "secondary": "",
+        "type": "BIGINT",
+        "corpus": "epoch-seconds",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.5888645
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.398625208
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.228902833
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.29222
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.338702291
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.2279075
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.221182292
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.340953417
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.341830833
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.215769917
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.211087708
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.331358292
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.32656175
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.220428
+              }
+            ],
+            "stats": {
+              "native": {
+                "median": 0.220428,
+                "min": 0.211087708,
+                "max": 0.2279075
+              },
+              "stock": {
+                "median": 0.338702291,
+                "min": 0.32656175,
+                "max": 0.341830833
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.647807875
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.581056875
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.37162725
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.3066595
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.326615833
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.377257125
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.366221666
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.343535333
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.330459416
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.367751375
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.374314708
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.369940916
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.335230833
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.369443875
+              }
+            ],
+            "stats": {
+              "previous": {
+                "median": 0.369443875,
+                "min": 0.366221666,
+                "max": 0.377257125
+              },
+              "stock": {
+                "median": 0.335230833,
+                "min": 0.326615833,
+                "max": 0.369940916
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.6508016209432727,
+        "native_over_previous": 0.5966481376907387
+      }
+    }
+  },
+  "summary": {
+    "bulk_cells": 48,
+    "bulk_stock_speedup": [
+      2.9424659800636968,
+      4.855136899336107
+    ],
+    "bulk_previous_speedup": [
+      4.190301136598471,
+      6.704100954209249
+    ],
+    "tiny_cells": 12,
+    "tiny_stock_losses": 12,
+    "tiny_stock_speedup": [
+      0.3817833663189536,
+      0.5905510646687697
+    ],
+    "tiny_previous_losses": 0,
+    "raw_prepared_samples": 6000,
+    "complete_jobs": 6,
+    "complete_stock_losses": 0,
+    "complete_previous_losses": 0,
+    "complete_native_over_stock": [
+      0.6508016209432727,
+      0.6920880310799434
+    ],
+    "complete_native_over_previous": [
+      0.5828817500691393,
+      0.642531911691134
+    ]
+  }
+}

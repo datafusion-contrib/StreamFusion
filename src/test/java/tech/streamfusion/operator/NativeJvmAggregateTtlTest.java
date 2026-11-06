@@ -134,7 +134,7 @@ class NativeJvmAggregateTtlTest {
         handler, equaliser, new LogicalType[] {new BigIntType(), new BigIntType()}, 1, true, 1000);
   }
 
-  private static final class SumHandler implements AggsHandleFunction {
+  static class SumHandler implements AggsHandleFunction {
     private RowData state;
 
     public void open(StateDataViewStore store) {}

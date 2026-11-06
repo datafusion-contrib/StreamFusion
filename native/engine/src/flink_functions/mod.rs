@@ -10,17 +10,20 @@ use datafusion::logical_expr::{ScalarUDF, Volatility};
 use std::sync::Arc;
 
 pub(crate) mod binary_cast;
+mod binary_character;
 pub(crate) mod binary_elt;
 pub(crate) mod calendar;
 mod calendar_round;
 pub(crate) mod certified;
 pub(crate) mod clock;
 pub(crate) mod decimal;
+mod decimal_epoch;
 pub(crate) mod decimal_float;
 pub(crate) mod decimal_round_text;
 pub(crate) mod decode;
 pub(crate) mod encode;
 pub(crate) mod from_unixtime;
+mod integral_round;
 pub(crate) mod json_quote;
 pub(crate) mod json_unquote;
 pub(crate) mod left;
@@ -51,18 +54,23 @@ mod array_slice;
 mod array_sort;
 mod array_timsort;
 mod ascii;
+mod binary_boundary;
 mod binary_strings;
+mod boolean_string;
 mod cardinality;
 mod charset;
 mod chr;
 pub(crate) mod collection_cast;
 mod collection_string;
+pub(crate) mod date_format;
+pub(crate) mod decimal_string;
 mod element;
 mod from_base64;
 mod hash_code;
 mod if_null;
 mod instr;
 pub(crate) mod integer_divide;
+mod integer_printf;
 pub(crate) mod integer_string;
 mod is_json;
 mod java_timsort;
@@ -80,10 +88,14 @@ mod map_union;
 mod negate;
 pub(crate) mod numeric;
 pub(crate) mod numeric_cast;
+mod numeric_classification;
+mod round_position;
 mod row_constructor;
 mod scalar;
 pub(crate) mod sha2_runtime;
 mod sign;
+mod string_classification;
+mod string_decimal;
 pub(crate) mod string_fusion;
 mod string_to_boolean;
 mod temporal_arithmetic;
@@ -97,6 +109,13 @@ const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
 
 pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
     Some(match op {
+        238 => string_classification::alpha(),
+        239 => string_classification::digit(),
+        240 => string_decimal::function(),
+        241 => numeric_classification::alpha(),
+        242 => numeric_classification::digit(),
+        243 => numeric_classification::decimal(),
+        244 => boolean_string::function(),
         65 => sign::function(),
         67 => ascii::function(),
         81 => chr::function(),
@@ -104,6 +123,8 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
             .as_ref()
             .clone(),
         101 => datafusion::functions::string::ends_with().as_ref().clone(),
+        235 => binary_boundary::starts_with(),
+        236 => binary_boundary::ends_with(),
         102 => datafusion::functions::unicode::strpos().as_ref().clone(),
         103 => ScalarUDF::new_from_impl(locate::FlinkLocate::new()),
         104 => udf(
@@ -289,7 +310,18 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         227 => collection_string::map_input(),
         228 => collection_string::extremum(true),
         229 => collection_string::extremum(false),
+        230 => integral_round::function(false),
+        231 => integral_round::function(true),
         232 => from_base64::function(),
+        237 => binary_character::function(),
+        245 => unnest_temporal::function(unnest_temporal::Operation::EpochSeconds),
+        246 => temporal_round::utc_ltz_ceil(),
+        247 => round_position::function(),
+        248 => integer_printf::function(),
+        249 => unnest_temporal::function(unnest_temporal::Operation::EpochPrecision),
+        250 => integer_printf::boolean_arguments(),
+        251 => decimal_epoch::function(false),
+        252 => decimal_epoch::function(true),
         _ => return None,
     })
 }

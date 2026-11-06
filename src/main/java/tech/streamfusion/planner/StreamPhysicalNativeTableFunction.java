@@ -69,6 +69,10 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
             .anyMatch(arg -> !JvmFunctionTypes.scalar(arg.getType()));
   }
 
+  boolean returnsAliasedValues() {
+    return JvmFunctionConversions.returnsAliasedValues(invocation);
+  }
+
   @Override
   public boolean requireWatermark() {
     return false;

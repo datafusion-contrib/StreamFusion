@@ -5,6 +5,8 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExchange;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGlobalGroupAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalGroupAggregate;
 
 /**
  * The services a {@link Substitution} needs from the scan that runs it: rewriting a keyed host
@@ -19,8 +21,21 @@ final class PlanContext {
   private final Set<String> repeatedSources;
   private final Set<RelNode> javaJsonInputs;
   private final Map<RelNode, RelNode> originals = new IdentityHashMap<>();
+  private final Map<RelNode, StreamPhysicalGlobalGroupAggregate> globalGroups =
+      new IdentityHashMap<>();
 
   private final Map<RelNode, Map<Substitution<?>, String>> probeFailures = new IdentityHashMap<>();
+
+  /** Retain the host accumulator layout before child substitution changes its metadata. */
+  void rememberGlobalGroup(StreamPhysicalGlobalGroupAggregate group) {
+    RelNode local = group.getInput();
+    if (local instanceof StreamPhysicalExchange) local = local.getInput(0);
+    if (local instanceof StreamPhysicalLocalGroupAggregate) globalGroups.put(local, group);
+  }
+
+  StreamPhysicalGlobalGroupAggregate globalGroupForLocal(RelNode local) {
+    return globalGroups.get(originalNode(local));
+  }
 
   void probeFailed(Substitution<?> entry, RelNode node, String reason) {
     probeFailures.computeIfAbsent(node, ignored -> new IdentityHashMap<>()).put(entry, reason);
@@ -77,9 +92,9 @@ final class PlanContext {
   }
 
   /**
-   * Replaces a keyed host exchange with a native columnar one (splitting the batch by the key), so the
-   * shuffle is always part of the columnar island. When the exchange's producer is rowwise
-   * the transition pass inserts a single transpose below the native exchange (the island perimeter);
+   * Replaces a keyed host exchange with a native columnar one (splitting the batch by the key), so
+   * the shuffle is always part of the columnar island. When the exchange's producer is rowwise the
+   * transition pass inserts a single transpose below the native exchange (the island perimeter);
    * when it is columnar no transpose is needed. A non-exchange input is returned unchanged.
    */
   RelNode columnarInput(RelNode input, int[] keyColumns) {
@@ -88,6 +103,11 @@ final class PlanContext {
 
   /** Some SINGLETON consumers keep their state in a fixed one-key-group namespace. */
   RelNode columnarInput(RelNode input, int[] keyColumns, boolean singleKeyGroup) {
+    return columnarInput(input, keyColumns, singleKeyGroup, false);
+  }
+
+  RelNode columnarInput(
+      RelNode input, int[] keyColumns, boolean singleKeyGroup, boolean projectedKeys) {
     if (input instanceof StreamPhysicalExchange) {
       return new StreamPhysicalNativeColumnarExchange(
           input.getCluster(),
@@ -95,7 +115,8 @@ final class PlanContext {
           input.getInputs().get(0),
           input.getRowType(),
           keyColumns,
-          singleKeyGroup);
+          singleKeyGroup,
+          projectedKeys);
     }
     return input;
   }

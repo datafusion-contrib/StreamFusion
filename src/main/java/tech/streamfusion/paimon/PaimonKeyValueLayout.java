@@ -2,17 +2,11 @@ package tech.streamfusion.paimon;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import javax.annotation.Nullable;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.KeyValue;
 import org.apache.paimon.flink.LogicalTypeConversion;
-import org.apache.paimon.format.FileFormat;
-import org.apache.paimon.format.SimpleStatsExtractor;
-import org.apache.paimon.io.SimpleStatsProducer;
 import org.apache.paimon.schema.TableSchema;
-import org.apache.paimon.statistics.NoneSimpleColStatsCollector;
-import org.apache.paimon.statistics.SimpleColStatsCollector;
 import org.apache.paimon.stats.SimpleStatsConverter;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.PrimaryKeyTableUtils;
@@ -22,7 +16,6 @@ import org.apache.paimon.types.DataTypeRoot;
 import org.apache.paimon.types.LocalZonedTimestampType;
 import org.apache.paimon.types.RowType;
 import org.apache.paimon.types.TimestampType;
-import org.apache.paimon.utils.StatsCollectorFactories;
 
 /**
  * How a primary-key table's data files are laid out: Paimon's key-value row (the trimmed primary
@@ -44,11 +37,11 @@ public final class PaimonKeyValueLayout {
   final org.apache.flink.table.types.logical.RowType flinkWriteType;
   final int[] keyColumns;
   final int[] keyTimestampPrecisions;
-  final SimpleStatsProducer statsProducer;
+  final PaimonFileStats statsProducer;
   final SimpleStatsConverter keyStatsConverter;
   final SimpleStatsConverter valueStatsConverter;
 
-  private PaimonKeyValueLayout(FileStoreTable table, boolean changelog) {
+  private PaimonKeyValueLayout(FileStoreTable table, int level, boolean changelog) {
     TableSchema schema = table.schema();
     CoreOptions options = table.coreOptions();
     this.keyType =
@@ -68,23 +61,26 @@ public final class PaimonKeyValueLayout {
             .mapToInt(field -> timestampPrecision(field.type()))
             .toArray();
     this.statsProducer =
-        SimpleStatsProducer.fromExtractor(
-            statsExtractor(
-                    options,
-                    fileType,
-                    changelog,
-                    thinMode ? keyType.getFieldNames() : Collections.emptyList())
-                .orElse(null));
+        PaimonVersion.fileStats(
+            options,
+            fileType,
+            level,
+            changelog,
+            thinMode ? keyType.getFieldNames() : Collections.emptyList());
     this.keyStatsConverter = new SimpleStatsConverter(keyType);
     this.valueStatsConverter = new SimpleStatsConverter(valueType, options.statsDenseStore());
   }
 
   public static PaimonKeyValueLayout of(FileStoreTable table) {
-    return new PaimonKeyValueLayout(table, false);
+    return of(table, 0);
+  }
+
+  static PaimonKeyValueLayout of(FileStoreTable table, int level) {
+    return new PaimonKeyValueLayout(table, level, false);
   }
 
   static PaimonKeyValueLayout changelog(FileStoreTable table) {
-    return new PaimonKeyValueLayout(table, true);
+    return new PaimonKeyValueLayout(table, 0, true);
   }
 
   /** The number of key columns a key-value row starts with. */
@@ -156,28 +152,5 @@ public final class PaimonKeyValueLayout {
       return ((LocalZonedTimestampType) type).getPrecision();
     }
     return -1;
-  }
-
-  /**
-   * The footer statistics extractor Paimon's key-value writer factory builds for a Parquet file.
-   */
-  private static Optional<SimpleStatsExtractor> statsExtractor(
-      CoreOptions options, RowType writeType, boolean changelog, List<String> keyNames) {
-    String statsMode =
-        changelog && options.changelogFileStatsMode() != null
-            ? options.changelogFileStatsMode()
-            : options.statsModePerLevel().getOrDefault(0, options.statsMode());
-    SimpleColStatsCollector.Factory[] factories =
-        StatsCollectorFactories.createStatsFactories(
-            statsMode, options, writeType.getFieldNames(), keyNames);
-    boolean disabled = true;
-    for (SimpleColStatsCollector collector : SimpleColStatsCollector.create(factories)) {
-      disabled &= collector instanceof NoneSimpleColStatsCollector;
-    }
-    if (disabled) {
-      return Optional.empty();
-    }
-    return FileFormat.fromIdentifier(options.fileFormatString(), options.toConfiguration())
-        .createStatsExtractor(writeType, factories);
   }
 }

@@ -1,0 +1,4543 @@
+{
+  "base": "b74199c218c65b5956cac4f0dc8002c0828e2276",
+  "function": "TRY_CAST",
+  "jdk": "Oracle JDK 17.0.12",
+  "warmups": 16,
+  "runs": 9,
+  "processed_rows_per_trial": 131072,
+  "dso_sha256": "0a98207b29ca912f4359ee68f0fbe58905c198c2125701cca017ecc1863790d1",
+  "cases": [
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 44.30103302001953,
+            "median_ns_per_row": 49.08466339111328,
+            "max_ns_per_row": 81.18025207519531
+          },
+          "native": {
+            "min_ns_per_row": 12.087188720703125,
+            "median_ns_per_row": 12.459114074707031,
+            "max_ns_per_row": 12.511253356933594
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,0,21752"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 52.5849609375,
+            "median_ns_per_row": 53.016029357910156,
+            "max_ns_per_row": 57.01701354980469
+          },
+          "previous": {
+            "min_ns_per_row": 52.50962829589844,
+            "median_ns_per_row": 53.218841552734375,
+            "max_ns_per_row": 61.242103576660156
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 47.77685546875,
+            "median_ns_per_row": 50.13593292236328,
+            "max_ns_per_row": 55.74226379394531
+          },
+          "native": {
+            "min_ns_per_row": 12.085594177246094,
+            "median_ns_per_row": 12.609169006347656,
+            "max_ns_per_row": 13.620376586914062
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,0,21752"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 55.027008056640625,
+            "median_ns_per_row": 55.96129608154297,
+            "max_ns_per_row": 58.48375701904297
+          },
+          "previous": {
+            "min_ns_per_row": 54.913841247558594,
+            "median_ns_per_row": 55.603668212890625,
+            "max_ns_per_row": 62.066078186035156
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 41.05186462402344,
+            "median_ns_per_row": 41.951499938964844,
+            "max_ns_per_row": 66.18309020996094
+          },
+          "native": {
+            "min_ns_per_row": 12.511886596679688,
+            "median_ns_per_row": 12.683547973632812,
+            "max_ns_per_row": 13.036094665527344
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,128,19217"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 47.55401611328125,
+            "median_ns_per_row": 49.12376403808594,
+            "max_ns_per_row": 56.612335205078125
+          },
+          "previous": {
+            "min_ns_per_row": 47.875091552734375,
+            "median_ns_per_row": 48.81541442871094,
+            "max_ns_per_row": 54.95420837402344
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 42.90644836425781,
+            "median_ns_per_row": 43.39281463623047,
+            "max_ns_per_row": 50.48719787597656
+          },
+          "native": {
+            "min_ns_per_row": 12.569740295410156,
+            "median_ns_per_row": 12.819290161132812,
+            "max_ns_per_row": 13.010978698730469
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,128,19217"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 49.81231689453125,
+            "median_ns_per_row": 50.377532958984375,
+            "max_ns_per_row": 56.784629821777344
+          },
+          "previous": {
+            "min_ns_per_row": 49.408912658691406,
+            "median_ns_per_row": 50.35972595214844,
+            "max_ns_per_row": 54.72373962402344
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 103.61162567138672,
+            "median_ns_per_row": 105.84481048583984,
+            "max_ns_per_row": 131.7173614501953
+          },
+          "native": {
+            "min_ns_per_row": 24.236679077148438,
+            "median_ns_per_row": 24.66424560546875,
+            "max_ns_per_row": 25.04412078857422
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",46,75304,0,12292"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 111.91971588134766,
+            "median_ns_per_row": 113.52698516845703,
+            "max_ns_per_row": 115.69341278076172
+          },
+          "previous": {
+            "min_ns_per_row": 112.25064849853516,
+            "median_ns_per_row": 114.10395050048828,
+            "max_ns_per_row": 115.79959106445312
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 103.09569549560547,
+            "median_ns_per_row": 106.57691955566406,
+            "max_ns_per_row": 113.97171020507812
+          },
+          "native": {
+            "min_ns_per_row": 24.43218231201172,
+            "median_ns_per_row": 24.997711181640625,
+            "max_ns_per_row": 25.57659149169922
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",46,75304,0,12292"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 114.50004577636719,
+            "median_ns_per_row": 117.77496337890625,
+            "max_ns_per_row": 121.88561248779297
+          },
+          "previous": {
+            "min_ns_per_row": 114.22411346435547,
+            "median_ns_per_row": 117.63826751708984,
+            "max_ns_per_row": 121.27717590332031
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 87.68431091308594,
+            "median_ns_per_row": 90.66072845458984,
+            "max_ns_per_row": 98.4182357788086
+          },
+          "native": {
+            "min_ns_per_row": 24.344444274902344,
+            "median_ns_per_row": 24.53899383544922,
+            "max_ns_per_row": 25.110244750976562
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",48,72880,0,11244"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 98.1597900390625,
+            "median_ns_per_row": 101.29229736328125,
+            "max_ns_per_row": 125.42724609375
+          },
+          "previous": {
+            "min_ns_per_row": 98.53427124023438,
+            "median_ns_per_row": 100.59769439697266,
+            "max_ns_per_row": 101.78501892089844
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 90.7093734741211,
+            "median_ns_per_row": 95.7819595336914,
+            "max_ns_per_row": 122.34846496582031
+          },
+          "native": {
+            "min_ns_per_row": 24.7313232421875,
+            "median_ns_per_row": 24.8734130859375,
+            "max_ns_per_row": 25.35851287841797
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",48,72880,0,11244"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 102.18079376220703,
+            "median_ns_per_row": 106.37474060058594,
+            "max_ns_per_row": 132.3095932006836
+          },
+          "previous": {
+            "min_ns_per_row": 101.14510345458984,
+            "median_ns_per_row": 105.85784912109375,
+            "max_ns_per_row": 108.28781127929688
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 47.249794006347656,
+            "median_ns_per_row": 53.69218444824219,
+            "max_ns_per_row": 58.15919494628906
+          },
+          "native": {
+            "min_ns_per_row": 12.232780456542969,
+            "median_ns_per_row": 12.883186340332031,
+            "max_ns_per_row": 13.286270141601562
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,0,21752"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 51.88306427001953,
+            "median_ns_per_row": 53.630828857421875,
+            "max_ns_per_row": 57.95637512207031
+          },
+          "previous": {
+            "min_ns_per_row": 52.62152862548828,
+            "median_ns_per_row": 53.909934997558594,
+            "max_ns_per_row": 59.93397521972656
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 47.38330841064453,
+            "median_ns_per_row": 48.10015106201172,
+            "max_ns_per_row": 62.143646240234375
+          },
+          "native": {
+            "min_ns_per_row": 12.387596130371094,
+            "median_ns_per_row": 12.461662292480469,
+            "max_ns_per_row": 12.789093017578125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,0,21752"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 54.09654235839844,
+            "median_ns_per_row": 55.2215576171875,
+            "max_ns_per_row": 58.42304229736328
+          },
+          "previous": {
+            "min_ns_per_row": 53.96302032470703,
+            "median_ns_per_row": 54.767295837402344,
+            "max_ns_per_row": 60.009002685546875
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 40.53147888183594,
+            "median_ns_per_row": 41.33478546142578,
+            "max_ns_per_row": 47.75110626220703
+          },
+          "native": {
+            "min_ns_per_row": 12.74554443359375,
+            "median_ns_per_row": 12.854896545410156,
+            "max_ns_per_row": 13.050712585449219
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,128,19217"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 49.12535858154297,
+            "median_ns_per_row": 57.35746765136719,
+            "max_ns_per_row": 61.188377380371094
+          },
+          "previous": {
+            "min_ns_per_row": 51.00853729248047,
+            "median_ns_per_row": 51.873207092285156,
+            "max_ns_per_row": 80.62458038330078
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 43.41888427734375,
+            "median_ns_per_row": 44.68568420410156,
+            "max_ns_per_row": 49.94392395019531
+          },
+          "native": {
+            "min_ns_per_row": 12.736961364746094,
+            "median_ns_per_row": 12.9273681640625,
+            "max_ns_per_row": 13.008750915527344
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,128,19217"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 49.50300598144531,
+            "median_ns_per_row": 50.25514221191406,
+            "max_ns_per_row": 67.7804946899414
+          },
+          "previous": {
+            "min_ns_per_row": 48.996925354003906,
+            "median_ns_per_row": 50.06599426269531,
+            "max_ns_per_row": 57.195350646972656
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 75.87909698486328,
+            "median_ns_per_row": 81.56459045410156,
+            "max_ns_per_row": 96.90666198730469
+          },
+          "native": {
+            "min_ns_per_row": 12.888267517089844,
+            "median_ns_per_row": 13.082817077636719,
+            "max_ns_per_row": 13.230323791503906
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,0,26898"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 87.93226623535156,
+            "median_ns_per_row": 90.78662109375,
+            "max_ns_per_row": 93.6562271118164
+          },
+          "previous": {
+            "min_ns_per_row": 88.24412536621094,
+            "median_ns_per_row": 89.97726440429688,
+            "max_ns_per_row": 91.74855041503906
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 107.68731689453125,
+            "median_ns_per_row": 109.95610046386719,
+            "max_ns_per_row": 143.15859985351562
+          },
+          "native": {
+            "min_ns_per_row": 12.919425964355469,
+            "median_ns_per_row": 13.635322570800781,
+            "max_ns_per_row": 14.464057922363281
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,0,26898"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 115.77320098876953,
+            "median_ns_per_row": 120.3018798828125,
+            "max_ns_per_row": 141.62318420410156
+          },
+          "previous": {
+            "min_ns_per_row": 119.02555084228516,
+            "median_ns_per_row": 121.07563018798828,
+            "max_ns_per_row": 122.93560791015625
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 74.54109191894531,
+            "median_ns_per_row": 76.58226776123047,
+            "max_ns_per_row": 88.68694305419922
+          },
+          "native": {
+            "min_ns_per_row": 13.3682861328125,
+            "median_ns_per_row": 13.706207275390625,
+            "max_ns_per_row": 14.309249877929688
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,128,23616"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 77.79121398925781,
+            "median_ns_per_row": 79.43026733398438,
+            "max_ns_per_row": 82.95822143554688
+          },
+          "previous": {
+            "min_ns_per_row": 77.0864486694336,
+            "median_ns_per_row": 80.4926528930664,
+            "max_ns_per_row": 87.6474380493164
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 92.29692077636719,
+            "median_ns_per_row": 96.14340209960938,
+            "max_ns_per_row": 121.51527404785156
+          },
+          "native": {
+            "min_ns_per_row": 13.427413940429688,
+            "median_ns_per_row": 13.577461242675781,
+            "max_ns_per_row": 13.87786865234375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,128,23616"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 101.21186828613281,
+            "median_ns_per_row": 103.08329010009766,
+            "max_ns_per_row": 118.25052642822266
+          },
+          "previous": {
+            "min_ns_per_row": 100.74011993408203,
+            "median_ns_per_row": 104.41780090332031,
+            "max_ns_per_row": 116.38958740234375
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 170.2092514038086,
+            "median_ns_per_row": 171.09552764892578,
+            "max_ns_per_row": 175.64678192138672
+          },
+          "native": {
+            "min_ns_per_row": 26.239395141601562,
+            "median_ns_per_row": 26.552200317382812,
+            "max_ns_per_row": 27.106605529785156
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",46,100930,0,12292"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 189.22774505615234,
+            "median_ns_per_row": 190.92718505859375,
+            "max_ns_per_row": 194.49138641357422
+          },
+          "previous": {
+            "min_ns_per_row": 189.0420913696289,
+            "median_ns_per_row": 191.76864624023438,
+            "max_ns_per_row": 216.04283905029297
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 202.67803955078125,
+            "median_ns_per_row": 211.5793228149414,
+            "max_ns_per_row": 215.0119171142578
+          },
+          "native": {
+            "min_ns_per_row": 27.698516845703125,
+            "median_ns_per_row": 28.43952178955078,
+            "max_ns_per_row": 29.073402404785156
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",46,100930,0,12292"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 209.76861572265625,
+            "median_ns_per_row": 211.01792907714844,
+            "max_ns_per_row": 225.13294219970703
+          },
+          "previous": {
+            "min_ns_per_row": 209.83377838134766,
+            "median_ns_per_row": 212.47068786621094,
+            "max_ns_per_row": 220.8217010498047
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 155.95308685302734,
+            "median_ns_per_row": 156.72016143798828,
+            "max_ns_per_row": 160.50306701660156
+          },
+          "native": {
+            "min_ns_per_row": 26.215553283691406,
+            "median_ns_per_row": 26.604652404785156,
+            "max_ns_per_row": 27.05097198486328
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",48,97759,0,11244"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 162.18312072753906,
+            "median_ns_per_row": 166.92606353759766,
+            "max_ns_per_row": 169.70094299316406
+          },
+          "previous": {
+            "min_ns_per_row": 163.9080047607422,
+            "median_ns_per_row": 165.39732360839844,
+            "max_ns_per_row": 168.35752868652344
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 177.5986328125,
+            "median_ns_per_row": 180.0416259765625,
+            "max_ns_per_row": 195.84115600585938
+          },
+          "native": {
+            "min_ns_per_row": 26.569686889648438,
+            "median_ns_per_row": 26.9317626953125,
+            "max_ns_per_row": 27.16827392578125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",48,97759,0,11244"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 180.93236541748047,
+            "median_ns_per_row": 182.85433959960938,
+            "max_ns_per_row": 212.87377166748047
+          },
+          "previous": {
+            "min_ns_per_row": 180.29340362548828,
+            "median_ns_per_row": 182.1133270263672,
+            "max_ns_per_row": 191.4501190185547
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 82.8530044555664,
+            "median_ns_per_row": 88.0304946899414,
+            "max_ns_per_row": 89.66255187988281
+          },
+          "native": {
+            "min_ns_per_row": 13.057075500488281,
+            "median_ns_per_row": 13.149894714355469,
+            "max_ns_per_row": 13.347312927246094
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,0,26898"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 92.6802978515625,
+            "median_ns_per_row": 95.41925048828125,
+            "max_ns_per_row": 97.06974029541016
+          },
+          "previous": {
+            "min_ns_per_row": 92.32679748535156,
+            "median_ns_per_row": 94.97833251953125,
+            "max_ns_per_row": 96.80652618408203
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 100.65492248535156,
+            "median_ns_per_row": 105.25385284423828,
+            "max_ns_per_row": 111.45401000976562
+          },
+          "native": {
+            "min_ns_per_row": 12.88604736328125,
+            "median_ns_per_row": 13.062156677246094,
+            "max_ns_per_row": 13.54534912109375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,0,26898"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 117.50221252441406,
+            "median_ns_per_row": 120.2208251953125,
+            "max_ns_per_row": 123.36190795898438
+          },
+          "previous": {
+            "min_ns_per_row": 116.1168441772461,
+            "median_ns_per_row": 119.66800689697266,
+            "max_ns_per_row": 123.04084014892578
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 86.34185791015625,
+            "median_ns_per_row": 92.56967163085938,
+            "max_ns_per_row": 96.96929168701172
+          },
+          "native": {
+            "min_ns_per_row": 13.573013305664062,
+            "median_ns_per_row": 13.756431579589844,
+            "max_ns_per_row": 14.478363037109375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,128,23616"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 75.4079818725586,
+            "median_ns_per_row": 75.99798583984375,
+            "max_ns_per_row": 78.93085479736328
+          },
+          "previous": {
+            "min_ns_per_row": 75.12982940673828,
+            "median_ns_per_row": 75.85334777832031,
+            "max_ns_per_row": 79.92808532714844
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 93.70613098144531,
+            "median_ns_per_row": 98.01451110839844,
+            "max_ns_per_row": 100.80877685546875
+          },
+          "native": {
+            "min_ns_per_row": 13.224922180175781,
+            "median_ns_per_row": 13.330780029296875,
+            "max_ns_per_row": 13.593353271484375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,128,23616"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 92.9880142211914,
+            "median_ns_per_row": 96.01910400390625,
+            "max_ns_per_row": 98.75520324707031
+          },
+          "previous": {
+            "min_ns_per_row": 94.87120819091797,
+            "median_ns_per_row": 96.1294174194336,
+            "max_ns_per_row": 98.28948974609375
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 42.37810516357422,
+            "median_ns_per_row": 43.178245544433594,
+            "max_ns_per_row": 48.45460510253906
+          },
+          "native": {
+            "min_ns_per_row": 31.22742462158203,
+            "median_ns_per_row": 32.410308837890625,
+            "max_ns_per_row": 33.418975830078125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2371,0,344"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 50.621665954589844,
+            "median_ns_per_row": 51.44500732421875,
+            "max_ns_per_row": 58.442115783691406
+          },
+          "previous": {
+            "min_ns_per_row": 50.690330505371094,
+            "median_ns_per_row": 51.38714599609375,
+            "max_ns_per_row": 59.14434051513672
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 46.64929962158203,
+            "median_ns_per_row": 52.826881408691406,
+            "max_ns_per_row": 65.121337890625
+          },
+          "native": {
+            "min_ns_per_row": 31.554222106933594,
+            "median_ns_per_row": 32.10862731933594,
+            "max_ns_per_row": 33.541358947753906
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2371,0,344"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 58.781944274902344,
+            "median_ns_per_row": 61.344146728515625,
+            "max_ns_per_row": 84.95807647705078
+          },
+          "previous": {
+            "min_ns_per_row": 60.091331481933594,
+            "median_ns_per_row": 60.76971435546875,
+            "max_ns_per_row": 64.94840240478516
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 36.47581481933594,
+            "median_ns_per_row": 36.713279724121094,
+            "max_ns_per_row": 42.310081481933594
+          },
+          "native": {
+            "min_ns_per_row": 31.517982482910156,
+            "median_ns_per_row": 31.72620391845703,
+            "max_ns_per_row": 32.21416473388672
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2371,2,291"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 42.583465576171875,
+            "median_ns_per_row": 42.83905029296875,
+            "max_ns_per_row": 70.31217956542969
+          },
+          "previous": {
+            "min_ns_per_row": 42.68296813964844,
+            "median_ns_per_row": 49.266815185546875,
+            "max_ns_per_row": 49.660362243652344
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 38.596153259277344,
+            "median_ns_per_row": 40.740013122558594,
+            "max_ns_per_row": 46.32377624511719
+          },
+          "native": {
+            "min_ns_per_row": 31.679473876953125,
+            "median_ns_per_row": 32.08001708984375,
+            "max_ns_per_row": 32.352760314941406
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2371,2,291"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 44.61383819580078,
+            "median_ns_per_row": 44.95429992675781,
+            "max_ns_per_row": 45.323692321777344
+          },
+          "previous": {
+            "min_ns_per_row": 44.61860656738281,
+            "median_ns_per_row": 47.31877899169922,
+            "max_ns_per_row": 52.201271057128906
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 81.80999755859375,
+            "median_ns_per_row": 85.16597747802734,
+            "max_ns_per_row": 90.58157348632812
+          },
+          "native": {
+            "min_ns_per_row": 32.334327697753906,
+            "median_ns_per_row": 32.807350158691406,
+            "max_ns_per_row": 33.035911560058594
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2691,0,426"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 84.747314453125,
+            "median_ns_per_row": 87.71800994873047,
+            "max_ns_per_row": 89.01437377929688
+          },
+          "previous": {
+            "min_ns_per_row": 82.97315979003906,
+            "median_ns_per_row": 86.72078704833984,
+            "max_ns_per_row": 88.72763061523438
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 99.1201400756836,
+            "median_ns_per_row": 103.12906646728516,
+            "max_ns_per_row": 114.29659271240234
+          },
+          "native": {
+            "min_ns_per_row": 32.28569030761719,
+            "median_ns_per_row": 32.64141082763672,
+            "max_ns_per_row": 34.229278564453125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2691,0,426"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 111.97630310058594,
+            "median_ns_per_row": 114.1942367553711,
+            "max_ns_per_row": 116.4220199584961
+          },
+          "previous": {
+            "min_ns_per_row": 112.65850067138672,
+            "median_ns_per_row": 115.095458984375,
+            "max_ns_per_row": 117.11438751220703
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 54.53014373779297,
+            "median_ns_per_row": 55.50733947753906,
+            "max_ns_per_row": 61.379119873046875
+          },
+          "native": {
+            "min_ns_per_row": 31.52942657470703,
+            "median_ns_per_row": 32.088600158691406,
+            "max_ns_per_row": 32.29554748535156
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2691,2,347"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 67.51028442382812,
+            "median_ns_per_row": 69.76985931396484,
+            "max_ns_per_row": 84.78609466552734
+          },
+          "previous": {
+            "min_ns_per_row": 69.84996795654297,
+            "median_ns_per_row": 71.96044921875,
+            "max_ns_per_row": 77.10838317871094
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 80.82516479492188,
+            "median_ns_per_row": 82.92801666259766,
+            "max_ns_per_row": 88.80583953857422
+          },
+          "native": {
+            "min_ns_per_row": 31.85272216796875,
+            "median_ns_per_row": 32.10131072998047,
+            "max_ns_per_row": 32.891273498535156
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2691,2,347"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 87.90937805175781,
+            "median_ns_per_row": 91.33943176269531,
+            "max_ns_per_row": 116.1966323852539
+          },
+          "previous": {
+            "min_ns_per_row": 88.01714324951172,
+            "median_ns_per_row": 91.2481918334961,
+            "max_ns_per_row": 107.93050384521484
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 45.481361389160156,
+            "median_ns_per_row": 46.29961395263672,
+            "max_ns_per_row": 74.00830078125
+          },
+          "native": {
+            "min_ns_per_row": 12.261070251464844,
+            "median_ns_per_row": 13.289451599121094,
+            "max_ns_per_row": 14.811515808105469
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,0,21752"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 57.47541046142578,
+            "median_ns_per_row": 58.997474670410156,
+            "max_ns_per_row": 65.6280517578125
+          },
+          "previous": {
+            "min_ns_per_row": 58.408416748046875,
+            "median_ns_per_row": 60.95917510986328,
+            "max_ns_per_row": 65.7765121459961
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 51.505088806152344,
+            "median_ns_per_row": 51.92884063720703,
+            "max_ns_per_row": 58.959007263183594
+          },
+          "native": {
+            "min_ns_per_row": 11.942230224609375,
+            "median_ns_per_row": 12.724876403808594,
+            "max_ns_per_row": 12.894630432128906
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,0,21752"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 59.941925048828125,
+            "median_ns_per_row": 62.20976257324219,
+            "max_ns_per_row": 67.29348754882812
+          },
+          "previous": {
+            "min_ns_per_row": 59.47240447998047,
+            "median_ns_per_row": 61.44841766357422,
+            "max_ns_per_row": 63.90253448486328
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 40.58837890625,
+            "median_ns_per_row": 46.329498291015625,
+            "max_ns_per_row": 75.63400268554688
+          },
+          "native": {
+            "min_ns_per_row": 12.666069030761719,
+            "median_ns_per_row": 12.74871826171875,
+            "max_ns_per_row": 13.186134338378906
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,128,19217"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 46.994850158691406,
+            "median_ns_per_row": 51.67388916015625,
+            "max_ns_per_row": 55.54962158203125
+          },
+          "previous": {
+            "min_ns_per_row": 47.03935241699219,
+            "median_ns_per_row": 47.533355712890625,
+            "max_ns_per_row": 48.95465087890625
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 43.396629333496094,
+            "median_ns_per_row": 43.75584411621094,
+            "max_ns_per_row": 50.38801574707031
+          },
+          "native": {
+            "min_ns_per_row": 12.483283996582031,
+            "median_ns_per_row": 12.775421142578125,
+            "max_ns_per_row": 13.08282470703125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,128,19217"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 49.86254119873047,
+            "median_ns_per_row": 51.79945373535156,
+            "max_ns_per_row": 52.775062561035156
+          },
+          "previous": {
+            "min_ns_per_row": 50.47893524169922,
+            "median_ns_per_row": 51.52130126953125,
+            "max_ns_per_row": 58.14552307128906
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 105.73863983154297,
+            "median_ns_per_row": 108.04303741455078,
+            "max_ns_per_row": 110.00028991699219
+          },
+          "native": {
+            "min_ns_per_row": 24.37622833251953,
+            "median_ns_per_row": 25.070831298828125,
+            "max_ns_per_row": 25.641761779785156
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",46,75304,0,12292"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 113.7075424194336,
+            "median_ns_per_row": 116.03641510009766,
+            "max_ns_per_row": 118.78522491455078
+          },
+          "previous": {
+            "min_ns_per_row": 113.36835479736328,
+            "median_ns_per_row": 116.94463348388672,
+            "max_ns_per_row": 119.53226470947266
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 102.36041259765625,
+            "median_ns_per_row": 104.27093505859375,
+            "max_ns_per_row": 106.20149230957031
+          },
+          "native": {
+            "min_ns_per_row": 24.11969757080078,
+            "median_ns_per_row": 25.453567504882812,
+            "max_ns_per_row": 26.33348846435547
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",46,75304,0,12292"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 114.25495147705078,
+            "median_ns_per_row": 116.77423858642578,
+            "max_ns_per_row": 118.11510467529297
+          },
+          "previous": {
+            "min_ns_per_row": 114.34110260009766,
+            "median_ns_per_row": 116.70589447021484,
+            "max_ns_per_row": 118.28963470458984
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 88.49048614501953,
+            "median_ns_per_row": 93.06938934326172,
+            "max_ns_per_row": 106.73999786376953
+          },
+          "native": {
+            "min_ns_per_row": 24.929359436035156,
+            "median_ns_per_row": 25.05811309814453,
+            "max_ns_per_row": 25.23040771484375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",48,72880,0,11244"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 101.19692993164062,
+            "median_ns_per_row": 103.80712890625,
+            "max_ns_per_row": 105.59272766113281
+          },
+          "previous": {
+            "min_ns_per_row": 101.17276000976562,
+            "median_ns_per_row": 104.14791107177734,
+            "max_ns_per_row": 105.06248474121094
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 96.0067138671875,
+            "median_ns_per_row": 98.91414642333984,
+            "max_ns_per_row": 100.90319061279297
+          },
+          "native": {
+            "min_ns_per_row": 24.943984985351562,
+            "median_ns_per_row": 25.120101928710938,
+            "max_ns_per_row": 25.766685485839844
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",48,72880,0,11244"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 100.67113494873047,
+            "median_ns_per_row": 103.89232635498047,
+            "max_ns_per_row": 108.31133270263672
+          },
+          "previous": {
+            "min_ns_per_row": 99.74352264404297,
+            "median_ns_per_row": 103.21489715576172,
+            "max_ns_per_row": 108.01093292236328
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 46.67060089111328,
+            "median_ns_per_row": 49.47503662109375,
+            "max_ns_per_row": 59.99311065673828
+          },
+          "native": {
+            "min_ns_per_row": 12.561485290527344,
+            "median_ns_per_row": 12.936592102050781,
+            "max_ns_per_row": 13.312660217285156
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,0,21752"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 58.61505126953125,
+            "median_ns_per_row": 61.46049499511719,
+            "max_ns_per_row": 64.09200286865234
+          },
+          "previous": {
+            "min_ns_per_row": 59.568092346191406,
+            "median_ns_per_row": 61.72593688964844,
+            "max_ns_per_row": 66.69775390625
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 52.074119567871094,
+            "median_ns_per_row": 54.109893798828125,
+            "max_ns_per_row": 61.69446563720703
+          },
+          "native": {
+            "min_ns_per_row": 12.248359680175781,
+            "median_ns_per_row": 13.417884826660156,
+            "max_ns_per_row": 14.475189208984375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,0,21752"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 60.297332763671875,
+            "median_ns_per_row": 60.63079833984375,
+            "max_ns_per_row": 90.35746765136719
+          },
+          "previous": {
+            "min_ns_per_row": 60.192420959472656,
+            "median_ns_per_row": 60.672447204589844,
+            "max_ns_per_row": 86.93376922607422
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 40.60713195800781,
+            "median_ns_per_row": 41.14087677001953,
+            "max_ns_per_row": 47.188758850097656
+          },
+          "native": {
+            "min_ns_per_row": 12.501083374023438,
+            "median_ns_per_row": 12.795448303222656,
+            "max_ns_per_row": 13.096176147460938
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,128,19217"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 55.00316619873047,
+            "median_ns_per_row": 55.208839416503906,
+            "max_ns_per_row": 57.6156005859375
+          },
+          "previous": {
+            "min_ns_per_row": 55.335365295410156,
+            "median_ns_per_row": 60.00995635986328,
+            "max_ns_per_row": 77.64180755615234
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 42.99322509765625,
+            "median_ns_per_row": 49.327537536621094,
+            "max_ns_per_row": 57.490028381347656
+          },
+          "native": {
+            "min_ns_per_row": 12.74713134765625,
+            "median_ns_per_row": 13.017333984375,
+            "max_ns_per_row": 13.335861206054688
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,42691,128,19217"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 49.90641784667969,
+            "median_ns_per_row": 50.974525451660156,
+            "max_ns_per_row": 69.31209564208984
+          },
+          "previous": {
+            "min_ns_per_row": 49.376800537109375,
+            "median_ns_per_row": 51.65418243408203,
+            "max_ns_per_row": 80.27013397216797
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 77.51242065429688,
+            "median_ns_per_row": 83.64932250976562,
+            "max_ns_per_row": 87.73167419433594
+          },
+          "native": {
+            "min_ns_per_row": 13.037994384765625,
+            "median_ns_per_row": 13.218246459960938,
+            "max_ns_per_row": 13.403579711914062
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,0,26898"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 84.55435180664062,
+            "median_ns_per_row": 87.09716796875,
+            "max_ns_per_row": 87.4064712524414
+          },
+          "previous": {
+            "min_ns_per_row": 85.11956787109375,
+            "median_ns_per_row": 87.06029510498047,
+            "max_ns_per_row": 88.09535217285156
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 108.42259216308594,
+            "median_ns_per_row": 112.470947265625,
+            "max_ns_per_row": 118.3929443359375
+          },
+          "native": {
+            "min_ns_per_row": 12.828514099121094,
+            "median_ns_per_row": 13.227783203125,
+            "max_ns_per_row": 13.407394409179688
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,0,26898"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 113.13279724121094,
+            "median_ns_per_row": 115.3879165649414,
+            "max_ns_per_row": 116.47383117675781
+          },
+          "previous": {
+            "min_ns_per_row": 112.30976867675781,
+            "median_ns_per_row": 114.95462799072266,
+            "max_ns_per_row": 116.72496795654297
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 79.59397888183594,
+            "median_ns_per_row": 80.20146942138672,
+            "max_ns_per_row": 87.09557342529297
+          },
+          "native": {
+            "min_ns_per_row": 13.320289611816406,
+            "median_ns_per_row": 13.504981994628906,
+            "max_ns_per_row": 13.730049133300781
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,128,23616"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 82.49632263183594,
+            "median_ns_per_row": 84.36012268066406,
+            "max_ns_per_row": 89.9515151977539
+          },
+          "previous": {
+            "min_ns_per_row": 83.37242889404297,
+            "median_ns_per_row": 84.13124084472656,
+            "max_ns_per_row": 87.34989166259766
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 101.1343002319336,
+            "median_ns_per_row": 103.72321319580078,
+            "max_ns_per_row": 123.99101257324219
+          },
+          "native": {
+            "min_ns_per_row": 13.204574584960938,
+            "median_ns_per_row": 13.373695373535156,
+            "max_ns_per_row": 13.701438903808594
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,128,23616"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 107.33985900878906,
+            "median_ns_per_row": 109.02436828613281,
+            "max_ns_per_row": 111.86854553222656
+          },
+          "previous": {
+            "min_ns_per_row": 108.1736831665039,
+            "median_ns_per_row": 108.91214752197266,
+            "max_ns_per_row": 110.89546966552734
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 164.57398986816406,
+            "median_ns_per_row": 166.99250030517578,
+            "max_ns_per_row": 170.1253204345703
+          },
+          "native": {
+            "min_ns_per_row": 27.050018310546875,
+            "median_ns_per_row": 27.34661102294922,
+            "max_ns_per_row": 27.82758331298828
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",46,100930,0,12292"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 188.01371002197266,
+            "median_ns_per_row": 189.59268188476562,
+            "max_ns_per_row": 191.88594818115234
+          },
+          "previous": {
+            "min_ns_per_row": 188.60467529296875,
+            "median_ns_per_row": 189.59935760498047,
+            "max_ns_per_row": 192.48294830322266
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 201.9815444946289,
+            "median_ns_per_row": 203.6091537475586,
+            "max_ns_per_row": 205.09656524658203
+          },
+          "native": {
+            "min_ns_per_row": 26.3551025390625,
+            "median_ns_per_row": 26.885986328125,
+            "max_ns_per_row": 27.161277770996094
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",46,100930,0,12292"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 217.62020874023438,
+            "median_ns_per_row": 221.56842803955078,
+            "max_ns_per_row": 224.82554626464844
+          },
+          "previous": {
+            "min_ns_per_row": 219.21189880371094,
+            "median_ns_per_row": 222.87591552734375,
+            "max_ns_per_row": 224.18785095214844
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 146.3743896484375,
+            "median_ns_per_row": 149.4738311767578,
+            "max_ns_per_row": 153.5940170288086
+          },
+          "native": {
+            "min_ns_per_row": 25.63762664794922,
+            "median_ns_per_row": 27.42736053466797,
+            "max_ns_per_row": 28.41790008544922
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",48,97759,0,11244"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 172.7307586669922,
+            "median_ns_per_row": 176.4984130859375,
+            "max_ns_per_row": 194.14360809326172
+          },
+          "previous": {
+            "min_ns_per_row": 172.12708282470703,
+            "median_ns_per_row": 174.7147216796875,
+            "max_ns_per_row": 189.8508071899414
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(-v AS CHAR(8))",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": false,
+      "target": "CHAR(8)",
+      "producer": "negate",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 165.3432846069336,
+            "median_ns_per_row": 166.99600219726562,
+            "max_ns_per_row": 169.51751708984375
+          },
+          "native": {
+            "min_ns_per_row": 26.1551513671875,
+            "median_ns_per_row": 26.595428466796875,
+            "max_ns_per_row": 27.097702026367188
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",48,97759,0,11244"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 186.16803741455078,
+            "median_ns_per_row": 187.0104522705078,
+            "max_ns_per_row": 189.79104614257812
+          },
+          "previous": {
+            "min_ns_per_row": 186.099365234375,
+            "median_ns_per_row": 188.3417739868164,
+            "max_ns_per_row": 195.58080291748047
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 79.56187438964844,
+            "median_ns_per_row": 82.49791717529297,
+            "max_ns_per_row": 86.45439147949219
+          },
+          "native": {
+            "min_ns_per_row": 13.150535583496094,
+            "median_ns_per_row": 13.598121643066406,
+            "max_ns_per_row": 14.094352722167969
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,0,26898"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 91.94374084472656,
+            "median_ns_per_row": 94.757080078125,
+            "max_ns_per_row": 96.81892395019531
+          },
+          "previous": {
+            "min_ns_per_row": 91.99142456054688,
+            "median_ns_per_row": 94.71829223632812,
+            "max_ns_per_row": 95.84808349609375
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 99.60142517089844,
+            "median_ns_per_row": 102.78575134277344,
+            "max_ns_per_row": 133.06967163085938
+          },
+          "native": {
+            "min_ns_per_row": 12.762069702148438,
+            "median_ns_per_row": 13.050392150878906,
+            "max_ns_per_row": 13.304710388183594
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,0,26898"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 112.884521484375,
+            "median_ns_per_row": 114.71176147460938,
+            "max_ns_per_row": 117.13758850097656
+          },
+          "previous": {
+            "min_ns_per_row": 112.8056869506836,
+            "median_ns_per_row": 114.29277801513672,
+            "max_ns_per_row": 115.43623352050781
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 70.94892120361328,
+            "median_ns_per_row": 76.69607543945312,
+            "max_ns_per_row": 96.97946166992188
+          },
+          "native": {
+            "min_ns_per_row": 13.250350952148438,
+            "median_ns_per_row": 13.418830871582031,
+            "max_ns_per_row": 13.697624206542969
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,128,23616"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 79.41373443603516,
+            "median_ns_per_row": 80.85409545898438,
+            "max_ns_per_row": 83.71385192871094
+          },
+          "previous": {
+            "min_ns_per_row": 79.29674530029297,
+            "median_ns_per_row": 81.14401245117188,
+            "max_ns_per_row": 83.22684478759766
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "direct",
+      "expression": "TRY_CAST(ABS(v) AS CHAR(44))",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "legacy": true,
+      "target": "CHAR(44)",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 93.64128112792969,
+            "median_ns_per_row": 97.3838119506836,
+            "max_ns_per_row": 125.42152404785156
+          },
+          "native": {
+            "min_ns_per_row": 12.791954040527344,
+            "median_ns_per_row": 13.435043334960938,
+            "max_ns_per_row": 13.754844665527344
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,63171,128,23616"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 97.78849029541016,
+            "median_ns_per_row": 99.88943481445312,
+            "max_ns_per_row": 101.9887924194336
+          },
+          "previous": {
+            "min_ns_per_row": 96.83672332763672,
+            "median_ns_per_row": 100.41777038574219,
+            "max_ns_per_row": 102.3896484375
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192CHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 44.081687927246094,
+            "median_ns_per_row": 44.396087646484375,
+            "max_ns_per_row": 49.73316192626953
+          },
+          "native": {
+            "min_ns_per_row": 31.81902313232422,
+            "median_ns_per_row": 31.93219757080078,
+            "max_ns_per_row": 32.794952392578125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2371,0,344"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 57.23253631591797,
+            "median_ns_per_row": 57.80918884277344,
+            "max_ns_per_row": 64.44263458251953
+          },
+          "previous": {
+            "min_ns_per_row": 56.938804626464844,
+            "median_ns_per_row": 57.6156005859375,
+            "max_ns_per_row": 65.88363647460938
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 47.193206787109375,
+            "median_ns_per_row": 48.05564880371094,
+            "max_ns_per_row": 54.45512390136719
+          },
+          "native": {
+            "min_ns_per_row": 31.721435546875,
+            "median_ns_per_row": 32.004676818847656,
+            "max_ns_per_row": 32.5775146484375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2371,0,344"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 53.822837829589844,
+            "median_ns_per_row": 54.088592529296875,
+            "max_ns_per_row": 56.244850158691406
+          },
+          "previous": {
+            "min_ns_per_row": 53.887046813964844,
+            "median_ns_per_row": 54.733909606933594,
+            "max_ns_per_row": 59.809043884277344
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 36.995567321777344,
+            "median_ns_per_row": 42.46648406982422,
+            "max_ns_per_row": 62.444366455078125
+          },
+          "native": {
+            "min_ns_per_row": 31.969390869140625,
+            "median_ns_per_row": 32.60485076904297,
+            "max_ns_per_row": 33.081695556640625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2371,2,291"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 43.097816467285156,
+            "median_ns_per_row": 47.53080749511719,
+            "max_ns_per_row": 51.749549865722656
+          },
+          "previous": {
+            "min_ns_per_row": 43.14263153076172,
+            "median_ns_per_row": 44.21710968017578,
+            "max_ns_per_row": 46.54407501220703
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(18,2)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 40.74065399169922,
+            "median_ns_per_row": 46.99961853027344,
+            "max_ns_per_row": 54.42778778076172
+          },
+          "native": {
+            "min_ns_per_row": 32.526329040527344,
+            "median_ns_per_row": 33.02415466308594,
+            "max_ns_per_row": 33.41102600097656
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2371,2,291"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 46.54725646972656,
+            "median_ns_per_row": 48.325218200683594,
+            "max_ns_per_row": 51.03874206542969
+          },
+          "previous": {
+            "min_ns_per_row": 45.67369079589844,
+            "median_ns_per_row": 50.226531982421875,
+            "max_ns_per_row": 56.177459716796875
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 81.0232162475586,
+            "median_ns_per_row": 84.67960357666016,
+            "max_ns_per_row": 89.50996398925781
+          },
+          "native": {
+            "min_ns_per_row": 32.112754821777344,
+            "median_ns_per_row": 32.54254913330078,
+            "max_ns_per_row": 33.11188507080078
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2691,0,426"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 92.56584930419922,
+            "median_ns_per_row": 94.10794067382812,
+            "max_ns_per_row": 97.46424865722656
+          },
+          "previous": {
+            "min_ns_per_row": 91.73870086669922,
+            "median_ns_per_row": 93.39459228515625,
+            "max_ns_per_row": 97.25157928466797
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 109.13372039794922,
+            "median_ns_per_row": 112.38066101074219,
+            "max_ns_per_row": 116.75102996826172
+          },
+          "native": {
+            "min_ns_per_row": 32.06634521484375,
+            "median_ns_per_row": 32.460533142089844,
+            "max_ns_per_row": 32.95452880859375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2691,0,426"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 118.70193481445312,
+            "median_ns_per_row": 121.32295227050781,
+            "max_ns_per_row": 123.11490631103516
+          },
+          "previous": {
+            "min_ns_per_row": 119.16510772705078,
+            "median_ns_per_row": 121.21009826660156,
+            "max_ns_per_row": 123.90327453613281
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 61.325714111328125,
+            "median_ns_per_row": 68.65914154052734,
+            "max_ns_per_row": 82.81739807128906
+          },
+          "native": {
+            "min_ns_per_row": 31.522430419921875,
+            "median_ns_per_row": 31.928062438964844,
+            "max_ns_per_row": 32.20812225341797
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2691,2,347"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 77.32232666015625,
+            "median_ns_per_row": 80.17222595214844,
+            "max_ns_per_row": 90.14860534667969
+          },
+          "previous": {
+            "min_ns_per_row": 74.96929168701172,
+            "median_ns_per_row": 78.07540893554688,
+            "max_ns_per_row": 82.24868774414062
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "tiny",
+      "expression": "TRY_CAST(ABS(v) AS STRING)",
+      "type": "DECIMAL(38,18)",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "legacy": false,
+      "target": "STRING",
+      "producer": "abs",
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 73.8204345703125,
+            "median_ns_per_row": 76.07046508789062,
+            "max_ns_per_row": 80.19225311279297
+          },
+          "native": {
+            "min_ns_per_row": 31.711578369140625,
+            "median_ns_per_row": 32.3028564453125,
+            "max_ns_per_row": 33.05690002441406
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",27,2691,2,347"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 80.7479248046875,
+            "median_ns_per_row": 83.75898742675781,
+            "max_ns_per_row": 86.28717803955078
+          },
+          "previous": {
+            "min_ns_per_row": 81.46540069580078,
+            "median_ns_per_row": 84.26856994628906,
+            "max_ns_per_row": 85.52360534667969
+          },
+          "allocation_probe": [],
+          "fallback_route": [
+            "PREVIOUS_FALLBACK,unsupported TRY_CAST DECIMAL\u2192VARCHAR"
+          ]
+        }
+      }
+    }
+  ],
+  "pipelines": {
+    "118-modern-abs": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.522985834
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.43185375
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.235847584
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.266119125
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.264686375
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.209733375
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.206908958
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.269670042
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.264873209
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.209461542
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.2110305
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.250927167
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.252151
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.209821667
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.462089375
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.273696583
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.235383958
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.232487708
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.209105375
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.210177709
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.207586792
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.209532458
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.206095375
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.211020666
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.217686166
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.212599209
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.203733042
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.207961667
+        }
+      ]
+    },
+    "118-modern-negate": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.642359375
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.394586042
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.22922225
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.411471542
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.380041209
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.226210667
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.229540125
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.378329584
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.370410459
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.223189541
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.222140917
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.372105042
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.386081041
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.2244275
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.667308834
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.404151875
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.351241208
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.348769875
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.342057875
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.345520875
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.344431083
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.338773917
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.342245042
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.338318583
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.34047975
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.33464925
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.342706791
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.346211416
+        }
+      ]
+    },
+    "118-legacy-abs": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.521549292
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.39491575
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.235696334
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.296951291
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.291546959
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.21696225
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.218376292
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.335873667
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.280389459
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.216920292
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.214796041
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.293051792
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.287302083
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.216607625
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.527763208
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.292185209
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.256902208
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.280990792
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.253203625
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.244746667
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.235302875
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.237482667
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.247610833
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.252706959
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.240273625
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.239804416
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.238306042
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.253584959
+        }
+      ]
+    },
+    "22-modern-abs": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.563077375
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.36933925
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.235219375
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.279483167
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.254011125
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.211899167
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.208158084
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.268574709
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.259245375
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.206518209
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.201710959
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.263132583
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.252922375
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.206410708
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.505527292
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.331086333
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.205455792
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.208456375
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.199138
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.216008917
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.199868916
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.214376916
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.204023542
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.217393875
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.194208208
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.195745375
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.205980833
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.215092166
+        }
+      ]
+    },
+    "22-modern-negate": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.725429667
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.386118875
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.252039667
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.419068333
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.382023667
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.226872542
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.233657542
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.376024208
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.372521
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.225204792
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.227980833
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.391603583
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.37442825
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.227104416
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.697999333
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.441411583
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.348497375
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.348661417
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.350055
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.345592
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.354460125
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.348689291
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.341240417
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.365853208
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.348294333
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.344693834
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.340141083
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.356738
+        }
+      ]
+    },
+    "22-legacy-abs": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.543005125
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.370751541
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.227636208
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.29303175
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.275327541
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.217126334
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.218377833
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.279562542
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.279536542
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.219148292
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.211098333
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.306824958
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.280751666
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.216443583
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.57321475
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.336567333
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.253483583
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.242686542
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.235847958
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.243812083
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.234912333
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.236068375
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.247688125
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.251506625
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.235065833
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.232570917
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.231293083
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.236467833
+        }
+      ]
+    }
+  },
+  "validation": {
+    "focused": {
+      "22-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=75 succeeded=75 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "22-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=75 succeeded=75 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=75 succeeded=75 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=75 succeeded=75 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "source_files_sha256": {
+        "src/main/java/tech/streamfusion/planner/RexExpression.java": "d5816b7a2f5c01dc38b4d4fe5418cd6e35c6bbc5582f53cfce15e64ce6514628",
+        "src/test/java/tech/streamfusion/planner/DecimalSignConsumerEncodingTest.java": "bc3585e492a771f18ce59fcd85c4a202677b777c0c9a9b2b2d0782d20a66388d",
+        "src/test/java/tech/streamfusion/planner/DecimalStringCastEncodingTest.java": "cfeb83b4d9a98694374439d75dc736e929eb5f45f4eb657283ad9549cc4e924d",
+        "src/test/java/tech/streamfusion/FlinkDecimalStringCastSqlHarnessTest.java": "3db16e1e95692c15d8b4e45be7daa65fee31dc1e814b499736115ba6d0f86b43",
+        "src/test/java/tech/streamfusion/planner/BooleanStringCastEncodingTest.java": "6eb4f137ba9ff77e68a83bac7c962b508bd97afc7bb5184138e1e0f6c7caa3dc",
+        "src/test/java/tech/streamfusion/FlinkBooleanStringCastSqlHarnessTest.java": "83c0655976fe01101003a74a14604159c278b59155199d9259ff0aa78834c5fc",
+        "src/test/java/tech/streamfusion/planner/NumericClassificationEncodingTest.java": "0a091649f72c50c70e6c39163d6c436e35d16e6bc4e346af91ca4ff301fa3f3d",
+        "src/test/java/tech/streamfusion/FlinkNativeNumericClassificationSqlHarnessTest.java": "30e30d9dc7ad9837098a9b13bb9239a0ef5de285b44b46169963e086d20d5e30",
+        "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "e69686cbe011cc577b38af6fe31b215cd5b148b2940640b64c537c6bc9b66ee8",
+        "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "2b687fcc0204f80f9c15fb2cc171cc080be86f4a8b465ef53e6a140ad0a5dfc9",
+        "src/test/java/tech/streamfusion/FlinkSharedStatefulScalarSqlHarnessTest.java": "7e1af5c4a9c2f8b8842a614718c9bec6fb0cc698e7e5059ea5cc8c843e28913a"
+      }
+    },
+    "released_cast_rules_stock_oracle": {
+      "reused_from": "boolean-string-cast-2026-11-01.json",
+      "scope": "Unchanged released CastRulesTest, 535 stock-oracle cases per Flink/JDK pair. Native-route evidence comes from the new runtime-input tests, not this stock oracle.",
+      "results": {
+        "22-11": {
+          "exit": 0,
+          "succeeded": [
+            "535"
+          ]
+        },
+        "22-17": {
+          "exit": 0,
+          "succeeded": [
+            "535"
+          ]
+        },
+        "118-11": {
+          "exit": 0,
+          "succeeded": [
+            "535"
+          ]
+        },
+        "118-17": {
+          "exit": 0,
+          "succeeded": [
+            "535"
+          ]
+        }
+      }
+    },
+    "rust_core": {
+      "passed": 1019,
+      "ignored": 2,
+      "reused_from": "boolean-string-cast-2026-11-01.json",
+      "scope": "Identical production Rust sources and release/default-feature/mimalloc DSO; no native or ownership change."
+    },
+    "fixture_controls": [
+      {
+        "line": "22",
+        "function": "SIGN",
+        "exit": 0
+      },
+      {
+        "line": "22",
+        "function": "FLOOR",
+        "exit": 0
+      },
+      {
+        "line": "22",
+        "function": "CEIL",
+        "exit": 0
+      },
+      {
+        "line": "22",
+        "function": "ROUND",
+        "exit": 0
+      },
+      {
+        "line": "22",
+        "function": "TRUNCATE",
+        "exit": 0
+      },
+      {
+        "line": "22",
+        "function": "IS_DIGIT",
+        "exit": 0
+      },
+      {
+        "line": "118",
+        "function": "SIGN",
+        "exit": 0
+      },
+      {
+        "line": "118",
+        "function": "FLOOR",
+        "exit": 0
+      },
+      {
+        "line": "118",
+        "function": "CEIL",
+        "exit": 0
+      },
+      {
+        "line": "118",
+        "function": "ROUND",
+        "exit": 0
+      },
+      {
+        "line": "118",
+        "function": "TRUNCATE",
+        "exit": 0
+      },
+      {
+        "line": "118",
+        "function": "IS_DIGIT",
+        "exit": 0
+      }
+    ],
+    "java_release": 11,
+    "runtime_jdks": [
+      11,
+      17
+    ],
+    "flink_releases": [
+      "1.18.1",
+      "2.2.1"
+    ],
+    "shared_state": {
+      "22-11": {
+        "exit": 0,
+        "succeeded": [
+          "1"
+        ]
+      },
+      "22-17": {
+        "exit": 0,
+        "succeeded": [
+          "1"
+        ]
+      },
+      "118-11": {
+        "exit": 0,
+        "succeeded": [
+          "1"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "succeeded": [
+          "1"
+        ]
+      }
+    },
+    "released_unary_implementation": {
+      "flink_releases": [
+        "1.18.1",
+        "2.2.1"
+      ],
+      "inspected_methods": [
+        "DecimalDataUtils.abs",
+        "DecimalDataUtils.negate"
+      ],
+      "contract": "Compact and noncompact branches preserve input precision/scale; noncompact BigDecimal unary operations preserve scale."
+    },
+    "decimal_oracle": {
+      "reused_from": "decimal-string-2026-10-29.json",
+      "scope": "Unchanged native formatter retains its released DecimalData plain-string oracle across all precision/scale pairs. New runtime unary witnesses separately prove the changed route."
+    }
+  },
+  "method": {
+    "build": "release/default features/mimalloc; Oracle JDK 17.0.12; Apple M4 Pro; one thread",
+    "prepared_boundary": "Released generated Java on prepared GenericRowData/BinaryRowData versus production Calc on matching Arrow. Operation and equivalent UTF-8 length/first/last-byte consumption timed inside Rust. Java uses BinaryStringData byteAt/getSizeInBytes without byte-array copying. Initial JNI/import/export and both perimeter transposes excluded; intrinsic previous JVM computation remains inside timing.",
+    "controls": "The actual independently recompiled preceding encoder rejects each TRY_CAST DECIMAL signature. Prepared previous/stock controls run released generated code in Java on prepared RowData, timed in Java; they require the real preceding rejection reason, not a fabricated callback. The candidate requires empty evaluator descriptors and intended native work.",
+    "data": "DECIMAL(18,2)/(38,18) signed extrema and large coefficients, nullable/NOT NULL schemas, NULL every seven rows if selected. Modern ABS(v) to STRING, modern -v to CHAR(8), legacy ABS(v) to CHAR(44). 1024-row bulk and 16-row modern ABS-to-STRING controls.",
+    "order": "Serial paired processes; 16 warmups/nine measurements; 131072 rows/trial; equivalent consumption and matching checksums.",
+    "pipeline": "Million-row nullable modern DECIMAL(18,2) ABS-to-STRING, modern DECIMAL(38,18) negate-to-CHAR(8), legacy DECIMAL(38,18) ABS-to-CHAR(44); rowwise source/blackhole, parallelism one, two warmups/five measurements. Planning/startup, production JNI and both transposes retained; require consumed NativeCalc, no fallback, empty candidate descriptors. Previous jobs require the real planner fallback, zero native substitutions and zero native work.",
+    "allocation": "Untimed CountingAllocator wrapping System with malloc=mi_malloc/free=sf_free aliases; JVM/C++/other-thread allocation excluded; counting disabled during timed trials. Requested bytes and output buffers are separate quantities."
+  },
+  "source_files_sha256": {
+    "src/main/java/tech/streamfusion/planner/RexExpression.java": "d5816b7a2f5c01dc38b4d4fe5418cd6e35c6bbc5582f53cfce15e64ce6514628",
+    "native/engine/examples/integral_expression.rs": "e002e9f15c782fea404340ad7cfd34d5c8095d739586db6726ad83aae1d20587",
+    "native/engine/src/flink_functions/boolean_string.rs": "745143d54e7edaf22459f8ec464d76750e095d27344af067cc42d60096153d8a",
+    "native/engine/src/flink_functions/left.rs": "14b45f7f678353db45ce7e374d34c4fc790e09f9fc2f6afe649fd11ddffaaae5",
+    "native/engine/src/flink_functions/lpad.rs": "fcd000d376fa54d785cb36178ca65d0a759882ee726da0ed14ed6c5c908f3636",
+    "native/engine/src/flink_functions/rpad.rs": "3c425f31df8304fc66d50ba58393d1c5f865740e1f492a4c651c6ca2f1744cb6",
+    "native/engine/src/calc.rs": "70742a836c388aac9072d23e345544eda05082c5e372e45224028975cb8e1adb",
+    "native/engine/src/expr.rs": "fa841096891162d8e0e75e37a276d073c380a22d64eccd0e2b7ded8235060e2e",
+    "native/engine/src/flink_functions/decimal_string.rs": "e7c0af97c577f1a90f34242a86eed3bd8b44827d4384dbf42d3b874869c6e781",
+    "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "e69686cbe011cc577b38af6fe31b215cd5b148b2940640b64c537c6bc9b66ee8",
+    "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "2b687fcc0204f80f9c15fb2cc171cc080be86f4a8b465ef53e6a140ad0a5dfc9",
+    "src/test/java/tech/streamfusion/planner/DecimalStringCastEncodingTest.java": "cfeb83b4d9a98694374439d75dc736e929eb5f45f4eb657283ad9549cc4e924d",
+    "src/test/java/tech/streamfusion/planner/DecimalSignConsumerEncodingTest.java": "bc3585e492a771f18ce59fcd85c4a202677b777c0c9a9b2b2d0782d20a66388d",
+    "src/test/java/tech/streamfusion/FlinkDecimalStringCastSqlHarnessTest.java": "3db16e1e95692c15d8b4e45be7daa65fee31dc1e814b499736115ba6d0f86b43",
+    "src/test/java/tech/streamfusion/FlinkSharedStatefulScalarSqlHarnessTest.java": "7e1af5c4a9c2f8b8842a614718c9bec6fb0cc698e7e5059ea5cc8c843e28913a"
+  },
+  "independent_baseline_verification": {
+    "base": "b74199c218c65b5956cac4f0dc8002c0828e2276",
+    "source_sha256": "3fc30e18ded3b608585b81c7ab7e9488dd8124423880125a9c171176e86cd6cf",
+    "classes": {
+      "22": {
+        "tech/streamfusion/planner/RexExpression$9.class": "3f5a52675180362f416acf98a0450129374f0b84f447edbcfc0a2c221df64995",
+        "tech/streamfusion/planner/RexExpression.class": "87d80a660b64c422737345563afa0b8edf3ea450bb51b5c5dbe597e2ffb3860a",
+        "tech/streamfusion/planner/RexExpression$8.class": "ae30068f03e0c397e923789c31e2a71a0ed11e782673e0431965c40d18278bf7",
+        "tech/streamfusion/planner/RexExpression$CalcEncoding.class": "4c7151714174fc589e013a3c77a43ca8004eabd02d936738a4832fa08f7325de",
+        "tech/streamfusion/planner/RexExpression$2.class": "b1da65ea572a0c65804918be8e70b2ee407d7b6c17243f0087cd774fc839ac2f",
+        "tech/streamfusion/planner/RexExpression$4.class": "3ff49b93c96a2fac4938321fbbda27465f1d9458cef54ee2c0364ea37730d5b8",
+        "tech/streamfusion/planner/RexExpression$6.class": "0140848406f9eb258093fb2152ca53c562da0ae4b073aee620785231ab3044ba",
+        "tech/streamfusion/planner/RexExpression$1.class": "d8d656c335385718daf977cf9454ecc6474fb9bcec2b6493b65248c7e88d5d98",
+        "tech/streamfusion/planner/RexExpression$3.class": "955bf1532c68900f4757cf05098e49f2e0c1c561314743f6940ef60866dd9dfc",
+        "tech/streamfusion/planner/RexExpression$7.class": "82526946404781d9f55d4f8a67183756b79704ffc592f44a45d069f38f10562e",
+        "tech/streamfusion/planner/RexExpression$5.class": "5f6beff7d2079e4d822b2e7667f2ca0ba79bbc38dbf9fec2c51711e919a369ab"
+      },
+      "118": {
+        "tech/streamfusion/planner/RexExpression$9.class": "3f5a52675180362f416acf98a0450129374f0b84f447edbcfc0a2c221df64995",
+        "tech/streamfusion/planner/RexExpression.class": "3da325440d896e30f347bb2d7bb05eafff3d1bacbbcda33848ee80366d40bedb",
+        "tech/streamfusion/planner/RexExpression$8.class": "ae30068f03e0c397e923789c31e2a71a0ed11e782673e0431965c40d18278bf7",
+        "tech/streamfusion/planner/RexExpression$CalcEncoding.class": "4c7151714174fc589e013a3c77a43ca8004eabd02d936738a4832fa08f7325de",
+        "tech/streamfusion/planner/RexExpression$2.class": "b1da65ea572a0c65804918be8e70b2ee407d7b6c17243f0087cd774fc839ac2f",
+        "tech/streamfusion/planner/RexExpression$4.class": "3ff49b93c96a2fac4938321fbbda27465f1d9458cef54ee2c0364ea37730d5b8",
+        "tech/streamfusion/planner/RexExpression$6.class": "0140848406f9eb258093fb2152ca53c562da0ae4b073aee620785231ab3044ba",
+        "tech/streamfusion/planner/RexExpression$1.class": "d8d656c335385718daf977cf9454ecc6474fb9bcec2b6493b65248c7e88d5d98",
+        "tech/streamfusion/planner/RexExpression$3.class": "955bf1532c68900f4757cf05098e49f2e0c1c561314743f6940ef60866dd9dfc",
+        "tech/streamfusion/planner/RexExpression$7.class": "82526946404781d9f55d4f8a67183756b79704ffc592f44a45d069f38f10562e",
+        "tech/streamfusion/planner/RexExpression$5.class": "5f6beff7d2079e4d822b2e7667f2ca0ba79bbc38dbf9fec2c51711e919a369ab"
+      }
+    }
+  },
+  "baseline_encoder_source_sha256": "3fc30e18ded3b608585b81c7ab7e9488dd8124423880125a9c171176e86cd6cf",
+  "baseline_encoder_class_sha256": {
+    "118": "3da325440d896e30f347bb2d7bb05eafff3d1bacbbcda33848ee80366d40bedb",
+    "22": "87d80a660b64c422737345563afa0b8edf3ea450bb51b5c5dbe597e2ffb3860a"
+  },
+  "allocator_aliases": {
+    "malloc_equals_mi_malloc": true,
+    "free_equals_checked_sf_free": true
+  },
+  "statistics": {
+    "118-direct": {
+      "stock_native_min": 3.215274353432213,
+      "stock_native_max": 8.502630073272918,
+      "previous_native_min": 3.728481149012567,
+      "previous_native_max": 8.757804109927795,
+      "losing": 0,
+      "count": 24
+    },
+    "118-tiny": {
+      "stock_native_min": 1.3024590840987527,
+      "stock_native_max": 3.462070709646607,
+      "previous_native_min": 1.3561512669813596,
+      "previous_native_max": 3.7340760158198045,
+      "losing": 0,
+      "count": 8
+    },
+    "22-direct": {
+      "stock_native_min": 3.2154895463693465,
+      "stock_native_max": 8.064063016692508,
+      "previous_native_min": 3.8487191856876986,
+      "previous_native_max": 9.161427921426707,
+      "losing": 0,
+      "count": 24
+    },
+    "22-tiny": {
+      "stock_native_min": 1.1571910657348699,
+      "stock_native_max": 3.15945493323984,
+      "previous_native_min": 1.4750234970005651,
+      "previous_native_max": 3.5260565050983144,
+      "losing": 0,
+      "count": 8
+    },
+    "118-modern-abs-pipeline": {
+      "candidate-native": [
+        0.206908958,
+        0.209733375,
+        0.2110305
+      ],
+      "candidate-stock": [
+        0.250927167,
+        0.264686375,
+        0.269670042
+      ],
+      "previous-previous": [
+        0.207586792,
+        0.210177709,
+        0.217686166
+      ],
+      "previous-stock": [
+        0.203733042,
+        0.209105375,
+        0.212599209
+      ],
+      "native_stock_ratio": 0.7923844776672015,
+      "native_previous_ratio": 0.9978859128205647
+    },
+    "118-modern-negate-pipeline": {
+      "candidate-native": [
+        0.222140917,
+        0.2244275,
+        0.229540125
+      ],
+      "candidate-stock": [
+        0.370410459,
+        0.378329584,
+        0.386081041
+      ],
+      "previous-previous": [
+        0.338318583,
+        0.344431083,
+        0.346211416
+      ],
+      "previous-stock": [
+        0.33464925,
+        0.342057875,
+        0.342706791
+      ],
+      "native_stock_ratio": 0.5932063192816558,
+      "native_previous_ratio": 0.6515889856549328
+    },
+    "118-legacy-abs-pipeline": {
+      "candidate-native": [
+        0.214796041,
+        0.216920292,
+        0.218376292
+      ],
+      "candidate-stock": [
+        0.280389459,
+        0.291546959,
+        0.335873667
+      ],
+      "previous-previous": [
+        0.235302875,
+        0.244746667,
+        0.253584959
+      ],
+      "previous-stock": [
+        0.237482667,
+        0.239804416,
+        0.253203625
+      ],
+      "native_stock_ratio": 0.7440320857539796,
+      "native_previous_ratio": 0.8863053975725846
+    },
+    "22-modern-abs-pipeline": {
+      "candidate-native": [
+        0.201710959,
+        0.206518209,
+        0.211899167
+      ],
+      "candidate-stock": [
+        0.252922375,
+        0.259245375,
+        0.268574709
+      ],
+      "previous-previous": [
+        0.194208208,
+        0.215092166,
+        0.217393875
+      ],
+      "previous-stock": [
+        0.195745375,
+        0.204023542,
+        0.214376916
+      ],
+      "native_stock_ratio": 0.7966128961799223,
+      "native_previous_ratio": 0.9601382181441234
+    },
+    "22-modern-negate-pipeline": {
+      "candidate-native": [
+        0.225204792,
+        0.227104416,
+        0.233657542
+      ],
+      "candidate-stock": [
+        0.372521,
+        0.376024208,
+        0.391603583
+      ],
+      "previous-previous": [
+        0.345592,
+        0.354460125,
+        0.365853208
+      ],
+      "previous-stock": [
+        0.340141083,
+        0.344693834,
+        0.350055
+      ],
+      "native_stock_ratio": 0.6039622214961223,
+      "native_previous_ratio": 0.6407051173950807
+    },
+    "22-legacy-abs-pipeline": {
+      "candidate-native": [
+        0.211098333,
+        0.217126334,
+        0.219148292
+      ],
+      "candidate-stock": [
+        0.275327541,
+        0.279562542,
+        0.306824958
+      ],
+      "previous-previous": [
+        0.234912333,
+        0.236467833,
+        0.251506625
+      ],
+      "previous-stock": [
+        0.231293083,
+        0.235847958,
+        0.247688125
+      ],
+      "native_stock_ratio": 0.7766646148181039,
+      "native_previous_ratio": 0.9182066382787887
+    },
+    "stock_control_drift": [
+      0.7206522036968017,
+      1.2180542761480335
+    ]
+  }
+}

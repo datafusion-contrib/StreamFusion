@@ -16,16 +16,18 @@ import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
-import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class FlinkStructuredCollectionSqlHarnessTest {
-  private static final RecoveryExecutionMetrics METRICS = new RecoveryExecutionMetrics();
+  private final RecoveryExecutionMetrics metrics = new RecoveryExecutionMetrics();
 
-  @AfterAll
-  static void closeCluster() {
-    METRICS.close();
+  @AfterEach
+  void closeCluster() {
+    metrics.close();
   }
 
   static org.apache.flink.table.types.DataType itemType() {
@@ -111,16 +113,16 @@ class FlinkStructuredCollectionSqlHarnessTest {
     return rows;
   }
 
-  private static TableEnvironment environment(int parallelism) {
+  private TableEnvironment environment(int parallelism) {
     return environment(parallelism, false);
   }
 
-  private static TableEnvironment environment(int parallelism, boolean empty) {
+  private TableEnvironment environment(int parallelism, boolean empty) {
     return environment(parallelism, empty, "nullable");
   }
 
-  private static TableEnvironment environment(int parallelism, boolean empty, String hints) {
-    var env = METRICS.environment(new Configuration(), parallelism, 0);
+  private TableEnvironment environment(int parallelism, boolean empty, String hints) {
+    var env = metrics.environment(new Configuration(), parallelism, 0);
     env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("streamfusion.transpose.batchRows", "2");
@@ -187,7 +189,7 @@ class FlinkStructuredCollectionSqlHarnessTest {
                 ? "k"
                 : hints.equals("values") ? "m" : hints.equals("multiset") ? "s" : "p";
     var previous =
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .map(row -> row.get("jobId"))
             .collect(java.util.stream.Collectors.toSet());
     var runs =
@@ -206,7 +208,7 @@ class FlinkStructuredCollectionSqlHarnessTest {
       runs.assertSuccess(NativeFailureParity.Route.NATIVE);
       assertEquals(perKey(runs.host().rows()), perKey(runs.nativeRun().rows()));
       RecoveryExecutionMetrics.assertConsumed(
-          METRICS.nativeOperators().stream()
+          metrics.nativeOperators().stream()
               .filter(row -> !previous.contains(row.get("jobId")))
               .collect(java.util.stream.Collectors.toList()),
           "NativeCalc");
@@ -217,7 +219,7 @@ class FlinkStructuredCollectionSqlHarnessTest {
   void runtimeRowsCastToStructuredObjectsThroughTheSameProgram() {
     check(
         () -> {
-          var env = METRICS.environment(new Configuration(), 1, 0);
+          var env = metrics.environment(new Configuration(), 1, 0);
           var table = StreamTableEnvironment.create(env);
           table.getConfig().set("streamfusion.transpose.batchRows", "2");
           var inputType =
@@ -380,14 +382,14 @@ class FlinkStructuredCollectionSqlHarnessTest {
     return result;
   }
 
-  private static void check(java.util.function.Supplier<TableEnvironment> factory, String sql) {
+  private void check(java.util.function.Supplier<TableEnvironment> factory, String sql) {
     check(factory, sql, false);
   }
 
-  private static void check(
+  private void check(
       java.util.function.Supplier<TableEnvironment> factory, String sql, boolean legacyRowCase) {
     var previous =
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .map(row -> row.get("jobId"))
             .collect(java.util.stream.Collectors.toSet());
     var runs = NativeFailureParity.run(factory, sql);
@@ -403,7 +405,7 @@ class FlinkStructuredCollectionSqlHarnessTest {
     assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
     assertEquals(perKey(runs.host().rows()), perKey(runs.nativeRun().rows()));
     RecoveryExecutionMetrics.assertConsumed(
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .filter(row -> !previous.contains(row.get("jobId")))
             .collect(java.util.stream.Collectors.toList()),
         "NativeCalc");

@@ -1,0 +1,5257 @@
+{
+  "base": "2e1b254586a44aef740381a518868bfd08f6bfdb",
+  "function": "TRUNCATE",
+  "jdk": "Oracle JDK 17.0.12",
+  "warmups": 16,
+  "runs": 9,
+  "processed_rows_per_trial": 131072,
+  "dso_sha256": "34fc33e87a0ebd8a115fd9b607b35212cbc6a7ac98b74636bb70054bc72e0337",
+  "cases": [
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 45.159019470214844,
+            "median_ns_per_row": 48.76518249511719,
+            "max_ns_per_row": 87.5085220336914
+          },
+          "native": {
+            "min_ns_per_row": 0.755950927734375,
+            "median_ns_per_row": 0.8471832275390625,
+            "max_ns_per_row": 0.8942337036132812
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,6268,0,4096"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 45.397117614746094,
+            "median_ns_per_row": 46.587623596191406,
+            "max_ns_per_row": 57.355247497558594
+          },
+          "previous": {
+            "min_ns_per_row": 85.26802062988281,
+            "median_ns_per_row": 98.49071502685547,
+            "max_ns_per_row": 116.09617614746094
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4096"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 49.46868133544922,
+            "median_ns_per_row": 54.95707702636719,
+            "max_ns_per_row": 89.51504516601562
+          },
+          "native": {
+            "min_ns_per_row": 0.729248046875,
+            "median_ns_per_row": 0.8023605346679688,
+            "max_ns_per_row": 0.9943695068359375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,6268,0,4096"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 50.72339630126953,
+            "median_ns_per_row": 54.427146911621094,
+            "max_ns_per_row": 64.02619934082031
+          },
+          "previous": {
+            "min_ns_per_row": 78.11864471435547,
+            "median_ns_per_row": 86.8097915649414,
+            "max_ns_per_row": 97.21978759765625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4096"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 41.155181884765625,
+            "median_ns_per_row": 42.45439910888672,
+            "max_ns_per_row": 50.314903259277344
+          },
+          "native": {
+            "min_ns_per_row": 1.1297836303710938,
+            "median_ns_per_row": 1.1628494262695312,
+            "max_ns_per_row": 1.2083053588867188
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,6268,128,4096"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 41.8548583984375,
+            "median_ns_per_row": 42.23950958251953,
+            "max_ns_per_row": 60.443878173828125
+          },
+          "previous": {
+            "min_ns_per_row": 67.01978302001953,
+            "median_ns_per_row": 72.9986801147461,
+            "max_ns_per_row": 82.66385650634766
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 46.32282257080078,
+            "median_ns_per_row": 51.30449676513672,
+            "max_ns_per_row": 55.631324768066406
+          },
+          "native": {
+            "min_ns_per_row": 1.0706558227539062,
+            "median_ns_per_row": 1.186370849609375,
+            "max_ns_per_row": 1.27252197265625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,6268,128,4096"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 45.235633850097656,
+            "median_ns_per_row": 51.0269775390625,
+            "max_ns_per_row": 65.14994049072266
+          },
+          "previous": {
+            "min_ns_per_row": 73.46788787841797,
+            "median_ns_per_row": 86.82695770263672,
+            "max_ns_per_row": 102.61026763916016
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 98.14643859863281,
+            "median_ns_per_row": 101.76627349853516,
+            "max_ns_per_row": 108.36824035644531
+          },
+          "native": {
+            "min_ns_per_row": 0.36716461181640625,
+            "median_ns_per_row": 0.48509979248046875,
+            "max_ns_per_row": 0.5734786987304688
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,9142,0,8192"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 113.55558776855469,
+            "median_ns_per_row": 119.28749084472656,
+            "max_ns_per_row": 135.45830535888672
+          },
+          "previous": {
+            "min_ns_per_row": 139.15061950683594,
+            "median_ns_per_row": 142.89505767822266,
+            "max_ns_per_row": 153.350830078125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,8192"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 115.12565612792969,
+            "median_ns_per_row": 120.06505584716797,
+            "max_ns_per_row": 125.38750457763672
+          },
+          "native": {
+            "min_ns_per_row": 0.36684417724609375,
+            "median_ns_per_row": 0.42597198486328125,
+            "max_ns_per_row": 0.5448684692382812
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,9142,0,8192"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 128.07941436767578,
+            "median_ns_per_row": 130.74239349365234,
+            "max_ns_per_row": 141.65179443359375
+          },
+          "previous": {
+            "min_ns_per_row": 134.86449432373047,
+            "median_ns_per_row": 142.1518325805664,
+            "max_ns_per_row": 154.2644500732422
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,8192"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 95.9603042602539,
+            "median_ns_per_row": 100.3713607788086,
+            "max_ns_per_row": 107.92827606201172
+          },
+          "native": {
+            "min_ns_per_row": 0.6917343139648438,
+            "median_ns_per_row": 0.736236572265625,
+            "max_ns_per_row": 0.8122177124023438
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,9142,128,8192"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 98.12355041503906,
+            "median_ns_per_row": 99.94920349121094,
+            "max_ns_per_row": 116.60798645019531
+          },
+          "previous": {
+            "min_ns_per_row": 125.42533874511719,
+            "median_ns_per_row": 129.63008880615234,
+            "max_ns_per_row": 138.77074432373047
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 99.11060333251953,
+            "median_ns_per_row": 110.60237884521484,
+            "max_ns_per_row": 117.9520263671875
+          },
+          "native": {
+            "min_ns_per_row": 0.6990432739257812,
+            "median_ns_per_row": 0.762298583984375,
+            "max_ns_per_row": 0.8039474487304688
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,9142,128,8192"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 106.89704132080078,
+            "median_ns_per_row": 109.27263641357422,
+            "max_ns_per_row": 111.89460754394531
+          },
+          "previous": {
+            "min_ns_per_row": 120.500244140625,
+            "median_ns_per_row": 127.21443176269531,
+            "max_ns_per_row": 137.16189575195312
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)))",
+      "type": "INT",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 48.70636749267578,
+            "median_ns_per_row": 51.94599914550781,
+            "max_ns_per_row": 73.05240631103516
+          },
+          "native": {
+            "min_ns_per_row": 1.8475875854492188,
+            "median_ns_per_row": 2.0847320556640625,
+            "max_ns_per_row": 2.2970809936523438
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",89,17800,0,4096"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 49.11199951171875,
+            "median_ns_per_row": 50.415992736816406,
+            "max_ns_per_row": 53.62224578857422
+          },
+          "previous": {
+            "min_ns_per_row": 82.0166244506836,
+            "median_ns_per_row": 93.72489166259766,
+            "max_ns_per_row": 104.38601684570312
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4096"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)))",
+      "type": "INT",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 51.88274383544922,
+            "median_ns_per_row": 52.843414306640625,
+            "max_ns_per_row": 68.3298110961914
+          },
+          "native": {
+            "min_ns_per_row": 2.0503997802734375,
+            "median_ns_per_row": 2.1775588989257812,
+            "max_ns_per_row": 2.3107528686523438
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",89,17800,0,4096"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 51.49650573730469,
+            "median_ns_per_row": 58.63983917236328,
+            "max_ns_per_row": 87.41378784179688
+          },
+          "previous": {
+            "min_ns_per_row": 80.16268920898438,
+            "median_ns_per_row": 83.48052215576172,
+            "max_ns_per_row": 95.75335693359375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4096"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 45.165382385253906,
+            "median_ns_per_row": 48.107147216796875,
+            "max_ns_per_row": 67.98680877685547
+          },
+          "native": {
+            "min_ns_per_row": 2.4077072143554688,
+            "median_ns_per_row": 2.5250091552734375,
+            "max_ns_per_row": 2.794586181640625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",91,17984,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 47.50537872314453,
+            "median_ns_per_row": 50.26404571533203,
+            "max_ns_per_row": 57.987213134765625
+          },
+          "previous": {
+            "min_ns_per_row": 85.86089324951172,
+            "median_ns_per_row": 89.68226623535156,
+            "max_ns_per_row": 117.4173355102539
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 51.97715759277344,
+            "median_ns_per_row": 59.59733581542969,
+            "max_ns_per_row": 80.22594451904297
+          },
+          "native": {
+            "min_ns_per_row": 2.4684219360351562,
+            "median_ns_per_row": 2.6350021362304688,
+            "max_ns_per_row": 2.840362548828125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",91,17984,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 49.36949920654297,
+            "median_ns_per_row": 54.453529357910156,
+            "max_ns_per_row": 77.69393920898438
+          },
+          "previous": {
+            "min_ns_per_row": 82.70835876464844,
+            "median_ns_per_row": 99.82808685302734,
+            "max_ns_per_row": 112.55868530273438
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)))",
+      "type": "BIGINT",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 136.38591766357422,
+            "median_ns_per_row": 138.61211395263672,
+            "max_ns_per_row": 143.02698516845703
+          },
+          "native": {
+            "min_ns_per_row": 0.7467269897460938,
+            "median_ns_per_row": 0.835418701171875,
+            "max_ns_per_row": 1.007080078125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",28,26038,0,8192"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 100.81450653076172,
+            "median_ns_per_row": 105.66997528076172,
+            "max_ns_per_row": 110.93013000488281
+          },
+          "previous": {
+            "min_ns_per_row": 145.16226196289062,
+            "median_ns_per_row": 147.54295349121094,
+            "max_ns_per_row": 153.62930297851562
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8192"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)))",
+      "type": "BIGINT",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 117.19926452636719,
+            "median_ns_per_row": 121.19928741455078,
+            "max_ns_per_row": 132.3528289794922
+          },
+          "native": {
+            "min_ns_per_row": 0.80426025390625,
+            "median_ns_per_row": 0.931427001953125,
+            "max_ns_per_row": 1.291595458984375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",28,26038,0,8192"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 118.88249206542969,
+            "median_ns_per_row": 122.87044525146484,
+            "max_ns_per_row": 130.00265502929688
+          },
+          "previous": {
+            "min_ns_per_row": 143.9952850341797,
+            "median_ns_per_row": 146.55177307128906,
+            "max_ns_per_row": 151.6132354736328
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8192"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 94.33492279052734,
+            "median_ns_per_row": 97.96110534667969,
+            "max_ns_per_row": 106.25330352783203
+          },
+          "native": {
+            "min_ns_per_row": 1.1005401611328125,
+            "median_ns_per_row": 1.2181625366210938,
+            "max_ns_per_row": 1.549407958984375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",30,26222,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 97.21597290039062,
+            "median_ns_per_row": 101.81459045410156,
+            "max_ns_per_row": 105.77678680419922
+          },
+          "previous": {
+            "min_ns_per_row": 134.36126708984375,
+            "median_ns_per_row": 138.14926147460938,
+            "max_ns_per_row": 143.43929290771484
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 102.08447265625,
+            "median_ns_per_row": 104.33133697509766,
+            "max_ns_per_row": 112.23761749267578
+          },
+          "native": {
+            "min_ns_per_row": 1.1154861450195312,
+            "median_ns_per_row": 1.203216552734375,
+            "max_ns_per_row": 1.3685226440429688
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",30,26222,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 101.09456634521484,
+            "median_ns_per_row": 105.2541732788086,
+            "max_ns_per_row": 111.9257583618164
+          },
+          "previous": {
+            "min_ns_per_row": 138.71320343017578,
+            "median_ns_per_row": 144.44796752929688,
+            "max_ns_per_row": 148.86443328857422
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 45.104026794433594,
+            "median_ns_per_row": 53.04590606689453,
+            "max_ns_per_row": 62.8204345703125
+          },
+          "native": {
+            "min_ns_per_row": 42.1873779296875,
+            "median_ns_per_row": 42.90898132324219,
+            "max_ns_per_row": 43.406166076660156
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,2236,0,64"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 44.24921417236328,
+            "median_ns_per_row": 47.34516143798828,
+            "max_ns_per_row": 51.018402099609375
+          },
+          "previous": {
+            "min_ns_per_row": 572.6283416748047,
+            "median_ns_per_row": 600.1822204589844,
+            "max_ns_per_row": 624.0062713623047
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,64"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 53.97828674316406,
+            "median_ns_per_row": 61.829566955566406,
+            "max_ns_per_row": 86.89340209960938
+          },
+          "native": {
+            "min_ns_per_row": 41.47529602050781,
+            "median_ns_per_row": 42.81743621826172,
+            "max_ns_per_row": 44.34967041015625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,2236,0,64"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 47.04093933105469,
+            "median_ns_per_row": 47.779083251953125,
+            "max_ns_per_row": 51.024436950683594
+          },
+          "previous": {
+            "min_ns_per_row": 558.0253601074219,
+            "median_ns_per_row": 584.0361862182617,
+            "max_ns_per_row": 613.8156280517578
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,64"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 40.39732360839844,
+            "median_ns_per_row": 41.93560028076172,
+            "max_ns_per_row": 49.39714813232422
+          },
+          "native": {
+            "min_ns_per_row": 40.63701629638672,
+            "median_ns_per_row": 43.21607208251953,
+            "max_ns_per_row": 44.45648193359375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,2236,2,64"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 40.688201904296875,
+            "median_ns_per_row": 41.790008544921875,
+            "max_ns_per_row": 44.79853820800781
+          },
+          "previous": {
+            "min_ns_per_row": 537.7174987792969,
+            "median_ns_per_row": 543.5870513916016,
+            "max_ns_per_row": 553.0989990234375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,66"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 41.69050598144531,
+            "median_ns_per_row": 42.472206115722656,
+            "max_ns_per_row": 50.62420654296875
+          },
+          "native": {
+            "min_ns_per_row": 41.76616668701172,
+            "median_ns_per_row": 42.108856201171875,
+            "max_ns_per_row": 42.85589599609375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,2236,2,64"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 40.961265563964844,
+            "median_ns_per_row": 42.936012268066406,
+            "max_ns_per_row": 44.49907684326172
+          },
+          "previous": {
+            "min_ns_per_row": 518.871940612793,
+            "median_ns_per_row": 526.1402130126953,
+            "max_ns_per_row": 535.464599609375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,66"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 110.12712860107422,
+            "median_ns_per_row": 114.43901062011719,
+            "max_ns_per_row": 125.77978515625
+          },
+          "native": {
+            "min_ns_per_row": 14.345802307128906,
+            "median_ns_per_row": 14.745712280273438,
+            "max_ns_per_row": 14.993354797363281
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,1078,0,128"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 97.11265563964844,
+            "median_ns_per_row": 102.5231704711914,
+            "max_ns_per_row": 105.87755584716797
+          },
+          "previous": {
+            "min_ns_per_row": 576.9103393554688,
+            "median_ns_per_row": 594.4487228393555,
+            "max_ns_per_row": 642.5546035766602
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,128"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 109.7116470336914,
+            "median_ns_per_row": 113.3890151977539,
+            "max_ns_per_row": 119.5246353149414
+          },
+          "native": {
+            "min_ns_per_row": 13.955436706542969,
+            "median_ns_per_row": 14.272689819335938,
+            "max_ns_per_row": 15.269599914550781
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,1078,0,128"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 110.64434051513672,
+            "median_ns_per_row": 114.86339569091797,
+            "max_ns_per_row": 120.62486267089844
+          },
+          "previous": {
+            "min_ns_per_row": 569.7434768676758,
+            "median_ns_per_row": 575.1762390136719,
+            "max_ns_per_row": 579.5704498291016
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,128"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 86.5462646484375,
+            "median_ns_per_row": 93.64636993408203,
+            "max_ns_per_row": 100.90287017822266
+          },
+          "native": {
+            "min_ns_per_row": 14.699935913085938,
+            "median_ns_per_row": 15.133857727050781,
+            "max_ns_per_row": 16.09039306640625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,1078,2,128"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 89.58943939208984,
+            "median_ns_per_row": 96.61865234375,
+            "max_ns_per_row": 98.47673034667969
+          },
+          "previous": {
+            "min_ns_per_row": 543.3015823364258,
+            "median_ns_per_row": 548.8268585205078,
+            "max_ns_per_row": 566.650390625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,130"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 93.66194152832031,
+            "median_ns_per_row": 98.70338439941406,
+            "max_ns_per_row": 105.67410278320312
+          },
+          "native": {
+            "min_ns_per_row": 14.442756652832031,
+            "median_ns_per_row": 14.613151550292969,
+            "max_ns_per_row": 14.741264343261719
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,1078,2,128"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 84.32547760009766,
+            "median_ns_per_row": 97.88036346435547,
+            "max_ns_per_row": 105.73069763183594
+          },
+          "previous": {
+            "min_ns_per_row": 550.2951889038086,
+            "median_ns_per_row": 555.9094772338867,
+            "max_ns_per_row": 559.208869934082
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,130"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-minus1",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),-1)",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 59.545196533203125,
+            "median_ns_per_row": 63.77824401855469,
+            "max_ns_per_row": 84.83663940429688
+          },
+          "native": {
+            "min_ns_per_row": 3.1073837280273438,
+            "median_ns_per_row": 3.2383651733398438,
+            "max_ns_per_row": 3.659881591796875
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",96,22536,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 60.96521759033203,
+            "median_ns_per_row": 62.72283935546875,
+            "max_ns_per_row": 67.37550354003906
+          },
+          "previous": {
+            "min_ns_per_row": 86.91629028320312,
+            "median_ns_per_row": 92.16277313232422,
+            "max_ns_per_row": 123.69886779785156
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-minus1",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),-1)",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 62.60935974121094,
+            "median_ns_per_row": 63.81575012207031,
+            "max_ns_per_row": 69.96504211425781
+          },
+          "native": {
+            "min_ns_per_row": 3.0794143676757812,
+            "median_ns_per_row": 3.2056198120117188,
+            "max_ns_per_row": 3.3261032104492188
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",96,22536,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 67.53317260742188,
+            "median_ns_per_row": 71.06781005859375,
+            "max_ns_per_row": 79.13843536376953
+          },
+          "previous": {
+            "min_ns_per_row": 92.05563354492188,
+            "median_ns_per_row": 96.78204345703125,
+            "max_ns_per_row": 103.42852783203125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-minus1",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),-1)",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 79.8187255859375,
+            "median_ns_per_row": 82.81739044189453,
+            "max_ns_per_row": 94.9122085571289
+          },
+          "native": {
+            "min_ns_per_row": 2.9112472534179688,
+            "median_ns_per_row": 3.0171051025390625,
+            "max_ns_per_row": 3.265380859375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",76,37399,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 80.41159057617188,
+            "median_ns_per_row": 82.83074951171875,
+            "max_ns_per_row": 87.31937408447266
+          },
+          "previous": {
+            "min_ns_per_row": 102.0364761352539,
+            "median_ns_per_row": 104.57738494873047,
+            "max_ns_per_row": 108.57359313964844
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-minus1",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),-1)",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 80.83598327636719,
+            "median_ns_per_row": 85.32682800292969,
+            "max_ns_per_row": 99.61541748046875
+          },
+          "native": {
+            "min_ns_per_row": 2.8622894287109375,
+            "median_ns_per_row": 3.0193328857421875,
+            "max_ns_per_row": 3.1925888061523438
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",76,37399,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 84.64463806152344,
+            "median_ns_per_row": 86.49889373779297,
+            "max_ns_per_row": 92.5439224243164
+          },
+          "previous": {
+            "min_ns_per_row": 99.62049865722656,
+            "median_ns_per_row": 103.87039184570312,
+            "max_ns_per_row": 111.81100463867188
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-minus38",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),-38)",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 27.213417053222656,
+            "median_ns_per_row": 28.23798370361328,
+            "max_ns_per_row": 45.62823486328125
+          },
+          "native": {
+            "min_ns_per_row": 2.6159286499023438,
+            "median_ns_per_row": 2.710662841796875,
+            "max_ns_per_row": 2.7990341186523438
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",96,22536,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 26.399932861328125,
+            "median_ns_per_row": 28.198562622070312,
+            "max_ns_per_row": 49.07575988769531
+          },
+          "previous": {
+            "min_ns_per_row": 52.403770446777344,
+            "median_ns_per_row": 57.60160827636719,
+            "max_ns_per_row": 74.91333770751953
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-minus38",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),-38)",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 27.632080078125,
+            "median_ns_per_row": 29.021575927734375,
+            "max_ns_per_row": 35.353660583496094
+          },
+          "native": {
+            "min_ns_per_row": 2.6365890502929688,
+            "median_ns_per_row": 2.716064453125,
+            "max_ns_per_row": 3.0139236450195312
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",96,22536,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 28.910316467285156,
+            "median_ns_per_row": 29.929794311523438,
+            "max_ns_per_row": 41.56080627441406
+          },
+          "previous": {
+            "min_ns_per_row": 52.80145263671875,
+            "median_ns_per_row": 54.05998229980469,
+            "max_ns_per_row": 65.30475616455078
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-minus38",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),-38)",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 26.29566192626953,
+            "median_ns_per_row": 27.240753173828125,
+            "max_ns_per_row": 43.20939636230469
+          },
+          "native": {
+            "min_ns_per_row": 2.4426727294921875,
+            "median_ns_per_row": 2.5081634521484375,
+            "max_ns_per_row": 2.6365966796875
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",76,37399,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 26.74579620361328,
+            "median_ns_per_row": 27.10405731201172,
+            "max_ns_per_row": 74.03024291992188
+          },
+          "previous": {
+            "min_ns_per_row": 50.94115447998047,
+            "median_ns_per_row": 56.87109375,
+            "max_ns_per_row": 66.1443099975586
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-minus38",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),-38)",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 27.35137939453125,
+            "median_ns_per_row": 28.13434600830078,
+            "max_ns_per_row": 34.64635467529297
+          },
+          "native": {
+            "min_ns_per_row": 2.4172439575195312,
+            "median_ns_per_row": 2.5157928466796875,
+            "max_ns_per_row": 2.658203125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",76,37399,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 28.82703399658203,
+            "median_ns_per_row": 29.529571533203125,
+            "max_ns_per_row": 37.37195587158203
+          },
+          "previous": {
+            "min_ns_per_row": 48.614501953125,
+            "median_ns_per_row": 51.39286804199219,
+            "max_ns_per_row": 61.73102569580078
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-plus38",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),38)",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 41.966758728027344,
+            "median_ns_per_row": 64.31929779052734,
+            "max_ns_per_row": 77.18435668945312
+          },
+          "native": {
+            "min_ns_per_row": 2.4903640747070312,
+            "median_ns_per_row": 2.6149749755859375,
+            "max_ns_per_row": 2.7399063110351562
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",93,18272,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 42.67724609375,
+            "median_ns_per_row": 44.418975830078125,
+            "max_ns_per_row": 68.89025115966797
+          },
+          "previous": {
+            "min_ns_per_row": 78.5223617553711,
+            "median_ns_per_row": 91.9351577758789,
+            "max_ns_per_row": 117.03173828125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-plus38",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),38)",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 48.639930725097656,
+            "median_ns_per_row": 55.05339050292969,
+            "max_ns_per_row": 76.99966430664062
+          },
+          "native": {
+            "min_ns_per_row": 2.5288238525390625,
+            "median_ns_per_row": 2.7208328247070312,
+            "max_ns_per_row": 2.8349533081054688
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",93,18272,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 46.77423095703125,
+            "median_ns_per_row": 52.3360595703125,
+            "max_ns_per_row": 55.65674591064453
+          },
+          "previous": {
+            "min_ns_per_row": 76.36705780029297,
+            "median_ns_per_row": 86.78054809570312,
+            "max_ns_per_row": 95.47010803222656
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-plus38",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),38)",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 54.741859436035156,
+            "median_ns_per_row": 62.435150146484375,
+            "max_ns_per_row": 73.76893615722656
+          },
+          "native": {
+            "min_ns_per_row": 2.364471435546875,
+            "median_ns_per_row": 2.5701522827148438,
+            "max_ns_per_row": 2.6315078735351562
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",73,29039,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 54.18109893798828,
+            "median_ns_per_row": 69.2138671875,
+            "max_ns_per_row": 79.17849731445312
+          },
+          "previous": {
+            "min_ns_per_row": 109.1286392211914,
+            "median_ns_per_row": 118.1968002319336,
+            "max_ns_per_row": 135.82737731933594
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-plus38",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),38)",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 55.893577575683594,
+            "median_ns_per_row": 61.518028259277344,
+            "max_ns_per_row": 82.5643539428711
+          },
+          "native": {
+            "min_ns_per_row": 2.3228302001953125,
+            "median_ns_per_row": 2.4271011352539062,
+            "max_ns_per_row": 2.5097503662109375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",73,29039,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 57.553611755371094,
+            "median_ns_per_row": 69.80577850341797,
+            "max_ns_per_row": 79.73416900634766
+          },
+          "previous": {
+            "min_ns_per_row": 119.81996154785156,
+            "median_ns_per_row": 128.07146453857422,
+            "max_ns_per_row": 136.44949340820312
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "22",
+      "workload": "position-null",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),CAST(NULL AS INT))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 1.7315521240234375,
+            "median_ns_per_row": 1.7461776733398438,
+            "max_ns_per_row": 1.7560348510742188
+          },
+          "native": {
+            "min_ns_per_row": 0.6459579467773438,
+            "median_ns_per_row": 0.6580352783203125,
+            "max_ns_per_row": 0.66534423828125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",16,4966,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 3.3086090087890625,
+            "median_ns_per_row": 3.3842697143554688,
+            "max_ns_per_row": 4.28009033203125
+          },
+          "previous": {
+            "min_ns_per_row": 32.89286804199219,
+            "median_ns_per_row": 35.97450256347656,
+            "max_ns_per_row": 86.33899688720703
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      },
+      "role": "Constant typed-NULL fold control, excluded from function execution qualification"
+    },
+    {
+      "line": "22",
+      "workload": "position-null",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),CAST(NULL AS INT))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 2.8702392578125,
+            "median_ns_per_row": 4.676506042480469,
+            "max_ns_per_row": 25.154747009277344
+          },
+          "native": {
+            "min_ns_per_row": 0.6418228149414062,
+            "median_ns_per_row": 0.6542205810546875,
+            "max_ns_per_row": 0.6891860961914062
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",16,4966,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 3.9348602294921875,
+            "median_ns_per_row": 4.090309143066406,
+            "max_ns_per_row": 4.4399871826171875
+          },
+          "previous": {
+            "min_ns_per_row": 31.415306091308594,
+            "median_ns_per_row": 33.00603485107422,
+            "max_ns_per_row": 63.726104736328125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      },
+      "role": "Constant typed-NULL fold control, excluded from function execution qualification"
+    },
+    {
+      "line": "22",
+      "workload": "position-null",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),CAST(NULL AS INT))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 1.7134323120117188,
+            "median_ns_per_row": 1.7283706665039062,
+            "max_ns_per_row": 1.764617919921875
+          },
+          "native": {
+            "min_ns_per_row": 0.6786956787109375,
+            "median_ns_per_row": 0.6821975708007812,
+            "max_ns_per_row": 0.7464065551757812
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",16,9062,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 5.978263854980469,
+            "median_ns_per_row": 6.386756896972656,
+            "max_ns_per_row": 6.7660064697265625
+          },
+          "previous": {
+            "min_ns_per_row": 46.86387634277344,
+            "median_ns_per_row": 48.906646728515625,
+            "max_ns_per_row": 72.89250946044922
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      },
+      "role": "Constant typed-NULL fold control, excluded from function execution qualification"
+    },
+    {
+      "line": "22",
+      "workload": "position-null",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),CAST(NULL AS INT))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 2.9303207397460938,
+            "median_ns_per_row": 2.9729232788085938,
+            "max_ns_per_row": 3.0638351440429688
+          },
+          "native": {
+            "min_ns_per_row": 0.7190704345703125,
+            "median_ns_per_row": 0.7289199829101562,
+            "max_ns_per_row": 0.81634521484375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",16,9062,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 3.32958984375,
+            "median_ns_per_row": 3.4367218017578125,
+            "max_ns_per_row": 6.547607421875
+          },
+          "previous": {
+            "min_ns_per_row": 31.284645080566406,
+            "median_ns_per_row": 32.852806091308594,
+            "max_ns_per_row": 61.40168762207031
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      },
+      "role": "Constant typed-NULL fold control, excluded from function execution qualification"
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 46.250022888183594,
+            "median_ns_per_row": 56.038543701171875,
+            "max_ns_per_row": 101.33647918701172
+          },
+          "native": {
+            "min_ns_per_row": 0.7645263671875,
+            "median_ns_per_row": 0.8837356567382812,
+            "max_ns_per_row": 0.9854660034179688
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,6268,0,4096"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 45.12659454345703,
+            "median_ns_per_row": 47.02632141113281,
+            "max_ns_per_row": 53.24046325683594
+          },
+          "previous": {
+            "min_ns_per_row": 83.77043914794922,
+            "median_ns_per_row": 87.20048522949219,
+            "max_ns_per_row": 91.98188781738281
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4096"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 49.4810791015625,
+            "median_ns_per_row": 56.655250549316406,
+            "max_ns_per_row": 83.41693878173828
+          },
+          "native": {
+            "min_ns_per_row": 0.7559432983398438,
+            "median_ns_per_row": 0.8424148559570312,
+            "max_ns_per_row": 0.9148941040039062
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,6268,0,4096"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 51.12616729736328,
+            "median_ns_per_row": 55.921234130859375,
+            "max_ns_per_row": 83.27516174316406
+          },
+          "previous": {
+            "min_ns_per_row": 88.21041870117188,
+            "median_ns_per_row": 107.72991180419922,
+            "max_ns_per_row": 128.28986358642578
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4096"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 42.249046325683594,
+            "median_ns_per_row": 46.225547790527344,
+            "max_ns_per_row": 53.71697235107422
+          },
+          "native": {
+            "min_ns_per_row": 1.1205673217773438,
+            "median_ns_per_row": 1.1873245239257812,
+            "max_ns_per_row": 1.2820587158203125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,6268,128,4096"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 43.752349853515625,
+            "median_ns_per_row": 45.33863067626953,
+            "max_ns_per_row": 76.45320892333984
+          },
+          "previous": {
+            "min_ns_per_row": 76.35275268554688,
+            "median_ns_per_row": 83.19314575195312,
+            "max_ns_per_row": 104.24073791503906
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 47.05397033691406,
+            "median_ns_per_row": 51.13728332519531,
+            "max_ns_per_row": 57.31233215332031
+          },
+          "native": {
+            "min_ns_per_row": 1.125335693359375,
+            "median_ns_per_row": 1.187957763671875,
+            "max_ns_per_row": 1.285552978515625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,6268,128,4096"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 47.68212890625,
+            "median_ns_per_row": 48.782981872558594,
+            "max_ns_per_row": 53.801856994628906
+          },
+          "previous": {
+            "min_ns_per_row": 71.34278869628906,
+            "median_ns_per_row": 77.18181610107422,
+            "max_ns_per_row": 116.19027709960938
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 107.07759857177734,
+            "median_ns_per_row": 114.08837127685547,
+            "max_ns_per_row": 120.10066223144531
+          },
+          "native": {
+            "min_ns_per_row": 0.3611297607421875,
+            "median_ns_per_row": 0.45013427734375,
+            "max_ns_per_row": 0.5000457763671875
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,9142,0,8192"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 109.1146469116211,
+            "median_ns_per_row": 115.9505844116211,
+            "max_ns_per_row": 120.22368621826172
+          },
+          "previous": {
+            "min_ns_per_row": 130.7544708251953,
+            "median_ns_per_row": 142.7904815673828,
+            "max_ns_per_row": 162.35987854003906
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,8192"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 115.02361297607422,
+            "median_ns_per_row": 124.64618682861328,
+            "max_ns_per_row": 129.95179748535156
+          },
+          "native": {
+            "min_ns_per_row": 0.362396240234375,
+            "median_ns_per_row": 0.4488677978515625,
+            "max_ns_per_row": 0.5143508911132812
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,9142,0,8192"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 126.53795623779297,
+            "median_ns_per_row": 132.13125610351562,
+            "max_ns_per_row": 138.71383666992188
+          },
+          "previous": {
+            "min_ns_per_row": 132.77339935302734,
+            "median_ns_per_row": 139.94947814941406,
+            "max_ns_per_row": 150.01360321044922
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,8192"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 99.38876342773438,
+            "median_ns_per_row": 107.02991485595703,
+            "max_ns_per_row": 113.61376190185547
+          },
+          "native": {
+            "min_ns_per_row": 0.6914138793945312,
+            "median_ns_per_row": 0.7985458374023438,
+            "max_ns_per_row": 0.8945465087890625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,9142,128,8192"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 100.04743194580078,
+            "median_ns_per_row": 105.76375579833984,
+            "max_ns_per_row": 116.86579132080078
+          },
+          "previous": {
+            "min_ns_per_row": 123.91694641113281,
+            "median_ns_per_row": 127.63690948486328,
+            "max_ns_per_row": 136.42660522460938
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 102.24691772460938,
+            "median_ns_per_row": 107.79094696044922,
+            "max_ns_per_row": 111.45877838134766
+          },
+          "native": {
+            "min_ns_per_row": 0.7298812866210938,
+            "median_ns_per_row": 0.7912368774414062,
+            "max_ns_per_row": 0.8662490844726562
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,9142,128,8192"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 107.86470031738281,
+            "median_ns_per_row": 110.27558898925781,
+            "max_ns_per_row": 114.81285095214844
+          },
+          "previous": {
+            "min_ns_per_row": 128.44116973876953,
+            "median_ns_per_row": 130.84442901611328,
+            "max_ns_per_row": 132.59315490722656
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)))",
+      "type": "INT",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 48.552513122558594,
+            "median_ns_per_row": 53.52433776855469,
+            "max_ns_per_row": 60.71758270263672
+          },
+          "native": {
+            "min_ns_per_row": 2.0519943237304688,
+            "median_ns_per_row": 2.12701416015625,
+            "max_ns_per_row": 2.3444442749023438
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",89,17800,0,4096"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 46.900115966796875,
+            "median_ns_per_row": 49.88542938232422,
+            "max_ns_per_row": 88.8833999633789
+          },
+          "previous": {
+            "min_ns_per_row": 84.3985824584961,
+            "median_ns_per_row": 87.38327026367188,
+            "max_ns_per_row": 104.33991241455078
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4096"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)))",
+      "type": "INT",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 51.917076110839844,
+            "median_ns_per_row": 58.732666015625,
+            "max_ns_per_row": 76.50089263916016
+          },
+          "native": {
+            "min_ns_per_row": 1.9537582397460938,
+            "median_ns_per_row": 2.182647705078125,
+            "max_ns_per_row": 2.3708343505859375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",89,17800,0,4096"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 54.07428741455078,
+            "median_ns_per_row": 55.62750244140625,
+            "max_ns_per_row": 61.0809326171875
+          },
+          "previous": {
+            "min_ns_per_row": 81.53692626953125,
+            "median_ns_per_row": 84.36711883544922,
+            "max_ns_per_row": 91.11372375488281
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4096"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 53.180381774902344,
+            "median_ns_per_row": 59.264183044433594,
+            "max_ns_per_row": 81.49974060058594
+          },
+          "native": {
+            "min_ns_per_row": 2.4449005126953125,
+            "median_ns_per_row": 2.5857315063476562,
+            "max_ns_per_row": 2.7186126708984375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",91,17984,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 46.701751708984375,
+            "median_ns_per_row": 49.569129943847656,
+            "max_ns_per_row": 56.151710510253906
+          },
+          "previous": {
+            "min_ns_per_row": 82.39110565185547,
+            "median_ns_per_row": 93.35803985595703,
+            "max_ns_per_row": 119.7799072265625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 56.563697814941406,
+            "median_ns_per_row": 63.017845153808594,
+            "max_ns_per_row": 76.50057983398438
+          },
+          "native": {
+            "min_ns_per_row": 2.4630279541015625,
+            "median_ns_per_row": 2.5650711059570312,
+            "max_ns_per_row": 2.7500762939453125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",91,17984,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 56.83135986328125,
+            "median_ns_per_row": 62.69264221191406,
+            "max_ns_per_row": 77.82014465332031
+          },
+          "previous": {
+            "min_ns_per_row": 83.24527740478516,
+            "median_ns_per_row": 94.59909057617188,
+            "max_ns_per_row": 106.52732849121094
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)))",
+      "type": "BIGINT",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 88.34679412841797,
+            "median_ns_per_row": 93.62983703613281,
+            "max_ns_per_row": 100.92893981933594
+          },
+          "native": {
+            "min_ns_per_row": 0.8207931518554688,
+            "median_ns_per_row": 0.9002685546875,
+            "max_ns_per_row": 1.007080078125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",28,26038,0,8192"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 63.68128967285156,
+            "median_ns_per_row": 88.00474548339844,
+            "max_ns_per_row": 100.8148193359375
+          },
+          "previous": {
+            "min_ns_per_row": 139.312744140625,
+            "median_ns_per_row": 148.0579376220703,
+            "max_ns_per_row": 154.9386978149414
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8192"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)))",
+      "type": "BIGINT",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 106.9631576538086,
+            "median_ns_per_row": 116.99867248535156,
+            "max_ns_per_row": 119.60569763183594
+          },
+          "native": {
+            "min_ns_per_row": 0.78582763671875,
+            "median_ns_per_row": 0.8325576782226562,
+            "max_ns_per_row": 0.949859619140625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",28,26038,0,8192"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 114.7139892578125,
+            "median_ns_per_row": 118.23622131347656,
+            "max_ns_per_row": 125.7740707397461
+          },
+          "previous": {
+            "min_ns_per_row": 144.09605407714844,
+            "median_ns_per_row": 148.5277862548828,
+            "max_ns_per_row": 153.5488739013672
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8192"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 97.87336730957031,
+            "median_ns_per_row": 103.36494445800781,
+            "max_ns_per_row": 108.05797576904297
+          },
+          "native": {
+            "min_ns_per_row": 1.1831893920898438,
+            "median_ns_per_row": 1.36407470703125,
+            "max_ns_per_row": 1.4737396240234375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",30,26222,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 71.37235260009766,
+            "median_ns_per_row": 85.64217376708984,
+            "max_ns_per_row": 90.97099304199219
+          },
+          "previous": {
+            "min_ns_per_row": 132.54039001464844,
+            "median_ns_per_row": 133.82785034179688,
+            "max_ns_per_row": 138.51388549804688
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "nested",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 103.4425048828125,
+            "median_ns_per_row": 106.92501068115234,
+            "max_ns_per_row": 109.86773681640625
+          },
+          "native": {
+            "min_ns_per_row": 1.1987686157226562,
+            "median_ns_per_row": 1.334503173828125,
+            "max_ns_per_row": 1.3993606567382812
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",30,26222,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 102.12993621826172,
+            "median_ns_per_row": 105.26116180419922,
+            "max_ns_per_row": 111.26327514648438
+          },
+          "previous": {
+            "min_ns_per_row": 139.09530639648438,
+            "median_ns_per_row": 142.8028793334961,
+            "max_ns_per_row": 158.79281616210938
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 44.88182067871094,
+            "median_ns_per_row": 50.41949462890625,
+            "max_ns_per_row": 90.6483383178711
+          },
+          "native": {
+            "min_ns_per_row": 41.46575927734375,
+            "median_ns_per_row": 42.311668395996094,
+            "max_ns_per_row": 43.842628479003906
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,2236,0,64"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 44.463470458984375,
+            "median_ns_per_row": 45.67304992675781,
+            "max_ns_per_row": 48.613548278808594
+          },
+          "previous": {
+            "min_ns_per_row": 561.5943298339844,
+            "median_ns_per_row": 573.4939575195312,
+            "max_ns_per_row": 590.0417938232422
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,64"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 46.40992736816406,
+            "median_ns_per_row": 51.46185302734375,
+            "max_ns_per_row": 57.71223449707031
+          },
+          "native": {
+            "min_ns_per_row": 41.774749755859375,
+            "median_ns_per_row": 42.42706298828125,
+            "max_ns_per_row": 43.25230407714844
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,2236,0,64"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 46.187400817871094,
+            "median_ns_per_row": 48.745155334472656,
+            "max_ns_per_row": 51.63414764404297
+          },
+          "previous": {
+            "min_ns_per_row": 551.1738433837891,
+            "median_ns_per_row": 572.7144927978516,
+            "max_ns_per_row": 601.7414703369141
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,64"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 39.30791473388672,
+            "median_ns_per_row": 41.921295166015625,
+            "max_ns_per_row": 47.051116943359375
+          },
+          "native": {
+            "min_ns_per_row": 41.73628234863281,
+            "median_ns_per_row": 42.844139099121094,
+            "max_ns_per_row": 43.551124572753906
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,2236,2,64"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 39.09587860107422,
+            "median_ns_per_row": 40.05082702636719,
+            "max_ns_per_row": 42.113616943359375
+          },
+          "previous": {
+            "min_ns_per_row": 521.1038589477539,
+            "median_ns_per_row": 526.8974304199219,
+            "max_ns_per_row": 572.4919662475586
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,66"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS INT))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 40.900550842285156,
+            "median_ns_per_row": 43.25389862060547,
+            "max_ns_per_row": 47.760643005371094
+          },
+          "native": {
+            "min_ns_per_row": 41.41203308105469,
+            "median_ns_per_row": 42.24395751953125,
+            "max_ns_per_row": 42.53196716308594
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",36,2236,2,64"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 41.84278106689453,
+            "median_ns_per_row": 43.578468322753906,
+            "max_ns_per_row": 45.752845764160156
+          },
+          "previous": {
+            "min_ns_per_row": 538.0922927856445,
+            "median_ns_per_row": 550.7478713989258,
+            "max_ns_per_row": 588.7301712036133
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,66"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": false,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 88.91360473632812,
+            "median_ns_per_row": 104.80754089355469,
+            "max_ns_per_row": 114.7470474243164
+          },
+          "native": {
+            "min_ns_per_row": 14.157936096191406,
+            "median_ns_per_row": 14.275550842285156,
+            "max_ns_per_row": 14.604255676269531
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,1078,0,128"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 94.61688995361328,
+            "median_ns_per_row": 96.72927856445312,
+            "max_ns_per_row": 106.69867706298828
+          },
+          "previous": {
+            "min_ns_per_row": 579.8641815185547,
+            "median_ns_per_row": 596.7314987182617,
+            "max_ns_per_row": 619.3930282592773
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,128"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": false,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 112.54310607910156,
+            "median_ns_per_row": 122.25850677490234,
+            "max_ns_per_row": 127.95512390136719
+          },
+          "native": {
+            "min_ns_per_row": 14.400482177734375,
+            "median_ns_per_row": 14.616645812988281,
+            "max_ns_per_row": 15.135765075683594
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,1078,0,128"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 111.79224395751953,
+            "median_ns_per_row": 115.4149398803711,
+            "max_ns_per_row": 118.15198516845703
+          },
+          "previous": {
+            "min_ns_per_row": 583.8877410888672,
+            "median_ns_per_row": 593.4956893920898,
+            "max_ns_per_row": 608.3059310913086
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,128"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 86.82855224609375,
+            "median_ns_per_row": 93.64478302001953,
+            "max_ns_per_row": 97.7366714477539
+          },
+          "native": {
+            "min_ns_per_row": 14.136634826660156,
+            "median_ns_per_row": 14.460563659667969,
+            "max_ns_per_row": 14.988899230957031
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,1078,2,128"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 88.73112487792969,
+            "median_ns_per_row": 101.09933471679688,
+            "max_ns_per_row": 103.4860610961914
+          },
+          "previous": {
+            "min_ns_per_row": 562.3998641967773,
+            "median_ns_per_row": 575.0214233398438,
+            "max_ns_per_row": 597.3987579345703
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,130"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "add",
+      "expression": "TRUNCATE(v+CAST(1 AS BIGINT))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 16,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 78.7210464477539,
+            "median_ns_per_row": 96.40058135986328,
+            "max_ns_per_row": 100.74456024169922
+          },
+          "native": {
+            "min_ns_per_row": 14.388084411621094,
+            "median_ns_per_row": 14.604248046875,
+            "max_ns_per_row": 15.169143676757812
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",19,1078,2,128"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 96.09317779541016,
+            "median_ns_per_row": 101.93952178955078,
+            "max_ns_per_row": 104.4632568359375
+          },
+          "previous": {
+            "min_ns_per_row": 546.1483001708984,
+            "median_ns_per_row": 583.4115295410156,
+            "max_ns_per_row": 595.111213684082
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",69,4226,0,130"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-minus1",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),-1)",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 59.342384338378906,
+            "median_ns_per_row": 61.18011474609375,
+            "max_ns_per_row": 65.79907989501953
+          },
+          "native": {
+            "min_ns_per_row": 3.081634521484375,
+            "median_ns_per_row": 3.1894073486328125,
+            "max_ns_per_row": 3.3899917602539062
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",96,22536,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 59.847511291503906,
+            "median_ns_per_row": 62.133155822753906,
+            "max_ns_per_row": 81.05341339111328
+          },
+          "previous": {
+            "min_ns_per_row": 85.38658905029297,
+            "median_ns_per_row": 89.33639526367188,
+            "max_ns_per_row": 95.42401885986328
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-minus1",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),-1)",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 62.73332977294922,
+            "median_ns_per_row": 69.5031509399414,
+            "max_ns_per_row": 108.4299087524414
+          },
+          "native": {
+            "min_ns_per_row": 3.0409469604492188,
+            "median_ns_per_row": 3.1874923706054688,
+            "max_ns_per_row": 3.398895263671875
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",96,22536,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 66.2988052368164,
+            "median_ns_per_row": 70.77534484863281,
+            "max_ns_per_row": 75.59807586669922
+          },
+          "previous": {
+            "min_ns_per_row": 92.86912536621094,
+            "median_ns_per_row": 95.47710418701172,
+            "max_ns_per_row": 101.80123901367188
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-minus1",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),-1)",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 77.2520751953125,
+            "median_ns_per_row": 78.57418060302734,
+            "max_ns_per_row": 84.30004119873047
+          },
+          "native": {
+            "min_ns_per_row": 2.8880386352539062,
+            "median_ns_per_row": 2.9964447021484375,
+            "max_ns_per_row": 3.0542984008789062
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",76,37399,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 82.29732513427734,
+            "median_ns_per_row": 83.47383880615234,
+            "max_ns_per_row": 88.46092224121094
+          },
+          "previous": {
+            "min_ns_per_row": 102.54541778564453,
+            "median_ns_per_row": 103.16816711425781,
+            "max_ns_per_row": 111.50709533691406
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-minus1",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),-1)",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 79.85877990722656,
+            "median_ns_per_row": 88.34298706054688,
+            "max_ns_per_row": 90.6699447631836
+          },
+          "native": {
+            "min_ns_per_row": 2.9207839965820312,
+            "median_ns_per_row": 3.047943115234375,
+            "max_ns_per_row": 3.34771728515625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",76,37399,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 81.92316436767578,
+            "median_ns_per_row": 85.46924591064453,
+            "max_ns_per_row": 88.67073059082031
+          },
+          "previous": {
+            "min_ns_per_row": 104.5573501586914,
+            "median_ns_per_row": 106.52860260009766,
+            "max_ns_per_row": 111.15518951416016
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-minus38",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),-38)",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 27.561187744140625,
+            "median_ns_per_row": 28.351470947265625,
+            "max_ns_per_row": 33.8134765625
+          },
+          "native": {
+            "min_ns_per_row": 2.5847702026367188,
+            "median_ns_per_row": 2.6887283325195312,
+            "max_ns_per_row": 2.9074325561523438
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",96,22536,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 25.910057067871094,
+            "median_ns_per_row": 26.421226501464844,
+            "max_ns_per_row": 41.914939880371094
+          },
+          "previous": {
+            "min_ns_per_row": 49.89656066894531,
+            "median_ns_per_row": 51.903404235839844,
+            "max_ns_per_row": 62.146820068359375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-minus38",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),-38)",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 28.0914306640625,
+            "median_ns_per_row": 35.77391052246094,
+            "max_ns_per_row": 53.565345764160156
+          },
+          "native": {
+            "min_ns_per_row": 2.57110595703125,
+            "median_ns_per_row": 2.6810989379882812,
+            "max_ns_per_row": 2.7926788330078125
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",96,22536,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 28.17821502685547,
+            "median_ns_per_row": 29.898330688476562,
+            "max_ns_per_row": 46.013511657714844
+          },
+          "previous": {
+            "min_ns_per_row": 53.009666442871094,
+            "median_ns_per_row": 56.75983428955078,
+            "max_ns_per_row": 69.10896301269531
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-minus38",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),-38)",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 27.28430938720703,
+            "median_ns_per_row": 33.01207733154297,
+            "max_ns_per_row": 52.63264465332031
+          },
+          "native": {
+            "min_ns_per_row": 2.4344100952148438,
+            "median_ns_per_row": 2.69317626953125,
+            "max_ns_per_row": 2.8079299926757812
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",76,37399,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 26.88916778564453,
+            "median_ns_per_row": 27.20960235595703,
+            "max_ns_per_row": 33.87737274169922
+          },
+          "previous": {
+            "min_ns_per_row": 53.801536560058594,
+            "median_ns_per_row": 62.00408935546875,
+            "max_ns_per_row": 72.7059097290039
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-minus38",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),-38)",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 27.947738647460938,
+            "median_ns_per_row": 34.61011505126953,
+            "max_ns_per_row": 50.599098205566406
+          },
+          "native": {
+            "min_ns_per_row": 2.4503097534179688,
+            "median_ns_per_row": 2.5037078857421875,
+            "max_ns_per_row": 2.65185546875
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",76,37399,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 27.872085571289062,
+            "median_ns_per_row": 28.84228515625,
+            "max_ns_per_row": 45.795440673828125
+          },
+          "previous": {
+            "min_ns_per_row": 53.882598876953125,
+            "median_ns_per_row": 59.329986572265625,
+            "max_ns_per_row": 77.33599853515625
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-plus38",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),38)",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 41.93592071533203,
+            "median_ns_per_row": 43.21257781982422,
+            "max_ns_per_row": 49.396202087402344
+          },
+          "native": {
+            "min_ns_per_row": 2.5240554809570312,
+            "median_ns_per_row": 2.5990753173828125,
+            "max_ns_per_row": 2.69158935546875
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",93,18272,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 44.722869873046875,
+            "median_ns_per_row": 45.762062072753906,
+            "max_ns_per_row": 52.451133728027344
+          },
+          "previous": {
+            "min_ns_per_row": 79.620361328125,
+            "median_ns_per_row": 83.24050903320312,
+            "max_ns_per_row": 108.62223815917969
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-plus38",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),38)",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 46.01924133300781,
+            "median_ns_per_row": 52.31983947753906,
+            "max_ns_per_row": 57.27894592285156
+          },
+          "native": {
+            "min_ns_per_row": 2.5262832641601562,
+            "median_ns_per_row": 2.5730133056640625,
+            "max_ns_per_row": 2.7313232421875
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",93,18272,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 48.703514099121094,
+            "median_ns_per_row": 52.12593078613281,
+            "max_ns_per_row": 60.388885498046875
+          },
+          "previous": {
+            "min_ns_per_row": 76.61660766601562,
+            "median_ns_per_row": 84.05463409423828,
+            "max_ns_per_row": 118.32300567626953
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-plus38",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),38)",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 54.04853820800781,
+            "median_ns_per_row": 69.02631378173828,
+            "max_ns_per_row": 81.46508026123047
+          },
+          "native": {
+            "min_ns_per_row": 2.3326873779296875,
+            "median_ns_per_row": 2.4592056274414062,
+            "max_ns_per_row": 2.6922225952148438
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",73,29039,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 53.682647705078125,
+            "median_ns_per_row": 67.54335021972656,
+            "max_ns_per_row": 89.77095794677734
+          },
+          "previous": {
+            "min_ns_per_row": 106.43196105957031,
+            "median_ns_per_row": 118.87264251708984,
+            "max_ns_per_row": 129.4301300048828
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-plus38",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),38)",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 53.90135192871094,
+            "median_ns_per_row": 59.59033966064453,
+            "max_ns_per_row": 73.02220153808594
+          },
+          "native": {
+            "min_ns_per_row": 2.3288726806640625,
+            "median_ns_per_row": 2.4340972900390625,
+            "max_ns_per_row": 2.5482177734375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",73,29039,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 55.66661071777344,
+            "median_ns_per_row": 67.01056671142578,
+            "max_ns_per_row": 72.11812591552734
+          },
+          "previous": {
+            "min_ns_per_row": 113.63855743408203,
+            "median_ns_per_row": 117.99971008300781,
+            "max_ns_per_row": 120.02055358886719
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      }
+    },
+    {
+      "line": "118",
+      "workload": "position-null",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),CAST(NULL AS INT))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 1.7420425415039062,
+            "median_ns_per_row": 1.7652511596679688,
+            "max_ns_per_row": 1.8682479858398438
+          },
+          "native": {
+            "min_ns_per_row": 0.65008544921875,
+            "median_ns_per_row": 0.6818771362304688,
+            "max_ns_per_row": 0.7718353271484375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",16,4966,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 2.4728775024414062,
+            "median_ns_per_row": 2.513885498046875,
+            "max_ns_per_row": 2.580322265625
+          },
+          "previous": {
+            "min_ns_per_row": 27.535751342773438,
+            "median_ns_per_row": 29.26000213623047,
+            "max_ns_per_row": 40.772438049316406
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      },
+      "role": "Constant typed-NULL fold control, excluded from function execution qualification"
+    },
+    {
+      "line": "118",
+      "workload": "position-null",
+      "expression": "TRUNCATE((v+CAST(1 AS INT))*(v-CAST(1 AS INT)),CAST(NULL AS INT))",
+      "type": "INT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 4.564598083496094,
+            "median_ns_per_row": 4.58843994140625,
+            "max_ns_per_row": 4.627227783203125
+          },
+          "native": {
+            "min_ns_per_row": 0.6345138549804688,
+            "median_ns_per_row": 0.637054443359375,
+            "max_ns_per_row": 0.8449554443359375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",16,4966,0,4224"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 3.4468994140625,
+            "median_ns_per_row": 3.5495758056640625,
+            "max_ns_per_row": 3.7183761596679688
+          },
+          "previous": {
+            "min_ns_per_row": 32.178558349609375,
+            "median_ns_per_row": 42.23155975341797,
+            "max_ns_per_row": 49.82598114013672
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,4224"
+          ]
+        }
+      },
+      "role": "Constant typed-NULL fold control, excluded from function execution qualification"
+    },
+    {
+      "line": "118",
+      "workload": "position-null",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),CAST(NULL AS INT))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": false,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 1.7271041870117188,
+            "median_ns_per_row": 1.8491744995117188,
+            "max_ns_per_row": 1.9429550170898438
+          },
+          "native": {
+            "min_ns_per_row": 0.7076263427734375,
+            "median_ns_per_row": 0.7731094360351562,
+            "max_ns_per_row": 0.7991790771484375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",16,9062,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 2.3953094482421875,
+            "median_ns_per_row": 2.4639739990234375,
+            "max_ns_per_row": 2.5669784545898438
+          },
+          "previous": {
+            "min_ns_per_row": 26.31060791015625,
+            "median_ns_per_row": 29.699325561523438,
+            "max_ns_per_row": 39.28565979003906
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      },
+      "role": "Constant typed-NULL fold control, excluded from function execution qualification"
+    },
+    {
+      "line": "118",
+      "workload": "position-null",
+      "expression": "TRUNCATE((v+CAST(1 AS BIGINT))*(v-CAST(1 AS BIGINT)),CAST(NULL AS INT))",
+      "type": "BIGINT",
+      "nullable": true,
+      "binary_rows": true,
+      "batch_rows": 1024,
+      "results": {
+        "candidate_control": {
+          "flink": {
+            "min_ns_per_row": 2.78631591796875,
+            "median_ns_per_row": 2.8228759765625,
+            "max_ns_per_row": 2.8921737670898438
+          },
+          "native": {
+            "min_ns_per_row": 0.67138671875,
+            "median_ns_per_row": 0.6793365478515625,
+            "max_ns_per_row": 0.7034912109375
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",16,9062,0,8320"
+          ]
+        },
+        "previous_control": {
+          "flink": {
+            "min_ns_per_row": 3.1566619873046875,
+            "median_ns_per_row": 3.5518035888671875,
+            "max_ns_per_row": 4.1033477783203125
+          },
+          "previous": {
+            "min_ns_per_row": 30.819259643554688,
+            "median_ns_per_row": 33.229827880859375,
+            "max_ns_per_row": 42.03510284423828
+          },
+          "allocation_probe": [
+            "NATIVE_ALLOCATION,\"integral_expression\",84,5208,0,8320"
+          ]
+        }
+      },
+      "role": "Constant typed-NULL fold control, excluded from function execution qualification"
+    }
+  ],
+  "pipelines": {
+    "118-add": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.484122375
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.302070917
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.175229875
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.282936625
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.194676084
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.165526
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.15182475
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.193198792
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.20016775
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.138675125
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.147799041
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.183309459
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.192814
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.148607708
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.453693458
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.445888041
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.254912708
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.210857083
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.206507375
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.261375208
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.283574709
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.190651292
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.189361875
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.241094417
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.242465333
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.19694
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188763
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.270105416
+        }
+      ]
+    },
+    "118-nested": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.470380916
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.315952875
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.196635834
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.212671875
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.192778292
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.155620834
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.151694292
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.190741333
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.203404583
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.160464917
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.148467708
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.200089083
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.203138583
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.145245542
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.452539209
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.469388709
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.27794875
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.200900792
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.208953459
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.270094542
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.25137425
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188948292
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.207530875
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.250777833
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.248944708
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.193096084
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.200864708
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.259171416
+        }
+      ]
+    },
+    "22-add": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.534347583
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.290293792
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.177240458
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.270885
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.200495875
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.152104458
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.145143334
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.201869417
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188942375
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.156501125
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.149377041
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.192394958
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.189921958
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.152557167
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.461842709
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.450980083
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.287907542
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.208642583
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.196888459
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.283939792
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.268801792
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.189002583
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.181838166
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.268505792
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.263646334
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.19929225
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188662166
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.269940083
+        }
+      ]
+    },
+    "22-nested": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.480410667
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.293062625
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.193403792
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.218216833
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.221746375
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.166039458
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.144713
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.206748208
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.196519708
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.142743542
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.145452166
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.22283775
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.202937292
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.142808292
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.508831667
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.480868333
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.304142459
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.213941792
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.211566375
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.257092417
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.236342292
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.205655916
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.198517792
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.250286125
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.247145792
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.212244917
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.20136975
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.253262292
+        }
+      ]
+    },
+    "118-position-add": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.49206925
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.301529708
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.200518
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.221968959
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.199241333
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.181934541
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.149888333
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.19175325
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.196939625
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.143434875
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.151558291
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.188253292
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.201865958
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.155143375
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.452963208
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.432218583
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.245304917
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.193089834
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.200740042
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.231149958
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.216203208
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.194403875
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.203603709
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.218595666
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.219569291
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.192303375
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.195267458
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.226763
+        }
+      ]
+    },
+    "118-position-nested": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.476184667
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.295305083
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.181969083
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.2186115
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.219927375
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.165354459
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.150483334
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.193057541
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.200893166
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.160048375
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.153747291
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.191256792
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.200262416
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.147627583
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.473764958
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.446871541
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.261784167
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.203435208
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.215703583
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.233522792
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.2365525
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.210261041
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.207347041
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.231090625
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.247183833
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.203475334
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.20311975
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.244212833
+        }
+      ]
+    },
+    "22-position-add": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.529265667
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.28153975
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.187152375
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.22168
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.220099625
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.172021125
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.146936959
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.210268958
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.200627542
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.143148125
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.14747675
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.209152666
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.208802583
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.14706425
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.497485708
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.459919334
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.248305167
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.209860667
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.210217708
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.2300725
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.217287291
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.205759291
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.199654917
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.227061292
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.222728584
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.206633333
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.208439542
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.221566209
+        }
+      ]
+    },
+    "22-position-nested": {
+      "candidate": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.51936
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.301050209
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.174510042
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.256151833
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.22280075
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.153083208
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.154721666
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.215521042
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.216477083
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.149474459
+        },
+        {
+          "engine": "native",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.144634667
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.213537
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.212656833
+        },
+        {
+          "engine": "native",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.146942334
+        }
+      ],
+      "previous": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.510669333
+        },
+        {
+          "engine": "previous",
+          "trial": 0,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.500133542
+        },
+        {
+          "engine": "previous",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.271310042
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "rows": 1000000,
+          "seconds": 0.211691333
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.215437958
+        },
+        {
+          "engine": "previous",
+          "trial": 2,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.270349209
+        },
+        {
+          "engine": "previous",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.250765458
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.21307025
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.220141125
+        },
+        {
+          "engine": "previous",
+          "trial": 4,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.23360175
+        },
+        {
+          "engine": "previous",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.244035042
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.206849792
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.207298292
+        },
+        {
+          "engine": "previous",
+          "trial": 6,
+          "warmup": false,
+          "rows": 1000000,
+          "seconds": 0.2376525
+        }
+      ]
+    }
+  },
+  "validation": {
+    "focused": {
+      "22-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=59 succeeded=59 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "22-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=59 succeeded=59 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=59 succeeded=59 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=59 succeeded=59 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "source_files_sha256": {
+        "src/main/java/tech/streamfusion/planner/RexExpression.java": "28d578d3a707902bce13569d2a242d44a436b9a3fc90cc6f363f8bcd6665baf1",
+        "src/test/java/tech/streamfusion/planner/IntegralArithmeticProducerEncodingTest.java": "7e9ef09e550335a2f6487268a88b4e664e69df98a9226ac6dd0b3bdbb1c386f2",
+        "src/test/java/tech/streamfusion/FlinkIntegralArithmeticSqlHarnessTest.java": "fbab019593976654b5830465260761a926289e92b275d97fe39e8d0d39e4f958",
+        "src/test/java/tech/streamfusion/FlinkIntegralTruncateSqlHarnessTest.java": "0e1a43b4f86b01731c4842d944b45639ca846e656c9638aa6a75989d5738ab96",
+        "src/test/java/tech/streamfusion/FlinkIntegralTruncatePositionSqlHarnessTest.java": "e8dd7a1c92ae8a2eb6341b673a63d250be29a1a456bdc3a34382e6fbc61aa112",
+        "src/test/java/tech/streamfusion/planner/IntegralTruncatePositionEncodingTest.java": "1bec01f902017f2e194a76e59fb02adfa9b3a5471c3933c9e96373cd950ab864"
+      }
+    },
+    "released_upstream": {
+      "22-11": {
+        "exit": 0,
+        "succeeded": [
+          "1"
+        ]
+      },
+      "22-17": {
+        "exit": 0,
+        "succeeded": [
+          "1"
+        ]
+      },
+      "118-11": {
+        "exit": 0,
+        "succeeded": [
+          "1"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "succeeded": [
+          "1"
+        ]
+      }
+    },
+    "java_release": 11,
+    "runtime_jdks": [
+      11,
+      17
+    ],
+    "flink_releases": [
+      "1.18.1",
+      "2.2.1"
+    ]
+  },
+  "method": {
+    "build": "release/default features/mimalloc; JDK 17.0.12; Apple M4 Pro; one thread",
+    "prepared_boundary": "Released generated Java on prebuilt GenericRowData/BinaryRowData versus production Calc on matching Arrow. Production operation plus equal checksum timed inside Rust. JNI entry/import/export and both perimeter transposes outside the small-operation timer; previous intrinsic JVM computation stays inside.",
+    "previous": "Actual independently compiled main encoder from base, required to bind a JVM evaluator. Candidate requires empty descriptors and nonempty intended native-function route.",
+    "signature": "Matching nullable/NOT NULL declarations on both Arrow and Java; NULL every seven rows where selected.",
+    "order": "Serial paired processes, 16 warmups, nine measurements, 131072 processed rows per trial; matching checksums retained.",
+    "pipeline": "One million nullable INT rows; rowwise source/blackhole; parallelism one; two warmups/five measurements. Retains production JNI, planning/startup and both transposes; consumed native Calc work required, candidate requires empty descriptors.",
+    "allocation": "Untimed production probe; CountingAllocator wraps System with link aliases malloc=mi_malloc/free=sf_free. Excludes JVM/C++/other-thread allocations. Timed counts disabled, wrapper check retained.",
+    "constant_null_controls": "NULL positions fold only after the recursively verified integer operand proof excludes failures. These controls measure Calc result materialization and consumption, not executed function-kernel work; exclude them from bulk function qualification."
+  },
+  "limits": [
+    "Tiny-batch fixed Calc/result costs remain; every slower cell is retained.",
+    "Independent stock-control drift and full-job variability are not causal isolation.",
+    "Bulk prepared qualification does not establish universal whole-job acceleration."
+  ],
+  "source_files_sha256": {
+    "src/main/java/tech/streamfusion/planner/RexExpression.java": "28d578d3a707902bce13569d2a242d44a436b9a3fc90cc6f363f8bcd6665baf1",
+    "native/engine/src/expr.rs": "fa841096891162d8e0e75e37a276d073c380a22d64eccd0e2b7ded8235060e2e",
+    "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "189e48daa2670d0d503557623791b4c8b2607e91eeff1ce5b6127701143e13ed",
+    "src/test/java/tech/streamfusion/FlinkIntegralArithmeticSqlHarnessTest.java": "fbab019593976654b5830465260761a926289e92b275d97fe39e8d0d39e4f958",
+    "native/engine/examples/integral_expression.rs": "5f60e18dc52df4dcff468ed3d1a2b94ea971dc33506ca32224695ffc646021a2"
+  },
+  "allocator_aliases": {
+    "malloc_equals_mi_malloc": true,
+    "free_equals_checked_sf_free": true
+  },
+  "constant_null_controls": {
+    "count": 8,
+    "stock_native_median_ratios": [
+      2.6536231884057973,
+      7.148209912536443,
+      2.533533891765548,
+      4.078531729833266,
+      2.5888111888111887,
+      7.202586826347305,
+      2.391866420613226,
+      4.155342422676939
+    ]
+  },
+  "statistics": {
+    "118-16": {
+      "stock_native_min": 0.9784604393387286,
+      "stock_native_max": 8.364333947687507,
+      "previous_native_min": 12.298004849646533,
+      "previous_native_max": 41.80094381722226,
+      "losing": 1,
+      "count": 8
+    },
+    "118-1024": {
+      "stock_native_min": 10.544565103272543,
+      "stock_native_max": 277.6901961450862,
+      "previous_native_min": 19.304071597000146,
+      "previous_native_max": 317.21752542372883,
+      "losing": 0,
+      "count": 28
+    },
+    "22-16": {
+      "stock_native_min": 0.9703704723716492,
+      "stock_native_max": 7.944474141387144,
+      "previous_native_min": 12.494763821156772,
+      "previous_native_max": 40.31332712456344,
+      "losing": 1,
+      "count": 8
+    },
+    "22-1024": {
+      "stock_native_min": 10.417372189635568,
+      "stock_native_max": 281.861390217255,
+      "previous_native_min": 19.90379213483146,
+      "previous_native_max": 333.711693801157,
+      "losing": 0,
+      "count": 28
+    },
+    "stock_control_drift": [
+      0.2706178886068389,
+      1.4480139757516381
+    ],
+    "118-add": {
+      "candidate-native": [
+        0.138675125,
+        0.148607708,
+        0.165526
+      ],
+      "candidate-stock": [
+        0.183309459,
+        0.193198792,
+        0.20016775
+      ],
+      "previous-previous": [
+        0.241094417,
+        0.261375208,
+        0.283574709
+      ],
+      "previous-stock": [
+        0.188763,
+        0.190651292,
+        0.206507375
+      ],
+      "native_stock_ratio": 0.769195844661389,
+      "native_previous_ratio": 0.5685608407052898
+    },
+    "118-nested": {
+      "candidate-native": [
+        0.145245542,
+        0.151694292,
+        0.160464917
+      ],
+      "candidate-stock": [
+        0.190741333,
+        0.200089083,
+        0.203404583
+      ],
+      "previous-previous": [
+        0.248944708,
+        0.25137425,
+        0.270094542
+      ],
+      "previous-stock": [
+        0.188948292,
+        0.200864708,
+        0.208953459
+      ],
+      "native_stock_ratio": 0.7581337758442324,
+      "native_previous_ratio": 0.6034599486622039
+    },
+    "22-add": {
+      "candidate-native": [
+        0.145143334,
+        0.152104458,
+        0.156501125
+      ],
+      "candidate-stock": [
+        0.188942375,
+        0.192394958,
+        0.201869417
+      ],
+      "previous-previous": [
+        0.263646334,
+        0.268801792,
+        0.283939792
+      ],
+      "previous-stock": [
+        0.181838166,
+        0.189002583,
+        0.19929225
+      ],
+      "native_stock_ratio": 0.7905844289329037,
+      "native_previous_ratio": 0.5658610267002983
+    },
+    "22-nested": {
+      "candidate-native": [
+        0.142743542,
+        0.144713,
+        0.166039458
+      ],
+      "candidate-stock": [
+        0.196519708,
+        0.206748208,
+        0.22283775
+      ],
+      "previous-previous": [
+        0.236342292,
+        0.250286125,
+        0.257092417
+      ],
+      "previous-stock": [
+        0.198517792,
+        0.205655916,
+        0.212244917
+      ],
+      "native_stock_ratio": 0.6999480256680146,
+      "native_previous_ratio": 0.5781902612460039
+    },
+    "118-position-add": {
+      "candidate-native": [
+        0.143434875,
+        0.151558291,
+        0.181934541
+      ],
+      "candidate-stock": [
+        0.188253292,
+        0.196939625,
+        0.201865958
+      ],
+      "previous-previous": [
+        0.216203208,
+        0.219569291,
+        0.231149958
+      ],
+      "previous-stock": [
+        0.192303375,
+        0.195267458,
+        0.203603709
+      ],
+      "native_stock_ratio": 0.7695672772810449,
+      "native_previous_ratio": 0.6902526774566121
+    },
+    "118-position-nested": {
+      "candidate-native": [
+        0.147627583,
+        0.153747291,
+        0.165354459
+      ],
+      "candidate-stock": [
+        0.191256792,
+        0.200262416,
+        0.219927375
+      ],
+      "previous-previous": [
+        0.231090625,
+        0.2365525,
+        0.247183833
+      ],
+      "previous-stock": [
+        0.20311975,
+        0.207347041,
+        0.215703583
+      ],
+      "native_stock_ratio": 0.767729132959227,
+      "native_previous_ratio": 0.6499499730503799
+    },
+    "22-position-add": {
+      "candidate-native": [
+        0.143148125,
+        0.14706425,
+        0.172021125
+      ],
+      "candidate-stock": [
+        0.200627542,
+        0.209152666,
+        0.220099625
+      ],
+      "previous-previous": [
+        0.217287291,
+        0.222728584,
+        0.2300725
+      ],
+      "previous-stock": [
+        0.199654917,
+        0.206633333,
+        0.210217708
+      ],
+      "native_stock_ratio": 0.7031430811405484,
+      "native_previous_ratio": 0.6602845820633422
+    },
+    "22-position-nested": {
+      "candidate-native": [
+        0.144634667,
+        0.149474459,
+        0.154721666
+      ],
+      "candidate-stock": [
+        0.212656833,
+        0.215521042,
+        0.22280075
+      ],
+      "previous-previous": [
+        0.23360175,
+        0.244035042,
+        0.270349209
+      ],
+      "previous-stock": [
+        0.206849792,
+        0.21307025,
+        0.220141125
+      ],
+      "native_stock_ratio": 0.6935492591020417,
+      "native_previous_ratio": 0.6125122760033782
+    }
+  }
+}

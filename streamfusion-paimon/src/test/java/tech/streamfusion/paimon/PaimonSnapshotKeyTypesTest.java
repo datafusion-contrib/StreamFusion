@@ -20,7 +20,6 @@ import org.apache.paimon.flink.LogicalTypeConversion;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.schema.Schema;
-import org.apache.paimon.schema.SchemaManager;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.types.DataField;
@@ -175,7 +174,7 @@ class PaimonSnapshotKeyTypesTest {
                 new DataField(3, "v", DataTypes.ARRAY(DataTypes.INT()))));
     var io = LocalFileIO.create();
     var path = new Path(Files.createTempDirectory("snapshot-key-types").toUri());
-    new SchemaManager(io, path)
+    PaimonTestCompat.schemaManager(io, path)
         .createTable(
             new Schema(
                 fields.getFields(),
@@ -251,9 +250,13 @@ class PaimonSnapshotKeyTypesTest {
               && precision > 0
               && keys.stream().anyMatch(k -> ((Timestamp) k).getMillisecond() < 0);
       assertEquals(
-          orderingRisk ? 0 : 2,
+          orderingRisk
+                  || (format.equals("orc")
+                      && keyType.getTypeRoot() == org.apache.paimon.types.DataTypeRoot.CHAR)
+              ? 0
+              : 2,
           merged,
-          "Native merging requires ordered decoded keys; ORC's last negative second retains Java");
+          "ORC CHAR normalization and the last negative timestamp second retain Java");
     }
     assertEquals("", NativePaimon.liveNativeHandles());
     assertEquals("", NativeParquet.liveNativeHandles());

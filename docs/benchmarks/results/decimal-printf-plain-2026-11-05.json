@@ -1,0 +1,97 @@
+{
+  "date": "2026-11-05",
+  "issue": 602,
+  "base": "624cbd7e5fa33c6485f9ec7d77c3b95517710ab3",
+  "previous_head": "a8b99422a9dfd958cf2e70898d8133a936aed48e",
+  "flink_versions": [
+    "1.18.1",
+    "2.2.1"
+  ],
+  "jdks": [
+    "11",
+    "17"
+  ],
+  "java_release": 11,
+  "build": "release --no-default-features --features mimalloc",
+  "change": "Use released DecimalData plain fixed-scale text for certified PRINTF %s/%S, then apply existing Formatter string precision/width. Numeric formats retain the DecimalData rejection. No admission, evaluator, transport or configuration change.",
+  "cases": {
+    "decimal_metadata": "precision 18/19/38, every valid scale 0..precision (78 combinations)",
+    "data": "5003 runtime GenericRowData rows, signed extrema, adjacent negative extrema, -1/0/1 unscaled, independent NULL columns, nullable/NOT NULL, multiple batches and all-filtered empty batches",
+    "formats": [
+      "%s",
+      "%S",
+      "%.4s",
+      "%1$24.7S/%2$s",
+      "%.0s"
+    ],
+    "controls": "Runtime formats, NULL format/input, composed length/equality/filter consumers, numeric-format rejection and unchanged integer/Boolean/Unicode formatting regressions",
+    "release_118": "PRINTF is absent; the explicit released validation contract passes rather than skipping or adding an unsupported function"
+  },
+  "route": "Admitted decimal SQL compares complete result maps and schemas, then requires consumed NativeCalc and no fallback. Its certified route retains JVM evaluator descriptors for rejected batches; this is not a blanket JVM-free admission claim. Standalone Rust certificate tests execute the accepted high-scale, sliced, varying-format and empty controls without a JVM.",
+  "before": {
+    "22-11": {
+      "exit": 1,
+      "result": [
+        "RESULT found=1 succeeded=0 aborted=0 skipped=0 failed=1"
+      ],
+      "native_sha256": "d45a58dbe5d6988e2ae3385d027ec4379b0f5a1b4ddb4cb290453c1d3987ec0d"
+    },
+    "22-17": {
+      "exit": 1,
+      "result": [
+        "RESULT found=1 succeeded=0 aborted=0 skipped=0 failed=1"
+      ],
+      "native_sha256": "d45a58dbe5d6988e2ae3385d027ec4379b0f5a1b4ddb4cb290453c1d3987ec0d"
+    }
+  },
+  "validation": {
+    "22-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=111 succeeded=111 aborted=0 skipped=0 failed=0"
+      ],
+      "native_sha256": "5c628da67cf17fd2cc5f2af90e1a9bad5e13a3cbee4ddb81bf51cd308a00b571"
+    },
+    "22-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=111 succeeded=111 aborted=0 skipped=0 failed=0"
+      ],
+      "native_sha256": "5c628da67cf17fd2cc5f2af90e1a9bad5e13a3cbee4ddb81bf51cd308a00b571"
+    },
+    "118-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=4 succeeded=4 aborted=0 skipped=0 failed=0"
+      ],
+      "native_sha256": "5c628da67cf17fd2cc5f2af90e1a9bad5e13a3cbee4ddb81bf51cd308a00b571"
+    },
+    "118-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=4 succeeded=4 aborted=0 skipped=0 failed=0"
+      ],
+      "native_sha256": "5c628da67cf17fd2cc5f2af90e1a9bad5e13a3cbee4ddb81bf51cd308a00b571"
+    }
+  },
+  "jvm_invocations": 230,
+  "rust_core": {
+    "passed": 920,
+    "failed": 0,
+    "ignored": 0
+  },
+  "native_artifacts": {
+    "libstreamfusion.dylib": "5c628da67cf17fd2cc5f2af90e1a9bad5e13a3cbee4ddb81bf51cd308a00b571",
+    "integral_expression": "7c323ad1a09ffac388e3a5ae8c3fe295149903d0bcc4e7f2b7f4e9eebf288b10"
+  },
+  "class_sha256": {
+    "22": "7fbc7ea2b28054b608c25e120d22f724214c212e3398ee3e037874b78d3a0c1a",
+    "118": "7fbc7ea2b28054b608c25e120d22f724214c212e3398ee3e037874b78d3a0c1a"
+  },
+  "source_sha256": {
+    "native/engine/src/flink_functions/certified/printf.rs": "ff3bc198f6b89ff3b435b0f6126aa7928ffe9a8b00e35a1745e2ab52cd69eddb",
+    "src/test/java/tech/streamfusion/FlinkDecimalPrintfSqlHarnessTest.java": "f63bd5dd4f7d1ab1c74c79d30ceb17f1c99e61bf8c4e069ae808eb6b20ded8e9",
+    "src/test/java/tech/streamfusion/FlinkDecimalBooleanTryCastSqlHarnessTest.java": "bccbf09caea34928fcd517c4876082d043f177c3f62f03e0da79e03f8e8bfaae"
+  },
+  "limits": "Correctness repair to already admitted behavior. No new performance measurement or acceleration claim; exact-head hosted CI remains separate."
+}

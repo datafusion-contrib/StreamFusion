@@ -906,7 +906,7 @@ JVM aggregate functions now default enabled under the accepted UDF performance e
 remaining coverage is tracked by [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
 The system property `streamfusion.experimental.jvmGroupAggregates` defaults to true and admits
 released Flink bridging aggregate functions and its exact legacy Table API aggregate wrapper
-in the synchronous single-phase plan when every
+in synchronous ordinary, single-phase mini-batch and two-phase local/global plans when every
 input and output field is a verified scalar: CHAR/VARCHAR, BOOLEAN, signed integers,
 FLOAT/DOUBLE, DECIMAL, BINARY/VARBINARY, DATE, TIME, TIMESTAMP/TIMESTAMP_LTZ or intervals.
 Fixed BINARY requires the existing variable-byte transport (enabled by default).
@@ -923,8 +923,8 @@ retain the ranges and startup/JIT limits without an acceleration claim.
 ARRAY/MAP/ROW fields at the operator boundary retain fallback; managed accumulator fields and
 DataViews still use Flink's own declared serializers and converters. It retains Flink's generated function,
 accumulate/retract logic, managed accumulator/DataView state and lifecycle inside an
-Arrow-batch input/output operator. It preserves each emitted changelog row; input coalescing
-does not reduce user function invocations or intermediate results. The operator disable switch
+Arrow-batch input/output operator. Ordinary execution preserves each emitted changelog row;
+input coalescing does not reduce user function invocations or intermediate results. The operator disable switch
 `streamfusion.operator.jvmGroupAggregate.enabled=false` retains whole-island fallback.
 
 The opt-in harness passes 44 checks on each released Flink line with JDK 17, at both
@@ -953,7 +953,7 @@ retaining the mixed UDAF/COUNT/managed-ListView workload. It verifies the same v
 source offsets, stable operator identities, complete key-group ownership, consumed native work
 and cleanup. Both lines also pass the existing checkpoint controls through the shared harness.
 [Savepoint evidence](../benchmarks/results/jvm-aggregate-savepoint-2026-10-16.json)
-records every stage. Cross-version migration and two-phase merge/reset remain pending.
+records every stage. Cross-version migration remains pending.
 Released Flink 2.2.1 stock/native one-phase state-layout migration is qualified separately in
 [captured managed UDF canonical state](#captured-managed-udf-canonical-state-partial).
 
@@ -966,13 +966,101 @@ coalescing so each row reads and updates expiring state on Flink's clock. Expira
 emit a delete; later input observes the same empty-state behavior as stock Flink, including
 ignored expired retractions and unsuppressed no-op updates.
 
-For non-compact DECIMAL grouping keys, the Java grouped operator projects keys through the
+For non-compact DECIMAL grouping keys in ordinary execution, the Java grouped operator projects keys through the
 released RowData serializer, matching the native exchange's existing BinaryRow layout.
 Flink's generated key projection reserves extra bytes for a NULL non-compact decimal, whereas
 its serializer omits them. Mixing those layouts gives different hashes and can route NULL
 keys into the wrong subtask. The selected keys own their bytes and always have INSERT kind,
 independent of the input changelog kind; other key types retain the generated selector.
 This does not establish stock/native savepoint-layout migration.
+
+### Single-phase JVM mini-batching
+
+With `table.exec.mini-batch.enabled=true` and the single-phase plan, verified scalar JVM
+aggregate input/output fields use the released `MiniBatchGroupAggFunction`, generated
+handlers and count trigger. The operator owns buffered keys and copies input rows before
+their Arrow batch closes. Count thresholds, watermarks, pre-checkpoint barriers and bounded
+completion finish the same logical bundles as Flink; physical Arrow batch boundaries do not.
+The `jvmMiniBatchRows` and `jvmMiniBatchBundles` counters establish actual bundle work.
+The ordinary accumulator cache and input coalescer are bypassed.
+
+Bundle membership depends on task assignment. This route uses Flink's generated BinaryRow
+key layout in both the columnar exchange and managed-state selector, including the reserved
+variable slots for NULL wide decimals and non-compact timestamps. Ordinary/native state
+continues using its existing serializer layout. This does not establish state migration
+between ordinary and mini-batch plans.
+
+Released Flink copies rows in `addInput` and evaluates each key's list during `finishBundle`.
+Its managed state, DataViews, retractions, NULLs, DISTINCT/FILTER and TTL rules remain in
+that implementation. Lifecycle follows the released bundle operator: it opens the function,
+but its closing helper only closes rich functions, so it does not invoke the aggregate
+handler's close hook. Open/evaluation failures retain their original cause and owned Arrow
+buffers are released on failure.
+
+ARRAY/MAP/ROW operator fields and async state retain fallback. Two-phase scalar bundles use the separate local/global route below.
+The UDF performance exception applies; mini-batch execution is coverage without a speedup
+claim. Collection aggregate mini-batching remains outside this scalar admission.
+The [release complete-job comparisons](../benchmarks/jvm-aggregates.md#single-phase-jvm-mini-batches-2026-11-01)
+retain stock and preceding-fallback controls, including the slower three-task STRING cases.
+
+The initial focused release selection passes 184 checks on Flink 2.2.1 and 181 with three
+release-specific exclusions on 1.18.1 (STATE_TTL hints). It covers 17 scalar argument/result
+families with append/retract input, count thresholds 1/3/17/1000, parallelism 1/3, nullable
+wide/colliding keys, shared DISTINCT/FILTER, managed ListViews, lifecycle failures and
+positive bundle counters. Operator controls compare raw updates at explicit checkpoint
+barriers, controlled TTL clocks and watermarks, with and without restore, and mutate
+borrowed input after handover. Heap/native-RocksDB jobs also pass two successive restores
+and checkpoint/canonical-savepoint rescaling through parallelisms 1 → 3 → 2 with verified
+source offsets, key-group ownership, stable operator identities and released memory.
+Three additional phase-selection controls cover an overloaded aggregate without a merge
+method. Released Flink keeps its physical plan single-phase for ordinary execution and for
+both ONE_PHASE and TWO_PHASE mini-batch requests; these cases require consumed JVM group
+input and matching raw changes/types. Merge-capable JVM functions use the local/global route below when released Flink chooses that physical plan.
+
+### Two-phase JVM mini-batching
+
+Merge-capable synchronous JVM aggregate definitions also run inside the native columnar island
+when released Flink selects a local/global plan. This route covers the same verified scalar
+input, key and result types as single-phase JVM mini-batching. Flink still chooses a single
+phase for a function without a merge method, even under a TWO_PHASE request. General
+ARRAY/MAP/ROW operator fields, collection aggregate mini-batching, specialization, approximate
+or ordered calls and asynchronous state retain fallback.
+
+The local phase uses released Flink accumulation/retraction and local bundle state. The global
+phase uses its local-combine and managed-state merge handlers, including shared DISTINCT/FILTER
+membership, managed DataViews, result comparison, TTL and changelog generation. Both phases
+retain the original released aggregate-info lists, including monotonic MIN/MAX retraction
+elision and the associated partial layout; metadata is captured before rewriting children. Count triggers,
+watermarks, checkpoint barriers and bounded completion drain logical bundles independently of
+physical Arrow batches. Local keys and buffered accumulator fields own their data after the input batch closes.
+Both phases retain released map-bundle lifecycle, including the rich-function-only close helper.
+
+Scalar accumulator fields cross the exchange as typed Arrow columns. Complex internal
+accumulator fields use their released Flink internal serializers in binary Arrow columns;
+the global phase decodes them before merging. These internal partials do not admit general
+nested UDAF inputs/results or introduce a new persistent-state codec. The exchange retains
+Flink's generated BinaryRow key layout, including NULL wide DECIMAL and timestamp slots.
+The local operator has no keyed state; the global operator owns the real logical key and
+Flink managed accumulator/DataView snapshots. Cross-version, stock/native and cross-plan
+state migration remain unverified.
+
+Focused comparisons cover append and retracting scalar values, nullable wide/colliding keys,
+keyless and nonleading grouping, shared DISTINCT/FILTER calls, legacy POJO accumulators,
+ListViews/MapViews and callback failures. Controlled-clock checks compare global bundle
+updates at TTL expiry, checkpoint barriers, watermarks and finish against the released
+runtime, with and without restore. Heap/native-RocksDB jobs verify two successive restores
+with shared DISTINCT/FILTER and both DataView families; checkpoint and canonical-savepoint
+jobs additionally rescale managed DISTINCT/MapView state through parallelisms 1 → 3 → 2.
+These preserve source offsets, operator identities, key-group ownership and released memory.
+Multi-aggregate chains compare materialized results because the preceding Rust builtin can
+emit different intermediate bundle updates; controlled bundle checks retain exact raw changes.
+
+Execution evidence distinguishes `NativeColumnarJvmLocalGroupOperator` and
+`NativeColumnarJvmGlobalGroupOperator`; each must consume input. Both expose the existing
+`jvmMiniBatchRows` and `jvmMiniBatchBundles` counters. This is UDF coverage under the accepted
+performance exception. [Release comparisons](../benchmarks/jvm-aggregates.md#two-phase-scalar-jvm-aggregates-2026-11-02) retain stock, preceding-runtime and candidate costs, including slower high-cardinality cases.
+
+### Ordinary state and validation
 
 The typed and modifier regressions compare complete values, declared types and per-key raw
 changelogs on both supported lines. Precision-38 decimals, nanosecond/wide-date timestamps,
@@ -985,8 +1073,8 @@ The unchanged upstream DISTINCT UDAF/DataView fixtures require positive native o
 [Complete-job diagnostics](../benchmarks/jvm-aggregates.md#scalar-types-distinctfilter-and-idle-retention-2026-10-23)
 retain stock, prior-fallback and native costs, including regressions under the accepted UDF exception.
 
-Mini-batching, asynchronous state, specialized functions, approximate aggregates and ordered
-calls are excluded from this boundary. Two-phase merge/reset, OVER functions and the remaining nested/table-function
+Asynchronous state, specialized functions, approximate aggregates and ordered calls remain excluded.
+OVER functions and the remaining nested/table-function
 type gaps stay tracked in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
 Verified [nested scalar results](calc-filter.md#nested-java-scalar-results) and
 [scalar table-function types](unnest-correlate.md#jvm-table-functions) are already enabled
@@ -1166,7 +1254,7 @@ improve, but medium STRING and distinct BIGINT still regress on 1.18. Distinct S
 beats its current stock control but remains slightly slower than the previous-runtime median.
 Separate-JVM control drift and all ranges are retained. Both native-library caches hit and all
 historical runtime queries verify zero native operators. This completes that measurement gap,
-not performance admission or the remaining merge/reset/OVER/type contracts in #237.
+not performance admission or the remaining OVER/type contracts in #237.
 
 The [encoding follow-up matrix](../benchmarks/results/jvm-encoding-isolated-2026-10-16.json)
 retains a further 18 aggregate cases plus both historical-runtime controls and eight mixed

@@ -168,7 +168,7 @@ class FlinkNestedScalarSqlHarnessTest {
   }
 
   @Test
-  void customTypeInferenceRetainsExplicitFallback() {
+  void delegatingCustomTypeInferenceRetainsDefaultConversions() {
     NativeFailureParity.run(
             () -> {
               var table = environment(false, false);
@@ -176,7 +176,7 @@ class FlinkNestedScalarSqlHarnessTest {
               return table;
             },
             "SELECT id, custom_inference(r) FROM inputs")
-        .assertSuccess(NativeFailureParity.Route.FALLBACK);
+        .assertSuccess(NativeFailureParity.Route.NATIVE);
   }
 
   @FunctionHint(

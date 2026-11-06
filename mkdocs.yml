@@ -139,6 +139,7 @@ nav:
       - Kafka to Iceberg results: benchmarks/kafka-iceberg-final-20261017/README.md
       - Basic type coverage: benchmarks/basic-type-coverage.md
       - JVM aggregate investigation: benchmarks/jvm-aggregates.md
+      - JVM temporal bridge costs: benchmarks/jvm-temporal-bridges.md
       - Floating GROUP BY: benchmarks/floating-group-by.md
       - Flink 1.18 compatibility: benchmarks/flink118-nexmark.md
   - Optimizations:
@@ -148,6 +149,7 @@ nav:
       - Columnar flow, transposes at edges: optimizations/columnar-flow-transposes-at-edges.md
       - Native columnar exchange: optimizations/native-columnar-exchange.md
       - Paimon append spill: optimizations/paimon-append-spill.md
+      - Columnar Paimon compaction: optimizations/paimon-compaction.md
       - Arrow columns into ORC vectors: optimizations/arrow-orc-vectors.md
       - Zero-copy local shuffle: optimizations/zero-copy-local-shuffle.md
       - Columnar changelog operators: optimizations/columnar-changelog-operators.md
@@ -184,12 +186,14 @@ nav:
       - Window-rank timestamp cells: optimizations/window-rank-timestamp-cells.md
       - Aggregate specialization fast paths: optimizations/aggregate-specialization-fast-paths.md
       - Allocation discipline: optimizations/allocation-discipline.md
+      - Boolean word blocks: optimizations/boolean-word-blocks.md
       - Memory accounting off the hot path: optimizations/memory-accounting-off-hot-path.md
       - Checkpoint partitioning in one pass: optimizations/checkpoint-partition-in-one-pass.md
       - Asynchronous Top-N memory checkpoints: optimizations/async-topn-memory-checkpoints.md
       - Sub-plan reuse digest barriers: optimizations/subplan-reuse-digest-barriers.md
       - UDFs via columnar upcall: optimizations/udf-columnar-upcall.md
       - Native string fusion: optimizations/native-string-fusion.md
+      - JDK UTF-8 decoding: optimizations/jdk-utf8-decoding.md
       - Host-exact builtins via upcall: optimizations/host-exact-builtins-upcall.md
       - Regex pattern cache: optimizations/regexp-pattern-cache.md
       - Lookup joins kept in the island: optimizations/lookup-join-in-island.md

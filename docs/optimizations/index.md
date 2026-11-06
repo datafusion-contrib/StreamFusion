@@ -31,12 +31,15 @@ Those measurements describe CI job counts and elapsed time, not SQL execution th
 - [Decimal Arrow reads](decimal-arrow-reads.md): reconstruct signed-long values directly while retaining wide-value and overflow contracts.
 - [Transfer Calc schemas once](calc-schema-once-c-data.md): cache immutable input and output schemas while retaining independent per-batch buffer ownership.
 - [Fuse exact string consumers](native-string-fusion.md): compare padding/overlay UTF-16 spans before encoding and replace verified ASCII characters directly in the final Arrow buffer.
+- [Preserve JDK UTF-8 decoding](jdk-utf8-decoding.md): share valid buffers and write replacement groups directly into Arrow.
+- [Format Boolean words in blocks](boolean-word-blocks.md): use bitmap-indexed ASCII blocks while preserving cast mode, character lengths and NULL validity.
 - [Shared-window state costs](shared-window-state.md): exact memory deltas, batched reservations and preserved accumulator state.
 - [Compact window-rank timestamp cells](window-rank-timestamp-cells.md): exact numeric digits avoid per-row timestamp struct slicing.
 - [Bounded rank payload rejection](bounded-rank-payloads.md): skip full payload encoding for batches already outside fixed rank bounds.
 - [Top-1 winner state](top1-winner-state.md): conditional winner updates and bounded clean decoded RocksDB state.
 - [Retire dead Delta checkpoint buffers](delta-live-buffer-retirement.md): release fully superseded Arrow batches and metadata.
 - [Preserve Paimon partition pruning](paimon-partition-pruning.md): carry retained partition equalities into released split planning.
+- [Columnar Paimon compaction](paimon-compaction.md): reuse released Rust file processing inside Java's selected maintenance work.
 - [Indexed pending rowtime deduplication](pending-dedup-index.md): incoming-key probes over bounded Arrow chunks.
 - [Optional Linux RocksDB io_uring reads](rocksdb-io-uring.md): configurable concurrent SST batch reads, with full before/after trial data.
 - [Fluss Arrow transport](fluss-arrow-transport.md): retained receive buffers, exactly sized serialization and bounded acknowledgement pipelining.

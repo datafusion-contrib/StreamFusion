@@ -1,6 +1,6 @@
 //! Paimon level-0 reducers. Like paimon-rust's sort_merge and pick-value aggregators, unchanged
 //! cells retain indices into Arrow columns. Only arithmetic and concatenation materialize values.
-//! The reducer shortcut and field iteration follow released Java Paimon 2.0.
+//! The reducer shortcut and field iteration follow released Java Paimon 2.1.
 //! The legacy adapter selects released 1.0 numeric overflow and retraction semantics.
 use super::*;
 #[cfg(test)]
@@ -30,6 +30,7 @@ pub(super) struct Options {
     pub fields: Vec<FieldOptions>,
     pub remove_on_delete: bool,
     pub remove_on_sequence_group: Vec<usize>,
+    pub retain_partial_delete: bool,
     #[serde(skip)]
     pub host_aggregates: Vec<Option<jni::objects::GlobalRef>>,
 }
@@ -45,6 +46,7 @@ impl Default for Options {
             fields: vec![],
             remove_on_delete: false,
             remove_on_sequence_group: vec![],
+            retain_partial_delete: false,
             host_aggregates: vec![],
         }
     }
@@ -62,6 +64,12 @@ pub(super) struct FieldOptions {
     host: bool,
     #[serde(default)]
     legacy_numeric: bool,
+    #[serde(default = "checked_arithmetic")]
+    fail_on_overflow: bool,
+}
+
+fn checked_arithmetic() -> bool {
+    true
 }
 
 impl Options {
@@ -203,7 +211,9 @@ impl<'a> Reducer<'a> {
         for &row in rows {
             let kind = kinds.value(row);
             let retract = is_retract(kind);
-            deleted = false;
+            if !self.options.retain_partial_delete || !partial || (!retract && !grouped) {
+                deleted = false;
+            }
             if partial && retract && !filled {
                 self.copy_row(&mut current, row);
                 filled = true;
@@ -257,6 +267,9 @@ impl<'a> Reducer<'a> {
                             break;
                         }
                         for &s in group {
+                            if !retract && self.options.remove_on_sequence_group.contains(&s) {
+                                deleted = false;
+                            }
                             current[s] = Cell::input(self.batch.column(s), row);
                             processed[s] = true;
                         }
@@ -464,6 +477,7 @@ fn aggregate(
                     column,
                     true,
                     field.legacy_numeric,
+                    field.fail_on_overflow,
                 );
             }
             _ => panic!(
@@ -495,6 +509,7 @@ fn aggregate(
             column,
             false,
             field.legacy_numeric,
+            field.fail_on_overflow,
         ),
         "min" | "max" => {
             if accumulator.is_null() {
@@ -580,6 +595,7 @@ fn numeric(
     column: &ArrayRef,
     retract: bool,
     legacy: bool,
+    fail_on_overflow: bool,
 ) -> Cell {
     if input.is_null() {
         return accumulator.clone();
@@ -596,8 +612,8 @@ fn numeric(
     macro_rules! integer {
         ($variant:ident, $a:expr, $b:expr) => {{
             let a = $a.unwrap_or(0);
-            // Paimon 1.0 uses Java primitive arithmetic; 2.0 checks overflow.
-            if legacy {
+            // Legacy always wraps; current Paimon exposes the field's overflow policy.
+            if legacy || !fail_on_overflow {
                 return Cell::Value(ScalarValue::$variant(Some(match (function, retract) {
                     ("sum", false) => a.wrapping_add($b),
                     ("sum", true) => a.wrapping_sub($b),
@@ -719,7 +735,12 @@ mod tests {
                     ("product", min, -1, true, min),
                 ] {
                     assert_eq!(
-                        numeric(function, &cell(a), &cell(b), &column, retract, true)
+                        numeric(function, &cell(a), &cell(b), &column, retract, true, true)
+                            .scalar(&column),
+                        ScalarValue::$variant(Some(expected))
+                    );
+                    assert_eq!(
+                        numeric(function, &cell(a), &cell(b), &column, retract, false, false)
                             .scalar(&column),
                         ScalarValue::$variant(Some(expected))
                     );
@@ -730,22 +751,27 @@ mod tests {
                             &cell(b),
                             &column,
                             retract,
-                            false
+                            false,
+                            true
                         )))
                         .is_err()
                     );
                 }
                 assert_eq!(
-                    numeric("product", &Cell::Null, &cell(5), &column, true, true).scalar(&column),
+                    numeric("product", &Cell::Null, &cell(5), &column, true, true, true)
+                        .scalar(&column),
                     ScalarValue::$variant(Some(5))
                 );
-                assert!(numeric("product", &Cell::Null, &cell(5), &column, true, false).is_null());
+                assert!(
+                    numeric("product", &Cell::Null, &cell(5), &column, true, false, true).is_null()
+                );
                 assert!(
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| numeric(
                         "product",
                         &cell(5),
                         &cell(0),
                         &column,
+                        true,
                         true,
                         true
                     )))

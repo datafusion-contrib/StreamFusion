@@ -1,9 +1,16 @@
 """Dependency setup can recover without ever invoking or retrying a test lifecycle."""
 
 import argparse
+import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 from pathlib import Path
+import re
+import shutil
+import socket
 import subprocess
+import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -18,7 +25,7 @@ class MavenDependenciesTest(unittest.TestCase):
     def options(self):
         return argparse.Namespace(maven="mvn", profile="flink-1.18", projects="streamfusion-runtime",
                                   also_make=True, pom=Path("checkout with spaces/pom.xml"),
-                                  repository=Path("repository with spaces"), artifact=[])
+                                  repository=Path("repository with spaces"), artifact=[], model_only=False)
 
     def invoke(self, statuses):
         results = [subprocess.CompletedProcess([], status) if isinstance(status, int) else status
@@ -43,6 +50,22 @@ class MavenDependenciesTest(unittest.TestCase):
         self.assertEqual(PREPARE.GOAL, command[-1])
         self.assertFalse({"test", "verify", "package", "install"} & set(command))
 
+    def test_project_models_retry_without_building_or_resolving_reactor_artifacts(self):
+        options = self.options()
+        options.model_only = True
+        with patch.object(PREPARE.subprocess, "run", side_effect=[
+                subprocess.CompletedProcess([], status) for status in (1, 0)]) as run, \
+                patch.object(PREPARE.time, "sleep"):
+            self.assertEqual(0, PREPARE.resolve(options))
+        command = run.call_args_list[0].args[0]
+        self.assertEqual(command, run.call_args_list[1].args[0])
+        self.assertIn(PREPARE.MODEL_GOAL, command)
+        self.assertIn("-Dexpression=project.id", command)
+        self.assertIn("streamfusion-runtime", command)
+        self.assertIn("-am", command)
+        self.assertNotIn(PREPARE.GOAL, command)
+        self.assertFalse({"test", "verify", "package", "install"} & set(command))
+
     def test_missing_download_is_rechecked_and_can_recover(self):
         status, calls, sleeps = self.invoke([1, 1, 0])
         self.assertEqual(0, status)
@@ -65,6 +88,81 @@ class MavenDependenciesTest(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertEqual(2, result.returncode)
         self.assertIn("unrecognized arguments", result.stderr)
+
+    @unittest.skipUnless(shutil.which("mvn"), "Maven is required for the HTTP transport integration")
+    def test_http_transports_recover_five_failed_requests_within_one_setup_attempt(self):
+        version = subprocess.check_output(["mvn", "--version"], text=True)
+        print(version, flush=True)
+        match = re.search(r"Apache Maven (\d+)\.(\d+)", version)
+        self.assertIsNotNone(match, version)
+        transports = (("native", "wagon") if tuple(map(int, match.groups())) >= (3, 9)
+                      else ("wagon",))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            options = self.options()
+            options.pom = root / "pom.xml"
+            options.repository = root / "m2"
+            options.profile, options.projects, options.also_make = "", None, False
+            options.model_only = True
+            options.pom.write_text('<project><modelVersion>4.0.0</modelVersion><groupId>test.transport</groupId>'
+                                   '<artifactId>probe</artifactId><version>1</version></project>')
+            # Populate only the fixed Help goal first; fault injection then needs no public downloads.
+            self.assertEqual(0, PREPARE.resolve(options))
+            for transport in transports:
+                with self.subTest(transport=transport):
+                    parent = ('<project><modelVersion>4.0.0</modelVersion><groupId>test.transport</groupId>'
+                              f'<artifactId>parent</artifactId><version>{transport}</version>'
+                              '<packaging>pom</packaging></project>').encode()
+                    path = f'/test/transport/parent/{transport}/parent-{transport}.pom'
+                    requests = []
+
+                    class Handler(BaseHTTPRequestHandler):
+                        def do_GET(self):
+                            if self.path == path:
+                                requests.append(self.path)
+                                if len(requests) <= 5:
+                                    if transport == "native":
+                                        self.send_error(502)
+                                    else:
+                                        self.connection.shutdown(socket.SHUT_RDWR)
+                                        self.connection.close()
+                                    return
+                                body = parent
+                            elif self.path == path + '.sha1':
+                                body = hashlib.sha1(parent).hexdigest().encode()
+                            else:
+                                self.send_error(404)
+                                return
+                            self.send_response(200)
+                            self.send_header('Content-Length', str(len(body)))
+                            self.end_headers()
+                            self.wfile.write(body)
+
+                        def log_message(self, *args):
+                            pass
+
+                    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+                    thread = threading.Thread(target=server.serve_forever, daemon=True)
+                    thread.start()
+                    try:
+                        options.pom.write_text(
+                            '<project><modelVersion>4.0.0</modelVersion><parent><groupId>test.transport</groupId>'
+                            f'<artifactId>parent</artifactId><version>{transport}</version><relativePath/></parent>'
+                            '<artifactId>probe</artifactId><repositories><repository><id>central</id>'
+                            f'<url>http://127.0.0.1:{server.server_port}</url></repository></repositories></project>')
+                        transport_options = [*PREPARE.TRANSPORT_OPTIONS,
+                                             "-Dmaven.resolver.transport=" + transport,
+                                             "-Daether.connector.http.retryHandler.interval=1",
+                                             "-Daether.transport.http.retryHandler.interval=1"]
+                        with patch.object(PREPARE, "DELAYS", ()), \
+                                patch.object(PREPARE, "TIMEOUT_SECONDS", 120), \
+                                patch.object(PREPARE, "TRANSPORT_OPTIONS", transport_options):
+                            self.assertEqual(0, PREPARE.resolve(options))
+                        self.assertEqual(6, len(requests))
+                    finally:
+                        server.shutdown()
+                        server.server_close()
+                        thread.join()
 
     def test_runtime_graphs_resolve_separately_and_retry_only_the_failed_download(self):
         options = self.options()

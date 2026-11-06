@@ -2,7 +2,7 @@
 
 Decision: preserve released planning rejection for concrete/custom List argument conversion
 classes. This is a scoped outcome within #237; the issue remains open for other contracts.
-Concrete List result conversions are a separate, valid direction, with scalar ArrayList
+Concrete List result conversions are a separate, valid direction, with scalar List
 results covered in the Correlate operator page.
 
 The released `flink-table-common` source artifacts for 1.18.1 and 2.2.1 contain identical
@@ -25,5 +25,5 @@ native-enabled run records explicit fallback before the released validator rejec
 this is not an execution failure to turn into a native feature.
 
 Reconsider this boundary when a released Flink version changes its argument conversion rule.
-Other concrete/custom List result classes, alternate nested bridges and Lists of containers
+Alternate nested bridges and Lists of containers
 remain tracked by https://github.com/datafusion-contrib/StreamFusion/issues/237.

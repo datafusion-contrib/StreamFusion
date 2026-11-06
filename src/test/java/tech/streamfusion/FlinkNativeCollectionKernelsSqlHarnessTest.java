@@ -11,18 +11,20 @@ import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.table.runtime.typeutils.ExternalTypeInfo;
 import org.apache.flink.types.Row;
-import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class FlinkNativeCollectionKernelsSqlHarnessTest {
-  private static final RecoveryExecutionMetrics METRICS = new RecoveryExecutionMetrics();
+  private final RecoveryExecutionMetrics metrics = new RecoveryExecutionMetrics();
 
-  @AfterAll
-  static void closeCluster() {
-    METRICS.close();
+  @AfterEach
+  void closeCluster() {
+    metrics.close();
   }
 
   @ParameterizedTest
@@ -166,7 +168,7 @@ class FlinkNativeCollectionKernelsSqlHarnessTest {
     }
   }
 
-  private static void check(String expression, boolean reuse, String suffix) {
+  private void check(String expression, boolean reuse, String suffix) {
     String sql = "SELECT id," + expression + " FROM src" + suffix;
     var table = environment(reuse);
     var scan = NativePlanner.install(table);
@@ -193,7 +195,7 @@ class FlinkNativeCollectionKernelsSqlHarnessTest {
                 }),
         "Expected native " + function + ": " + scan.functionExecutions());
     var earlier =
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .map(row -> row.get("jobId"))
             .collect(java.util.stream.Collectors.toSet());
     var runs = NativeFailureParity.run(() -> environment(reuse), sql);
@@ -201,14 +203,14 @@ class FlinkNativeCollectionKernelsSqlHarnessTest {
     assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
     if (!suffix.contains("id<0"))
       RecoveryExecutionMetrics.assertConsumed(
-          METRICS.nativeOperators().stream()
+          metrics.nativeOperators().stream()
               .filter(row -> !earlier.contains(row.get("jobId")))
               .collect(java.util.stream.Collectors.toList()),
           "NativeCalc");
   }
 
-  private static TableEnvironment environment(boolean reuse) {
-    var env = METRICS.environment(new Configuration(), 1, 0);
+  private TableEnvironment environment(boolean reuse) {
+    var env = metrics.environment(new Configuration(), 1, 0);
     if (reuse) env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("streamfusion.transpose.batchRows", "3");

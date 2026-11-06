@@ -40,16 +40,15 @@ with its input/output conversions. Whole SQL jobs measured 1.20× with Parquet a
 including ingress, shuffle, writing and commit.
 
 Paimon's streaming source applies the same boundary in reverse: Java plans committed files and
-owns storage access, while native Parquet decoding emits Arrow directly for append files and
-primary-key changelog files. Admitted initial deduplication snapshots also merge in native code,
-using paimon-rust's loser tree and Arrow cursors. Other snapshot merges stay in Java and pay one
-row-to-Arrow conversion after the merge. The
-[source file-reader diagnostic](../connectors/paimon.md#source-file-reader-diagnostic) measured
-1.30× append and 2.18× changelog throughput against the stock reader, including the Java byte-range
-bridge and Arrow import. These numbers measure local file reads, not whole Flink jobs.
+owns storage access, while released paimon-rust 0.4.0 decodes append and primary-key changelog
+files into Arrow. Both Paimon adapters use the same FileIO/Arrow bridge. Admitted initial
+snapshots use upstream deduplication, first-row or basic partial updates; a columnar selection
+removes winning retracts while preserving the stored add kind. The copied loser tree and reducers
+are removed. Potential sequence ties and other unverified semantics retain Java and pay one
+row-to-Arrow conversion after merging.
 
-The [snapshot catch-up diagnostic](../connectors/paimon.md#snapshot-catch-up-diagnostic) measured
-1.61–2.58× throughput over the Java merge-to-Arrow path with integer keys on one, four and eight
-commits, and 1.68–2.08× with decimal, timestamp, binary and date keys on four commits. Both paths
-include storage reads, emit Arrow and checksum the same integer payload. Keeping one running winner per key and flushing retained
-output references by bytes avoids pinning all input versions during snapshot catch-up.
+The [released-reader comparison](../connectors/paimon.md#released-reader-migration-diagnostic)
+retains production file access, JNI, projection, decode and Arrow import. It compares canonical
+released Paimon and the previous StreamFusion implementation, including unfavorable cases.
+Public reader reuse reduces owned algorithms; it does not make every merge faster. In particular,
+upstream partial-update allocation is more expensive than the previous custom gathering loop.

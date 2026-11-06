@@ -3775,3 +3775,6995 @@ SF_BENCHMARK=true mvn -B -ntp -pl streamfusion-runtime -am test -Pbench \
 
 Add `flink-1.18` to the Maven profiles for the other supported line. Complete-job
 trials and their engine order are retained in the JSON result record.
+
+## Integer ROUND with a literal position
+
+Measured on 2026-10-28 against canonical main `d89e03b5`: Apple M4 Pro, macOS aarch64,
+JDK 17.0.12, Rust 1.94.0 release without default features, system allocator with counting
+allocation wrapper. Released Flink 1.18.1 and 2.2.1 are measured independently. The query
+is `ROUND(v, literal_position)` on each signed integer width. No option is required for
+admitted positions in -38..38 or typed NULL; runtime/extreme positions stay generated.
+
+The shared `integral_rounding` example compares equal prepared logical values, widths,
+NULLs, signed minima and BIGINTs above 2^53. Stock uses the released generated expression
+over GenericRowData/BinaryRowData. Main and candidate start on Arrow in production Calc,
+with timers inside Rust. Main's actual encoding was independently checked on both lines:
+kind 17, one integer input, a matching primitive result code and the literal embedded in
+the generated expression. Its scalar JVM callback and intrinsic conversions remain timed;
+a whole-row evaluator is not substituted for that baseline. Setup, initial JNI entry,
+Arrow import/export and perimeter transposes are excluded. Full Arrow/schema equality
+precedes timing; every measured output contributes to matching wrapping checksums.
+
+All schemas are nullable; the NULL flag means actual NULLs every seventh row. Profiles
+include a native-width divisor (-1), a widened divisor (-19), shared-buffer identity (+2),
+1,024-row bulk and 16-row controls. Stock/main/candidate order rotates over 16 warmups
+and 11 measured trials of 65,536 rows per trial. Runs are sequential without concurrent
+builds or tests. Values are median [min, max] ns/row.
+
+| Flink / type / NULL values / stock format / rows / position | Stock ns/row | Main ns/row | Native ns/row | Stock/native | Main/native |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1.18.1 / BIGINT / false / binary / 1024 / -1 | 20.295 [16.401, 34.218] | 63.417 [42.317, 97.714] | 1.054 [0.970, 1.186] | 19.25x | 60.16x |
+| 1.18.1 / BIGINT / true / generic / 1024 / -1 | 25.187 [15.237, 44.253] | 57.227 [40.222, 115.171] | 1.401 [1.374, 1.504] | 17.98x | 40.86x |
+| 1.18.1 / BIGINT / true / generic / 1024 / 2 | 21.570 [19.807, 38.154] | 48.349 [42.130, 79.212] | 0.776 [0.706, 0.835] | 27.79x | 62.28x |
+| 1.18.1 / BIGINT / true / binary / 1024 / -19 | 21.341 [19.769, 45.342] | 64.600 [48.355, 104.913] | 1.433 [1.362, 1.626] | 14.89x | 45.08x |
+| 1.18.1 / BIGINT / true / binary / 16 / -1 | 8.309 [8.127, 8.578] | 522.553 [509.412, 531.985] | 26.217 [25.069, 27.737] | 0.32x | 19.93x |
+| 1.18.1 / INT / false / binary / 1024 / -1 | 14.713 [11.123, 16.694] | 56.767 [51.779, 101.699] | 1.043 [0.915, 1.096] | 14.11x | 54.44x |
+| 1.18.1 / INT / true / generic / 1024 / -1 | 9.023 [8.751, 10.166] | 32.519 [29.354, 98.593] | 1.403 [1.362, 1.588] | 6.43x | 23.18x |
+| 1.18.1 / INT / true / generic / 1024 / 2 | 9.085 [8.963, 12.779] | 39.531 [34.158, 76.625] | 0.813 [0.800, 0.884] | 11.17x | 48.61x |
+| 1.18.1 / INT / true / binary / 1024 / -19 | 10.394 [9.523, 29.420] | 44.711 [41.842, 96.408] | 1.404 [1.354, 1.561] | 7.40x | 31.85x |
+| 1.18.1 / INT / true / binary / 16 / -1 | 8.261 [8.142, 12.412] | 506.146 [501.726, 549.752] | 23.167 [22.579, 23.507] | 0.36x | 21.85x |
+| 1.18.1 / SMALLINT / false / binary / 1024 / -1 | 12.840 [12.487, 34.390] | 50.510 [40.183, 100.056] | 1.024 [0.963, 1.071] | 12.54x | 49.31x |
+| 1.18.1 / SMALLINT / true / generic / 1024 / -1 | 10.525 [9.774, 28.827] | 32.763 [31.300, 39.398] | 1.408 [1.360, 1.470] | 7.48x | 23.28x |
+| 1.18.1 / SMALLINT / true / generic / 1024 / 2 | 14.768 [11.401, 28.476] | 47.838 [35.615, 119.448] | 0.830 [0.793, 0.968] | 17.79x | 57.61x |
+| 1.18.1 / SMALLINT / true / binary / 1024 / -19 | 19.641 [14.444, 36.503] | 37.951 [33.329, 54.068] | 1.392 [1.289, 1.594] | 14.11x | 27.27x |
+| 1.18.1 / SMALLINT / true / binary / 16 / -1 | 6.919 [6.827, 27.100] | 523.215 [515.179, 527.838] | 23.293 [22.640, 23.792] | 0.30x | 22.46x |
+| 1.18.1 / TINYINT / false / binary / 1024 / -1 | 11.786 [11.625, 12.552] | 51.721 [46.646, 98.059] | 1.037 [1.020, 1.140] | 11.37x | 49.88x |
+| 1.18.1 / TINYINT / true / generic / 1024 / -1 | 10.710 [9.556, 29.348] | 41.841 [31.691, 72.752] | 1.429 [1.249, 1.666] | 7.49x | 29.27x |
+| 1.18.1 / TINYINT / true / generic / 1024 / 2 | 16.310 [14.906, 31.041] | 38.218 [35.713, 56.314] | 0.826 [0.773, 0.844] | 19.75x | 46.27x |
+| 1.18.1 / TINYINT / true / binary / 1024 / -19 | 21.159 [15.428, 37.910] | 58.338 [39.677, 113.485] | 1.396 [1.350, 1.724] | 15.15x | 41.78x |
+| 1.18.1 / TINYINT / true / binary / 16 / -1 | 9.501 [8.812, 10.990] | 569.044 [549.186, 615.807] | 24.003 [23.064, 25.495] | 0.40x | 23.71x |
+| 2.2.1 / BIGINT / false / binary / 1024 / -1 | 17.445 [16.772, 31.464] | 38.129 [36.368, 54.123] | 1.046 [1.013, 1.104] | 16.68x | 36.46x |
+| 2.2.1 / BIGINT / true / generic / 1024 / -1 | 18.519 [18.015, 36.332] | 34.995 [32.736, 55.193] | 1.427 [1.368, 1.521] | 12.97x | 24.52x |
+| 2.2.1 / BIGINT / true / generic / 1024 / 2 | 34.648 [19.582, 43.114] | 65.889 [49.659, 140.938] | 0.837 [0.698, 1.000] | 41.38x | 78.69x |
+| 2.2.1 / BIGINT / true / binary / 1024 / -19 | 20.863 [20.085, 64.760] | 65.118 [54.057, 106.282] | 1.440 [1.410, 1.745] | 14.49x | 45.22x |
+| 2.2.1 / BIGINT / true / binary / 16 / -1 | 8.451 [7.376, 13.141] | 571.144 [539.469, 584.906] | 26.101 [22.622, 28.975] | 0.32x | 21.88x |
+| 2.2.1 / INT / false / binary / 1024 / -1 | 12.973 [10.591, 17.623] | 54.145 [47.759, 98.277] | 1.066 [0.959, 1.113] | 12.17x | 50.81x |
+| 2.2.1 / INT / true / generic / 1024 / -1 | 12.401 [9.130, 14.297] | 49.821 [34.920, 102.674] | 1.415 [1.298, 1.521] | 8.77x | 35.22x |
+| 2.2.1 / INT / true / generic / 1024 / 2 | 12.624 [10.127, 27.711] | 66.395 [42.700, 91.185] | 0.837 [0.818, 0.850] | 15.09x | 79.35x |
+| 2.2.1 / INT / true / binary / 1024 / -19 | 15.711 [9.849, 37.292] | 105.385 [38.283, 164.042] | 1.377 [1.354, 1.432] | 11.41x | 76.53x |
+| 2.2.1 / INT / true / binary / 16 / -1 | 8.342 [7.921, 8.502] | 516.578 [501.617, 538.036] | 23.314 [21.689, 25.815] | 0.36x | 22.16x |
+| 2.2.1 / SMALLINT / false / binary / 1024 / -1 | 14.891 [12.455, 33.859] | 60.584 [44.174, 101.692] | 1.100 [1.064, 1.170] | 13.54x | 55.08x |
+| 2.2.1 / SMALLINT / true / generic / 1024 / -1 | 13.615 [10.628, 30.334] | 55.721 [51.214, 106.354] | 1.415 [1.271, 1.623] | 9.62x | 39.39x |
+| 2.2.1 / SMALLINT / true / generic / 1024 / 2 | 13.747 [11.222, 32.217] | 49.999 [41.403, 97.153] | 0.832 [0.741, 0.855] | 16.53x | 60.12x |
+| 2.2.1 / SMALLINT / true / binary / 1024 / -19 | 14.741 [14.492, 31.559] | 35.318 [33.274, 53.660] | 1.404 [1.383, 1.635] | 10.50x | 25.16x |
+| 2.2.1 / SMALLINT / true / binary / 16 / -1 | 7.176 [6.625, 8.462] | 557.781 [533.161, 611.802] | 24.355 [22.543, 28.458] | 0.29x | 22.90x |
+| 2.2.1 / TINYINT / false / binary / 1024 / -1 | 24.363 [11.980, 32.704] | 57.568 [33.740, 84.532] | 1.095 [0.927, 1.188] | 22.25x | 52.58x |
+| 2.2.1 / TINYINT / true / generic / 1024 / -1 | 11.126 [9.336, 39.951] | 43.566 [31.790, 70.793] | 1.387 [1.241, 1.590] | 8.02x | 31.40x |
+| 2.2.1 / TINYINT / true / generic / 1024 / 2 | 18.447 [15.104, 29.708] | 68.672 [44.312, 97.975] | 0.820 [0.750, 0.860] | 22.51x | 83.80x |
+| 2.2.1 / TINYINT / true / binary / 1024 / -19 | 16.088 [15.526, 35.040] | 54.562 [38.261, 114.259] | 1.413 [1.254, 1.724] | 11.38x | 38.61x |
+| 2.2.1 / TINYINT / true / binary / 16 / -1 | 9.165 [8.950, 9.549] | 498.255 [490.307, 538.081] | 22.830 [22.391, 24.350] | 0.40x | 21.82x |
+
+The 1,024-row candidate improves 6.43-41.38x over stock and 23.18-83.80x over main.
+The 16-row candidate remains slower than stock (0.29-0.40x), while improving
+19.93-23.71x over main. Native-width remainder avoids per-element i128 division;
+large powers use widened comparisons and nonnegative positions share the input.
+A three-second native-only sample on the slower INT/16-row profile observes
+scalar-function argument/result setup and destruction, primitive-array allocation,
+Calc projection and checksum consumption. Overlapping sampled frames do not establish
+independent CPU percentages. The raw allocation probes distinguish shared output buffers
+from newly requested values buffers. These are bounded batch gains, not a universal
+small-batch or end-to-end claim.
+
+An independent complete job processes 1M INT rows using `ROUND(v,-1)`, parallelism one,
+a bounded Flink row source and a rowwise blackhole sink. Native plans retain both
+transposes and require positive consumed NativeCalc work. Main uses its actual encoder
+first on the classpath and requires the ROUND JVM route; candidate requires `jvm=[]`.
+Two warmups precede five measured jobs in each sequential engine JVM. Seconds are
+median [min, max]:
+
+| Stock | Main scalar callback | Candidate |
+| ---: | ---: | ---: |
+| 0.143764 [0.139465, 0.157385] | 0.164713 [0.157161, 0.173648] | 0.139733 [0.130734, 0.143993] |
+
+The candidate improves main on this job, with overlapping stock/candidate ranges.
+Startup, submission and JIT remain included; these short jobs do not establish sustained
+complete-job acceleration. [All raw trials, checksums, configuration and allocation probes](results/integral-round-positions-2026-10-28.json)
+remain available. Generic small-batch and perimeter work stays in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+After building current Java test classes, set `JAVA_HOME`, `SF_NATIVE_BENCH_CLASSPATH`
+and `SF_NATIVE_LIB_DIR` to the release library directory. Build and run:
+
+```sh
+cargo build --manifest-path native/Cargo.toml -p streamfusion --release \
+  --no-default-features --lib --example integral_rounding
+SF_INTEGRAL_ROUNDING_FUNCTION=ROUND SF_INTEGRAL_ROUNDING_POSITION=-1 \
+  native/target/release/examples/integral_rounding INT true false 1024 64 16 11
+```
+
+Arguments are type, actual NULL flag, stock BinaryRowData flag, batch rows, loops,
+warmups and measured trials. Without the position environment variable the shared
+example retains its historical single-argument mode. Complete-job properties are
+`rounding.pipeline.function=ROUND`, `rounding.pipeline.position=-1` and
+`rounding.pipeline.engine=flink|previous|native`, enabled by `SF_BENCHMARK=true` and
+the `bench` profile. The previous mode requires the preceding encoder first on the
+classpath; relabeling the unchanged candidate is insufficient.
+
+Runtime parity covers every admitted position and all widths on both supported Flink
+lines and JDK 11/17. Witnesses consume 5,003 rows per width with no ROUND JVM route,
+check exact expected values/NULLs, and require positive native work and no fallback.
+Nested/widened expressions, scalar consumers, filters, empty batches, selected/unselected
+failures and extreme-position host errors are covered. The unchanged released upstream
+`ScalarFunctionsTest.testRound` passes on both lines; it supplies oracle evidence,
+while the runtime witnesses prove consumed native work. Full JVM/upstream suites remain CI checks.
+
+## Integer TRUNCATE with a literal position
+
+Measured independently on 2026-10-28 against canonical main `d89e03b5`, using the same
+Apple M4 Pro, JDK 17.0.12, Rust 1.94.0 release/no-default-features configuration,
+system/counting allocator and boundaries as [literal-position ROUND](#integer-round-with-a-literal-position).
+The query is `TRUNCATE(v, literal_position)` on INT/BIGINT. Direct narrow-integer
+signatures preserve released Flink's generated-compilation failure; explicit widening
+is supported. Admission covers INT literal positions -38..38 or typed NULL and verified
+producers only; runtime/extreme positions and other producers stay generated.
+
+Stock executes the released generated projection over prepared GenericRowData/BinaryRowData.
+Main's actual kind-17 scalar expression has one integer argument/result and embeds the
+literal position; its callback and intrinsic conversion stay inside the Rust timer.
+Candidate production Calc invokes the Arrow toward-zero kernel. Values, widths, NULLs,
+minima and BIGINTs above 2^53 match. Full output/schema equality precedes timing and all
+measured outputs contribute to matching checksums in their own runtime. Input/operator
+setup, JNI import/export and perimeter transposes are excluded only from this prepared
+functionality measurement. No concurrent tests/builds run during measurement.
+
+Every schema is nullable; actual NULLs appear every seventh row when the flag is true.
+Profiles cover -1, -19 and +2 positions, native-width/large divisors, shared-buffer
+identity and 1,024-/16-row batches. Each case rotates stock/main/candidate order for
+16 warmups and 11 measured trials of 65,536 rows. Values are median [min, max] ns/row.
+
+| Flink / type / NULL values / stock format / rows / position | Stock ns/row | Main ns/row | Native ns/row | Stock/native | Main/native |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1.18.1 / BIGINT / false / binary / 1024 / -1 | 82.793 [80.556, 96.215] | 105.433 [99.404, 160.713] | 1.088 [1.046, 1.149] | 76.06x | 96.86x |
+| 1.18.1 / BIGINT / true / generic / 1024 / -1 | 73.506 [70.045, 119.251] | 99.348 [92.960, 154.620] | 1.449 [1.300, 1.569] | 50.73x | 68.57x |
+| 1.18.1 / BIGINT / true / generic / 1024 / 2 | 79.189 [66.412, 109.428] | 96.375 [88.223, 119.227] | 0.942 [0.796, 0.998] | 84.04x | 102.28x |
+| 1.18.1 / BIGINT / true / binary / 1024 / -19 | 29.352 [28.196, 60.632] | 49.988 [47.063, 72.699] | 0.969 [0.942, 1.118] | 30.29x | 51.59x |
+| 1.18.1 / BIGINT / true / binary / 16 / -1 | 66.630 [63.771, 71.818] | 622.942 [606.855, 636.044] | 24.017 [22.496, 30.481] | 2.77x | 25.94x |
+| 1.18.1 / INT / false / binary / 1024 / -1 | 63.423 [61.859, 95.424] | 88.022 [80.719, 137.247] | 1.005 [0.931, 1.125] | 63.10x | 87.57x |
+| 1.18.1 / INT / true / generic / 1024 / -1 | 56.305 [54.621, 109.278] | 81.130 [74.706, 99.076] | 1.493 [1.376, 1.634] | 37.70x | 54.32x |
+| 1.18.1 / INT / true / generic / 1024 / 2 | 54.448 [52.867, 97.235] | 96.239 [73.837, 135.696] | 0.849 [0.821, 0.868] | 64.10x | 113.30x |
+| 1.18.1 / INT / true / binary / 1024 / -19 | 26.170 [24.514, 49.325] | 62.735 [46.422, 148.438] | 1.012 [0.946, 1.991] | 25.86x | 61.98x |
+| 1.18.1 / INT / true / binary / 16 / -1 | 52.738 [50.178, 59.952] | 595.444 [586.147, 614.468] | 24.014 [22.436, 26.831] | 2.20x | 24.80x |
+| 2.2.1 / BIGINT / false / binary / 1024 / -1 | 81.130 [77.929, 119.018] | 106.023 [100.971, 168.556] | 1.126 [1.043, 1.234] | 72.05x | 94.16x |
+| 2.2.1 / BIGINT / true / generic / 1024 / -1 | 71.206 [68.321, 89.049] | 93.903 [89.711, 114.658] | 1.430 [1.390, 1.520] | 49.80x | 65.67x |
+| 2.2.1 / BIGINT / true / generic / 1024 / 2 | 74.601 [61.907, 107.140] | 93.374 [87.193, 154.513] | 0.860 [0.745, 0.956] | 86.72x | 108.55x |
+| 2.2.1 / BIGINT / true / binary / 1024 / -19 | 29.249 [27.757, 61.291] | 66.074 [50.031, 106.862] | 1.003 [0.959, 1.086] | 29.17x | 65.90x |
+| 2.2.1 / BIGINT / true / binary / 16 / -1 | 66.425 [64.204, 75.006] | 623.986 [616.370, 649.518] | 24.160 [23.481, 25.192] | 2.75x | 25.83x |
+| 2.2.1 / INT / false / binary / 1024 / -1 | 63.797 [60.988, 116.205] | 88.085 [79.557, 121.353] | 1.036 [0.984, 1.175] | 61.60x | 85.05x |
+| 2.2.1 / INT / true / generic / 1024 / -1 | 55.975 [53.712, 95.767] | 82.354 [73.753, 118.947] | 1.420 [1.291, 1.466] | 39.41x | 57.98x |
+| 2.2.1 / INT / true / generic / 1024 / 2 | 65.570 [53.518, 104.253] | 85.697 [76.602, 140.537] | 0.852 [0.741, 0.964] | 76.96x | 100.59x |
+| 2.2.1 / INT / true / binary / 1024 / -19 | 25.875 [24.856, 50.336] | 51.790 [44.918, 96.118] | 0.957 [0.909, 1.131] | 27.04x | 54.13x |
+| 2.2.1 / INT / true / binary / 16 / -1 | 52.284 [50.070, 56.420] | 586.700 [566.703, 602.521] | 28.638 [27.205, 29.861] | 1.83x | 20.49x |
+
+At 1,024 rows the recorded candidate improves 25.86-86.72x over stock and 51.59-113.30x
+over main. At 16 rows it improves 1.83-2.77x over stock and 20.49-25.94x over main.
+The kernel avoids released Flink's DECIMAL(38,18) intermediate, uses native integer
+remainder for negative positions, writes zero when the divisor exceeds the input width,
+and shares buffers for nonnegative positions. There is no HALF_UP increment in TRUNCATE.
+Allocation probes in the raw record distinguish shared validity/identity buffers from
+new result values. These measurements do not imply that every Calc or workload accelerates.
+
+The independent complete job retains the bounded row source, both transposes and a
+rowwise blackhole sink: Flink 2.2.1, 1M INT rows, `TRUNCATE(v,-1)`, parallelism one,
+two warmups and five measured jobs per engine in sequential JVMs. The actual main
+encoder is loaded first for the previous control; route checks require its TRUNCATE
+JVM evaluator and candidate `jvm=[]`. Both native modes require consumed NativeCalc
+work and both transposes. Seconds are median [min, max]:
+
+| Stock | Main scalar callback | Candidate |
+| ---: | ---: | ---: |
+| 0.210510 [0.200087, 0.216174] | 0.215636 [0.205634, 0.227845] | 0.131335 [0.127314, 0.152458] |
+
+The recorded complete workload improves 1.60x over stock and 1.64x over main by median.
+Submission, startup, JIT and both transposes remain included; this does not establish
+sustained throughput or a universal gain. [All raw trials, checksums and allocation probes](results/integral-truncate-positions-2026-10-28.json)
+retain variability and the exact configuration. Generic Calc/perimeter costs remain in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+Use the shared release example and complete-job fixture from ROUND, selecting
+`SF_INTEGRAL_ROUNDING_FUNCTION=TRUNCATE` / `rounding.pipeline.function=TRUNCATE`,
+with the corresponding position setting. Without a position setting the historical
+single-argument mode is unchanged. The previous mode requires its actual encoder
+first on the classpath.
+
+The final combined regression passes 396 JVM test invocations across 13 classes,
+Flink 1.18.1/2.2.1 and JDK 11/17, plus all 835 release Rust core tests. Fresh all-core
+production compilation targets Java 11 on both lines. TRUNCATE parity covers all 77
+positions, declared nullability, typed NULL positions, signed extrema, exact BIGINTs,
+scalar consumers, filters and ROUND/TRUNCATE nesting. INT/BIGINT witnesses verify exact
+outputs and consumed native work over 5,003 rows per type with no evaluator or fallback.
+Selected/unselected failures, empty batches, extreme-position Underflow and narrow-input
+compilation behavior remain checked. Unchanged released upstream `testRound` and
+`testTruncate` pass on both lines; those supply oracle evidence, while the focused
+witnesses establish execution of the native kernels. Full JVM/upstream suites remain CI checks.
+
+After sharing the ROUND/TRUNCATE input handling, independent ROUND INT/-1 and BIGINT/-19
+1,024-row controls recheck output/schema/checksums and timing against stock and actual main.
+Their full measured trials are included as `shared_round_kernel_rechecks` in the TRUNCATE
+raw record; the original 40-case ROUND matrix records the preceding ROUND-only implementation.
+
+## DECIMAL to STRING
+
+The direct-input `CAST(d AS STRING)` comparison uses released Flink 1.18.1 and 2.2.1,
+JDK 17, one thread and a release/mimalloc native build. Stock Flink starts with prepared
+GenericRowData or BinaryRowData; StreamFusion starts with the same logical decimals in
+prepared Arrow Decimal128 buffers. Setup and input preparation are outside both timers.
+Stock uses the released generated expression and consumes UTF-8 result lengths; native
+times the production Calc and the same length checksum inside Rust. Output allocation and
+the previous implementation's JVM callbacks remain inside the timer. Perimeter JNI entry,
+export and row/Arrow transposes are excluded from this small-functionality comparison.
+
+Inputs cover DECIMAL(18,3), DECIMAL(38,0) and DECIMAL(38,38), with signed varying coefficients,
+maxima, zero, coefficients above 2^53 and optional NULL every seven rows. Batch sizes are
+16 and 1,024 rows. Each independent JVM runs 16 warmups and nine measured trials, alternating
+engine order. Each timed trial processes 131,072 rows. The previous control loads the actual
+preceding encoder from `2441db79` first on the classpath and verifies its JVM expression
+binding; it uses the unchanged callback implementation in the same release engine build.
+Candidate and previous controls each retain their paired stock trials. Benchmarks run serially.
+
+On Apple M4 Pro with JDK 17.0.12, the measured median ranges are:
+
+| Flink line | Batch rows | Flink / native | Previous StreamFusion / native |
+| --- | ---: | ---: | ---: |
+| 1.18.1 | 16 | 1.008–2.362x | 19.776–23.101x |
+| 1.18.1 | 1,024 | 2.861–6.438x | 5.725–8.238x |
+| 2.2.1 | 16 | 1.087–1.964x | 20.088–22.412x |
+| 2.2.1 | 1,024 | 2.816–6.363x | 5.743–8.234x |
+
+The near-1x small-batch observation is within timing variability, not evidence of a reliable
+speedup. Separate-JVM stock controls drift between 0.786x and 1.380x, so previous/candidate
+ratios do not isolate only the implementation change. The [prepared raw trials](results/decimal-string-2026-10-29.csv)
+retain every warmup/sample, paired stock control and checksum. The
+[result record](results/decimal-string-2026-10-29.json) retains min/median/max for every
+configuration, the release DSO hash and all complete-job trials.
+
+The separate bounded job compares one million nullable DECIMAL(18,3) rows at parallelism 1,
+with a rowwise sequence/map source and blackhole STRING sink. Two warmups and five measured
+trials alternate engine order. Planning, startup, production JNI and both perimeter transposes
+remain included. Each native job must consume NativeCalc rows, and its plan and evaluator
+descriptors must match the expected native or previous JVM route.
+
+| Flink line | Candidate's stock (s) | Native (s) | Previous's stock (s) | Previous StreamFusion (s) |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 0.205514 | 0.174687 | 0.206497 | 0.237319 |
+| 2.2.1 | 0.203710 | 0.176602 | 0.198950 | 0.232253 |
+
+Native job medians improve by 15.0% and 13.3% versus their paired stock controls, and 26.4%
+and 24.0% versus previous StreamFusion. These subsecond bounded jobs include startup and
+do not establish sustained throughput for other pipelines or configurations.
+
+The released DecimalData oracle checks 28,823 boundary and deterministic random values across
+every precision 1–38 and every valid scale against released DecimalData's plain formatting.
+The focused SQL matrix additionally checks resolved types, legacy/modern mode, consumers,
+nullable runtime inputs, unselected failures, empty filtered results and retained bounded and
+computed-DECIMAL paths. The unchanged released DecimalTypeTest literal, field-access and
+CASE fixtures supplement that oracle; their local expression tests are not native-work evidence.
+The runtime SQL tests separately require native execution and empty JVM evaluator descriptors.
+All 352 focused JVM invocations pass across Flink 1.18.1/2.2.1 and JDK 11/17 with no skips;
+855 release Rust core tests also pass. Each of the four version/JDK oracle runs matches all
+28,823 values. This does not replace the full upstream integration suite or CI.
+
+After compiling `DecimalStringBenchmarkFunctions`, use the released test/runtime classpath as
+`SF_NATIVE_BENCH_CLASSPATH` and the release library directory as `SF_NATIVE_LIB_DIR`:
+
+```sh
+cargo build --manifest-path native/Cargo.toml --release --locked -p streamfusion \
+  --no-default-features --features mimalloc --example decimal_string
+native/target/release/examples/decimal_string 18 3 true false 1024 128 16 9
+java -cp "$SF_NATIVE_BENCH_CLASSPATH" tech.streamfusion.planner.DecimalStringBenchmarkFunctions > oracle.csv
+native/target/release/examples/decimal_string --oracle oracle.csv
+```
+
+Arguments are precision, scale, NULL values, BinaryRowData stock input, batch rows, loops,
+warmups and measured trials. The previous control also sets `SF_DECIMAL_STRING_PREVIOUS=true`
+and prepends the independently compiled preceding encoder to the classpath. Complete jobs use
+`DecimalStringPipelineBenchmark`, `SF_BENCHMARK=true` and the corresponding
+`sf.decimal.string.previous` property/classpath pair.
+
+## Binary STARTSWITH
+
+Released Flink 2.2.1, Oracle JDK 17.0.12 and a release/mimalloc engine are compared on an
+Apple M4 Pro, at one thread. Stock executes the released generated expression over prepared
+GenericRowData or BinaryRowData. Native executes the production Calc over equivalent prepared
+Arrow Binary or FixedSizeBinary inputs. Both consume a Boolean checksum including NULLs.
+Inputs, compilation and setup are outside the timers; native timing starts and stops inside
+Rust. Output allocation, validity work and the previous implementation's JVM callback remain
+inside timing. Initial JNI entry, Arrow export and row/Arrow transposes are excluded only from
+this prepared-function gate.
+
+The 40 configurations cover 16/1,024-row batches, widths 8/64/4,096, fixed/variable bytes,
+Generic/BinaryRowData and NULL/non-NULL inputs. Needles include matching and non-matching bytes,
+empty needles and needles longer than the input. Fixed-width needles contain four bytes;
+padding is retained. Each independent JVM alternates engine order for 24 warmups and nine
+measured trials, processing 131,072 rows per trial. Previous controls prepend the independently
+compiled encoder from canonical main `3af56f9a`, assert its JVM binding and retain that callback
+inside the same production Calc. They each retain their own stock control. All runs are serial.
+
+Ranges of medians across the matching configurations, in nanoseconds per row:
+
+| Stock input | Batch rows | Stock Flink | Previous StreamFusion | Native |
+| --- | ---: | ---: | ---: | ---: |
+| GenericRowData | 16 | 1.521–2.047 | 525.025–776.607 | 19.858–29.297 |
+| GenericRowData | 1,024 | 2.043–3.137 | 36.469–220.812 | 3.028–4.568 |
+| BinaryRowData | 16 | 10.491–183.693 | 554.351–839.167 | 19.851–29.036 |
+| BinaryRowData | 1,024 | 15.052–190.540 | 37.113–213.782 | 3.033–4.622 |
+
+For 1,024-row BinaryRowData inputs, matching stock/native ratios are 3.878–62.816x and
+previous/native ratios are 8.338–70.478x. The stock generated binary getter copies bytes from
+BinaryRowData; native compares existing Arrow buffers. GenericRowData already holds byte
+arrays, so its cheap getter avoids that copying: those controls still beat native, whose
+stock/native ratios are 0.474–0.829x at 1,024 rows. Sixteen-row native batches also lose to
+stock for all GenericRowData and several BinaryRowData cases. This is a qualified bulk binary
+comparison improvement, not a universal scalar or complete-job acceleration claim.
+
+The [raw trials](results/binary-starts-2026-11-01.csv) distinguish each control and include all
+warmups, samples and checksums. The [record](results/binary-starts-2026-11-01.json) includes
+per-case min/median/max and the release library SHA-256.
+
+The separate million-row job uses nullable 64-byte inputs, parallelism 1, a rowwise sequence/map
+source and a blackhole BOOLEAN sink. Two warmups and five measured trials alternate engine
+order. JNI, planning/startup and both transposes remain included. Native operators must consume
+rows, and evaluator descriptors must match the intended native or previous JVM route.
+
+| Job control | Stock median (min–max), seconds | StreamFusion median (min–max), seconds |
+| --- | ---: | ---: |
+| Candidate | 0.170384 (0.162449–0.181901) | 0.187063 (0.185032–0.198267) |
+| Previous | 0.166628 (0.157360–0.177254) | 0.223773 (0.215104–0.239078) |
+
+Native improves 16.4% over previous StreamFusion but takes 9.8% longer than its paired stock
+control. Separate-JVM stock medians drift 2.3%; these short bounded jobs do not establish
+sustained throughput. [All complete-job trials](results/binary-starts-pipeline-2026-11-01.json)
+retain the unfavorable results as well as the gains over the callback.
+
+After compiling the test helper, set `JAVA_HOME` to the supported JDK and provide the matching
+runtime/test classpath through `SF_NATIVE_BENCH_CLASSPATH`, plus `SF_NATIVE_LIB_DIR`:
+
+```sh
+cargo build --manifest-path native/Cargo.toml --release --locked -p streamfusion \
+  --features mimalloc --lib --example binary_boundary
+native/target/release/examples/binary_boundary 64 false true true 1024 128 24 9
+```
+
+Arguments are width, fixed-width input, nullable input, BinaryRowData stock input, batch rows,
+loops, warmups and measured trials. Previous controls additionally set
+`SF_BINARY_BOUNDARY_PREVIOUS=true` and prepend the actual preceding encoder's compiled classes.
+An optional final `ends` argument selects ENDSWITH; the default remains STARTSWITH.
+Complete jobs use `BinaryBoundaryPipelineBenchmark` with `SF_BENCHMARK=true`; its test-only
+`sf.binary.boundary.previous` property must agree with that classpath. Set
+`sf.binary.boundary.suffix=true` for the suffix workload.
+
+## Binary ENDSWITH
+
+The suffix comparison uses the same released Flink 2.2.1/JDK 17.0.12, release/mimalloc,
+single-thread machine, input matrix, checksums and timer boundaries as the binary STARTSWITH
+comparison. A separate 40-configuration matrix compares the shared suffix kernel with the
+released generated expression and the actual preceding encoder from `3af56f9a`. Matching
+needles are drawn from the tail of the input. Arbitrary non-text bytes, NULLs, mismatches,
+empty/long needles and fixed padding remain represented. Each trial processes 131,072 rows;
+24 warmups and nine measured trials alternate engine order. Benchmarks run serially.
+
+Ranges of medians, in nanoseconds per row:
+
+| Stock input | Batch rows | Stock Flink | Previous StreamFusion | Native |
+| --- | ---: | ---: | ---: | ---: |
+| GenericRowData | 16 | 1.971–2.325 | 534.839–813.729 | 19.512–27.349 |
+| GenericRowData | 1,024 | 2.515–4.505 | 35.695–215.287 | 3.015–4.722 |
+| BinaryRowData | 16 | 11.218–194.367 | 535.303–804.324 | 19.411–26.987 |
+| BinaryRowData | 1,024 | 14.347–196.462 | 35.084–214.879 | 3.100–4.623 |
+
+At 1,024 rows with BinaryRowData stock inputs, native improves 3.677–62.521x over stock
+and 8.218–68.381x over previous StreamFusion. GenericRowData stock/native ratios range
+from 0.571 to 1.223x: its existing byte arrays avoid the generated BinaryRowData getter's
+copying, and most of those cheap controls still beat native. Sixteen-row controls also
+retain Calc setup and output-allocation costs. These results establish a bulk binary
+comparison improvement, not a universal speedup across input representations or batch sizes.
+
+[Raw prepared trials](results/binary-ends-2026-11-01.csv) retain every control, warmup,
+sample and checksum. The [result record](results/binary-ends-2026-11-01.json) includes
+all min/median/max values and the release library SHA-256. Use the shared `binary_boundary`
+example with a final `ends` argument to reproduce the suffix comparison.
+
+The corresponding million-row job retains the same nullable 64-byte source, blackhole sink,
+parallelism 1, both transposes and JNI as the prefix diagnostic. Two warmups and five measured
+trials alternate engines; consumed native work and the exact evaluator route are required.
+
+| Job control | Stock median (min–max), seconds | StreamFusion median (min–max), seconds |
+| --- | ---: | ---: |
+| Candidate | 0.177847 (0.163777–0.195478) | 0.198512 (0.193328–0.208405) |
+| Previous | 0.180443 (0.172684–0.201166) | 0.237657 (0.226938–0.247604) |
+
+Native takes 16.5% less time than previous StreamFusion, but 11.6% more than its paired stock
+control. Separate-JVM stock medians drift 1.5%; the diagnostic includes startup and does not
+establish sustained throughput. [All complete-job trials](results/binary-ends-pipeline-2026-11-01.json)
+retain these limits. The shared-kernel change also rechecks representative STARTSWITH prepared
+configurations; those trials are included in the suffix result record.
+
+On Flink 2.2.1, the focused prefix/suffix and adjacent STRING/BOOLEAN runtime suites pass
+42 tests each on JDK 11 and 17. They include arbitrary bytes, fixed casts, filters, conditional
+branches and empty filtered batches. Separate 5,004-row witnesses consume native Calc output
+without JVM evaluator bindings or fallback. The Rust core suite without default features
+passes 865 tests, including sliced value/validity buffers, all 256 byte values, empty arrays,
+scalar NULLs and byte-for-byte comparison oracles. The default-feature release suite also
+passes 1,004 tests with two existing ignores. CI supplies the broader version matrix.
+
+## Binary to STRING
+
+The 2026-11-01 comparison uses Apple M4 Pro / 24 GiB, released Flink 1.18.1 and
+2.2.1, JDK 17.0.12 and a Rust 1.95.0 release/mimalloc build with default features.
+JDK 11 correctness is checked separately. Stock executes the released generated
+cast over prepared GenericRowData or BinaryRowData. Native executes the complete
+production Calc over equivalent prepared Arrow Binary or FixedSizeBinary batches;
+the timer starts and stops inside Rust. Setup, initial JNI entry, final export and
+perimeter transposes are outside this small-functionality timer. Allocation and
+all conversions intrinsic to the expression remain inside it.
+
+Both timers consume NULL as -1, empty as zero, otherwise the first UTF-16 unit plus
+one. The cast still computes its complete result. Complete outputs are separately
+verified against released generated casts over 90,404 deterministic inputs per
+Flink/JDK pair. Earlier full-length consumption added a UTF-16 scan on Arrow that
+Java String.length does not perform; those diagnostics are retained separately,
+not pooled with the final results.
+
+The actual preceding encoder from main `3af56f9a` is independently compiled and
+loaded first for the previous control. It must reject the binary cast, so its
+prepared operation is the resulting generated Flink fallback, rather than a
+simulated JVM callback. Each candidate JVM alternates stock/native order; the
+previous control runs in a separate JVM with the same values and resources.
+All runs are serial, with no concurrent builds or tests, 256/512 MiB initial/max
+heap, 16 warmups, nine measured trials and 65,536 processed rows per trial.
+
+The 71 configurations include widths 8/64/4096, batches 16/1024, fixed/variable
+bytes, both stock RowData forms, NULL/non-NULL controls, ASCII, supplementary/CJK
+text, malformed surrogate tails, mixed tails and dense deterministic arbitrary
+bytes. NULL appears every seventh row when enabled. Flink 2.2 has the full
+55-configuration matrix; Flink 1.18 has 16 representative controls including
+dense invalid input. At 1,024 rows with BinaryRowData:
+
+| Flink | Stock / native median | Previous fallback / native median |
+| --- | ---: | ---: |
+| 1.18.1 | 1.225-27.153x | 1.206-26.926x |
+| 2.2.1 | 1.220-27.143x | 1.181-26.864x |
+
+Selected variable-width nullable inputs, ns/row, median [minimum-maximum]:
+
+| Flink | Bytes / content | Stock | Previous fallback | Native |
+| --- | --- | ---: | ---: | ---: |
+| 2.2.1 | 8 / ASCII | 18.90 [18.69-19.16] | 17.46 [16.40-18.01] | 1.98 [1.92-2.08] |
+| 2.2.1 | 64 / supplementary+CJK | 55.18 [50.66-91.12] | 54.81 [53.80-84.05] | 21.44 [21.19-27.80] |
+| 2.2.1 | 4096 / malformed tail | 3541.72 [3488.84-3632.33] | 3505.34 [3437.55-3646.49] | 130.49 [126.02-131.81] |
+| 2.2.1 | 4096 / dense arbitrary | 3187.90 [3090.52-3303.64] | 3085.71 [3070.70-3224.00] | 2612.54 [2536.02-2682.08] |
+| 1.18.1 | 4096 / supplementary+CJK | 2202.27 [2169.05-2249.56] | 2182.91 [2153.31-2273.44] | 1264.74 [1201.06-1324.22] |
+
+Small batches remain a limit. Across the Flink 2.2 16-row controls, stock/native
+median ratios range from 0.504x to 20.828x, and previous/native from 0.528x to
+20.673x. One 1,024-row GenericRowData case also loses to its independent previous
+fallback control despite beating paired stock. Independent stock/fallback control
+medians drift by factors 0.625-1.736. Retain both controls and their variability;
+these measurements do not isolate a universal throughput improvement.
+
+The [complete record](results/binary-character-2026-11-01.json) includes all
+configuration ranges, the production library hash, validation and full-job trials.
+[All prepared trials](results/binary-character-2026-11-01.csv.gz) retain warmups
+and checksums. The implementation shares valid buffers, copies validated prefixes,
+writes directly into Arrow and batches independent invalid-byte replacements;
+see the [decoder technique](../optimizations/jdk-utf8-decoding.md).
+
+### Complete row-source jobs
+
+Each Flink line also runs a one-million-row job at parallelism one, with 64-byte
+inputs, a malformed tail every seventh row and independent NULL every eleventh
+row. A rowwise sequence/map source feeds the cast and a blackhole STRING sink.
+Planning, startup, production JNI and both RowData/Arrow transposes stay timed.
+The candidate must show both transposes, no evaluator/fallback and consumed
+NativeCalc work; the old encoder must show stock fallback and zero native work.
+Each independent JVM uses the same 2 GiB maximum heap, two warmups and five
+measured jobs with alternating engine order. Seconds, median [minimum-maximum]:
+
+| Flink | Candidate's stock | Native | Previous's stock | Previous fallback |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | 0.228064 [0.225555-0.241543] | 0.210187 [0.209547-0.220651] | 0.213727 [0.206077-0.250102] | 0.212407 [0.206951-0.222358] |
+| 1.18.1 | 0.239151 [0.219020-0.254718] | 0.204987 [0.202946-0.213079] | 0.212720 [0.205804-0.217317] | 0.213624 [0.204449-0.216186] |
+
+Native is 7.8%/14.3% lower than paired stock medians, but the independent stock
+controls drift and ranges overlap. Gains versus the actual preceding fallback
+are only 1.0%/4.0%, also with overlapping ranges. These short jobs do not establish
+a reliable whole-job speedup or sustained connector throughput.
+
+### Profiling and validation
+
+Earlier experiments are retained as diagnostics with their original consumption
+method. The [initial partial matrix](results/binary-character-before-opt-2026-11-01.csv.gz),
+[prefix-validation experiment](results/binary-character-opt-diag-2026-11-01.csv.gz)
+and [UTF-8-chunks experiment](results/binary-character-chunks-diag-2026-11-01.csv.gz)
+consume full UTF-16 length. Profiling first located most long-ASCII samples in
+that extra result scan. After changing to constant output consumption, the
+[prefix/manual decoder](results/binary-character-prefix-copy-diagnostic-2026-11-01.csv.gz)
+still lost on dense invalid bytes. The
+[direct-builder version](results/binary-character-direct-builder-diagnostic-2026-11-01.csv.gz)
+measured 3412 ns/row versus stock 3164 for 4096-byte dense inputs. Batching
+independent replacement writes reduces that profile to 2596 versus stock 3129
+in the [final preflight](results/binary-character-final-diagnostic-2026-11-01.csv.gz).
+Only the subsequent frozen 71-configuration matrix supplies the reported ranges.
+
+Final validation passes 142 focused JVM test invocations across both released
+lines and JDK 11/17, without skips, and 1004 release Rust core tests with two
+existing ignores. Each of the four generated-expression oracles matches all
+90,404 inputs, including every single/two-byte input, surrogate continuation
+boundaries and deterministic longer arbitrary bytes. SQL coverage adds modern
+and legacy modes, fixed padding, composed consumers, TRY_CAST operand failures,
+lazy CASE, all-filtered batches, multi-batch ownership and retained fallbacks.
+Separate fixed/variable witnesses consume 5,003 rows and require `jvm=[]` plus
+positive native work. Full CI and unchanged upstream suites remain required.
+
+### Reproduce
+
+Compile the test helper with the released runtime/test classpath, then use JDK 17:
+
+```sh
+mvn -Pbench -pl streamfusion-runtime -am -Dnative.build.skip=true -DskipTests test-compile
+mvn -pl streamfusion-runtime dependency:build-classpath -Dmdep.outputFile=target/binary-character.classpath
+export SF_NATIVE_BENCH_CLASSPATH="$PWD/streamfusion-runtime/target/test-classes:$PWD/streamfusion-runtime/target/classes:$(cat streamfusion-runtime/target/binary-character.classpath)"
+export SF_NATIVE_LIB_DIR="$PWD/native/target/release"
+cargo build --manifest-path native/Cargo.toml --release --locked -p streamfusion \
+  --features mimalloc --lib --example binary_character
+native/target/release/examples/binary_character 64 4 false true true 1024 64 16 9
+java -cp "$SF_NATIVE_BENCH_CLASSPATH" tech.streamfusion.planner.BinaryCharacterBenchmarkFunctions > oracle.csv
+native/target/release/examples/binary_character --oracle oracle.csv
+```
+
+Arguments are byte width, content mode 0-4, fixed-width input, nullable values,
+BinaryRowData stock input, batch rows, loops, warmups and measured trials. The
+previous control prepends the independently compiled main encoder and sets
+`SF_BINARY_CHARACTER_PREVIOUS=true`; it fails if that encoder admits the cast.
+Use the `flink-1.18` Maven profile for the other released line. Complete jobs use
+`BinaryCharacterPipelineBenchmark`, `SF_BENCHMARK=true` and the matching
+`sf.binary.character.previous` property/classpath pair.
+
+### Modern bounded CHAR/VARCHAR targets
+
+Modern `CAST`/`TRY_CAST(binary AS VARCHAR(n)/CHAR(n))` extends the same kernel with
+Flink's UTF-16 truncation and CHAR padding. The preceding encoder at `c0d1a509` rejects
+these targets, so its control verifies that rejection and measures released Flink's
+generated fallback. The prepared comparison uses released Flink 1.18.1/2.2.1 on JDK
+17.0.12, Apple M4 Pro, one thread and a release/mimalloc build, with the binary-character
+harness above: nullable inputs, GenericRowData/BinaryRowData, 16/1,024-row batches,
+131,072 rows per trial, 16 warmups and nine measurements per engine. Targets are
+VARCHAR(4), VARCHAR(64) and CHAR(16) over 8/64-byte ASCII, supplementary+CJK and
+malformed-tail content, plus 16-byte fixed BINARY. The stock consumer maps the lone
+high surrogate of a split pair to `?`, the character Flink writes for it.
+
+Selected variable-width nullable BinaryRowData inputs at 1,024 rows, ns/row median:
+
+| Flink | Target | Bytes / content | Stock | Previous fallback | Native |
+| --- | --- | --- | ---: | ---: | ---: |
+| 2.2.1 | VARCHAR(4) | 8 / ASCII | 18.42 | 18.56 | 5.10 |
+| 2.2.1 | VARCHAR(4) | 64 / supplementary+CJK | 58.09 | 62.03 | 29.79 |
+| 2.2.1 | VARCHAR(64) | 64 / ASCII | 15.02 | 14.09 | 3.48 |
+| 2.2.1 | CHAR(16) | 8 / ASCII | 23.91 | 24.79 | 8.69 |
+| 2.2.1 | CHAR(16) | 64 / supplementary+CJK | 59.35 | 57.26 | 38.37 |
+| 1.18.1 | VARCHAR(4) | 8 / supplementary+CJK | 27.20 | 27.09 | 11.94 |
+| 1.18.1 | CHAR(16) | 64 / ASCII | 25.19 | 23.85 | 5.96 |
+| 1.18.1 | CHAR(16) | 64 / supplementary+CJK | 50.34 | 56.44 | 37.36 |
+
+Across all 42 1,024-row configurations per line, stock/native median ratios are
+1.357-8.168x on Flink 2.2.1 and 1.331-6.179x on 1.18.1; previous/native ratios are
+1.370-8.457x and 1.198-7.167x. Supplementary and CJK text gains least. Sixteen-row
+batches remain a limit: 30 of 36 such configurations on Flink 2.2.1 and 32 of 36 on
+1.18.1 are slower than stock, with stock/native ratios down to 0.404x and 0.394x.
+These results do not establish acceleration for small batches.
+
+An [initial Flink 2.2.1 matrix](results/binary-character-bounded-before-opt-2026-11-02.csv.gz)
+built every bounded row through a string builder and scanned whole rows for ASCII. Seven
+of its 42 1,024-row configurations lost to stock (down to 0.818x), all truncating short
+ASCII outputs. The measured version writes values and offsets directly, reuses input
+validity and checks only the truncated prefix for ASCII. [All final trials](results/binary-character-bounded-2026-11-02.csv.gz)
+retain warmups, checksums and the target column. Before timing, the generated-expression
+oracle matches all 90,404 inputs on both lines for STRING, VARCHAR(1), VARCHAR(2),
+VARCHAR(5), CHAR(1), CHAR(3) and CHAR(8).
+
+Complete one-million-row jobs reuse the row-source pipeline above, with a bounded
+blackhole column of the same type. Candidate runs require both transposes, consumed
+NativeCalc work and no evaluator or fallback. Two warmups and five measured jobs
+alternate engine order in one JVM per target. Seconds, median [minimum-maximum]:
+
+| Flink | Target | Stock | Native |
+| --- | --- | ---: | ---: |
+| 2.2.1 | VARCHAR(16) | 0.231831 [0.229030-0.237508] | 0.207224 [0.200973-0.220357] |
+| 2.2.1 | CHAR(16) | 0.239948 [0.232398-0.260705] | 0.212151 [0.203249-0.215048] |
+| 1.18.1 | VARCHAR(16) | 0.235405 [0.223152-0.248219] | 0.211334 [0.201674-0.211897] |
+| 1.18.1 | CHAR(16) | 0.237634 [0.235295-0.243123] | 0.202265 [0.198970-0.212588] |
+
+Native medians are 10.2-14.9% lower. The previous encoder falls back to the same
+generated stock path, so these jobs have no separate previous column. They are short and
+use one stock control per target, so they do not establish sustained connector
+throughput.
+
+Reproduce with the commands above, setting `SF_BINARY_CHARACTER_TARGET`, for example
+`VARCHAR(4)` or `CHAR(16)`, for the prepared runs and oracle. The Java oracle also reads
+`-Dsf.binary.character.target`. Complete jobs pass the target with
+`-Dsf.extraJvmArgs="-Dsf.binary.character.target=CHAR(16) -Xmx2g"`.
+
+### Latest-main bounded-cast requalification (2026-11-03)
+
+The [fresh record](results/binary-character-bounded-2026-11-03.json) repeats the
+prepared comparison on canonical main `5d628b6a` with the same final kernel and
+released lines, using release/mimalloc for both the executable and JNI DSO
+(verified from their allocator symbols). The actual preceding main encoder is
+compiled independently against the current runtime and fixture. This isolates
+admission/kernel changes, not an entire historical library replay.
+
+Twelve 1,024-row configurations per line cover VARCHAR(4), VARCHAR(64), CHAR(16),
+ASCII, supplementary/CJK, malformed tails, dense arbitrary bytes, NULLs and a
+non-null fixed-BINARY GenericRowData control. Stock/native median ratios are
+1.107-5.306x on 2.2 and 1.105-6.429x on 1.18; previous/native ratios are
+1.111-4.950x and 1.194-5.524x. All 24 bulk cells improve against both controls.
+Four of eight 16-row controls lose to stock; the lowest stock/native ratio is
+0.705x. [All trials](results/binary-character-bounded-2026-11-03.csv.gz) retain
+warmups, checksums and those slower cells.
+
+Complete-job stock/native medians, seconds, with five measured jobs per engine:
+
+| Flink | Target | Paired stock | Native | Independent stock | Previous fallback |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | VARCHAR(16) | 0.234476 | 0.211839 | 0.211336 | 0.213190 |
+| 2.2.1 | CHAR(16) | 0.231994 | 0.209202 | 0.216906 | 0.214053 |
+| 1.18.1 | VARCHAR(16) | 0.247202 | 0.210752 | 0.211955 | 0.209260 |
+| 1.18.1 | CHAR(16) | 0.233629 | 0.208619 | 0.205848 | 0.209841 |
+
+All four candidate medians beat paired stock, but independent stock/fallback
+controls drift. One native median loses to previous fallback and measured ranges
+overlap. These short jobs do not establish a reliable full-job throughput win.
+The linked JSON retains all complete-job trials and configuration ranges.
+
+Fresh validation passes 292 focused JVM invocations across Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java release 11. Twelve existing fixed-BINARY controls
+abort on Flink 1.18 under their version assumptions; the bounded-cast tests all
+execute. Twenty-eight generated-expression oracle runs each match 90,404 complete
+outputs, covering seven targets across all four release/JDK pairs. The Rust core
+suite passes 892 tests without ignores. Runtime witnesses consume 5,003 rows and
+require empty evaluator descriptors plus consumed NativeCalc work; lazy branches,
+all-filtered failures, operand exceptions and represented consumers have explicit
+SQL regressions. Full hosted CI remains a separate check.
+
+## DECIMAL to STRING TRY_CAST
+
+Direct-input `TRY_CAST(d AS STRING)` reuses the qualified native formatter above. Its
+previous encoder at `3af56f9a` rejects this signature, so the previous control verifies that
+rejection and measures released Flink's generated fallback; it does not substitute a JVM
+callback that the old query would never execute. Modern and legacy modes share the same
+plain formatting. Bounded targets and computed DECIMAL operands retain their existing rules.
+
+The prepared comparison uses released Flink 1.18.1/2.2.1 on JDK 17.0.12, Apple M4 Pro,
+one thread, and a release/default-feature/mimalloc build. It retains the preceding comparison's
+RowData and Arrow timer boundaries, UTF-8 length checksum, three DECIMAL types, signed
+coefficients, optional NULLs, GenericRowData/BinaryRowData and 16/1,024-row batches. Each
+of the 48 configurations processes 131,072 rows per trial, with 16 warmups and nine
+measurements per engine. Separate candidate/previous processes retain both stock controls;
+all timings run serially. Median ratio ranges are:
+
+| Flink line | Batch rows | Stock / native | Previous fallback / native |
+| --- | ---: | ---: | ---: |
+| 1.18.1 | 16 | 1.084–2.549x | 1.215–3.082x |
+| 1.18.1 | 1,024 | 3.103–7.309x | 3.451–7.837x |
+| 2.2.1 | 16 | 1.089–2.716x | 1.082–3.022x |
+| 2.2.1 | 1,024 | 2.830–7.505x | 3.104–7.949x |
+
+The small-batch results closest to 1x do not establish a reliable speedup. Independent
+stock controls drift by 0.994–1.491x, so the previous/candidate ratios also contain run
+variation. The [raw trials](results/decimal-try-string-2026-11-01.csv.gz) keep every warmup,
+measurement and checksum; the [result record](results/decimal-try-string-2026-11-01.json)
+includes per-configuration min/median/max, build hash and complete-job samples.
+
+The separate complete job processes one million nullable DECIMAL(18,3) rows with a rowwise
+sequence/map source and blackhole STRING sink at parallelism one. Two warmups and five
+measurements alternate paired engines. Planning, startup, production JNI and both candidate
+perimeter transposes remain included. Candidate plans require consumed NativeCalc work and
+`jvm=[]`; previous plans require the actual unsupported-TRY_CAST fallback and no native work.
+
+| Flink line | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous fallback median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 0.210033 (0.198174–0.341704) | 0.178884 (0.175655–0.193307) | 0.173271 (0.171626–0.178455) | 0.176192 (0.171641–0.181437) |
+| 2.2.1 | 0.200191 (0.189743–0.214374) | 0.176218 (0.172520–0.180682) | 0.180489 (0.175176–0.203107) | 0.171967 (0.163684–0.176673) |
+
+Candidate medians improve over their paired stock controls, but the previous fallback is
+1.5%/2.5% faster than native. The independent stock drift, overlapping ranges and subsecond
+startup cost prevent a reliable complete-job improvement claim. These observations do not
+establish sustained throughput for other jobs.
+
+The focused suite passes 91 tests on each released line/JDK 11/17 pair, 364 invocations
+with no skips. It retains the CAST regressions and adds TRY_CAST to the all-precision/scale
+encoding checks, runtime multi-batch witnesses, consumers, NULLs, lazy branches and empty
+filtered results. Computing a failing operand still fails; bounded TRY_CAST remains fallback.
+The unchanged formatting kernel keeps its preceding released-DecimalData oracle coverage;
+this admission change does not replace the full upstream integration suite or CI.
+
+Use the preceding `decimal_string` commands with `SF_DECIMAL_STRING_TRY_CAST=true`.
+For the old control also set `SF_DECIMAL_STRING_PREVIOUS=true` and prepend an independently
+compiled `3af56f9a` encoder. Complete jobs set `SF_BENCHMARK=true` and
+`-Dsf.decimal.string.tryCast=true`, plus the matching previous property/classpath when required.
+
+## STRING IS_ALPHA
+
+The native classifier uses the actual worker JDK's immutable BMP letter bitmap. It
+copies 8 KiB once during expression compilation, outside the prepared-operation timer;
+batch and row execution do not call Java. ASCII letters take a byte fast path. The
+UTF-16-char contract rejects supplementary letters, combining marks and isolated
+surrogates, and returns nonnullable FALSE for NULL or empty strings.
+
+The original alpha matrix uses nullable generated Java/encoder signatures for both data
+populations; its nullable flag selects whether rows contain NULL. It does not establish
+the cost of a declared NOT NULL signature. The separate
+[matching NOT NULL controls](#declared-not-null-classification-controls) below qualify that
+signature explicitly. Original trials remain available with their source-commit metadata.
+
+Prepared controls use released Flink 1.18.1/2.2.1, JDK 17.0.12, Apple M4 Pro, one thread
+and a release/default-feature/mimalloc native build. Flink starts with prepared
+GenericRowData or BinaryRowData and times its released generated expression in Java.
+StreamFusion starts with equivalent Arrow strings and times the production Calc and a
+TRUE-count checksum inside Rust. Both engines consume the same logical Boolean results.
+Perimeter JNI/import/export and row/Arrow transposes are outside this small-operation
+timer; output allocation and previous behavior's intrinsic JVM callback remain inside.
+
+The 96 configurations cover ASCII letter bodies of 16/128 characters, mixed ASCII,
+BMP letters, mixed Unicode and supplementary-letter rejection with 16-character bodies,
+varying prefixes and optional NULL every seven rows. Each independently prepared JVM
+runs 16 warmups and nine measurements, 131,072 rows per trial, with alternating paired
+engines. The previous control prepends the actual `3af56f9a` encoder and requires its
+generated evaluator binding. Candidate and previous processes retain separate stock
+controls. All measurements run serially.
+
+| Flink line | Batch rows | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.612–2.389x | 9.915–31.988x |
+| 1.18.1 | 1,024 | 1.321–13.424x | 3.189–25.839x |
+| 2.2.1 | 16 | 0.628–2.359x | 10.343–33.583x |
+| 2.2.1 | 1,024 | 1.312–12.425x | 3.058–26.485x |
+
+All 1,024-row cells improve over their paired stock controls, including cached
+GenericRowData. Twenty-three 16-row cells lose to stock: small batches and early-rejecting
+strings expose fixed Calc/output costs. These losses remain in the
+[raw trials](results/string-alpha-2026-11-01.csv.gz) and
+[result record](results/string-alpha-2026-11-01.json). Independent stock controls drift
+by 0.761–1.774x; previous/candidate ratios include that variability. The strongest
+supplementary-string ratios do not describe the cost of scanning an entire letter string.
+
+The separate complete job processes one million nullable mixed-Unicode strings with a
+rowwise sequence/map source and BOOLEAN NOT NULL blackhole sink at parallelism one.
+Two warmups and five measurements alternate paired engines. The measured job retains
+planning, startup, production JNI and both perimeter transposes. Candidate and previous
+plans both require consumed NativeCalc work, with empty versus present JVM evaluator
+descriptors respectively.
+
+| Flink line | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 0.209614 (0.204382–0.218415) | 0.213378 (0.205885–0.222676) | 0.218010 (0.205615–0.228056) | 0.334182 (0.320680–0.358193) |
+| 2.2.1 | 0.233453 (0.226726–0.262184) | 0.213483 (0.209738–0.218223) | 0.220989 (0.211911–0.226113) | 0.315859 (0.307981–0.323943) |
+
+The 2.2 native median improves 8.6% over its paired stock and 32.4% over previous
+StreamFusion. The 1.18 native median is 1.8% slower than paired stock, with overlapping
+ranges, while improving 36.2% over previous StreamFusion. These startup-heavy bounded
+jobs do not establish a universal or sustained whole-job speedup.
+
+Focused SQL checks every BMP unit, supplementary letters, NULL/empty inputs, CHAR casts,
+consumers, filters, CASE, grouping, selected failures and empty filtered batches on each
+released Flink/JDK 11/17 pair. The multi-batch witness checks every input ID exactly once,
+positive native work and `jvm=[]`. Released upstream `ScalarFunctionsTest.testIsAlpha`
+assertions also run unchanged on all four pairs; those local expression tests are not
+native-work evidence. Noncharacter and sensitive-expression evaluator rules remain separate.
+
+After compiling `StringClassificationBenchmarkFunctions`, supply the corresponding released
+runtime/test classpath as `SF_NATIVE_BENCH_CLASSPATH` and release library directory as
+`SF_NATIVE_LIB_DIR`:
+
+```sh
+cargo build --manifest-path native/Cargo.toml --release --locked -p streamfusion \
+  --features mimalloc --lib --example string_classification
+native/target/release/examples/string_classification unicode 16 true true 1024 128 16 9
+```
+
+Arguments are corpus, body characters, NULL inputs, BinaryRowData stock input, batch rows,
+loops, warmups and measured trials. Available corpora are `ascii`, `mixed`, `bmp`, `unicode`
+and `supplementary`. The old control also sets `SF_CLASSIFICATION_PREVIOUS=true` and prepends
+an independently compiled `3af56f9a` encoder. Complete jobs use
+`StringClassificationPipelineBenchmark`, `SF_BENCHMARK=true` and the matching
+`sf.classification.previous` property/classpath pair.
+
+## STRING IS_DIGIT
+
+The digit classifier uses the same worker-JDK snapshot lifecycle and Arrow/RowData timing
+boundaries as IS_ALPHA. A separate 8 KiB BMP digit bitmap preserves `Character.isDigit(char)`;
+NULL/empty strings, supplementary digits, signs, decimal points, superscripts and Roman
+numerals return nonnullable FALSE. ASCII decimal digits have a specialized byte loop.
+There are no batch/row JVM calls in the classifier.
+
+As in the original alpha matrix, generated Java/encoder signatures are nullable in all
+original digit cells; the flag selects data NULLs. See the separate
+[declared NOT NULL controls](#declared-not-null-classification-controls) for that signature.
+
+The prepared controls cover ASCII digit bodies of 16/128 characters, mixed ASCII, BMP
+digits, mixed Unicode digits and supplementary-digit rejection with 16-character bodies,
+varying prefixes, NULL every seven rows, GenericRowData/BinaryRowData and 16/1,024-row
+batches. Flink 1.18.1/2.2.1, JDK 17.0.12, Apple M4 Pro, one thread and a release/default-feature/
+mimalloc build match the alpha controls. Every trial consumes 131,072 Boolean results,
+with 16 warmups and nine measurements, alternating paired engines and retaining both
+independent stock controls. The previous process uses the actual `3af56f9a` encoder and
+its generated JVM callback.
+
+| Flink line | Batch rows | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.527–3.017x | 10.051–32.780x |
+| 1.18.1 | 1,024 | 1.160–13.203x | 2.605–25.935x |
+| 2.2.1 | 16 | 0.530–2.556x | 9.431–31.182x |
+| 2.2.1 | 1,024 | 1.172–12.236x | 2.471–25.662x |
+
+Every 1,024-row configuration improves over paired stock, including cached GenericRowData.
+Twenty-three 16-row cells lose to stock: fixed Calc/output costs remain visible on tiny
+batches. Independent stock controls drift by 0.710–1.553x. Supplementary-digit rejection
+does not measure the cost of scanning a full digit string. The
+[raw trials](results/string-digit-2026-11-01.csv.gz) and
+[result record](results/string-digit-2026-11-01.json) retain these limitations and all losses.
+
+The separate one-million-row jobs use nullable mixed Unicode digits, a rowwise source and
+BOOLEAN NOT NULL blackhole, parallelism one, two warmups and five measurements. Production
+JNI, planning/startup and both transposes stay in the job path. Both candidates require
+consumed NativeCalc work; only the candidate requires empty JVM evaluator descriptors.
+
+| Flink line | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 0.208241 (0.206801–0.219251) | 0.214863 (0.209152–0.225335) | 0.207409 (0.202933–0.213170) | 0.331346 (0.322421–0.333293) |
+| 2.2.1 | 0.220444 (0.216505–0.229146) | 0.217703 (0.213208–0.220951) | 0.214789 (0.209489–0.223645) | 0.315420 (0.306975–0.349680) |
+
+The 2.2 native median is 1.2% faster than paired stock and 31.0% faster than previous
+StreamFusion. The 1.18 median is 3.2% slower than paired stock and 35.2% faster than previous
+StreamFusion. Stock/native ranges overlap on both lines. These startup-heavy jobs do not
+establish a reliable whole-job win over stock or a universal sustained throughput gain.
+
+Focused classification checks pass 56 JVM invocations across released Flink 1.18.1/2.2.1
+and JDK 11/17, including both alpha/digit kernels after shared initialization was factored.
+Every BMP unit, supplementary characters, NULL/empty inputs, CHAR casts, consumers, grouping,
+lazy and selected failures, and multi-batch IDs are checked against stock. The unchanged
+released `ScalarFunctionsTest.testIsDigit` also passes on all four pairs; these local
+expression tests do not establish native work. Default-feature release/mimalloc Rust core:
+1,004 pass, two pre-existing ignores.
+
+Eight 1,024-row alpha controls after sharing initialization cover ASCII 16/128, nullable
+mixed Unicode BinaryRowData and BMP GenericRowData on both lines. All remain faster than
+paired stock, by 1.350–4.314x. Their summaries are in the digit result record and
+[raw trials](results/string-alpha-shared-2026-11-01.csv.gz) retain the separate controls.
+
+Reproduce with the IS_ALPHA commands and arguments, additionally setting
+`SF_CLASSIFICATION_DIGIT=true` for the native example. For the complete-job launcher set
+`-Dsf.classification.digit=true` instead. Both are benchmark controls, not production switches.
+The old control keeps its matching `SF_CLASSIFICATION_PREVIOUS=true` or
+`-Dsf.classification.previous=true` and independently compiled encoder classpath.
+
+## STRING IS_DECIMAL
+
+Flink's predicate tries Java integer, long and double parsing. Native ASCII lexical
+classification therefore accepts signed integers/fractions, decimal/hexadecimal exponents,
+floating suffixes, signed NaN/Infinity and magnitude overflow. It trims only U+0000..U+0020
+on the double path. A separate worker-JDK snapshot supplies packed BMP radix-10 digit
+values for Unicode integers, which require signed-long bounds and no trimming. No row/batch
+Java parser, exception allocation or floating conversion remains in the classifier.
+
+Controls use released Flink 1.18.1/2.2.1, JDK 17.0.12, Apple M4 Pro, one thread and a
+release/default-feature/mimalloc build. The generated released RowData evaluator and
+production Arrow Calc consume matching Boolean TRUE counts in their own runtimes. Native
+timers are inside Rust after Arrow preparation and before export. Perimeter JNI and both
+transposes are outside this small-operation timer; intrinsic previous JVM callbacks remain
+inside. Candidate and actual `3af56f9a` encoder processes retain independent stock controls.
+
+The 160 prepared configurations cover ASCII digit bodies of 1/6/16/128 characters, fractions,
+decimal/hexadecimal exponents, mixed invalid/empty strings, BMP/Unicode digits, Unicode
+integer overflow, special values and supplementary-digit rejection. Each has GenericRowData/
+BinaryRowData and nullable/nonnullable controls at 1,024 rows. Six representative corpora also
+have 16-row controls. Trials process 32,768 rows with 16 warmups and nine measurements,
+alternating paired engines, with all timing jobs run serially.
+
+| Flink line | Batch rows | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.653–54.114x | 35.620–81.912x |
+| 1.18.1 | 1,024 | 2.310–229.729x | 10.439–256.494x |
+| 2.2.1 | 16 | 1.369–59.370x | 28.012–84.348x |
+| 2.2.1 | 1,024 | 3.261–203.293x | 9.438–215.964x |
+
+All 1,024-row cells improve over paired stock, including cached GenericRowData and actual
+NOT NULL declarations. Four 16-row 1.18 cells lose to stock; fixed Calc/output cost remains
+visible on short integer strings. The strongest gains avoid released Flink's caught parser
+exceptions for fractional, invalid or non-int numeric syntax; they do not describe arbitrary
+numeric arithmetic or every string input. Independent stock controls drift by 0.423–2.257x,
+and previous/native ratios include that variability. The
+[result record](results/string-is-decimal-2026-11-01.json) and
+[raw trials](results/string-is-decimal-2026-11-01.csv.gz) retain every qualified cell and trial.
+
+Separate one-million-row jobs retain production JNI, startup/planning, a rowwise source,
+BOOLEAN NOT NULL blackhole and both transposes. They use nullable ASCII bodies of six
+characters or mixed Unicode bodies of sixteen, parallelism one, two warmups and five
+measurements. Both native modes require consumed Calc work; the candidate additionally
+requires empty JVM evaluator descriptors. The independent previous process keeps its own
+stock control.
+
+| Flink line / corpus | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / ASCII 6 | 0.204180 (0.188094–0.212755) | 0.192536 (0.189526–0.208814) | 0.190818 (0.186239–0.199758) | 0.252382 (0.245369–0.265800) |
+| 2.2.1 / ASCII 6 | 0.199403 (0.196239–0.213949) | 0.183029 (0.177659–0.187342) | 0.211075 (0.209459–0.220351) | 0.259388 (0.247681–0.320371) |
+| 1.18.1 / Unicode 16 | 1.459045 (1.447974–1.466384) | 0.250724 (0.242249–0.255112) | 1.468166 (1.455251–1.487260) | 1.802646 (1.780039–1.815647) |
+| 2.2.1 / Unicode 16 | 1.311750 (1.308548–1.336238) | 0.237144 (0.225340–0.255713) | 1.340659 (1.302556–1.365580) | 1.691473 (1.621389–1.739532) |
+
+The ASCII native medians improve 5.7%/8.2% over paired stock and 23.7%/29.4% over
+previous StreamFusion on 1.18/2.2 respectively. Stock/native ranges overlap on 1.18;
+independent stock controls also vary. Unicode medians improve 5.82x/5.53x over paired
+stock on these exact jobs: longer Unicode integer strings cause the released predicate
+to allocate and catch integer-parser failures before trying long parsing. These bounded
+jobs do not establish a universal or sustained whole-job gain, and neither the source
+string construction nor the sink/transpose costs are removed.
+
+Focused classification checks pass 76 JVM invocations across released Flink 1.18.1/2.2.1
+and JDK 11/17, including the three classifiers after shared initialization changes. The
+decimal witnesses compare all 65,536 BMP single units and 82,556 embedded-unit,
+grammar-combination and seeded random strings, plus positive/negative signed-long bounds
+for every BMP digit, against the released
+parser and stock runtime SQL. Unique source IDs, complete output counts, consumed native
+work, no fallback and empty JVM descriptors are required. Unchanged released upstream
+`ScalarFunctionsTest.testIsDecimal` passes on all four pairs; local expression assertions
+are separate from the native witnesses. Default-feature release/mimalloc Rust core:
+1,007 pass, two pre-existing ignores.
+
+Reproduce with the classification example and `SF_CLASSIFICATION_DECIMAL=true` instead of
+the digit flag. The complete-job launcher takes `-Dsf.classification.decimal=true`, plus
+`-Dclassification.pipeline.corpus=ascii -Dclassification.pipeline.width=6` or
+`-Dclassification.pipeline.corpus=unicode -Dclassification.pipeline.width=16`.
+These are benchmark-only controls. The example additionally accepts `fraction`, `exponent`,
+`hex`, `special` and `unicode-overflow` corpora. Previous controls prepend the independently
+compiled main encoder and enable the existing previous-mode flag.
+
+## Declared NOT NULL classification controls
+
+These additional controls declare STRING NOT NULL in the actual encoder and generated
+released Java input signature and use a matching nonnullable Arrow field with no NULL data.
+They separate that signature from the original alpha/digit matrices, whose no-NULL data
+populations still used nullable Java signatures. `StringClassificationBenchmarkFunctions`
+requires the fixture's data setting to match its signature. The native example passes that
+setting before creating the JVM; it is not a production option.
+
+The 176 configurations cover 48 alpha, 48 digit and 80 decimal cells on both releases,
+with the same corpora, prepared timing boundaries, one thread, release/default/mimalloc,
+16 warmups and nine measurements. Alpha/digit trials process 131,072 rows and decimal
+trials 32,768 rows. Every 1,024-row cell beats its paired stock control. Twelve alpha,
+eleven digit and two decimal 16-row cells lose to stock; no small-batch win is assumed.
+The decimal NOT NULL cells are included in its 160-cell qualified matrix, not extra
+independent evidence for that total.
+
+The [result record](results/classification-not-null-2026-11-01.json) and
+[raw trials](results/classification-not-null-2026-11-01.csv.gz) retain both stock controls,
+all variability and each slower case. Existing nullable-signature data remains in the
+original alpha/digit records with its scope and source commits explicitly identified.
+
+## Integer ABS over arithmetic
+
+The admitted producer tree contains only integer inputs, typed literals, recursive lossless
+widening, nested ABS, addition, subtraction and multiplication. Every arithmetic node wraps
+to its resolved Java width. Division, remainder, narrowing and other unverified producers
+retain the complete generated outer expression.
+
+`IntegralExpressionBenchmarkFunctions` parses real SQL through each released planner and
+uses the actual encoder, including the independently compiled preceding main encoder.
+The candidate must have no JVM descriptors; the previous control must bind one. Stock uses
+the released generated evaluator on prepared GenericRowData/BinaryRowData. The native
+example prepares matching Arrow input and times production Calc plus equal output checksum
+consumption inside Rust. Perimeter JNI/import/export and both row/Arrow transposes are
+outside this small-operation timer; previous intrinsic callbacks stay inside.
+
+The release/default-feature/mimalloc controls use JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups, nine measurements and 131,072 rows per trial. Input declarations and Arrow
+metadata match the selected nullable/NOT NULL data. The matrix covers all four integer
+widths, varying values including signed minima, optional NULL every seven rows and both
+RowData representations. Both `ABS(v+1)` and `ABS((v+1)*(v-1))` use typed literals in
+1,024-row batches; INT/BIGINT addition also has 16-row controls. Independent paired-stock
+processes, checksums and all unfavorable timings are retained.
+
+The initial correct native implementation still lost to stock in twelve bulk cells per
+release. Result casts after every narrow arithmetic node widened already-correct arrays
+to BIGINT and reconstructed their original width. Sharing only actual same-width integer
+arrays removes that work without changing true narrowing or scalar materialization.
+
+| Flink line | Batch rows | Initial stock/native median range | Qualified stock/native median range | Qualified previous/native median range |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.054–0.124x | 0.067–0.128x | 9.650–10.806x |
+| 1.18.1 | 1,024 | 0.369–4.570x | 1.477–7.808x | 11.416–41.864x |
+| 2.2.1 | 16 | 0.057–0.126x | 0.070–0.129x | 10.010–11.365x |
+| 2.2.1 | 1,024 | 0.369–4.637x | 1.498–8.087x | 10.858–50.934x |
+
+All 64 qualified bulk cells beat their paired stock control. All sixteen small-batch
+cells remain slower than stock: fixed Calc/result costs dominate this tiny computation.
+Independent stock controls drift by 0.611–1.638x. Initial/qualified processes are separate
+measurements, so their timing ratios do not isolate a causal effect from that variability.
+The [result record](results/integral-arithmetic-abs-2026-11-01.json) and
+[raw trials](results/integral-arithmetic-abs-2026-11-01.csv.gz) retain both matrices,
+including the rejected initial bulk path and every small-batch loss.
+
+Single-batch allocation probes use the same production operation after compilation, with
+1,024 nullable GenericRowData-equivalent inputs on 2.2.1. They count requests/bytes, not
+retained memory or copied bytes. The accompanying prepared timing cells are reported
+separately; allocation probes themselves are not elapsed-time evidence.
+
+| Input / expression | Initial allocation requests / bytes | Qualified allocation requests / bytes | Initial / qualified median ns per row |
+| --- | ---: | ---: | ---: |
+| INT / addition | 52 / 23,876 | 41 / 10,820 | 4.151 / 1.259 |
+| INT / nested | 129 / 61,704 | 96 / 22,536 | 11.249 / 2.711 |
+| BIGINT / addition | 39 / 18,728 | 39 / 18,728 | 1.320 / 1.306 |
+| BIGINT / nested | 76 / 37,399 | 76 / 37,399 | 2.471 / 2.473 |
+
+The BIGINT controls already lack the narrow result casts and retain their allocation
+counts. Rust tests require pointer-identical same-width slices/NULLs/empty arrays,
+unchanged scalar materialization and real narrowing. The default-feature release/mimalloc
+Rust suite passes 1,003 tests with two pre-existing ignores. Eighty focused JVM invocations
+pass across released 1.18.1/2.2.1 and JDK 11/17, including width/overflow/NULL parity,
+multi-batch IDs, consumed native work and empty evaluator descriptors. The independently
+compiled preceding encoder fails the new route regression. Released upstream `testAbs`
+passes unchanged on all four pairs; those local assertions are not native-work evidence.
+
+The allocation executable retains its counting wrapper with counts disabled during timing;
+link-symbol inspection confirms its System calls resolve through the enabled engine aliases
+(`malloc=mi_malloc`, `free=sf_free`). JVM/C++/other-thread allocations are outside the probe.
+
+Separate million-row INT source/blackhole jobs retain production JNI, planning/startup
+and both transposes. They use nullable inputs, parallelism one, two warmups and five
+measurements. Both native modes require consumed Calc work; the candidate additionally
+requires empty evaluator descriptors. Each previous process has its own paired stock.
+
+| Flink line / expression | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / addition | 0.132738 (0.125002–0.135948) | 0.148356 (0.143165–0.164692) | 0.125945 (0.121515–0.144187) | 0.164539 (0.153559–0.179181) |
+| 1.18.1 / nested | 0.134089 (0.123711–0.144396) | 0.147029 (0.144632–0.161026) | 0.124107 (0.120619–0.128548) | 0.164153 (0.154318–0.174387) |
+| 2.2.1 / addition | 0.134425 (0.128763–0.179637) | 0.147232 (0.142800–0.159292) | 0.128637 (0.124836–0.164790) | 0.168241 (0.153037–0.189463) |
+| 2.2.1 / nested | 0.129607 (0.121807–0.147824) | 0.142487 (0.139940–0.152310) | 0.128585 (0.121173–0.152629) | 0.171499 (0.160844–0.192563) |
+
+Native medians improve 9.8–16.9% over previous StreamFusion, but remain 9.5–11.8%
+slower than paired stock. The 2.2 stock/native ranges overlap; independent stock
+controls also drift. Source/sink and perimeter conversion costs remain in these
+startup-heavy bounded jobs. This qualifies the bulk small-operation gate, not a
+standalone-job or universal sustained throughput win over Flink. Generic small-batch
+and perimeter costs remain in [the numeric follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+Reproduce after compiling the Java fixture and providing its matching released runtime/test
+classpath as `SF_NATIVE_BENCH_CLASSPATH` and the release library directory as
+`SF_NATIVE_LIB_DIR`:
+
+```sh
+cargo build --manifest-path native/Cargo.toml --release --locked -p streamfusion \
+  --features mimalloc --lib --example integral_expression
+SF_INTEGRAL_EXPRESSION='ABS((v+CAST(1 AS $TYPE))*(v-CAST(1 AS $TYPE)))' \
+  native/target/release/examples/integral_expression INT true false 1024 128 16 9
+```
+
+The example arguments are SQL integer type, NULL inputs, BinaryRowData input, batch rows,
+loops, warmups and measurements. The previous control sets `SF_INTEGRAL_PREVIOUS=true`
+and prepends the actual preceding encoder to the classpath. Complete jobs use
+`IntegralExpressionPipelineBenchmark`, `SF_BENCHMARK=true` and the corresponding
+`sf.integral.expression` / `sf.integral.previous` properties. These are benchmark controls,
+not production switches.
+
+## Integer unary minus over arithmetic
+
+Unary minus now admits the same recursively verified integer addition, subtraction and
+multiplication producers as ABS. Every intermediate retains its resolved integer width
+and wrapping overflow. An input-containing tree uses the physical negative expression;
+a constant-only tree uses the wrapping scalar kernel because DataFusion's ordinary scalar
+negative checks overflow. Division, remainder, narrowing and unverified producers retain
+the complete generated expression.
+
+The prepared controls use the actual preceding main encoder and the production Calc,
+with the same timing boundaries, release/default-feature/mimalloc build and matching
+nullable/NOT NULL declarations as the ABS arithmetic matrix. Stock runs released generated
+Java on prepared GenericRowData/BinaryRowData; native runs matching Arrow with both timing
+and equal checksum consumption inside Rust. Intrinsic previous JVM work remains timed;
+entry JNI/import/export and both perimeter transposes remain outside this small-operation
+timer. The candidate requires an intended native function and empty JVM descriptors;
+the previous control must bind a JVM evaluator.
+
+JDK 17.0.12 on Apple M4 Pro, one thread, 16 warmups, nine measurements and 131,072 rows
+per trial cover all four integer widths, NULL/NOT NULL, both row representations, typed
+addition and nested multiplication. INT/BIGINT addition also has 16-row controls.
+
+| Flink line | Batch rows | Stock/native median range | Previous/native median range |
+| --- | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.073-0.323x | 10.525-29.251x |
+| 1.18.1 | 1,024 | 1.483-8.502x | 12.874-57.345x |
+| 2.2.1 | 16 | 0.073-0.337x | 10.747-30.518x |
+| 2.2.1 | 1,024 | 1.507-9.339x | 13.313-74.468x |
+
+All 64 bulk cells beat paired stock; all sixteen tiny-batch cells remain slower. Fixed
+Calc/result costs dominate tiny computations. Independent paired-stock controls drift
+by 0.663-1.353x. The [result record](results/integral-arithmetic-negate-2026-11-01.json)
+and [raw trials](results/integral-arithmetic-negate-2026-11-01.csv.gz) retain every
+measurement, including slower controls and allocation probes.
+
+Separate million-row nullable INT source/blackhole jobs keep production JNI, startup,
+planning and both transposes, with parallelism one, two warmups and five measurements.
+Both native controls require consumed Calc work; the candidate requires empty evaluators.
+
+| Flink line / expression | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / addition | 0.126943 (0.123006-0.136017) | 0.145248 (0.141566-0.159738) | 0.130385 (0.120768-0.146977) | 0.166026 (0.154087-0.170880) |
+| 1.18.1 / nested | 0.127378 (0.119838-0.136126) | 0.142236 (0.138390-0.162559) | 0.129773 (0.123038-0.134026) | 0.168336 (0.155652-0.171366) |
+| 2.2.1 / addition | 0.137106 (0.130255-0.147236) | 0.149406 (0.140301-0.164516) | 0.138002 (0.126575-0.175749) | 0.174674 (0.159422-0.202962) |
+| 2.2.1 / nested | 0.127712 (0.123361-0.134710) | 0.145771 (0.142729-0.152221) | 0.125265 (0.122946-0.132947) | 0.163662 (0.158853-0.182695) |
+
+Native medians improve 10.9-15.5% over previous StreamFusion, but remain 9.0-14.4%
+slower than paired stock. The 2.2 addition ranges overlap. This qualifies prepared bulk
+computation, not whole-job acceleration: fixed Calc, source/sink and perimeter costs
+remain in these bounded jobs. Tiny-batch/perimeter optimization stays in the
+[numeric follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+Correctness checks pass 160 focused JVM invocations across released Flink 1.18.1/2.2.1
+and JDK 11/17, plus eight strengthened encoder checks. Consumed runtime jobs compare every
+ID, value, type and NULL across batches and require empty JVM descriptors and no fallback.
+Sixteen dedicated JVM-started JNI invocations additionally test four signed widths,
+both constant operand orders and zero/one/1,023 rows: all 96 batches preserve cardinality,
+types and wrapping signed minima after the input closes. The unchanged released upstream
+unary-plus/minus method passes on all four pairs. These local upstream assertions are
+separate from native-work evidence. Java compiles for release 11. No new Rust production
+code is added beyond the separately tested ABS identity-cast optimization.
+
+Reproduce with the same `integral_expression` fixture and preceding-encoder controls as
+the ABS matrix, using `SF_INTEGRAL_EXPRESSION='-((v+CAST(1 AS $TYPE))*(v-CAST(1 AS $TYPE)))'`.
+Complete jobs use the corresponding `sf.integral.expression` property.
+
+## Integer SIGN over arithmetic
+
+The existing native SIGN implementation now admits recursively verified integer addition,
+subtraction and multiplication over its input/literal, lossless-widening and nested-function
+whitelist. Each arithmetic node keeps its resolved signed width and Java overflow wrapping.
+Division, remainder, narrowing, DECIMAL arithmetic and other unverified producers retain
+the complete generated expression. No configuration switch is added.
+
+The [result record](results/integral-arithmetic-sign-2026-11-01.json) and
+[raw trials](results/integral-arithmetic-sign-2026-11-01.csv.gz) retain all paired controls, warmups,
+measurements, allocation probes and complete-job samples. Release/default-feature/mimalloc,
+JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups, nine measurements and 131,072 rows per
+trial compare released generated Java on prepared GenericRowData/BinaryRowData with
+production Calc on matching Arrow. Native timers and equivalent checksum consumption are
+inside Rust; initial JNI/import/export and both perimeter transposes are outside this
+small-operation timer. Intrinsic previous JVM computation remains timed. The actual
+independently compiled preceding main encoder is required to bind an evaluator; the
+candidate requires the intended native function and empty JVM descriptors. Nullable/NOT NULL
+declarations match both inputs, including actual NULLs every seven rows where selected.
+
+Typed addition and nested multiplication cover every supported integer width and both row
+representations at 1,024 rows; INT/BIGINT addition also has 16-row controls. SIGN and TRUNCATE
+retain released Flink's direct narrow-integer compilation failures and use INT/BIGINT here.
+
+| Flink line | Batch rows | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.071-0.128x | 9.673-11.315x | 8 / 8 |
+| 1.18.1 | 1,024 | 1.540-5.768x | 10.535-34.869x | 0 / 16 |
+| 2.2.1 | 16 | 0.072-0.127x | 10.139-11.226x | 8 / 8 |
+| 2.2.1 | 1,024 | 1.500-5.587x | 10.989-41.784x | 0 / 16 |
+
+The bulk matrix has 0 slower cells out of 32;
+the tiny-batch matrix has 16 slower cells out of 16.
+Fixed Calc/result costs remain visible on small computations. Independent stock-control
+drift ranges from 0.443 to 1.453x; cross-process ratios do not isolate variability.
+
+Separate million-row nullable INT source/blackhole jobs retain production JNI, planning,
+startup and both transposes. Parallelism is one, with two warmups and five measurements.
+Both native controls require consumed Calc work; the candidate requires empty descriptors.
+
+| Flink line / expression | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / add | 0.130256 (0.124880-0.139337) | 0.143118 (0.137992-0.154661) | 0.136756 (0.134128-0.150880) | 0.169804 (0.165546-0.210110) |
+| 1.18.1 / nested | 0.136361 (0.123144-0.192691) | 0.154559 (0.147487-0.170228) | 0.122213 (0.119685-0.153817) | 0.165679 (0.156633-0.174462) |
+| 2.2.1 / add | 0.135250 (0.126187-0.152305) | 0.147599 (0.141288-0.175990) | 0.131027 (0.121526-0.137569) | 0.164077 (0.151389-0.210137) |
+| 2.2.1 / nested | 0.129468 (0.122160-0.140752) | 0.156528 (0.143648-0.181162) | 0.136065 (0.122717-0.150573) | 0.159781 (0.159538-0.207609) |
+
+Native/paired-stock elapsed-time ratios range from 1.091 to
+1.209; native/previous ratios range from
+0.843 to 0.980. Ratios above one are slower.
+Retain overlapping ranges, independent stock drift and unfavorable complete jobs. Prepared
+bulk qualification does not establish a universal or complete-job throughput improvement.
+Remaining small-batch and perimeter costs stay in [the numeric follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+All 100 focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17.
+Runtime witnesses compare complete values, types, NULLs, cardinality and unique IDs across
+multiple batches, and require consumed native work, no fallback and empty JVM descriptors.
+Existing selected/unselected failures, empty filtered batches and unverified-producer guards
+remain covered. The unchanged released upstream method also passes on all four pairs; its
+local expression assertions supplement the independent runtime native-work witnesses.
+Both Java lines compile for release 11. No new Rust production code is introduced by this
+producer-admission change.
+
+Reproduce with `integral_expression` and `IntegralExpressionPipelineBenchmark`, setting
+`SF_INTEGRAL_EXPRESSION='SIGN((v+CAST(1 AS $TYPE))*(v-CAST(1 AS $TYPE)))'` or the matching
+`sf.integral.expression` property. As in the ABS controls, the actual previous encoder is
+prepended to its own classpath and qualified with `SF_INTEGRAL_PREVIOUS=true`.
+
+## Integer FLOOR over arithmetic
+
+The existing native FLOOR implementation now admits recursively verified integer addition,
+subtraction and multiplication over its input/literal, lossless-widening and nested-function
+whitelist. Each arithmetic node keeps its resolved signed width and Java overflow wrapping.
+Division, remainder, narrowing, DECIMAL arithmetic and other unverified producers retain
+the complete generated expression. No configuration switch is added.
+
+The [result record](results/integral-arithmetic-floor-2026-11-01.json) and
+[raw trials](results/integral-arithmetic-floor-2026-11-01.csv.gz) retain all paired controls, warmups,
+measurements, allocation probes and complete-job samples. Release/default-feature/mimalloc,
+JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups, nine measurements and 131,072 rows per
+trial compare released generated Java on prepared GenericRowData/BinaryRowData with
+production Calc on matching Arrow. Native timers and equivalent checksum consumption are
+inside Rust; initial JNI/import/export and both perimeter transposes are outside this
+small-operation timer. Intrinsic previous JVM computation remains timed. The actual
+independently compiled preceding main encoder is required to bind an evaluator; the
+candidate requires the intended native function and empty JVM descriptors. Nullable/NOT NULL
+declarations match both inputs, including actual NULLs every seven rows where selected.
+
+Typed addition and nested multiplication cover every supported integer width and both row
+representations at 1,024 rows; INT/BIGINT addition also has 16-row controls. SIGN and TRUNCATE
+retain released Flink's direct narrow-integer compilation failures and use INT/BIGINT here.
+
+| Flink line | Batch rows | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.073-0.385x | 10.848-33.897x | 8 / 8 |
+| 1.18.1 | 1,024 | 1.526-11.036x | 11.725-85.888x | 0 / 32 |
+| 2.2.1 | 16 | 0.078-0.377x | 11.285-34.749x | 8 / 8 |
+| 2.2.1 | 1,024 | 1.568-12.272x | 10.653-90.189x | 0 / 32 |
+
+The bulk matrix has 0 slower cells out of 64;
+the tiny-batch matrix has 16 slower cells out of 16.
+Fixed Calc/result costs remain visible on small computations. Independent stock-control
+drift ranges from 0.592 to 1.601x; cross-process ratios do not isolate variability.
+
+Separate million-row nullable INT source/blackhole jobs retain production JNI, planning,
+startup and both transposes. Parallelism is one, with two warmups and five measurements.
+Both native controls require consumed Calc work; the candidate requires empty descriptors.
+
+| Flink line / expression | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / add | 0.123600 (0.122369-0.129598) | 0.151265 (0.137397-0.159724) | 0.126829 (0.118631-0.138255) | 0.164821 (0.157293-0.189417) |
+| 1.18.1 / nested | 0.125440 (0.118526-0.154963) | 0.140254 (0.138623-0.154078) | 0.127278 (0.122852-0.136469) | 0.163857 (0.157304-0.179982) |
+| 2.2.1 / add | 0.143825 (0.125135-0.170857) | 0.149311 (0.146698-0.163415) | 0.132833 (0.129114-0.141480) | 0.167962 (0.162157-0.214726) |
+| 2.2.1 / nested | 0.128320 (0.122758-0.130398) | 0.145575 (0.143623-0.154209) | 0.137148 (0.122207-0.147096) | 0.166432 (0.160759-0.177441) |
+
+Native/paired-stock elapsed-time ratios range from 1.038 to
+1.224; native/previous ratios range from
+0.856 to 0.918. Ratios above one are slower.
+Retain overlapping ranges, independent stock drift and unfavorable complete jobs. Prepared
+bulk qualification does not establish a universal or complete-job throughput improvement.
+Remaining small-batch and perimeter costs stay in [the numeric follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+All 132 focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17.
+Runtime witnesses compare complete values, types, NULLs, cardinality and unique IDs across
+multiple batches, and require consumed native work, no fallback and empty JVM descriptors.
+Existing selected/unselected failures, empty filtered batches and unverified-producer guards
+remain covered. The unchanged released upstream method also passes on all four pairs; its
+local expression assertions supplement the independent runtime native-work witnesses.
+Both Java lines compile for release 11. No new Rust production code is introduced by this
+producer-admission change.
+
+Reproduce with `integral_expression` and `IntegralExpressionPipelineBenchmark`, setting
+`SF_INTEGRAL_EXPRESSION='FLOOR((v+CAST(1 AS $TYPE))*(v-CAST(1 AS $TYPE)))'` or the matching
+`sf.integral.expression` property. As in the ABS controls, the actual previous encoder is
+prepended to its own classpath and qualified with `SF_INTEGRAL_PREVIOUS=true`.
+
+## Integer CEIL over arithmetic
+
+The existing native CEIL implementation now admits recursively verified integer addition,
+subtraction and multiplication over its input/literal, lossless-widening and nested-function
+whitelist. Each arithmetic node keeps its resolved signed width and Java overflow wrapping.
+Division, remainder, narrowing, DECIMAL arithmetic and other unverified producers retain
+the complete generated expression. No configuration switch is added.
+
+The [result record](results/integral-arithmetic-ceil-2026-11-01.json) and
+[raw trials](results/integral-arithmetic-ceil-2026-11-01.csv.gz) retain all paired controls, warmups,
+measurements, allocation probes and complete-job samples. Release/default-feature/mimalloc,
+JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups, nine measurements and 131,072 rows per
+trial compare released generated Java on prepared GenericRowData/BinaryRowData with
+production Calc on matching Arrow. Native timers and equivalent checksum consumption are
+inside Rust; initial JNI/import/export and both perimeter transposes are outside this
+small-operation timer. Intrinsic previous JVM computation remains timed. The actual
+independently compiled preceding main encoder is required to bind an evaluator; the
+candidate requires the intended native function and empty JVM descriptors. Nullable/NOT NULL
+declarations match both inputs, including actual NULLs every seven rows where selected.
+
+Typed addition and nested multiplication cover every supported integer width and both row
+representations at 1,024 rows; INT/BIGINT addition also has 16-row controls. SIGN and TRUNCATE
+retain released Flink's direct narrow-integer compilation failures and use INT/BIGINT here.
+
+| Flink line | Batch rows | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.077-0.375x | 10.891-34.160x | 8 / 8 |
+| 1.18.1 | 1,024 | 1.555-11.353x | 11.566-82.999x | 0 / 32 |
+| 2.2.1 | 16 | 0.078-0.363x | 11.241-34.910x | 8 / 8 |
+| 2.2.1 | 1,024 | 1.553-12.186x | 11.711-112.828x | 0 / 32 |
+
+The bulk matrix has 0 slower cells out of 64;
+the tiny-batch matrix has 16 slower cells out of 16.
+Fixed Calc/result costs remain visible on small computations. Independent stock-control
+drift ranges from 0.417 to 1.414x; cross-process ratios do not isolate variability.
+
+Separate million-row nullable INT source/blackhole jobs retain production JNI, planning,
+startup and both transposes. Parallelism is one, with two warmups and five measurements.
+Both native controls require consumed Calc work; the candidate requires empty descriptors.
+
+| Flink line / expression | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / add | 0.130198 (0.122790-0.137458) | 0.157354 (0.138733-0.168121) | 0.121527 (0.119802-0.135765) | 0.163856 (0.155947-0.169186) |
+| 1.18.1 / nested | 0.129851 (0.120823-0.152799) | 0.141774 (0.138176-0.156186) | 0.128809 (0.127996-0.153699) | 0.165188 (0.161602-0.178558) |
+| 2.2.1 / add | 0.126569 (0.122766-0.131987) | 0.148518 (0.143178-0.160139) | 0.126695 (0.121754-0.140802) | 0.162624 (0.157716-0.181336) |
+| 2.2.1 / nested | 0.126593 (0.121725-0.168759) | 0.147910 (0.141753-0.154536) | 0.126083 (0.119509-0.155248) | 0.166177 (0.162577-0.186416) |
+
+Native/paired-stock elapsed-time ratios range from 1.092 to
+1.209; native/previous ratios range from
+0.858 to 0.960. Ratios above one are slower.
+Retain overlapping ranges, independent stock drift and unfavorable complete jobs. Prepared
+bulk qualification does not establish a universal or complete-job throughput improvement.
+Remaining small-batch and perimeter costs stay in [the numeric follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+All 152 focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17.
+Runtime witnesses compare complete values, types, NULLs, cardinality and unique IDs across
+multiple batches, and require consumed native work, no fallback and empty JVM descriptors.
+Existing selected/unselected failures, empty filtered batches and unverified-producer guards
+remain covered. The unchanged released upstream method also passes on all four pairs; its
+local expression assertions supplement the independent runtime native-work witnesses.
+Both Java lines compile for release 11. No new Rust production code is introduced by this
+producer-admission change.
+
+Reproduce with `integral_expression` and `IntegralExpressionPipelineBenchmark`, setting
+`SF_INTEGRAL_EXPRESSION='CEIL((v+CAST(1 AS $TYPE))*(v-CAST(1 AS $TYPE)))'` or the matching
+`sf.integral.expression` property. As in the ABS controls, the actual previous encoder is
+prepended to its own classpath and qualified with `SF_INTEGRAL_PREVIOUS=true`.
+
+## Integer ROUND over arithmetic
+
+The existing native ROUND implementation now admits recursively verified integer addition,
+subtraction and multiplication over its input/literal, lossless-widening and nested-function
+whitelist. Each arithmetic node keeps its resolved signed width and Java overflow wrapping.
+Division, remainder, narrowing, DECIMAL arithmetic and other unverified producers retain
+the complete generated expression. No configuration switch is added.
+
+The [result record](results/integral-arithmetic-round-2026-11-01.json) and
+[raw trials](results/integral-arithmetic-round-2026-11-01.csv.gz) retain all paired controls, warmups,
+measurements, allocation probes and complete-job samples. Release/default-feature/mimalloc,
+JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups, nine measurements and 131,072 rows per
+trial compare released generated Java on prepared GenericRowData/BinaryRowData with
+production Calc on matching Arrow. Native timers and equivalent checksum consumption are
+inside Rust; initial JNI/import/export and both perimeter transposes are outside this
+small-operation timer. Intrinsic previous JVM computation remains timed. The actual
+independently compiled preceding main encoder is required to bind an evaluator; the
+candidate requires the intended native function and empty JVM descriptors. Nullable/NOT NULL
+declarations match both inputs, including actual NULLs every seven rows where selected.
+
+Typed addition and nested multiplication cover every supported integer width and both row
+representations at 1,024 rows; INT/BIGINT addition also has 16-row controls. ROUND covers
+all four integer widths.
+
+Additional nullable Generic/Binary cells apply literal INT positions -1, -38 and 38 to the
+nested arithmetic expression over every admitted width. NULL-position cells are retained
+separately as constant-result controls and excluded from function-execution qualification.
+
+| Flink line | Batch rows | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.084-0.384x | 11.029-35.381x | 8 / 8 |
+| 1.18.1 | 1,024 | 1.805-35.430x | 10.527-98.619x | 0 / 56 |
+| 2.2.1 | 16 | 0.091-0.397x | 11.018-35.726x | 8 / 8 |
+| 2.2.1 | 1,024 | 1.832-35.412x | 11.169-105.774x | 0 / 56 |
+
+The bulk matrix has 0 slower cells out of 112;
+the tiny-batch matrix has 16 slower cells out of 16.
+Fixed Calc/result costs remain visible on small computations. Independent stock-control
+drift ranges from 0.284 to 6.389x; cross-process ratios do not isolate variability.
+
+Separate million-row nullable INT source/blackhole jobs retain production JNI, planning,
+startup and both transposes. Parallelism is one, with two warmups and five measurements.
+Both native controls require consumed Calc work; the candidate requires empty descriptors.
+The position-add/position-nested job rows apply the explicit literal position -1.
+
+| Flink line / expression | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / add | 0.138509 (0.128871-0.141295) | 0.151582 (0.149946-0.187205) | 0.135664 (0.129138-0.147661) | 0.179961 (0.172285-0.213695) |
+| 1.18.1 / nested | 0.131959 (0.126554-0.138073) | 0.148946 (0.141745-0.190673) | 0.133393 (0.127564-0.136626) | 0.175208 (0.171869-0.184764) |
+| 1.18.1 / position-add | 0.143669 (0.135566-0.165214) | 0.146206 (0.144089-0.168085) | 0.141263 (0.139604-0.155608) | 0.175963 (0.164515-0.233102) |
+| 1.18.1 / position-nested | 0.155569 (0.146503-0.156909) | 0.157583 (0.143202-0.174439) | 0.158029 (0.141994-0.164224) | 0.193834 (0.177136-0.201926) |
+| 2.2.1 / add | 0.138633 (0.135453-0.148245) | 0.149119 (0.143823-0.155219) | 0.136070 (0.132937-0.150031) | 0.178963 (0.170773-0.199273) |
+| 2.2.1 / nested | 0.132262 (0.128172-0.159622) | 0.143343 (0.136777-0.161370) | 0.136466 (0.126677-0.165135) | 0.172319 (0.167299-0.197420) |
+| 2.2.1 / position-add | 0.146133 (0.142373-0.166690) | 0.147639 (0.145069-0.161272) | 0.147190 (0.132771-0.152431) | 0.170306 (0.165477-0.186386) |
+| 2.2.1 / position-nested | 0.145609 (0.142876-0.159408) | 0.143521 (0.142514-0.155381) | 0.146946 (0.140844-0.160657) | 0.187572 (0.177320-0.211928) |
+
+Native/paired-stock elapsed-time ratios range from 0.986 to
+1.129; native/previous ratios range from
+0.765 to 0.867. Ratios above one are slower.
+Retain overlapping ranges, independent stock drift and unfavorable complete jobs. Prepared
+bulk qualification does not establish a universal or complete-job throughput improvement.
+Remaining small-batch and perimeter costs stay in [the numeric follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+All 240 focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17.
+Runtime witnesses compare complete values, types, NULLs, cardinality and unique IDs across
+multiple batches, and require consumed native work, no fallback and empty JVM descriptors.
+Existing selected/unselected failures, empty filtered batches and unverified-producer guards
+remain covered. The unchanged released upstream method also passes on all four pairs; its
+local expression assertions supplement the independent runtime native-work witnesses.
+Both Java lines compile for release 11. No new Rust production code is introduced by this
+producer-admission change.
+
+Reproduce with `integral_expression` and `IntegralExpressionPipelineBenchmark`, setting
+`SF_INTEGRAL_EXPRESSION='ROUND((v+CAST(1 AS $TYPE))*(v-CAST(1 AS $TYPE)))'` or the matching
+`sf.integral.expression` property. As in the ABS controls, the actual previous encoder is
+prepended to its own classpath and qualified with `SF_INTEGRAL_PREVIOUS=true`.
+
+The 16 constant-NULL fold controls have paired stock/native median ratios
+from 2.425 to 23.015x. They measure production Calc result
+materialization and consumption after a bounded proof excludes operand failures; they
+do not establish executed function-kernel work. Division, remainder, narrowing and other
+unverified producers retain evaluation even when the position is NULL.
+
+The initial eager NULL-position implementation lost to stock in all eight diagnostic
+cells (0.65-0.71x stock/native). Eliminating the verified failure-free operand tree moves
+matched diagnostic medians from 2.50-2.72 to 0.62-0.72 ns/row and the paired ratios to
+2.48-2.80x, with independent process/stock variation retained. Untimed Rust allocation
+requests drop from 79-99 to 16 per batch; these exclude JVM/other-thread allocations and
+are not retained memory. The [initial trials](results/integral-arithmetic-round-null-before-fold-2026-11-01.csv.gz)
+and [folded trials](results/integral-arithmetic-round-null-after-fold-2026-11-01.csv.gz) supplement the main
+[result record](results/integral-arithmetic-round-2026-11-01.json).
+
+All 116 additional shared typed-NULL encoding/SQL invocations pass across the same four
+version/JDK pairs, covering precision, nested fields, temporal types, unknown-type guards
+and partial final batches.
+
+## Integer TRUNCATE over arithmetic
+
+The existing native TRUNCATE implementation now admits recursively verified integer addition,
+subtraction and multiplication over its input/literal, lossless-widening and nested-function
+whitelist. Each arithmetic node keeps its resolved signed width and Java overflow wrapping.
+Division, remainder, narrowing, DECIMAL arithmetic and other unverified producers retain
+the complete generated expression. No configuration switch is added.
+
+The [result record](results/integral-arithmetic-truncate-2026-11-01.json) and
+[raw trials](results/integral-arithmetic-truncate-2026-11-01.csv.gz) retain all paired controls, warmups,
+measurements, allocation probes and complete-job samples. Release/default-feature/mimalloc,
+JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups, nine measurements and 131,072 rows per
+trial compare released generated Java on prepared GenericRowData/BinaryRowData with
+production Calc on matching Arrow. Native timers and equivalent checksum consumption are
+inside Rust; initial JNI/import/export and both perimeter transposes are outside this
+small-operation timer. Intrinsic previous JVM computation remains timed. The actual
+independently compiled preceding main encoder is required to bind an evaluator; the
+candidate requires the intended native function and empty JVM descriptors. Nullable/NOT NULL
+declarations match both inputs, including actual NULLs every seven rows where selected.
+
+Typed addition and nested multiplication cover every supported integer width and both row
+representations at 1,024 rows; INT/BIGINT addition also has 16-row controls. TRUNCATE
+retains released Flink's direct narrow-integer compilation failures and uses INT/BIGINT here.
+
+Additional nullable Generic/Binary cells apply literal INT positions -1, -38 and 38 to the
+nested arithmetic expression over every admitted width. NULL-position cells are retained
+separately as constant-result controls and excluded from function-execution qualification.
+
+| Flink line | Batch rows | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.978-8.364x | 12.298-41.801x | 1 / 8 |
+| 1.18.1 | 1,024 | 10.545-277.690x | 19.304-317.218x | 0 / 28 |
+| 2.2.1 | 16 | 0.970-7.944x | 12.495-40.313x | 1 / 8 |
+| 2.2.1 | 1,024 | 10.417-281.861x | 19.904-333.712x | 0 / 28 |
+
+The bulk matrix has 0 slower cells out of 56;
+the tiny-batch matrix has 2 slower cells out of 16.
+Fixed Calc/result costs remain visible on small computations. Independent stock-control
+drift ranges from 0.271 to 1.448x; cross-process ratios do not isolate variability.
+
+Separate million-row nullable INT source/blackhole jobs retain production JNI, planning,
+startup and both transposes. Parallelism is one, with two warmups and five measurements.
+Both native controls require consumed Calc work; the candidate requires empty descriptors.
+The position-add/position-nested job rows apply the explicit literal position -1.
+
+| Flink line / expression | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / add | 0.193199 (0.183309-0.200168) | 0.148608 (0.138675-0.165526) | 0.190651 (0.188763-0.206507) | 0.261375 (0.241094-0.283575) |
+| 1.18.1 / nested | 0.200089 (0.190741-0.203405) | 0.151694 (0.145246-0.160465) | 0.200865 (0.188948-0.208953) | 0.251374 (0.248945-0.270095) |
+| 1.18.1 / position-add | 0.196940 (0.188253-0.201866) | 0.151558 (0.143435-0.181935) | 0.195267 (0.192303-0.203604) | 0.219569 (0.216203-0.231150) |
+| 1.18.1 / position-nested | 0.200262 (0.191257-0.219927) | 0.153747 (0.147628-0.165354) | 0.207347 (0.203120-0.215704) | 0.236552 (0.231091-0.247184) |
+| 2.2.1 / add | 0.192395 (0.188942-0.201869) | 0.152104 (0.145143-0.156501) | 0.189003 (0.181838-0.199292) | 0.268802 (0.263646-0.283940) |
+| 2.2.1 / nested | 0.206748 (0.196520-0.222838) | 0.144713 (0.142744-0.166039) | 0.205656 (0.198518-0.212245) | 0.250286 (0.236342-0.257092) |
+| 2.2.1 / position-add | 0.209153 (0.200628-0.220100) | 0.147064 (0.143148-0.172021) | 0.206633 (0.199655-0.210218) | 0.222729 (0.217287-0.230073) |
+| 2.2.1 / position-nested | 0.215521 (0.212657-0.222801) | 0.149474 (0.144635-0.154722) | 0.213070 (0.206850-0.220141) | 0.244035 (0.233602-0.270349) |
+
+Native/paired-stock elapsed-time ratios range from 0.694 to
+0.791; native/previous ratios range from
+0.566 to 0.690. Ratios above one are slower.
+These eight complete-job medians improve by 20.9-30.6% over paired stock and 31.0-43.4%
+over previous StreamFusion. Retain overlapping ranges and independent stock drift;
+the measured workloads do not establish a universal complete-job throughput improvement.
+Remaining small-batch and perimeter costs stay in [the numeric follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+All 236 focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17.
+Runtime witnesses compare complete values, types, NULLs, cardinality and unique IDs across
+multiple batches, and require consumed native work, no fallback and empty JVM descriptors.
+Existing selected/unselected failures, empty filtered batches and unverified-producer guards
+remain covered. The unchanged released upstream method also passes on all four pairs; its
+local expression assertions supplement the independent runtime native-work witnesses.
+Both Java lines compile for release 11. No new Rust production code is introduced by this
+producer-admission change.
+
+Reproduce with `integral_expression` and `IntegralExpressionPipelineBenchmark`, setting
+`SF_INTEGRAL_EXPRESSION='TRUNCATE((v+CAST(1 AS $TYPE))*(v-CAST(1 AS $TYPE)))'` or the matching
+`sf.integral.expression` property. As in the ABS controls, the actual previous encoder is
+prepended to its own classpath and qualified with `SF_INTEGRAL_PREVIOUS=true`.
+
+The 8 constant-NULL fold controls have paired stock/native median ratios
+from 2.392 to 7.203x. They measure production Calc result
+materialization and consumption after a bounded proof excludes operand failures; they
+do not establish executed function-kernel work. Division, remainder, narrowing and other
+unverified producers retain evaluation even when the position is NULL.
+
+## Numeric IS_ALPHA
+
+Released Flink receives boxed primitive integers or internal `DecimalData` in this overload.
+All admitted numeric arguments return FALSE, including runtime/literal NULLs.
+Direct inputs/literals keep a native type-based predicate. Only the recursively verified
+failure-free integer producer scope folds away unused arithmetic; division, remainder,
+narrowing, UDFs and other unverified producers retain the complete generated call, including
+failures and state changes. Floating signatures remain generated. This preserves the released
+behavior rather than inferring it from Java's public BigDecimal API.
+
+The final admission guard additionally keeps unverified producers generated. An untimed
+comparison on each Flink line confirms that all 28 distinct measured direct/add/nested
+signatures retain identical encoded programs and constant pools; the result record keeps
+both measured/final source hashes and final-guard correctness validation.
+
+The [result record](results/numeric-classification-alpha-2026-11-01.json) and
+[raw trials](results/numeric-classification-alpha-2026-11-01.csv.gz) retain 80 configurations and 8,000 main
+trials. Direct runtime arguments retain the native call; arithmetic fold controls are
+explicitly excluded from predicate-kernel qualification. The direct matrix covers four
+integer widths and DECIMAL(18,2)/(38,18), nullable/NOT NULL and GenericRowData/BinaryRowData
+at 1,024 rows. Tiny INT/BIGINT controls use 16 rows. Typed addition/nested multiplication
+provide separate fold diagnostics. No input values are converted to strings.
+
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
+measurements and 131,072 rows/trial compare actual released generated Java on prepared
+RowData with production Calc on matching Arrow. Native operation and equivalent Boolean
+result consumption are timed inside Rust; initial JNI/import/export and perimeter
+transposes are outside this small-operation timer. Intrinsic previous JVM computation
+stays inside. The actual independently compiled preceding-main encoder must bind an
+evaluator; the candidate requires empty descriptors and the intended function before the
+bounded fold. Both sides retain exact types, widths, signed boundaries and matching NULLs.
+
+| Flink line | Rows / measured work | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: |
+| 1.18.1 | 1,024 / predicate | 4.338-75.846x | 57.267-83.709x | 0 / 24 |
+| 1.18.1 | 16 / predicate | 0.132-0.177x | 29.727-32.708x | 8 / 8 |
+| 1.18.1 | 1,024 / fold control | 5.214-14.863x | 80.878-156.067x | 0 / 8 |
+| 2.2.1 | 1,024 / predicate | 4.378-74.153x | 56.493-174.781x | 0 / 24 |
+| 2.2.1 | 16 / predicate | 0.132-0.167x | 29.850-33.778x | 8 / 8 |
+| 2.2.1 | 1,024 / fold control | 5.669-10.663x | 82.630-211.918x | 0 / 8 |
+
+Ratios above one favor native. The type-based predicate returns a Boolean scalar which
+production Calc materializes to the batch length; the measurements do not claim a
+per-row character scan. Small-batch fixed Calc/result costs and every unfavorable sample
+remain in the record. Independent paired-stock drift ranges from
+0.474 to 4.622x; cross-process
+ratios are not causal isolation.
+
+Separate million-row nullable INT source/blackhole jobs retain production JNI, planning,
+startup and both transposes, with parallelism one and two warmups/five measurements.
+Direct jobs retain the predicate. Add/nested jobs exercise the bounded fold and must not
+be cited as predicate-kernel work. All require consumed native Calc work, no fallback and
+empty candidate evaluator descriptors.
+
+| Flink line / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / direct | 0.144208 (0.139951-0.185509) | 0.158264 (0.155906-0.180063) | 0.150093 (0.140484-0.155497) | 0.190045 (0.184045-0.214745) |
+| 1.18.1 / add | 0.158886 (0.138947-0.184109) | 0.153646 (0.148057-0.187208) | 0.144336 (0.143366-0.162540) | 0.180045 (0.173658-0.223902) |
+| 1.18.1 / nested | 0.147116 (0.143477-0.157420) | 0.153543 (0.149247-0.156138) | 0.148057 (0.140475-0.163178) | 0.179666 (0.174594-0.195992) |
+| 2.2.1 / direct | 0.171778 (0.156760-0.184056) | 0.163535 (0.162832-0.170514) | 0.155110 (0.150512-0.163980) | 0.192114 (0.179358-0.216947) |
+| 2.2.1 / add | 0.159357 (0.151531-0.164622) | 0.151333 (0.150413-0.174848) | 0.152845 (0.150406-0.165735) | 0.190004 (0.185241-0.206299) |
+| 2.2.1 / nested | 0.155059 (0.149082-0.160268) | 0.150045 (0.143815-0.165674) | 0.170340 (0.152518-0.174406) | 0.191185 (0.188699-0.243760) |
+
+Across these jobs, native/stock elapsed-time ratios range from
+0.950 to 1.097; native/previous ratios range
+from 0.785 to 0.855. Ratios above one are
+slower. Retain overlapping ranges and independent stock drift; prepared bulk qualification
+does not establish universal whole-job acceleration.
+
+All 56 focused JVM invocations and unchanged released `IS_ALPHA` expression tests
+pass on Flink 1.18.1/2.2.1 with JDK 11/17. Eight numeric declarations, 5,003 rows, nullable
+and NOT NULL inputs, literal NULLs and Boolean consumers compare complete values, resolved
+types, cardinality and unique IDs across multiple batches. Direct runtime witnesses require
+consumed work, no fallback and empty descriptors. Separate failure/empty-batch tests and
+four additional shared-state invocations prove that arguments are not discarded. Java
+compiles for release 11; the release/default/mimalloc Rust core suite passes 1,017 tests
+with two pre-existing ignores.
+
+Reproduce with `integral_expression`, for example
+`SF_INTEGRAL_EXPRESSION='IS_ALPHA(v)'`, and `IntegralExpressionPipelineBenchmark` with
+`sf.integral.expression=IS_ALPHA(v)`. Prepended independently compiled previous-encoder
+classes and `SF_INTEGRAL_PREVIOUS=true` select the preceding callback control. Remaining
+coverage stays in [the classification follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/494).
+
+The initial nullable INT arithmetic probe loses to stock
+(0.882x stock/native).
+The bounded fold moves the matched native median from
+2.352 to 0.381 ns/row,
+with a paired stock/native ratio of
+5.815x after the change.
+The [initial](results/numeric-classification-alpha-probe-2026-11-01.csv.gz) and
+[folded](results/numeric-classification-alpha-fold-probe-2026-11-01.csv.gz) probe trials retain direct/tiny
+controls, allocation probes and independent process variation. They are optimizer
+diagnostics, separate from the direct predicate qualification.
+
+## Numeric IS_DIGIT
+
+Released Flink receives boxed primitive integers or internal `DecimalData` in this overload.
+Integral arguments return TRUE regardless of sign or runtime/literal NULL; internal DecimalData arguments return FALSE.
+Direct inputs/literals keep a native type-based predicate. Only the recursively verified
+failure-free integer producer scope folds away unused arithmetic; division, remainder,
+narrowing, UDFs and other unverified producers retain the complete generated call, including
+failures and state changes. Floating signatures remain generated. This preserves the released
+behavior rather than inferring it from Java's public BigDecimal API.
+
+The [result record](results/numeric-classification-digit-2026-11-01.json) and
+[raw trials](results/numeric-classification-digit-2026-11-01.csv.gz) retain 80 configurations and 8,000 main
+trials. Direct runtime arguments retain the native call; arithmetic fold controls are
+explicitly excluded from predicate-kernel qualification. The direct matrix covers four
+integer widths and DECIMAL(18,2)/(38,18), nullable/NOT NULL and GenericRowData/BinaryRowData
+at 1,024 rows. Tiny INT/BIGINT controls use 16 rows. Typed addition/nested multiplication
+provide separate fold diagnostics. No input values are converted to strings.
+
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
+measurements and 131,072 rows/trial compare actual released generated Java on prepared
+RowData with production Calc on matching Arrow. Native operation and equivalent Boolean
+result consumption are timed inside Rust; initial JNI/import/export and perimeter
+transposes are outside this small-operation timer. Intrinsic previous JVM computation
+stays inside. The actual independently compiled preceding-main encoder must bind an
+evaluator; the candidate requires empty descriptors and the intended function before the
+bounded fold. Both sides retain exact types, widths, signed boundaries and matching NULLs.
+
+| Flink line | Rows / measured work | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: |
+| 1.18.1 | 1,024 / predicate | 4.327-76.960x | 56.537-83.467x | 0 / 24 |
+| 1.18.1 | 16 / predicate | 0.146-0.207x | 29.999-32.504x | 8 / 8 |
+| 1.18.1 | 1,024 / fold control | 5.655-9.284x | 86.747-124.336x | 0 / 8 |
+| 2.2.1 | 1,024 / predicate | 4.403-52.638x | 48.010-73.082x | 0 / 24 |
+| 2.2.1 | 16 / predicate | 0.138-0.187x | 30.394-32.411x | 8 / 8 |
+| 2.2.1 | 1,024 / fold control | 5.822-9.055x | 68.054-78.744x | 0 / 8 |
+
+Ratios above one favor native. The type-based predicate returns a Boolean scalar which
+production Calc materializes to the batch length; the measurements do not claim a
+per-row character scan. Small-batch fixed Calc/result costs and every unfavorable sample
+remain in the record. Independent paired-stock drift ranges from
+0.585 to 9.993x; cross-process
+ratios are not causal isolation.
+
+Separate million-row nullable INT source/blackhole jobs retain production JNI, planning,
+startup and both transposes, with parallelism one and two warmups/five measurements.
+Direct jobs retain the predicate. Add/nested jobs exercise the bounded fold and must not
+be cited as predicate-kernel work. All require consumed native Calc work, no fallback and
+empty candidate evaluator descriptors.
+
+| Flink line / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / direct | 0.147362 (0.143816-0.187192) | 0.165473 (0.163363-0.191847) | 0.155385 (0.145714-0.159703) | 0.188236 (0.181853-0.326542) |
+| 1.18.1 / add | 0.152047 (0.144916-0.158812) | 0.159139 (0.153293-0.174958) | 0.150465 (0.142756-0.192243) | 0.186863 (0.182414-0.205804) |
+| 1.18.1 / nested | 0.152921 (0.146317-0.182007) | 0.155172 (0.151606-0.171286) | 0.148784 (0.140122-0.150412) | 0.181575 (0.178331-0.194795) |
+| 2.2.1 / direct | 0.152754 (0.144340-0.183355) | 0.167731 (0.157047-0.171134) | 0.154388 (0.149800-0.160568) | 0.177077 (0.176169-0.203367) |
+| 2.2.1 / add | 0.159082 (0.157465-0.169012) | 0.158240 (0.151098-0.166858) | 0.158511 (0.149533-0.166617) | 0.180761 (0.176107-0.188447) |
+| 2.2.1 / nested | 0.154696 (0.144169-0.162562) | 0.152258 (0.149800-0.169870) | 0.155161 (0.145043-0.165499) | 0.185097 (0.180521-0.209116) |
+
+Across these jobs, native/stock elapsed-time ratios range from
+0.984 to 1.123; native/previous ratios range
+from 0.823 to 0.947. Ratios above one are
+slower. Retain overlapping ranges and independent stock drift; prepared bulk qualification
+does not establish universal whole-job acceleration.
+
+All 96 focused JVM invocations and unchanged released `IS_DIGIT` expression tests
+pass on Flink 1.18.1/2.2.1 with JDK 11/17. Eight numeric declarations, 5,003 rows, nullable
+and NOT NULL inputs, literal NULLs and Boolean consumers compare complete values, resolved
+types, cardinality and unique IDs across multiple batches. Direct runtime witnesses require
+consumed work, no fallback and empty descriptors. Separate failure/empty-batch tests and
+four additional shared-state invocations prove that arguments are not discarded. Java
+compiles for release 11; the release/default/mimalloc Rust core suite passes 1,017 tests
+with two pre-existing ignores.
+
+Reproduce with `integral_expression`, for example
+`SF_INTEGRAL_EXPRESSION='IS_DIGIT(v)'`, and `IntegralExpressionPipelineBenchmark` with
+`sf.integral.expression=IS_DIGIT(v)`. Prepended independently compiled previous-encoder
+classes and `SF_INTEGRAL_PREVIOUS=true` select the preceding callback control. Remaining
+coverage stays in [the classification follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/494).
+
+## Numeric IS_DECIMAL
+
+Released Flink receives boxed primitive integers or internal `DecimalData` in this overload.
+Integral arguments return TRUE regardless of sign or runtime/literal NULL; internal DecimalData arguments return FALSE.
+Direct inputs/literals keep a native type-based predicate. Only the recursively verified
+failure-free integer producer scope folds away unused arithmetic; division, remainder,
+narrowing, UDFs and other unverified producers retain the complete generated call, including
+failures and state changes. Floating signatures remain generated. This preserves the released
+behavior rather than inferring it from Java's public BigDecimal API.
+
+The [result record](results/numeric-classification-decimal-2026-11-01.json) and
+[raw trials](results/numeric-classification-decimal-2026-11-01.csv.gz) retain 80 configurations and 8,000 main
+trials. Direct runtime arguments retain the native call; arithmetic fold controls are
+explicitly excluded from predicate-kernel qualification. The direct matrix covers four
+integer widths and DECIMAL(18,2)/(38,18), nullable/NOT NULL and GenericRowData/BinaryRowData
+at 1,024 rows. Tiny INT/BIGINT controls use 16 rows. Typed addition/nested multiplication
+provide separate fold diagnostics. No input values are converted to strings.
+
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
+measurements and 131,072 rows/trial compare actual released generated Java on prepared
+RowData with production Calc on matching Arrow. Native operation and equivalent Boolean
+result consumption are timed inside Rust; initial JNI/import/export and perimeter
+transposes are outside this small-operation timer. Intrinsic previous JVM computation
+stays inside. The actual independently compiled preceding-main encoder must bind an
+evaluator; the candidate requires empty descriptors and the intended function before the
+bounded fold. Both sides retain exact types, widths, signed boundaries and matching NULLs.
+
+| Flink line | Rows / measured work | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: |
+| 1.18.1 | 1,024 / predicate | 4.444-64.321x | 55.610-91.331x | 0 / 24 |
+| 1.18.1 | 16 / predicate | 0.155-0.190x | 29.598-32.049x | 8 / 8 |
+| 1.18.1 | 1,024 / fold control | 5.805-14.961x | 80.176-100.769x | 0 / 8 |
+| 2.2.1 | 1,024 / predicate | 4.555-58.821x | 59.944-78.244x | 0 / 24 |
+| 2.2.1 | 16 / predicate | 0.143-0.187x | 30.265-32.526x | 8 / 8 |
+| 2.2.1 | 1,024 / fold control | 6.007-11.253x | 74.172-127.370x | 0 / 8 |
+
+Ratios above one favor native. The type-based predicate returns a Boolean scalar which
+production Calc materializes to the batch length; the measurements do not claim a
+per-row character scan. Small-batch fixed Calc/result costs and every unfavorable sample
+remain in the record. Independent paired-stock drift ranges from
+0.558 to 1.749x; cross-process
+ratios are not causal isolation.
+
+Separate million-row nullable INT source/blackhole jobs retain production JNI, planning,
+startup and both transposes, with parallelism one and two warmups/five measurements.
+Direct jobs retain the predicate. Add/nested jobs exercise the bounded fold and must not
+be cited as predicate-kernel work. All require consumed native Calc work, no fallback and
+empty candidate evaluator descriptors.
+
+| Flink line / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / direct | 0.152290 (0.143413-0.157737) | 0.164787 (0.151287-0.177813) | 0.143699 (0.140306-0.158073) | 0.182686 (0.176609-0.207314) |
+| 1.18.1 / add | 0.150613 (0.146701-0.159775) | 0.158213 (0.153216-0.160860) | 0.146302 (0.140714-0.157664) | 0.187217 (0.173755-0.193327) |
+| 1.18.1 / nested | 0.143415 (0.139697-0.151992) | 0.147550 (0.145604-0.167166) | 0.143714 (0.141247-0.143864) | 0.183689 (0.171484-0.196876) |
+| 2.2.1 / direct | 0.163562 (0.152313-0.169804) | 0.164748 (0.160193-0.185271) | 0.165385 (0.151227-0.184964) | 0.193048 (0.190476-0.220503) |
+| 2.2.1 / add | 0.162638 (0.155080-0.175627) | 0.148933 (0.144973-0.164875) | 0.160004 (0.145057-0.171511) | 0.189043 (0.184488-0.221272) |
+| 2.2.1 / nested | 0.156228 (0.154461-0.169524) | 0.158591 (0.154876-0.165304) | 0.148495 (0.145414-0.173559) | 0.187562 (0.184164-0.199794) |
+
+Across these jobs, native/stock elapsed-time ratios range from
+0.916 to 1.082; native/previous ratios range
+from 0.788 to 0.902. Ratios above one are
+slower. Retain overlapping ranges and independent stock drift; prepared bulk qualification
+does not establish universal whole-job acceleration.
+
+All 136 focused JVM invocations and unchanged released `IS_DECIMAL` expression tests
+pass on Flink 1.18.1/2.2.1 with JDK 11/17. Eight numeric declarations, 5,003 rows, nullable
+and NOT NULL inputs, literal NULLs and Boolean consumers compare complete values, resolved
+types, cardinality and unique IDs across multiple batches. Direct runtime witnesses require
+consumed work, no fallback and empty descriptors. Separate failure/empty-batch tests and
+four additional shared-state invocations prove that arguments are not discarded. Java
+compiles for release 11; the release/default/mimalloc Rust core suite passes 1,017 tests
+with two pre-existing ignores.
+
+Reproduce with `integral_expression`, for example
+`SF_INTEGRAL_EXPRESSION='IS_DECIMAL(v)'`, and `IntegralExpressionPipelineBenchmark` with
+`sf.integral.expression=IS_DECIMAL(v)`. Prepended independently compiled previous-encoder
+classes and `SF_INTEGRAL_PREVIOUS=true` select the preceding callback control. Remaining
+coverage stays in [the classification follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/494).
+
+## BOOLEAN CAST to character
+
+Direct BOOLEAN inputs/literals use a native formatter for STRING and bounded VARCHAR/CHAR.
+Modern mode emits uppercase text, truncates overlength values and pads bounded CHAR;
+legacy mode emits lowercase text without target-length enforcement. NULL remains NULL.
+Unverified computed operands retain generated Flink evaluation; independent TRY_CAST and logical-operand qualification follow below.
+No production switch is added. Both modes use Flink's existing cast configuration.
+
+The [result record](results/boolean-string-cast-2026-11-01.json) and
+[raw trials](results/boolean-string-cast-2026-11-01.csv.gz) retain 152 configurations and
+15,200 main trials. Modern bulk cells cover STRING, VARCHAR(1/3/4/5/8) and
+CHAR(1/3/4/5/8/32); legacy cells cover STRING, VARCHAR(3) and CHAR(8), including their
+ignored target lengths. Both released lines use matching nullable/NOT NULL declarations,
+alternating true/false values and actual NULLs every seven rows where selected, with
+GenericRowData and BinaryRowData controls. Tiny STRING/CHAR(8) cells retain both modes.
+
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
+measurements and 131,072 rows/trial compare released generated Java on prebuilt RowData
+with production Calc on matching Arrow buffers. Both consume UTF-8 length and boundary
+bytes; Java uses BinaryStringData access without copying to a byte array. The Rust timer
+covers the native operation and equivalent consumption, excluding initial JNI/import/export
+and both perimeter transposes. Intrinsic previous JVM computation stays inside timing.
+The actual independently compiled preceding encoder must bind a JVM evaluator; the
+candidate requires the intended function and empty descriptors. Every checksum agrees.
+
+| Flink line | Mode | Batch rows | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 1.18.1 | modern | 1024 | 48 | 1.626-11.810x | 9.879-19.183x | 0 |
+| 1.18.1 | modern | 16 | 8 | 0.190-1.836x | 22.304-24.939x | 4 |
+| 1.18.1 | legacy | 1024 | 12 | 6.949-17.607x | 12.056-20.007x | 0 |
+| 1.18.1 | legacy | 16 | 8 | 0.825-1.385x | 20.465-24.113x | 4 |
+| 2.2.1 | modern | 1024 | 48 | 1.551-10.159x | 10.185-19.556x | 0 |
+| 2.2.1 | modern | 16 | 8 | 0.198-1.764x | 21.865-23.653x | 4 |
+| 2.2.1 | legacy | 1024 | 12 | 8.237-11.477x | 12.273-17.424x | 0 |
+| 2.2.1 | legacy | 16 | 8 | 0.838-1.031x | 22.531-25.358x | 6 |
+
+Ratios above one favor native. All 120 bulk cells pass the prepared-operation gate;
+18 of 32 tiny cells remain slower than stock. Paired stock-control drift ranges from
+0.597 to 1.844x. Keep every range and unfavorable case rather than treating
+cross-process ratios as causal isolation.
+
+The initial row writer loses the modern cached-STRING probe. The
+[bitmap block technique](../optimizations/boolean-word-blocks.md) reduces the matched
+native median from 6.162 to 2.446 ns/row; paired stock/native moves from 0.657x to 1.601x.
+The [initial](results/boolean-string-cast-probe-2026-11-01.csv.gz) and
+[optimized](results/boolean-string-cast-blocks-probe-2026-11-01.csv.gz) diagnostics retain
+eight cells each, their stock drift and the untimed allocation/buffer observations.
+They remain separate from the main matrix. The output validity is shared; masked NULL
+positions can carry payload, so fewer requested bytes do not imply smaller output buffers.
+
+Separate million-row nullable BOOLEAN source/blackhole jobs retain production JNI,
+planning/startup and both transposes, parallelism one, two warmups and five measurements.
+They require consumed NativeCalc work, no fallback and empty candidate descriptors.
+
+| Flink line / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-string | 0.158820 (0.157408-0.167913) | 0.159093 (0.154768-0.173915) | 0.157794 (0.144974-0.175266) | 0.191205 (0.188041-0.197415) |
+| 1.18.1 / modern-varchar3 | 0.173374 (0.170471-0.180415) | 0.158684 (0.156780-0.167511) | 0.173464 (0.172478-0.178372) | 0.219246 (0.216342-0.222373) |
+| 1.18.1 / modern-char8 | 0.198373 (0.190325-0.201441) | 0.166334 (0.157919-0.168544) | 0.190850 (0.184823-0.195628) | 0.230782 (0.227496-0.245033) |
+| 1.18.1 / legacy-string | 0.183357 (0.172087-0.197666) | 0.169239 (0.158804-0.179719) | 0.186869 (0.176384-0.253488) | 0.190473 (0.182322-0.195269) |
+| 1.18.1 / legacy-char8 | 0.175425 (0.173670-0.219901) | 0.167376 (0.157756-0.171659) | 0.178774 (0.171553-0.242362) | 0.200614 (0.194548-0.215857) |
+| 2.2.1 / modern-string | 0.161098 (0.151663-0.162549) | 0.162494 (0.156651-0.167074) | 0.155657 (0.150932-0.157231) | 0.193431 (0.183526-0.199987) |
+| 2.2.1 / modern-varchar3 | 0.181900 (0.180263-0.197655) | 0.161911 (0.158735-0.177116) | 0.181335 (0.174057-0.184622) | 0.220254 (0.214121-0.229879) |
+| 2.2.1 / modern-char8 | 0.194581 (0.188651-0.204043) | 0.162995 (0.158961-0.171878) | 0.193474 (0.183651-0.200218) | 0.227816 (0.222634-0.248081) |
+| 2.2.1 / legacy-string | 0.170059 (0.169012-0.170231) | 0.161957 (0.159721-0.165669) | 0.178505 (0.172566-0.190951) | 0.189525 (0.187156-0.201872) |
+| 2.2.1 / legacy-char8 | 0.179689 (0.173855-0.195317) | 0.160113 (0.159534-0.168144) | 0.171615 (0.170076-0.182689) | 0.182692 (0.178134-0.195459) |
+
+Across these jobs, native/stock elapsed ratios range from 0.838
+to 1.009, and native/previous ratios range from
+0.715 to 0.889. Ratios above one are slower.
+These short full jobs retain startup and overlapping ranges; prepared bulk qualification
+does not establish universal complete-job acceleration.
+
+The initial 172 focused JVM invocations pass, including existing numeric and decimal-cast
+regressions. After the bitmap optimization, all 40 focused invocations pass on released
+Flink 1.18.1/2.2.1 with JDK 11/17, including added string consumers. Runtime-source
+witnesses compare complete 5,003-row outputs, resolved types, NULLs, cardinality and unique
+IDs across batches, and require consumed native work, no fallback and empty descriptors.
+The unchanged released CastRulesTest supplies 535 passing stock-oracle cases on each
+Flink/JDK pair; the separate runtime witnesses establish native execution. Four additional
+shared-state invocations pass. Twelve existing integer/predicate fixture smokes retain
+their types and checksums. Java compiles for release 11; release/default/mimalloc Rust core
+passes 1,019 tests with two pre-existing ignores, including every bitmap word and unaligned
+tail. Strict docs, formatting and source/privacy checks pass.
+
+Reproduce the prepared path with `integral_expression`, BOOLEAN input and
+`SF_INTEGRAL_EXPRESSION='CAST(v AS STRING)'`; set `SF_INTEGRAL_LEGACY=true` for the legacy
+control. Complete jobs use `IntegralExpressionPipelineBenchmark`, `SF_BENCHMARK=true`,
+`sf.integral.booleanInput=true`, `sf.integral.expression=CAST(v AS CHAR(8))` and
+`sf.integral.legacy=true` where selected. These are benchmark controls, not production
+options. Remaining cast coverage stays in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## BOOLEAN TRY_CAST to character
+
+Direct BOOLEAN inputs/literals now use the same native STRING/VARCHAR/CHAR formatter for
+TRY_CAST as for CAST. Formatting cannot produce a conversion error. Modern and legacy
+spelling, truncation/padding and NULL behavior match the released generated code.
+Unverified computed operands keep the complete generated expression; TRY_CAST must not swallow
+failures while evaluating an operand or drop shared stateful calls. An unconfigured
+encoder also keeps generated evaluation. No production option is added.
+
+The [independent result record](results/boolean-try-string-cast-2026-11-01.json) and
+[raw trials](results/boolean-try-string-cast-2026-11-01.csv.gz) retain 152 configurations
+and 15,200 trials for TRY_CAST itself. The baseline is the actual preceding CAST encoder,
+which still binds a JVM evaluator for TRY_CAST; the candidate requires empty descriptors
+and the intended native function. Both configure the same released cast mode. The Rust
+kernel, release DSO and benchmark executable are unchanged from CAST qualification;
+source and DSO hashes are checked rather than rerunning the identical Rust suite.
+
+The prepared boundary and matching BOOLEAN/NULL/cached-or-binary RowData inputs are the
+same as CAST above: release/default/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial. Rust times the production operation
+and equivalent UTF-8 boundary consumption. Initial JNI/import/export and both perimeter
+transposes are outside this timer; intrinsic previous JVM calls remain timed. All
+checksums agree. Tiny controls and independent stock drift remain separate from bulk
+qualification.
+
+| Flink line | Mode | Batch rows | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 1.18.1 | modern | 1024 | 48 | 1.646-8.972x | 8.592-18.641x | 0 |
+| 1.18.1 | modern | 16 | 8 | 0.194-2.023x | 22.171-25.598x | 4 |
+| 1.18.1 | legacy | 1024 | 12 | 7.273-11.839x | 16.625-24.167x | 0 |
+| 1.18.1 | legacy | 16 | 8 | 0.807-1.134x | 23.742-26.719x | 4 |
+| 2.2.1 | modern | 1024 | 48 | 1.604-13.670x | 8.472-18.768x | 0 |
+| 2.2.1 | modern | 16 | 8 | 0.198-1.783x | 22.358-26.250x | 4 |
+| 2.2.1 | legacy | 1024 | 12 | 8.882-12.173x | 15.719-21.836x | 0 |
+| 2.2.1 | legacy | 16 | 8 | 0.846-1.052x | 23.919-27.109x | 6 |
+
+All 120 bulk cells pass the prepared-operation gate;
+18 of 32 tiny cells are slower
+than stock. Ratios above one favor native. Paired stock-control drift spans
+0.674-1.940x; cross-process ratios are not causal isolation.
+
+Ten million-row nullable BOOLEAN source/blackhole configurations retain production JNI,
+planning/startup and both transposes, parallelism one, two warmups/five measurements.
+They require consumed NativeCalc work, no fallback and empty candidate descriptors.
+
+| Flink line / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-string | 0.164568 (0.152968-0.178889) | 0.155482 (0.154097-0.169737) | 0.163534 (0.150881-0.166770) | 0.178076 (0.175590-0.190067) |
+| 1.18.1 / modern-varchar3 | 0.172382 (0.168989-0.187415) | 0.163684 (0.158259-0.172744) | 0.182536 (0.172397-0.188274) | 0.205375 (0.204545-0.218700) |
+| 1.18.1 / modern-char8 | 0.199662 (0.192069-0.280178) | 0.159020 (0.156592-0.169004) | 0.193263 (0.188125-0.200050) | 0.224147 (0.213284-0.226749) |
+| 1.18.1 / legacy-string | 0.181813 (0.172095-0.202011) | 0.161006 (0.159682-0.172754) | 0.173408 (0.164714-0.192122) | 0.208225 (0.194695-0.216245) |
+| 1.18.1 / legacy-char8 | 0.179340 (0.176745-0.217252) | 0.166424 (0.164905-0.172886) | 0.183752 (0.171472-0.191367) | 0.205981 (0.200621-0.224427) |
+| 2.2.1 / modern-string | 0.167586 (0.155133-0.190176) | 0.164438 (0.157190-0.166998) | 0.155230 (0.150007-0.166039) | 0.181543 (0.179630-0.195766) |
+| 2.2.1 / modern-varchar3 | 0.176160 (0.168682-0.181995) | 0.163558 (0.160969-0.169159) | 0.174333 (0.167268-0.188351) | 0.207104 (0.199274-0.218739) |
+| 2.2.1 / modern-char8 | 0.195855 (0.191255-0.209562) | 0.158579 (0.157120-0.160678) | 0.192746 (0.189712-0.197713) | 0.216276 (0.211593-0.218344) |
+| 2.2.1 / legacy-string | 0.171966 (0.168650-0.194207) | 0.160860 (0.154903-0.172927) | 0.169731 (0.160435-0.179396) | 0.206011 (0.197393-0.216290) |
+| 2.2.1 / legacy-char8 | 0.175236 (0.169376-0.186207) | 0.159021 (0.156173-0.166410) | 0.174426 (0.166370-0.183576) | 0.193287 (0.187956-0.213551) |
+
+Native/stock elapsed ratios range from 0.796 to
+0.981; native/previous ratios range from
+0.709 to 0.906. Ratios above one are slower.
+Keep overlapping ranges and unfavorable outcomes; prepared qualification does not prove
+universal full-job acceleration.
+
+All 68 focused JVM invocations pass across Flink 1.18.1/2.2.1 and JDK 11/17, including
+CAST regression controls. Complete 5,003-row outputs, resolved types, cardinality, unique
+IDs and NULLs match stock across batches; direct runtime witnesses require consumed native
+work with no fallback or evaluator descriptor. Selected operand division errors, lazy
+branches, empty filtered batches, string consumers and unconfigured encoder behavior are
+covered. Four additional shared-state invocations pass. The unchanged released CastRules
+stock oracle (535 cases per pair) and 1,019 Rust core passes/two pre-existing ignores are
+reused from the identical kernel qualification; they are separate from the new native
+TRY_CAST witnesses. Java compiles for release 11. Strict docs, diff and privacy checks pass.
+
+Reproduce with `SF_INTEGRAL_EXPRESSION='TRY_CAST(v AS STRING)'` and BOOLEAN input for
+`integral_expression`; complete jobs use `sf.integral.booleanInput=true` and
+`sf.integral.expression=TRY_CAST(v AS CHAR(8))`. The existing benchmark-only legacy control
+selects the corresponding mode. Remaining casts stay in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## BOOLEAN CAST over logical operands
+
+The formatter accepts recursively verified BOOLEAN-only NOT, AND, OR, IS NULL,
+IS NOT NULL, IS TRUE, IS NOT TRUE, IS FALSE and IS NOT FALSE over BOOLEAN references
+and literals. These operations cannot fail or mutate shared state. At this logical-only qualification, numeric comparisons, division, UDFs and CASE kept their generated
+or short-circuit fallback routes. The proof never discards a computed operand.
+
+The [result record](results/boolean-logical-cast-2026-11-01.json) and
+[raw trials](results/boolean-logical-cast-2026-11-01.csv.gz) retain 76 configurations
+and 7,600 trials. Representative producers are NOT(v) and nullable
+v IS TRUE. The initial Flink 2.2 NOT NULL v IS TRUE control simplifies to v before encoding and
+is already native in the actual preceding encoder. NOT NULL truth-test cells are
+excluded from new-feature performance coverage on both lines.
+The initial strict previous-route assertion exposed that simplification rather than
+allowing it to count as callback removal. Its independent candidate-only
+[diagnostic](results/boolean-logical-cast-simplified-control-2026-11-01.csv.gz) retains
+all 50 samples separately. Correctness witnesses still cover both declarations.
+
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
+measurements and 131,072 rows/trial use the prepared Rust/Arrow versus released
+Java/RowData boundary described above. Modern targets are STRING/VARCHAR(3)/CHAR(8);
+legacy targets are STRING/CHAR(8). Cached and binary RowData controls match logical
+values and NULLs. The actual preceding encoder must bind a JVM evaluator; candidate
+encoding must have none. Equivalent UTF-8 boundary consumption and every checksum agree.
+The identical production Rust kernel/DSO is reused, with source and DSO hashes checked.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | logical bulk | 30 | 1.456-11.667x | 11.497-20.919x | 0 |
+| 1.18.1 | tiny NOT control | 8 | 0.175-0.918x | 19.655-21.435x | 8 |
+| 2.2.1 | logical bulk | 30 | 1.460-10.751x | 12.686-17.764x | 0 |
+| 2.2.1 | tiny NOT control | 8 | 0.180-0.896x | 19.915-22.033x | 8 |
+
+All 60 bulk cells pass the prepared-operation gate;
+16 of 16 tiny cells are slower
+than stock. Ratios above one favor native. Independent stock-control drift spans
+0.573-1.499x. These measurements qualify the representative logical
+producers; they do not assert a speedup for every expression tree.
+
+Six million-row source/blackhole configurations retain planning/startup, production JNI
+and both transposes. Modern NOT-to-STRING, modern truth-test-to-CHAR(8) and legacy
+NOT-to-STRING run at parallelism one with two warmups/five measurements. Runtime witnesses
+require consumed native Calc work, no fallback and empty candidate evaluator descriptors.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-not | 0.155199 (0.152203-0.180638) | 0.157988 (0.153672-0.165963) | 0.156686 (0.155055-0.184734) | 0.187435 (0.182388-0.190953) |
+| 1.18.1 / modern-truth | 0.239740 (0.234626-0.249306) | 0.193730 (0.190997-0.201901) | 0.240761 (0.235625-0.248413) | 0.275991 (0.274064-0.291803) |
+| 1.18.1 / legacy-not | 0.172859 (0.170668-0.216929) | 0.165043 (0.159584-0.165952) | 0.193202 (0.175767-0.262754) | 0.191391 (0.189054-0.218440) |
+| 2.2.1 / modern-not | 0.162671 (0.154038-0.169849) | 0.155008 (0.153929-0.162233) | 0.159649 (0.156157-0.168375) | 0.196254 (0.186756-0.199247) |
+| 2.2.1 / modern-truth | 0.251202 (0.245248-0.265937) | 0.206193 (0.203454-0.212622) | 0.245309 (0.244001-0.258694) | 0.269516 (0.266690-0.276784) |
+| 2.2.1 / legacy-not | 0.177856 (0.172548-0.199941) | 0.163611 (0.160215-0.168126) | 0.176808 (0.172573-0.188163) | 0.191048 (0.186868-0.204655) |
+
+Native/stock elapsed ratios span 0.808-1.018;
+native/previous ratios span 0.702-0.862.
+Ratios above one are slower. Retain overlapping ranges and all unfavorable cases;
+bulk qualification does not establish universal full-job acceleration.
+
+All 84 focused JVM invocations and four additional shared-state invocations pass on
+released Flink 1.18.1/2.2.1 with JDK 11/17. Runtime witnesses compare complete 5,003-row
+outputs, resolved types, NULLs, cardinality and unique IDs across batches; independent
+BOOLEAN columns cover AND/OR combinations and nesting. They require consumed native work,
+no fallback and empty descriptors for every admitted logical query. Failing comparisons
+under logical wrappers, lazy/empty branches and stateful producers retain their exact
+prior route and successful/exception behavior. The unchanged released
+ScalarFunctionsTest.testIsTrueIsFalse and ScalarOperatorsTest.testFunctionWithBooleanExpression
+also pass on all four pairs; they are separate from the new native execution witnesses.
+Java targets release 11. The unchanged kernel retains its prior 1,019 Rust core passes,
+two pre-existing ignores and released CastRules stock oracle. Strict docs, diff, source
+and privacy checks pass.
+
+Reproduce prepared qualification with `integral_expression`, BOOLEAN input and
+`SF_INTEGRAL_EXPRESSION='CAST(NOT v AS STRING)'`. Complete jobs use
+`sf.integral.booleanInput=true` and `sf.integral.expression=CAST(v IS TRUE AS CHAR(8))`.
+No production option is introduced. Remaining conversions are tracked in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## BOOLEAN TRY_CAST over logical operands
+
+The formatter accepts recursively verified BOOLEAN-only NOT, AND, OR, IS NULL,
+IS NOT NULL, IS TRUE, IS NOT TRUE, IS FALSE and IS NOT FALSE over BOOLEAN references
+and literals. These operations cannot fail or mutate shared state. At this logical-only qualification, numeric comparisons, division, UDFs and CASE kept their generated
+or short-circuit fallback routes. The proof never discards a computed operand.
+
+The [result record](results/boolean-logical-try-cast-2026-11-01.json) and
+[raw trials](results/boolean-logical-try-cast-2026-11-01.csv.gz) retain 76 configurations
+and 7,600 trials. Representative producers are NOT(v) and nullable
+v IS TRUE. The initial Flink 2.2 NOT NULL v IS TRUE control simplifies to v before encoding and
+is already native in the actual preceding encoder. NOT NULL truth-test cells are
+excluded from new-feature performance coverage on both lines.
+The preceding CAST strict previous-route assertion exposed that simplification rather than
+allowing it to count as callback removal. Its independent candidate-only
+[diagnostic](results/boolean-logical-cast-simplified-control-2026-11-01.csv.gz) retains
+all 50 samples separately. Correctness witnesses still cover both declarations.
+
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
+measurements and 131,072 rows/trial use the prepared Rust/Arrow versus released
+Java/RowData boundary described above. Modern targets are STRING/VARCHAR(3)/CHAR(8);
+legacy targets are STRING/CHAR(8). Cached and binary RowData controls match logical
+values and NULLs. The actual preceding encoder must bind a JVM evaluator; candidate
+encoding must have none. Equivalent UTF-8 boundary consumption and every checksum agree.
+The identical production Rust kernel/DSO is reused, with source and DSO hashes checked.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | logical bulk | 30 | 1.429-18.184x | 8.887-21.064x | 0 |
+| 1.18.1 | tiny NOT control | 8 | 0.175-0.939x | 19.482-25.024x | 8 |
+| 2.2.1 | logical bulk | 30 | 1.453-12.490x | 9.313-21.843x | 0 |
+| 2.2.1 | tiny NOT control | 8 | 0.175-1.104x | 19.154-27.388x | 7 |
+
+All 60 bulk cells pass the prepared-operation gate;
+15 of 16 tiny cells are slower
+than stock. Ratios above one favor native. Independent stock-control drift spans
+0.632-1.992x. These measurements qualify the representative logical
+producers; they do not assert a speedup for every expression tree.
+
+Six million-row source/blackhole configurations retain planning/startup, production JNI
+and both transposes. Modern NOT-to-STRING, modern truth-test-to-CHAR(8) and legacy
+NOT-to-STRING run at parallelism one with two warmups/five measurements. Runtime witnesses
+require consumed native Calc work, no fallback and empty candidate evaluator descriptors.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-not | 0.192990 (0.170395-0.289754) | 0.188779 (0.175542-0.276829) | 0.168986 (0.155901-0.175384) | 0.190369 (0.185188-0.193414) |
+| 1.18.1 / modern-truth | 0.240194 (0.235374-0.249937) | 0.189541 (0.177280-0.190945) | 0.218437 (0.205282-0.244150) | 0.235512 (0.227074-0.263892) |
+| 1.18.1 / legacy-not | 0.211747 (0.189535-0.228928) | 0.179852 (0.169331-0.181138) | 0.185579 (0.179722-0.194138) | 0.224362 (0.216911-0.230450) |
+| 2.2.1 / modern-not | 0.164041 (0.156972-0.166769) | 0.162113 (0.158810-0.163989) | 0.178893 (0.172315-0.193451) | 0.206872 (0.204361-0.213012) |
+| 2.2.1 / modern-truth | 0.234089 (0.214258-0.237513) | 0.168890 (0.167765-0.186218) | 0.234878 (0.214046-0.243389) | 0.250744 (0.240538-0.263417) |
+| 2.2.1 / legacy-not | 0.226982 (0.200094-0.244595) | 0.205476 (0.184333-0.210453) | 0.198807 (0.191128-0.219500) | 0.244790 (0.222760-0.250576) |
+
+Native/stock elapsed ratios span 0.721-0.988;
+native/previous ratios span 0.674-0.992.
+Ratios above one are slower. Retain overlapping ranges and all unfavorable cases;
+bulk qualification does not establish universal full-job acceleration.
+
+All 92 focused JVM invocations and four additional shared-state invocations pass on
+released Flink 1.18.1/2.2.1 with JDK 11/17. Runtime witnesses compare complete 5,003-row
+outputs, resolved types, NULLs, cardinality and unique IDs across batches; independent
+BOOLEAN columns cover AND/OR combinations and nesting. They require consumed native work,
+no fallback and empty descriptors for every admitted logical query. Failing comparisons
+under logical wrappers, lazy/empty branches and stateful producers retain their exact
+prior route and successful/exception behavior. The unchanged released
+ScalarFunctionsTest.testIsTrueIsFalse and ScalarOperatorsTest.testFunctionWithBooleanExpression
+retain their unchanged preceding CAST qualification on all four pairs; the new TRY_CAST runtime witnesses establish the changed native route.
+Java targets release 11. The unchanged kernel retains its prior 1,019 Rust core passes,
+two pre-existing ignores and released CastRules stock oracle. Strict docs, diff, source
+and privacy checks pass.
+
+Reproduce prepared qualification with `integral_expression`, BOOLEAN input and
+`SF_INTEGRAL_EXPRESSION='TRY_CAST(NOT v AS STRING)'`. Complete jobs use
+`sf.integral.booleanInput=true` and `sf.integral.expression=TRY_CAST(v IS TRUE AS CHAR(8))`.
+No production option is introduced. Remaining conversions are tracked in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## Bounded DECIMAL CAST to character
+
+Direct DECIMAL inputs/literals reuse the exact native plain-text formatter. Modern
+VARCHAR truncates through LEFT; modern CHAR truncates or space-pads through RPAD.
+DECIMAL text is ASCII, so these existing kernels preserve released Flink character
+widths without a Unicode approximation. Legacy mode ignores target length; maximum-INT
+CHAR does not pad. This direct-input qualification does not measure computed decimals;
+the later unary-operand qualification is recorded separately below. Other computed
+decimals and their metadata guards retain existing admission.
+Bounded TRY_CAST remains a separate qualification.
+
+The [result record](results/decimal-bounded-cast-2026-11-01.json) and
+[raw trials](results/decimal-bounded-cast-2026-11-01.csv.gz) retain 96 configurations/9600 trials.
+Release/default-feature/mimalloc, Oracle JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. DECIMAL(18,2)/(38,18), signed extrema and
+large signed coefficients match across GenericRowData/BinaryRowData and nullable/NOT NULL
+schemas. Modern targets are VARCHAR(3)/CHAR(8)/CHAR(44); legacy targets VARCHAR(3)/CHAR(8).
+All output checksums match. Candidate descriptors must be empty; the independently
+compiled preceding encoder must retain its actual JVM route. Tiny 16-row CHAR(8)
+controls remain separate from 1,024-row bulk qualification.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 40 | 3.076-9.964x | 4.247-11.757x | 0 |
+| 1.18.1 | tiny control | 8 | 1.421-3.349x | 10.676-13.234x | 0 |
+| 2.2.1 | bulk | 40 | 3.073-10.201x | 4.239-11.687x | 0 |
+| 2.2.1 | tiny control | 8 | 1.427-3.294x | 10.489-12.713x | 0 |
+
+All 80 bulk cells beat stock. 0 of 16 tiny controls are slower.
+Independent stock-control drift spans 0.731-1.130x; all ranges remain in the record.
+
+Six complete million-row jobs retain source generation, planning/startup, production JNI
+and both perimeter transposes, using a rowwise source and blackhole at parallelism one.
+Each has two warmups/five measurements. Compact modern VARCHAR(3), wide modern CHAR(44)
+and wide legacy CHAR(8) require consumed NativeCalc, no fallback and no candidate evaluator.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-compact | 0.310117 (0.303876-0.311701) | 0.215852 (0.211178-0.227059) | 0.315230 (0.311484-0.321128) | 0.375995 (0.373839-0.383962) |
+| 1.18.1 / modern-wide | 0.566128 (0.550808-0.568562) | 0.270693 (0.266628-0.276478) | 0.554017 (0.540817-0.565504) | 0.621521 (0.619297-0.633610) |
+| 1.18.1 / legacy-wide | 0.278262 (0.263808-0.285093) | 0.218404 (0.214724-0.225595) | 0.272596 (0.267901-0.296278) | 0.310646 (0.304137-0.321228) |
+| 2.2.1 / modern-compact | 0.316695 (0.315670-0.330976) | 0.215533 (0.210773-0.216891) | 0.315654 (0.311846-0.325644) | 0.355857 (0.346658-0.382724) |
+| 2.2.1 / modern-wide | 0.565624 (0.549676-0.577944) | 0.263300 (0.249329-0.267397) | 0.555790 (0.545149-0.560500) | 0.622109 (0.613828-0.638969) |
+| 2.2.1 / legacy-wide | 0.277581 (0.270206-0.302031) | 0.216288 (0.210198-0.222025) | 0.280246 (0.269209-0.293993) | 0.308279 (0.306989-0.325054) |
+
+Native/stock elapsed ratios span 0.466-0.785;
+native/previous ratios span 0.423-0.703. Ratios above one are slower.
+Overlapping ranges and unfavorable whole-job results remain; prepared qualification
+does not establish universal end-to-end acceleration.
+
+All 132 focused encoding/runtime invocations (including existing unbounded/failure controls) pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row outputs verify declared types, NULLs, unique IDs
+and cardinality across batches with consumed native work and empty evaluator descriptors.
+Additional consumers, truncation/padding, lazy and empty-batch cases, selected operand
+failures and materialized aggregate results match stock. Flink 1.18 does not support
+MAX(CHAR); that boundary witness first widens the padded CHAR to STRING before MAX.
+Twelve existing integer/predicate fixture controls pass. The unchanged released
+CastRulesTest oracle retains its prior 535 stock cases per pair; the unchanged Rust
+DSO retains 1,019 core passes/two pre-existing ignores. Neither reused oracle substitutes
+for the new native execution witnesses. Source/DSO hashes and independently recompiled
+preceding encoder classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, DECIMAL input and
+`SF_INTEGRAL_EXPRESSION='CAST(v AS CHAR(8))'`. Complete jobs use
+`sf.integral.decimalPrecision=38`, `sf.integral.decimalScale=18` and the same expression.
+These are benchmark-only controls; no production option is introduced. Remaining work
+is tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## Bounded DECIMAL TRY_CAST to character
+
+Direct DECIMAL inputs/literals reuse the exact native plain-text formatter. Modern
+VARCHAR truncates through LEFT; modern CHAR truncates or space-pads through RPAD.
+DECIMAL text is ASCII, so these existing kernels preserve released Flink character
+widths without a Unicode approximation. Legacy mode ignores target length; maximum-INT
+CHAR does not pad. This direct-input TRY_CAST qualification does not measure computed
+decimals; the later unary-operand qualification is recorded separately below. Other
+computed decimals and their metadata guards retain existing admission.
+TRY_CAST uses the same total formatting operation and does not catch operand failures.
+
+The [result record](results/decimal-bounded-try-cast-2026-11-01.json) and
+[raw trials](results/decimal-bounded-try-cast-2026-11-01.csv.gz) retain 96 configurations/9600 trials.
+Release/default-feature/mimalloc, Oracle JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. DECIMAL(18,2)/(38,18), signed extrema and
+large signed coefficients match across GenericRowData/BinaryRowData and nullable/NOT NULL
+schemas. Modern targets are VARCHAR(3)/CHAR(8)/CHAR(44); legacy targets VARCHAR(3)/CHAR(8).
+All output checksums match. Candidate descriptors must be empty; the independently
+compiled preceding encoder must reject bounded DECIMAL TRY_CAST. Its prepared
+control runs the released evaluator in Java on matching RowData; operation and
+equivalent consumption are timed in Java. Complete previous jobs require the real
+planner fallback reason, zero native substitutions and zero consumed native work.
+The candidate uses Rust-side timers and empty evaluator descriptors. Tiny 16-row CHAR(8)
+controls remain separate from 1,024-row bulk qualification.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 40 | 3.251-9.827x | 3.488-10.748x | 0 |
+| 1.18.1 | tiny control | 8 | 1.412-3.401x | 1.544-3.745x | 0 |
+| 2.2.1 | bulk | 40 | 3.104-10.154x | 3.422-10.276x | 0 |
+| 2.2.1 | tiny control | 8 | 1.428-3.434x | 1.746-3.500x | 0 |
+
+All 80 bulk cells beat stock. 0 of 16 tiny controls are slower.
+Independent stock-control drift spans 0.759-0.999x; all ranges remain in the record.
+
+Six complete million-row configurations use a rowwise source and blackhole at
+parallelism one, with two warmups/five measurements. Candidate native jobs retain source
+generation, planning/startup, production JNI and both perimeter transposes; the preceding
+stock fallback retains its actual path. Compact modern VARCHAR(3), wide modern CHAR(44)
+and wide legacy CHAR(8) require consumed NativeCalc, no fallback and no candidate evaluator.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-compact | 0.323108 (0.317246-0.325959) | 0.215176 (0.214526-0.218355) | 0.272784 (0.264374-0.280154) | 0.272559 (0.259251-0.276117) |
+| 1.18.1 / modern-wide | 0.554577 (0.544595-0.577801) | 0.249330 (0.245439-0.250792) | 0.521098 (0.515807-0.523225) | 0.520737 (0.517170-0.526215) |
+| 1.18.1 / legacy-wide | 0.288225 (0.274643-0.316488) | 0.218552 (0.208366-0.222127) | 0.240750 (0.233640-0.246038) | 0.249669 (0.236538-0.253221) |
+| 2.2.1 / modern-compact | 0.317752 (0.315881-0.329789) | 0.216294 (0.213674-0.223117) | 0.268792 (0.265014-0.273145) | 0.281972 (0.268092-0.286282) |
+| 2.2.1 / modern-wide | 0.555897 (0.533242-0.559481) | 0.252509 (0.245032-0.255392) | 0.520144 (0.518186-0.537838) | 0.520204 (0.515485-0.531938) |
+| 2.2.1 / legacy-wide | 0.285559 (0.268036-0.291094) | 0.218255 (0.212956-0.227082) | 0.244965 (0.238019-0.249634) | 0.237997 (0.235115-0.245426) |
+
+Native/stock elapsed ratios span 0.450-0.764;
+native/previous ratios span 0.479-0.917. Ratios above one are slower.
+Overlapping ranges and unfavorable whole-job results remain; prepared qualification
+does not establish universal end-to-end acceleration.
+
+All 184 focused encoding/runtime invocations (including existing unbounded/failure controls) pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row outputs verify declared types, NULLs, unique IDs
+and cardinality across batches with consumed native work and empty evaluator descriptors.
+Additional consumers, truncation/padding, lazy and empty-batch cases, selected operand
+failures and materialized aggregate results match stock. Flink 1.18 does not support
+MAX(CHAR); that boundary witness first widens the padded CHAR to STRING before MAX.
+Twelve existing integer/predicate fixture controls pass. The unchanged released
+CastRulesTest oracle retains its prior 535 stock cases per pair; the unchanged Rust
+DSO retains 1,019 core passes/two pre-existing ignores. Neither reused oracle substitutes
+for the new native execution witnesses. Source/DSO hashes and independently recompiled
+preceding encoder classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, DECIMAL input and
+`SF_INTEGRAL_EXPRESSION='TRY_CAST(v AS CHAR(8))'`. Complete jobs use
+`sf.integral.decimalPrecision=38`, `sf.integral.decimalScale=18` and the same expression.
+These are benchmark-only controls; no production option is introduced. Remaining work
+is tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+The preceding fallback control launches `IntegralExpressionBenchmarkFunctions` with
+`sf.integral.previous=true` and `sf.integral.fallbackControl=true`, using the same
+expression, legacy mode, row format and trial counts. Complete previous jobs use
+the same fallback control. These controls never replace the actual rejected encoding
+with a synthetic native or callback program.
+
+## BOOLEAN CAST over integer comparisons
+
+Integer =, <>, <, <=, > and >= comparisons reuse the native BOOLEAN formatter.
+The recursive proof admits verified integer references/literals, wrapping addition,
+subtraction and multiplication, lossless widening and the existing integral rounding
+forms. BOOLEAN logical/null/truth wrappers remain native; integer IS NULL/IS NOT NULL
+also cover the optimizer's expansion of nullable comparisons. The proof excludes
+failing and stateful producers. DECIMAL, character, floating and temporal comparisons,
+division, remainder and other unverified producers keep their existing routes.
+Modern and legacy text/width rules are unchanged. No production switch is introduced.
+
+The [result record](results/boolean-integer-comparison-cast-2026-11-01.json) and
+[raw trials](results/boolean-integer-comparison-cast-2026-11-01.csv.gz) retain 64 configurations/6,400 trials.
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. INT/BIGINT extrema and values beyond 2^53
+match across GenericRowData/BinaryRowData and nullable/NOT NULL declarations.
+Representative bulk expressions are modern v>=0 to STRING, modern wrapping v+1<0
+to CHAR(8), and legacy v<0 to CHAR(8). Sixteen-row modern comparison-to-STRING
+controls remain separate. All checksums agree. The independently recompiled actual
+preceding encoder must bind a JVM evaluator; the candidate must have no evaluator.
+The unchanged Rust formatter, Calc and comparison kernels retain their exact DSO.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 1.571-9.760x | 11.270-14.952x | 0 |
+| 1.18.1 | tiny control | 8 | 0.123-0.162x | 14.109-15.029x | 8 |
+| 2.2.1 | bulk | 24 | 1.581-9.791x | 11.132-15.929x | 0 |
+| 2.2.1 | tiny control | 8 | 0.123-0.163x | 14.003-15.089x | 8 |
+
+All 48 bulk cells beat stock; 16 of 16 tiny controls are slower.
+Independent stock-control drift spans 0.650-1.393x. All ranges are retained.
+For the Flink 2.2 NOT NULL INT/GenericRowData comparison, untimed native allocation
+probes report 29 requests for both batch sizes: 10,534 requested bytes at 1,024 rows
+and 1,816 at 16 rows. Native medians rise from 2.315 to 33.023 ns/row while stock
+remains near 4.7 ns/row. Fixed per-batch work remains a small-batch limitation;
+removing the preceding JVM evaluator does not eliminate that cost.
+
+Six complete million-row source/blackhole configurations retain source generation,
+planning/startup, production JNI and both transposes. Modern INT comparison-to-STRING,
+modern BIGINT arithmetic comparison-to-CHAR(8), and legacy INT comparison-to-CHAR(8)
+run at parallelism one with two warmups/five measurements. Each native query requires
+consumed NativeCalc, no fallback and empty candidate evaluator descriptors.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-comparison | 0.188399 (0.186934-0.194068) | 0.191475 (0.190601-0.197079) | 0.192767 (0.183027-0.197884) | 0.217869 (0.215422-0.238049) |
+| 1.18.1 / modern-arithmetic | 0.235702 (0.231248-0.249417) | 0.199672 (0.196615-0.223385) | 0.242474 (0.237011-0.247843) | 0.273772 (0.270471-0.284878) |
+| 1.18.1 / legacy-comparison | 0.208412 (0.200292-0.227803) | 0.188325 (0.185272-0.198546) | 0.212331 (0.208584-0.216080) | 0.223269 (0.220450-0.231086) |
+| 2.2.1 / modern-comparison | 0.185857 (0.181895-0.190989) | 0.187063 (0.184722-0.196945) | 0.187830 (0.180328-0.192330) | 0.219429 (0.215679-0.226802) |
+| 2.2.1 / modern-arithmetic | 0.225332 (0.219251-0.228684) | 0.190797 (0.190280-0.194885) | 0.229180 (0.218205-0.244467) | 0.258519 (0.251868-0.277756) |
+| 2.2.1 / legacy-comparison | 0.205362 (0.204444-0.214410) | 0.192941 (0.189956-0.201685) | 0.204743 (0.194486-0.218907) | 0.212190 (0.207976-0.218663) |
+
+Native/stock elapsed ratios span 0.847-1.016;
+native/previous ratios span 0.729-0.909. Ratios above one are slower.
+All unfavorable results and overlapping ranges remain. Prepared qualification does
+not establish universal end-to-end acceleration.
+
+All 268 focused JVM invocations, four additional shared-state invocations and
+12 existing fixture smokes pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row witnesses compare all values, schema, NULLs,
+IDs and cardinality across batches for TINYINT/SMALLINT/INT/BIGINT, independent input
+columns, nullable/NOT NULL declarations, modern/legacy mode, signed extrema and BIGINT
+values beyond 2^53. They require consumed native work, no fallback and no evaluator.
+String consumers, grouping, lazy branches and empty filtered batches match stock.
+Failing and stateful inputs keep their released behavior and exact previous routes.
+Unchanged released boolean-expression/truth tests, 535 CastRules stock-oracle cases
+per pair, and the identical DSO's 1,019 core passes/two pre-existing ignores retain
+their preceding qualification; new runtime witnesses establish the changed route.
+Source/DSO hashes and independently recompiled baseline classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, INT/BIGINT input and
+`SF_INTEGRAL_EXPRESSION='CAST(v>=CAST(0 AS $TYPE) AS STRING)'`. Complete jobs use
+`sf.integral.expression=CAST(v>=0 AS STRING)`; BIGINT controls additionally use
+`sf.integral.bigintInput=true`. Remaining conversions are tracked in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## BOOLEAN TRY_CAST over integer comparisons
+
+Integer =, <>, <, <=, > and >= comparisons reuse the native BOOLEAN formatter.
+The recursive proof admits verified integer references/literals, wrapping addition,
+subtraction and multiplication, lossless widening and the existing integral rounding
+forms. BOOLEAN logical/null/truth wrappers remain native; integer IS NULL/IS NOT NULL
+also cover the optimizer's expansion of nullable comparisons. The proof excludes
+failing and stateful producers. DECIMAL, character, floating and temporal comparisons,
+division, remainder and other unverified producers keep their existing routes.
+Modern and legacy text/width rules are unchanged. No production switch is introduced.
+
+The [result record](results/boolean-integer-comparison-try-cast-2026-11-01.json) and
+[raw trials](results/boolean-integer-comparison-try-cast-2026-11-01.csv.gz) retain 64 configurations/6,400 trials.
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. INT/BIGINT extrema and values beyond 2^53
+match across GenericRowData/BinaryRowData and nullable/NOT NULL declarations.
+Representative bulk expressions are modern v>=0 to STRING, modern wrapping v+1<0
+to CHAR(8), and legacy v<0 to CHAR(8). Sixteen-row modern comparison-to-STRING
+controls remain separate. All checksums agree. The independently recompiled actual
+preceding encoder must bind a JVM evaluator; the candidate must have no evaluator.
+The unchanged Rust formatter, Calc and comparison kernels retain their exact DSO.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 1.502-16.474x | 10.559-18.565x | 0 |
+| 1.18.1 | tiny control | 8 | 0.124-0.162x | 14.250-15.230x | 8 |
+| 2.2.1 | bulk | 24 | 1.531-10.600x | 10.074-19.601x | 0 |
+| 2.2.1 | tiny control | 8 | 0.122-0.163x | 14.110-14.918x | 8 |
+
+All 48 bulk cells beat stock; 16 of 16 tiny controls are slower.
+Independent stock-control drift spans 0.756-1.905x. All ranges are retained.
+
+Six complete million-row source/blackhole configurations retain source generation,
+planning/startup, production JNI and both transposes. Modern INT comparison-to-STRING,
+modern BIGINT arithmetic comparison-to-CHAR(8), and legacy INT comparison-to-CHAR(8)
+run at parallelism one with two warmups/five measurements. Each native query requires
+consumed NativeCalc, no fallback and empty candidate evaluator descriptors.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-comparison | 0.188606 (0.183451-0.213412) | 0.194802 (0.194257-0.200845) | 0.193022 (0.181021-0.197639) | 0.212879 (0.212570-0.221866) |
+| 1.18.1 / modern-arithmetic | 0.240461 (0.234930-0.242738) | 0.202671 (0.191075-0.207119) | 0.240431 (0.227648-0.241450) | 0.244998 (0.240404-0.252949) |
+| 1.18.1 / legacy-comparison | 0.210634 (0.209291-0.225512) | 0.193515 (0.189962-0.200454) | 0.215743 (0.197997-0.227196) | 0.245962 (0.234360-0.359305) |
+| 2.2.1 / modern-comparison | 0.189071 (0.184989-0.199581) | 0.189496 (0.185077-0.194949) | 0.192146 (0.185846-0.196981) | 0.207776 (0.204363-0.213585) |
+| 2.2.1 / modern-arithmetic | 0.229806 (0.221967-0.238040) | 0.198334 (0.195886-0.204989) | 0.224424 (0.220635-0.238883) | 0.247177 (0.244628-0.259436) |
+| 2.2.1 / legacy-comparison | 0.195756 (0.192557-0.200052) | 0.185488 (0.183502-0.196643) | 0.202816 (0.201091-0.213579) | 0.228695 (0.224209-0.232692) |
+
+Native/stock elapsed ratios span 0.843-1.033;
+native/previous ratios span 0.787-0.915. Ratios above one are slower.
+All unfavorable results and overlapping ranges remain. Prepared qualification does
+not establish universal end-to-end acceleration.
+
+All 292 focused JVM invocations, four additional shared-state invocations and
+12 existing fixture smokes pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row witnesses compare all values, schema, NULLs,
+IDs and cardinality across batches for TINYINT/SMALLINT/INT/BIGINT, independent input
+columns, nullable/NOT NULL declarations, modern/legacy mode, signed extrema and BIGINT
+values beyond 2^53. They require consumed native work, no fallback and no evaluator.
+String consumers, grouping, lazy branches and empty filtered batches match stock.
+Failing and stateful inputs keep their released behavior and exact previous routes.
+Unchanged released boolean-expression/truth tests, 535 CastRules stock-oracle cases
+per pair, and the identical DSO's 1,019 core passes/two pre-existing ignores retain
+their preceding qualification; new runtime witnesses establish the changed route.
+Source/DSO hashes and independently recompiled baseline classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, INT/BIGINT input and
+`SF_INTEGRAL_EXPRESSION='TRY_CAST(v>=CAST(0 AS $TYPE) AS STRING)'`. Complete jobs use
+`sf.integral.expression=TRY_CAST(v>=0 AS STRING)`; BIGINT controls additionally use
+`sf.integral.bigintInput=true`. Remaining conversions are tracked in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## DECIMAL unary CAST to character
+
+Verified DECIMAL ABS and unary minus, same-operator nesting, and same-scale
+precision widening reuse the native plain-text formatter and existing ASCII-safe
+LEFT/RPAD width kernels. Released Flink retains precision/scale in these unary
+operations. Modern/legacy spelling, trailing zeros, truncation/padding and NULLs
+remain unchanged. Arithmetic CAST/TRY_CAST is qualified separately below. Other
+arithmetic, rounding metadata, SIGN, mixed unary trees, stateful/failing producers
+and unknown configuration retain their existing routes.
+No native kernel, JNI boundary, ownership contract or production switch changes.
+
+The [result record](results/decimal-unary-cast-2026-11-01.json) and
+[raw trials](results/decimal-unary-cast-2026-11-01.csv.gz) retain 64 configurations/6,400 trials.
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. DECIMAL(18,2)/(38,18) extrema and large signed coefficients
+match across GenericRowData/BinaryRowData and nullable/NOT NULL declarations.
+Representative bulk expressions are modern ABS(v) to STRING, modern -v
+to CHAR(8), and legacy ABS(v) to CHAR(44). Sixteen-row modern ABS-to-STRING
+controls remain separate. All checksums agree. The independently recompiled actual
+preceding encoder must bind a JVM evaluator; the candidate must have no evaluator.
+The unchanged Rust decimal formatter, Calc and unary kernels retain their exact DSO.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 3.527-8.304x | 5.151-8.657x | 0 |
+| 1.18.1 | tiny control | 8 | 1.174-3.390x | 16.101-19.433x | 0 |
+| 2.2.1 | bulk | 24 | 3.242-8.637x | 4.963-8.754x | 0 |
+| 2.2.1 | tiny control | 8 | 1.221-3.017x | 17.392-19.115x | 0 |
+
+All 48 bulk cells beat stock; 0 of 16 tiny controls are slower.
+Independent stock-control drift spans 0.792-1.170x. All ranges are retained.
+
+Six complete million-row source/blackhole configurations retain source generation,
+planning/startup, production JNI and both transposes. Modern DECIMAL(18,2) ABS-to-STRING,
+modern DECIMAL(38,18) negate-to-CHAR(8), and legacy DECIMAL(38,18) ABS-to-CHAR(44)
+run at parallelism one with two warmups/five measurements. Each native query requires
+consumed NativeCalc, no fallback and empty candidate evaluator descriptors.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-abs | 0.259279 (0.245537-0.298334) | 0.212230 (0.207713-0.220957) | 0.257366 (0.249812-0.266154) | 0.271891 (0.264303-0.274019) |
+| 1.18.1 / modern-negate | 0.388762 (0.378809-0.394126) | 0.231802 (0.224440-0.236891) | 0.382977 (0.378330-0.387905) | 0.448462 (0.438670-0.452394) |
+| 1.18.1 / legacy-abs | 0.290965 (0.277537-0.297425) | 0.219611 (0.217127-0.231349) | 0.282531 (0.277297-0.308506) | 0.303356 (0.296926-0.312935) |
+| 2.2.1 / modern-abs | 0.260823 (0.248016-0.278068) | 0.210224 (0.202756-0.216913) | 0.260424 (0.255985-0.281087) | 0.271364 (0.267967-0.273161) |
+| 2.2.1 / modern-negate | 0.365805 (0.361973-0.375923) | 0.224516 (0.218071-0.230758) | 0.367469 (0.361109-0.375109) | 0.420946 (0.414307-0.428079) |
+| 2.2.1 / legacy-abs | 0.294697 (0.279771-0.298122) | 0.227533 (0.225032-0.228816) | 0.287236 (0.281952-0.329673) | 0.293164 (0.290418-0.302692) |
+
+Native/stock elapsed ratios span 0.596-0.819;
+native/previous ratios span 0.517-0.781. Ratios above one are slower.
+All unfavorable results and overlapping ranges remain. Prepared qualification does
+not establish universal end-to-end acceleration.
+
+All 248 focused JVM invocations, four additional shared-state invocations and
+12 existing fixture smokes pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row witnesses compare all values, schema, NULLs,
+IDs and cardinality across batches for eight DECIMAL precision/scale pairs from (1,1)
+through (38,38), nullable/NOT NULL declarations, modern/legacy mode, signed extrema,
+zeros and unit coefficients. They require consumed native work, no fallback and no evaluator.
+String consumers, grouping, lazy branches and empty filtered batches match stock.
+Failing and stateful inputs keep their released behavior and exact previous routes.
+The unchanged released DecimalData formatting oracle, 535 CastRules stock-oracle cases
+per pair, and the identical DSO's 1,019 core passes/two pre-existing ignores retain
+their preceding qualification; new runtime witnesses establish the changed route.
+Source/DSO hashes and independently recompiled baseline classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, DECIMAL input and
+`SF_INTEGRAL_EXPRESSION='CAST(ABS(v) AS STRING)'`. Complete jobs use
+`sf.integral.expression=CAST(ABS(v) AS STRING)` and
+`sf.integral.decimalPrecision=18`, `sf.integral.decimalScale=2`. Remaining conversions
+are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## DECIMAL unary TRY_CAST to character
+
+Verified DECIMAL ABS and unary minus, same-operator nesting, and same-scale
+precision widening reuse the native plain-text formatter and existing ASCII-safe
+LEFT/RPAD width kernels. Released Flink retains precision/scale in these unary
+operations. Modern/legacy spelling, trailing zeros, truncation/padding and NULLs
+remain unchanged. Arithmetic CAST/TRY_CAST is qualified separately below. Other
+arithmetic, rounding metadata, SIGN, mixed unary trees, stateful/failing producers
+and unknown configuration retain their existing routes.
+No native kernel, JNI boundary, ownership contract or production switch changes.
+
+The [result record](results/decimal-unary-try-cast-2026-11-01.json) and
+[raw trials](results/decimal-unary-try-cast-2026-11-01.csv.gz) retain 64 configurations/6,400 trials.
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. DECIMAL(18,2)/(38,18) extrema and large signed coefficients
+match across GenericRowData/BinaryRowData and nullable/NOT NULL declarations.
+Representative bulk expressions are modern ABS(v) to STRING, modern -v
+to CHAR(8), and legacy ABS(v) to CHAR(44). Sixteen-row modern ABS-to-STRING
+controls remain separate. All checksums agree. The independently recompiled actual
+preceding encoder rejects this signature. Its prepared controls use released Java
+on RowData with Java-side timing, preserving the actual fallback reason. No JVM
+callback baseline is fabricated; the candidate must have no evaluator.
+The unchanged Rust decimal formatter, Calc and unary kernels retain their exact DSO.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 3.215-8.503x | 3.728-8.758x | 0 |
+| 1.18.1 | tiny control | 8 | 1.302-3.462x | 1.356-3.734x | 0 |
+| 2.2.1 | bulk | 24 | 3.215-8.064x | 3.849-9.161x | 0 |
+| 2.2.1 | tiny control | 8 | 1.157-3.159x | 1.475-3.526x | 0 |
+
+All 48 bulk cells beat stock; 0 of 16 tiny controls are slower.
+Independent stock-control drift spans 0.721-1.218x. All ranges are retained.
+
+Six complete million-row source/blackhole configurations retain source generation,
+planning/startup, production JNI and both transposes. Modern DECIMAL(18,2) ABS-to-STRING,
+modern DECIMAL(38,18) negate-to-CHAR(8), and legacy DECIMAL(38,18) ABS-to-CHAR(44)
+run at parallelism one with two warmups/five measurements. Each native query requires
+consumed NativeCalc, no fallback and empty candidate evaluator descriptors. Previous
+jobs require actual planner fallback with zero native substitutions or work.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-abs | 0.264686 (0.250927-0.269670) | 0.209733 (0.206909-0.211031) | 0.209105 (0.203733-0.212599) | 0.210178 (0.207587-0.217686) |
+| 1.18.1 / modern-negate | 0.378330 (0.370410-0.386081) | 0.224428 (0.222141-0.229540) | 0.342058 (0.334649-0.342707) | 0.344431 (0.338319-0.346211) |
+| 1.18.1 / legacy-abs | 0.291547 (0.280389-0.335874) | 0.216920 (0.214796-0.218376) | 0.239804 (0.237483-0.253204) | 0.244747 (0.235303-0.253585) |
+| 2.2.1 / modern-abs | 0.259245 (0.252922-0.268575) | 0.206518 (0.201711-0.211899) | 0.204024 (0.195745-0.214377) | 0.215092 (0.194208-0.217394) |
+| 2.2.1 / modern-negate | 0.376024 (0.372521-0.391604) | 0.227104 (0.225205-0.233658) | 0.344694 (0.340141-0.350055) | 0.354460 (0.345592-0.365853) |
+| 2.2.1 / legacy-abs | 0.279563 (0.275328-0.306825) | 0.217126 (0.211098-0.219148) | 0.235848 (0.231293-0.247688) | 0.236468 (0.234912-0.251507) |
+
+Native/stock elapsed ratios span 0.593-0.797;
+native/previous ratios span 0.641-0.998. Ratios above one are slower.
+All unfavorable results and overlapping ranges remain. Prepared qualification does
+not establish universal end-to-end acceleration.
+
+The modern ABS-to-STRING jobs overlap the previous fallback control: native/previous
+elapsed ratios are 0.998 on Flink 1.18 and 0.960 on Flink 2.2. Do not infer a robust
+whole-job improvement from these subsecond differences. Independent stock-process
+controls also differ; all paired samples remain available instead of selecting the
+more favorable control.
+
+All 300 focused JVM invocations, four additional shared-state invocations and
+12 existing fixture smokes pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row witnesses compare all values, schema, NULLs,
+IDs and cardinality across batches for eight DECIMAL precision/scale pairs from (1,1)
+through (38,38), nullable/NOT NULL declarations, modern/legacy mode, signed extrema,
+zeros and unit coefficients. They require consumed native work, no fallback and no evaluator.
+String consumers, grouping, lazy branches and empty filtered batches match stock.
+Failing and stateful inputs keep their released behavior and exact previous routes.
+The unchanged released DecimalData formatting oracle, 535 CastRules stock-oracle cases
+per pair, and the identical DSO's 1,019 core passes/two pre-existing ignores retain
+their preceding qualification; new runtime witnesses establish the changed route.
+Source/DSO hashes and independently recompiled baseline classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, DECIMAL input and
+`SF_INTEGRAL_EXPRESSION='TRY_CAST(ABS(v) AS STRING)'`. Complete jobs use
+`sf.integral.expression=TRY_CAST(ABS(v) AS STRING)` and
+`sf.integral.decimalPrecision=18`, `sf.integral.decimalScale=2`. Remaining conversions
+are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## Nullable DECIMAL arithmetic CAST to character
+
+Nullable DECIMAL-only addition, subtraction and multiplication trees reuse the
+existing typed arithmetic kernels and exact character formatter. Each node retains
+its resolved precision/scale and overflow NULL. The proof also admits previously
+verified ABS/negate inputs; it excludes division, remainder, mixed numeric types,
+stateful/failing producers and unverified conversions. Both the computed source
+and the character result must be nullable. NOT NULL CAST retains the exact
+generated value/default/null-flag contract; arithmetic TRY_CAST is qualified
+separately below. No Rust kernel, JNI/ownership boundary or production option changes.
+
+The [result record](results/decimal-arithmetic-cast-2026-11-01.json) and
+[raw trials](results/decimal-arithmetic-cast-2026-11-01.csv.gz) retain 32 configurations/3,200 trials.
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. DECIMAL(18,2)/(38,18) extrema and large signed coefficients
+match across GenericRowData/BinaryRowData and nullable declarations.
+Representative bulk expressions are modern v+v to STRING, modern v*v
+to CHAR(8), and legacy (v+v)*v to CHAR(44). Sixteen-row modern v*v-to-STRING
+controls remain separate. All checksums agree. The independently recompiled actual
+preceding encoder must bind a JVM evaluator; the candidate must have no evaluator.
+The unchanged Rust decimal formatter, Calc and typed arithmetic kernels retain their exact DSO.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 12 | 1.832-8.545x | 1.819-10.077x | 0 |
+| 1.18.1 | tiny control | 4 | 1.430-2.923x | 9.921-13.647x | 0 |
+| 2.2.1 | bulk | 12 | 1.799-8.606x | 1.772-10.408x | 0 |
+| 2.2.1 | tiny control | 4 | 1.459-2.968x | 9.659-13.076x | 0 |
+
+All 24 bulk cells beat stock; 0 of 8 tiny controls are slower.
+Independent stock-control drift spans 0.899-1.085x. All ranges are retained.
+
+Six complete million-row source/blackhole configurations retain source generation,
+planning/startup, production JNI and both transposes. Modern DECIMAL(18,2) v+v-to-STRING,
+modern DECIMAL(38,18) v*v-to-CHAR(8), and legacy DECIMAL(38,18) (v+v)*v-to-CHAR(44)
+run at parallelism one with two warmups/five measurements. Each native query requires
+consumed NativeCalc, no fallback and empty candidate evaluator descriptors.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-add | 0.256403 (0.240670-0.266953) | 0.219047 (0.215546-0.224134) | 0.254911 (0.244312-0.263866) | 0.285142 (0.278247-0.293991) |
+| 1.18.1 / modern-multiply | 0.378419 (0.360666-0.380856) | 0.244122 (0.239227-0.254304) | 0.366048 (0.359645-0.377322) | 0.346962 (0.340675-0.351597) |
+| 1.18.1 / legacy-nested | 0.331110 (0.329966-0.337205) | 0.261276 (0.254386-0.275251) | 0.327974 (0.316690-0.341677) | 0.308758 (0.299839-0.322865) |
+| 2.2.1 / modern-add | 0.247919 (0.246311-0.257852) | 0.217974 (0.212238-0.226258) | 0.260530 (0.251712-0.287248) | 0.285710 (0.282034-0.291648) |
+| 2.2.1 / modern-multiply | 0.374700 (0.372850-0.383431) | 0.250588 (0.242618-0.255825) | 0.385305 (0.381401-0.389040) | 0.326326 (0.320013-0.336114) |
+| 2.2.1 / legacy-nested | 0.337211 (0.328946-0.361897) | 0.252416 (0.249894-0.256505) | 0.344956 (0.331128-0.350719) | 0.303112 (0.294999-0.315260) |
+
+Native/stock elapsed ratios span 0.645-0.879;
+native/previous ratios span 0.704-0.846. Ratios above one are slower.
+All unfavorable results and overlapping ranges remain. Prepared qualification does
+not establish universal end-to-end acceleration.
+
+All 640 focused JVM invocations (including the shared-state suite) and
+12 existing fixture smokes pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row witnesses compare all values, schema, NULLs,
+IDs and cardinality across batches for eight DECIMAL precision/scale pairs from (1,1)
+through (38,38), nullable declarations, modern/legacy mode, signed extrema,
+zeros and unit coefficients. They require consumed native work, no fallback and no evaluator.
+String consumers, grouping, lazy branches and empty filtered batches match stock.
+NOT NULL CAST and failing/stateful producers retain their preceding generated/fallback
+routes, with the overflow repair also revalidated. Arithmetic TRY_CAST has a
+separate qualification below.
+The unchanged released DecimalData formatting oracle, 535 CastRules stock-oracle cases
+per pair, and the identical DSO's 1,019 core passes/two pre-existing ignores retain
+their preceding qualification; new runtime witnesses establish the changed route.
+Source/DSO hashes and independently recompiled baseline classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, DECIMAL input and
+`SF_INTEGRAL_EXPRESSION='CAST(v+v AS STRING)'`. Complete jobs use
+`sf.integral.expression=CAST(v+v AS STRING)` and
+`sf.integral.decimalPrecision=18`, `sf.integral.decimalScale=2`. Remaining conversions
+are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## DECIMAL arithmetic TRY_CAST to character
+
+DECIMAL-only addition, subtraction and multiplication trees reuse the
+existing typed arithmetic kernels and exact character formatter. Each node retains
+its resolved precision/scale and overflow NULL. The proof also admits previously
+verified ABS/negate inputs; it excludes division, remainder, mixed numeric types,
+stateful/failing producers and unverified conversions. TRY_CAST keeps a nullable character result with nullable
+or NOT NULL arithmetic sources, retaining overflow NULL instead of a non-nullable
+CAST projection default. NOT NULL CAST keeps its generated value/default/null-flag
+contract. No Rust kernel, JNI/ownership boundary or production option changes.
+
+The [result record](results/decimal-arithmetic-try-cast-2026-11-01.json) and
+[raw trials](results/decimal-arithmetic-try-cast-2026-11-01.csv.gz) retain 64 configurations/6,400 trials.
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. DECIMAL(18,2)/(38,18) extrema and large signed coefficients
+match across GenericRowData/BinaryRowData and nullable/NOT NULL declarations.
+Representative bulk expressions are modern v+v to STRING, modern v*v
+to CHAR(8), and legacy (v+v)*v to CHAR(44). Sixteen-row modern v*v-to-STRING
+controls remain separate. All checksums agree. The independently recompiled actual
+preceding encoder rejects this signature. Its prepared controls use released Java
+on RowData with Java-side timing, preserving the actual fallback reason. No JVM
+callback baseline is fabricated; the candidate must have no evaluator.
+The unchanged Rust decimal formatter, Calc and typed arithmetic kernels retain their exact DSO.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 1.787-10.422x | 2.035-11.123x | 0 |
+| 1.18.1 | tiny control | 8 | 1.416-3.495x | 1.482-3.738x | 0 |
+| 2.2.1 | bulk | 24 | 1.890-10.314x | 1.983-10.945x | 0 |
+| 2.2.1 | tiny control | 8 | 1.417-3.648x | 1.464-3.773x | 0 |
+
+All 48 bulk cells beat stock; 0 of 16 tiny controls are slower.
+Independent stock-control drift spans 0.824-1.030x. All ranges are retained.
+
+Six complete million-row source/blackhole configurations retain source generation,
+planning/startup, production JNI and both transposes. Modern DECIMAL(18,2) v+v-to-STRING,
+modern DECIMAL(38,18) v*v-to-CHAR(8), and legacy DECIMAL(38,18) (v+v)*v-to-CHAR(44)
+run at parallelism one with two warmups/five measurements. Each native query requires
+consumed NativeCalc, no fallback and empty candidate evaluator descriptors. Previous
+jobs require actual planner fallback with zero native substitutions or work.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-add | 0.261276 (0.245271-0.299600) | 0.221004 (0.217863-0.234701) | 0.221582 (0.212394-0.230538) | 0.222617 (0.218642-0.236744) |
+| 1.18.1 / modern-multiply | 0.370796 (0.351150-0.375298) | 0.250625 (0.241326-0.258752) | 0.328880 (0.314737-0.335114) | 0.323991 (0.320824-0.335213) |
+| 1.18.1 / legacy-nested | 0.337627 (0.323339-0.343045) | 0.270040 (0.264440-0.275955) | 0.302010 (0.300327-0.305214) | 0.299326 (0.290850-0.303809) |
+| 2.2.1 / modern-add | 0.247882 (0.239912-0.266768) | 0.220313 (0.214473-0.228999) | 0.222404 (0.210382-0.229336) | 0.214866 (0.207088-0.232275) |
+| 2.2.1 / modern-multiply | 0.382778 (0.373021-0.391164) | 0.235763 (0.231195-0.237817) | 0.339623 (0.332366-0.347701) | 0.338182 (0.324840-0.350138) |
+| 2.2.1 / legacy-nested | 0.332702 (0.329976-0.352564) | 0.253855 (0.247578-0.268084) | 0.296810 (0.288384-0.300062) | 0.296049 (0.287876-0.301089) |
+
+Native/stock elapsed ratios span 0.616-0.889;
+native/previous ratios span 0.697-1.025. Ratios above one are slower.
+All unfavorable results and overlapping ranges remain. Prepared qualification does
+not establish universal end-to-end acceleration.
+The simple-addition jobs overlap their previous fallback controls: native/previous
+is 0.993 on Flink 1.18 and 1.025 on 2.2, with the latter median 2.5% slower.
+Neither simple-addition comparison establishes a stable complete-job improvement.
+
+All 680 focused JVM invocations (including the shared-state suite) and
+12 existing fixture smokes pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row witnesses compare all values, schema, NULLs,
+IDs and cardinality across batches for eight DECIMAL precision/scale pairs from (1,1)
+through (38,38), nullable/NOT NULL declarations, modern/legacy mode, signed extrema,
+zeros and unit coefficients. They require consumed native work, no fallback and no evaluator.
+String consumers, grouping, lazy branches and empty filtered batches match stock.
+NOT NULL CAST and failing/stateful producers retain their preceding generated/fallback
+routes, with the overflow repair also revalidated. Mixed numeric arithmetic TRY_CAST
+retains an explicit fallback witness.
+The unchanged released DecimalData formatting oracle, 535 CastRules stock-oracle cases
+per pair, and the identical DSO's 1,019 core passes/two pre-existing ignores retain
+their preceding qualification; new runtime witnesses establish the changed route.
+Source/DSO hashes and independently recompiled baseline classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, DECIMAL input and
+`SF_INTEGRAL_EXPRESSION='TRY_CAST(v+v AS STRING)'`. Complete jobs use
+`sf.integral.expression=TRY_CAST(v+v AS STRING)` and
+`sf.integral.decimalPrecision=18`, `sf.integral.decimalScale=2`. Remaining conversions
+are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## DECIMAL ABS over arithmetic
+
+Verified DECIMAL-only addition, subtraction and multiplication now stay in Arrow
+through ABS, including nested ABS and same-scale precision widening. Each arithmetic
+node retains its resolved precision/scale and overflow NULL. Division, remainder,
+mixed numeric operands, rescaling, narrowing, mixed ABS/negation and unverified
+producers keep generated evaluation. This extends producer coverage using the existing
+typed arithmetic and ABS rules. A typed DECIMAL-array loop removes per-row input-type
+and legacy integer-error dispatch, retaining exact iterator capacity for the output.
+There is no JNI/ownership or option change.
+The separate NOT NULL projection-default repairs remain active for affected basic-type
+consumers; they are not claimed as JVM-free acceleration.
+Character CAST/TRY_CAST keep their own producer whitelist in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492); this ABS extension
+does not claim every enclosing character conversion is JVM-free.
+
+The [result record](results/decimal-arithmetic-abs-2026-11-02.json) and
+[raw trials](results/decimal-arithmetic-abs-2026-11-02.csv.gz) retain 64 configurations
+and 6,400 trials. Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro,
+one thread, 16 warmups/nine measurements and 131,072 rows/trial compare released
+generated Java on prepared GenericRowData/BinaryRowData with production Calc on Arrow.
+Native timing stays inside Rust; initial JNI/C Data and perimeter transposes are
+excluded, while intrinsic previous callbacks remain inside. The independently
+recompiled actual preceding encoder includes the correctness repair; its retained
+preceding executable and DSO bind the real generated evaluator. The candidate requires empty evaluator descriptors and
+the intended native function work. Checksums match.
+
+DECIMAL(18,2)/(38,18), nullable/NOT NULL inputs, signed extrema, large coefficients,
+addition, multiplication and nested producers cover 1,024-row bulk batches;
+16-row multiplication controls remain separate. Every expression consumes ABS through
+`>0 OR CAST(NULL AS BOOLEAN)`, retaining overflow NULL even for NOT NULL sources.
+These timings measure arithmetic ABS through a BOOLEAN consumer, not final DECIMAL
+output. Untimed allocation probes retain requested bytes and output buffers separately.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 1.086-4.339x | 3.732-8.435x | 0 |
+| 1.18.1 | tiny control | 8 | 0.193-1.198x | 7.920-12.712x | 6 |
+| 2.2.1 | bulk | 24 | 1.065-3.979x | 3.684-7.591x | 0 |
+| 2.2.1 | tiny control | 8 | 0.171-1.171x | 8.148-12.954x | 6 |
+
+The initial 64-cell investigation retained 11 slower bulk cells;
+the [initial raw trials](results/decimal-arithmetic-abs-initial-2026-11-02.csv.gz)
+and full initial results remain in the record. A ten-second native stack sample
+located repeated arithmetic input/error dispatch and output-buffer growth.
+The typed-array loop removes those costs without changing arithmetic rules.
+Final native bulk timings improve by
+1.111-1.982x
+over the initial native attempt, with independent stock-process drift retained.
+
+All 48 final bulk cells beat stock and the actual preceding path; 12 of 16 tiny
+controls are slower than stock. Independent stock-process drift spans
+0.643-2.211x; every raw trial is retained.
+
+Six million-row row-source/blackhole configurations retain source generation,
+planning/startup, production JNI and both transposes. Nullable DECIMAL(18,2) addition
+and DECIMAL(38,18) multiplication/nested producers use the same BOOLEAN consumers,
+parallelism one, two warmups/five measurements. Both versions require consumed
+NativeCalc work and no fallback; the candidate requires no evaluator and the actual
+preceding version requires its generated route. Seconds are median (min-max):
+
+| Flink / producer | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / add | 0.156515 (0.149577-0.168454) | 0.181894 (0.177573-0.183620) | 0.172555 (0.170005-0.179224) | 0.206288 (0.201754-0.210439) |
+| 1.18.1 / multiply | 0.226769 (0.220124-0.239322) | 0.214279 (0.211862-0.224900) | 0.229178 (0.220161-0.240174) | 0.278883 (0.271642-0.300167) |
+| 1.18.1 / nested | 0.252536 (0.245212-0.256080) | 0.213737 (0.210284-0.232305) | 0.250923 (0.233308-0.260183) | 0.319663 (0.302313-0.334127) |
+| 2.2.1 / add | 0.156260 (0.149138-0.169494) | 0.179437 (0.175440-0.200563) | 0.163660 (0.155227-0.168385) | 0.211092 (0.204884-0.224814) |
+| 2.2.1 / multiply | 0.221233 (0.216625-0.238267) | 0.202235 (0.196252-0.205395) | 0.221499 (0.215712-0.227944) | 0.283277 (0.277864-0.290121) |
+| 2.2.1 / nested | 0.248131 (0.242918-0.252392) | 0.221560 (0.216796-0.230291) | 0.246680 (0.242554-0.248168) | 0.311119 (0.309095-0.319681) |
+
+Native/stock elapsed-time ratios span 0.846-1.162;
+native/previous ratios span 0.669-0.882. Ratios above one are slower.
+Unfavorable results, overlapping ranges and independent stock controls remain visible;
+prepared qualification does not establish universal complete-job acceleration.
+
+All 856 focused JVM invocations and 12 existing fixture smokes pass across released
+Flink 1.18.1/2.2.1 with JDK 11/17, compiled for Java release 11. Complete 5,003-row
+witnesses compare values, schema, NULLs, IDs and cardinality over 11 precision/scale
+pairs, including nullable extrema/overflow and safe NOT NULL values. They require
+consumed native work, no fallback and empty evaluators for admitted arithmetic ABS.
+Filters, grouping, lazy CASE branches, empty batches, selected failures, shared state
+and the #577/#581 projection-default regressions pass. Direct overflowing DECIMAL
+outputs retain stock ERROR/DROP behavior. The new release DSO passes a fresh
+1,019 core tests with two pre-existing ignores; source/DSO hashes, allocator aliases
+and independently recompiled baseline classes are recorded.
+
+Reproduce prepared qualification using `integral_expression`, DECIMAL inputs and
+`SF_INTEGRAL_EXPRESSION='ABS(v*v)>0 OR CAST(NULL AS BOOLEAN)'`. Complete jobs use
+the same `sf.integral.expression` with `sf.integral.decimalPrecision=38` and
+`sf.integral.decimalScale=18`. Remaining unary/rounding producers are tracked in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## DECIMAL negation over arithmetic
+
+DECIMAL-only addition, subtraction and multiplication now retain native unary
+minus, including same-operator nesting and same-scale precision widening. Each
+arithmetic node keeps its resolved precision/scale and overflow NULL. Negation
+uses the existing Arrow numeric kernel for arrays and exact i128 scalar dispatch;
+all legal DECIMAL coefficients have a representable negation. The batching
+structure follows Comet's Arrow negation; released Flink supplies the semantic
+rules. Rust, the release DSO, JNI/ownership and options are unchanged.
+
+Division, remainder, mixed numeric inputs, rescaling, narrowing, mixed ABS/negation
+and unverified producers retain generated evaluation. The existing projection-default
+repairs remain active for NOT NULL basic-type consumers and are not claimed as
+JVM-free acceleration. Direct overflowing DECIMAL outputs retain ERROR/DROP
+enforcement. Character CAST/TRY_CAST retain their separate producer whitelist;
+admitting arithmetic negation does not extend every enclosing conversion.
+
+The [result record](results/decimal-arithmetic-negate-2026-11-02.json) and
+[raw trials](results/decimal-arithmetic-negate-2026-11-02.csv.gz) retain 64 configurations
+and 6,400 trials. Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro,
+one thread, 16 warmups/nine measurements and 131,072 rows/trial compare released
+generated Java on matching prepared GenericRowData/BinaryRowData with production
+Calc on Arrow. Native timing stays inside Rust; initial JNI/C Data import/export
+and perimeter transposes are excluded, while intrinsic previous JVM callbacks
+remain inside. The independently recompiled actual preceding encoder includes
+the explicit CAST correctness repair and binds its real generated evaluator.
+Both versions use the identical, byte-verified preceding executable and DSO.
+The candidate requires empty descriptors and intended native work; checksums match.
+
+DECIMAL(18,2)/(38,18), nullable/NOT NULL sources, signed extrema and large coefficients
+cover `-(v+v)`, `-(v*v)` and `-((v+v)*v)` through
+`>0 OR CAST(NULL AS BOOLEAN)`. This nullable consumer retains overflow NULL even
+for NOT NULL inputs. Timings measure composed arithmetic negation through a
+BOOLEAN consumer, not final DECIMAL output. Bulk batches contain 1,024 rows;
+16-row multiplication controls remain separate. Untimed allocation probes retain
+requested bytes and output buffers separately.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 1.132-3.867x | 3.654-9.141x | 0 |
+| 1.18.1 | tiny control | 8 | 0.224-1.174x | 7.753-10.926x | 6 |
+| 2.2.1 | bulk | 24 | 1.089-4.076x | 3.694-8.399x | 0 |
+| 2.2.1 | tiny control | 8 | 0.228-1.135x | 7.319-10.605x | 6 |
+
+All 48 bulk cells beat stock and actual previous behavior; 12/16 tiny
+controls remain slower than stock. Independent stock-process drift spans
+0.565-2.730x; every trial is retained.
+
+Six million-row row-source/blackhole controls retain planning/startup, source
+generation, production JNI and both transposes. Nullable DECIMAL(18,2) addition
+and DECIMAL(38,18) multiplication/nested producers use the same BOOLEAN consumers,
+parallelism one, two warmups/five measurements. Both versions require consumed
+NativeCalc and no fallback; the candidate requires empty evaluators while the
+actual preceding control retains its generated route. Seconds are median (min-max):
+
+| Flink / producer | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / add | 0.159210 (0.154452-0.162179) | 0.183171 (0.182496-0.189683) | 0.165552 (0.158069-0.180885) | 0.211707 (0.201569-0.221333) |
+| 1.18.1 / multiply | 0.220525 (0.214375-0.243314) | 0.204681 (0.204143-0.217983) | 0.219037 (0.212691-0.241882) | 0.273960 (0.270173-0.283251) |
+| 1.18.1 / nested | 0.249028 (0.239493-0.252058) | 0.218595 (0.209154-0.219580) | 0.252982 (0.237527-0.265619) | 0.325243 (0.317213-0.337302) |
+| 2.2.1 / add | 0.156649 (0.152608-0.161492) | 0.177944 (0.177173-0.185652) | 0.166901 (0.157939-0.180192) | 0.216225 (0.209954-0.223065) |
+| 2.2.1 / multiply | 0.229529 (0.223492-0.241392) | 0.207194 (0.202259-0.210548) | 0.228994 (0.211501-0.237611) | 0.281756 (0.274132-0.290865) |
+| 2.2.1 / nested | 0.236939 (0.224113-0.247618) | 0.206135 (0.204783-0.215894) | 0.236026 (0.229298-0.253815) | 0.308385 (0.304602-0.325335) |
+
+Native/stock elapsed-time ratios span 0.870-1.151;
+native/previous ratios span 0.668-0.865. Ratios above one are slower.
+Overlapping ranges, unfavorable samples and independent stock controls remain
+visible; prepared qualification does not establish universal complete-job acceleration.
+
+All 1088 focused JVM invocations and 12 fixture smokes pass on released Flink
+1.18.1/2.2.1 and JDK 11/17, compiled for Java release 11. Complete 5,003-row
+witnesses compare values, types, NULLs, IDs and cardinality over eleven precision/scale
+pairs. Admitted arithmetic negation requires consumed native work, no fallback
+and empty evaluator descriptors. Filters, grouping, CASE, empty batches, selected
+failures, shared state, ABS controls and #577/#581/#582 defaults remain verified.
+Safe numeric CAST and retained NULL-aware consumers preserve their native routes.
+The unchanged release DSO retains the earlier fresh 1,019 Rust core passes and
+two pre-existing ignores; that run is reused rather than presented as a new run.
+Source/runtime hashes, allocator aliases and independently recompiled baseline
+classes are recorded.
+
+Reproduce prepared qualification using `integral_expression` and
+`SF_INTEGRAL_EXPRESSION='-(v*v)>0 OR CAST(NULL AS BOOLEAN)'`. Complete jobs use
+the same `sf.integral.expression`, `sf.integral.decimalPrecision=38` and
+`sf.integral.decimalScale=18`. Further unary/sign/rounding coverage remains in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## DECIMAL SIGN over arithmetic
+
+DECIMAL-only addition, subtraction and multiplication now retain native SIGN,
+including verified SIGN nesting and same-scale precision widening. Each arithmetic
+node preserves its resolved precision/scale and overflow NULL. SIGN reuses the
+existing typed Decimal128 kernel: ordinary decimals return scaled -1, zero or one;
+noncompact DECIMAL(p,p), p > 18, returns NULL for nonzero coefficients and scaled
+zero for zero. Released Flink supplies these rules; Comet's Arrow unary batching
+is a structural reference, not a source of Spark's result-type semantics.
+Production Rust, the DSO, JNI/ownership and options are unchanged.
+
+SIGN retains a separate recursive proof so compact DECIMAL(p,p), p <= 18,
+intermediates stay generated even under arithmetic or widening. Division, remainder,
+mixed numeric operands, ABS/negation, rescaling, narrowing and unverified producers
+also retain generated evaluation. The #584 final-projection-default repair remains
+active for affected NOT NULL basic-type consumers; it is not claimed as JVM-free
+acceleration. Direct DECIMAL ERROR/DROP enforcement remains intact. Multiplication
+of DECIMAL(38,38) inputs resolves to scale 37 in released Flink, so its SIGN can
+represent one; input type alone does not determine whether SIGN returns NULL.
+Character CAST/TRY_CAST keep their separate producer proofs.
+
+The [result record](results/decimal-arithmetic-sign-2026-11-02.json) and
+[raw trials](results/decimal-arithmetic-sign-2026-11-02.csv.gz) retain 128 configurations
+and 12,800 trials. Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro,
+one thread, 16 warmups/nine measurements and 131,072 rows/trial compare released
+generated Java on matching prepared GenericRowData/BinaryRowData with production
+Calc on Arrow. Native timing stays inside Rust; initial JNI/C Data import/export
+and perimeter transposes are excluded, while intrinsic previous JVM callbacks
+remain inside. The independently recompiled actual preceding encoder at 69e4198f
+includes the SIGN projection-default repair and binds its real generated evaluator.
+Both paths share the expanded four-type benchmark fixture and identical DSO.
+The executable changes only to add the two zero-integral-width corpora; it is not
+claimed byte-identical to the historical two-type executable. Separate old/new
+fixture smokes verify unchanged original-type checksums. The candidate requires
+empty descriptors and intended native work; every trial has a matching checksum.
+
+DECIMAL(18,2)/(19,19)/(38,18)/(38,38), nullable/NOT NULL sources, signed extrema
+and large coefficients cover `SIGN(v+v)`, `SIGN(v*v)` and `SIGN((v+v)*v)` through
+`>0 OR CAST(NULL AS BOOLEAN)`. This nullable consumer retains overflow NULL even
+for NOT NULL inputs. Timings measure composed arithmetic SIGN through a BOOLEAN
+consumer, not final DECIMAL output. Bulk batches contain 1,024 rows; 16-row
+multiplication controls remain separate. Untimed allocation probes retain requested
+bytes and output buffers separately.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 48 | 1.495-7.225x | 3.745-9.152x | 0 |
+| 1.18.1 | tiny control | 16 | 0.217-1.630x | 8.005-13.690x | 12 |
+| 2.2.1 | bulk | 48 | 1.514-7.059x | 3.636-9.193x | 0 |
+| 2.2.1 | tiny control | 16 | 0.221-1.644x | 8.235-13.466x | 11 |
+
+All 96 bulk cells beat stock and actual previous behavior; 23/32 tiny
+controls remain slower than stock. Independent stock-process drift spans
+0.721-2.134x; every trial is retained.
+
+Eight million-row row-source/blackhole configurations retain planning/startup,
+source generation, production JNI and both transposes. Nullable DECIMAL(18,2)
+addition, DECIMAL(38,18) multiplication/nested and DECIMAL(38,38) multiplication
+use the same BOOLEAN consumers, parallelism one, two warmups/five measurements.
+Both versions require consumed NativeCalc and no fallback; the candidate requires
+empty evaluators while the actual preceding control retains its generated route.
+Seconds are median (min-max):
+
+| Flink / producer | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / add | 0.158934 (0.153983-0.176404) | 0.179950 (0.178487-0.193787) | 0.159119 (0.156121-0.168153) | 0.212601 (0.202957-0.214075) |
+| 1.18.1 / multiply | 0.226859 (0.223039-0.230969) | 0.205721 (0.198910-0.217739) | 0.232498 (0.219782-0.235035) | 0.279492 (0.276106-0.288636) |
+| 1.18.1 / nested | 0.260404 (0.253915-0.266903) | 0.216729 (0.212598-0.222201) | 0.263372 (0.247378-0.275634) | 0.314720 (0.310512-0.334009) |
+| 1.18.1 / zero-integer | 0.204853 (0.201356-0.214965) | 0.195758 (0.191983-0.201677) | 0.204023 (0.193139-0.204758) | 0.261931 (0.246114-0.269036) |
+| 2.2.1 / add | 0.164609 (0.159899-0.179596) | 0.178191 (0.173004-0.184767) | 0.158762 (0.157087-0.171613) | 0.211523 (0.206122-0.228402) |
+| 2.2.1 / multiply | 0.240034 (0.229098-0.243295) | 0.204904 (0.196789-0.211282) | 0.227246 (0.221138-0.231929) | 0.294640 (0.287326-0.313013) |
+| 2.2.1 / nested | 0.259564 (0.251532-0.264922) | 0.213077 (0.209736-0.222779) | 0.262493 (0.255530-0.272066) | 0.331459 (0.315043-0.340202) |
+| 2.2.1 / zero-integer | 0.205501 (0.198043-0.216030) | 0.196261 (0.187968-0.209492) | 0.205637 (0.195450-0.218607) | 0.262806 (0.252995-0.285873) |
+
+Native/stock elapsed-time ratios span 0.821-1.132;
+native/previous ratios span 0.643-0.846. Ratios above one are slower.
+Overlapping ranges, unfavorable samples and independent stock controls remain
+visible; prepared qualification does not establish universal complete-job acceleration.
+
+All 480 focused JVM invocations pass on released Flink 1.18.1/2.2.1
+and JDK 11/17, compiled for Java release 11. All 36 fixture smokes pass
+on both Flink lines using JDK 17. Complete 5,003-row
+witnesses compare values, types, NULLs, IDs and cardinality over eleven precision/scale
+pairs, crossing the default 1,024-row Arrow batch limit. Admitted arithmetic SIGN
+requires consumed native work, no fallback and empty evaluator descriptors.
+Filters, grouping, CASE, empty batches, selected failures, shared state and SIGN/CAST
+projection defaults remain verified. The unchanged released
+`ScalarFunctionsTest.testSign` stock oracle also passes on each release/runtime pair;
+separate SQL witnesses establish native work.
+The unchanged release DSO retains the earlier fresh 1,019 Rust core passes and two
+pre-existing ignores; that run is reused rather than presented as a new run.
+Source/runtime hashes, allocator aliases and independently recompiled baseline
+classes are recorded. The fixture example changes; no production Rust source changes.
+
+Reproduce prepared qualification using `integral_expression` and
+`SF_INTEGRAL_EXPRESSION='SIGN(v*v)>0 OR CAST(NULL AS BOOLEAN)'`. Complete jobs use
+the same `sf.integral.expression`, `sf.integral.decimalPrecision=38` and
+`sf.integral.decimalScale=38`. Further unary/sign/rounding coverage remains in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## Mixed exact GREATEST
+
+GREATEST over verified direct/literal integer and DECIMAL operands now casts each argument
+to Flink's resolved DECIMAL precision/scale before the existing Arrow extrema kernel.
+Integer capacity must be sufficient and no DECIMAL may lose scale. A DECIMAL whose metadata
+changes must be NOT NULL: released Flink can dereference it before checking its NULL flag.
+Nullable metadata changes, scale reduction and computed/unverified producers retain generated
+evaluation. These measurements qualify GREATEST; LEAST has its own qualification. No production Rust,
+JNI/ownership or configuration changes.
+
+The [result record](results/mixed-exact-greatest-2026-11-02.json) and
+[raw trials](results/mixed-exact-greatest-2026-11-02.csv.gz) retain 112 configurations/11,200 trials against
+canonical main `b0eb507c`. The actual preceding encoder is independently compiled from
+that committed source; 1,390 unchanged Java source hashes match the complete previous build.
+Both paths use the same production DSO and expanded two-column fixture. A fresh release
+benchmark executable links the current production Rust. Separate old/new fixture smokes
+confirm that adding the second input leaves existing one-column corpora unchanged.
+
+Release/default-feature, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
+measurements and 131,072 rows per trial compare stock generated Java over prepared
+GenericRowData/BinaryRowData with production Calc over equal Arrow batches. Native timing
+stays inside Rust; initial JNI/C Data entry/export and perimeter transposes are excluded.
+Intrinsic previous JVM callbacks remain included. Every trial checksum matches. The
+new path requires empty evaluators and intended native work.
+
+DECIMAL(18,2)/(19,19)/(38,18) with INT/BIGINT, both operand orders, a three-argument control,
+NULL/NOT NULL inputs, signed extrema, large coefficients and both row representations use
+`GREATEST(v,n)>0 OR CAST(NULL AS BOOLEAN)`. This measures numeric extrema through a nullable
+BOOLEAN consumer, not final DECIMAL output. Bulk batches contain 1,024 rows; 16-row controls
+remain separate. Untimed allocation probes retain their requested-byte/output-buffer counts.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 38 | 1.959-14.317x | 5.929-16.405x | 0 |
+| 1.18.1 | tiny control | 18 | 0.078-0.546x | 6.045-8.433x | 18 |
+| 2.2.1 | bulk | 38 | 1.943-13.777x | 5.827-17.625x | 0 |
+| 2.2.1 | tiny control | 18 | 0.081-0.580x | 6.844-8.663x | 18 |
+
+All 76 bulk cells beat stock and the actual preceding implementation. All 36 tiny controls
+remain slower than stock, although they improve on the preceding JVM route.
+
+Eight million-row row-source/blackhole configurations retain planning/startup, source
+generation, production JNI and both transposes, at parallelism one with two warmups/five
+measurements. Compact controls use DECIMAL(18,2) with INT/BIGINT, wide uses DECIMAL(38,18)
+with BIGINT, and fractional uses NOT NULL DECIMAL(19,19) with BIGINT. Both versions require
+consumed NativeCalc and no fallback; only the candidate requires empty evaluators. Seconds
+are median (min-max); independent stock controls and unfavorable samples are retained.
+
+| Flink / inputs | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / compact-int | 0.216645 (0.198815-0.224089) | 0.217573 (0.214520-0.243753) | 0.207151 (0.202257-0.211784) | 0.247769 (0.244072-0.264842) |
+| 1.18.1 / compact-bigint | 0.198637 (0.188381-0.220365) | 0.209963 (0.201012-0.225706) | 0.204936 (0.193470-0.217870) | 0.250919 (0.240080-0.262518) |
+| 1.18.1 / wide-bigint | 0.218562 (0.214016-0.223888) | 0.233461 (0.219373-0.241594) | 0.223502 (0.216588-0.238021) | 0.260326 (0.259093-0.304801) |
+| 1.18.1 / fractional-bigint | 0.210791 (0.210339-0.241606) | 0.215612 (0.212575-0.223834) | 0.224164 (0.219900-0.236927) | 0.276282 (0.272253-0.284695) |
+| 2.2.1 / compact-int | 0.203020 (0.195792-0.208881) | 0.210581 (0.209462-0.214752) | 0.195421 (0.192371-0.206530) | 0.257562 (0.243652-0.261182) |
+| 2.2.1 / compact-bigint | 0.198064 (0.197332-0.206831) | 0.218062 (0.209673-0.236910) | 0.207929 (0.203583-0.210888) | 0.268514 (0.257670-0.275773) |
+| 2.2.1 / wide-bigint | 0.219288 (0.214332-0.220702) | 0.229656 (0.224162-0.231757) | 0.219867 (0.212633-0.229906) | 0.276054 (0.268153-0.318449) |
+| 2.2.1 / fractional-bigint | 0.231148 (0.228257-0.240856) | 0.224373 (0.220700-0.246401) | 0.230612 (0.228576-0.238758) | 0.294351 (0.283615-0.319577) |
+
+Native/stock elapsed-time ratios span 0.971-1.101;
+native/previous ratios span 0.762-0.897. Ratios above
+one are slower. These measurements do not establish universal complete-job acceleration.
+
+All 796 focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17,
+compiled for Java release 11. Complete 5,003-row witnesses verify values, types, NULLs, IDs,
+cardinality and actual native consumption, plus consumers, grouping, lazy/empty batches,
+nullable-metadata failures and the current DECIMAL projection-default repairs. The unchanged
+released GreatestLeastFunctionsITCase passes 146 stock-oracle invocations; 44 fixture smokes
+pass separately. Existing native production code and its DSO are unchanged; this is not a
+claim of a new Rust core-suite run. Further mixed numeric, rounding and producer scope remains
+in [#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## Mixed exact LEAST
+
+Verified mixed integer/DECIMAL LEAST reuses the lossless casts and existing Arrow minimum
+kernel described for GREATEST. Nullable DECIMAL metadata changes, scale reduction, insufficient
+integral capacity and unverified/computed producers retain generated evaluation. This preserves
+released Flink's nullable-conversion failures. No production Rust, JNI, ownership or option changes.
+
+The [result record](results/mixed-exact-least-2026-11-02.json) and
+[raw trials](results/mixed-exact-least-2026-11-02.csv.gz) retain 112 configurations/11,200 trials.
+The actual preceding encoder is independently recompiled from `a7eaea10`, the separate GREATEST
+commit on canonical main `b0eb507c`. Both paths use the same release/default-feature DSO,
+fresh benchmark executable and two-column fixture. JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows per trial match the GREATEST methodology.
+Prepared GenericRowData/BinaryRowData and Arrow contain equal values/types/NULLs. Rust timing
+excludes initial JNI/import/export and perimeter transposes; intrinsic previous callbacks remain.
+Checksums match, with consumed native function work and empty candidate evaluator descriptors.
+
+DECIMAL(18,2)/(19,19)/(38,18) with INT/BIGINT, both orders, a three-argument control, NULL/NOT NULL,
+signed extrema and large coefficients use `LEAST(v,n)>0 OR CAST(NULL AS BOOLEAN)`. These timings
+consume a nullable BOOLEAN, not final DECIMAL output. Bulk batches contain 1,024 rows and tiny
+controls 16. Requested-byte/output-buffer allocation probes remain in the result record.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 38 | 1.911-13.370x | 6.227-15.783x | 0 |
+| 1.18.1 | tiny control | 18 | 0.070-0.552x | 6.984-8.190x | 18 |
+| 2.2.1 | bulk | 38 | 1.200-13.535x | 5.905-15.711x | 0 |
+| 2.2.1 | tiny control | 18 | 0.073-0.532x | 6.956-8.294x | 18 |
+
+All 76 bulk medians beat stock and previous. All 36 tiny controls remain slower than stock.
+Eight million-row row-source/blackhole controls retain startup/planning, source generation,
+production JNI and both transposes at parallelism one, with two warmups/five measurements.
+Seconds are median (min-max); independent stock controls and unfavorable samples are retained.
+
+| Flink / inputs | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / compact-int | 0.280502 (0.261990-0.367126) | 0.315172 (0.205658-0.333249) | 0.210022 (0.193419-0.293259) | 0.272373 (0.242126-0.282771) |
+| 1.18.1 / compact-bigint | 0.216120 (0.200640-0.235634) | 0.229793 (0.212071-0.291695) | 0.222998 (0.195001-0.241038) | 0.343002 (0.275064-0.491480) |
+| 1.18.1 / wide-bigint | 0.286441 (0.224139-0.691903) | 0.308327 (0.235885-0.503705) | 0.227179 (0.208461-0.231006) | 0.280126 (0.269329-0.381201) |
+| 1.18.1 / fractional-bigint | 0.219772 (0.213547-0.227718) | 0.218514 (0.212634-0.229046) | 0.216152 (0.211148-0.221203) | 0.285881 (0.277306-0.305001) |
+| 2.2.1 / compact-int | 0.204871 (0.198575-0.211131) | 0.209832 (0.204694-0.221375) | 0.204786 (0.196269-0.207228) | 0.250877 (0.243003-0.270677) |
+| 2.2.1 / compact-bigint | 0.205481 (0.203301-0.217226) | 0.214091 (0.207014-0.227696) | 0.201066 (0.197392-0.217963) | 0.258565 (0.248192-0.292048) |
+| 2.2.1 / wide-bigint | 0.215578 (0.211774-0.219300) | 0.217707 (0.214002-0.225476) | 0.214131 (0.210309-0.233518) | 0.272811 (0.254320-0.355432) |
+| 2.2.1 / fractional-bigint | 0.298122 (0.272389-0.354822) | 0.255497 (0.245776-0.353708) | 0.308293 (0.245968-0.486820) | 0.474460 (0.336639-0.607842) |
+
+Native/stock elapsed ratios span 0.857-1.124 and native/previous 0.539-1.157. Several
+short jobs have wide sample ranges and differing stock controls; these are retained, not
+discarded or interpreted as universal complete-job acceleration.
+
+All 264 focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17,
+compiled for Java release 11, plus 44 fixture smokes. Complete 5,003-row runtime witnesses
+compare values/types/NULLs/IDs/cardinality and require consumed NativeCalc work with no
+fallback and empty evaluators. Consumers, grouping, selected failures, empty batches,
+nullable metadata failures and current DECIMAL projection defaults remain covered. The 146
+unchanged GreatestLeastFunctionsITCase stock-oracle invocations recorded for GREATEST cover
+both extrema functions; they are not claimed as a second new run. Production Rust is unchanged.
+Further mixed numeric and producer scope remains in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+
+## Mixed exact IF
+
+Direct/literal mixed integer/DECIMAL IF branches use a typed Arrow selector when both
+conversions are lossless and the resolved DECIMAL precision exceeds 18. NULL conditions
+select ELSE; selected NULL values stay NULL. The selector writes one output array without
+filtered batches, separate cast arrays or a merge. Matching branch types retain the existing
+native CASE path. Computed/unverified mixed branches, scale reduction, insufficient integral
+capacity, stateful/volatile calls and compact-result mixed normalization retain their existing
+routes. No JNI, ownership or configuration change is introduced.
+
+The first generic CASE investigation had **16/48 bulk cells slower than stock**. Process
+sampling identified `CaseBody::expr_or_expr`, `arrow_select::merge` and `MutableArrayData::extend`.
+A representative 1,024-row compact-result control went from 109 allocations/68,528 requested
+bytes to 56/20,418 after fusion. Its fused median was still 7.84 ns/row against stock's
+6.78 ns/row, so compact mixed normalization stays generated. The
+[result record](results/mixed-exact-if-2026-11-02.json) preserves this failed matrix and pilot;
+[initial raw trials](results/mixed-exact-if-initial-2026-11-02.csv.gz) are separate from the
+[final raw trials](results/mixed-exact-if-2026-11-02.csv.gz).
+
+The final noncompact matrix retains 72 configurations/7,200 trials against independently
+recompiled actual preceding commit `289b69f0`, on canonical main `b0eb507c`. The candidate
+uses the new release/default-feature DSO; previous controls use their independently
+preserved preceding DSO/executable and the same expanded logical corpus. Apple M4 Pro,
+JDK 17.0.12, one thread, 16 warmups/nine measurements, 131,072 rows/trial and matching prepared
+GenericRowData/BinaryRowData/Arrow inputs follow the preceding extrema method. Timing stays
+inside Rust and includes intrinsic JVM callbacks, allocations, conversions and output consumption;
+initial JNI/import/export and perimeter transposes are outside this small-function timer.
+Every trial checksum agrees and the admitted candidate requires empty evaluators.
+
+DECIMAL(4,2)/(18,2)/(19,19)/(38,18) with INT/BIGINT, both branch orders, NULL/NOT NULL,
+signed extrema and large coefficients use `IF(n>=0,v,n)>0 OR CAST(NULL AS BOOLEAN)`.
+Every selected bulk combination resolves to precision greater than 18. This measures a nullable
+BOOLEAN consumer, not final DECIMAL output. Bulk batches have 1,024 rows and tiny controls 16.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 1.051-5.253x | 6.298-12.165x | 0 |
+| 1.18.1 | tiny control | 12 | 0.065-0.326x | 6.936-8.202x | 12 |
+| 2.2.1 | bulk | 24 | 1.523-5.820x | 5.314-14.075x | 0 |
+| 2.2.1 | tiny control | 12 | 0.066-0.319x | 7.117-8.761x | 12 |
+
+All 48 bulk medians beat stock and previous. All 24 tiny controls remain slower than stock.
+Eight complete million-row source/blackhole jobs retain startup, JNI and both transposes, at
+parallelism one with two warmups/five measurements. `fractional-int` uses DECIMAL(19,19)/INT;
+`compact-bigint` uses DECIMAL(18,2)/BIGINT (the resolved result is noncompact); `wide-bigint`
+uses DECIMAL(38,18)/BIGINT; `fractional-bigint` uses DECIMAL(19,19)/BIGINT. Seconds are median
+(min-max); independent stock controls and unfavorable samples remain recorded.
+
+| Flink / inputs | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / fractional-int | 0.207477 (0.201241-0.208401) | 0.223703 (0.215123-0.231077) | 0.202862 (0.196273-0.206931) | 0.275605 (0.272918-0.285621) |
+| 1.18.1 / compact-bigint | 0.215457 (0.205784-0.220610) | 0.224521 (0.213762-0.234266) | 0.202049 (0.192554-0.209908) | 0.258307 (0.256854-0.272890) |
+| 1.18.1 / wide-bigint | 0.202431 (0.198542-0.209724) | 0.220264 (0.214817-0.227628) | 0.205333 (0.200273-0.229048) | 0.293870 (0.281837-0.301714) |
+| 1.18.1 / fractional-bigint | 0.213749 (0.211021-0.221769) | 0.232539 (0.227125-0.249843) | 0.206994 (0.200390-0.297613) | 0.293367 (0.268386-0.505663) |
+| 2.2.1 / fractional-int | 0.204839 (0.202637-0.214151) | 0.235065 (0.228285-0.237179) | 0.212130 (0.208221-0.220079) | 0.282727 (0.272990-0.290860) |
+| 2.2.1 / compact-bigint | 0.199342 (0.197950-0.216623) | 0.217757 (0.211355-0.227652) | 0.191884 (0.185234-0.202888) | 0.253936 (0.243814-0.262679) |
+| 2.2.1 / wide-bigint | 0.206973 (0.199895-0.215854) | 0.235268 (0.226704-0.252028) | 0.202695 (0.195838-0.210014) | 0.277684 (0.274433-0.317087) |
+| 2.2.1 / fractional-bigint | 0.213100 (0.206608-0.223398) | 0.230963 (0.227135-0.242107) | 0.205177 (0.198572-0.223956) | 0.275922 (0.266477-0.288107) |
+
+Native/stock elapsed ratios span 1.042-1.148: every measured complete job remains slower
+than stock. Native/previous ratios span 0.750-0.869. This establishes improved function work
+and previous-path costs, not whole-job acceleration.
+
+The new Rust selector passes scalar, nullable array, sliced-offset, full-BIGINT and empty-input
+regressions; 883 core tests pass with `--no-default-features`. The released upstream
+`ScalarFunctionsTest.testIf` stock oracle passes on Flink 1.18.1/2.2.1 with JDK 11/17.
+All 538 final focused JVM invocations pass (two released-1.18 negative-TIME controls abort
+as expected), plus 48 fixture smokes. Runtime SQL witnesses compare complete 5,003-row
+outputs, schemas, NULLs, IDs/cardinality,
+consumers, grouping, lazy branches, selected failures, empty filtered batches and current
+DECIMAL projection defaults, requiring consumed native work and empty evaluators for admitted
+paths. Final source hashes and focused results accompany the measurement record. A final
+admission-only restriction preserves matching-type CASE; measured mixed-signature lowering
+is unchanged. Further producers, compact mixed normalization and rounding remain in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## Mixed selection latest-main regression
+
+The six GREATEST, LEAST, IF and DATE HOUR/MINUTE/SECOND commits rebase onto canonical
+main `be842d2d` with six equal patches in `git range-diff`. Historical measurements keep
+their original source hashes, encoders, DSOs and pre-rebase baseline IDs; they are not
+relabeled as new timings. The [regression record](results/mixed-selection-main-regression-2026-11-02.json)
+maps those commits into the rebased history and records **768 fresh passing JVM invocations**
+(192 per released Flink 1.18.1/2.2.1 and JDK 11/17 pair), compiled for Java release 11.
+They cover complete mixed-selection/DATE result maps and native consumption, shared state,
+DECIMAL defaults, calendar/timestamp controls and current nested bridge admission/fallback.
+
+## UTC LTZ calendar FLOOR
+
+The FLOOR qualification snapshot admits direct/literal TIMESTAMP_LTZ to MONTH/YEAR in
+fixed zero-offset session zones using the existing calendar kernel. Released Flink uses
+the same Julian-date arithmetic there, including signed division, int overflow and the
+Gregorian cutover. Regional zones, nonzero offsets, computed inputs and other units retain
+their existing routes. CEIL is qualified separately below. Production Rust, JNI, ownership
+and configuration are unchanged.
+
+The [result record](results/utc-ltz-floor-2026-11-02.json) and
+[4,000 raw trials](results/utc-ltz-floor-2026-11-02.csv.gz) retain stock controls, an independently
+recompiled actual preceding encoder at `11e13486`, source/DSO hashes and unfavorable results.
+Both paths use the same unchanged release/default-feature DSO and the same expanded
+timestamp fixture/executable; this is not relabeled as the preceding historical executable.
+On Apple M4 Pro, JDK 17.0.12, one thread, 16 warmups/nine measurements and 131,072 rows/trial,
+TIMESTAMP_LTZ(3)/(9), NULL/NOT NULL and GenericRowData/BinaryRowData/Arrow controls consume
+`YEAR(FLOOR(v TO MONTH|YEAR))>0 OR CAST(NULL AS BOOLEAN)`. Inputs include full signed
+millisecond extrema, pre-epoch fractions, cutover and year boundaries. The timer starts/stops
+inside Rust, including intrinsic work and output consumption; initial JNI/import/export and
+perimeter transposes are outside this small-function timer. Checksums agree in every trial,
+and admitted candidate expressions require empty JVM evaluators.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 16 | 1.182-1.551x | 2.286-2.821x | 0 |
+| 1.18.1 | tiny control | 4 | 0.193-0.253x | 8.358-8.609x | 4 |
+| 2.2.1 | bulk | 16 | 1.224-1.632x | 2.312-3.178x | 0 |
+| 2.2.1 | tiny control | 4 | 0.195-0.247x | 8.123-8.654x | 4 |
+
+All 32 bulk medians beat stock and previous. All eight 16-row controls remain slower than
+stock. Eight complete million-row source/blackhole configurations retain startup, JNI and
+both transposes, at parallelism one with two warmups/five measurements. Seconds are median
+(min-max), with independent stock controls retained.
+
+| Flink / inputs | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / millis-month | 0.188040 (0.186749-0.205863) | 0.221072 (0.214229-0.226698) | 0.193261 (0.185584-0.202123) | 0.245723 (0.235856-0.248278) |
+| 1.18.1 / millis-year | 0.195539 (0.186410-0.203306) | 0.220040 (0.211578-0.263018) | 0.180761 (0.175119-0.191061) | 0.238446 (0.236861-0.267134) |
+| 1.18.1 / nanos-month | 0.180207 (0.177152-0.188744) | 0.212674 (0.211109-0.219351) | 0.185782 (0.179583-0.188839) | 0.235585 (0.235366-0.246597) |
+| 1.18.1 / nanos-year | 0.181047 (0.176542-0.182064) | 0.216663 (0.211255-0.223228) | 0.177336 (0.172870-0.186011) | 0.229550 (0.228119-0.237410) |
+| 2.2.1 / millis-month | 0.179602 (0.175361-0.193702) | 0.212927 (0.209005-0.226058) | 0.183578 (0.179895-0.192829) | 0.246426 (0.234361-0.263776) |
+| 2.2.1 / millis-year | 0.183784 (0.182589-0.197169) | 0.231608 (0.228845-0.251674) | 0.180244 (0.179069-0.201296) | 0.239005 (0.228666-0.274734) |
+| 2.2.1 / nanos-month | 0.185797 (0.180933-0.190350) | 0.218771 (0.216324-0.227968) | 0.189567 (0.181581-0.202551) | 0.239713 (0.235645-0.246484) |
+| 2.2.1 / nanos-year | 0.178197 (0.172020-0.185764) | 0.218076 (0.212453-0.226665) | 0.176826 (0.174746-0.191225) | 0.237412 (0.233253-0.262087) |
+
+Native/stock elapsed ratios span **1.125-1.260**: every measured complete job is slower than
+stock. Native/previous ratios span **0.864-0.969**. The small-function improvement does not
+establish whole-job acceleration, and tiny batches remain an unfavorable workload.
+
+All 68 focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17,
+compiled for Java release 11. Complete 5,003-row runtime maps compare values, declared
+precision, NULLs, unique IDs/cardinality and full-range inputs across eight session zones;
+only normalized fixed-zero zones require empty evaluators. Negative admission controls at
+this snapshot cover other units, CEIL and computed inputs. The unchanged released
+`ScalarFunctionsTest.testTemporalFloor` stock oracle passes on all four pairs, separately
+from native-route witnesses. All 28 fixture smokes pass, including unchanged original-corpus
+checksums. The unchanged production DSO reuses the recorded 886 Rust core passes; the
+expanded release benchmark executable is rebuilt. Further LTZ scope remains in
+[#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
+
+## UTC LTZ calendar CEIL
+
+CEIL/CEILING to MONTH/YEAR admits the same direct/literal LTZ and fixed-zero session-zone
+subset, independently of FLOOR qualification. Released Flink drops submillisecond fractions
+before its calendar calculation; the existing kernel reproduces this behavior at exact month
+boundaries and for negative/full-range milliseconds. Fixed-unit LTZ CEIL is different and
+remains outside this admission, together with nonzero/regional zones and computed inputs.
+No production Rust, DSO, JNI, ownership or option changes are needed.
+
+The [result record](results/utc-ltz-ceil-2026-11-02.json) and
+[4,000 raw trials](results/utc-ltz-ceil-2026-11-02.csv.gz) compare stock with independently
+recompiled actual preceding encoder `bc9156b3` and candidate. They use the same timestamp
+fixture, production DSO and release/default-feature executable as FLOOR, with
+`YEAR(CEIL(v TO MONTH|YEAR))>0 OR CAST(NULL AS BOOLEAN)`. The prepared-input Rust-side
+timer, types, signed extrema, NULLs, GenericRowData/BinaryRowData controls, batch sizes,
+16 warmups/nine measurements and 131,072 rows/trial are unchanged. Every checksum agrees;
+candidate native expressions have empty JVM evaluators. All unfavorable controls and
+source/runtime hashes remain public.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 16 | 1.177-1.672x | 2.539-4.442x | 0 |
+| 1.18.1 | tiny control | 4 | 0.203-0.249x | 8.403-8.773x | 4 |
+| 2.2.1 | bulk | 16 | 1.157-1.665x | 2.380-3.261x | 0 |
+| 2.2.1 | tiny control | 4 | 0.201-0.258x | 8.495-8.830x | 4 |
+
+All 32 bulk medians beat stock and previous; all eight tiny controls lose to stock. The
+eight million-row source/blackhole configurations retain startup, JNI and both transposes,
+two warmups/five measurements and independent stock controls. Seconds are median (min-max).
+
+| Flink / inputs | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / millis-month | 0.186132 (0.178269-0.186337) | 0.208164 (0.206946-0.214929) | 0.182699 (0.181872-0.216983) | 0.243392 (0.241391-0.262012) |
+| 1.18.1 / millis-year | 0.188171 (0.175289-0.197888) | 0.219593 (0.209214-0.226519) | 0.185199 (0.178695-0.188247) | 0.250715 (0.231815-0.271578) |
+| 1.18.1 / nanos-month | 0.190383 (0.182234-0.201164) | 0.209850 (0.205938-0.228390) | 0.180241 (0.176636-0.205446) | 0.249955 (0.244625-0.276685) |
+| 1.18.1 / nanos-year | 0.196046 (0.178773-0.199058) | 0.217153 (0.208887-0.223411) | 0.196122 (0.187562-0.199845) | 0.268520 (0.251645-0.291934) |
+| 2.2.1 / millis-month | 0.180832 (0.177707-0.195561) | 0.208945 (0.200662-0.229296) | 0.188054 (0.184059-0.194765) | 0.245933 (0.238274-0.261214) |
+| 2.2.1 / millis-year | 0.184349 (0.181639-0.193377) | 0.216672 (0.213815-0.233547) | 0.187517 (0.181014-0.198702) | 0.248477 (0.234889-0.258829) |
+| 2.2.1 / nanos-month | 0.188166 (0.177473-0.191057) | 0.215282 (0.212135-0.229300) | 0.196054 (0.183815-0.204254) | 0.244518 (0.239370-0.254048) |
+| 2.2.1 / nanos-year | 0.183150 (0.180889-0.203244) | 0.218773 (0.213459-0.236328) | 0.189499 (0.181699-0.192151) | 0.240628 (0.237761-0.265100) |
+
+Native/stock elapsed ratios span **1.102-1.195**; every measured complete job still loses
+to stock. Native/previous ratios span **0.809-0.909**. These results qualify bulk function
+work and quantify the remaining complete-job cost, without asserting whole-job acceleration.
+
+All 68 new focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17,
+compiled for Java release 11. Full 5,003-row maps cover eight zones, NULLs, declared precision,
+millisecond extrema and nanoseconds, with consumed intended native work and empty evaluators
+only in qualified zones. Other units and computed round operands remain negative admission
+controls. The unchanged released temporal FLOOR/CEIL stock oracle is reused from FLOOR's
+four passing release/JDK controls; these are not claimed as a second new oracle run.
+All 28 fixture smokes pass. The production DSO and its recorded 886 Rust core passes are
+unchanged. A further **152 passing JVM invocations** (38 per release/JDK pair) exercise
+the final FLOOR/CEIL implementation together with existing calendar/interval controls;
+that source/result record accompanies the CEIL artifact. Broader calendar work remains in
+[#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
+
+## BIGINT epoch millisecond conversion
+
+Direct/literal `TO_TIMESTAMP_LTZ(n,3)` with BIGINT input reuses the existing epoch-millisecond
+kernel in ordinary Calc. Released bounds are inclusive -62167219200000..253402300799999;
+NULL and out-of-range values stay NULL. The timestamp shares the immutable input value
+buffer, uses zero nanoseconds, and places combined input/range validity on its parent.
+A packed range mask plus wordwise validity intersection replaces per-row Option handling.
+At this qualification, computed ordinary-Calc inputs, seconds and other numeric signatures
+retain existing routes; the later seconds qualification extends the direct BIGINT subset.
+
+The initial unchanged kernel's nullable Flink 1.18 IS NULL pilot loses: stock 3.160 versus
+native 4.490 ns/row. CPU samples identify conversion, Vec growth/realloc and Vec<bool>
+validity copying. Sharing the millisecond buffer reduces a 1,024-row probe from 55 allocation
+requests/28,575 requested bytes to 29/6,047, but one isolated pilot still measures 0.990x
+stock/native. The final packed-mask pass uses 31 requests/6,231 bytes and measures 1.269
+ns/row in that final pilot. These are request counts, not peak memory or bytes copied.
+The BOOLEAN output itself owns a new bitmap; timestamp buffer sharing is independently
+asserted for sliced inputs after input owners are dropped.
+
+The [result record](results/epoch-millis-2026-11-02.json) preserves the failed initial pilot,
+first-pass matrix/jobs, allocation/profile observations and final qualification;
+[4,000 final raw trials](results/epoch-millis-2026-11-02.csv.gz) retain all unfavorable controls.
+The release/default-feature prepared executable and both core DSOs use **System**, verified
+against retained Mach-O allocator symbols; these are not mimalloc-specific measurements.
+The actual preceding encoder/runtime at `871f269e` is preserved separately, with its own
+DSO/executable hashes; both sides use the same expanded logical BIGINT corpus. Inputs include
+signed extrema, both exact conversion boundaries and adjacent invalid values, cutover and
+modern dates, NULL/NOT NULL and GenericRowData/BinaryRowData/Arrow. Apple M4 Pro, JDK 17.0.12,
+one thread, 16 warmups/nine measurements and 131,072 rows/trial follow the prepared Rust-side
+method: production operation and output consumption are timed inside Rust; initial JNI/import/
+export and perimeter transposes are excluded. Intrinsic callback costs remain included in
+previous controls. Candidate expressions require empty evaluators and every checksum agrees.
+Consumers are YEAR/MONTH/SECOND comparisons and IS NULL, each planned independently.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 16 | 1.343-3.910x | 5.438-42.181x | 0 |
+| 1.18.1 | tiny control | 4 | 0.078-0.117x | 9.571-23.935x | 4 |
+| 2.2.1 | bulk | 16 | 1.405-5.014x | 5.860-40.166x | 0 |
+| 2.2.1 | tiny control | 4 | 0.111-0.124x | 9.757-24.940x | 4 |
+
+All 32 bulk medians beat stock and previous. All eight 16-row controls remain slower than
+stock. Eight complete million-row source/blackhole configurations retain startup, JNI and
+both transposes, with two warmups/five measurements and independent stock controls. Seconds
+are median (min-max).
+
+| Flink / consumer | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / year | 0.172933 (0.160338-0.174794) | 0.185525 (0.180171-0.207699) | 0.173175 (0.163452-0.180049) | 0.208390 (0.206822-0.222593) |
+| 1.18.1 / month | 0.162458 (0.157122-0.182099) | 0.186845 (0.182849-0.190759) | 0.166398 (0.163162-0.172407) | 0.212426 (0.204017-0.217323) |
+| 1.18.1 / second | 0.161529 (0.157477-0.173762) | 0.176890 (0.173200-0.186999) | 0.166245 (0.163281-0.172074) | 0.224440 (0.221124-0.231372) |
+| 1.18.1 / null | 0.185503 (0.176530-0.189883) | 0.195437 (0.187705-0.200961) | 0.180688 (0.175215-0.185593) | 0.227803 (0.224631-0.240018) |
+| 2.2.1 / year | 0.178724 (0.165996-0.183075) | 0.182469 (0.181150-0.194421) | 0.165492 (0.157553-0.174396) | 0.221700 (0.213897-0.251977) |
+| 2.2.1 / month | 0.171128 (0.163341-0.172744) | 0.177046 (0.174130-0.185138) | 0.171559 (0.166280-0.172917) | 0.216314 (0.211774-0.223302) |
+| 2.2.1 / second | 0.161398 (0.159844-0.170333) | 0.181007 (0.176693-0.183741) | 0.166190 (0.159351-0.171686) | 0.208888 (0.204120-0.223793) |
+| 2.2.1 / null | 0.192193 (0.185861-0.195798) | 0.199313 (0.196734-0.209371) | 0.186166 (0.180513-0.191239) | 0.231576 (0.230858-0.242957) |
+
+Native/stock elapsed ratios span **1.021-1.150**: every measured complete job still loses
+to stock. Native/previous ratios span **0.788-0.890**. Bulk function work improves; these
+short complete jobs do not establish whole-job acceleration.
+
+All **148 focused JVM invocations** pass across released Flink 1.18.1/2.2.1 and JDK 11/17,
+compiled for Java release 11. Complete 5,003-row maps verify values, types, NULLs, unique
+IDs/cardinality, both nullabilities, four zones, calendar consumers, typed conditional selection,
+all-filtered batches and the then-generated seconds/computed controls. Direct BIGINT seconds
+are admitted by the separate qualification below. Admitted
+paths require consumed NativeCalc work and empty evaluators. Existing UNNEST temporal
+bounds, zones and failure contracts remain covered. All **888 Rust core tests** pass without
+default features, zero ignored, including sliced buffer ownership, parent/child NULL contracts,
+scalars and empty arrays. The unchanged released `TemporalTypesTest` Shanghai, UTC, boundary
+and invalid TO_TIMESTAMP_LTZ methods pass in **16 stock-oracle invocations**, separately
+from native-route witnesses. All 28 fixture smokes pass, including old/new original-corpus
+checksum controls. Broader conversions remain in
+[#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
+
+## Function allocator provenance and matched IF controls
+
+The [artifact audit](results/function-allocator-provenance-2026-11-02.json) corrects blanket
+mimalloc labels on this change's mixed-selection and UTC-rounding records. Prepared Rust
+executables and JNI core DSOs are separate link products. CountingAllocator declares System,
+but only inspecting the final linked artifact establishes whether allocator symbols were rebound.
+The retained extrema executable imports System malloc while its shared `ef29d700` JNI DSO
+uses mimalloc. The retained `4a10d804` UTC-rounding core DSO uses System. Original IF candidate
+and calendar executable artifacts are not retained for independent symbol reinspection; their
+hashes/raw measurements remain, without inventing an allocator attribution. These historical
+numbers are not a mimalloc-specific prepared-function qualification.
+
+A fresh [matched IF record](results/mixed-exact-if-allocator-matched-2026-11-02.json) and
+[7,200 raw trials](results/mixed-exact-if-allocator-matched-2026-11-02.csv.gz) use the same
+current release/System executable and core DSO on both sides. The independently compiled actual
+pre-feature encoder `289b69f0` keeps its generated evaluator; candidate uses the typed selector.
+This isolates the encoder/selection change on the same current primitive evaluator/transport;
+it is not a replay of the complete historical DSO. Input values/checksums, DECIMAL signatures,
+branch orders, nullabilities, GenericRowData/BinaryRowData, nullable BOOLEAN consumer, timing
+boundary, warmup/repetition and complete-job perimeter match the original IF qualification.
+Every checksum agrees and candidate native expressions require empty evaluators. Reused fixture
+and released-oracle controls are identified as reused, not newly executed IF oracles.
+
+| Flink | Workload | Cells | Stock/native median range | Prior encoder/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 1.243-6.803x | 7.068-10.927x | 0 |
+| 1.18.1 | tiny control | 12 | 0.064-0.293x | 6.613-8.869x | 12 |
+| 2.2.1 | bulk | 24 | 1.067-4.861x | 6.423-10.811x | 0 |
+| 2.2.1 | tiny control | 12 | 0.066-0.289x | 6.625-8.397x | 12 |
+
+All 48 bulk medians beat stock and the prior-encoder control. All 24 tiny controls still
+lose to stock. Complete million-row source/blackhole jobs retain startup, JNI and both
+transposes, two warmups/five measurements and independent stock controls. Seconds are
+median (min-max).
+
+| Flink / inputs | Candidate stock | Native | Prior-control stock | Prior encoder |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / fractional-int | 0.211896 (0.205774-0.214337) | 0.226388 (0.214241-0.227146) | 0.201043 (0.194222-0.210099) | 0.270145 (0.267369-0.273343) |
+| 1.18.1 / compact-bigint | 0.199994 (0.194616-0.210764) | 0.224322 (0.211926-0.235112) | 0.200780 (0.199217-0.201742) | 0.266821 (0.257370-0.278869) |
+| 1.18.1 / wide-bigint | 0.208675 (0.202621-0.213879) | 0.225573 (0.219125-0.241540) | 0.214507 (0.204583-0.217570) | 0.291849 (0.284361-0.306561) |
+| 1.18.1 / fractional-bigint | 0.215004 (0.209909-0.229445) | 0.228181 (0.221224-0.245202) | 0.208205 (0.202990-0.223996) | 0.282070 (0.271877-0.284726) |
+| 2.2.1 / fractional-int | 0.206288 (0.203484-0.206633) | 0.225171 (0.223702-0.236765) | 0.202783 (0.201772-0.209552) | 0.287532 (0.285755-0.299882) |
+| 2.2.1 / compact-bigint | 0.204214 (0.197145-0.210660) | 0.226605 (0.215100-0.238641) | 0.197689 (0.193144-0.209770) | 0.256399 (0.251695-0.270723) |
+| 2.2.1 / wide-bigint | 0.209169 (0.201884-0.212275) | 0.226093 (0.221882-0.236119) | 0.200475 (0.194004-0.205439) | 0.278284 (0.276462-0.285379) |
+| 2.2.1 / fractional-bigint | 0.201508 (0.196561-0.211933) | 0.222281 (0.220729-0.230879) | 0.207573 (0.204575-0.210746) | 0.279755 (0.270325-0.294065) |
+
+Native/stock elapsed ratios span **1.061-1.122** and native/prior-encoder **0.773-0.884**.
+Every measured complete job remains slower than stock. These matched controls replace an
+assumption of matched historical allocator settings; original trials/hashes remain available.
+
+Canonical main advances to `76b1e46f` through CI-status-only PR #586. All ten implementation/
+record patches rebase equally in `git range-diff`; `git diff 14f4c6dc HEAD -- src native`
+is empty at the rebased implementation head recorded in the audit. No runtime source changes
+or new performance timings are inferred from that CI-only rebase. Historical base IDs remain
+attached to the measurements they actually produced.
+
+## BIGINT epoch second conversion
+
+Direct/literal `TO_TIMESTAMP_LTZ(n,0)` with BIGINT input reuses the epoch conversion structure.
+Both released Flink jars check original seconds against inclusive
+`[-62167219200,253402300799]` before multiplying by 1000. Invalid values stay NULL even if
+their scaled long would wrap into a valid timestamp. The new millisecond buffer and zero
+nanoseconds use the existing component schema; input/range validity stays on the parent.
+Numeric conversion is zone independent. Computed ordinary-Calc/UNNEST inputs and other numeric,
+string, format or precision signatures keep their existing routes. There is no new switch.
+
+The [record](results/epoch-seconds-2026-11-02.json) and
+[4,000 raw trials](results/epoch-seconds-2026-11-02.csv.gz) compare the independently compiled
+actual preceding encoder `5d78fd4a` with candidate on one current release/default-feature/System
+runtime, allocator, transport and expanded seconds fixture. Both final linked artifacts import
+System malloc and have no mimalloc allocator symbols. This isolates the encoder/kernel route
+change; it is not a replay of a complete historical DSO. The preceding encoder still binds
+its generated evaluator, while candidate requires empty evaluators. All checksums agree.
+
+On Apple M4 Pro, Oracle JDK 17.0.12, one thread, 16 warmups/nine measurements and 131,072
+rows/trial, equal GenericRowData/BinaryRowData/Arrow contain exact seconds bounds and adjacent
+invalid values, signed extrema and multiplication-overflow controls, cutover/modern/pre-epoch
+values and NULL/NOT NULL. Production work/output consumption are timed inside Rust with
+intrinsic callback costs retained in the preceding control. Initial JNI/C Data entry/export
+and perimeter transposes are excluded only from this prepared-function timer. Independently
+planned nullable BOOLEAN consumers are YEAR/MONTH/SECOND comparisons and IS NULL.
+
+| Flink | Workload | Cells | Stock/native median range | Prior encoder/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 16 | 1.342-3.448x | 5.967-39.244x | 0 |
+| 1.18.1 | tiny control | 4 | 0.078-0.106x | 9.399-21.834x | 4 |
+| 2.2.1 | bulk | 16 | 1.350-4.511x | 5.777-37.158x | 0 |
+| 2.2.1 | tiny control | 4 | 0.099-0.110x | 9.369-22.675x | 4 |
+
+All 32 bulk medians beat stock and the preceding encoder; all eight 16-row controls lose
+to stock. Complete million-row source/blackhole jobs retain startup, JNI, production conversions
+and both transposes, with two warmups/five measurements and independent stock controls.
+Seconds are median (min-max).
+
+| Flink / consumer | Candidate stock | Native | Prior-control stock | Prior encoder |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / year | 0.178340 (0.170356-0.219641) | 0.184620 (0.178544-0.200105) | 0.162921 (0.161419-0.182398) | 0.213423 (0.206437-0.226048) |
+| 1.18.1 / month | 0.172563 (0.166091-0.180995) | 0.188816 (0.184118-0.202078) | 0.185944 (0.168941-0.196921) | 0.220979 (0.212758-0.236827) |
+| 1.18.1 / second | 0.169010 (0.163062-0.184871) | 0.185623 (0.175359-0.191390) | 0.162442 (0.157704-0.167774) | 0.216820 (0.208115-0.234500) |
+| 1.18.1 / null | 0.178418 (0.169744-0.192398) | 0.203734 (0.197714-0.234369) | 0.176524 (0.171268-0.184801) | 0.230295 (0.224920-0.239758) |
+| 2.2.1 / year | 0.178993 (0.168456-0.192806) | 0.191535 (0.186340-0.223990) | 0.173104 (0.168654-0.181658) | 0.216082 (0.213046-0.241996) |
+| 2.2.1 / month | 0.181048 (0.166665-0.188743) | 0.183546 (0.177635-0.202007) | 0.171645 (0.162908-0.181974) | 0.223246 (0.208871-0.239910) |
+| 2.2.1 / second | 0.159443 (0.155857-0.194190) | 0.184733 (0.170795-0.189403) | 0.162390 (0.159129-0.170958) | 0.210622 (0.208602-0.224377) |
+| 2.2.1 / null | 0.194371 (0.178394-0.201297) | 0.201201 (0.196232-0.232690) | 0.191489 (0.185210-0.207430) | 0.229590 (0.226761-0.258798) |
+
+Native/stock elapsed ratios span **1.014-1.159**; all eight measured complete jobs remain
+slower than stock. Native/prior-encoder ratios span **0.822-0.886**. These prepared bulk
+function wins do not establish complete-job acceleration.
+
+All **212 focused JVM invocations** pass on released Flink 1.18.1/2.2.1 x JDK 11/17 with
+Java release 11. Complete 5,003-row maps compare values, resolved types, NULLs, IDs/cardinality,
+exact seconds/millisecond bounds, signed extrema, four zones, calendar consumers, typed
+conditional selection, all-filtered batches and explicit generated controls for computed/
+other-numeric inputs. The intended NativeCalc must consume runtime work and admitted functions
+have no JVM evaluator. Existing millisecond and UNNEST coverage stays covered. All **890 Rust
+core tests** pass without default features and zero ignored, including parent/child validity,
+sliced/scalar/empty inputs and pre-scaling range checks. Sixteen freshly executed unchanged
+released TemporalTypesTest stock-oracle invocations and 28 fixture smokes pass separately;
+original-corpus controls compare the retained preceding executable with the expanded fixture.
+Broad temporal parsing/formatting and other conversions stay in
+[#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
+
+### Retained millisecond controls
+
+A first seconds implementation passed its bulk gate but added redundant buffer-reference
+clones and selected range bounds at runtime. A retained Flink 1.18 millisecond IS NULL pilot
+then took 1.274 versus preceding-native 1.151 ns/row, with nonoverlapping measured ranges.
+The final implementation moves the scaled buffer directly and specializes fixed bounds by
+unit. Both complete seconds qualifications, the first
+[4,000 trials](results/epoch-seconds-initial-2026-11-02.csv.gz) and all 800 first/final
+retained-millisecond raw trials remain in the result record. These diagnostics compare the
+retained actual previous native executable/DSO with candidate; their meaning differs from
+the preceding-encoder-only seconds control above.
+
+Final millisecond medians (min-max) in ns/row:
+
+| Flink / consumer | Retained preceding native | Candidate native | Candidate / retained median |
+| --- | ---: | ---: | ---: |
+| 1.18.1 / year | 7.597 (7.446-7.771) | 7.710 (7.575-9.072) | 1.015 |
+| 1.18.1 / null | 1.251 (1.197-1.298) | 1.221 (1.194-1.271) | 0.976 |
+| 2.2.1 / year | 7.704 (7.678-7.897) | 7.678 (7.516-7.769) | 0.997 |
+| 2.2.1 / null | 1.161 (1.119-1.183) | 1.238 (1.208-1.483) | 1.067 |
+
+The original 1.18 NULL regression is not stable in the final control, but the final 2.2 NULL
+pilot is still 6.7% slower than retained native, also with nonoverlapping ranges. The other
+controls overlap. These isolated short probes do not establish a universal unchanged-path
+speedup or absence of regressions; remaining small-operation overhead stays visible.
+
+## Narrow integer epoch conversion
+
+Direct TINYINT/SMALLINT/INT `TO_TIMESTAMP_LTZ(v,0/3)` widens signed input losslessly
+with the existing Arrow integer cast, then reuses the qualified BIGINT epoch kernel.
+The two released Flink lines use the same long-based conversion. Computed inputs,
+non-integer signatures and existing UNNEST restrictions retain their preceding routes.
+No production Rust implementation, JNI contract, timestamp schema or switch changes.
+
+The [2026-11-03 record](results/integral-epoch-2026-11-03.json) compares released
+Flink 1.18.1/2.2.1 on JDK 17.0.12, Apple M4 Pro, one thread, and release/mimalloc-linked
+artifacts. Allocator symbols are checked for both executable and JNI DSO. Stock uses
+prepared BinaryRowData; Rust uses the same signed values in prepared Arrow, with and
+without NULLs, over all three input widths, precision 0/3 and YEAR/IS NULL consumers.
+Each engine processes 131,072 rows per trial, with 16 warmups and nine measurements.
+The Rust timer includes widening, allocation, result consumption and intrinsic callbacks;
+perimeter import/export is excluded only for this prepared function comparison.
+
+The actual preceding encoder `490f458a` is compiled against the same current runtime,
+fixture and allocator. It retains a JVM evaluator. Both its independent stock control
+and the candidate's paired stock control are retained separately, avoiding an overwritten
+stock baseline. This does not replay an entire historical native library.
+
+| Flink | Bulk cells | Stock / native median | Previous / native median |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 24 | 2.313-4.193x | 6.536-61.804x |
+| 1.18.1 | 24 | 1.682-3.062x | 6.133-44.228x |
+
+All 48 1,024-row cells improve against both controls. All twelve 16-row controls
+lose to stock, with stock/native ratios 0.246-0.277x. Keep these small-batch limits:
+replacement of a JVM callback alone is not evidence of a stock-Flink speedup.
+[All trials](results/integral-epoch-2026-11-03.csv.gz) include warmups, checksums,
+paired/independent stock and prior evaluator measurements.
+
+Complete jobs use the existing INT row source and blackhole sink, one million rows,
+UTC, two warmups and five measurements per engine with alternating order. Planning,
+startup, production JNI and both transposes remain timed. Candidates require consumed
+NativeCalc input and empty evaluators; previous controls require the generated route.
+Seconds, median, for the same YEAR/IS NULL consumers:
+
+| Flink | Unit / consumer | Paired stock | Native | Independent stock | Previous evaluator |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | 0 / YEAR | 0.168406 | 0.174265 | 0.182519 | 0.217596 |
+| 2.2.1 | 0 / NULL | 0.180299 | 0.192963 | 0.177445 | 0.218229 |
+| 2.2.1 | 3 / YEAR | 0.169664 | 0.175953 | 0.171438 | 0.206674 |
+| 2.2.1 | 3 / NULL | 0.184774 | 0.197030 | 0.183020 | 0.227416 |
+| 1.18.1 | 0 / YEAR | 0.169060 | 0.178559 | 0.177995 | 0.204989 |
+| 1.18.1 | 0 / NULL | 0.168649 | 0.190953 | 0.168474 | 0.216864 |
+| 1.18.1 | 3 / YEAR | 0.172733 | 0.180505 | 0.166589 | 0.205832 |
+| 1.18.1 | 3 / NULL | 0.173585 | 0.194221 | 0.173924 | 0.223086 |
+
+All eight complete native medians remain slower than stock (native/stock elapsed
+1.035-1.132), while improving over prior generated execution (native/prior elapsed
+0.801-0.884). The JSON retains every trial and range. These measurements qualify the
+bulk function path; they do not establish complete-job acceleration or timestamp
+serialization throughput.
+
+A before-change runtime control matches values but fails six narrow-integer pure-route
+assertions with `jvm=[TO_TIMESTAMP_LTZ]`; BIGINT and computed controls pass. The final
+44 focused JVM invocations pass on both releases and JDK 11/17, targeting Java release
+11, with no skips. Full 5,003-row maps compare values, schema, NULLs and unique IDs;
+UTC/regional sessions, signed extrema, both precisions, CASE and all-filtered batches
+have runtime work/empty-evaluator assertions. Computed operands retain explicit
+generated-route controls. The 892-test Rust core result uses the unchanged production
+Rust implementation; the new example metadata checks actual BIGINT result types even
+when input is narrow. Full hosted CI is separate.
+Sixteen freshly executed, unchanged released `TemporalTypesTest` stock-oracle
+invocations pass separately across both Flink lines and JDKs. They confirm released
+behavior and do not count as native-runtime coverage.
+
+
+## UTC LTZ fixed-unit FLOOR
+
+Direct/literal LTZ FLOOR in a fixed-zero session zone reuses the existing plain-timestamp
+fixed-width floor kernel. DAY/HOUR qualify on both released lines; MINUTE/SECOND/MILLISECOND
+qualify only on 2.2. Released 1.18 generates invalid Java casts for those sub-hour LTZ forms;
+explicit failure controls preserve that behavior. Regional/nonzero zones, computed operands
+and fixed-unit LTZ CEIL retain their preceding routes. No production Rust, JNI, timestamp
+schema or runtime switch changes.
+
+The [2026-11-03 record](results/utc-ltz-fixed-floor-2026-11-03.json) uses released
+Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc-linked
+artifacts. Equal prepared GenericRowData/BinaryRowData and Arrow contain signed-long extrema,
+normal/pre-epoch values, LTZ(3/9) fractional inputs and nullable/NOT NULL columns. The Rust-side
+timer retains production work, output consumption and intrinsic callbacks; initial import/export
+and perimeter transposes are excluded only from this prepared comparison. Each trial processes
+131,072 rows with 16 warmups and nine measurements. The consumer is
+`YEAR(FLOOR(v TO unit))>0 OR CAST(NULL AS BOOLEAN)`, not timestamp output serialization.
+
+The independently compiled actual preceding encoder `db05513e` retains generated FLOOR on
+the shared current runtime, fixture and allocator. Candidate paired stock and independent
+prior-stock controls remain distinct; this is not a complete historical DSO replay. Symbol
+checks confirm both the prepared executable and JNI DSO resolve malloc to mimalloc.
+
+| Flink | Bulk cells | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 40 | 1.099-1.612x | 3.520-4.682x |
+| 1.18.1 | 16 | 1.160-1.479x | 3.504-4.551x |
+
+All 56 bulk cells improve against stock and the previous encoder. All fourteen 16-row
+controls lose to stock (stock/native 0.146-0.175x); their overhead remains visible.
+[All 7,000 raw trials](results/utc-ltz-fixed-floor-2026-11-03.csv.gz) retain warmups,
+checksums and both stock controls. Reproduce with the existing `integral_expression`
+fixture, TIMESTAMP_LTZ(3/9), the expression above, and each admitted unit.
+
+Ten complete million-row jobs use the existing row source/blackhole fixture, UTC, LTZ(3/9),
+two warmups/five measurements and alternating engine order. Startup, JNI and both transposes
+remain in the timing. Candidate runs require consumed native Calc work and empty evaluators;
+previous runs require generated FLOOR. Seconds, median:
+
+| Flink | Precision / unit | Paired stock | Native | Independent stock | Previous evaluator |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | 3 / DAY | 0.176608 | 0.211898 | 0.182302 | 0.241057 |
+| 2.2.1 | 3 / HOUR | 0.171679 | 0.204881 | 0.174518 | 0.231262 |
+| 2.2.1 | 3 / MILLISECOND | 0.170209 | 0.215291 | 0.170087 | 0.242998 |
+| 2.2.1 | 9 / DAY | 0.180133 | 0.205462 | 0.173028 | 0.235460 |
+| 2.2.1 | 9 / HOUR | 0.177703 | 0.207438 | 0.179124 | 0.231418 |
+| 2.2.1 | 9 / MILLISECOND | 0.174788 | 0.211231 | 0.174412 | 0.238524 |
+| 1.18.1 | 3 / DAY | 0.174992 | 0.209729 | 0.178677 | 0.242289 |
+| 1.18.1 | 3 / HOUR | 0.177254 | 0.209395 | 0.175687 | 0.231452 |
+| 1.18.1 | 9 / DAY | 0.175201 | 0.216809 | 0.178319 | 0.241498 |
+| 1.18.1 | 9 / HOUR | 0.184392 | 0.211330 | 0.178049 | 0.258221 |
+
+Native/stock elapsed ratios span **1.141-1.265**;
+native/previous ratios span **0.818-0.905**.
+These complete-job results remain separate from bulk function qualification. The JSON retains
+every trial and range; prepared gains do not establish complete-job acceleration.
+
+A before-change runtime control matches complete values/schema, then fails six zero-offset
+pure-route assertions with `jvm=[FLOOR]`. The final 44 focused JVM invocations and 136 adjacent
+calendar FLOOR/CEIL/encoder regressions pass across both releases and JDK 11/17, targeting Java
+release 11, with no skips. The runtime matrix compares full 5,003-row maps, types, NULLs,
+IDs/cardinality, signed-long extrema, fractions, precisions 0/3/9, zero-offset aliases,
+nonzero/regional generated controls, CASE and all-filtered batches. Admitted paths require
+consumed NativeCalc work and empty evaluator descriptors; computed/CEIL/unsupported-unit
+encoder controls remain explicit. Released 1.18's three smaller LTZ units fail independently
+under both stock and native-enabled fallback with the same code-generation cause/phase.
+Four freshly executed unchanged released `ScalarFunctionsTest.testTemporalFloor` stock-oracle
+invocations pass separately, not as native-runtime coverage. The existing 892-test Rust core
+result covers the unchanged production Rust; hosted CI remains separate. Remaining temporal
+work stays in [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
+
+
+## UTC LTZ fixed-unit CEIL
+
+A separate Rust kernel preserves released LTZ signed-remainder CEIL, including ignored
+submillisecond fractions and final long overflow. The ordinary TIMESTAMP CEIL kernel stays
+unchanged. Direct/literal inputs qualify only in normalized fixed-zero zones, for DAY/HOUR
+on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The latter three forms retain the
+released 1.18 code-generation failure. Computed inputs, nonzero/regional zones and other
+units retain their existing routes. Component and primitive Arrow timestamps are accepted
+without changing JNI, timestamp transport or configuration.
+
+The [2026-11-03 record](results/utc-ltz-fixed-ceil-2026-11-03.json) compares released
+Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc-linked
+artifacts. Both executable and JNI DSO have malloc/mi_malloc symbol identity checks. Prepared
+GenericRowData, BinaryRowData and Arrow contain identical signed-long extrema, normal and
+pre-epoch values, LTZ(3/9), submillisecond fractions and nullable/NOT NULL columns. Each trial
+processes 131,072 rows with 16 warmups and nine measurements. The Rust-side timer retains
+production operation, output consumption and intrinsic prior callbacks; initial import/export
+and perimeter transposes are excluded only from this function comparison. The consumer is
+`YEAR(CEIL(v TO unit))>0 OR CAST(NULL AS BOOLEAN)`, not timestamp output serialization.
+
+Actual preceding encoder `e7b2a8e4` runs generated CEIL on the same current runtime, fixture
+and allocator. Its independent stock control remains distinct from candidate paired stock;
+this is not an entire historical DSO replay. The prior native artifacts are retained separately
+for provenance; this qualification isolates the encoder/kernel route change.
+
+| Flink | Bulk cells | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 40 | 1.208-1.632x | 3.798-7.901x |
+| 1.18.1 | 16 | 1.237-1.581x | 3.862-4.969x |
+
+All 56 bulk cells improve against stock and the prior evaluator. All fourteen 16-row
+controls lose to stock (stock/native **0.150-0.179x**). The
+[7,000 raw trials](results/utc-ltz-fixed-ceil-2026-11-03.csv.gz) retain warmups,
+checksums and both stock controls. Reproduce with `integral_expression`, LTZ(3/9),
+the expression above and each admitted unit.
+
+Ten complete million-row jobs retain startup, JNI and both transposes, using the existing
+row source/blackhole fixture in UTC with LTZ(3/9), two warmups, five measurements and
+alternating engine order. Candidate jobs require consumed NativeCalc work and empty
+evaluators; prior jobs require generated CEIL. Seconds, median:
+
+| Flink | Precision / unit | Paired stock | Native | Independent stock | Previous evaluator |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | 3 / DAY | 0.182005 | 0.200002 | 0.181019 | 0.235959 |
+| 2.2.1 | 3 / HOUR | 0.185597 | 0.203753 | 0.172905 | 0.230548 |
+| 2.2.1 | 3 / MILLISECOND | 0.178166 | 0.208781 | 0.174501 | 0.227337 |
+| 2.2.1 | 9 / DAY | 0.175395 | 0.206331 | 0.177940 | 0.234895 |
+| 2.2.1 | 9 / HOUR | 0.180320 | 0.203949 | 0.181615 | 0.237350 |
+| 2.2.1 | 9 / MILLISECOND | 0.170617 | 0.206994 | 0.173575 | 0.235976 |
+| 1.18.1 | 3 / DAY | 0.173835 | 0.206550 | 0.184450 | 0.245386 |
+| 1.18.1 | 3 / HOUR | 0.174190 | 0.202289 | 0.181930 | 0.233150 |
+| 1.18.1 | 9 / DAY | 0.185248 | 0.206611 | 0.173145 | 0.227567 |
+| 1.18.1 | 9 / HOUR | 0.173767 | 0.207287 | 0.178209 | 0.232716 |
+
+All ten complete native medians remain slower than stock: native/stock elapsed
+**1.098-1.213**, native/previous **0.842-0.918**.
+Every trial, range and independent control is retained. The prepared function gate does
+not establish complete-job acceleration.
+
+All **896 release Rust core tests** pass without default features, zero ignores. New tests
+exercise full signed millis, fractions, final-wrap overflow, distinct ordinary-TIMESTAMP
+behavior, primitive/component timestamps without coercion, scalar broadcasts, slices,
+NULL widths, empty/all-NULL arrays, ownership and rejected signatures. All **268 focused
+JVM invocations** pass on both released lines and JDK 11/17, targeting Java release 11,
+with no skips. Complete 5,003-row maps compare values/types/NULLs/IDs/cardinality, precisions
+0/3/9, zero-offset aliases, nonzero/regional generated controls, CASE and all-filtered batches.
+Admitted paths require consumed NativeCalc work and empty evaluators; computed/unsupported
+shapes and 1.18 code-generation failures retain explicit expectations. Adjacent fixed/calendar
+FLOOR/CEIL and narrow integer epoch routes are included. The actual before-change control
+matches values/schema but fails six zero-offset pure-route assertions with `jvm=[CEIL]`.
+Four fresh unchanged released `ScalarFunctionsTest.testTemporalFloor` oracle invocations
+pass separately; that upstream method contains both FLOOR and CEIL assertions and does not
+provide native-runtime coverage. Hosted CI remains separate. Further calendar/timezone work
+stays in [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
+
+
+## Computed integer epoch conversion
+
+`TO_TIMESTAMP_LTZ(...,0/3)` now reuses the existing exact epoch kernels for recursively
+verified integer arithmetic, lossless widening and rounding trees in ordinary Calc.
+The child retains its resolved integer width before any widening, preserving intermediate
+wrap and the released epoch bounds. Division/remainder, narrowing, unknown/stateful producers,
+other signatures and existing UNNEST restrictions retain their preceding routes. No native
+implementation, JNI, transport, dependency or configuration changes.
+
+The [2026-11-03 record](results/computed-integral-epoch-2026-11-03.json) compares released
+Flink 1.18.1/2.2.1 on Oracle JDK 17.0.12, Apple M4 Pro, one thread, with release/mimalloc-linked
+artifacts. The executable and DSO retain verified malloc/mi_malloc identity. Equal prepared
+GenericRowData, BinaryRowData and Arrow contain nullable/NOT NULL TINYINT/SMALLINT/INT/BIGINT,
+signed extrema and released epoch boundaries. Each trial consumes 131,072 rows, with 16 warmups
+and nine measurements. Rust times production operation and equivalent result consumption after
+import and before export, including the prior evaluator's intrinsic callbacks. Initial JNI/import/
+export and perimeter transposes are excluded only from this prepared function comparison.
+
+The add consumer is `YEAR(TO_TIMESTAMP_LTZ(v+CAST(1 AS $TYPE),unit))`; composed controls use
+`TO_TIMESTAMP_LTZ(ROUND((v+CAST(1 AS $TYPE))*v,-2),unit) IS NULL`, at precision 0 and 3.
+This is not a timestamp output serialization benchmark. Actual preceding encoder `998df4fd`
+runs against the shared current runtime, fixture and allocator; it is not a whole historical
+DSO replay. Its independent stock control remains distinct from candidate paired stock.
+
+| Flink | Bulk cells | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 40 | 1.683-9.329x | 5.203-15.737x |
+| 1.18.1 | 40 | 1.584-5.455x | 5.411-14.469x |
+
+All 80 bulk cells improve against stock and previous. All sixteen 16-row controls lose to
+stock (stock/native **0.146-0.178x**).
+The [9,600 raw qualification trials](results/computed-integral-epoch-2026-11-03.csv.gz)
+retain warmups, checksums and independent controls. The separate
+[800 initial pilot trials](results/computed-integral-epoch-pilot-2026-11-03.csv.gz)
+are also retained, with their summaries in the result record. Reproduce with
+`integral_expression`, the types and expressions above, and matching epoch-seconds/millis corpora.
+
+Twelve complete million-row jobs use the existing row source/blackhole fixture in UTC,
+with two warmups, five measurements and alternating engine order. They retain startup,
+JNI and both transposes. Candidate requires consumed NativeCalc work and empty evaluators;
+prior requires generated epoch conversion. Seconds, median:
+
+| Flink / input / precision / shape | Paired stock | Native | Independent stock | Previous evaluator |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-0-add | 0.170323 | 0.173181 | 0.175443 | 0.207233 |
+| 2.2.1 / INT-3-add | 0.176385 | 0.176725 | 0.171943 | 0.207876 |
+| 2.2.1 / BIGINT-0-add | 0.166357 | 0.184379 | 0.164921 | 0.213727 |
+| 2.2.1 / BIGINT-3-add | 0.165382 | 0.176141 | 0.167736 | 0.221302 |
+| 2.2.1 / BIGINT-0-round-product | 0.195209 | 0.193531 | 0.205385 | 0.227742 |
+| 2.2.1 / BIGINT-3-round-product | 0.199279 | 0.194703 | 0.206845 | 0.229284 |
+| 1.18.1 / INT-0-add | 0.165017 | 0.175784 | 0.172271 | 0.207979 |
+| 1.18.1 / INT-3-add | 0.174836 | 0.175597 | 0.174498 | 0.205013 |
+| 1.18.1 / BIGINT-0-add | 0.175806 | 0.179489 | 0.173366 | 0.206188 |
+| 1.18.1 / BIGINT-3-add | 0.165088 | 0.184378 | 0.170795 | 0.214139 |
+| 1.18.1 / BIGINT-0-round-product | 0.196274 | 0.196922 | 0.196744 | 0.221564 |
+| 1.18.1 / BIGINT-3-round-product | 0.191578 | 0.192440 | 0.198439 | 0.222426 |
+
+Native/stock elapsed spans **0.977-1.117**; native/previous spans
+**0.796-0.889**. Every trial and variability range is retained;
+the prepared function gate does not establish complete-job acceleration.
+
+All **380 focused JVM invocations** pass without skips across Flink 1.18.1/2.2.1 and JDK
+11/17, targeting Java release 11. Complete 5,003-row maps compare values, resolved types,
+NULLs, IDs and cardinality for arithmetic overflow, epoch bounds and adjacent values,
+rounding and widening, nullable/NOT NULL inputs, CASE and all-filtered batches. Admitted
+paths require consumed NativeCalc work and empty evaluators. Narrowing, division, failing
+lazy/empty producers and recurring-DST extraction retain explicit generated controls.
+Adjacent direct epochs, UNNEST and fixed-unit LTZ rounding are included. The actual before
+control matches values/schema then fails all eight new pure-route assertions with
+`jvm=[TO_TIMESTAMP_LTZ]`; its unverified-producer control passes. Sixteen fresh unchanged
+released `TemporalTypesTest` oracle invocations pass separately, providing stock semantics,
+not native-runtime evidence. No Rust implementation changes from the preceding CEIL commit,
+which passed 896 release core tests without ignores. Hosted CI remains separate. Broader
+parsing/conversion work stays in [#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
+
+
+## Integer ROUND with a bounded runtime position
+
+The planner proves an INT CASE position always returns -38..38 or NULL, with only
+failure-free BOOLEAN/logical/integer-comparison conditions. A typed selector chooses the
+first TRUE branch in one Arrow pass, retaining NULL conditions and selected NULLs. Integer
+ROUND consumes that position array, preserves resolved widths, signed overflow and HALF_UP
+ties, and uses no JVM evaluator. Nested bounded CASE and verified integer value producers
+are covered. Arbitrary position columns, extreme results and failing/stateful/unverified
+producers remain generated. TRUNCATE was literal-position only in this qualification;
+its later bounded-runtime extension is qualified separately below.
+
+The [2026-11-03 record](results/bounded-runtime-round-2026-11-03.json) retains released
+Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc-linked
+artifacts. Equal prepared GenericRowData, BinaryRowData and Arrow contain nullable/NOT NULL
+TINYINT/SMALLINT/INT/BIGINT, extrema and NULLs. Each trial consumes 131,072 rows, with
+16 warmups and nine measurements. Rust times production operation and equivalent output
+consumption after input import and before export. Prior intrinsic JVM callbacks remain
+timed. Initial JNI/import/export and perimeter transposes are excluded only from this
+small-function gate. Complete jobs retain those costs.
+
+The short shape selects -2/-1; the wide-null shape selects -38/NULL/0; extra computed
+INT/BIGINT controls add one in the resolved input width before rounding. The secondary
+position-condition input is INT. Actual preceding encoder `7c8ffe00` is independently
+compiled against the shared current runtime, fixture and allocator. This isolates encoder
+and kernel changes, not a whole historical DSO replay. The independent prior-stock control
+remains separate from the candidate's paired stock control.
+
+| Flink | Bulk cells | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 36 | 1.417-3.557x | 3.872-10.091x |
+| 1.18.1 | 36 | 1.020-4.796x | 3.963-8.528x |
+
+All 72 bulk cells beat paired stock and the previous generated route.
+Independent prior-stock/native spans **0.928-3.531x**;
+2 bulk cells have a lower independent stock median than native. These
+separate-process stock controls are retained rather than normalized to the paired controls.
+The smallest paired gain is modest and measurement ranges can overlap.
+Sixteen 16-row controls retain stock/native **0.126-0.291x**;
+these small-function results do not establish complete-job acceleration.
+The [8,800 raw trials](results/bounded-runtime-round-2026-11-03.csv.gz) retain warmups,
+checksums and independent stock measurements.
+
+Two failed/intermediate implementations remain public: the initial generic CASE pilot
+loses on every nullable wide-null width, and the selector-only partial matrix still loses
+on nullable INT/short GenericRowData (9.433 stock versus 10.452 native ns/row). The selector
+removes generic filtering/scattering; precomputed signed-64-bit powers then remove per-row
+i128 exponentiation/remainder, retaining an exact separate 10^19 wrapping case. Initial
+and intermediate artifacts/classes are hashed. Raw
+[initial pilot](results/bounded-runtime-round-2026-11-03-initial-pilot.csv.gz),
+[selector pilot](results/bounded-runtime-round-2026-11-03-selector-pilot.csv.gz),
+[partial selector qualification](results/bounded-runtime-round-2026-11-03-selector-partial.csv.gz),
+[final pilot](results/bounded-runtime-round-2026-11-03-final-pilot.csv.gz) and
+[retained literal controls](results/bounded-runtime-round-2026-11-03-literal-controls.csv.gz)
+prevent replacing failed measurements with only favorable final numbers. The literal
+controls replay the saved preceding executable/DSO independently; their variation is retained.
+
+Eight complete million-row INT/BIGINT jobs use the bounded row source and blackhole sink,
+two warmups, five measurements and alternating engine order. They retain startup, JNI and
+both transposes. Candidate requires consumed NativeCalc and empty evaluator descriptors;
+the actual preceding encoder requires the ROUND evaluator. Seconds, median:
+
+| Flink / type / position shape | Paired stock | Native | Independent stock | Previous evaluator |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-short | 0.182302 | 0.195996 | 0.183552 | 0.228636 |
+| 2.2.1 / INT-wide-null | 0.188430 | 0.200061 | 0.186238 | 0.227620 |
+| 2.2.1 / BIGINT-short | 0.196292 | 0.213548 | 0.193110 | 0.231555 |
+| 2.2.1 / BIGINT-wide-null | 0.197680 | 0.201215 | 0.186568 | 0.231936 |
+| 1.18.1 / INT-short | 0.188607 | 0.198215 | 0.195201 | 0.228789 |
+| 1.18.1 / INT-wide-null | 0.187114 | 0.203781 | 0.183182 | 0.229998 |
+| 1.18.1 / BIGINT-short | 0.216962 | 0.223382 | 0.197413 | 0.237526 |
+| 1.18.1 / BIGINT-wide-null | 0.196454 | 0.207811 | 0.195804 | 0.249493 |
+
+Native/stock elapsed spans **1.018-1.089**; native/previous spans
+**0.833-0.940**. Every trial and full range remains in the
+record. No universal job speedup is claimed.
+
+All **268 focused JVM invocations** pass without skips across both releases and JDK 11/17,
+targeting Java release 11. Complete 5,003-row maps compare values, schema, NULLs, IDs and
+cardinality for every integer width, arithmetic/widening/nesting, NULL/negative/extreme
+positions, consumers and all-filtered batches. Admitted routes require actual NativeCalc
+consumption and empty evaluators. Unverified positions, out-of-range branches and failing
+conditions retain generated controls. The actual before encoder matches complete values
+and schema, then fails eight new pure-route assertions; its retained control passes.
+Four fresh unchanged released `ScalarFunctionsTest.testRound` stock-oracle invocations pass
+separately. All **900 release Rust core tests** pass without ignores, including dynamic
+positions, 10^19 ties, slices, ownership, scalar broadcasts and empty/rejected inputs.
+Hosted CI is separate. Broader runtime/extreme numeric work remains in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+Reproduce prepared measurements with the release `integral_expression` example,
+`SF_INTEGRAL_SECONDARY_TYPE=INT` and expressions from the record; supply the independently
+compiled preceding encoder for `SF_INTEGRAL_PREVIOUS=true`. Complete-job controls use
+`IntegralExpressionPipelineBenchmark`, `sf.integral.secondaryType=INT`, the matching
+`sf.integral.expression`, and `sf.integral.bigintInput=true` for BIGINT.
+
+
+## Integer TRUNCATE with a bounded runtime position
+
+INT/BIGINT TRUNCATE reuses the committed bounded-position selector and toward-zero integer
+kernel when the planner proves every CASE result is an INT literal in -38..38 or NULL
+and all conditions/value producers are failure-free. No new Rust implementation, opcode,
+JNI, transport, dependency or configuration switch is required. Direct narrow signatures
+retain released Flink's generated-compilation failure; explicit widening is supported.
+Arbitrary columns, extreme/out-of-range results and unverified/failing/stateful producers
+retain their preceding routes, including empty-batch and lazy-failure behavior.
+
+The [2026-11-03 record](results/bounded-runtime-truncate-2026-11-03.json) measures released
+Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro and one thread. Release/mimalloc-linked
+executable and DSO hashes are identical to the preceding ROUND qualification; allocator
+symbols remain verified. Equal prepared GenericRowData, BinaryRowData and Arrow contain
+nullable/NOT NULL INT/BIGINT, signed extrema and NULLs. Each trial consumes 131,072 rows,
+with 16 warmups and nine measurements. Rust times production Calc and equivalent output
+consumption after import and before export. Intrinsic prior evaluator callbacks remain
+timed. Initial JNI/import/export and perimeter transposes are excluded only from this
+small-function gate; complete jobs retain those costs.
+
+The short CASE chooses -2/-1; the wide-null CASE chooses -38/NULL/0. Extra computed controls
+add one at the original input width before truncation. Secondary condition input is INT.
+Actual preceding encoder `71b821c4` is independently compiled against the unchanged current
+runtime/fixture/allocator; it still evaluates runtime TRUNCATE in the JVM. This is an
+encoder comparison, not a whole historical DSO replay. Independent stock remains distinct.
+
+| Flink | Bulk cells | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 20 | 3.801-15.378x | 7.653-19.165x |
+| 1.18.1 | 20 | 3.915-16.393x | 6.796-20.044x |
+
+All 40 bulk cells beat paired stock and the previous evaluator. Independent prior-stock/
+native spans **3.970-16.296x**; all independent controls and
+variability remain in the record. Eight 16-row controls retain stock/native
+**0.565-1.466x**. The [4,800 raw trials](results/bounded-runtime-truncate-2026-11-03.csv.gz)
+include warmups and checksums; [400 initial pilot trials](results/bounded-runtime-truncate-2026-11-03-pilot.csv.gz)
+are separate. Reproduce with the release `integral_expression` example,
+`SF_INTEGRAL_SECONDARY_TYPE=INT` and the expressions above; the prior control supplies its
+independently compiled encoder and `SF_INTEGRAL_PREVIOUS=true`.
+
+Eight complete million-row jobs retain the bounded row source, blackhole sink, startup,
+JNI and both transposes. Two warmups and five measurements alternate engine order.
+Candidate requires consumed NativeCalc work and empty evaluators; previous requires the
+TRUNCATE evaluator. Seconds, median:
+
+| Flink / type / position shape | Paired stock | Native | Independent stock | Previous evaluator |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-short | 0.251914 | 0.192503 | 0.254554 | 0.285888 |
+| 2.2.1 / INT-wide-null | 0.219562 | 0.203798 | 0.211600 | 0.253925 |
+| 2.2.1 / BIGINT-short | 0.266054 | 0.212577 | 0.266745 | 0.299863 |
+| 2.2.1 / BIGINT-wide-null | 0.231545 | 0.210317 | 0.233702 | 0.272629 |
+| 1.18.1 / INT-short | 0.247101 | 0.189082 | 0.239740 | 0.280074 |
+| 1.18.1 / INT-wide-null | 0.226415 | 0.198152 | 0.212048 | 0.256564 |
+| 1.18.1 / BIGINT-short | 0.269613 | 0.217554 | 0.262311 | 0.316432 |
+| 1.18.1 / BIGINT-wide-null | 0.236126 | 0.214385 | 0.239261 | 0.274413 |
+
+Native/stock elapsed spans **0.764-0.928**; native/previous spans
+**0.673-0.803**. Every trial and range is retained. The prepared
+function gate does not establish a universal job speedup. Reproduce complete jobs with
+`IntegralExpressionPipelineBenchmark`, `sf.integral.secondaryType=INT`, matching
+`sf.integral.expression`, and `sf.integral.bigintInput=true` for BIGINT.
+
+All **344 focused JVM invocations** pass without skips on Flink 1.18.1/2.2.1 and JDK 11/17,
+targeting Java release 11. Complete 5,003-row maps compare values, schema, NULLs, IDs and
+cardinality for bounded runtime positions, toward-zero behavior, arithmetic/widening/nesting,
+STRING/epoch consumers and all-filtered batches. Existing literal TRUNCATE and ROUND
+encoding/rounding controls are included, preserving the narrow-input compilation contract.
+Admitted paths require actual consumed NativeCalc and empty evaluator descriptors.
+The actual preceding encoder matches full values/schema then fails the four new pure-route
+assertions; its retained unverified-position control passes. Four fresh unchanged released
+`ScalarFunctionsTest.testTruncate` stock-oracle invocations pass separately. The exact
+unchanged Rust runtime already passed **900 release core tests** without ignores,
+including dynamic-position TRUNCATE, slices, NULLs, ownership and empty arrays. Hosted CI
+remains separate; broader runtime/extreme numeric scope stays in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+
+## Integer PRINTF with a literal format
+
+On released Flink 2.2.1, verified integer inputs/literals and failure-free arithmetic,
+lossless widening or admitted rounding trees use an evaluator-free Arrow formatter with
+an ASCII literal format of at most 512 characters. Conversions are `%s`/`%S`, `%d`,
+`%x`/`%X`, `%o` and `%%`; width/precision are at most 256. The planner validates flags and
+indexing during planning using the running JDK's `Formatter(Locale.US)`. Explicit index zero stays
+on its preceding route because JDK 11 accepts it and JDK 17 rejects it. Every producer
+must be failure-free, including unused arguments. Other formats/types and sensitive string
+consumers retain their existing routes. Flink 1.18 has no PRINTF and retains SQL rejection.
+
+The new path borrows the literal format, reuses an output scratch String, and appends into
+one Arrow builder rather than creating an output String and materialized format per row.
+The existing compatibility formatter remains shared; this does not substitute Rust format
+syntax for Java Formatter. Parsing and per-conversion strings are still rowwise. Actual
+preceding encoder `f910c352` is compiled independently against the shared current runtime,
+fixture and allocator. Its direct compatible ASCII batches can already execute certified
+Rust with a retained evaluator; computed producers retain generated evaluation. The previous
+control is not assumed to perform callbacks on every batch, nor is it a whole historical
+DSO replay.
+
+The [2026-11-03 record](results/integer-literal-printf-2026-11-03.json) uses released Flink 2.2.1, Oracle JDK 17.0.12,
+Apple M4 Pro, one thread and release/mimalloc-linked artifacts. Both executable and DSO
+verify identical malloc/mi_malloc addresses. Prepared GenericRowData, BinaryRowData and
+Arrow contain the same values, all signed integer widths, nullable/NOT NULL, extrema and
+NULLs. Each trial consumes 131,072 rows, with 16 warmups and nine measurements. Rust times
+production Calc and equivalent output consumption after input import and before output
+export. Intrinsic callbacks remain timed; initial JNI/import/export and perimeter transposes
+are excluded only from the prepared function gate. Complete jobs retain those costs.
+
+Short formatting uses `PRINTF('%d/%s/%1$x',v,v)`; padded formatting uses
+`PRINTF('%+020d:%2$-12.3S:%1$08X',v,v)`. Additional INT/BIGINT controls add one at the original
+input width in the first formatter argument. Secondary input is not needed.
+
+| Bulk cells | Paired stock / native median range | Previous / native median range | Independent stock / native |
+| ---: | ---: | ---: | ---: |
+| 40 | 2.532-5.180x | 1.072-5.250x | 2.462-5.094x |
+
+All 40 bulk cells beat paired stock and the actual preceding encoder. Independent stock
+has 0 lower medians than native; all independent measurements and variability remain.
+The eight 16-row controls retain paired stock/native 2.174-4.008x,
+including 0 controls slower than stock. The [4,800 raw trials](results/integer-literal-printf-2026-11-03.csv.gz)
+include checksums and warmups.
+
+The initial implementation merely removed the descriptor and reused certified formatting;
+its previous/native pilot spans 0.968-1.033x and loses several controls. Its
+[800 pilot trials](results/integer-literal-printf-2026-11-03-initial-pilot.csv.gz), source and artifact hashes remain
+separate from the [800 optimized pilot trials](results/integer-literal-printf-2026-11-03-optimized-pilot.csv.gz).
+For the 1,024-row nullable INT short probe, scratch/builder reuse reduces allocation requests
+from 4,136/195,476 requested bytes to
+3,102/91,842. Retained width-300 formats replay the saved pre-refactor
+executable/DSO and current artifacts, both retaining evaluators; initial/current median
+ratios span 0.987-1.005x. These [400 controls](results/integer-literal-printf-2026-11-03-retained-controls.csv.gz)
+retain shared-formatter variation separately from the admitted scope.
+
+Eight complete million-row INT/BIGINT jobs retain a bounded row source, blackhole sink,
+startup, JNI and both transposes; two warmups and five measurements alternate engine order.
+Candidate requires consumed NativeCalc work and empty evaluators. Previous requires its
+retained evaluator, which does not prove callbacks for every compatible direct batch.
+Seconds, median:
+
+| Flink / type / format shape | Paired stock | Native | Independent stock | Previous route |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-short | 0.512502 | 0.282118 | 0.528230 | 0.308422 |
+| 2.2.1 / INT-padded | 0.888427 | 0.326280 | 0.970378 | 0.331879 |
+| 2.2.1 / INT-short-computed | 0.511739 | 0.288623 | 0.483461 | 0.507033 |
+| 2.2.1 / INT-padded-computed | 0.983899 | 0.327239 | 0.933144 | 0.967021 |
+| 2.2.1 / BIGINT-short | 0.566439 | 0.293006 | 0.580639 | 0.325968 |
+| 2.2.1 / BIGINT-padded | 0.962960 | 0.319097 | 0.932796 | 0.343919 |
+| 2.2.1 / BIGINT-short-computed | 0.556859 | 0.298003 | 0.558454 | 0.609614 |
+| 2.2.1 / BIGINT-padded-computed | 0.925704 | 0.330283 | 0.969479 | 1.019794 |
+
+Native/stock elapsed spans **0.331-0.564**; native/previous spans
+**0.324-0.983**. All trials/ranges are retained; prepared function
+gains do not imply a universal complete-job speedup.
+
+All **392 focused JVM invocations** pass without skips across released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java release 11. Runtime tests compare complete 5,003-row maps,
+resolved schemas, IDs, cardinality, all signed widths/extrema, NULLs, indexing, padding,
+precision, computed wrapping producers and all-filtered batches. Generated controls retain
+unverified formats/producers, JDK-dependent index zero and CHAR_LENGTH representation guards.
+Existing certified/PRINTF tests qualify the shared formatter on Flink 2.2. Before controls
+match full maps/schema then fail all eight new pure-route assertions; the generated control
+passes. Two unchanged released `StringFunctionsITCase.printfTestCases` runs pass all **47
+original assertions each**, separately as stock oracles. All **902 release Rust core tests**
+pass without ignores, including slices, ownership, empty arrays and rejected contracts.
+Hosted CI remains separate; broader formats/types/consumers stay in
+[#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).
+
+Reproduce prepared controls with the release `integral_expression` example and
+`SF_INTEGRAL_EXPRESSION` above; supply independently compiled previous encoder and
+`SF_INTEGRAL_PREVIOUS=true` for that control. Complete jobs use
+`IntegralExpressionPipelineBenchmark`, matching `sf.integral.expression`, and
+`sf.integral.bigintInput=true` for BIGINT. Other resources/settings remain identical.
+
+
+## Integer TRY_CAST
+
+Verified TINYINT/SMALLINT/INT/BIGINT TRY_CAST reuses exact native primitive conversion.
+Both modern and legacy Flink modes wrap integer narrowing overflow; they do not yield
+NULL on out-of-range integer input. NULL input stays NULL and resolved schemas remain
+unchanged. Inputs/literals, failure-free integer arithmetic, lossless widening and admitted
+rounding producers qualify; division, narrowing producers and other unverified trees retain
+fallback. Errors while computing an operand are not conversion errors. Same-type planner
+rewrites are covered by parity but excluded from performance claims.
+
+The first implementation only admitted the existing CAST kernel. All 112 bulk cells beat
+paired stock, but four independent previous medians remain slightly lower than native.
+The [initial 12,400 trials](results/integer-try-cast-2026-11-03-initial.csv.gz),
+[600 pilot trials](results/integer-try-cast-2026-11-03-initial-pilot.csv.gz), source and runtime hashes remain.
+The integer kernel used an intermediate i64 column and nullable row iteration. Following
+Comet's legacy integer-cast structure, the final implementation maps the original typed
+values in one Arrow unary pass and retains the immutable NULL buffer. Flink's own overflow
+rules apply in both modes; Spark's ANSI/try semantics are not imported. DECIMAL/floating
+paths remain separate. A nullable INT-to-TINYINT 1,024-row allocation probe drops from
+28 requests/11,007 requested bytes to
+21/2,279.
+
+The [final record](results/integer-try-cast-2026-11-03.json) measures released Flink 1.18.1/2.2.1, Oracle JDK
+17.0.12, Apple M4 Pro, one thread and release/mimalloc-linked artifacts, with verified
+allocator symbols. Equal prepared GenericRowData, BinaryRowData and Arrow contain all
+signed integer source/destination widths, nullable/NOT NULL, extrema and NULLs. Each trial
+consumes 131,072 rows, with 16 warmups and nine measurements. Native timing starts/stops
+inside Rust, after import and before export, retaining production Calc and equivalent
+output consumption. Only initial JNI/import/export and perimeter transposes are excluded
+from this small-function gate. Complete jobs retain them.
+
+Actual preceding encoder `04e0cf86` rejects these signatures. Its Java prepared control
+verifies the exact fallback reason, then measures the released generated expression on
+RowData without artificial native overhead. Independent stock and previous remain distinct
+samples of that stock fallback. Both controls use the same final fixture, which checks and
+consumes the resolved output width. Short/wide destination casts and extra computed inputs
+`v+CAST(1 AS source)` are qualified. No historical DSO callback is invented for the prior.
+
+| Flink | Bulk cells | Paired stock / native | Previous fallback / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | 56 | 2.468-15.672x | 2.435-13.883x | 2.468-13.879x |
+| 1.18.1 | 56 | 2.463-12.864x | 2.440-12.919x | 2.445-12.987x |
+
+All 112 bulk cells beat paired stock and the actual preceding fallback. Twelve 16-row
+controls retain stock/native 0.276-0.368x, including 12 slower controls.
+The [12,400 final trials](results/integer-try-cast-2026-11-03.csv.gz) retain warmups, checksums and variability;
+[600 optimized pilot trials](results/integer-try-cast-2026-11-03-optimized-pilot.csv.gz) remain separate.
+Ten [ordinary CAST controls](results/integer-try-cast-2026-11-03-retained-casts.csv.gz) replay saved initial
+executable/DSO and optimized artifacts on the same final encoder/fixture. Eight integer
+initial/current median ratios span 4.190-8.023x; two separate unchanged DECIMAL
+controls span 0.987-1.040x. All variation is retained.
+
+Eight complete million-row INT/BIGINT jobs retain the bounded row source, blackhole sink,
+startup, JNI and both native transposes. Two warmups and five measurements alternate order.
+Candidate requires consumed NativeCalc work and empty evaluators; actual previous must
+fall back with the exact expected reason and zero native substitutions/operators.
+Seconds, median:
+
+| Flink / source / destination | Paired stock | Native | Independent stock | Previous fallback |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-TINYINT | 0.162741 | 0.172488 | 0.146897 | 0.148155 |
+| 2.2.1 / INT-BIGINT | 0.160180 | 0.174861 | 0.143499 | 0.144603 |
+| 2.2.1 / BIGINT-TINYINT | 0.154210 | 0.164889 | 0.147629 | 0.148952 |
+| 2.2.1 / BIGINT-INT | 0.154995 | 0.168157 | 0.147347 | 0.152415 |
+| 1.18.1 / INT-TINYINT | 0.165774 | 0.170204 | 0.150125 | 0.144074 |
+| 1.18.1 / INT-BIGINT | 0.163677 | 0.172033 | 0.151377 | 0.149134 |
+| 1.18.1 / BIGINT-TINYINT | 0.174743 | 0.177714 | 0.156687 | 0.154429 |
+| 1.18.1 / BIGINT-INT | 0.163483 | 0.180986 | 0.168767 | 0.164599 |
+
+Native/stock elapsed spans **1.017-1.107**; native/previous spans
+**1.100-1.209**. Unfavorable complete jobs and independent controls remain;
+prepared gains do not establish universal complete-job acceleration.
+
+All **716 focused JVM invocations** pass without skips across released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java release 11. Complete 5,003-row maps/schema compare every
+integer source/destination width, NULLs, extrema, modern/legacy modes, computed overflow,
+filters, CASE and all-filtered batches. Failing/unverified producers retain explicit
+fallback and lazy/empty/failure controls. Shared ARRAY CAST and adjacent rounding/epoch/
+PRINTF paths are rechecked. Sixteen actual-before cases match full maps/schema, then fail
+the old fallback assertion; two old filter controls stop at missing native substitution
+before their final map assertion. Four unchanged released `CastRulesTest` integer-oracle
+runs each pass **41 original assertions**, separately as stock semantics. All **903 release
+Rust core tests** pass, including six integer narrowing pairs, signed wrapping, slices,
+empty arrays, NULL-buffer sharing, scalar materialization and input ownership. Hosted CI
+remains separate; broader scalar conversion work stays in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+Reproduce native prepared controls with release `integral_expression`,
+`SF_INTEGRAL_EXPRESSION='TRY_CAST(v AS target)'`, equal source type and nullable/row-layout
+arguments. The preceding control uses `IntegralExpressionBenchmarkFunctions` on the actual
+prior encoder with `sf.integral.previous=true`, `sf.integral.fallbackControl=true` and an
+exact `sf.integral.fallbackReason` (for example `unsupported TRY_CAST BIGINT` followed by
+U+2192 and `INTEGER`). Complete jobs use `IntegralExpressionPipelineBenchmark`, matching
+`sf.integral.expression`, BIGINT input flag when needed, and those previous fallback controls.
+
+
+## Integer boolean PRINTF formats
+
+On released Flink 2.2.1, `%b`/`%B` treats any non-NULL integer object, **including zero**,
+as `true`/`TRUE`; NULL becomes `false`/`FALSE`. Bounded literal ASCII formats use the
+existing evaluator-free integer formatter, including precision, space padding, explicit
+indices and argument reuse. This does not admit BOOLEAN-object or other argument types.
+Invalid flags and unverified producers keep Flink's NULL/error and lazy/empty behavior.
+Flink 1.18.1 has no PRINTF and retains its released SQL rejection.
+
+The [record](results/integer-boolean-printf-2026-11-03.json) uses released Flink 2.2.1, Oracle JDK 17.0.12, Apple M4 Pro,
+one thread and release/mimalloc-linked artifacts. Equal prepared GenericRowData,
+BinaryRowData and Arrow include all four integer widths, nullable/NOT NULL, signed
+extrema and zero. Each trial consumes 131,072 rows, with 16 warmups/nine measurements.
+The 48 cells cover short and padded formats, plus computed INT/BIGINT arithmetic.
+Timers start/stop inside Rust after import and before export, retaining production Calc,
+equivalent output consumption and intrinsic callbacks. Stock starts on prepared RowData;
+only initial JNI/import/export and perimeter transposes are outside the small-function gate.
+Complete jobs retain them.
+
+The actual preceding encoder and formatter-admission helper, plus saved **whole DSO and
+executable** from `5d46dde1`, run against the same final fixture/JDK/data. Both artifacts
+retain verified mimalloc aliases. This preserves the original integer boolean format's
+JDK route instead of accidentally giving the preceding certified path the new kernel.
+Existing compatible certified formats are not described as universal Java callbacks.
+
+The [four numeric-format controls](results/integer-boolean-printf-2026-11-03-retained-numeric-formats.csv.gz) and
+[reverse-order replay](results/integer-boolean-printf-2026-11-03-retained-numeric-formats-reversed.csv.gz) retain
+whole-runtime before/after differences for existing numeric formats. Both BIGINT controls
+have lower preceding-runtime medians in both orders, by approximately 3-6%. The new-format
+gains below do not establish an improvement for those unchanged numeric signatures.
+An attempted non-inlined default helper does not recover them
+([four diagnostic cells](results/integer-boolean-printf-2026-11-03-helper-experiment.csv.gz), initial/current
+0.938-1.011x); that extra indirection is discarded. Its [rejected patch](results/integer-boolean-printf-2026-11-03-rejected-helper.patch), source/artifact hashes and successful
+904-test Rust result remain separately recorded. The exact originally measured production
+source, DSO and executable are restored, checked by hash, then requalified with the final
+SQL tests including independently nullable indexing arguments. The residual numeric-format
+cost differences still need attribution/profile work; no cause is inferred from a source
+branch alone.
+
+| Scope | Cells | Paired stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk (1,024 rows) | 40 | 4.947-7.411x | 5.723-8.108x | 5.346-7.519x |
+| Tiny (16 rows) | 8 | 3.789-5.423x | 11.212-12.205x | 3.853-5.508x |
+
+All bulk cells beat paired stock and the actual previous implementation. Tiny controls
+retain 0 stock losses and 0 previous losses.
+The [4,800 trials](results/integer-boolean-printf-2026-11-03.csv.gz) retain warmups, checksums and variability.
+Four [numeric-format controls](results/integer-boolean-printf-2026-11-03-retained-numeric-formats.csv.gz) replay
+initial/current artifacts on the same final encoder and fixture. Their initial/current
+median ratios span 0.945-1.024x; all variation remains.
+
+Eight complete million-row INT/BIGINT jobs include direct/computed short/padded formats.
+They retain the bounded row source, blackhole sink, startup, JNI and both transposes.
+Two warmups and five measurements alternate stock/native. Each native control requires
+consumed NativeCalc work; new paths require empty evaluators and previous paths require
+their original retained evaluators. Seconds, median:
+
+| Flink / source / shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-short | 0.621235 | 0.259344 | 0.606269 | 0.634951 |
+| 2.2.1 / INT-padded | 0.750707 | 0.273240 | 0.784988 | 0.820727 |
+| 2.2.1 / INT-short-computed | 0.597576 | 0.266733 | 0.607545 | 0.619766 |
+| 2.2.1 / INT-padded-computed | 0.809255 | 0.270421 | 0.795140 | 0.804340 |
+| 2.2.1 / BIGINT-short | 0.671868 | 0.266082 | 0.578773 | 0.597283 |
+| 2.2.1 / BIGINT-padded | 0.828991 | 0.269570 | 0.783403 | 0.819152 |
+| 2.2.1 / BIGINT-short-computed | 0.673516 | 0.257944 | 0.571059 | 0.568660 |
+| 2.2.1 / BIGINT-padded-computed | 0.828161 | 0.274525 | 0.751099 | 0.753517 |
+
+Native/stock elapsed spans **0.325-0.446**; native/previous spans
+**0.329-0.454**. These are measured workloads; the prepared gate does
+not establish universal complete-job acceleration.
+
+All **716 focused JVM invocations** pass without skips across released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java release 11. Complete 5,003-row runtime maps/schema cover
+integer widths, NULLs, signed extrema/zero, computed producers, boolean format precision/
+padding/indexing with independently nullable arguments, all-filtered batches, remaining
+generated controls and adjacent scalar/ARRAY CAST paths. Pure claims require consumed NativeCalc work and empty evaluators.
+The actual preceding control compares full maps/schema then fails eight intended pure-route
+assertions; its generated control passes. Two fresh unchanged released PRINTF oracle runs
+pass **47 original assertions each**, separately as stock semantics. All **904 release Rust
+core tests** pass, including sliced/empty/NULL inputs and input ownership. Hosted CI remains
+separate. Remaining format/type/consumer scope stays in
+[#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).
+
+Reproduce with release `integral_expression`,
+`SF_INTEGRAL_EXPRESSION` set to `PRINTF('%b/%1$B/%1$.2b',v,v)`,
+and matching signed type/nullability/row-layout arguments. The previous control supplies
+its saved DSO/executable, separately compiled preceding encoder/helper and
+`SF_INTEGRAL_PREVIOUS=true`. Complete jobs use `IntegralExpressionPipelineBenchmark` with
+matching `sf.integral.expression`, `sf.integral.bigintInput=true` for BIGINT and previous
+route settings. All resources and data otherwise match.
+
+
+## BOOLEAN-to-integer TRY_CAST
+
+Verified BOOLEAN input/literal, logical, NULL-check and integer-comparison trees now use
+the existing primitive native cast for TRY_CAST to TINYINT/SMALLINT/INT/BIGINT. TRUE is 1,
+FALSE is 0 and NULL stays NULL in modern/legacy modes. Conversion cannot fail; failing or
+unverified producers keep their preceding route. Ordinary CAST already becomes Flink's
+CASE expression during released planning and needs no admission change. This follows
+Flink's BooleanToNumeric rule and Comet's DataFusion-compatible primitive conversion.
+There is no new native opcode, JNI entry point, setting or Rust production change.
+
+The [record](results/boolean-integer-try-cast-2026-11-03.json) retains 48 cells and
+[4,800 raw trials](results/boolean-integer-try-cast-2026-11-03.csv.gz), including warmups/checksums/ranges.
+Released Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc
+artifacts are used. Equal prepared GenericRowData/BinaryRowData and Arrow contain true,
+false and NULL with nullable/NOT NULL schemas and four target integer widths. Computed
+controls use `NOT v OR v IS NULL`. Each trial consumes 131,072 rows, with 16 warmups and
+nine measurements. The native timer runs inside Rust after import and before export,
+covering production Calc and equivalent output consumption. Stock runs on prepared RowData;
+setup and perimeter conversion are outside only the small-function gate. Intrinsic costs
+remain timed. The actual previous encoder from `8ccec369` verifies each exact fallback
+reason and executes released generated Java without invented native overhead. Current and
+previous controls use identical logical data/resources. The existing release runtime and
+its mimalloc aliases are checked by hash and reused unchanged.
+
+| Scope | Cells | Paired stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk (1,024 rows) | 40 | 1.092-2.819x | 1.075-2.135x | 1.071-2.147x |
+| Tiny (16 rows) | 8 | 0.281-0.301x | 0.277-0.302x | 0.277-0.303x |
+
+All bulk cells beat stock and actual previous fallback. Tiny controls retain
+8 stock losses and 8 previous losses;
+small batches are not described as accelerated when they lose.
+
+Eight million-row complete jobs retain bounded row input, blackhole output, startup, JNI
+and both transposes. Two warmups/five measurements alternate order. Candidate controls
+require consumed NativeCalc work and empty evaluator descriptors. Actual previous controls
+require exact fallback, zero substitutions and zero native operators. Seconds, median:
+
+| Flink / source / target | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / BOOLEAN-TINYINT | 0.170140 | 0.167920 | 0.143392 | 0.145854 |
+| 2.2.1 / BOOLEAN-SMALLINT | 0.158451 | 0.162561 | 0.142876 | 0.142270 |
+| 2.2.1 / BOOLEAN-INT | 0.167679 | 0.173542 | 0.146190 | 0.146495 |
+| 2.2.1 / BOOLEAN-BIGINT | 0.161557 | 0.169256 | 0.140627 | 0.157842 |
+| 1.18.1 / BOOLEAN-TINYINT | 0.155952 | 0.170372 | 0.141720 | 0.140429 |
+| 1.18.1 / BOOLEAN-SMALLINT | 0.165398 | 0.164696 | 0.136228 | 0.137099 |
+| 1.18.1 / BOOLEAN-INT | 0.157851 | 0.164143 | 0.149238 | 0.144749 |
+| 1.18.1 / BOOLEAN-BIGINT | 0.157443 | 0.170163 | 0.139337 | 0.143281 |
+
+Native/stock elapsed spans **0.987-1.092**; native/previous spans
+**1.072-1.213**. All slower results remain; prepared-kernel qualification does
+not establish universal complete-job acceleration. Six of eight complete jobs lose to
+paired stock; all eight lose to the independently measured actual previous fallback.
+
+All **740 focused JVM invocations** pass without skips across both released Flink lines
+and JDK 11/17, targeting Java release 11. Complete 5,003-row maps/schema, both cast modes,
+NULLs/logical producers, filters, CASE, character consumers, all-filtered batches, selected
+producer failures and adjacent function regressions pass. Admitted pure paths require
+consumed NativeCalc work and empty evaluators. Sixteen actual previous positive cases
+compare maps/schema then fail only the expected native-route assertion; eight control
+methods stop earlier at their positive filter assertion, so their later negative checks
+are not claimed as previous result comparisons. The unchanged released CastRules oracle
+passes **eight original BOOLEAN-to-integer assertions** for each release/JDK pair. No Rust
+code changes; the prior 904-test accepted-runtime result retains its historical provenance.
+Other type/producer coverage remains in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+Reproduce with release `integral_expression`, `BOOLEAN` input, the matching nullable/binary/
+batch arguments and `SF_INTEGRAL_EXPRESSION=TRY_CAST(v AS INT)`. Previous uses the frozen
+encoder, `IntegralExpressionBenchmarkFunctions`, `sf.integral.previous=true`,
+`sf.integral.fallbackControl=true` and the exact fallback reason. Complete jobs use
+`IntegralExpressionPipelineBenchmark` with `sf.integral.booleanInput=true` and the same
+expression/previous settings; all resources and data otherwise match.
+
+
+## Integer-to-BOOLEAN TRY_CAST
+
+TRY_CAST of verified TINYINT/SMALLINT/INT/BIGINT inputs and failure-free arithmetic,
+widening/rounding producers uses the existing native comparison with a zero of the
+input's resolved width. Nonzero values, including signed minima, become TRUE; zero is
+FALSE and NULL stays NULL in both modes. This mirrors Flink's NumericToBoolean rule.
+Comet also treats integer-to-BOOLEAN as a DataFusion-compatible conversion; using the
+existing comparison avoids a new cast target/opcode, JNI entry point or Rust kernel.
+Ordinary CAST already lowers to this comparison through released planning. Failing,
+stateful or unverified producers keep their previous route. At this qualification revision,
+character formatting of the new boolean TRY_CAST result
+remained generated; the later character-consumer qualification extends that producer proof.
+
+The [record](results/integer-boolean-try-cast-2026-11-03.json) retains 48 cells and
+[4,800 raw trials](results/integer-boolean-try-cast-2026-11-03.csv.gz), including warmups/checksums/ranges.
+Released Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc
+artifacts are used. Equal prepared GenericRowData/BinaryRowData and Arrow include all
+four signed integer source widths, nullable/NOT NULL, extrema and zero. Computed controls
+use `v+CAST(1 AS source)`. Each trial consumes 131,072 rows, with 16 warmups and nine
+measurements. The native timer runs inside Rust after import and before export, retaining
+production Calc and equivalent output consumption. Stock uses prepared Java RowData.
+Setup and perimeter conversions are outside only the small-function gate; intrinsic costs
+remain. The actual previous encoder from `49f269d9` rejects each exact integer-to-BOOLEAN
+TRY_CAST and its control executes released generated Java without synthetic native costs.
+Current and previous inputs/resources match. The release runtime is unchanged and verified
+by hash, including mimalloc malloc aliases.
+
+| Scope | Cells | Paired stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk (1,024 rows) | 40 | 2.658-20.095x | 2.656-6.831x | 2.645-6.790x |
+| Tiny (16 rows) | 8 | 0.259-0.272x | 0.257-0.277x | 0.255-0.274x |
+
+The largest paired ratio comes from the Flink 1.18.1 NOT NULL GenericRowData INT cell:
+paired stock is 12.271 ns/row (3.524-17.732), versus independent stock 2.088 ns/row.
+A [diagnostic replay](results/integer-boolean-try-cast-2026-11-03-stock-drift-replay.csv.gz) with 64 warmups/nine
+measurements gives stock/native 3.524x
+and previous/native 3.352x.
+This retains all 292 replay samples separately and does not overwrite the primary data or
+prove the cause of the stock drift. The original 20x ratio is not a stable speedup claim.
+
+All bulk cells beat stock and actual previous fallback. Tiny controls retain
+8 stock losses and 8 previous losses.
+Small batches are not called accelerated when they lose.
+
+Eight complete million-row jobs cover direct/computed INT/BIGINT inputs. They retain the
+bounded row source, blackhole output, startup, JNI and both transposes. Two warmups/five
+measurements alternate order. Candidate requires consumed NativeCalc work and empty JVM
+evaluator descriptors. Actual previous controls require exact fallback, zero substitutions
+and zero native operators. Seconds, median:
+
+| Flink / source / shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-BOOLEAN | 0.162491 | 0.166682 | 0.147023 | 0.148354 |
+| 2.2.1 / INT-BOOLEAN-computed | 0.155750 | 0.167884 | 0.149599 | 0.156696 |
+| 2.2.1 / BIGINT-BOOLEAN | 0.158948 | 0.167414 | 0.155004 | 0.155063 |
+| 2.2.1 / BIGINT-BOOLEAN-computed | 0.161442 | 0.179230 | 0.147702 | 0.153635 |
+| 1.18.1 / INT-BOOLEAN | 0.167345 | 0.173842 | 0.144691 | 0.145597 |
+| 1.18.1 / INT-BOOLEAN-computed | 0.163659 | 0.167112 | 0.141206 | 0.142495 |
+| 1.18.1 / BIGINT-BOOLEAN | 0.169389 | 0.180325 | 0.161704 | 0.161217 |
+| 1.18.1 / BIGINT-BOOLEAN-computed | 0.169641 | 0.184478 | 0.152336 | 0.159917 |
+
+Native/stock elapsed spans **1.021-1.110**; native/previous spans
+**1.071-1.194**. 8 of eight complete jobs lose to paired
+stock; 8 lose to independently measured actual previous fallback.
+All slower results remain. Prepared-function gains do not establish universal complete-job
+acceleration.
+
+All **528 focused JVM invocations** pass without skips across both released Flink lines
+and JDK 11/17, targeting Java release 11. The new complete 5,003-row maps/schema cover
+four integer widths, modern/legacy modes, NULLs, signed extrema and zero, arithmetic,
+widening, rounding, logic, CASE and empty filtered batches. Real filters and failing/lazy
+producer controls pass; at this qualification revision, character consumers explicitly
+retain their generated route. The following qualification removes those evaluators for
+the separately verified character-consumer subset.
+Related integer/BOOLEAN TRY_CAST, temporal parsing and BOOLEAN CASE regressions also pass.
+Admitted pure claims require consumed NativeCalc work and empty evaluators. Sixty-four
+actual previous positive cases compare full maps/schema before the expected fallback
+assertion; their empty/character follow-ups are not reached. Eight control methods stop
+at the positive filter route assertion before their later negative checks. Four unchanged
+released CastRules oracle runs pass **12 original integer-to-BOOLEAN assertions each**.
+No Rust production code changes; the previously qualified accepted runtime's 904-test
+result retains its historical provenance. Other producers, types and unverified character
+consumers remain in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+Reproduce with release `integral_expression`, matching integer type/nullability/row-layout/
+batch arguments and `SF_INTEGRAL_EXPRESSION=TRY_CAST(v AS BOOLEAN)`. Previous uses its
+frozen encoder, `IntegralExpressionBenchmarkFunctions`, `sf.integral.previous=true`,
+`sf.integral.fallbackControl=true` and the exact fallback reason. Complete jobs use
+`IntegralExpressionPipelineBenchmark`, `sf.integral.bigintInput=true` for BIGINT, the same
+expression and previous settings, preserving resources/data and perimeter costs.
+
+
+## Character consumers of integer truth
+
+CAST/TRY_CAST of the verified integer-to-BOOLEAN TRY_CAST result to STRING/VARCHAR/CHAR
+reuse the existing BOOLEAN formatter. The same total-integer producer proof governs the
+inner nonzero comparison and its outer character/logical consumers. Integer-target casts
+retain their separate preceding proof. This follows
+Flink's NumericToBoolean and BooleanToString rules, including mode-dependent spelling,
+NULL, CHAR padding and VARCHAR truncation. Comet's compatible numeric/boolean conversion
+paths are consulted; no Rust kernel, opcode, JNI entry point, setting or dependency changes.
+Division, narrowing and unverified/failing/stateful producers retain their preceding routes.
+Ordinary integer-to-BOOLEAN CAST already has a released native comparison rewrite.
+
+The [record](results/integer-truth-character-casts-2026-11-03.json) retains 96 prepared cells and
+[9,600 raw samples](results/integer-truth-character-casts-2026-11-03.csv.gz), including warmups, checksums and variability.
+Released Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc
+artifacts are used. Equal GenericRowData/BinaryRowData and Arrow contain four signed
+integer widths, nullable/NOT NULL, extrema and zero. Short STRING and padded CHAR(8)
+forms use direct or addition producers. Each trial consumes 131,072 rows, with 16 warmups
+and nine measurements. Rust times production Calc and equivalent output consumption after
+import/before export; stock uses equal prepared RowData. Setup and perimeter conversions
+are excluded only from this small-function timer; intrinsic costs remain. The actual
+preceding encoder `45cdf27a` runs on the exact same unchanged DSO/executable and fixture.
+It retains its registered evaluators and any production shortcuts. A retained descriptor
+alone does not prove Java executes on every row. Artifact hashes and mimalloc aliases match.
+
+| Scope | Cells | Paired stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk (1,024 rows) | 80 | 1.301-10.373x | 9.137-18.033x | 1.399-7.896x |
+| Tiny (16 rows) | 16 | 0.113-0.962x | 13.991-15.825x | 0.112-0.990x |
+
+All bulk cells beat stock and the actual preceding behavior. Tiny controls retain
+16 stock losses and 0 previous losses.
+All independent samples remain; the function gate does not establish universal job gains.
+
+Sixteen complete million-row INT/BIGINT jobs cover direct/computed short/padded forms.
+They retain bounded row input, blackhole output, startup, JNI and both transposes. Two
+warmups/five measurements alternate order. New controls require consumed NativeCalc work
+and empty evaluators; actual preceding controls require retained evaluators and consumed
+work. Seconds, median:
+
+| Flink / source / shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-short | 0.188565 | 0.190101 | 0.190131 | 0.222412 |
+| 2.2.1 / INT-padded | 0.219376 | 0.191142 | 0.231627 | 0.248017 |
+| 2.2.1 / INT-short-computed | 0.186346 | 0.195479 | 0.191713 | 0.223141 |
+| 2.2.1 / INT-padded-computed | 0.220819 | 0.192531 | 0.224752 | 0.242662 |
+| 2.2.1 / BIGINT-short | 0.191168 | 0.197340 | 0.190325 | 0.220678 |
+| 2.2.1 / BIGINT-padded | 0.236820 | 0.198431 | 0.244500 | 0.255661 |
+| 2.2.1 / BIGINT-short-computed | 0.203478 | 0.202725 | 0.190485 | 0.226375 |
+| 2.2.1 / BIGINT-padded-computed | 0.237860 | 0.198294 | 0.233832 | 0.250998 |
+| 1.18.1 / INT-short | 0.192091 | 0.203404 | 0.190491 | 0.216337 |
+| 1.18.1 / INT-padded | 0.216036 | 0.193191 | 0.219586 | 0.238627 |
+| 1.18.1 / INT-short-computed | 0.190646 | 0.194826 | 0.186903 | 0.218633 |
+| 1.18.1 / INT-padded-computed | 0.228368 | 0.196992 | 0.220991 | 0.245635 |
+| 1.18.1 / BIGINT-short | 0.201844 | 0.210436 | 0.202028 | 0.239229 |
+| 1.18.1 / BIGINT-padded | 0.242544 | 0.208591 | 0.240534 | 0.258406 |
+| 1.18.1 / BIGINT-short-computed | 0.206283 | 0.214572 | 0.203259 | 0.234902 |
+| 1.18.1 / BIGINT-padded-computed | 0.229412 | 0.210455 | 0.233978 | 0.255656 |
+
+Native/stock elapsed spans **0.834-1.059**, with 7 stock losses;
+native/previous spans **0.771-0.940**, with 0 previous losses.
+Every slower control remains; prepared-function gains are distinct from complete-job gains.
+
+All **384 focused JVM invocations** pass without skips across both released Flink lines
+and JDK 11/17, targeting Java release 11. Complete 5,003-row maps/schema cover all integer
+widths, signed extrema/zero, nullable/NOT NULL, modern/legacy modes, both outer cast kinds,
+STRING/VARCHAR(1/3)/CHAR(4/8), arithmetic/logical producers, explicitly retained
+nested-integer fallback and all-filtered batches. Real filters, CONCAT/length,
+selected failures and untaken branches
+also pass, with explicit retained-route assertions. Related boolean CASE, integer casts
+and the original BOOLEAN formatter regressions pass. Pure claims require consumed native
+work and empty evaluator descriptors.
+
+The actual previous 64 type/mode/nullability cases compare the first CAST query's full
+maps/schema, then fail only the new evaluator-free expectation. Their empty query and
+later outer TRY_CAST loop are not reached; candidate tests verify those separately.
+All sixteen original compound/failing/empty controls across both outer operators pass.
+Four freshly executed unchanged released CastRules oracle runs pass **eight original
+BOOLEAN-to-character assertions each**, separately from native work evidence. No Rust
+production changes; the accepted runtime's prior 904-test result remains historical.
+Other type/producer/consumer gaps stay in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+Reproduce with release `integral_expression`, matching signed input/nullability/row-layout/
+batch arguments and `SF_INTEGRAL_EXPRESSION=CAST(TRY_CAST(v AS BOOLEAN) AS STRING)` or
+`TRY_CAST(TRY_CAST(v AS BOOLEAN) AS CHAR(8))`. Previous supplies the frozen encoder and
+`SF_INTEGRAL_PREVIOUS=true` on the same release runtime. Complete jobs use
+`IntegralExpressionPipelineBenchmark`, the corresponding expression, bigint input flag
+and `sf.integral.previous=true` for the preceding control; other resources/data match.
+
+
+## DECIMAL-to-BOOLEAN TRY_CAST
+
+Direct DECIMAL inputs/literals use the existing native `<>` comparison against a
+zero with identical precision/scale. Every nonzero coefficient is TRUE, zero is FALSE
+and NULL remains NULL in both cast modes. This follows Flink's NumericToBoolean rule
+and Comet's same-type Decimal128 zero comparison. Ordinary CAST already rewrites to a
+comparison when precision exceeds scale; released ordinary DECIMAL(p,p) CAST fails
+during planning and remains unchanged. Computed/metadata-sensitive/failing/stateful
+producers retain their previous routes and character formatting retains its separate
+proof. No new Rust production kernel, setting, dependency or JNI contract is added.
+
+The [record](results/decimal-boolean-try-cast-2026-11-03.json) retains all 50 prepared configurations and
+[5,000 raw samples](results/decimal-boolean-try-cast-2026-11-03.csv.gz), including warmups, checksums and variability.
+Released Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread, and release/mimalloc
+are used. Five compact/noncompact input types are DECIMAL(4,2), (18,2), (19,19), (38,18)
+and (38,38), each nullable/NOT NULL and GenericRowData/BinaryRowData. Matching Arrow and
+Java fixtures include signed extrema, both signs and periodic zeros. The explicit
+`SF_INTEGRAL_CORPUS=decimal-truth` corpus adds the same zeros to both fixtures; the earlier
+nonzero-only pilot is retained separately and is not the final qualification.
+
+Each trial consumes 131,072 rows with 16 warmups/nine measurements. The Rust timer
+encloses production Calc and equivalent consumption after import/before export; Flink
+starts on equal prepared RowData. Setup/perimeter costs alone are outside this function
+timer; intrinsic costs remain. Actual preceding encoder `907c078c` rejects TRY_CAST and
+its real Java fallback is measured, not an invented callback. Both use the exact same
+unchanged accepted DSO and final fixtures. Only the benchmark executable changes to
+add the explicit zero corpus. Artifact/source hashes and matching mimalloc aliases remain.
+
+| Scope | Cells | Paired stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk (1,024 rows) | 40 | 4.245-52.674x | 4.250-45.661x | 4.222-45.962x |
+| Tiny (16 rows) | 10 | 0.341-1.487x | 0.406-1.842x | 0.390-1.810x |
+
+All bulk cells beat stock and actual previous behavior. Tiny cells retain
+5 stock losses and 5 previous losses.
+Independent stock ranges remain alongside paired controls.
+
+Ten complete million-row configurations cover all five input types on both released
+Flink lines. They retain bounded row input, blackhole output, startup, JNI and both
+transposes, with two warmups/five measurements in alternating order. Candidate controls
+require consumed NativeCalc work and empty evaluators; preceding controls require their
+actual fallback and zero native substitutions. Seconds, median:
+
+| Flink / source / target | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / DECIMAL(4,2)-BOOLEAN | 0.169193 | 0.184344 | 0.162222 | 0.157377 |
+| 2.2.1 / DECIMAL(18,2)-BOOLEAN | 0.161567 | 0.177438 | 0.151877 | 0.156473 |
+| 2.2.1 / DECIMAL(19,19)-BOOLEAN | 0.160679 | 0.194553 | 0.151313 | 0.161298 |
+| 2.2.1 / DECIMAL(38,18)-BOOLEAN | 0.169855 | 0.193467 | 0.148120 | 0.160680 |
+| 2.2.1 / DECIMAL(38,38)-BOOLEAN | 0.157564 | 0.192809 | 0.159520 | 0.148599 |
+| 1.18.1 / DECIMAL(4,2)-BOOLEAN | 0.173802 | 0.178297 | 0.154189 | 0.154342 |
+| 1.18.1 / DECIMAL(18,2)-BOOLEAN | 0.159733 | 0.180253 | 0.149595 | 0.154122 |
+| 1.18.1 / DECIMAL(19,19)-BOOLEAN | 0.167480 | 0.186420 | 0.146684 | 0.153933 |
+| 1.18.1 / DECIMAL(38,18)-BOOLEAN | 0.157908 | 0.190552 | 0.156317 | 0.147475 |
+| 1.18.1 / DECIMAL(38,38)-BOOLEAN | 0.163782 | 0.187075 | 0.154887 | 0.149671 |
+
+Native/stock elapsed spans **1.026-1.224**, retaining 10 stock losses;
+native/previous spans **1.134-1.298**, retaining 10 previous losses.
+Every unfavorable result remains; function qualification is distinct from full-job gains.
+
+All **456 focused JVM invocations** pass without skips on released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java release 11. Full 5,003-row maps/schema cover eleven
+precision/scale pairs from DECIMAL(1,0)/(1,1) to (38,38), nullable/NOT NULL, both cast
+modes, zero, signed extrema, logical/NULL/CASE consumers and all-filtered batches.
+At this qualification revision, the character control retains its generated evaluator;
+the following qualification extends that proof. Filters, computed/failing producers and
+lazy branches also pass. Admitted paths require actual consumed native work and empty evaluators.
+The four ordinary DECIMAL(p,p) planning failures are separately verified in both modes.
+Adjacent integer/BOOLEAN casts and DECIMAL projection/default regressions pass.
+
+Actual-before runs compare 44 positive invocations' first NOT NULL/modern normal
+maps/schema before the expected old-fallback assertion; later modes/nullability/empty
+queries are not claimed as reached. Eight before character-consumer controls also compare
+maps/schema before their fallback assertion, with later filters/negative checks unreached.
+All sixteen ordinary CAST planning-failure invocations pass, each covering both modes.
+Four fresh unchanged released CastRules oracles pass two original DECIMAL-to-BOOLEAN
+assertions each. A fresh release core run passes **904 Rust tests**, no ignores; only the
+benchmark fixture changes in Rust, and the production DSO hash stays identical.
+
+Reproduce with release `integral_expression`, matching DECIMAL input/nullability/row-layout/
+batch arguments, `SF_INTEGRAL_CORPUS=decimal-truth` and
+`SF_INTEGRAL_EXPRESSION=TRY_CAST(v AS BOOLEAN)`. Actual previous uses its frozen encoder
+with the same final Java fixture and explicit `sf.integral.fallbackControl=true` /
+`sf.integral.fallbackReason=unsupported TRY_CAST DECIMAL→BOOLEAN` control. Complete jobs use
+`IntegralExpressionPipelineBenchmark` and matching `sf.integral.decimalPrecision`/`decimalScale`;
+the preceding control must keep its fallback. Remaining producers, consumers and source/
+target families stay in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+
+## Character consumers of decimal truth
+
+CAST/TRY_CAST of verified direct DECIMAL-to-BOOLEAN TRY_CAST to STRING/VARCHAR/CHAR
+reuse the existing native BOOLEAN formatter. The producer proof permits verified logical
+and NULL wrappers around that conversion. Same-precision/scale decimal zero comparison,
+modern/legacy spelling, NULLs, VARCHAR truncation and CHAR padding remain unchanged.
+The structure follows Flink's NumericToBoolean/BooleanToString rules and Comet's
+same-type zero comparison. No native kernel, setting, dependency or JNI changes.
+Computed/failing/stateful/metadata-sensitive producers retain their preceding routes.
+Integer-target and bounded-position condition proofs remain separate. At this qualification
+revision ordinary DECIMAL CAST uses a different comparison tree and retains its character
+evaluator; the following qualification extends that direct-comparison proof. Ordinary
+DECIMAL(p,p) CAST retains the released planning failure.
+
+The [record](results/decimal-truth-character-casts-2026-11-03.json) retains 100 prepared configurations and
+[10,000 raw samples](results/decimal-truth-character-casts-2026-11-03.csv.gz), including warmups, checksums and variability.
+Released Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc
+are used. Equal GenericRowData/BinaryRowData and Arrow contain DECIMAL(4,2), (18,2),
+(19,19), (38,18) and (38,38), nullable/NOT NULL, signed extrema, zero and both signs.
+`SF_INTEGRAL_CORPUS=decimal-truth` selects the same fixture. Shapes are outer CAST to
+STRING and outer TRY_CAST to CHAR(8), each over the direct inner TRY_CAST.
+
+Each trial consumes 131,072 rows, with 16 warmups/nine measurements. Rust times production
+Calc and equivalent consumption after import/before export; Flink starts on equal prepared
+RowData. Setup and perimeter costs alone are excluded from this function timer; intrinsic
+costs remain. Actual preceding encoder `8b42f7c1` retains its character evaluator and any
+production shortcuts on the exact same unchanged DSO/executable/fixture. A retained
+descriptor alone is not proof of a JVM callback on every row. Hashes/mimalloc aliases match.
+
+| Scope | Cells | Paired stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk (1,024 rows) | 80 | 2.109-13.089x | 11.307-18.114x | 1.854-11.668x |
+| Tiny (16 rows) | 20 | 0.211-1.308x | 13.644-15.236x | 0.204-1.244x |
+
+All bulk cells beat stock and actual previous behavior. Tiny cells retain
+14 stock losses and 0 previous losses.
+All independent measurements and unfavorable controls remain.
+
+Twenty complete million-row configurations cover five DECIMAL types and both shapes
+on both released Flink lines. They retain bounded row input, blackhole output, startup,
+JNI and both transposes. Two warmups/five measurements alternate order. Candidate controls
+require consumed NativeCalc work and empty evaluators; previous controls require consumed
+work and their retained evaluators. Seconds, median:
+
+| Flink / source / shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / DECIMAL(4,2)-short | 0.207693 | 0.205985 | 0.211752 | 0.238406 |
+| 2.2.1 / DECIMAL(4,2)-padded | 0.250289 | 0.213052 | 0.246135 | 0.267123 |
+| 2.2.1 / DECIMAL(18,2)-short | 0.210433 | 0.206001 | 0.201563 | 0.232634 |
+| 2.2.1 / DECIMAL(18,2)-padded | 0.240361 | 0.207615 | 0.244654 | 0.276751 |
+| 2.2.1 / DECIMAL(19,19)-short | 0.206595 | 0.201382 | 0.208084 | 0.237834 |
+| 2.2.1 / DECIMAL(19,19)-padded | 0.244125 | 0.222056 | 0.254456 | 0.282303 |
+| 2.2.1 / DECIMAL(38,18)-short | 0.208986 | 0.211712 | 0.208985 | 0.241863 |
+| 2.2.1 / DECIMAL(38,18)-padded | 0.242238 | 0.211111 | 0.249556 | 0.281209 |
+| 2.2.1 / DECIMAL(38,38)-short | 0.215642 | 0.211295 | 0.207752 | 0.243736 |
+| 2.2.1 / DECIMAL(38,38)-padded | 0.247046 | 0.217456 | 0.250570 | 0.282227 |
+| 1.18.1 / DECIMAL(4,2)-short | 0.207685 | 0.209153 | 0.210604 | 0.236102 |
+| 1.18.1 / DECIMAL(4,2)-padded | 0.250418 | 0.211956 | 0.243160 | 0.262985 |
+| 1.18.1 / DECIMAL(18,2)-short | 0.210772 | 0.206240 | 0.220348 | 0.247438 |
+| 1.18.1 / DECIMAL(18,2)-padded | 0.245597 | 0.208913 | 0.243005 | 0.266683 |
+| 1.18.1 / DECIMAL(19,19)-short | 0.207183 | 0.228833 | 0.210799 | 0.240593 |
+| 1.18.1 / DECIMAL(19,19)-padded | 0.249136 | 0.216391 | 0.240292 | 0.270399 |
+| 1.18.1 / DECIMAL(38,18)-short | 0.205375 | 0.216000 | 0.215327 | 0.232637 |
+| 1.18.1 / DECIMAL(38,18)-padded | 0.246364 | 0.232057 | 0.240270 | 0.273388 |
+| 1.18.1 / DECIMAL(38,38)-short | 0.218105 | 0.214802 | 0.216118 | 0.249770 |
+| 1.18.1 / DECIMAL(38,38)-padded | 0.246352 | 0.215345 | 0.241897 | 0.273894 |
+
+Native/stock elapsed spans **0.846-1.104**, retaining 4 stock losses;
+native/previous spans **0.750-0.951**, retaining 0 previous losses.
+Prepared function gains are distinct from complete-job gains; no slower control is removed.
+
+All **304 focused JVM invocations** pass without skips across released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java release 11. Complete 5,003-row maps/schema cover eleven
+precision/scale pairs from DECIMAL(1,0)/(1,1) to (38,38), both outer cast kinds, nullable/
+NOT NULL, modern/legacy modes, STRING/VARCHAR(1/3)/CHAR(4/8), signed extrema/zero, logical/
+NULL wrappers and empty filtered batches. Filter/length/CONCAT consumers, selected errors,
+untaken branches and explicitly retained integer targets pass. Related direct decimal,
+integer truth/character and BOOLEAN/integer regressions pass. Admitted claims require
+consumed NativeCalc work and empty evaluator descriptors.
+
+Actual-before runs compare 44 first NOT NULL/modern outer-CAST queries' complete maps/
+schema before the evaluator-free assertion; their subsequent modes/nullability/empty and
+outer TRY_CAST queries are not claimed as reached. All sixteen preceding compound/failing/
+empty/integer-target controls pass. Four fresh unchanged released CastRules oracles pass
+eight original BOOLEAN-to-character assertions each. No Rust source/artifact changes;
+the immediately preceding qualification's fresh 904-test Rust result remains historical.
+
+Reproduce with release `integral_expression`, matching DECIMAL input/nullability/row-layout/
+batch arguments, `SF_INTEGRAL_CORPUS=decimal-truth` and
+`SF_INTEGRAL_EXPRESSION=CAST(TRY_CAST(v AS BOOLEAN) AS STRING)` or
+`TRY_CAST(TRY_CAST(v AS BOOLEAN) AS CHAR(8))`. Actual previous supplies the frozen encoder
+and `SF_INTEGRAL_PREVIOUS=true` on the same runtime/fixture. Complete jobs use
+`IntegralExpressionPipelineBenchmark` with matching `sf.integral.decimalPrecision`/
+`decimalScale` and `sf.integral.previous=true` for previous. Other resources/data match.
+Remaining type/producer/consumer gaps stay in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+
+## Character consumers of direct decimal predicates
+
+CAST/TRY_CAST to STRING/VARCHAR/CHAR reuse the native BOOLEAN formatter for direct
+same-precision/scale DECIMAL comparisons, direct DECIMAL NULL checks and verified logical/
+NULL wrappers. The NULL proof also covers released nullable-comparison rewrites. The
+ordinary DECIMAL-to-BOOLEAN CAST rewrite consequently qualifies when precision exceeds
+scale; ordinary DECIMAL(p,p) retains released planning failure. Computed/failing/stateful/
+mixed-type operands, integer-target TRY_CAST and bounded-position proofs stay separate.
+No Rust kernel, setting, dependency or JNI/transport change is introduced by this extension.
+
+The [record](results/decimal-comparison-character-casts-2026-11-04.json) retains 60 prepared configurations and
+[6,000 raw samples](results/decimal-comparison-character-casts-2026-11-04.csv.gz), including warmups, checksums and variability.
+Released Flink 1.18.1/2.2.1, Oracle JDK 17.0.12, Apple M4 Pro, one thread and release/mimalloc
+are used. Equal GenericRowData/BinaryRowData and Arrow contain DECIMAL(4,2), (18,2),
+and (38,18), nullable/NOT NULL, signed extrema, periodic zero and both signs.
+Shapes are CAST(CAST(v AS BOOLEAN) AS STRING) and
+TRY_CAST(CAST(v AS BOOLEAN) AS CHAR(8)); the inner ordinary CAST produces a verified
+same-type zero comparison in released planning.
+
+Each trial consumes 131,072 rows, with 16 warmups/nine measurements. Rust times production
+Calc and equivalent consumption after import/before export; stock starts on equal prepared
+RowData. Setup/perimeter conversion alone is excluded; intrinsic costs remain timed.
+Actual preceding encoder `6305c6f9` retains its character evaluator and any production
+shortcuts on the exact same newly rebuilt DSO/executable/fixture. A descriptor alone is
+not proof of a Java callback on every row. Allocator aliases and artifact hashes match.
+
+| Scope | Cells | Paired stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk (1,024 rows) | 48 | 1.834-15.438x | 10.918-33.003x | 1.604-12.815x |
+| Tiny (16 rows) | 12 | 0.169-1.127x | 13.296-14.487x | 0.167-1.185x |
+
+All bulk cells beat paired stock and actual previous behavior. Tiny cells retain
+10 paired-stock losses and 0 previous losses;
+all independent measurements and unfavorable controls remain.
+
+Eight complete million-row configurations cover compact DECIMAL(18,2) and noncompact
+DECIMAL(38,18), both shapes and both released lines. Bounded row input, blackhole output,
+startup, JNI and both transposes remain. Two warmups/five measurements alternate order.
+Candidate needs consumed NativeCalc work and empty evaluators; preceding controls retain
+consumed work and their character evaluator. Seconds, median:
+
+| Flink / input / shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / DECIMAL(18,2)-short | 0.200580 | 0.192215 | 0.206523 | 0.233667 |
+| 2.2.1 / DECIMAL(18,2)-padded | 0.246108 | 0.208744 | 0.243367 | 0.260601 |
+| 2.2.1 / DECIMAL(38,18)-short | 0.201272 | 0.208937 | 0.205316 | 0.237216 |
+| 2.2.1 / DECIMAL(38,18)-padded | 0.246396 | 0.215287 | 0.245370 | 0.277956 |
+| 1.18.1 / DECIMAL(18,2)-short | 0.205336 | 0.203482 | 0.210707 | 0.244583 |
+| 1.18.1 / DECIMAL(18,2)-padded | 0.242385 | 0.207672 | 0.233590 | 0.251610 |
+| 1.18.1 / DECIMAL(38,18)-short | 0.203797 | 0.222972 | 0.194975 | 0.237246 |
+| 1.18.1 / DECIMAL(38,18)-padded | 0.238009 | 0.210415 | 0.246277 | 0.265138 |
+
+Native/stock elapsed spans **0.848-1.094**, retaining 2 stock losses;
+native/previous spans **0.775-0.940**, retaining 0 previous losses.
+Prepared function gains are distinct from complete-job gains; no slower control is removed.
+
+All **260 focused JVM invocations** pass without skips on released Flink 1.18.1/2.2.1 and
+JDK 11/17, targeting Java release 11. Complete 5,003-row maps/schema cover eleven precision/
+scale pairs through (38,38), all six comparisons, independently varying DECIMAL columns
+and NULL positions, NULL/logical wrappers, both outer cast kinds, STRING/VARCHAR(1/3)/
+CHAR(4/8), modern/legacy modes and empty filtered batches. Computed operands retain their
+generated controls; integer targets retain fallback. Filters/length, selected division
+failures and untaken branches pass. Ordinary DECIMAL(p,p) planning failures remain covered.
+Pure claims require consumed NativeCalc work and empty evaluator descriptors.
+
+Actual-before runs compare all 44 first NOT NULL/modern outer-CAST queries' maps/schema
+before failing the new evaluator-free assertion. Later modes/nullability/empty/outer-TRY_CAST
+queries are not claimed as reached by those invocations. All eight retained-route controls
+pass. Four fresh unchanged released DecimalTypeTest oracles each execute three original
+comparison methods with their setup/teardown and original assertions. These are stock
+oracles; the independent runtime-source SQL witnesses establish native parity and execution.
+
+After rebasing onto merged main `2bb52ca2`, fresh full runtime Maven compilations for both lines,
+**904 release Rust core tests** with no ignores and **304 preceding-character JVM controls**
+pass on the rebuilt artifacts. A separate 260 invocations separately qualify this
+comparison extension. Another **80 targeted metadata regressions** pass across the four
+release/JDK pairs for NOT NULL arithmetic, narrowing CAST overflow and noncompact SIGN
+character/default consumers. Eight fresh compact/noncompact direct-TRY_CAST character
+prepared replays also beat stock and the actual latest-main encoder on the rebuilt runtime;
+their raw samples are retained in the linked record. Earlier character measurements retain their original revision/DSO
+provenance; none is relabeled as a fresh measurement of this rebuilt runtime. The
+[800 fresh replay samples](results/decimal-truth-character-rebase-2026-11-04.csv.gz) are
+separate prepared controls; they do not relabel the earlier twenty complete-job measurements.
+
+Reproduce using release `integral_expression`, matching DECIMAL type/nullability/row layout/
+batch, `SF_INTEGRAL_CORPUS=decimal-truth` and `SF_INTEGRAL_EXPRESSION` set to either shape.
+Actual previous supplies the frozen encoder with `SF_INTEGRAL_PREVIOUS=true` on the same
+runtime/fixture. Complete jobs use IntegralExpressionPipelineBenchmark with the matching
+expression/precision/scale and `sf.integral.previous=true` for previous controls.
+Remaining type/producer/consumer gaps stay in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+
+## Runtime integer epoch precision
+
+Ordinary Calc admits verified INT CASE precision trees with literal 0, 3 or NULL results
+for integer TO_TIMESTAMP_LTZ. The native kernel reads conditions/branches directly, checks
+original seconds/milliseconds before scaling, and writes one timestamp column. Literal
+millisecond-or-NULL branches share immutable input values and alter parent validity only.
+Nested branches reuse the total integer selector. Computed integer children retain their
+resolved widths before widening; unproven/failing/stateful inputs and UNNEST keep their routes.
+
+The [record](results/runtime-epoch-precision-2026-11-04.json) retains all 80 final configurations and
+[19,800 raw samples](results/runtime-epoch-precision-2026-11-04.csv.gz) across all development stages and the final matrix.
+Apple M4 Pro, macOS arm64, JDK 17.0.12, one thread, release/mimalloc, Flink 1.18.1/2.2.1.
+Matched prepared GenericRowData/BinaryRowData and Arrow cover all four integer widths,
+nullable/NOT NULL inputs, extrema and epoch bounds. Each trial consumes 131,072 rows;
+16 warmups/nine measurements alternate engines. Native timing starts inside Rust after
+import and stops before export, retaining production Calc/consumption and intrinsic costs.
+Stock starts on equivalent prepared RowData. Actual preceding encoder `a90183ec` retains
+its evaluator on the same current native runtime/fixture, with independent stock controls.
+
+The two measured shapes consume YEAR over seconds/milliseconds selected by the sign of v,
+or IS NULL over millisecond/NULL selection. SQL strings, all medians/ranges and artifacts
+are retained in the record. The timings do not qualify every nested composition.
+
+| Scope | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk, 1,024 rows | 64 | 1.145-4.399x | 6.227-38.014x | 1.372-5.028x |
+| Tiny, 16 rows | 16 | 0.042-0.197x | 10.826-17.692x | 0.044-0.161x |
+
+Retain 0 paired-stock bulk medians below 1x,
+0 independent-stock bulk medians below 1x and
+16 tiny paired-stock losses. These are measured diagnostics;
+native execution evidence alone does not establish a speedup.
+
+The first timestamp-CASE implementation loses despite correctness. CPU samples identify
+CASE batch partitioning and Struct timestamp merging, including child/null-buffer copies.
+A first fused kernel removes that merging but still materializes an INT precision column;
+another sample identifies selector/materialization work. Direct branch selection removes
+that intermediate, and millisecond-or-NULL buffer sharing removes the remaining value copy.
+The shared-buffer version still loses bulk cases. Packed Arrow condition/validity masks
+replace per-row selection for scalar precision leaves, retain first-true CASE selection and
+scale only selected in-range seconds. Final masks exclude NULL predicates. All development
+stages, actual source/artifact hashes and slower samples are retained rather
+than replaced by the final matrix. Inclusive sample counts overlap; they are not wall-time shares.
+
+Eight complete million-row configurations retain the bounded row source, blackhole sink,
+startup, JNI and both transposes. Two warmups/five measurements alternate stock/native;
+candidate requires consumed NativeCalc work and empty evaluators, previous keeps its evaluator.
+Median seconds:
+
+| Flink / input / shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 / INT-seconds-millis | 0.176752 | 0.177871 | 0.172852 | 0.212247 |
+| 2.2.1 / INT-millis-null | 0.177497 | 0.188569 | 0.183063 | 0.234874 |
+| 2.2.1 / BIGINT-seconds-millis | 0.169195 | 0.183573 | 0.162459 | 0.218152 |
+| 2.2.1 / BIGINT-millis-null | 0.181030 | 0.190784 | 0.182086 | 0.236146 |
+| 1.18.1 / INT-seconds-millis | 0.166785 | 0.178363 | 0.170580 | 0.206144 |
+| 1.18.1 / INT-millis-null | 0.178303 | 0.187838 | 0.175389 | 0.233447 |
+| 1.18.1 / BIGINT-seconds-millis | 0.159494 | 0.179954 | 0.165135 | 0.219383 |
+| 1.18.1 / BIGINT-millis-null | 0.179089 | 0.191463 | 0.177121 | 0.223125 |
+
+Native/stock elapsed ranges **1.006-1.128**, retaining
+8 stock losses; native/previous ranges
+**0.803-0.865**, retaining 0 previous losses.
+No universal complete-job gain is claimed.
+
+All **432 final JVM invocations** pass without skips across released Flink 1.18.1/2.2.1
+and JDK 11/17, Java release 11: 36 new precision invocations, 136 preceding epoch/rounding
+controls and 260 preceding decimal/integer-character controls. Complete 5,003-row maps/schema
+cover six precision trees, nested/NULL conditions, all integer widths, resolved overflow,
+original epoch bounds, UTC/New York and empty filtered batches. New pure routes require
+consumed native work, no fallback and empty evaluator descriptors. Fallible/unknown precision
+and epoch producers retain explicit generated controls. Recorded preceding-encoder controls compare all 32
+first-query maps/schema before the expected new route assertion fails; their subsequent
+empty-query comparisons are not reached. Four retained-route methods pass six controls each.
+
+All **910 release Rust core tests** pass without ignores. New tests cover original-unit
+bounds, pre-scaling overflow, independently sliced validity, scalar/array combinations,
+first-true/NULL conditions, independently sliced conditions across 64-bit boundaries, empty
+arrays, invalid internal signatures and immutable buffer
+ownership. Sixteen unchanged released TemporalTypesTest method invocations pass separately;
+these stock oracles do not replace the independent native SQL/evidence witnesses.
+
+Reproduce with release integral_expression, SF_INTEGRAL_CORPUS=epoch-millis and the exact
+expression/type/NULL/layout/batch from the record. Actual previous supplies the frozen
+encoder and SF_INTEGRAL_PREVIOUS=true on the same final native runtime. Complete jobs use
+IntegralExpressionPipelineBenchmark with matching expression and INT/BIGINT input settings.
+Remaining signatures and timezone/parser work stay in
+[#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
+
+
+## Boolean-object and mixed integer PRINTF
+
+On released Flink 2.2.1, verified total BOOLEAN producers and mixed signed-integer/BOOLEAN
+arguments use the evaluator-free literal ASCII formatter. BOOLEAN `%b` observes true/false;
+NULL is false. BOOLEAN `%s` uses true/false words and null for NULL. A non-NULL integer,
+including zero, still formats as true with `%b`. Argument indices/reuse, uppercasing,
+width, precision, NULLs and invalid-format routes retain Java Formatter semantics.
+The running JDK validates each actual argument type at planning time. Explicit index zero
+stays on the preceding route because JDK 11 and 17 disagree. Bounds remain 512 ASCII format
+characters and width/precision at most 256. Other types/formats, unverified/failing/stateful
+producers and representation-sensitive consumers keep their previous routes. Flink 1.18
+has no PRINTF and retains released SQL rejection.
+
+The [record](results/boolean-object-printf-2026-11-04.json) includes all final cells, initial slower versions,
+source/artifact hashes and [16,000 raw trials](results/boolean-object-printf-2026-11-04.csv.gz).
+Apple M4 Pro, macOS arm64, one thread, Oracle JDK 17.0.12, released Flink 2.2.1 and
+release/mimalloc-linked DSO/executable with verified malloc aliases. Equal prepared
+GenericRowData/BinaryRowData and Arrow cover true/false, nullable/NOT NULL and mixed
+INT/BIGINT signed extrema/NULLs. Each trial consumes 131,072 rows, with 16 warmups and
+nine measurements. Native timing starts/stops inside Rust after import and before export,
+retaining production Calc, output consumption and intrinsic costs. Initial JNI/import/export
+and perimeter transposes are excluded only from this small-function timer. Stock starts
+on matching prepared RowData.
+
+The actual preceding encoder/helper `1346ed57` runs with its saved **whole DSO/executable**
+and the identical final fixture/JDK/data. It does not receive the new certified formatter.
+New BOOLEAN controls retain their preceding evaluator; eight existing integer native controls
+require empty evaluators on both versions. A retained descriptor alone does not prove a
+Java callback on every batch. Independent stock measurements remain separate.
+
+Shapes are `PRINTF('%b/%1$B',v)`, `PRINTF('%1$8.2S:%1$-8.3b',v)` and
+`PRINTF('%1$+08d:%2$8.2B:%1$x:%2$s',n,v)` with INT or BIGINT n. Both row layouts and
+NULL modes are retained, plus 16-row controls.
+
+| Scope | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| New bulk, 1,024 rows | 16 | 4.930-7.627x | 5.632-8.099x | 4.849-7.460x |
+| New tiny, 16 rows | 4 | 3.382-5.248x | 10.339-12.905x | 3.367-5.101x |
+
+All new bulk cells beat paired stock and the actual preceding implementation. Retain
+0 tiny stock losses and
+0 tiny previous losses.
+Eight retained nullable INT/BIGINT `%d`/`%+08d:%1$x` native controls have previous/current
+median ratios **1.285-1.440x**, with all ranges and checksums retained.
+Eight additional unchanged certified DECIMAL(4,2)/DECIMAL(38,18) short/padded controls retain
+their evaluators on both whole runtimes; previous/current spans
+**1.103-1.214x**. Their matching output digests and allocation probes are
+retained separately. The new pure scope does not include these DECIMAL arguments.
+
+The first shared-loop implementation passes correctness but adds a stable BIGINT-simple
+slowdown in the recorded order (previous/current 0.931x with nonoverlapping ranges).
+CPU samples locate format parsing and integer conversion/allocation; inclusive counts overlap
+and do not attribute wall time to a source branch. Separately compiling Boolean-capable and
+integer-only loops recovers that simple-format probe, but padded BIGINT retains lower preceding
+medians in both orders. The final implementation also reuses one conversion String across
+rows/conversions and writes decimal integer digits through the existing `itoa` buffer.
+Boolean/NULL words and hexadecimal/octal/character output append into this buffer. General
+certified DECIMAL formatting retains its owned result without an additional copy. Parsing
+is still rowwise. The intermediate buffered version also enables Boolean dispatch in general certified
+formatting; DECIMAL controls expose previous/current as low as 0.927x. The final general
+formatter uses its preceding non-Boolean specialization, with Boolean-object evaluation
+retained outside the planner-verified literal path. An ownership-only experiment also
+retains slower padded medians and is discarded. When every format in a certified batch
+is equal and non-NULL, the final evaluator borrows it once and reuses the Arrow builder/
+row/conversion buffers. This removes per-row output String materialization; varying/NULL
+formats retain row handling. Existing complete-batch ASCII/cache checks still precede
+formatting, and a failed formatter still rejects the whole certificate. All slower stages
+and reverse-order numeric probes remain recorded.
+For the nullable GenericRowData BIGINT padded control, one warmed 1,024-row operation
+drops from **2,489 allocation requests / 80,164 requested bytes** on the actual preceding
+whole runtime to **29 / 48,687**; output buffer bytes remain 35,159. Allocation traffic
+is diagnostic, not peak memory or proof of a complete-job gain.
+
+Four million-row jobs retain the bounded row source, blackhole sink, startup, JNI and
+both transposes. Two warmups and five measurements alternate stock/native. New paths require
+consumed NativeCalc work and empty evaluators; previous retains its original evaluator.
+Median seconds:
+
+| Shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| truth | 0.449773 | 0.287959 | 0.459998 | 0.460954 |
+| padded | 0.709251 | 0.303006 | 0.704850 | 0.753436 |
+| mixed-int | 1.046717 | 0.340149 | 1.021757 | 1.049034 |
+| mixed-bigint | 1.065773 | 0.329840 | 1.059488 | 1.135357 |
+
+Native/stock elapsed spans **0.309-0.640**;
+native/previous spans **0.291-0.625**. All trials and
+variability remain, including any losses; prepared gains do not establish universal
+complete-job acceleration.
+
+All **112 final focused JVM invocations** pass without skips across released Flink
+1.18.1/2.2.1 and JDK 11/17, targeting Java 11: 24 new BOOLEAN/absence-control invocations,
+20 existing integer-PRINTF/absence controls, 12 format-helper invocations, 36 preceding
+epoch invocations and 20 existing PRINTF/shared-certificate invocations on Flink 2.2.
+Complete 5,003-row maps/schema cover true/false/NULL, all signed widths, logical/comparison
+producers, mixed independently nullable arguments, literals, padding/index/reuse/precision,
+empty filtered batches and explicit invalid/dynamic/failing/lazy/protected-consumer controls.
+Pure-route witnesses require consumed native work, no fallback and empty evaluator descriptors.
+The actual preceding Flink 2.2 controls each compare ten complete first-query maps/schema
+before failing the intended pure-route assertions; subsequent empty-query checks in those
+failing invocations are not reached. Retained routes and both 1.18 absence controls pass.
+
+All **912 release Rust core tests** pass without ignores, including Boolean/NULL/signed-width
+formatting, independently sliced/empty arrays, rejected contracts and input ownership.
+Two unchanged released `StringFunctionsITCase.printfTestCases` stock-oracle runs each pass
+all **47 original assertions**. These stock oracles are separate from the native SQL and
+execution witnesses. Earlier decimal/epoch commit timing records retain their own runtime
+provenance; this rebuilt DSO is not substituted into historical measurements. Hosted CI
+remains separate.
+
+Reproduce with release `integral_expression`, the exact expression/type/secondary-type/
+NULL/layout/batch from the record and the saved previous encoder/helper plus whole runtime.
+New preceding routes set `SF_INTEGRAL_PREVIOUS=true`; retained old-native integer controls
+leave it false. Certified DECIMAL controls set it true on both runtimes. Complete jobs use
+`IntegralExpressionPipelineBenchmark`, `sf.integral.booleanInput=true`, matching expression
+and secondary type. Remaining scope stays in
+[#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).
+
+
+## Numeric Boolean producers for PRINTF
+
+The literal primitive formatter also accepts the exact numeric BOOLEAN producer proof
+already used by character CAST/TRY_CAST: integer truth TRY_CAST over total integer trees,
+direct DECIMAL truth TRY_CAST, same-precision/scale direct DECIMAL comparisons, and their
+verified logical/NULL wrappers. This keeps `PRINTF('%b',0)` as true while
+`PRINTF('%b',TRY_CAST(0 AS BOOLEAN))` is false. Ordinary DECIMAL-to-BOOLEAN CAST benefits
+from its released comparison rewrite where supported; DECIMAL(p,p) retains the released
+planning failure. Computed/mixed decimal predicates, failing/stateful inputs, protected
+consumers and integer-target/rounding-position proofs retain their preceding scopes.
+Only released Flink 2.2 has PRINTF; 1.18 retains its SQL rejection.
+
+This is a Java admission extension with **no native source/build change**. The exact preceding
+encoder/helper `46a1f487` and its saved whole runtime execute the same fixture/data/JDK.
+Candidate native artifacts are byte-identical. Final prepared and SQL-test encoder/context
+bytecode matches within Flink 2.2, and before-control bytecode matches the saved sources.
+The [record](results/exact-numeric-boolean-printf-2026-11-04.json) retains sources, hashes, all cells and
+[4,050 raw prepared trials](results/exact-numeric-boolean-printf-2026-11-04.csv.gz).
+
+Apple M4 Pro, macOS arm64, one thread, JDK 17.0.12, Flink 2.2.1 and the same verified
+release/mimalloc DSO/executable as the preceding BOOLEAN formatter qualification.
+Equal prepared GenericRowData/BinaryRowData and Arrow cover nullable/NOT NULL
+DECIMAL(4,2)/DECIMAL(38,18), extrema/zero, independently nullable mixed INT and signed
+INT/BIGINT truth controls. Each trial consumes 131,072 rows with 16 warmups and nine
+measurements. The production Calc/output-consumption timer starts/stops inside Rust after
+import and before export, retaining intrinsic allocation, conversions and callbacks.
+Only this prepared gate excludes initial JNI/import/export and perimeter transposes.
+Stock starts on matching prepared RowData. New paths require empty evaluators; actual
+preceding paths retain their original evaluator.
+
+| Scope | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk, 1,024 rows | 32 | 4.646-8.479x | 5.200-8.644x | 4.495-8.516x |
+| Tiny, 16 rows | 8 | 2.603-4.874x | 8.343-10.742x | 2.168-4.687x |
+
+All bulk cells beat paired stock and actual preceding behavior. Retain
+0 tiny stock losses and 0 tiny previous losses.
+The initial candidate run completed 50 paired stock/native samples with matching digests,
+but the local parser failed on the comma in the existing unquoted DECIMAL type field before
+launching its preceding control. Those samples remain a separate `parser-attempt` stage;
+they are not paired previous evidence. Normalizing that field before parsing and quoting
+public CSV preserves the engine outputs without an engine/runtime modification.
+
+Four million-row jobs retain the bounded row source, blackhole sink, job submission/startup,
+JNI and both perimeter transposes. Environment setup and surrounding JVM process startup
+are outside the job timer. Two warmups and five measurements alternate stock/native.
+NativeCalc must consume work and the new routes require empty evaluators; preceding routes
+keep their original evaluators. Median seconds:
+
+| Shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| truth-DECIMAL(4,2) | 0.707504 | 0.258533 | 0.698759 | 0.696531 |
+| mixed-DECIMAL(4,2) | 0.836147 | 0.324166 | 0.819374 | 0.819529 |
+| truth-DECIMAL(38,18) | 0.691274 | 0.258629 | 0.661155 | 0.712982 |
+| mixed-DECIMAL(38,18) | 0.835070 | 0.323816 | 0.816792 | 0.830866 |
+
+Native/stock elapsed spans **0.365-0.388**
+(0 stock losses); native/previous spans
+**0.363-0.396** (0 previous losses).
+All variability and independent stock measurements remain. These prepared and complete-job
+results do not establish universal job acceleration.
+
+All **76 fresh focused JVM invocations** pass without skips across released Flink
+1.18.1/2.2.1 and JDK 11/17, targeting Java 11. Complete 5,003-row maps/schema cover eight
+decimal precision/scale pairs, direct and comparison truth, independently nullable inputs,
+modern/legacy modes, string precision/padding, mixed integer arguments, all-filtered
+batches and retained invalid/failing/lazy/consumer controls. Signed-width cases also
+compare a boxed integer's `%b` with its explicit BOOLEAN truth conversion. Admitted paths
+require consumed NativeCalc work, no fallback and empty evaluator descriptors.
+
+Actual preceding controls on each JDK compare sixteen complete first-query maps/schema
+before the intended new pure-route assertion fails. Subsequent queries/modes/empty checks
+in those failing invocations are not counted. Four other dynamic tests per JDK pass,
+covering existing pure BOOLEAN routes and retained generated routes. The unchanged native
+artifacts retain the preceding **912 release Rust core tests** and two unchanged released
+PRINTF stock-oracle runs with **47 assertions** each; these are not new Rust/oracle runs.
+Focused current JVM verification is separate from full hosted CI on the exact pushed head.
+
+Reproduce with `integral_expression` using the record's expression/type, secondary type,
+NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`; previous controls set
+`SF_INTEGRAL_PREVIOUS=true` and use the saved actual encoder/helper and whole runtime.
+Complete jobs use `IntegralExpressionPipelineBenchmark`, matching decimal precision/scale,
+secondary type and expression. General STRING/DECIMAL printf arguments, remaining formats,
+producers and consumers remain in [#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).
+
+## Length of primitive ASCII PRINTF
+
+On 2026-11-04, direct released built-in `CHAR_LENGTH`/`CHARACTER_LENGTH` over the
+already-qualified primitive ASCII formatter reuse the native length kernel. ASCII has
+identical byte, character and UTF-16 lengths, so this consumer does not need Java String
+identity. The proof includes total integer/BOOLEAN and admitted exact numeric truth
+producers. Operator identity prevents a same-name catalog UDF from being substituted.
+Generic Unicode, invalid/dynamic formats, unverified producers, other consumers and
+relational representation guards remain unchanged. No native runtime or transport change.
+
+The [record](results/primitive-printf-length-2026-11-04.json) retains source/artifact hashes,
+every configuration, allocation diagnostics and [3,000 raw trials](results/primitive-printf-length-2026-11-04.csv.gz).
+The actual preceding encoder/helper is `bbada54b`, replayed on its saved whole runtime;
+candidate DSO and prepared executable are byte-identical. Apple M4 Pro, macOS arm64,
+one thread, JDK 17.0.12, released Flink 2.2.1, Java `--release 11`, release/mimalloc build.
+
+Stock starts on prepared GenericRowData/BinaryRowData and native starts inside Rust on
+equal prepared Arrow batches. The timer retains production Calc, consumption, allocation,
+intrinsic conversions and callbacks after input import and before output export. Only
+initial JNI/import/export and perimeter transposes are outside this small-function timer.
+Each cell uses 131,072 logical rows, 16 warmups and nine alternating measured trials.
+Both NULL modes and row layouts cover INT/BIGINT extrema, BOOLEAN/mixed INT, compact/wide
+DECIMAL truth/comparisons, indexed formats and padding. Digests match for all engines.
+
+| Scope | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk, 1,024 rows | 24 | 2.224-6.884x | 2.718-7.269x | 2.159-6.921x |
+| Tiny, 16 rows | 6 | 1.352-4.703x | 8.432-10.516x | 1.406-5.079x |
+
+Four complete million-row jobs retain job submission/startup, JNI and both RowData/Arrow
+transposes, with bounded row sources and blackhole sinks. Each engine has two warmups and
+five alternating measured jobs; the surrounding JVM startup and setup remain outside the
+job timer. Median seconds:
+
+| Shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| int-length | 0.319771 | 0.210095 | 0.318141 | 0.343298 |
+| boolean-mixed | 0.762079 | 0.277136 | 0.779459 | 0.808125 |
+| decimal-truth | 0.608789 | 0.226033 | 0.658311 | 0.658383 |
+| decimal-comparison | 0.780619 | 0.298393 | 0.755788 | 0.810500 |
+
+Native/stock elapsed spans **0.364-0.657** and native/previous **0.343-0.612**.
+All measured bulk, tiny and complete-job cells improve; these bounded measurements do
+not establish universal job acceleration. Raw trials retain variability and independent
+stock controls.
+
+All **114 final focused JVM invocations** pass, zero skips, across released Flink
+1.18.1/2.2.1 and JDK 11/17. Full 5,003-row maps and resolved types cover all integer
+widths, BOOLEAN, numeric truth, decimal extremes/NULLs, aliases, modern/legacy casts,
+empty filtered batches, invalid/dynamic/non-ASCII formats and failing/lazy controls.
+An executed same-name catalog UDF keeps its implementation. Pure routes require consumed
+NativeCalc work, no fallback and empty evaluator descriptors. Each JDK's actual preceding
+control compares fourteen complete first-query maps/schema before the intended pure-route
+assertion fails; later queries in those failing invocations are not counted. Its retained
+route and catalog UDF controls pass. An initial local UDF control needed quoted SQL
+identifiers; final controls use the corrected test with no production-code change.
+
+Four unchanged released `ScalarFunctionsTest.testCharLength` stock-oracle runs pass
+separately, one per release/JDK pair. The byte-identical native artifacts retain their
+earlier 912-core-test and PRINTF-oracle qualifications; these are not new Rust/PRINTF
+oracle runs. Full hosted suites must qualify the exact pushed head separately.
+
+Reproduce with release `integral_expression`, the record's expression/type/secondary type,
+NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`. Previous controls set
+`SF_INTEGRAL_PREVIOUS=true` and use the saved actual preceding encoder/helper and runtime.
+Complete jobs use `IntegralExpressionPipelineBenchmark` with matching input and expression
+properties. Remaining consumers/representations stay in
+[#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).
+
+## Comparisons of primitive ASCII PRINTF
+
+On 2026-11-04, direct built-in `=`, `<>`, `<`, `<=`, `>`, `>=` comparisons use native
+kernels when both sides are qualified primitive ASCII formatter results or ASCII/NULL
+character literals, with at least one formatter. Cached Java UTF-16 and serialized UTF-8
+have identical order on this proven subset. Native filters can consume the predicates.
+This Java-only admission proof preserves built-in identity and the complete existing
+formatter producer proof. Arbitrary STRING inputs, non-ASCII literals, unknown/invalid
+formats, other consumers and relational representation guards retain their prior paths.
+
+The [record](results/primitive-printf-comparison-2026-11-04.json) retains every cell, source/
+artifact hashes, variability, route evidence and [3,000 raw trials](results/primitive-printf-comparison-2026-11-04.csv.gz).
+Apple M4 Pro, macOS arm64, one thread, JDK 17.0.12, released Flink 2.2.1, Java release 11,
+release/mimalloc. The DSO and prepared executable are byte-identical to the qualified
+preceding runtime; the actual previous encoder/helper is `40f26521`.
+
+Prepared stock starts on equal GenericRowData/BinaryRowData and native starts inside Rust
+on prebuilt Arrow. Each cell has 131,072 logical rows, 16 warmups and nine alternating
+measurements. The Rust timer retains production Calc, consumption, allocation, intrinsic
+conversions and callbacks after import and before export. Only initial JNI/import/export
+and perimeter transposes are outside this small-function timer. Signed INT/BIGINT extrema,
+BOOLEAN/mixed INT, compact/wide DECIMAL truth/comparisons, both NULL modes and row layouts
+are covered; all engine digests match.
+
+The previous route is verified per shape. Equality/inequality retain a native Calc with
+the generated evaluator on the saved whole runtime. Ordered prepared controls verify
+the actual previous whole-Calc stock fallback and exact representation reason, then time
+the released generated evaluator on prepared RowData using the existing fallback fixture.
+They do not substitute a hypothetical native callback for a rejected signature.
+
+| Scope | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk, 1,024 rows | 24 | 1.420-6.704x | 2.192-7.800x | 1.464-7.000x |
+| Tiny, 16 rows | 6 | 0.774-4.163x | 3.509-9.424x | 0.627-4.129x |
+
+All bulk cells pass the prepared bulk-function gate. The 16-row INT equality control
+loses to stock; its timing and independent stock control remain in the record. The other
+five tiny controls improve. No universal small-batch improvement is claimed.
+
+Four complete million-row jobs retain job submission/startup, JNI and both transposes,
+using bounded external Row sources and blackhole sinks. The external source proves
+Java-backed inputs to the preceding planner, so its ordered complete-job controls retain
+the actual native Calc with generated evaluation. This differs from the conservative
+prepared/internal-RowData fallback. Both runtimes must consume native work, while the new
+route additionally requires empty evaluators. Each engine has two warmups and five
+alternating measured jobs; surrounding JVM startup and setup are outside timing. Median seconds:
+
+| Shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| int-order | 0.218030 | 0.197722 | 0.202463 | 0.232047 |
+| boolean-mixed-order | 0.795598 | 0.299646 | 0.748803 | 0.744022 |
+| decimal-truth | 0.567530 | 0.232338 | 0.595066 | 0.585824 |
+| decimal-comparison-order | 0.707602 | 0.300004 | 0.710702 | 0.776674 |
+
+Native/stock elapsed spans **0.377-0.907**, native/previous **0.386-0.852**.
+All four measured complete-job medians improve; independent controls and variability
+remain, and the bounded qualification does not imply every job will improve.
+
+All **148 final focused JVM invocations** pass, zero skips, on released Flink
+1.18.1/2.2.1 and JDK 11/17. Complete 5,003-row maps/schema cover all six comparisons,
+operand reversal, two formatter operands, all integer widths, BOOLEAN, DECIMAL truth,
+NULLs, padding, empty filtered batches and the retained Unicode/format/failing/lazy paths.
+An executed filter compares every surviving ID/value with stock. Admitted paths require
+consumed NativeCalc work, no fallback and empty evaluators. The previous encoder compares
+fourteen complete first-query projection maps/schema plus the filter result per JDK before
+fifteen expected route failures. Later queries/modes in those failing invocations are not
+counted. The unverified-path control passes with its explicit fallback/generated expectations.
+An initial residual test expected generated Calc where the existing guard correctly used
+whole-Calc fallback; only that test expectation changed.
+
+Four unchanged released stock-oracle invocations each pass `ScalarOperatorsTest.testCompareOperator`
+and `testMoreEqualAndNonEqual`, separately from native qualification. The unchanged native
+artifacts keep their earlier 912-core-test/PRINTF-oracle qualification; those are not new
+Rust/PRINTF runs. Hosted suites must qualify the exact pushed head separately.
+
+Reproduce prepared cells with release `integral_expression` and the record's type/expression,
+NULL/layout/batch/secondary type and `SF_INTEGRAL_CORPUS=decimal-truth`. Previous generated
+controls set `SF_INTEGRAL_PREVIOUS=true` on the saved encoder/helper/runtime. Ordered
+previous controls run `IntegralExpressionBenchmarkFunctions` with `sf.integral.previous=true`,
+`sf.integral.fallbackControl=true` and the recorded exact fallback reason. Complete jobs
+use `IntegralExpressionPipelineBenchmark` with matching inputs and expressions. Remaining
+scope stays in [#497](https://github.com/datafusion-contrib/StreamFusion/issues/497) and
+[#508](https://github.com/datafusion-contrib/StreamFusion/issues/508).
+
+## Integer text producers for PRINTF
+
+On 2026-11-04, unbounded STRING CAST/TRY_CAST of a proven total integer producer can
+feed the primitive formatter without materializing intermediate text. The planner first
+validates conversions against the logical STRING argument. Only then does it emit the
+underlying integer: `%s`/`%S` and `%b`/`%B` have the same result for its decimal text,
+including NULLs, precision, padding and indexing. Numeric conversions remain invalid for
+STRING; their NULL-specific released behavior stays on the preceding route. Bounded
+character targets, BOOLEAN/DECIMAL text and unverified/failing producers are excluded.
+In particular, BOOLEAN false formatted with `%b` differs from its non-NULL text `false`.
+
+This Java-only elision reuses the byte-identical native runtime and its buffered formatter.
+Existing direct length/comparison consumers reuse the same ASCII proof; it does not widen
+general STRING/representation admission. The [record](results/integer-text-printf-2026-11-04.json)
+retains all configurations, hashes, allocation diagnostics and [3,500 raw trials](results/integer-text-printf-2026-11-04.csv.gz).
+Apple M4 Pro, macOS arm64, one thread, JDK 17.0.12, released Flink 2.2.1, Java release 11,
+release/mimalloc. Actual preceding encoder/helper `5e18ac8d` runs on its saved whole
+DSO/executable, including its generated evaluator; measured and validated bytecode match.
+
+Prepared stock starts on GenericRowData/BinaryRowData and native starts inside Rust on
+equal prebuilt Arrow. Each cell has 131,072 logical rows, 16 warmups and nine alternating
+measurements. Production Calc, output consumption, allocation, intrinsic conversions and
+callbacks remain inside the Rust timer after import and before export. Initial JNI/import/
+export and perimeter transposes are outside this small-function timer only. Four signed
+integer widths, both NULL modes/layouts, computed wrapping, mixed BOOLEAN/integer arguments,
+general string/Boolean formats, indexing, precision and padding are covered; all digests match.
+
+| Scope | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| Bulk, 1,024 rows | 28 | 2.059-7.947x | 3.023-8.367x | 2.102-8.084x |
+| Tiny, 16 rows | 7 | 1.184-5.362x | 8.791-12.787x | 1.138-5.676x |
+
+Four complete million-row jobs use bounded external Row sources and blackhole sinks,
+retaining job submission/startup, JNI and both transposes. Each engine has two warmups and
+five alternating measured jobs; surrounding JVM startup and setup are outside timing.
+Candidate and preceding native operators must consume work; only the new route requires
+empty evaluators. Median seconds:
+
+| Shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| int-text | 0.267157 | 0.225393 | 0.268707 | 0.292513 |
+| bigint-text | 0.691436 | 0.250366 | 0.622890 | 0.655572 |
+| boolean-and-text | 0.816311 | 0.279250 | 0.753133 | 0.738243 |
+| computed-text | 0.668061 | 0.249539 | 0.682569 | 0.675910 |
+
+Native/stock elapsed spans **0.342-0.844** and native/previous **0.369-0.771**.
+All measured cells improve, with raw variability and independent stock controls retained.
+These gains qualify this bounded feature, not universal job acceleration or the earlier
+16-row comparison regression, which remains in its own record.
+
+All **172 final focused JVM invocations** pass without skips across released Flink
+1.18.1/2.2.1 and JDK 11/17, targeting Java 11. Full 5,003-row maps/schema cover CAST and
+TRY_CAST, signed extrema/NULLs, modern/legacy modes, arithmetic wrapping, mixed BOOLEAN,
+length/comparison consumers, all-filtered batches, invalid STRING numeric conversions,
+bounded/BOOLEAN/DECIMAL exclusions and failing/lazy/unused arguments. Admitted paths
+require consumed NativeCalc work, no fallback and empty evaluators. On each JDK the actual
+previous encoder compares eight first-query maps/schema, then fails the intended route
+assertions; later legacy/empty queries in those invocations are not counted. Those broad
+queries include ordered consumers and encounter the preceding internal-RowData whole-Calc
+fallback. Its residual dynamic control passes; prepared direct-PRINTF controls independently
+verify and time its generated native Calc route.
+
+The unchanged DSO/executable retain their earlier 912-core-test and released PRINTF stock-
+oracle qualification; these are not new Rust/oracle runs. Flink 1.18's lack of PRINTF remains
+an absence control, not a native gap. Hosted suites must qualify the exact pushed head.
+
+Reproduce prepared measurements with release `integral_expression` and the record's
+type/expression, secondary type, NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`.
+Previous controls set `SF_INTEGRAL_PREVIOUS=true` with the actual saved encoder/helper/runtime.
+Complete jobs use `IntegralExpressionPipelineBenchmark`, matching boolean/BIGINT input,
+secondary type and expression properties. Remaining direct STRING/DECIMAL arguments,
+formats and consumers stay in [#497](https://github.com/datafusion-contrib/StreamFusion/issues/497).
+
+## Primitive text UPPER
+
+On 2026-11-04, built-in UPPER executes in Rust for verified total integer/BOOLEAN casts
+to unbounded STRING on both released lines. Qualified primitive ASCII PRINTF also
+participates on Flink 2.2 when its literal contains no lowercase `i`. Primitive conversions
+cannot write `i`, so this domain has identical Java-backed/binary-only and worker-locale
+behavior. Integer text has no letters and reuses the native CAST result; BOOLEAN text
+writes uppercase directly. Only formatted text needs the existing Arrow case kernel.
+General STRING/Unicode, bounded casts, unverified/failing producers, dependent consumers
+and existing relational guards retain their previous routes.
+
+The [record](results/primitive-upper-2026-11-04.json) and
+[10,500 raw samples](results/primitive-upper-2026-11-04.csv.gz) retain 7,000 final trials
+and 3,500 trials from the initial redundant-case implementation. Apple M4 Pro, macOS arm64,
+one thread, JDK 17.0.12, released Flink 1.18.1/2.2.1, Java release 11, release/mimalloc.
+Actual preceding encoder/helper `534099a2` uses its saved whole runtime, including the
+generated evaluator. Native artifacts are byte-identical; measured/validated encoder
+bytecode and source/artifact hashes match.
+
+Prepared stock starts on equal GenericRowData/BinaryRowData and native starts inside
+Rust on equal Arrow. Each cell processes 131,072 logical rows with sixteen warmups and
+nine alternating measurements. Production Calc, output consumption, allocation and
+intrinsic conversions/callbacks remain inside timing; initial JNI/import/export and
+perimeter transposes are outside this small-function gate only. Four integer widths,
+NULL modes/layouts, modern/legacy BOOLEAN text and padded/indexed PRINTF are covered.
+
+| Flink | Batch rows | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2.2 | 1,024 | 32 | 1.569-18.254x | 2.964-27.255x | 1.592-15.203x |
+| 1.18 | 1,024 | 24 | 1.511-21.388x | 2.916-27.811x | 1.569-18.239x |
+| 2.2 | 16 | 8 | 0.489-4.960x | 10.057-26.178x | 0.471-5.085x |
+| 1.18 | 16 | 6 | 0.519-1.293x | 11.934-24.137x | 0.502-1.142x |
+
+All 56 bulk cells beat stock and previous. Seven of fourteen tiny controls remain slower
+than stock. A three-second native-only INT/16-row sample identifies scalar dispatch,
+casts and case conversion. Removing the redundant integer case scan/output reduces a
+representative batch from 38 allocations/2,760 requested bytes to 33/2,208. BOOLEAN text
+also writes its final case directly. The original 2.2 tiny BOOLEAN control improves from
+0.824x to 1.205x stock; simple small integers retain fixed Calc/CAST overhead and losses.
+All initial measurements and allocation diagnostics remain; bulk qualification does not
+establish universal small-batch acceleration.
+
+Eight complete million-row configurations use bounded external Row sources and blackhole
+sinks, retaining job submission/startup, JNI and both transposes. Each engine has two
+warmups and five alternating measured jobs. Candidate and previous must consume native
+work; only the candidate requires empty evaluators. Median seconds:
+
+| Flink/shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 22-int-text | 0.231095 | 0.215401 | 0.234017 | 0.257369 |
+| 22-boolean-text | 0.209379 | 0.250789 | 0.210564 | 0.259598 |
+| 22-int-format | 0.713247 | 0.257157 | 0.677347 | 0.699764 |
+| 22-boolean-format | 0.680982 | 0.297569 | 0.654967 | 0.707587 |
+| 22-boolean-legacy | 0.210135 | 0.197164 | 0.231739 | 0.299726 |
+| 118-int-text | 0.231382 | 0.204040 | 0.227603 | 0.253104 |
+| 118-boolean-text | 0.220297 | 0.247613 | 0.209224 | 0.241832 |
+| 118-boolean-legacy | 0.237388 | 0.257726 | 0.228105 | 0.289418 |
+
+Native/stock elapsed spans **0.361-1.198** and native/previous **0.367-1.024**.
+Three complete-job medians lose to stock. The 1.18 modern BOOLEAN median also loses
+2.4% to previous, with overlapping ranges. All losses, stock-process drift and raw
+variability remain; the prepared bulk gate is distinct from complete-job acceleration.
+
+All **238 final focused JVM invocations** pass without skips on released Flink
+1.18.1/2.2.1 and JDK 11/17, compiling with Java release 11: 106 case/existing-function
+invocations plus 132 BOOLEAN CAST regression invocations. Full 5,003-row maps/schema
+cover signed extrema, NULLs, total wrapping/BOOLEAN producers, modern/legacy modes,
+empty batches, invalid formats, bounded/DECIMAL exclusions, failing/lazy paths and
+same-name catalog UDFs. Four runtime locales and exhaustive single-byte ASCII validate
+both released string representations. Admitted paths require consumed NativeCalc work,
+no fallback and empty evaluators. Four unchanged released `testUpperCase` stock-oracle
+invocations pass separately.
+
+Per JDK, the previous encoder compares thirteen full first-query maps/schema on 2.2
+and ten on 1.18, plus the first locale query, before the intended evaluator-route
+failures. Later modes/queries in failing invocations are not counted. Its two residual/
+catalog controls per version/JDK pass. The unchanged native artifacts retain their
+archived 912-core-test qualification; these are not new Rust runs. Hosted suites must
+qualify the exact pushed head separately.
+
+Reproduce prepared cells with release `integral_expression`, the record's type/expression,
+NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`. Legacy controls also set
+`SF_INTEGRAL_LEGACY=true`. Previous controls set `SF_INTEGRAL_PREVIOUS=true` with the saved
+encoder/helper/runtime. Complete jobs use `IntegralExpressionPipelineBenchmark` with
+matching input, expression and `sf.integral.legacy` properties. General Unicode casing
+and other residual contracts remain in [#494](https://github.com/datafusion-contrib/StreamFusion/issues/494).
+
+## Primitive text LOWER
+
+On 2026-11-04, LOWER reuses the primitive producer proof and native text writers qualified
+for UPPER. Total integer/BOOLEAN casts to unbounded STRING are admitted on both released
+lines. Qualified primitive ASCII PRINTF participates on Flink 2.2 when its literal contains
+no uppercase `I`: cached Java strings otherwise lowercase it differently in Turkish/Azeri
+locales. Primitive conversions cannot introduce `I`. Integer text reuses its existing
+native CAST result, BOOLEAN writes lowercase directly, and formatted text uses the
+existing Arrow case kernel. General STRING/Unicode and consumers keep their exact paths.
+
+The [record](results/primitive-lower-2026-11-04.json) and
+[7,000 raw trials](results/primitive-lower-2026-11-04.csv.gz) retain all cells, allocation
+diagnostics, variability and actual source/artifact hashes. Apple M4 Pro, macOS arm64,
+one thread, JDK 17.0.12, released Flink 1.18.1/2.2.1, Java release 11, release/mimalloc.
+Actual preceding encoder/helper `60d1e655` includes native UPPER but retains generated
+LOWER evaluation. Both whole runtimes are byte-identical; measured and validated scalar
+bytecode match. No new configuration or transport contract is introduced.
+
+Prepared stock starts on GenericRowData/BinaryRowData and native starts inside Rust on
+equal Arrow. Each cell processes 131,072 logical rows, sixteen warmups and nine alternating
+measurements. Production Calc, result consumption, allocation and intrinsic conversions/
+callbacks remain inside timing; initial JNI/import/export and perimeter transposes are
+outside this small-function gate only. Four integer widths, both NULL modes/layouts,
+modern/legacy BOOLEAN text and padded/indexed formats are covered; all digests match.
+
+| Flink | Batch rows | Cells | Stock / native | Actual previous / native | Independent stock / native |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2.2 | 1,024 | 32 | 1.514-16.338x | 2.959-28.997x | 1.687-14.814x |
+| 1.18 | 1,024 | 24 | 1.508-21.269x | 3.020-30.765x | 1.638-15.777x |
+| 2.2 | 16 | 8 | 0.514-4.932x | 10.132-26.523x | 0.525-4.992x |
+| 1.18 | 16 | 6 | 0.498-1.158x | 12.343-24.451x | 0.543-1.212x |
+
+All 56 bulk medians beat stock and previous; nine of fourteen tiny controls still lose
+to stock. This extension already uses the integer identity and final-case BOOLEAN writer
+profiled in the UPPER qualification. Remaining small-batch Calc/CAST costs, independent
+stock drift and the slightly slower legacy BOOLEAN tiny control are retained.
+
+Eight complete million-row configurations use bounded external Row sources and blackhole
+sinks, retaining job submission/startup, JNI and both transposes. Each engine has two
+warmups and five alternating measured jobs. Both candidate/previous require consumed
+native work; only the candidate requires empty evaluators. Median seconds:
+
+| Flink/shape | Paired stock | Native | Independent stock | Actual previous |
+| --- | ---: | ---: | ---: | ---: |
+| 22-int-text | 0.240047 | 0.201903 | 0.231463 | 0.261967 |
+| 22-boolean-text | 0.210758 | 0.208022 | 0.212839 | 0.264560 |
+| 22-int-format | 0.645009 | 0.263799 | 0.631092 | 0.650668 |
+| 22-boolean-format | 0.645045 | 0.286106 | 0.661133 | 0.700037 |
+| 22-boolean-legacy | 0.230676 | 0.244194 | 0.211327 | 0.241696 |
+| 118-int-text | 0.233692 | 0.214742 | 0.234665 | 0.260876 |
+| 118-boolean-text | 0.233153 | 0.247825 | 0.218829 | 0.265762 |
+| 118-boolean-legacy | 0.229295 | 0.238191 | 0.212077 | 0.288261 |
+
+Native/stock elapsed spans **0.409-1.063**, native/previous **0.405-1.010**.
+Three complete-job medians lose to stock; 2.2 legacy BOOLEAN also loses 1.0% to previous,
+with overlapping ranges. These losses remain and are distinct from the bulk gate.
+
+All **196 fresh focused JVM invocations** pass without skips on released Flink
+1.18.1/2.2.1 and JDK 11/17, compiling with Java release 11: 164 shared case/existing-function
+invocations plus 32 DECIMAL-truth/predicate composition invocations. The shared tests
+revalidate UPPER and LOWER over full 5,003-row maps/schema, signed extrema/NULLs, total
+wrapping, modern/legacy casts, empty batches, locale-sensitive/Unicode exclusions,
+retained consumers, failing/lazy producers and same-name catalog UDFs. Additional compact
+DECIMAL(4,2) and noncompact DECIMAL(38,18) controls feed both case functions through
+verified truth/predicate text. Admitted routes require consumed NativeCalc work, no fallback
+and empty evaluator descriptors. Four unchanged released `testLowerCase` stock oracles
+pass separately. The earlier 132-invocation BOOLEAN CAST qualification is retained in
+the UPPER record, not relabeled as a new test run.
+
+Per JDK, preceding LOWER controls compare thirteen first-query maps/schema on 2.2 and
+ten on 1.18, plus the first locale query, before expected evaluator-route failures.
+Later modes/queries in those failing invocations are not counted. Its residual/catalog
+controls pass. In the additional DECIMAL matrix, all four preceding UPPER controls pass;
+four preceding LOWER controls compare results and then fail the intended route assertion.
+The unchanged native artifacts retain the archived 912-core-test qualification; these
+are not new Rust runs. Hosted suites must qualify the exact pushed head.
+
+Reproduce prepared cells with release `integral_expression`, the record's type/expression,
+NULL/layout/batch and `SF_INTEGRAL_CORPUS=decimal-truth`; legacy cells also set
+`SF_INTEGRAL_LEGACY=true`. Previous controls set `SF_INTEGRAL_PREVIOUS=true` on the saved
+encoder/helper/runtime. Complete jobs use `IntegralExpressionPipelineBenchmark` with
+matching inputs, expression and `sf.integral.legacy`. Remaining general Unicode casing
+and other signatures stay in [#494](https://github.com/datafusion-contrib/StreamFusion/issues/494).
+
+
+## Integer ROUND with clamped runtime positions
+
+This independent extension admits total INT position trees bounded by built-in GREATEST,
+LEAST and CASE. For example, `ROUND(v,GREATEST(-38,LEAST(n,38)))` stays inside the existing
+verified -38..38 range. Range propagation is conservative across wrapping arithmetic;
+every condition/argument must be total, including unselected and NULL-dominated arguments.
+Only all signed integer widths are admitted. Unproven
+ranges/producers and custom functions keep their preceding routes. Epoch precision remains
+on its separate 0/3/NULL proof. No runtime opcode, JNI, representation or switch is added.
+
+The [public record](results/clamped-round-2026-11-04.json) and
+[8,800 raw trials](results/clamped-round-2026-11-04.csv.gz) retain full ranges,
+independent stock controls, allocation probes, checksums and source/bytecode/artifact hashes.
+The actual preceding encoder is `2539fabb`; it binds the ROUND JVM evaluator
+for these clamps. Both encoders run on byte-identical frozen release DSOs/executables with
+verified mimalloc aliases. This isolates Java admission on the same production kernels;
+it is not a replay of a different historical whole runtime. Archived 912-core-test runtime
+qualification is retained, rather than relabeled as new Rust tests.
+
+### Prepared operation
+
+Stock starts on equal prepared GenericRowData or BinaryRowData; native starts on prepared
+Arrow buffers with its timer inside Rust, after import and before export. Input/setup,
+initial JNI/C Data entry and perimeter transposes are outside this small-functionality
+timer only. Production Calc evaluation, output consumption, allocations and intrinsic
+conversions/callbacks remain inside. One thread, JDK 17, Java release 11, both released
+Flink lines, 131,072 logical rows per trial, 16 warmups and nine measured repetitions.
+Both nullable modes, independent position NULLs, signed extrema and BIGINT values beyond
+2^53 are included. Each comparison checks matching consumed-output digests.
+
+Each type has `GREATEST(-38,LEAST(n,38))` and `GREATEST(-3,LEAST(n,-1))` shapes. The wide
+prepared corpus mostly saturates at -38/38; its results alone would overrepresent zero or
+identity shortcuts. The separate negative clamp executes nontrivial -3/-1 rounding.
+Functional SQL sources additionally walk all interior positions through id-2500, with
+nested/NULL CASE, arithmetic, STRING/epoch consumers and empty batches.
+
+All 64 bulk cells (1,024 rows/batch) beat paired stock by 2.052-20.494x
+and previous by 6.389-29.439x. Ratios of paired medians:
+
+| Released Flink | Input | Stock/native throughput | Previous/native throughput |
+| --- | --- | ---: | ---: |
+| 2.2.1 | TINYINT | 2.424-19.783x | 7.466-29.439x |
+| 2.2.1 | SMALLINT | 2.412-17.210x | 7.726-27.877x |
+| 2.2.1 | INT | 3.298-17.027x | 6.685-24.739x |
+| 2.2.1 | BIGINT | 2.593-19.992x | 7.215-26.252x |
+| 1.18.1 | TINYINT | 2.052-20.494x | 6.389-27.700x |
+| 1.18.1 | SMALLINT | 2.322-18.250x | 7.877-26.777x |
+| 1.18.1 | INT | 2.710-14.844x | 7.842-23.883x |
+| 1.18.1 | BIGINT | 3.020-18.607x | 7.274-26.679x |
+
+Of 16 sixteen-row controls, 12 lose to stock. Their stock/native ratios
+range from 0.211 to 1.189x. These are retained diagnostics, not removed
+from the data or used to claim universal tiny-batch acceleration. Independent prior-JVM
+stock timings remain alongside candidate-JVM stock, with no subtraction or normalization.
+
+### Complete jobs and correctness
+
+Eight complete configurations process 1M rows each: INT/BIGINT, both clamp shapes and
+both Flink releases. Runtime rowwise source to blackhole, parallelism one, two warmups,
+five alternating stock/native measurements per engine, submission/startup, JNI and both
+RowData/Arrow transposes remain in the job timer. Seconds, median (minimum-maximum):
+
+| Release/shape | Stock | Native | Independent stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 22-int-wide | 0.211375 (0.208757-0.216321) | 0.188357 (0.186368-0.215522) | 0.214924 (0.211917-0.232876) | 0.246277 (0.243375-0.281274) |
+| 22-int-negative | 0.192676 (0.189297-0.204379) | 0.194442 (0.191757-0.353703) | 0.187509 (0.184368-0.193174) | 0.220544 (0.217093-0.246181) |
+| 22-bigint-wide | 0.236759 (0.234225-0.242784) | 0.214993 (0.201897-0.233321) | 0.232573 (0.225093-0.236360) | 0.272229 (0.264901-0.288339) |
+| 22-bigint-negative | 0.199538 (0.192411-0.207178) | 0.209872 (0.200907-0.212597) | 0.201076 (0.200125-0.215894) | 0.238390 (0.229101-0.250444) |
+| 118-int-wide | 0.215960 (0.204185-0.230945) | 0.189556 (0.189021-0.207103) | 0.218499 (0.210813-0.220883) | 0.255599 (0.250429-0.270002) |
+| 118-int-negative | 0.209546 (0.188340-0.211879) | 0.199818 (0.194083-0.222225) | 0.190139 (0.185749-0.218386) | 0.239198 (0.221494-0.266854) |
+| 118-bigint-wide | 0.235236 (0.223393-0.250472) | 0.216688 (0.209132-0.226110) | 0.240505 (0.236140-0.253585) | 0.283365 (0.273492-0.312494) |
+| 118-bigint-negative | 0.206729 (0.200961-0.242730) | 0.218570 (0.215633-0.229089) | 0.205106 (0.196390-0.219563) | 0.253952 (0.247074-0.277491) |
+
+Native/stock elapsed is 0.878-1.057;
+3 configurations lose to paired stock. Native/previous is
+0.742-0.882,
+with 0 previous-path losses. Whole-job variability remains in the raw record;
+prepared-operation speedups do not establish universal full-job acceleration.
+
+240 fresh focused JVM invocations pass with no skips across released
+Flink 1.18.1/2.2.1 and JDK 11/17, targeting Java 11. Complete maps/schema compare 5,003-row
+sources, widths, signed overflow, HALF_UP/toward-zero behavior as applicable, independent
+NULLs, lazy/failing paths and empty batches. Admitted queries require consumed NativeCalc
+work, no fallback and empty evaluators. Original literal/bounded CASE and temporal-precision
+controls pass. Four unchanged released `ROUND` stock-oracle invocations pass separately.
+The preceding encoder compares every positive first-query map/schema and then fails the
+intended pure-route assertion; later queries in those failing invocations are not counted.
+Both retained/generated and same-name catalog-UDF controls pass. These local qualifications
+do not stand in for the hosted suites on the exact pushed PR head.
+
+Reproduce prepared controls with the existing release `integral_expression` example,
+`SF_INTEGRAL_SECONDARY_TYPE=INT` and
+`SF_INTEGRAL_EXPRESSION='ROUND(v,GREATEST(-3,LEAST(n,-1)))'`, selecting each input width,
+nullable/row-representation/batch configuration and the preceding encoder first on its
+classpath. Complete jobs use `IntegralExpressionPipelineBenchmark`, the same expression
+and `-Dsf.integral.secondaryType=INT`; the prior control sets `sf.integral.previous=true`.
+The records retain the exact source/artifact hashes and trial configuration.
+
+
+## Integer TRUNCATE with clamped runtime positions
+
+This independent extension admits total INT position trees bounded by built-in GREATEST,
+LEAST and CASE. For example, `TRUNCATE(v,GREATEST(-38,LEAST(n,38)))` stays inside the existing
+verified -38..38 range. Range propagation is conservative across wrapping arithmetic;
+every condition/argument must be total, including unselected and NULL-dominated arguments.
+Only INT/BIGINT are admitted. Unproven
+ranges/producers and custom functions keep their preceding routes. Epoch precision remains
+on its separate 0/3/NULL proof. No runtime opcode, JNI, representation or switch is added.
+
+The [public record](results/clamped-truncate-2026-11-04.json) and
+[4,000 raw trials](results/clamped-truncate-2026-11-04.csv.gz) retain full ranges,
+independent stock controls, allocation probes, checksums and source/bytecode/artifact hashes.
+The actual preceding encoder is `0acdd9b7`; it binds the TRUNCATE JVM evaluator
+for these clamps. Both encoders run on byte-identical frozen release DSOs/executables with
+verified mimalloc aliases. This isolates Java admission on the same production kernels;
+it is not a replay of a different historical whole runtime. Archived 912-core-test runtime
+qualification is retained, rather than relabeled as new Rust tests.
+
+### Prepared operation
+
+Stock starts on equal prepared GenericRowData or BinaryRowData; native starts on prepared
+Arrow buffers with its timer inside Rust, after import and before export. Input/setup,
+initial JNI/C Data entry and perimeter transposes are outside this small-functionality
+timer only. Production Calc evaluation, output consumption, allocations and intrinsic
+conversions/callbacks remain inside. One thread, JDK 17, Java release 11, both released
+Flink lines, 131,072 logical rows per trial, 16 warmups and nine measured repetitions.
+Both nullable modes, independent position NULLs, signed extrema and BIGINT values beyond
+2^53 are included. Each comparison checks matching consumed-output digests.
+
+Each type has `GREATEST(-38,LEAST(n,38))` and `GREATEST(-3,LEAST(n,-1))` shapes. The wide
+prepared corpus mostly saturates at -38/38; its results alone would overrepresent zero or
+identity shortcuts. The separate negative clamp executes nontrivial -3/-1 rounding.
+Functional SQL sources additionally walk all interior positions through id-2500, with
+nested/NULL CASE, arithmetic, STRING/epoch consumers and empty batches.
+
+All 32 bulk cells (1,024 rows/batch) beat paired stock by 6.593-28.118x
+and previous by 11.913-36.111x. Ratios of paired medians:
+
+| Released Flink | Input | Stock/native throughput | Previous/native throughput |
+| --- | --- | ---: | ---: |
+| 2.2.1 | INT | 6.746-26.683x | 11.959-33.213x |
+| 2.2.1 | BIGINT | 8.351-28.118x | 12.890-34.283x |
+| 1.18.1 | INT | 6.593-26.033x | 11.913-36.111x |
+| 1.18.1 | BIGINT | 9.130-26.918x | 12.208-35.569x |
+
+Of 8 sixteen-row controls, 3 lose to stock. Their stock/native ratios
+range from 0.826 to 1.613x. These are retained diagnostics, not removed
+from the data or used to claim universal tiny-batch acceleration. Independent prior-JVM
+stock timings remain alongside candidate-JVM stock, with no subtraction or normalization.
+
+### Complete jobs and correctness
+
+Eight complete configurations process 1M rows each: INT/BIGINT, both clamp shapes and
+both Flink releases. Runtime rowwise source to blackhole, parallelism one, two warmups,
+five alternating stock/native measurements per engine, submission/startup, JNI and both
+RowData/Arrow transposes remain in the job timer. Seconds, median (minimum-maximum):
+
+| Release/shape | Stock | Native | Independent stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 22-int-wide | 0.216388 (0.213630-0.223902) | 0.190361 (0.185447-0.204954) | 0.220159 (0.213937-0.223426) | 0.258516 (0.248854-0.274577) |
+| 22-int-negative | 0.248733 (0.244749-0.253861) | 0.190804 (0.190657-0.208462) | 0.237455 (0.233748-0.249631) | 0.276953 (0.272416-0.291678) |
+| 22-bigint-wide | 0.235817 (0.230376-0.243834) | 0.208476 (0.202216-0.217662) | 0.243563 (0.239602-0.250967) | 0.276771 (0.260991-0.290315) |
+| 22-bigint-negative | 0.263149 (0.255959-0.270185) | 0.201221 (0.196207-0.217436) | 0.254803 (0.250489-0.266496) | 0.293021 (0.287375-0.307211) |
+| 118-int-wide | 0.222041 (0.216154-0.231507) | 0.197143 (0.194934-0.198736) | 0.216478 (0.215683-0.242135) | 0.253723 (0.248861-0.282366) |
+| 118-int-negative | 0.240669 (0.230602-0.243193) | 0.197705 (0.187929-0.199502) | 0.234460 (0.230710-0.239697) | 0.269294 (0.262753-0.283474) |
+| 118-bigint-wide | 0.242870 (0.237979-0.257082) | 0.210705 (0.209571-0.218985) | 0.249933 (0.234538-0.263448) | 0.275957 (0.267568-0.288913) |
+| 118-bigint-negative | 0.252105 (0.246873-0.266810) | 0.214418 (0.206610-0.221217) | 0.265535 (0.260429-0.270674) | 0.301647 (0.293013-0.315090) |
+
+Native/stock elapsed is 0.765-0.888;
+0 configurations lose to paired stock. Native/previous is
+0.687-0.777,
+with 0 previous-path losses. Whole-job variability remains in the raw record;
+prepared-operation speedups do not establish universal full-job acceleration.
+
+264 fresh focused JVM invocations pass with no skips across released
+Flink 1.18.1/2.2.1 and JDK 11/17, targeting Java 11. Complete maps/schema compare 5,003-row
+sources, widths, signed overflow, HALF_UP/toward-zero behavior as applicable, independent
+NULLs, lazy/failing paths and empty batches. Admitted queries require consumed NativeCalc
+work, no fallback and empty evaluators. Original literal/bounded CASE and temporal-precision
+controls pass. Four unchanged released `TRUNCATE` stock-oracle invocations pass separately.
+The preceding encoder compares every positive first-query map/schema and then fails the
+intended pure-route assertion; later queries in those failing invocations are not counted.
+Both retained/generated and same-name catalog-UDF controls pass. These local qualifications
+do not stand in for the hosted suites on the exact pushed PR head.
+
+Reproduce prepared controls with the existing release `integral_expression` example,
+`SF_INTEGRAL_SECONDARY_TYPE=INT` and
+`SF_INTEGRAL_EXPRESSION='TRUNCATE(v,GREATEST(-3,LEAST(n,-1)))'`, selecting each input width,
+nullable/row-representation/batch configuration and the preceding encoder first on its
+classpath. Complete jobs use `IntegralExpressionPipelineBenchmark`, the same expression
+and `-Dsf.integral.secondaryType=INT`; the prior control sets `sf.integral.previous=true`.
+The records retain the exact source/artifact hashes and trial configuration.
+
+
+## Length of proven primitive case results
+
+Direct built-in `CHAR_LENGTH` and `CHARACTER_LENGTH` now consume qualified native
+UPPER/LOWER results without a JVM evaluator. Their existing producer proof establishes
+locale-independent ASCII from total integer/BOOLEAN text, direct DECIMAL truth/predicate
+text and qualified Flink 2.2 primitive PRINTF. UTF-8 and Java UTF-16 lengths therefore
+agree. Integer casing still shares its CAST result; BOOLEAN writes its final case directly.
+The existing Arrow length kernel consumes those results. This introduces no Rust source,
+transport, opcode or switch change. General Unicode, bounded casts, locale-sensitive
+formats, fallible/unverified producers and further dependent expressions keep prior routes.
+
+The [record](results/primitive-case-length-2026-11-04.json) and
+[9,400 raw trials](results/primitive-case-length-2026-11-04.csv.gz) preserve full ranges,
+independent stock controls, pilot provenance, checksums, allocations and source/
+bytecode/artifact hashes. Actual preceding encoder `519f221f` already supports
+primitive UPPER/LOWER but delegates these length consumers. Both versions run on identical
+release/mimalloc runtime artifacts; archived 912-core-test qualification is retained rather
+than called a new Rust run. Final validated and measured scalar bytecode matches.
+
+### Functionality gate
+
+One thread on Apple M4 Pro/macOS arm64, JDK 17.0.12, Java release 11, released Flink
+1.18.1/2.2.1. Stock starts on equal prepared GenericRowData/BinaryRowData; native starts
+inside Rust on prepared Arrow. Input/setup, initial JNI/import/export and perimeter
+transposes are outside this small-function timer only. Production Calc, output consumption,
+allocation and intrinsic conversions/callbacks remain inside. Every cell processes 131,072
+logical rows with sixteen warmups and nine measured alternating trials; all digests match.
+
+The matrix covers four integer widths, BOOLEAN, compact DECIMAL(4,2) truth and noncompact
+DECIMAL(38,18) predicates, both NULL modes and row layouts, modern/legacy text and indexed/
+padded formatter output. PRINTF is absent from Flink 1.18 and its cells run only on 2.2.
+Every successful encoder control now uses the production context-aware entry, passing the
+real TableConfig even when the output is INT. The old output-type heuristic missed inner
+character casts in numeric length outputs and failed registration before any timing. The
+corrected common fixture is used by stock/actual-prior/native, with equal fixture bytecode
+for both encoders. Setup/configuration remains outside timing; rejected-signature controls
+keep their diagnostic path. No timings from the failed registration are used.
+
+| Flink | Batch rows | Cells | Stock/native throughput | Previous/native throughput | Independent stock/native |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2.2.1 | 1,024 | 40 | 1.580-16.236x | 2.898-21.935x | 1.551-16.865x |
+| 2.2.1 | 16 | 10 | 0.424-4.561x | 8.989-19.484x | 0.430-4.827x |
+| 1.18.1 | 1,024 | 32 | 1.437-16.119x | 2.626-21.305x | 1.629-15.155x |
+| 1.18.1 | 16 | 8 | 0.413-0.903x | 10.027-18.291x | 0.427-0.934x |
+
+All 72 bulk cells beat stock by 1.437-16.236x and previous by
+2.626-21.935x. Of 18 sixteen-row controls,
+15 lose to stock. Those losses, independent stock drift and the
+four-cell pilot are retained. The final common fixture removes only unreachable rejected-
+signature diagnostic branches after that pilot; pilot source/bytecode hashes remain in the
+record. There is no broad small-batch acceleration claim.
+
+### Complete jobs and correctness
+
+Twelve complete 1M-row configurations retain the runtime rowwise source, blackhole sink,
+parallelism one, submission/startup, JNI and both RowData/Arrow transposes. Each engine has
+two warmups and five alternating measured trials. Shapes include integer and BOOLEAN text,
+compact/noncompact DECIMAL producers, modern/legacy text and applicable formatters. Seconds,
+median (minimum-maximum):
+
+| Release/shape | Stock | Native | Independent stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 22-int-text | 0.196109 (0.186710-0.216379) | 0.180605 (0.175743-0.197065) | 0.184473 (0.181079-0.204818) | 0.221067 (0.216402-0.246059) |
+| 22-boolean-text | 0.194744 (0.173471-0.206837) | 0.167066 (0.161800-0.183659) | 0.174838 (0.163094-0.179601) | 0.205228 (0.201143-0.219627) |
+| 22-int-format | 0.672973 (0.655778-0.678616) | 0.230926 (0.226071-0.246572) | 0.631091 (0.618354-0.633107) | 0.620273 (0.603027-0.631882) |
+| 22-boolean-format | 0.664518 (0.664071-0.673431) | 0.218722 (0.212579-0.230046) | 0.668366 (0.661009-0.669023) | 0.639350 (0.630945-0.648802) |
+| 22-decimal-truth | 0.202152 (0.194988-0.217200) | 0.189457 (0.182427-0.207775) | 0.191021 (0.186779-0.209982) | 0.234690 (0.232336-0.238282) |
+| 22-decimal-predicate | 0.190472 (0.185858-0.201505) | 0.189945 (0.185299-0.199012) | 0.187950 (0.186691-0.195766) | 0.245734 (0.236047-0.250349) |
+| 22-boolean-legacy | 0.187480 (0.180378-0.200136) | 0.171613 (0.164190-0.181044) | 0.180563 (0.175631-0.187807) | 0.211343 (0.200118-0.223612) |
+| 118-int-text | 0.204004 (0.191636-0.216645) | 0.188930 (0.181423-0.206237) | 0.190948 (0.187601-0.198028) | 0.220120 (0.217568-0.234642) |
+| 118-boolean-text | 0.168852 (0.162029-0.199493) | 0.168579 (0.161640-0.182174) | 0.174042 (0.168368-0.176570) | 0.207406 (0.197169-0.213397) |
+| 118-decimal-truth | 0.186952 (0.181923-0.200563) | 0.178256 (0.173796-0.191289) | 0.195962 (0.187249-0.206562) | 0.224311 (0.213567-0.235870) |
+| 118-decimal-predicate | 0.190382 (0.181827-0.206279) | 0.190054 (0.184949-0.242657) | 0.186770 (0.182483-0.198041) | 0.251478 (0.233013-0.253193) |
+| 118-boolean-legacy | 0.175627 (0.167726-0.193887) | 0.174471 (0.164651-0.196198) | 0.174645 (0.161150-0.194922) | 0.215897 (0.210575-0.231338) |
+
+Native/stock elapsed ranges from 0.329 to
+0.998; 0 configurations
+lose to paired stock. Native/previous elapsed is
+0.342-0.858,
+with 0 previous-path losses. Variability and independent
+controls remain in the record. Two independent prior-JVM stock medians beat native
+in DECIMAL predicate jobs, and several paired ranges overlap. No stable complete-job
+gain is claimed for those near-parity cases. Function-level gains are not universal job gains.
+
+190 fresh focused JVM invocations pass with no skips across both released
+lines and JDK 11/17, targeting Java 11. They revalidate UPPER/LOWER and compare complete
+5,003-row maps/schema for integer/BOOLEAN text, compact/noncompact DECIMAL truth/predicates,
+NULLs, wrapping, both cast modes, four JVM locales, lazy failures and empty batches.
+Positive routes require consumed NativeCalc work, no fallback and empty JVM evaluators.
+The actual prior encoder compares every positive first-query map/schema before the intended
+route assertion fails; later queries in those failing invocations are not counted.
+Generated/consumer controls and same-name catalog UDFs pass. Four unchanged released
+`testCharLength` stock-oracle invocations pass separately. Hosted suites still need the
+exact pushed PR head; earlier per-function records keep their original provenance.
+
+Use the existing release `integral_expression` example with, for example,
+`SF_INTEGRAL_EXPRESSION='CHAR_LENGTH(UPPER(CAST(v AS STRING)))'`, then select the input
+width/NULL/layout/batch and candidate or actual preceding encoder on its classpath.
+`IntegralExpressionPipelineBenchmark` uses the same expression through `sf.integral.expression`;
+previous controls set `sf.integral.previous=true`. Records retain exact hashes/settings.
+
+## UTC FLOOR over integer epochs
+
+`FLOOR(TO_TIMESTAMP_LTZ(n,p) TO unit)` composes the existing Rust integer, epoch
+and rounding kernels in fixed-zero session zones, after proving the genuine built-in
+conversion and total integer/precision producers. YEAR/MONTH/DAY/HOUR qualify on both
+released lines; smaller verified units remain 2.2-only. Other zones, fallible/unverified
+inputs and invalid precision keep their correct preceding routes. See the
+[coverage contract](../operators/temporal-functions.md#native-utc-floor-over-integer-epochs).
+The fixed-unit FLOOR kernel now writes directly to the existing capacity-sized timestamp
+builder. This removes a temporary result vector and repeated growth/splitting, while
+retaining Flink arithmetic and the existing JNI/transport/configuration contracts.
+
+The final matrix passes **348 fresh JVM invocations** with zero skips across
+released Flink 1.18.1/2.2.1 and JDK 11/17, targeting Java 11. Full 5,003-row maps/schema
+cover all signed integer widths, NULLs, epoch limits, wrapping arithmetic, runtime 0/3/NULL
+precision, YEAR/NULL consumers, three zero-zone aliases and all-filtered batches. Direct
+LTZ FLOOR/CEIL, nanoseconds and released unsupported sub-hour forms are revalidated.
+Catalog functions and fallible/unknown producers retain their existing contracts. Four
+unchanged released `testTemporalFloor` stock-oracle invocations pass separately.
+Actual preceding encoder `b6cccbf1` matches each positive invocation's
+first complete map/schema before the intended pure-route assertion fails. Subsequent
+queries in those failing invocations are not reached. Admitted SQL consumes NativeCalc
+with no fallback and empty evaluators.
+
+The rebuilt release runtime passes **914 fresh Rust core tests**, including sliced parent
+validity, independent NULL operands, empty results and fractional rounding in the new
+builder regression. The preceding runtime retains its separate archived 912-test qualification. Measured and validated encoder,
+build-selected compatibility and fixture hashes are recorded. Setup additionally requires
+FLOOR in candidate native descriptors and previous JVM descriptors, preventing the
+outer YEAR consumer from disguising a generated or removed round operation.
+
+Prepared timing starts stock on equal prebuilt GenericRowData/BinaryRowData and native
+inside Rust on equal Arrow batches. It retains production epoch, rounding and YEAR,
+NULL handling, result consumption, allocation and intrinsic conversions/callbacks; initial
+JNI/import/export and perimeter transposes remain outside this small-function timer.
+One thread, 131,072 rows/trial, 16 warmups and nine measurements, both NULL modes, batches
+1,024 and 16. Four shapes consume seconds/YEAR, milliseconds/MONTH, INT milliseconds/DAY,
+and runtime CASE precision/HOUR through YEAR. Epoch corpora include released range limits,
+invalid values and signed extrema; INT uses the identical signed-width generator in both
+runtimes. Candidate and actual preceding encoders use identical fixtures/TableConfig and
+their recorded release native artifacts; stock is independently measured in both JVMs.
+
+| Prepared controls | Cells | Stock/native throughput | Previous/native throughput |
+| --- | ---: | ---: | ---: |
+| 1,024 rows/batch | 32 | 1.017-1.985x | 2.552-5.131x |
+| 16 rows/batch | 8 | 0.112-0.321x | 8.137-11.642x |
+
+All 32 final bulk medians beat stock and previous. The two smallest paired gains are
+only about 2%, with overlapping ranges; they do not establish a stable speedup. **8/8
+tiny controls lose to stock**; they remain in the record. Independent stock medians and
+min/max ranges remain visible rather than being replaced with paired controls.
+
+Complete jobs use a bounded million-row source and blackhole sink, one thread, two
+warmups and five alternating measured trials. Submission/startup, JNI and both perimeter
+transposes stay inside the job timer; surrounding JVM startup is outside. Six configurations
+span the three BIGINT shapes on both releases. Values are median elapsed seconds:
+
+| Release-shape | Paired stock | Native | Independent stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 22-seconds-year | 0.174415 | 0.194423 | 0.174084 | 0.235397 |
+| 22-millis-month | 0.179176 | 0.188011 | 0.174567 | 0.222483 |
+| 22-runtime-hour | 0.171393 | 0.188866 | 0.168582 | 0.221171 |
+| 118-seconds-year | 0.181120 | 0.192063 | 0.178531 | 0.216032 |
+| 118-millis-month | 0.177334 | 0.194292 | 0.180732 | 0.225815 |
+| 118-runtime-hour | 0.174516 | 0.188233 | 0.173405 | 0.216282 |
+
+Native/stock elapsed is **1.049-1.115**,
+with 6/6 paired medians slower than stock; native/previous is
+**0.826-0.889**, with
+0/6 slower than previous. 6/6 independent
+stock medians also beat native. Overlapping ranges and slower complete jobs remain
+limitations; prepared bulk gains do not establish universal pipeline acceleration.
+
+The initial 32 bulk cells include one nullable runtime-precision/HOUR cell at **0.978x**
+stock. A five-second process sample locates `timestamp_array` and vector growth under
+TemporalRound (272 sampled inclusive frames); counts are not elapsed percentages. The
+capacity-sized builder follows the same Arrow construction pattern as Comet's temporal
+casts, reusing StreamFusion's existing two-component builder rather than Spark semantics.
+Builder-only reduces a representative allocation probe from 122/86,917 bytes to 99/48,253
+bytes, but still has slower bulk cells (0.871x on one 1.18 control). Disassembly identifies
+a runtime `sdiv` inside the per-row loop. The final scalar-width specialization makes the
+five supported widths constant to the compiler and avoids materializing width/direction
+arrays; arbitrary widths and NULL arguments retain the generic path. This retains all
+released signed-overflow and nanosecond rules.
+All five specialized implementations have no integer division instruction in the
+release binary. The same final allocation probe is 92 requests and 39,541 bytes.
+Both initial stages, their twelve complete jobs and source/artifact provenance remain in
+the record alongside the final optimization, including every slower result.
+
+All **12,000 prepared raw samples**, allocation probes, complete-job trials,
+independent controls, source/bytecode/artifact hashes and exact expressions are in the
+[portable JSON](results/epoch-ltz-floor-2026-11-04.json) and
+[compressed raw CSV](results/epoch-ltz-floor-2026-11-04.csv.gz). The existing prepared
+`integral_expression` fixture selects these shapes through `SF_INTEGRAL_EXPRESSION`,
+`SF_INTEGRAL_CORPUS=epoch-seconds|epoch-millis` and
+`SF_INTEGRAL_REQUIRED_FUNCTION=FLOOR`; the complete-job fixture uses its corresponding
+epoch input properties. The record identifies the actual preceding encoder; an arbitrary
+older main/runtime is not an equivalent previous control. Full hosted checks qualify the
+exact pushed head separately. Broad [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504)
+remains open for other producers/zones, units and recurring-DST extraction.
+
+## UTC CEIL over integer epochs
+
+`CEIL(TO_TIMESTAMP_LTZ(n,p) TO unit)` composes the existing Rust integer, epoch
+and rounding kernels in fixed-zero session zones, after proving the genuine built-in
+conversion and total integer/precision producers. YEAR/MONTH/DAY/HOUR qualify on both
+released lines; smaller verified units remain 2.2-only. Other zones, fallible/unverified
+inputs and invalid precision keep their correct preceding routes. See the
+[coverage contract](../operators/temporal-functions.md#native-utc-ceil-over-integer-epochs).
+The verified numeric epoch bound and zero fractions make plain-timestamp fixed-unit CEIL
+exact here, so this extension reuses the existing rounding operation. General LTZ
+inputs retain their dedicated signed-remainder/overflow path. The fixed component loop
+now maps millisecond values with Arrow unary and reuses parent validity, avoiding per-row
+NULL rebuilding and fractional-buffer appends. No opcode, JNI, transport or configuration change.
+
+The final matrix passes **388 fresh JVM invocations** with zero skips across
+released Flink 1.18.1/2.2.1 and JDK 11/17, targeting Java 11. Full 5,003-row maps/schema
+cover all signed integer widths, NULLs, epoch limits, wrapping arithmetic, runtime 0/3/NULL
+precision, YEAR/NULL consumers, three zero-zone aliases and all-filtered batches. Direct/plain
+TIMESTAMP and LTZ FLOOR/CEIL, both CEIL aliases, nanoseconds and released unsupported sub-hour forms are revalidated.
+Catalog functions and fallible/unknown producers retain their existing contracts. Four
+unchanged released `testTemporalFloor` (including CEIL) stock-oracle invocations pass separately.
+Actual preceding encoder `0e4ed571` matches each positive invocation's
+first complete map/schema before the intended pure-route assertion fails. Subsequent
+queries in those failing invocations are not reached. Candidate SQL consumes NativeCalc
+with no fallback and empty evaluators.
+
+The rebuilt release runtime passes **915 fresh Rust core tests**, including shared sliced
+parent validity and zero fractions. The actual preceding runtime retains its archived
+914-test qualification; none of its historical tests are relabeled as fresh. Measured and validated encoder,
+build-selected compatibility and fixture hashes are recorded. Setup additionally requires
+CEIL in candidate native descriptors and previous JVM descriptors, preventing the
+outer YEAR consumer from disguising a generated or removed round operation.
+
+Prepared timing starts stock on equal prebuilt GenericRowData/BinaryRowData and native
+inside Rust on equal Arrow batches. It retains production epoch, rounding and YEAR,
+NULL handling, result consumption, allocation and intrinsic conversions/callbacks; initial
+JNI/import/export and perimeter transposes remain outside this small-function timer.
+One thread, 131,072 rows/trial, 16 warmups and nine measurements, both NULL modes, batches
+1,024 and 16. Four shapes consume seconds/YEAR, milliseconds/MONTH, INT milliseconds/DAY,
+and runtime CASE precision/HOUR through YEAR. Epoch corpora include released range limits,
+invalid values and signed extrema; INT uses the identical signed-width generator in both
+runtimes. Candidate and actual preceding encoders use identical fixtures/TableConfig and
+their recorded release native artifacts; stock is independently measured in both JVMs.
+
+| Prepared controls | Cells | Stock/native throughput | Previous/native throughput |
+| --- | ---: | ---: | ---: |
+| 1,024 rows/batch | 32 | 1.085-3.083x | 2.614-8.457x |
+| 16 rows/batch | 8 | 0.122-0.321x | 9.247-12.703x |
+
+All 32 final bulk medians beat stock and previous. **8/8
+tiny controls lose to stock**; they remain in the record. Independent stock medians and
+min/max ranges remain visible rather than being replaced with paired controls.
+
+Complete jobs use a bounded million-row source and blackhole sink, one thread, two
+warmups and five alternating measured trials. Submission/startup, JNI and both perimeter
+transposes stay inside the job timer; surrounding JVM startup is outside. Six configurations
+span the three BIGINT shapes on both releases. Values are median elapsed seconds:
+
+| Release-shape | Paired stock | Native | Independent stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 22-seconds-year | 0.177023 | 0.188216 | 0.175292 | 0.234545 |
+| 22-millis-month | 0.182372 | 0.196069 | 0.180223 | 0.225036 |
+| 22-runtime-hour | 0.168022 | 0.180388 | 0.168876 | 0.223127 |
+| 118-seconds-year | 0.173584 | 0.192806 | 0.176364 | 0.223084 |
+| 118-millis-month | 0.177507 | 0.200562 | 0.178427 | 0.221420 |
+| 118-runtime-hour | 0.163780 | 0.183824 | 0.168138 | 0.218249 |
+
+Native/stock elapsed is **1.063-1.130**,
+with 6/6 paired medians slower than stock; native/previous is
+**0.802-0.906**, with
+0/6 slower than previous. 6/6 independent
+stock medians also beat native. Overlapping ranges and slower complete jobs remain
+limitations; prepared bulk gains do not establish universal pipeline acceleration.
+
+The initial candidate includes a nullable runtime-precision/HOUR bulk cell at **0.943x**
+stock. A five-second native stack sample finds 1,886 inclusive TemporalRound frames, with
+per-row append_nulls/append_value and validity/timestamp reads below the fixed loop. Counts
+are sampled frames, not elapsed percentages. Following Comet's timestamp-extraction unary
+pattern, the final fixed component loop maps milliseconds and reuses sliced parent validity.
+Flink wrapping and fraction rules remain unchanged. Initial trials, all six initial complete
+jobs, and their source/artifact provenance remain in the record. The representative
+runtime-precision/HOUR allocation probe falls from 92 requests/39,541 bytes to 88/39,165 bytes.
+
+All **8,000 prepared raw samples**, allocation probes, complete-job trials,
+independent controls, source/bytecode/artifact hashes and exact expressions are in the
+[portable JSON](results/epoch-ltz-ceil-2026-11-04.json) and
+[compressed raw CSV](results/epoch-ltz-ceil-2026-11-04.csv.gz). The existing prepared
+`integral_expression` fixture selects these shapes through `SF_INTEGRAL_EXPRESSION`,
+`SF_INTEGRAL_CORPUS=epoch-seconds|epoch-millis` and
+`SF_INTEGRAL_REQUIRED_FUNCTION=CEIL`; the complete-job fixture uses its corresponding
+epoch input properties. The record identifies the actual preceding encoder; an arbitrary
+older main/runtime is not an equivalent previous control. Full hosted checks qualify the
+exact pushed head separately. Broad [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504)
+remains open for other producers/zones, units and recurring-DST extraction.
+
+
+## Primitive-text GREATEST
+
+The built-in selects extrema of proven ASCII/NULL character literals, total verified
+integer/BOOLEAN casts to unbounded STRING, qualified primitive ASCII PRINTF and
+locale-independent UPPER/LOWER. Both released Flink lines retain their own types,
+NULLs and cast modes; PRINTF applies only to 2.2. Ordinary source strings, bounded
+casts, Unicode/unverified and fallible producers retain their prior routes. This
+does not remove the source-representation gate tracked in
+[#508](https://github.com/datafusion-contrib/StreamFusion/issues/508).
+
+```sql
+SELECT GREATEST(CAST(v AS STRING), TRY_CAST(n AS STRING)) FROM inputs;
+```
+
+The same output has identical UTF-8 byte and Java UTF-16 ordering under this producer
+proof. A single typed selection writes the chosen slices once, with strict union
+validity. Uniform winners reuse their immutable input offsets/values. Equivalent
+BOOLEAN casts select the strict BOOLEAN extremum before formatting once; mixed
+casing never uses that rewrite. Integer text is written through a reusable itoa
+buffer, sharing input validity and preserving bounded truncation/CHAR padding.
+
+Release qualification uses 348 fresh JVM invocations on Flink 1.18.1/2.2.1
+and JDK 11/17 with zero skips, Java release 11, actual preceding-encoder controls,
+and unchanged released GreatestLeastFunctionsITCase stock oracles. The rebuilt
+native runtime passes all 919 Rust core tests, including independent sorting,
+sliced NULL bitmaps, scalar/array/empty controls, buffer ownership and formatting
+oracles. Admitted SQL consumes NativeCalc with empty evaluator descriptors. The
+previous prepared input falls back for unproven string representation; its complete
+job uses a generated evaluator because the external Row source proves Java-backed
+inputs. These actual routes are asserted separately.
+
+Prepared timing uses equivalent prebuilt Java Generic/Binary RowData and Arrow
+inputs, both NULL modes, modern/legacy casts, BOOLEAN/all signed widths and three DECIMAL truth precisions, 1,024/16-row
+batches, 131,072 rows per trial, 16 warmups and nine measurements. The native timer
+runs inside Rust after import and before export, retaining production Calc,
+formatting, allocations and output consumption. Only this prepared gate excludes
+perimeter JNI/import/export and transposes.
+
+All 108 bulk cells beat stock by 1.071-11.929x and actual previous by
+1.096-12.888x. 26/27 tiny cells remain slower than stock
+(stock/native 0.106-3.489x). No universal small-batch speedup is claimed.
+
+Nine complete million-row jobs retain submission/startup, JNI and both row/Arrow
+transposes, one thread, two warmups and five alternating measurements per engine.
+Native/stock elapsed is 0.474-1.035;
+native/previous is 0.443-0.888.
+2/9 complete medians lose to the candidate-process stock control,
+2/9 lose to the independent stock control, and
+0/9 lose to previous. Ranges and unfavorable results are retained;
+prepared admission is not a complete-pipeline acceleration claim.
+
+| Flink/shape | Stock seconds | Native seconds | Independent stock seconds | Previous seconds |
+|---|---:|---:|---:|---:|
+| 22-int-pair | 0.252068 | 0.235734 | 0.259810 | 0.294924 |
+| 22-bigint-literal | 0.224076 | 0.206773 | 0.225453 | 0.260644 |
+| 22-boolean-pair | 0.227179 | 0.235179 | 0.223270 | 0.266883 |
+| 22-boolean-integer | 0.250538 | 0.247003 | 0.251650 | 0.278111 |
+| 22-printf | 0.695091 | 0.329240 | 0.699164 | 0.743174 |
+| 118-int-pair | 0.257102 | 0.241080 | 0.255740 | 0.290259 |
+| 118-bigint-literal | 0.250537 | 0.208740 | 0.231161 | 0.271153 |
+| 118-boolean-pair | 0.225301 | 0.229217 | 0.223491 | 0.260773 |
+| 118-boolean-integer | 0.228776 | 0.222973 | 0.236081 | 0.255155 |
+
+The [machine-readable record](results/primitive-greatest-2026-11-05.json) and
+[all 28,900 raw prepared samples](results/primitive-greatest-2026-11-05.csv.gz)
+retain initial losing attempts, medians/ranges, actual routes, allocator bindings,
+source/bytecode/runtime hashes and full-job trials. Initial process profiling found
+intermediate comparison/zip arrays and generic integer formatting. A first builder
+pass still lost bulk controls; direct output buffers, shared validity, BOOLEAN
+selection before text and uniform-winner reuse remove that work. Exact-head hosted
+CI is separate from this local qualification.
+
+
+## Primitive-text LEAST
+
+The built-in selects extrema of proven ASCII/NULL character literals, total verified
+integer/BOOLEAN casts to unbounded STRING, qualified primitive ASCII PRINTF and
+locale-independent UPPER/LOWER. Both released Flink lines retain their own types,
+NULLs and cast modes; PRINTF applies only to 2.2. Ordinary source strings, bounded
+casts, Unicode/unverified and fallible producers retain their prior routes. This
+does not remove the source-representation gate tracked in
+[#508](https://github.com/datafusion-contrib/StreamFusion/issues/508).
+
+```sql
+SELECT LEAST(CAST(v AS STRING), TRY_CAST(n AS STRING)) FROM inputs;
+```
+
+The same output has identical UTF-8 byte and Java UTF-16 ordering under this producer
+proof. A single typed selection writes the chosen slices once, with strict union
+validity. Uniform winners reuse their immutable input offsets/values. Equivalent
+BOOLEAN casts select the strict BOOLEAN extremum before formatting once; mixed
+casing never uses that rewrite. Integer text is written through a reusable itoa
+buffer, sharing input validity and preserving bounded truncation/CHAR padding.
+
+Release qualification uses 402 fresh JVM invocations on Flink 1.18.1/2.2.1
+and JDK 11/17 with zero skips, Java release 11, actual preceding-encoder controls,
+and unchanged released GreatestLeastFunctionsITCase stock oracles. The rebuilt
+native runtime passes all 921 Rust core tests, including independent sorting,
+sliced NULL bitmaps, scalar/array/empty controls, buffer ownership and formatting
+oracles. Admitted SQL consumes NativeCalc with empty evaluator descriptors. The
+previous prepared input falls back for unproven string representation; its complete
+job uses a generated evaluator because the external Row source proves Java-backed
+inputs. These actual routes are asserted separately.
+
+Prepared timing uses equivalent prebuilt Java Generic/Binary RowData and Arrow
+inputs, both NULL modes, modern/legacy casts, BOOLEAN/all signed widths and three DECIMAL truth precisions, 1,024/16-row
+batches, 131,072 rows per trial, 16 warmups and nine measurements. The native timer
+runs inside Rust after import and before export, retaining production Calc,
+formatting, allocations and output consumption. Only this prepared gate excludes
+perimeter JNI/import/export and transposes.
+
+All 108 bulk cells beat stock by 1.263-14.862x and actual previous by
+1.227-13.121x. 26/27 tiny cells remain slower than stock
+(stock/native 0.179-3.378x). No universal small-batch speedup is claimed.
+
+Nine complete million-row jobs retain submission/startup, JNI and both row/Arrow
+transposes, one thread, two warmups and five alternating measurements per engine.
+Native/stock elapsed is 0.416-1.096;
+native/previous is 0.397-0.922.
+2/9 complete medians lose to the candidate-process stock control,
+2/9 lose to the independent stock control, and
+0/9 lose to previous. Ranges and unfavorable results are retained;
+prepared admission is not a complete-pipeline acceleration claim.
+
+| Flink/shape | Stock seconds | Native seconds | Independent stock seconds | Previous seconds |
+|---|---:|---:|---:|---:|
+| 22-int-pair | 0.243379 | 0.232681 | 0.256746 | 0.300773 |
+| 22-bigint-literal | 0.225372 | 0.207914 | 0.231243 | 0.264847 |
+| 22-boolean-pair | 0.224270 | 0.230709 | 0.221438 | 0.268155 |
+| 22-boolean-integer | 0.242662 | 0.238090 | 0.244949 | 0.292659 |
+| 22-printf | 0.788043 | 0.327847 | 0.763934 | 0.824953 |
+| 118-int-pair | 0.260317 | 0.241753 | 0.251691 | 0.291510 |
+| 118-bigint-literal | 0.216809 | 0.210058 | 0.224630 | 0.265566 |
+| 118-boolean-pair | 0.228650 | 0.250603 | 0.226020 | 0.271904 |
+| 118-boolean-integer | 0.248352 | 0.243139 | 0.244889 | 0.295120 |
+
+The [machine-readable record](results/primitive-least-2026-11-05.json) and
+[all 17,100 raw prepared samples](results/primitive-least-2026-11-05.csv.gz)
+retain development controls, medians/ranges, actual routes, allocator bindings,
+source/bytecode/runtime hashes and full-job trials. The first eight-cell pilot lost its BOOLEAN pair to stock
+(stock/native 0.921x) and actual previous (0.914x). A five-second native process sample
+includes 1,243 zip frames; counts identify work, not elapsed-time percentages. The new
+typed Boolean extremum uses OR/AND over packed value bitmaps with strict union validity,
+reusing identities and avoiding generic comparison/zip arrays. It reuses the preceding
+string selection and integer formatting kernels. Both extrema rerun after this shared change. Exact-head hosted
+CI is separate from this local qualification.
+
+
+### Shared Boolean kernel controls
+
+A separate GREATEST replay isolates the shared bitmap change on an already JVM-free
+path. Both the actual preceding encoder/runtime and candidate require native GREATEST
+with empty evaluators; the old route is not relabeled as fallback. Encoder/fixture
+bytecodes match the independently qualified source records. Sixteen additional
+prepared bulk controls across both released lines, both NULL modes, Generic/Binary
+rows and modern/legacy casts beat stock 2.520-13.333x and actual previous 1.326-2.455x.
+All four 16-row controls still lose to stock (0.190-0.504x); their previous/native
+ratios are 1.711-1.838x. They remain prepared controls, not new complete-job timings.
+The same machine-readable record and raw CSV retain all 2,000 additional samples.
+
+
+## DECIMAL epoch conversion
+
+Genuine ordinary-Calc `TO_TIMESTAMP_LTZ(d,0)` / `(d,3)` over direct DECIMAL
+columns/literals executes in Rust. Released Flink 1.18.1/2.2.1 first truncates
+toward zero, wraps `BigDecimal.longValue()`, wraps seconds times 1,000, then checks
+the final millisecond range. The integer overload's original-unit bounds do not
+apply. NULLs, pre-epoch fractions, resolved TIMESTAMP_LTZ(3), session-zone behavior,
+empty/lazy branches and catalog function identity are preserved. Computed decimal
+producers, runtime precision, UNNEST and other signatures keep their preceding routes.
+
+Arrow unary truncates directly into Int64 milliseconds, using compact 64-bit or
+128-bit division as required. The existing epoch kernel builds timestamp components
+with strict range/NULL parent validity and immutable child buffers. No new callback,
+temporal transport or configuration switch is introduced.
+
+All 580 fresh focused JVM invocations pass on both released Flink
+lines and JDK 11/17, targeting Java 11. All 925 release Rust core tests pass, including
+an independent wide-integer oracle for every precision/scale, sliced/scalar/NULL/empty
+and wrap/range controls. The complete current Java core is freshly compiled (373/375
+sources); expected native work must be consumed and admitted routes have empty
+evaluator descriptors. The actual preceding encoder/runtime returns the same complete
+5,003-row first-query maps/schema before failing 86 expected pure-route assertions per
+release/JDK pair, while three retained controls pass. Subsequent SQL in those failing
+invocations is not counted as preceding parity evidence. Sixteen unchanged released
+temporal method oracles pass separately. The earlier released-utility algorithm oracle
+has 806,336 matches; it is algorithm evidence, not native execution evidence.
+
+Prepared and complete-job timings use JDK 17. Prepared inputs match Generic/Binary RowData and Arrow over DECIMAL(18,0), (18,3),
+(19,0), (19,19), (38,0), (38,18) and (38,38), seconds/milliseconds, both NULL modes,
+1,024/16-row batches and signed-fraction/range/low-64-bit wrapping values. Each trial
+processes 131,072 rows, with 16 warmups and nine measurements. Timers start inside Rust
+after input setup/import and stop before export, retaining production Calc, allocation,
+conversion and equivalent output consumption. Only this small-function gate excludes
+perimeter JNI/C Data entry and transposes. Preceding measurement uses its actual
+JVM evaluator inside NativeCalc; it is not relabeled as stock fallback. Both processes
+retain independent stock controls; process order reverses on 1.18.
+
+All 112 prepared bulk cells beat stock 1.965-12.441x
+and actual preceding behavior 11.439-29.473x.
+23/28 tiny controls lose to stock
+(stock/native 0.218-1.351x), and
+0/28 lose to previous. These losses remain;
+no universal tiny-batch speedup is claimed.
+
+Eight complete million-row job configurations retain submission/startup, JNI and both
+row/Arrow transposes, one thread, two warmups and five alternating measurements per
+engine. Native/stock elapsed ranges 0.934-1.165;
+native/previous ranges 0.649-0.880.
+6/8 complete medians lose to the paired stock control,
+5/8 lose to independent stock and
+0/8 lose to previous. All complete-job losses and ranges
+remain; a prepared bulk gain is not a whole-job acceleration claim.
+
+| Flink/DECIMAL/unit | Stock seconds | Native seconds | Independent stock seconds | Previous seconds |
+|---|---:|---:|---:|---:|
+| 22-p18s0-u0 | 0.191690 | 0.198154 | 0.189804 | 0.235846 |
+| 22-p18s3-u3 | 0.195445 | 0.196903 | 0.198312 | 0.240912 |
+| 22-p38s0-u0 | 0.210570 | 0.224670 | 0.200114 | 0.259989 |
+| 22-p38s18-u3 | 0.241333 | 0.235233 | 0.248650 | 0.362492 |
+| 118-p18s0-u0 | 0.196552 | 0.197247 | 0.192116 | 0.224039 |
+| 118-p18s3-u3 | 0.193650 | 0.197908 | 0.193933 | 0.232247 |
+| 118-p38s0-u0 | 0.196993 | 0.229459 | 0.208220 | 0.271942 |
+| 118-p38s18-u3 | 0.246362 | 0.230224 | 0.241323 | 0.348089 |
+
+The [machine-readable qualification](results/decimal-epoch-2026-11-05.json) and
+[all 14,800 raw prepared samples](results/decimal-epoch-2026-11-05.csv.gz) retain
+pilot/final medians, full trials, independent controls, source/fixture/encoder bytecodes,
+complete current-core compilation, exact preceding/candidate release artifacts and
+allocator aliases. Historical qualifications keep their original provenance.
+Hosted CI must qualify the exact final head separately.
+
+
+## DECIMAL unary epoch producers
+
+Ordinary-Calc `TO_TIMESTAMP_LTZ(...,0/3)` also accepts total same-operator
+DECIMAL ABS/negation chains and widening casts that keep the scale. The existing
+unary/cast kernels compose with the independently qualified decimal epoch kernel:
+truncate toward zero, wrap low signed 64 bits, wrap seconds multiplication, then
+check final millisecond bounds. NULLs, resolved types, regional display, lazy branches
+and empty batches remain exact. Mixed unary trees, arithmetic, narrowing/scale-changing
+casts, runtime precision and UNNEST keep their previous routes.
+
+All 624 focused JVM invocations pass on released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java 11. Full 5,003-row maps/schema cover signed fractions,
+precision/scale extremes, low-64-bit wrapping, final bounds, NULLs, nullable/non-null
+sources, modern/legacy cast modes and New York/UTC sessions. Positive routes require
+consumed NativeCalc, no fallback and empty evaluator descriptors. The actual preceding
+encoder compares complete first-query maps/schema before ten expected pure-route failures
+per release/JDK pair; the retained-control method passes. Later unreached queries are
+not preceding parity evidence.
+
+This extension changes only planner admission: it reuses the unchanged release runtime
+with its preceding 925-core-test qualification and sixteen unchanged released temporal
+method oracles. Those historical results are not relabeled as fresh tests. All other
+sources match the complete-core compilation from that qualification; each SQL/performance
+configuration uses its freshly compiled preceding or candidate encoder with Java release 11.
+The source, encoder and runtime hashes are checked independently.
+
+Prepared and complete-job timings use JDK 17. Prepared inputs match Generic/Binary RowData and Arrow over DECIMAL(18,3), (19,0),
+(19,19), (38,0), (38,18) and (38,38), ABS/negation/nesting/same-scale widening,
+seconds/milliseconds, both NULL modes,
+1,024/16-row batches and signed-fraction/range/low-64-bit wrapping values. Each trial
+processes 131,072 rows, with 16 warmups and nine measurements. Timers start inside Rust
+after input setup/import and stop before export, retaining production Calc, allocation,
+conversion and equivalent output consumption. Only this small-function gate excludes
+perimeter JNI/C Data entry and transposes. Preceding measurement uses its actual
+JVM evaluator inside NativeCalc; it is not relabeled as stock fallback. Both processes
+retain independent stock controls; process order reverses on 1.18.
+
+All 48 prepared bulk cells beat stock 1.815-12.115x
+and actual preceding behavior 8.100-21.684x.
+10/12 tiny controls lose to stock
+(stock/native 0.295-1.291x), and
+0/12 lose to previous. These losses remain;
+no universal tiny-batch speedup is claimed.
+
+Six complete million-row job configurations retain submission/startup, JNI and both
+row/Arrow transposes, one thread, two warmups and five alternating measurements per
+engine. Native/stock elapsed ranges 0.909-1.025;
+native/previous ranges 0.623-0.871.
+1/6 complete medians lose to the paired stock control,
+1/6 lose to independent stock and
+0/6 lose to previous. All complete-job losses and ranges
+remain; a prepared bulk gain is not a whole-job acceleration claim.
+
+| Flink/DECIMAL/unit | Stock seconds | Native seconds | Independent stock seconds | Previous seconds |
+|---|---:|---:|---:|---:|
+| 22-negate-p18s3-u0 | 0.197845 | 0.196491 | 0.197402 | 0.239379 |
+| 22-abs-p38s18-u3 | 0.250061 | 0.234997 | 0.251065 | 0.368419 |
+| 22-widen-p19s0-u3 | 0.207587 | 0.212784 | 0.196798 | 0.245700 |
+| 118-negate-p18s3-u0 | 0.205466 | 0.204706 | 0.205045 | 0.235013 |
+| 118-abs-p38s18-u3 | 0.250150 | 0.227381 | 0.249014 | 0.365091 |
+| 118-widen-p19s0-u3 | 0.204820 | 0.202692 | 0.203000 | 0.246186 |
+
+The [machine-readable qualification](results/decimal-unary-epoch-2026-11-05.json) and
+[all 6,950 raw prepared samples](results/decimal-unary-epoch-2026-11-05.csv.gz) retain
+pilot/final medians, full trials, independent controls, source/fixture/encoder bytecodes,
+complete current-core compilation, exact preceding/candidate release artifacts and
+allocator aliases. The initial double-negation probe folded to an already-native direct input, so it cannot
+establish a new-feature gain: its three completed paired cells and fifty unpaired
+candidate samples are retained separately. Historical qualifications keep their original provenance.
+Hosted CI must qualify the exact final head separately.
+
+
+## DECIMAL from proven integer text
+
+A genuine ordinary-Calc `TRY_CAST(CAST(n AS STRING) AS DECIMAL(p,s))` can use the
+existing exact numeric kernel when the inner CAST/TRY_CAST formats a verified total
+signed integer producer and `p-s` covers the complete resolved width: 3/5/10/19 digits
+for TINYINT/SMALLINT/INT/BIGINT. Integer text is ASCII with no extra leading zeros,
+point or exponent, so both released parser branches give exactly integer times
+10^scale, without overflow. This removes intermediate formatting, parsing and a JVM
+evaluator. It preserves NULLs, resolved result schema/scale, original integer width,
+modern/legacy behavior, lazy consumers and empty batches. Ordinary CAST roundtrips
+that Flink already simplifies to numeric casts remain existing controls.
+
+Source STRING, bounded CHAR/VARCHAR, insufficient capacity, fallible/stateful or
+unverified producers and UNNEST retain their preceding routes. This is not a generic
+STRING parser: the released compact parser has precision/byte-length and malformed-text
+behavior that differs from ordinary decimal parsing.
+
+After rebase onto canonical main `9954a19c`, the complete core is rebuilt
+against released Flink 1.18.1/2.2.1, targeting Java 11. All 132 focused
+JVM invocations pass on JDK 11/17, with full 5,003-row maps/schema at all four signed
+widths, scales 0/3/38-widthDigits, both NULL modes, modern/legacy modes, lazy branches
+and empty batches. Admitted routes require consumed NativeCalc, no fallback and empty
+evaluators. Each actual-before release/JDK run compares the complete first-query
+map/schema before eight expected pure-route failures; two retained controls pass.
+Later unreached queries are not preceding-parity evidence.
+
+An independent released utility oracle matches 243,968 cases across every fitting
+target precision/scale and all signed widths on both release/JDK pairs. Four unchanged
+released `CastRulesTest#castTests` runs pass; these are stock-only tests, separate from
+native SQL qualification. An initial local 1.18 oracle run lacked its released
+`TableAssertions` test dependency; that classpath failure is excluded. Native runtime
+sources/artifacts do not change. The preceding 925 Rust core tests are reused with
+their original runtime hashes, rather than described as a fresh run.
+
+Release prepared measurements use JDK 17, equivalent Generic/Binary RowData and Arrow,
+all four signed widths at three target scales, both NULL modes and signed extremes.
+Both engines evaluate the same TRY_CAST roundtrip compared with decimal zero. Each
+trial processes 131,072 rows, with 16 warmups and nine measurements. The native timer
+runs inside Rust after setup/import and before export, retaining production Calc,
+allocation, exact conversion, comparison and equivalent output consumption. Only this
+small-function gate excludes perimeter JNI/C Data entry and transposes. Actual previous
+behavior retains its generated evaluator inside NativeCalc, not whole-Calc fallback.
+Both processes retain independent stock controls; process order reverses on 1.18.
+
+All 96 prepared bulk cells beat stock **6.574-23.579x**
+and actual previous behavior **12.440-35.978x**.
+6/24 tiny controls lose to stock
+(stock/native 0.811-1.795x), and
+0/24 lose to previous. All losses remain.
+
+Six complete million-row configurations retain startup/submission, JNI and both
+row/Arrow transposes, with two warmups and five alternating trials per engine.
+Native/stock elapsed is 0.679-0.891,
+native/previous 0.576-0.736.
+0/6 medians lose to paired stock,
+0/6 to independent stock and
+0/6 to previous. Prepared gains do not establish
+universal complete-job acceleration.
+
+| Flink/target | Stock seconds | Native seconds | Independent stock seconds | Previous seconds |
+|---|---:|---:|---:|---:|
+| 22-int-p13s3 | 0.194477 | 0.173282 | 0.195940 | 0.235402 |
+| 22-int-p38s28 | 0.235606 | 0.173231 | 0.226662 | 0.265245 |
+| 22-bigint-p38s19 | 0.258878 | 0.175869 | 0.240012 | 0.305235 |
+| 118-int-p13s3 | 0.203184 | 0.176220 | 0.198230 | 0.241878 |
+| 118-int-p38s28 | 0.223859 | 0.170982 | 0.225316 | 0.271301 |
+| 118-bigint-p38s19 | 0.254095 | 0.182445 | 0.254451 | 0.294057 |
+
+The [machine-readable qualification](results/integer-text-decimal-2026-11-05.json) and
+[12,850 raw prepared samples](results/integer-text-decimal-2026-11-05.csv.gz) retain
+full trials, independent controls, source/encoder/fixture/core bytecode and release
+artifact hashes. The 800 pilot samples retain their pre-rebase provenance. Fifty
+unpaired ordinary-CAST probe samples are an already-native control, not a new-feature
+speedup. Hosted CI must qualify the exact final PR head separately.
+
+
+## Default numeric epoch precision
+
+Released Flink 2.2.1 single-argument `TO_TIMESTAMP_LTZ` over Number/DecimalData delegates
+to precision 3 in its unchanged bytecode. Ordinary Calc therefore reuses the existing
+integer and DECIMAL millisecond kernels for their separately verified total producers.
+The proof requires genuine built-in identity; omitted precision does not admit new
+producer families, floating/text overloads or UNNEST. Integer widths/NULLs/range and
+DECIMAL truncation/low-64-bit wrapping/final milliseconds retain their existing contracts.
+Flink 1.18.1 rejects this signature during SQL validation; both stock and native controls
+preserve that rejection, without skipped tests or a new SQL overload.
+
+All 192 fresh focused JVM invocations pass on released Flink 1.18.1/2.2.1
+and JDK 11/17, targeting Java 11. The 2.2 matrix includes complete 5,003-row maps/schema,
+all signed integer widths, arithmetic/widening/rounding producers, seven DECIMAL
+precision/scale pairs, unary/widening producers, signed fractions/range/wrapping values,
+both NULL modes, New York/UTC sessions, lazy/empty consumers and UTC integer-epoch
+FLOOR/CEIL. Positive routes require consumed NativeCalc, no fallback and empty
+evaluators. Retained invalid/text/catalog/producer controls and existing double-argument,
+runtime-precision and UTC-rounding contracts pass separately.
+
+The actual preceding 2.2 encoder compares all eleven first-query maps/schema before its
+expected pure-route assertions fail; two retained controls pass per JDK. Later unreached
+queries are not preceding-parity evidence. Eight fresh unchanged released 2.2 temporal
+method oracles pass as stock-only evidence. A separate 1074-invocation
+parent-core matrix qualifies rebase onto main `9954a19c`, including incoming
+recursive UDF alias/validation and shared-state contracts. That frozen parent-core result
+is not relabeled as testing the later single-argument encoder. No runtime changes are
+made; its historical 925 Rust core tests retain their original hashes and are not rerun
+or relabeled as fresh tests. Candidate/previous encoders are freshly compiled and checked
+against their SQL/performance bytecode and complete parent-core compilation.
+
+Release prepared measurements use Flink 2.2.1/JDK 17, equivalent Generic/Binary RowData
+and Arrow, all four signed integer widths, integer multiplication, DECIMAL(18,3),
+(19,0), (38,0), (38,18), (38,38), ABS/negation, NULLs and epoch/wrap-boundary domains.
+Each trial processes 131,072 rows with 16 warmups and nine measurements. Native timing
+starts inside Rust after input setup/import and stops before export, retaining production
+Calc, allocation, intrinsic conversions and equivalent output consumption. Only this
+small-function gate excludes perimeter JNI/C Data and transposes. Previous behavior is
+its actual generated evaluator inside NativeCalc, not host fallback. Both processes retain
+independent stock controls.
+
+All 44 bulk cells beat stock **1.412-15.625x** and previous
+**11.349-21.918x**. 9/11 tiny cells
+lose to stock (stock/native 0.078-1.252x), and
+0/11 lose to previous. All small-batch losses and variability remain.
+
+Four complete million-row configurations retain startup/submission, JNI and both
+row/Arrow transposes, with two warmups and five alternating measurements per engine.
+Native/stock elapsed is 0.894-1.074;
+native/previous 0.612-0.866.
+2/4 medians lose to paired stock,
+2/4 to independent stock and
+0/4 to previous. A prepared gain is not a universal
+complete-job acceleration claim.
+
+| Input/producer | Stock seconds | Native seconds | Independent stock seconds | Previous seconds |
+|---|---:|---:|---:|---:|
+| int-square | 0.182350 | 0.181269 | 0.182687 | 0.219454 |
+| bigint-direct | 0.186902 | 0.192911 | 0.182297 | 0.222803 |
+| decimal-p18s3 | 0.187237 | 0.201149 | 0.191009 | 0.243453 |
+| decimal-abs-p38s18 | 0.249972 | 0.223394 | 0.250466 | 0.365267 |
+
+The [machine-readable qualification](results/default-precision-epoch-2026-11-05.json)
+and [5,500 raw prepared samples](results/default-precision-epoch-2026-11-05.csv.gz)
+retain all measurements, independent controls, exact source/encoder/fixture/runtime
+provenance and the separate parent rebase qualification. Historical results keep their
+original revisions. Hosted CI must qualify the exact final PR head separately.
+
+## Numeric DATE_FORMAT calendar correctness (2026-11-05)
+
+This repairs an already-enabled path rather than claiming a new accelerated signature.
+All 28 fresh JVM invocations pass on released Flink 1.18.1/2.2.1 and JDK 11/17, targeting
+Java 11. They cover complete runtime-source maps and schemas for TIMESTAMP(0/3/6/9),
+BCE/year-zero/extended dates, signed-millisecond endpoints, NULLs, filtering and empty
+batches. Admitted paths consume NativeCalc with no fallback and empty JVM evaluators.
+The actual preceding runtime fails all four new value tests on each released line's
+JDK 17 control, while the three existing tests pass. Twelve unchanged released temporal
+test-method oracles and all 927 release Rust core tests also pass.
+
+Six complete million-row configurations compare stock, the actual preceding native
+runtime and the repaired runtime on modern dates, where the preceding formatter is
+correct. Each engine has two warmups and three measured trials at parallelism one.
+Both row/Arrow perimeter transposes, planning/submission, JNI and blackhole consumption
+remain in the measured jobs. Raw elapsed and job-runtime trials, source/library hashes
+and correctness accounting are retained in the
+[qualification record](results/date-format-year-2026-11-05.json).
+Native/stock median elapsed is 0.744-0.960; native/previous is 0.926-1.001.
+The full timestamp pattern on Flink 2.2 is 0.07% slower than the preceding runtime;
+the trials are retained rather than presented as a universal speedup. These complete-job
+diagnostics do not qualify any additional pattern or timezone admission.
+
+## Java DATE_FORMAT literal syntax (2026-11-05)
+
+Numeric plain-TIMESTAMP patterns honor quoted literals and doubled quotes without
+copying Java syntax into the output. Optional sections and unsupported/invalid patterns
+keep Flink's generated evaluator. All 56 fresh JVM invocations pass on released
+Flink 1.18.1/2.2.1 and JDK 11/17, targeting Java 11. Runtime-source tests compare complete
+maps/schema, NULLs, native consumption, absent fallback and exact evaluator routes;
+reserved/malformed patterns preserve released failures and all-filtered laziness.
+The preceding encoder fails seven new tests and passes seven retained tests per
+released-line JDK 17 control. Later unreached queries are not preceding-parity evidence.
+
+Release prepared measurements cover TIMESTAMP(3/9), full signed-millisecond endpoints,
+pre-epoch/extended dates, Generic/Binary RowData, NULL modes and three quoted patterns.
+Stock starts on prebuilt RowData and native starts on equivalent Arrow; native timing
+starts inside Rust after input preparation/import and stops before export, retaining
+production Calc, allocation, intrinsic conversions and equivalent output consumption.
+The actual preceding path retains its generated JVM evaluator inside NativeCalc.
+Each trial processes 131,072 rows, with 16 warmups and nine measurements per engine.
+
+All 48 bulk cells beat stock **2.499-4.252x** and previous **3.433-5.541x**.
+Eleven of twelve 16-row cells lose to stock (stock/native **0.751-1.007x**); all beat
+the preceding generated path. These small-batch losses and all 6,000 raw samples are
+retained in the [qualification](results/date-format-pattern-2026-11-05.json) and
+[prepared trials](results/date-format-pattern-2026-11-05.csv.gz).
+
+Four complete million-row jobs retain both row/Arrow perimeter transposes, JNI,
+planning/submission and blackhole consumption, with two warmups and three measured
+trials per engine. Native/stock median elapsed is **0.783-0.990** and native/previous
+is **0.607-0.707**. The narrowest stock margin is the literal-prefix pattern on
+Flink 1.18 (0.270 versus 0.273 seconds); raw startup and measured trials remain in the
+qualification rather than being hidden by the prepared speedup.
+
+## Exact UTC DATE_FORMAT over local-zoned timestamps (2026-11-05)
+
+Direct TIMESTAMP_LTZ input columns in ordinary Calc reuse the exact numeric formatter
+when the planning JDK normalizes the session zone to a fixed zero offset. This removes
+the generated evaluator without a separate timezone database or a new performance switch.
+Nonzero/regional zones, unverified derived producers, unsupported patterns, catalog
+functions and explicit incompatible/UNNEST routes keep their previous handling.
+
+All 68 new focused JVM tests pass across released Flink 1.18.1/2.2.1 and JDK 11/17,
+targeting Java 11. Complete runtime-source maps/schema cover TIMESTAMP_LTZ(0/3/6/9),
+UTC aliases, BCE/extended years, signed-millisecond endpoints, NULLs, filtering and
+empty batches. Pure routes require consumed NativeCalc, no fallback and empty JVM
+evaluators; retained routes are checked explicitly. The preceding encoder matches each
+first-query map/schema before twelve expected pure-route failures per released-line
+JDK 17 control; its nineteen retained tests pass. Later queries are not prior-parity evidence.
+
+The broader final selection has another 162 passing regression invocations and fourteen
+unchanged version-gated aborts: seven FlinkTemporalFunctionsSqlHarnessTest assumptions
+on each 1.18/JDK combination for absent LTZ text/default-precision signatures, the
+pre-epoch TIME external conversion limit and three sub-hour LTZ rounding signatures.
+Those aborts are not counted as passes; no new UTC-formatting test is aborted or skipped.
+The runtime is unchanged from the calendar repair, whose 927-core qualification remains
+separate preceding evidence.
+
+Release prepared measurements use equivalent Generic/Binary RowData and Arrow,
+TIMESTAMP_LTZ(3/9), NULL modes, full-range epoch data and three literal numeric formats.
+Each trial processes 131,072 rows with sixteen warmups and nine measurements per engine.
+Native timing starts inside Rust after input preparation/import and stops before export;
+intrinsic production Calc, allocations, conversions and output consumption remain timed.
+Previous behavior retains its actual generated evaluator inside NativeCalc.
+
+All 48 bulk cells beat stock **2.861-4.546x** and previous **4.168-5.989x**.
+Ten of twelve 16-row cells lose to stock (stock/native **0.676-1.062x**); all beat previous.
+Six complete million-row jobs retain submission, JNI and both perimeter transposes, with
+two warmups and three measured trials per engine. Native/stock median elapsed is
+**0.764-0.961** and native/previous **0.533-0.678**. All startup and measured trials,
+variability, source/runtime hashes and evaluator-route evidence remain in the
+[qualification](results/utc-date-format-2026-11-05.json) and
+[6,000 prepared samples](results/utc-date-format-2026-11-05.csv.gz).
+
+
+## DECIMAL ABS over negative producers (2026-11-05)
+
+Verified DECIMAL ABS now consumes unary-minus trees and same-scale widening, including
+`ABS(-d)`, `ABS(CAST(-d AS DECIMAL(38,s)))` and negative subtrees of the existing
+DECIMAL-only arithmetic proof. Leading verified negations are omitted rather than
+materializing an intermediate array. Released Flink's decimal ABS and negation retain
+precision and scale, and every valid SQL DECIMAL coefficient has an exact negation.
+The existing typed ABS kernel retains arithmetic overflow NULLs and constraint enforcement.
+No runtime opcode, JNI boundary, configuration switch or production Rust change is added.
+Negation over ABS, narrowing, scale changes, fallible/unverified inputs and arithmetic
+epoch producers retain their generated paths.
+
+All **124 fresh focused JVM invocations** pass on released Flink 1.18.1/2.2.1 and
+JDK 11/17, targeting Java 11. These include **52 new SQL invocations** over ten
+precision/scale pairs, nullable/NOT NULL inputs, strict/legacy modes, complete 5,003-row
+maps/schema, consumers, overflow, lazy/all-filtered paths and catalog identity. Pure
+admitted routes consume NativeCalc with no fallback and empty JVM evaluators. Another
+**138 existing ABS/negation/CAST regression invocations** pass on both released lines/JDK17,
+including encoding checks across every DECIMAL precision/scale. Four unchanged released
+`ScalarFunctionsTest.testAbs` stock-oracle invocations pass independently. Nothing in this
+selection is skipped or aborted. Actual preceding encoder `a23b3e3b4` matches the first
+query's values/schema, then fails ten expected new route assertions per released-line
+JDK17 control; three retained controls pass. Later unreached queries are not prior-parity evidence.
+The unchanged runtime retains the preceding calendar repair's 927-core-test qualification;
+this is not reported as a fresh Rust run.
+
+Prepared release measurements use `(ABS(...)>0 OR CAST(NULL AS BOOLEAN))` so both
+engines consume the same nullable BOOLEAN output through the existing checksum fixture.
+Stock starts on equivalent prebuilt Generic/Binary RowData; native starts on prebuilt
+Arrow. The timer is inside Rust after input setup/import and before output export;
+intrinsic allocations, conversions and prior JVM callbacks remain timed. Five producer/type
+shapes cover DECIMAL(18,3), (38,18), (38,38), widening from (19,0), and negative arithmetic.
+Each runs nullable/nonnullable and Generic/Binary controls with 1,024-row batches and an
+additional 16-row nullable/Binary control on each released line. Each trial processes
+131,072 rows, with sixteen warmups and nine measured repetitions. No other tests or
+benchmarks run concurrently. The actual previous encoder uses the same unchanged release
+runtime and fixture; independently measured stock controls remain in the raw data.
+
+All **40 bulk cells** beat stock by **1.460-20.950x** and previous by **5.485-28.144x**.
+All **10 tiny controls lose to stock**, with stock/native **0.094-0.481x**. These are
+bounded prepared-function results, not a universal job-speedup claim.
+
+Six complete million-row jobs output DECIMAL directly, retaining submission/startup,
+production JNI and both RowData/Arrow transposes. Each engine has two warmups and five
+measured repetitions at parallelism one. Five of six native medians lose to paired stock;
+the remaining 0.18% difference is near parity and does not establish a stable gain.
+Native/stock elapsed is **0.998-1.222**, native/previous **0.771-0.890**. All six beat the
+preceding callback route, but row-source boundary costs remain material. Complete-job
+ranges, independent stock controls and all slower results are retained.
+
+See the [qualification and exact source/runtime provenance](results/decimal-abs-negate-2026-11-05.json)
+and [5,000 raw prepared samples](results/decimal-abs-negate-2026-11-05.csv.gz).
+The broader exact numeric scope remains tracked in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## DECIMAL negation over absolute values (2026-11-05)
+
+Verified DECIMAL unary minus now consumes ABS and alternating trees of both operators,
+including `-ABS(d)`, `ABS(-ABS(d))` and same-scale widening. The existing decimal-only
+arithmetic proof admits the same verified unary subtrees. Released ABS and negation keep
+precision and scale; every valid coefficient has an exact signed counterpart. The
+existing native kernels preserve NULLs, resolved intermediate types and arithmetic
+overflow. No production Rust/JNI change or performance switch is added. SIGN's separate
+representation proof, narrowing, rescaling and fallible/unverified producers remain unchanged.
+Total unary/widened character and epoch consumers also stay native; arithmetic epochs
+and unverified arithmetic character consumers keep their previous routes.
+
+All **212 focused/related JVM invocations** pass across released Flink 1.18.1/2.2.1 and
+JDK 11/17, targeting Java 11. Another **12 consumer-control invocations** pass on the
+same four combinations. These contain 64 new SQL invocations and 160 related invocations,
+with no skipped or aborted cases. Complete 5,003-row maps/schema cover ten precision/scale
+pairs, strict/legacy modes, independent NULLs, NOT NULL inputs, alternating trees,
+character/Boolean/CASE/epoch consumers and all-filtered batches. Positive pure paths consume
+NativeCalc with no fallback and empty JVM evaluators. Direct overflow keeps ERROR/DROP
+constraint enforcement; final NOT NULL defaults and predicate NULL flags are checked separately.
+`TRY_CAST(-ABS(d*d) AS CHAR(48))` explicitly retains its existing fallback and matches stock;
+this qualification does not silently extend character admission over arithmetic roots.
+Twelve unchanged released ABS and numeric/decimal unary stock-oracle invocations pass.
+Actual preceding encoder `6454ff64a` matches each first query's complete values/schema,
+then fails ten expected new route assertions per released-line JDK17 control; three
+retained controls pass. Unreached later queries are not prior-parity evidence.
+The unchanged release runtime retains its preceding 927-core-test qualification, not a
+new Rust run. Focused and final performance encoder instructions match on both released lines.
+
+Prepared release measurements use `(-ABS(...)<0 OR CAST(NULL AS BOOLEAN))` through the
+existing checksum fixture. Six shapes cover DECIMAL(18,3), (38,18), (38,38), widening
+from (19,0), arithmetic and alternating (19,19) trees. Each uses nullable/nonnullable and
+Generic/Binary RowData controls, 1,024-row batches and a separate 16-row nullable/Binary
+control, on both released lines. Stock starts on equivalent prebuilt RowData; native
+starts on prebuilt Arrow. The Rust timer excludes initial input preparation/import and
+final export, while retaining allocations, conversions and prior JVM callbacks intrinsic
+to the expression. Each trial processes 131,072 rows, with sixteen warmups and nine
+measurements. Actual preceding and candidate encoders share the same release runtime
+and fixture. Independent stock controls, warmups and all variability remain in the records;
+no other tests or benchmarks run concurrently.
+
+All **48 bulk cells** beat stock by **1.562-13.880x** and previous by **4.686-21.670x**.
+All **12 tiny controls lose to stock**, with stock/native **0.114-0.484x**. Six complete
+million-row jobs output DECIMAL directly, retaining submission/startup, production JNI
+and both RowData/Arrow transposes. At parallelism one, each engine has two warmups and
+five measured repetitions. All six native medians lose to paired stock, with
+native/stock elapsed **1.001-1.228**; the narrowest 0.12% difference is near parity.
+All six beat the preceding evaluator, with native/previous **0.772-0.921**. These are
+bounded prepared-function gains; row-source boundary costs remain material and no
+complete-job acceleration is claimed.
+
+See the [qualification and exact provenance](results/decimal-negate-abs-2026-11-05.json)
+and [6,000 raw prepared samples](results/decimal-negate-abs-2026-11-05.csv.gz).
+The remaining exact numeric and character-conversion scopes stay open in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491) and
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## DECIMAL unary arithmetic TRY_CAST to character (2026-11-05)
+
+Nullable character TRY_CAST now admits verified ABS/unary-minus wrappers over
+DECIMAL-only addition, subtraction and multiplication. For example,
+`TRY_CAST(-ABS(d*d) AS CHAR(48))` formats through existing native decimal kernels.
+Resolved intermediate precision/scale and overflow NULLs remain unchanged. This
+verified TRY_CAST boundary resolves arithmetic NULLs before consumers such as IS NULL
+observe them, including NOT NULL source fields. Ordinary CAST retains its separate
+producer and projection-default guards; narrowing, rescaling and fallible/unverified
+producers retain their existing routes. No production Rust/JNI change or switch is added.
+
+All **428 fresh JVM invocations** pass on released Flink 1.18.1/2.2.1 and JDK 11/17,
+targeting Java 11: 48 new SQL invocations and 380 related invocations, with no skips or
+aborts. Complete 5,003-row maps/schema cover ten precision/scale pairs, strict/legacy
+modes, nullable/NOT NULL sources, STRING/CHAR/VARCHAR, arithmetic overflow,
+IS NULL/CHAR_LENGTH/CASE consumers, runtime filters and all-filtered batches. Admitted
+pure routes consume NativeCalc, have no fallback and have empty JVM evaluator descriptors.
+Ordinary CAST defaults and unverified/fallible producer controls remain explicit.
+Four unchanged released `CastRulesTest#castTests` stock-oracle runs pass 535 cases each;
+these are separate stock evidence, not 2,140 new native tests.
+
+Actual preceding encoder `83d032683` fails eleven expected route assertions and passes
+one retained control per released-line JDK17 run. Ten core methods compare first-query
+full maps/schema before their expected fallback assertion fails. The mixed ordinary-CAST
+control fails its NativeSubstitution assertion before multiset comparison and is not
+preceding-value evidence; later unreached queries are not counted either. Final parity
+and performance encoder instructions, including nested classes, match on both released
+lines. The unchanged release runtime retains its historical 927-core-test qualification.
+
+Prepared release measurements output STRING/CHAR/VARCHAR directly with equivalent
+UTF-8 checksum consumption. Four shapes cover ABS of a product at DECIMAL(18,3),
+negative ABS of a product at (38,18), a negative sum at (38,38), and nested unary
+arithmetic at (19,0). Each uses strict/legacy, nullable/nonnullable and Generic/Binary
+RowData controls with 1,024-row batches, plus 16-row nullable/Binary controls.
+Stock starts on prebuilt RowData and native on equivalent prebuilt Arrow. The timer
+starts inside Rust after setup/import and stops before export; production Calc,
+allocations and conversions intrinsic to the operation remain timed. Every trial
+processes 131,072 rows, with sixteen warmups and nine measured repetitions.
+Candidate and preceding prepared JVMs both use `-Xmx1g`; no other tests or benchmarks
+run concurrently. Independent preceding stock controls remain in the raw records.
+
+These direct character-root expressions used **whole-Calc stock fallback** before
+the change. The preceding control verifies that actual rejection and times Flink,
+rather than fabricating a callback inside NativeCalc. This performance scope does
+not cover the distinct preceding whole-projection evaluator route that a NOT NULL
+arithmetic TRY_CAST observed by IS NULL can use; that consumer has pure-native
+correctness evidence but no separate speedup claim here.
+
+All **64 bulk cells** beat stock by **1.283-8.044x** and previous by **1.280-8.426x**.
+Nine of sixteen tiny controls lose to stock, and eight lose to previous; tiny
+stock/native ranges **0.808-2.431x**. Six complete million-row jobs output character
+values directly and retain submission/startup, production JNI and both RowData/Arrow
+transposes. At parallelism one and `-Xmx2g` for every engine, each has two warmups
+and five measured repetitions. All six beat paired stock and actual preceding
+fallback: native/stock elapsed is **0.502-0.705**, native/previous **0.519-0.744**.
+These measured shapes do not establish universal job or tiny-batch acceleration.
+
+See the [qualification, raw full-job trials and exact provenance](results/decimal-unary-arithmetic-try-cast-2026-11-05.json)
+and [8,000 prepared samples](results/decimal-unary-arithmetic-try-cast-2026-11-05.csv.gz).
+Remaining character conversions stay tracked in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## UTC DATE_FORMAT over verified integer epochs (2026-11-05)
+
+DATE_FORMAT now composes the verified total integer TO_TIMESTAMP_LTZ producer proof
+in ordinary Calc, for supported literal numeric patterns and session zones normalized
+to a fixed zero offset. This includes direct integers, admitted wrapping arithmetic
+and rounding, literal precision 0/3 and verified runtime INT CASE precision 0/3/NULL.
+Flink 2.2's single-argument numeric epoch uses its released default precision three;
+Flink 1.18 retains its validation rejection. For example,
+`DATE_FORMAT(TO_TIMESTAMP_LTZ(n*n,3),'yyyy-MM-dd')` now stays in Arrow without a
+generated temporal evaluator. Resolved integer widths, original-unit epoch bounds,
+overflow wrapping, NULLs and the existing exact numeric calendar formatter are reused.
+No production Rust/JNI change, new opcode or performance switch is added.
+
+Both released DateTimeUtils implementations format TimestampData through its Instant,
+the session ZoneId and cached Java DateTimeFormatter. The fixed-zero proof avoids
+introducing a second timezone database. Regional/nonzero zones, DECIMAL epochs,
+unverified producers, unsupported/dynamic patterns and existing UNNEST contexts retain
+their separate routes. Arbitrary timestamp CASE/casts are not admitted by this proof.
+
+All **314 fresh JVM invocations** pass on released Flink 1.18.1/2.2.1 and JDK 11/17,
+targeting Java 11: 62 new SQL invocations and 252 related regressions, no skips or
+aborts. Complete 5,003-row maps/schema cover all four integer widths, nullable/NOT NULL
+fields, signed bounds, wrapping arithmetic/rounding, runtime precision, quoted patterns,
+IS NULL/CHAR_LENGTH/LIKE/CASE consumers, UTC aliases, retained regional zones and
+all-filtered batches. Pure routes consume NativeCalc, have no fallback and have empty
+JVM evaluator descriptors. Narrowing, division, DECIMAL, unsupported patterns and
+unverified precision controls retain generated evaluation. Lazy failing branches and
+all-filtered divide-by-zero inputs remain harmless. Twelve fresh unchanged released
+TemporalTypesTest DATE_FORMAT/Shanghai/LosAngeles method oracles pass as separate stock
+evidence. The byte-identical runtime retains its historical 927-core-test qualification.
+
+Actual preceding encoder `284ebb1a2` compares each first query's full maps/schema and
+then fails fifteen expected pure-route assertions on 2.2/JDK17 and eleven on 1.18/JDK17.
+Two retained controls pass on both lines; the 1.18 absent-signature control also passes.
+Later unreached queries are not preceding-parity evidence. Qualified and performance
+encoder instructions match on both lines; current and preceding benchmark fixture
+classes are byte-identical.
+
+Prepared release measurements output character values directly and consume equivalent
+UTF-8 checksums. Six shapes cover TINYINT seconds, SMALLINT millisecond addition, INT
+millisecond multiplication, BIGINT seconds, BIGINT millisecond addition and BIGINT
+runtime precision. Each uses nullable/nonnullable and Generic/Binary RowData controls,
+1,024-row batches and an additional 16-row nullable/Binary control on each release.
+Stock starts on equivalent prebuilt RowData, native on prebuilt Arrow. The timer runs
+inside Rust after setup/import and before export; production Calc, allocation and
+intrinsic conversions/callbacks remain timed. The actual preceding route is a generated
+temporal evaluator inside NativeCalc. Both encoders use the same release runtime and
+fixture. Each trial processes 131,072 rows, with sixteen warmups, nine measurements
+and 1 GiB prepared JVM heaps. No other tests or benchmarks run concurrently.
+
+All **48 bulk cells** beat stock **2.942-4.855x** and previous **4.190-6.704x**.
+All **12 tiny controls lose to stock**, with stock/native **0.382-0.591x**; all beat
+previous. Six complete million-row jobs retain submission/startup, production JNI
+and both RowData/Arrow transposes. At parallelism one and 2 GiB heaps for every engine,
+each has two warmups and five measured repetitions. All six beat paired stock and
+the actual preceding evaluator: native/stock elapsed **0.651-0.692**, native/previous
+**0.583-0.643**. These results do not establish universal tiny-batch or complete-job gains.
+
+See the [qualification, full-job trials and exact provenance](results/epoch-date-format-2026-11-05.json)
+and [6,000 raw prepared samples](results/epoch-date-format-2026-11-05.csv.gz).
+Remaining temporal signatures stay open in
+[#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
+
+## DECIMAL SIGN over verified unary producers (2026-11-05)
+
+SIGN now composes verified DECIMAL ABS/unary-minus producers, their alternating unary
+trees and admitted arithmetic through existing typed kernels. For example,
+`SIGN(ABS(d))`, `SIGN(-ABS(d))` and `SIGN(ABS(d*d))` no longer need a generated
+evaluator when their result/producer types satisfy the existing SIGN proof. Released
+ABS/negation preserve precision and scale over valid coefficients. This does not admit
+SIGN as an ABS/negation producer or remove the SIGN-specific representation guards.
+
+Released SIGN directly constructs compact scaled +/-1, which can exceed a declared
+compact DECIMAL(p,p) precision. Its noncompact branch reconstructs through BigDecimal
+and returns NULL for nonzero DECIMAL(p,p) values. Those contracts remain distinct:
+compact SIGN and compact SIGN intermediates under widening/arithmetic stay generated;
+noncompact zero/NULL results, final defaults versus NULL flags and NOT NULL ERROR/DROP
+enforcement remain unchanged. Narrowing, rescaling, division/remainder and unverified
+producers retain their existing routes. Character CAST/TRY_CAST keep separate proofs;
+`TRY_CAST(SIGN(ABS(d)) AS STRING)` retains its explicit fallback and matches stock.
+No production Rust/JNI change, new opcode or performance switch is added.
+
+All **448 fresh JVM invocations** pass across released Flink 1.18.1/2.2.1 and
+JDK 11/17, targeting Java 11: 60 new SQL invocations and 388 related invocations,
+with no skips or aborts. Full 5,003-row maps/schema cover nine admitted precision/scale
+pairs, nullable/NOT NULL fields, same-scale widening, alternating/arithmetic trees,
+overflow, lazy/all-filtered paths and retained compact/consumer routes. Admitted pure
+queries consume NativeCalc, have no fallback and have empty JVM evaluators. Encoding
+controls cover every DECIMAL precision/scale, retaining the compact result restriction.
+Four fresh unchanged released ScalarFunctionsTest.testSign stock-oracle runs pass
+separately. Actual preceding encoder `902876488` matches each first-query map/schema
+before nine expected new pure-route failures per released-line JDK17 run; six retained
+controls pass. Later unreached queries are not preceding-parity evidence. Final parity
+and performance encoder instructions match on both lines, and candidate/previous
+fixture classes are byte-identical. The unchanged runtime retains its historical
+927-core-test qualification, not a fresh Rust run.
+
+Prepared release measurements consume `(SIGN(...)>0 OR CAST(NULL AS BOOLEAN))` with
+equivalent nullable BOOLEAN checksums. Five shapes cover ABS at DECIMAL(18,3), negation
+at (19,0), negative ABS at (38,18), alternating unary trees at (38,38), and ABS of a
+product at (18,3). Each uses nullable/nonnullable and Generic/Binary RowData controls
+with 1,024-row batches, plus a 16-row nullable/Binary control on each released line.
+Stock starts on equivalent prebuilt RowData; native starts on prebuilt Arrow. The Rust
+timer runs after setup/import and before export, retaining production Calc, allocation
+and intrinsic conversions/callbacks. Actual previous behavior uses generated evaluation
+inside NativeCalc. Each trial processes 131,072 rows, with sixteen warmups and nine
+measurements. Prepared JVM heaps match at 1 GiB. No other tests or benchmarks run
+concurrently; independent stock controls and all variability remain in the records.
+
+All **40 bulk cells** beat stock **1.503-12.203x** and previous **5.932-19.853x**.
+All **10 tiny controls lose to stock**, with stock/native **0.088-0.462x**; all beat
+previous. Six complete million-row jobs output DECIMAL directly and retain submission,
+production JNI and both RowData/Arrow transposes. At parallelism one and 2 GiB heaps
+for every engine, each has two warmups and five measured repetitions. Four of six
+lose to paired stock: native/stock elapsed **0.936-1.107**, native/previous
+**0.767-0.880**. All six beat previous. The conversion-inclusive stock losses remain
+material; these prepared-function gains do not establish universal job acceleration.
+
+See the [qualification, complete-job trials and exact provenance](results/decimal-sign-unary-2026-11-05.json)
+and [5,000 raw prepared samples](results/decimal-sign-unary-2026-11-05.csv.gz).
+Remaining exact numeric work stays open in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## UTC DATE_FORMAT over verified DECIMAL epochs (2026-11-05)
+
+Ordinary Calc now composes the existing numeric DATE_FORMAT renderer with verified
+DECIMAL TO_TIMESTAMP_LTZ producers in sessions normalized by the planning JDK to a fixed
+zero offset. Direct fields/literals, total ABS/negation chains and same-scale widening
+use literal precision 0/3 or the released Flink 2.2 default. For example,
+`DATE_FORMAT(TO_TIMESTAMP_LTZ(-ABS(d),3),'yyyy-MM-dd')` has no generated evaluator.
+Flink 1.18 still rejects the absent single-argument overload. Genuine builtin identities,
+supported literal numeric patterns, incompatible-option and UNNEST gates remain intact.
+Arithmetic/narrowing/rescaling and other unverified producers, runtime DECIMAL precision,
+nonzero/regional zones and dynamic/unsupported patterns retain their preceding routes.
+
+Both released DateTimeUtils bytecodes truncate through `BigDecimal.setScale(0, DOWN)`,
+wrap the signed long, wrap seconds multiplication when needed, and then bound final
+milliseconds. These differ from integer original-unit epoch checks. Their formatter uses
+TimestampData.toInstant, LocalDateTime.ofInstant in the session ZoneId, and the cached
+Java DateTimeFormatter. A zero-offset session composes the existing exact epoch and
+full-range numeric calendar kernels without another timezone database, runtime opcode,
+JNI path or performance switch.
+
+All **286 fresh JVM invocations** pass on released Flink 1.18.1/2.2.1 and JDK 11/17,
+targeting Java 11: **68 new SQL invocations and 218 related invocations**, no skips or
+aborts. Full 5,003-row maps/schema cover ten DECIMAL precision/scale pairs, nullable and
+NOT NULL sources, modern/legacy mode, deterministic seeded coefficients, truncation,
+wraps and epoch bounds, total unary/widening trees, quoted patterns, IS NULL/CHAR_LENGTH/
+LIKE/CASE consumers, UTC aliases, retained routes and lazy/all-filtered failures. Pure
+admitted queries consume NativeCalc, have no fallback and empty JVM evaluators. Twelve
+unchanged released DATE_FORMAT/Shanghai/LosAngeles stock-oracle runs pass separately.
+Actual preceding `f123e4eaf` matches each first-query map/schema before sixteen expected
+pure-route failures on 2.2/JDK17 and thirteen on 1.18/JDK17. Two retained controls pass
+per line, plus the 1.18 absent-signature control; later unreached queries are not prior
+parity evidence. Focused/performance encoder instructions match, including nested
+classes; candidate/prior fixture classes are byte-identical. The unchanged runtime
+retains its historical 927-core qualification; these are not fresh Rust test runs.
+
+Prepared release timing consumes direct character output with equivalent UTF-8 checksum
+work. Stock starts on prebuilt Generic/Binary RowData; native starts inside Rust on
+prebuilt Arrow RecordBatch. The timer excludes setup/import/export and retains intrinsic
+Calc work, allocations and conversions. Actual previous behavior invokes the generated
+temporal evaluator inside NativeCalc. Five shapes cover compact DECIMAL(18,3) seconds,
+noncompact (19,0) milliseconds, wrapping (38,0) seconds, negated (38,18) milliseconds and
+ABS of (38,38) milliseconds. Each released line uses nullable/nonnullable and Generic/
+Binary controls with 1,024-row batches, plus five 16-row nullable/Binary controls. Each
+trial processes 131,072 rows with sixteen warmups, nine measurements and matched 1 GiB
+prepared JVM heaps. UTC is explicit in the prepared process environment. Independent
+stock controls and all variability remain in the record. No other tests or benchmarks
+run concurrently with timing.
+
+All **40 bulk cells** beat stock **3.070-5.782x** and actual previous
+behavior **4.603-8.379x**. **10/10 tiny controls
+lose to stock**; **0/10 lose to previous**. Six complete million-row
+character-output jobs retain submission/startup, production JNI and both perimeter
+transposes. Every engine uses parallelism one, 2 GiB heaps, two warmups and five measured
+repetitions. **0/6 lose to stock** and
+**0/6 lose to previous**: native/stock elapsed is
+**0.684-0.780**, native/previous
+**0.482-0.637**. These bounded function gains do not
+establish universal job acceleration; slower tiny/full-job results remain material.
+
+See the [qualification, complete-job trials and exact provenance](results/decimal-epoch-date-format-2026-11-05.json)
+and [5,000 raw prepared samples](results/decimal-epoch-date-format-2026-11-05.csv.gz).
+The remaining temporal signatures stay open in
+[#503](https://github.com/datafusion-contrib/StreamFusion/issues/503).
+
+## UTC FLOOR over verified DECIMAL epochs (2026-11-05)
+
+Ordinary Calc FLOOR now composes verified DECIMAL TO_TIMESTAMP_LTZ producers with the
+existing exact calendar/fixed-width kernels in sessions normalized by the planning JDK
+to fixed zero offset. Direct fields/literals, total ABS/negation chains and same-scale
+widening use literal precision 0/3 or Flink 2.2 default precision. Preserve DECIMAL
+truncation, signed-long/seconds wrapping and final millisecond bounds. YEAR/MONTH/DAY/HOUR
+qualify on both released lines, MINUTE/SECOND/MILLISECOND on 2.2. Flink 1.18 retains its
+absent default signature and sub-hour initialization failures. Genuine builtins, NULLs,
+resolved result precision, conditional/empty batches and existing UNNEST scope stay exact.
+DECIMAL CEIL/CEILING, runtime decimal precision, binary arithmetic/narrowing/rescaling,
+other unverified producers, regional/nonzero zones and unsupported units retain their
+routes. DATE_FORMAT shares its existing DECIMAL producer proof without a behavior change.
+No production Rust/JNI/opcode or configuration change is introduced.
+
+Released DateTimeUtils truncates DECIMAL through BigDecimal before signed-long conversion
+and wrapped seconds multiplication. It bounds the final milliseconds. timestampFloor
+adds the zone offset, applies fixed-width floor or signed-day/int-Julian calendar
+conversion, then subtracts the offset. At fixed zero offset the existing kernels preserve
+signed division, calendar cutover and zeroed fractions; generic Gregorian truncation is
+not a replacement for these released calendar rules.
+
+All **308 fresh JVM invocations** pass on released Flink 1.18.1/2.2.1 and JDK 11/17,
+targeting Java 11: **68 new harness invocations and 240 related invocations**, no
+skips/aborts. Complete 5,003-row maps/schema cover ten DECIMAL precision/scale pairs,
+nullable/NOT NULL sources, total unary/widening trees, wraps, exact fixed-unit boundaries,
+pre-epoch and calendar-cutover values, every admitted unit, basic consumers, UTC aliases,
+lazy/all-filtered paths and retained routes. Admitted paths consume NativeCalc work, have
+no fallback and empty JVM evaluators. Existing fixed/calendar FLOOR, direct CEIL, numeric
+producer/version admission and the shared DATE_FORMAT route are requalified. Four
+unchanged released ScalarFunctionsTest.testTemporalFloor stock oracles pass separately.
+Actual preceding `22f6b94ca` compares each first-query map/schema before sixteen expected
+pure-route failures on 2.2/JDK17 and thirteen on 1.18/JDK17; two retained controls per line
+and the 1.18 absent-signature control pass. Later unreached queries are not prior parity
+evidence. Final parity/performance encoder instructions match, including nested classes;
+candidate/prior fixture classes are byte-identical. The unchanged runtime retains its
+historical 927-core qualification; this is not a newly rerun Rust count.
+
+Prepared release timing consumes YEAR(FLOOR(...)) as an integer with equivalent checksums.
+Four shapes cover compact DECIMAL(18,3) seconds/YEAR, noncompact (19,0) millis/MONTH,
+wrapping (38,0) seconds/DAY and negative ABS (38,18) millis/HOUR. Stock starts on prebuilt
+Generic/Binary RowData; native starts on prebuilt Arrow RecordBatch, with its timer inside
+Rust after setup/import and before export. Production Calc, allocation and intrinsic
+conversions remain timed. Actual previous behavior retains generated temporal evaluation
+inside NativeCalc. Each released line uses nullable/nonnullable and Generic/Binary controls
+at 1,024 rows, plus four 16-row nullable/Binary controls. Each trial processes 131,072
+rows, with sixteen warmups, nine measurements, matched 1 GiB heaps and explicit UTC.
+Independent stock controls and variability remain recorded; no other performance workload
+runs concurrently with timing.
+
+All **32 bulk cells** beat stock **1.291-6.523x** and actual previous
+behavior **2.651-9.545x**. **8/8 tiny controls
+lose to stock**, **0/8 lose to previous**. Six complete million-row
+jobs output TIMESTAMP_LTZ(3) directly, retaining submission/startup, JNI and both perimeter
+transposes. Each engine uses parallelism one, 2 GiB heaps, two warmups and five measured
+repetitions. **4/6 lose to stock**, **0/6
+lose to previous**; native/stock elapsed is **0.921-1.078**,
+native/previous **0.658-0.885**. The prepared function gains
+do not establish universal complete-job acceleration; all slower cases remain material.
+
+See the [qualification, complete-job trials and exact provenance](results/decimal-epoch-floor-2026-11-05.json)
+and [4,000 raw prepared samples](results/decimal-epoch-floor-2026-11-05.csv.gz).
+Other temporal/calendar signatures remain open in
+[#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).

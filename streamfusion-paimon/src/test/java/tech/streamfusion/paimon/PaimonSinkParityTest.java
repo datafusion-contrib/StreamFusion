@@ -745,7 +745,6 @@ class PaimonSinkParityTest {
         "checkpointing",
         "write-only",
         "precommit-compact",
-        "sink.savepoint.auto-tag",
         "execution.checkpointing.max-concurrent-checkpoints"
       })
   void coordinatorCommitKeepsPaimonsConfigurationChecks(String invalid) throws Exception {
@@ -766,9 +765,7 @@ class PaimonSinkParityTest {
               + "'bucket' = '-1', 'sink.coordinator-commit.enabled' = 'true', 'write-only' = '"
               + !invalid.equals("write-only")
               + "'"
-              + (invalid.equals("precommit-compact") || invalid.equals("sink.savepoint.auto-tag")
-                  ? ", '" + invalid + "' = 'true'"
-                  : "")
+              + (invalid.equals("precommit-compact") ? ", '" + invalid + "' = 'true'" : "")
               + ")");
       if (nativeWriter) {
         NativePlanner.install(tableEnv);
@@ -788,6 +785,35 @@ class PaimonSinkParityTest {
       failures.add(cause.getMessage());
     }
     assertEquals(failures.get(0), failures.get(1));
+  }
+
+  @Test
+  void coordinatorCommitPreservesReleasedSavepointTaggingPolicy() throws Exception {
+    for (boolean nativeWriter : new boolean[] {false, true}) {
+      var env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      env.enableCheckpointing(100);
+      var tableEnv = catalogEnvironment(env, Files.createTempDirectory("paimon-savepoint-tag"));
+      tableEnv.executeSql(
+          "CREATE TABLE tagged (id BIGINT, v BIGINT) WITH ("
+              + "'bucket'='-1','sink.coordinator-commit.enabled'='true',"
+              + "'write-only'='true','sink.savepoint.auto-tag'='true')");
+      var scan = nativeWriter ? NativePlanner.install(tableEnv) : null;
+      org.junit.jupiter.api.function.Executable explain =
+          () ->
+              tableEnv.explainSql(
+                  "INSERT INTO tagged SELECT CAST(1 AS BIGINT), CAST(2 AS BIGINT)",
+                  ExplainDetail.JSON_EXECUTION_PLAN);
+      if (PaimonTestCompat.paimon21()) {
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(explain);
+        if (nativeWriter) assertAccelerated(scan);
+      } else {
+        var failure = assertThrows(Exception.class, explain);
+        Throwable cause = failure;
+        while (cause.getCause() != null) cause = cause.getCause();
+        assertTrue(cause.getMessage().contains("sink.savepoint.auto-tag"), cause::getMessage);
+      }
+    }
   }
 
   @ParameterizedTest
@@ -963,9 +989,11 @@ class PaimonSinkParityTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setRuntimeMode(org.apache.flink.api.common.RuntimeExecutionMode.BATCH);
     StreamTableEnvironment compactor = catalogEnvironment(env, warehouse);
-    compactor.getConfig().set(
-        org.apache.flink.configuration.ExecutionOptions.RUNTIME_MODE,
-        org.apache.flink.api.common.RuntimeExecutionMode.BATCH);
+    compactor
+        .getConfig()
+        .set(
+            org.apache.flink.configuration.ExecutionOptions.RUNTIME_MODE,
+            org.apache.flink.api.common.RuntimeExecutionMode.BATCH);
     compactor
         .getConfig()
         .set(org.apache.flink.table.api.config.TableConfigOptions.TABLE_DML_SYNC, true);

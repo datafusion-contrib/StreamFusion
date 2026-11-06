@@ -1,0 +1,5751 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-01",
+  "purpose": "Correctness-verified JVM function coverage costs under the accepted UDF performance exception; no acceleration claim.",
+  "candidate_revision": "5ee08ce3fa72b8d0f774d356dd8e6b9b1f5d2203",
+  "previous_revision": "f5274a10a373ed3a8081b4c5b9b6b46625966bef",
+  "native_sha256": "d1e7b4611e6d52f569b355e0aa255174da220462b8225c7fb6a1d91be9df5acb",
+  "native_sources_unchanged_between_revisions": true,
+  "fixture_sha256": {
+    "FlinkBoxedDateTableFunctionSqlHarnessTest.java": "fc4c35d1557b168535123a1d2cee03171404ececf43fa453d45dddb7cc251774",
+    "BoxedDateTableFunctionBenchmark.java": "64a8dd4f0885175051146ff9ddcfc82df823ae2682aee726009df85bdbfa350b",
+    "FlinkAlternateTemporalTableFunctionSqlHarnessTest.java": "d9ffdc1b2349958a70fe962c1bbbc5c0722465f5d72c4f26d1c4f309e3ecbead",
+    "AlternateTemporalTableFunctionBenchmark.java": "efddda5998559238be03ee6ef3267c548532a45d13212c2881468d11fa9ecae1"
+  },
+  "environment": {
+    "os": "Darwin",
+    "architecture": "arm64",
+    "logical_cpus": 10,
+    "memory_bytes": 17179869184,
+    "jdk": "Temurin 17.0.17",
+    "heap": "2 GiB",
+    "native_profile": "release with mimalloc",
+    "parallelism": 1,
+    "transpose_batch_rows": 1024,
+    "warmup_pairs": 2,
+    "measured_pairs": 5
+  },
+  "method": "Complete-job executeSql/await timer after symmetric EXPLAIN, with row source, blackhole sink, callback and owned output conversion, and both perimeter transposes. Fresh environment per trial, alternating engine order. Cluster setup/teardown is outside the job timer. Previous production uses unchanged Java sources and the identical fixture sources and release DSO. Its enabled control requires zero native substitutions/work; candidate requires both transposes, no fallback and positive native table-function input on every trial.",
+  "limitations": [
+    "Background macOS indexing/analysis processes consumed substantial sampled CPU; no other Java processes were observed.",
+    "Large-input stock controls drift between independent forks and include outliers. Preserve every trial and do not interpret cross-fork differences as an isolated optimization effect.",
+    "Host observations contain UTC gaps; process duration is not used as operator/job throughput.",
+    "Short runs retain startup/JIT costs. No slower result is excluded and no throughput admission is claimed."
+  ],
+  "correctness": {
+    "flink_1_18_1": {
+      "junit_invocations": 147,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    "flink_2_2_1": {
+      "junit_invocations": 147,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    }
+  },
+  "series": [
+    {
+      "variant": "candidate",
+      "flink_line": "2.2",
+      "rows": 262144,
+      "started_utc": "2026-11-01T12:59:09Z",
+      "ended_utc": "2026-11-01T13:02:49Z",
+      "exit_code": 0,
+      "cases": [
+        {
+          "case": "JVM_BOXED_DATE_array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.1098875,
+            0.107858875,
+            0.114704834,
+            0.122514542,
+            0.111837959
+          ],
+          "enabled_seconds": [
+            0.147092375,
+            0.146474875,
+            0.151498125,
+            0.154739875,
+            0.154121125
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.341037
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.291231
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.154617
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.104809
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.109888
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.147092
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.146475
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.107859
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.114705
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.151498
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.15474
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.122515
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.111838
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.154121
+            }
+          ]
+        },
+        {
+          "case": "JVM_BOXED_DATE_list",
+          "rows": 262144,
+          "stock_seconds": [
+            0.659507625,
+            0.663754416,
+            0.65422,
+            0.647390875,
+            0.652463
+          ],
+          "enabled_seconds": [
+            1.206842834,
+            1.204661625,
+            1.197511083,
+            1.200082583,
+            1.195064208
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.700527
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 1.238478
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 1.198669
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.652309
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.659508
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 1.206843
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 1.204662
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.663754
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.65422
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 1.197511
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 1.200083
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.647391
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.652463
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 1.195064
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_date-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.098633,
+            0.103929667,
+            0.098981333,
+            0.099904208,
+            0.1106205
+          ],
+          "enabled_seconds": [
+            0.200277167,
+            0.196321292,
+            0.197237833,
+            0.198679916,
+            0.197186333
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.105025
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.217644
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.193412
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.09823
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.098633
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.200277
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.196321
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.10393
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.098981
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.197238
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.19868
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.099904
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.110621
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.197186
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_time-integer:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.09883475,
+            0.095167958,
+            0.105927625,
+            0.09752525,
+            0.108258917
+          ],
+          "enabled_seconds": [
+            0.189043208,
+            0.192318,
+            0.188538917,
+            0.194452084,
+            0.190138583
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.099409
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.195195
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.189934
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.096429
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.098835
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.189043
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.192318
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.095168
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.105928
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.188539
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.194452
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.097525
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.108259
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.190139
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_time-long:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.113580208,
+            0.107363959,
+            0.104818,
+            0.108321333,
+            0.09729175
+          ],
+          "enabled_seconds": [
+            0.189694792,
+            0.18908575,
+            0.192470458,
+            0.193224,
+            0.202413625
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.099103
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.204314
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.371997
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.121227
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.11358
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.189695
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.189086
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.107364
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.104818
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.19247
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.193224
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.108321
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.097292
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.202414
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_time-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.103845333,
+            0.113073041,
+            0.104566166,
+            0.104963042,
+            0.102098834
+          ],
+          "enabled_seconds": [
+            0.195553917,
+            0.198180709,
+            0.198822209,
+            0.208000333,
+            0.197106209
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.103591
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.196428
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.198314
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.102208
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.103845
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.195554
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.198181
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.113073
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.104566
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.198822
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.208
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.104963
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.102099
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.197106
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_timestamp-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.112089208,
+            0.115117083,
+            0.127799708,
+            0.11233675,
+            0.113510917
+          ],
+          "enabled_seconds": [
+            0.205196083,
+            0.2025925,
+            0.207535833,
+            0.204340959,
+            0.20673275
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.123037
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.213791
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.20655
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.110229
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.112089
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.205196
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.202593
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.115117
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.1278
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.207536
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.204341
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.112337
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.113511
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.206733
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_ltz-integer:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.100307,
+            0.100262958,
+            0.097247,
+            0.101315333,
+            0.100411458
+          ],
+          "enabled_seconds": [
+            0.209147417,
+            0.197825834,
+            0.201832208,
+            0.197196583,
+            0.201984958
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.09834
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.201966
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.198438
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.102178
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.100307
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.209147
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.197826
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.100263
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.097247
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.201832
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.197197
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.101315
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.100411
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.201985
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_ltz-long:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.097662542,
+            0.0988765,
+            0.099657916,
+            0.100328708,
+            0.101748459
+          ],
+          "enabled_seconds": [
+            0.199850209,
+            0.199204584,
+            0.200510208,
+            0.201115,
+            0.20729675
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.103176
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.201016
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.197025
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.097456
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.097663
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.19985
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.199205
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.098877
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.099658
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.20051
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.201115
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.100329
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.101748
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.207297
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_ltz-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.101305209,
+            0.102904875,
+            0.0990545,
+            0.097879375,
+            0.103523792
+          ],
+          "enabled_seconds": [
+            0.197689917,
+            0.1980935,
+            0.202674208,
+            0.201891458,
+            0.1943495
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.099674
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.209719
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.198908
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.100578
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.101305
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.19769
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.198094
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.102905
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.099055
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.202674
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.201891
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.097879
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.103524
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.19435
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_date-sql:list",
+          "rows": 262144,
+          "stock_seconds": [
+            0.62094575,
+            0.632307917,
+            0.621509542,
+            0.621905,
+            0.62335125
+          ],
+          "enabled_seconds": [
+            2.020841917,
+            2.0381735,
+            2.013599667,
+            2.030670042,
+            2.026124708
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.631505
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 1.99933
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 2.008358
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.622335
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.620946
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 2.020842
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 2.038174
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.632308
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.62151
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 2.0136
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 2.03067
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.621905
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.623351
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 2.026125
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_timestamp-sql:list",
+          "rows": 262144,
+          "stock_seconds": [
+            0.671489625,
+            0.639506917,
+            0.631758375,
+            0.641185208,
+            0.638676667
+          ],
+          "enabled_seconds": [
+            2.071391667,
+            2.069634666,
+            2.037117292,
+            2.046396833,
+            2.052752
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.642496
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 2.064849
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 2.079135
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.644217
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.67149
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 2.071392
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 2.069635
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.639507
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.631758
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 2.037117
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 2.046397
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.641185
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.638677
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 2.052752
+            }
+          ]
+        }
+      ],
+      "host_observations": {
+        "samples": 9,
+        "maximum_utc_gap_seconds": 115.0,
+        "external_java_pids_observed": [],
+        "processes_reaching_fifty_percent_cpu": [
+          {
+            "process": "spotlightknowledged",
+            "samples_at_or_above_five_percent": 9,
+            "mean_cpu_percent_in_those_samples": 185.52222222222224,
+            "max_cpu_percent": 196.0
+          },
+          {
+            "process": "java",
+            "samples_at_or_above_five_percent": 8,
+            "mean_cpu_percent_in_those_samples": 71.3375,
+            "max_cpu_percent": 108.4
+          },
+          {
+            "process": "suggestd",
+            "samples_at_or_above_five_percent": 1,
+            "mean_cpu_percent_in_those_samples": 55.5,
+            "max_cpu_percent": 55.5
+          }
+        ]
+      }
+    },
+    {
+      "variant": "previous",
+      "flink_line": "2.2",
+      "rows": 262144,
+      "started_utc": "2026-11-01T13:02:49Z",
+      "ended_utc": "2026-11-01T13:04:20Z",
+      "exit_code": 0,
+      "cases": [
+        {
+          "case": "JVM_BOXED_DATE_array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.100664667,
+            0.110216125,
+            0.114245334,
+            0.107282,
+            0.113474125
+          ],
+          "enabled_seconds": [
+            0.104099375,
+            0.107746625,
+            0.107638875,
+            0.113978,
+            0.112517208
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.355138
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.171203
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.11128
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.1163
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.100665
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.104099
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.107747
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.110216
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.114245
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.107639
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.113978
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.107282
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.113474
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.112517
+            }
+          ]
+        },
+        {
+          "case": "JVM_BOXED_DATE_list",
+          "rows": 262144,
+          "stock_seconds": [
+            0.669031334,
+            0.652729666,
+            0.664126584,
+            0.651033125,
+            0.649816459
+          ],
+          "enabled_seconds": [
+            0.659927041,
+            0.66263925,
+            0.648463875,
+            0.646737209,
+            0.662120708
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.711936
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.658862
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.650484
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.650199
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.669031
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.659927
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.662639
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.65273
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.664127
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.648464
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.646737
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.651033
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.649816
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.662121
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_date-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.094839959,
+            0.096022084,
+            0.098053125,
+            0.097044334,
+            0.098816458
+          ],
+          "enabled_seconds": [
+            0.094152334,
+            0.096519334,
+            0.099956916,
+            0.107031333,
+            0.098223292
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.099302
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.09438
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.09643
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.108109
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.09484
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.094152
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.096519
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.096022
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.098053
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.099957
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.107031
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.097044
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.098816
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.098223
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_time-integer:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.103375333,
+            0.09348775,
+            0.093709666,
+            0.094127834,
+            0.095926291
+          ],
+          "enabled_seconds": [
+            0.091359125,
+            0.102156,
+            0.090638708,
+            0.092454208,
+            0.102814958
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.099864
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.10566
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.093022
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.09484
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.103375
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.091359
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.102156
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.093488
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.09371
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.090639
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.092454
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.094128
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.095926
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.102815
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_time-long:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.095213458,
+            0.09896325,
+            0.097980292,
+            0.09932925,
+            0.095248625
+          ],
+          "enabled_seconds": [
+            0.091789292,
+            0.100730458,
+            0.107926916,
+            0.094756958,
+            0.095802708
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.098132
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.096775
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.09484
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.091871
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.095213
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.091789
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.10073
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.098963
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.09798
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.107927
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.094757
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.099329
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.095249
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.095803
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_time-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.098624125,
+            0.101928833,
+            0.097864,
+            0.102060917,
+            0.099478625
+          ],
+          "enabled_seconds": [
+            0.10091625,
+            0.108271542,
+            0.096796416,
+            0.103044125,
+            0.098814083
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.106281
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.107506
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.099796
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.098991
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.098624
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.100916
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.108272
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.101929
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.097864
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.096796
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.103044
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.102061
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.099479
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.098814
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_timestamp-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.108780542,
+            0.105368166,
+            0.108365209,
+            0.107465333,
+            0.10893725
+          ],
+          "enabled_seconds": [
+            0.104904167,
+            0.107603708,
+            0.108618583,
+            0.107540417,
+            0.1092765
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.121441
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.107975
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.10959
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.108332
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.108781
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.104904
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.107604
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.105368
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.108365
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.108619
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.10754
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.107465
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.108937
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.109277
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_ltz-integer:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.099529708,
+            0.100897959,
+            0.0959085,
+            0.099793416,
+            0.102289708
+          ],
+          "enabled_seconds": [
+            0.095437291,
+            0.096602,
+            0.101146541,
+            0.096570209,
+            0.099499334
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.097515
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.096826
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.099887
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.09888
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.09953
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.095437
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.096602
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.100898
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.095909
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.101147
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.09657
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.099793
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.10229
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.099499
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_ltz-long:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.100280416,
+            0.103095666,
+            0.096556083,
+            0.10698275,
+            0.100496041
+          ],
+          "enabled_seconds": [
+            0.099842666,
+            0.099076084,
+            0.102147042,
+            0.100089417,
+            0.096673375
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.096315
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.10085
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.107413
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.100484
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.10028
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.099843
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.099076
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.103096
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.096556
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.102147
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.100089
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.106983
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.100496
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.096673
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_ltz-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.09798025,
+            0.097313125,
+            0.09947825,
+            0.09629825,
+            0.093701083
+          ],
+          "enabled_seconds": [
+            0.1014305,
+            0.095665417,
+            0.0966855,
+            0.10081325,
+            0.099614958
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.098295
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.101765
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.106444
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.102498
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.09798
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.101431
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.095665
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.097313
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.099478
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.096686
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.100813
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.096298
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.093701
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.099615
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_date-sql:list",
+          "rows": 262144,
+          "stock_seconds": [
+            0.626054792,
+            0.623225541,
+            0.62712425,
+            0.624603667,
+            0.622639334
+          ],
+          "enabled_seconds": [
+            0.6261595,
+            0.628236209,
+            0.886182167,
+            0.625111667,
+            0.62404875
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.627758
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.624978
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.634316
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.627506
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.626055
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.62616
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.628236
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.623226
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.627124
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.886182
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.625112
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.624604
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.622639
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.624049
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_timestamp-sql:list",
+          "rows": 262144,
+          "stock_seconds": [
+            0.643668375,
+            0.637813167,
+            0.651523917,
+            0.641236875,
+            0.638801792
+          ],
+          "enabled_seconds": [
+            0.631825709,
+            0.636331583,
+            0.636051542,
+            0.636956542,
+            0.646715875
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.638446
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.66766
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.639777
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.63574
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.643668
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.631826
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.636332
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.637813
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.651524
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.636052
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.636957
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.641237
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.638802
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.646716
+            }
+          ]
+        }
+      ],
+      "host_observations": {
+        "samples": 6,
+        "maximum_utc_gap_seconds": 50.0,
+        "external_java_pids_observed": [],
+        "processes_reaching_fifty_percent_cpu": [
+          {
+            "process": "spotlightknowledged",
+            "samples_at_or_above_five_percent": 5,
+            "mean_cpu_percent_in_those_samples": 175.76,
+            "max_cpu_percent": 198.9
+          },
+          {
+            "process": "java",
+            "samples_at_or_above_five_percent": 5,
+            "mean_cpu_percent_in_those_samples": 53.67999999999999,
+            "max_cpu_percent": 78.3
+          },
+          {
+            "process": "mediaanalysisd",
+            "samples_at_or_above_five_percent": 1,
+            "mean_cpu_percent_in_those_samples": 92.9,
+            "max_cpu_percent": 92.9
+          }
+        ]
+      }
+    },
+    {
+      "variant": "candidate",
+      "flink_line": "2.2",
+      "rows": 2097152,
+      "started_utc": "2026-11-01T13:04:20Z",
+      "ended_utc": "2026-11-01T13:18:07Z",
+      "exit_code": 0,
+      "cases": [
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_timestamp-sql:list",
+          "rows": 2097152,
+          "stock_seconds": [
+            12.103344167,
+            12.105993542,
+            12.116953709,
+            14.41722175,
+            14.893425375
+          ],
+          "enabled_seconds": [
+            23.588667416,
+            23.743096125,
+            23.871424166,
+            25.0247705,
+            27.9265625
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 12.410691
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 23.631346
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 22.492005
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 12.138751
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 12.103344
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 23.588667
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 23.743096
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 12.105994
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 12.116954
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 23.871424
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 25.024771
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 14.417222
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 14.893425
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 27.926563
+            }
+          ]
+        }
+      ],
+      "host_observations": {
+        "samples": 27,
+        "maximum_utc_gap_seconds": 573.0,
+        "external_java_pids_observed": [],
+        "processes_reaching_fifty_percent_cpu": [
+          {
+            "process": "java",
+            "samples_at_or_above_five_percent": 26,
+            "mean_cpu_percent_in_those_samples": 104.85,
+            "max_cpu_percent": 122.9
+          },
+          {
+            "process": "suggestd",
+            "samples_at_or_above_five_percent": 1,
+            "mean_cpu_percent_in_those_samples": 72.5,
+            "max_cpu_percent": 72.5
+          },
+          {
+            "process": "corespotlightd",
+            "samples_at_or_above_five_percent": 3,
+            "mean_cpu_percent_in_those_samples": 69.60000000000001,
+            "max_cpu_percent": 128.1
+          },
+          {
+            "process": "spotlightknowledged",
+            "samples_at_or_above_five_percent": 19,
+            "mean_cpu_percent_in_those_samples": 190.98947368421054,
+            "max_cpu_percent": 204.9
+          }
+        ]
+      }
+    },
+    {
+      "variant": "previous",
+      "flink_line": "2.2",
+      "rows": 2097152,
+      "started_utc": "2026-11-01T13:18:07Z",
+      "ended_utc": "2026-11-01T13:19:39Z",
+      "exit_code": 0,
+      "cases": [
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_timestamp-sql:list",
+          "rows": 2097152,
+          "stock_seconds": [
+            6.092910333,
+            6.086316083,
+            6.119263459,
+            6.264935083,
+            6.321114292
+          ],
+          "enabled_seconds": [
+            6.009268,
+            6.1102165,
+            6.142144209,
+            6.180997875,
+            6.166605125
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 6.523223
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 6.116583
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 6.12182
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 6.090805
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 6.09291
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 6.009268
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 6.110217
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 6.086316
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 6.119263
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 6.142144
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 6.180998
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 6.264935
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 6.321114
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 6.166605
+            }
+          ]
+        }
+      ],
+      "host_observations": {
+        "samples": 10,
+        "maximum_utc_gap_seconds": 10.0,
+        "external_java_pids_observed": [],
+        "processes_reaching_fifty_percent_cpu": [
+          {
+            "process": "spotlightknowledged",
+            "samples_at_or_above_five_percent": 10,
+            "mean_cpu_percent_in_those_samples": 194.47,
+            "max_cpu_percent": 210.4
+          },
+          {
+            "process": "java",
+            "samples_at_or_above_five_percent": 9,
+            "mean_cpu_percent_in_those_samples": 106.5888888888889,
+            "max_cpu_percent": 126.2
+          },
+          {
+            "process": "mediaanalysisd",
+            "samples_at_or_above_five_percent": 1,
+            "mean_cpu_percent_in_those_samples": 91.6,
+            "max_cpu_percent": 91.6
+          }
+        ]
+      }
+    },
+    {
+      "variant": "candidate",
+      "flink_line": "1.18",
+      "rows": 262144,
+      "started_utc": "2026-11-01T13:26:55Z",
+      "ended_utc": "2026-11-01T13:28:19Z",
+      "exit_code": 0,
+      "cases": [
+        {
+          "case": "JVM_BOXED_DATE_array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.117854167,
+            0.112336084,
+            0.112001916,
+            0.114927791,
+            0.118534958
+          ],
+          "enabled_seconds": [
+            0.15081675,
+            0.149643541,
+            0.152579208,
+            0.153498667,
+            0.152762667
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.320449
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.268081
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.162218
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.101553
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.117854
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.150817
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.149644
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.112336
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.112002
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.152579
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.153499
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.114928
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.118535
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.152763
+            }
+          ]
+        },
+        {
+          "case": "JVM_BOXED_DATE_list",
+          "rows": 262144,
+          "stock_seconds": [
+            0.668331625,
+            0.644848875,
+            0.6468965,
+            0.654543666,
+            0.647495416
+          ],
+          "enabled_seconds": [
+            1.184826333,
+            1.174923208,
+            1.168312083,
+            1.166626375,
+            1.1888335
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.731028
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 1.211174
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 1.149291
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.648966
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.668332
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 1.184826
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 1.174923
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.644849
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.646897
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 1.168312
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 1.166626
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.654544
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.647495
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 1.188834
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_date-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.100321583,
+            0.1030255,
+            0.104898667,
+            0.094086208,
+            0.094580916
+          ],
+          "enabled_seconds": [
+            0.193517458,
+            0.205219,
+            0.207001791,
+            0.197865708,
+            0.197766042
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.100044
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.206829
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.205219
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.104116
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.100322
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.193517
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.205219
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.103026
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.104899
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.207002
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.197866
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.094086
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.094581
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.197766
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_time-integer:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.102278209,
+            0.094006625,
+            0.094989667,
+            0.091371625,
+            0.091792208
+          ],
+          "enabled_seconds": [
+            0.1930035,
+            0.202168041,
+            0.189883834,
+            0.194402375,
+            0.193273208
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.103592
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.214338
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.192681
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.094489
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.102278
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.193004
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.202168
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.094007
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.09499
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.189884
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.194402
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.091372
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.091792
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.193273
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_time-long:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.09985175,
+            0.094727958,
+            0.092350834,
+            0.096643917,
+            0.093902125
+          ],
+          "enabled_seconds": [
+            0.196371333,
+            0.203653375,
+            0.19561525,
+            0.1916435,
+            0.194614042
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.096619
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.19262
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.203823
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.093803
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.099852
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.196371
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.203653
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.094728
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.092351
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.195615
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.191644
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.096644
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.093902
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.194614
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_time-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.099095958,
+            0.107376416,
+            0.09917425,
+            0.108034875,
+            0.099298875
+          ],
+          "enabled_seconds": [
+            0.199042375,
+            0.195459958,
+            0.197466541,
+            0.199558834,
+            0.200314042
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.102437
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.197132
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.198528
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.100674
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.099096
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.199042
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.19546
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.107376
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.099174
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.197467
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.199559
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.108035
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.099299
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.200314
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_timestamp-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.109227459,
+            0.108295792,
+            0.108087625,
+            0.116266792,
+            0.10922325
+          ],
+          "enabled_seconds": [
+            0.205516042,
+            0.210261666,
+            0.20595,
+            0.206490708,
+            0.206924334
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.121668
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.218447
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.210299
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.116424
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.109227
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.205516
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.210262
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.108296
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.108088
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.20595
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.206491
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.116267
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.109223
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.206924
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_ltz-integer:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.097266917,
+            0.105139167,
+            0.105720167,
+            0.095788417,
+            0.096322458
+          ],
+          "enabled_seconds": [
+            0.199496875,
+            0.199369875,
+            0.2038805,
+            0.199013667,
+            0.209191667
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.097016
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.20996
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.203461
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.096097
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.097267
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.199497
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.19937
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.105139
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.10572
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.203881
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.199014
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.095788
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.096322
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.209192
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_ltz-long:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.097689167,
+            0.096046958,
+            0.094276167,
+            0.094249959,
+            0.0968995
+          ],
+          "enabled_seconds": [
+            0.201687875,
+            0.202823167,
+            0.202655917,
+            0.20279025,
+            0.201592584
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.095271
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.202075
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.201324
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.094982
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.097689
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.201688
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.202823
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.096047
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.094276
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.202656
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.20279
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.09425
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.0969
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.201593
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_ltz-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.100305167,
+            0.097696625,
+            0.10473975,
+            0.106728417,
+            0.09880925
+          ],
+          "enabled_seconds": [
+            0.203003042,
+            0.201555042,
+            0.212281625,
+            0.203708708,
+            0.209440416
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.092827
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.203621
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.21028
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.098776
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.100305
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.203003
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.201555
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.097697
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.10474
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.212282
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.203709
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.106728
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.098809
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.20944
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_date-sql:list",
+          "rows": 262144,
+          "stock_seconds": [
+            0.626106666,
+            0.632066667,
+            0.62752125,
+            0.633710333,
+            0.633733
+          ],
+          "enabled_seconds": [
+            1.970877167,
+            1.990107917,
+            1.988205833,
+            1.995584209,
+            1.992303
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.632777
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 1.976951
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 1.967398
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.628975
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.626107
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 1.970877
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 1.990108
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.632067
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.627521
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 1.988206
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 1.995584
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.63371
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.633733
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 1.992303
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_timestamp-sql:list",
+          "rows": 262144,
+          "stock_seconds": [
+            0.635165042,
+            0.646170041,
+            0.639137375,
+            0.651757208,
+            0.63826125
+          ],
+          "enabled_seconds": [
+            2.005635375,
+            2.015919125,
+            1.999405667,
+            2.010475458,
+            2.01776775
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.650285
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 2.005814
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 2.019667
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.637937
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.635165
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 2.005635
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 2.015919
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.64617
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.639137
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 1.999406
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 2.010475
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.651757
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.638261
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 2.017768
+            }
+          ]
+        }
+      ],
+      "host_observations": {
+        "samples": 9,
+        "maximum_utc_gap_seconds": 10.0,
+        "external_java_pids_observed": [],
+        "processes_reaching_fifty_percent_cpu": [
+          {
+            "process": "java",
+            "samples_at_or_above_five_percent": 8,
+            "mean_cpu_percent_in_those_samples": 69.15,
+            "max_cpu_percent": 107.2
+          },
+          {
+            "process": "mds_stores",
+            "samples_at_or_above_five_percent": 7,
+            "mean_cpu_percent_in_those_samples": 94.58571428571429,
+            "max_cpu_percent": 99.7
+          },
+          {
+            "process": "suggestd",
+            "samples_at_or_above_five_percent": 1,
+            "mean_cpu_percent_in_those_samples": 85.3,
+            "max_cpu_percent": 85.3
+          },
+          {
+            "process": "mediaanalysisd",
+            "samples_at_or_above_five_percent": 2,
+            "mean_cpu_percent_in_those_samples": 51.349999999999994,
+            "max_cpu_percent": 96.6
+          }
+        ]
+      }
+    },
+    {
+      "variant": "previous",
+      "flink_line": "1.18",
+      "rows": 262144,
+      "started_utc": "2026-11-01T13:28:19Z",
+      "ended_utc": "2026-11-01T13:29:14Z",
+      "exit_code": 0,
+      "cases": [
+        {
+          "case": "JVM_BOXED_DATE_array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.111935583,
+            0.106762083,
+            0.110485125,
+            0.106919916,
+            0.109851417
+          ],
+          "enabled_seconds": [
+            0.108035042,
+            0.101780875,
+            0.113095833,
+            0.120404917,
+            0.1094045
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.319007
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.178747
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.102128
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.113959
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.111936
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.108035
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.101781
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.106762
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.110485
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.113096
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.120405
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.10692
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.109851
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.109405
+            }
+          ]
+        },
+        {
+          "case": "JVM_BOXED_DATE_list",
+          "rows": 262144,
+          "stock_seconds": [
+            0.663292583,
+            0.672716834,
+            0.683385042,
+            0.647852292,
+            0.64865725
+          ],
+          "enabled_seconds": [
+            0.701370875,
+            0.703516834,
+            0.66549075,
+            0.6476465,
+            0.647852583
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.733023
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.653821
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.65873
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.648612
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.663293
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.701371
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.703517
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.672717
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.683385
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.665491
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.647647
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.647852
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.648657
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.647853
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_date-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.09424175,
+            0.107149834,
+            0.096518167,
+            0.099303,
+            0.093857416
+          ],
+          "enabled_seconds": [
+            0.097154958,
+            0.093648166,
+            0.105057875,
+            0.107524583,
+            0.097096041
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.101755
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.102777
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.10403
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.104819
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.094242
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.097155
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.093648
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.10715
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.096518
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.105058
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.107525
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.099303
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.093857
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.097096
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_time-integer:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.100921375,
+            0.094537042,
+            0.089530541,
+            0.090513875,
+            0.093661083
+          ],
+          "enabled_seconds": [
+            0.101991625,
+            0.09991375,
+            0.097113083,
+            0.096433375,
+            0.088625542
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.089275
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.096577
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.096295
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.090411
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.100921
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.101992
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.099914
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.094537
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.089531
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.097113
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.096433
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.090514
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.093661
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.088626
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_time-long:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.104098083,
+            0.105211958,
+            0.106407666,
+            0.105685459,
+            0.096478375
+          ],
+          "enabled_seconds": [
+            0.105170625,
+            0.102360875,
+            0.095878166,
+            0.094250959,
+            0.093907875
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.095443
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.096935
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.104348
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.095032
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.104098
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.105171
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.102361
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.105212
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.106408
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.095878
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.094251
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.105685
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.096478
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.093908
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_time-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.099008084,
+            0.095756875,
+            0.100856042,
+            0.105719708,
+            0.106643208
+          ],
+          "enabled_seconds": [
+            0.105558917,
+            0.096034958,
+            0.099115541,
+            0.104918792,
+            0.100441125
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.111734
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.100855
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.099544
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.101083
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.099008
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.105559
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.096035
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.095757
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.100856
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.099116
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.104919
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.10572
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.106643
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.100441
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_timestamp-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.108655667,
+            0.105549917,
+            0.108873083,
+            0.109591875,
+            0.107727542
+          ],
+          "enabled_seconds": [
+            0.108784791,
+            0.107604708,
+            0.106837125,
+            0.107074792,
+            0.113544625
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.139824
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.105988
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.11627
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.106157
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.108656
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.108785
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.107605
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.10555
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.108873
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.106837
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.107075
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.109592
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.107728
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.113545
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_ltz-integer:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.106515917,
+            0.091967208,
+            0.0957625,
+            0.096514083,
+            0.097830666
+          ],
+          "enabled_seconds": [
+            0.0953615,
+            0.0979525,
+            0.094204292,
+            0.094582584,
+            0.097345833
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.094186
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.104856
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.097201
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.096002
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.106516
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.095362
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.097953
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.091967
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.095763
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.094204
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.094583
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.096514
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.097831
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.097346
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_ltz-long:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.098432167,
+            0.097896875,
+            0.106850334,
+            0.107889458,
+            0.10260975
+          ],
+          "enabled_seconds": [
+            0.1043955,
+            0.107497959,
+            0.103892667,
+            0.095933458,
+            0.106679084
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.095237
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.093208
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.104733
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.096151
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.098432
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.104396
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.107498
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.097897
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.10685
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.103893
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.095933
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.107889
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.10261
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.106679
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_ltz-sql:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.099067708,
+            0.097184125,
+            0.09800475,
+            0.097968459,
+            0.096051542
+          ],
+          "enabled_seconds": [
+            0.098105417,
+            0.097748958,
+            0.104370042,
+            0.099271584,
+            0.107194833
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.096228
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.10628
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.09832
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.093541
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.099068
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.098105
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.097749
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.097184
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.098005
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.10437
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.099272
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.097968
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.096052
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.107195
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_date-sql:list",
+          "rows": 262144,
+          "stock_seconds": [
+            0.635589833,
+            0.638574625,
+            0.634875167,
+            0.63640975,
+            0.634150041
+          ],
+          "enabled_seconds": [
+            0.629474375,
+            0.62623625,
+            0.630999708,
+            0.630597125,
+            0.63395875
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.630315
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.637742
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.626144
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.629284
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.63559
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.629474
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.626236
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.638575
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.634875
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.631
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.630597
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.63641
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.63415
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.633959
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_timestamp-sql:list",
+          "rows": 262144,
+          "stock_seconds": [
+            0.685295875,
+            0.700690042,
+            0.691991958,
+            0.696397333,
+            0.696781041
+          ],
+          "enabled_seconds": [
+            0.70187575,
+            0.702229792,
+            0.711961625,
+            0.707156667,
+            0.684077167
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.654841
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 0.648133
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.668758
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 0.685453
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.685296
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 0.701876
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.70223
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 0.70069
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.691992
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 0.711962
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.707157
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 0.696397
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.696781
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 0.684077
+            }
+          ]
+        }
+      ],
+      "host_observations": {
+        "samples": 6,
+        "maximum_utc_gap_seconds": 10.0,
+        "external_java_pids_observed": [],
+        "processes_reaching_fifty_percent_cpu": [
+          {
+            "process": "mds_stores",
+            "samples_at_or_above_five_percent": 6,
+            "mean_cpu_percent_in_those_samples": 97.8,
+            "max_cpu_percent": 100.3
+          },
+          {
+            "process": "java",
+            "samples_at_or_above_five_percent": 5,
+            "mean_cpu_percent_in_those_samples": 90.17999999999999,
+            "max_cpu_percent": 116.9
+          },
+          {
+            "process": "mediaanalysisd",
+            "samples_at_or_above_five_percent": 3,
+            "mean_cpu_percent_in_those_samples": 110.13333333333333,
+            "max_cpu_percent": 155.7
+          }
+        ]
+      }
+    },
+    {
+      "variant": "candidate",
+      "flink_line": "1.18",
+      "rows": 2097152,
+      "started_utc": "2026-11-01T13:29:14Z",
+      "ended_utc": "2026-11-01T13:43:03Z",
+      "exit_code": 0,
+      "cases": [
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_timestamp-sql:list",
+          "rows": 2097152,
+          "stock_seconds": [
+            16.908064875,
+            57.638473625,
+            22.253837375,
+            12.133865708,
+            12.123356041
+          ],
+          "enabled_seconds": [
+            31.612947083,
+            73.132752875,
+            23.506833625,
+            24.213983584,
+            23.208837708
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 14.592242
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 28.355015
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 29.135467
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 16.569146
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 16.908065
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 31.612947
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 73.132753
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 57.638474
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 22.253837
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 23.506834
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 24.213984
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 12.133866
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 12.123356
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 23.208838
+            }
+          ]
+        }
+      ],
+      "host_observations": {
+        "samples": 39,
+        "maximum_utc_gap_seconds": 270.0,
+        "external_java_pids_observed": [],
+        "processes_reaching_fifty_percent_cpu": [
+          {
+            "process": "mds_stores",
+            "samples_at_or_above_five_percent": 17,
+            "mean_cpu_percent_in_those_samples": 39.21176470588235,
+            "max_cpu_percent": 98.8
+          },
+          {
+            "process": "mediaanalysisd",
+            "samples_at_or_above_five_percent": 34,
+            "mean_cpu_percent_in_those_samples": 105.37352941176471,
+            "max_cpu_percent": 196.6
+          },
+          {
+            "process": "java",
+            "samples_at_or_above_five_percent": 38,
+            "mean_cpu_percent_in_those_samples": 106.6078947368421,
+            "max_cpu_percent": 237.5
+          },
+          {
+            "process": "searchpartyd",
+            "samples_at_or_above_five_percent": 1,
+            "mean_cpu_percent_in_those_samples": 55.0,
+            "max_cpu_percent": 55.0
+          },
+          {
+            "process": "suggestd",
+            "samples_at_or_above_five_percent": 1,
+            "mean_cpu_percent_in_those_samples": 77.6,
+            "max_cpu_percent": 77.6
+          }
+        ]
+      }
+    },
+    {
+      "variant": "previous",
+      "flink_line": "1.18",
+      "rows": 2097152,
+      "started_utc": "2026-11-01T13:43:03Z",
+      "ended_utc": "2026-11-01T13:45:57Z",
+      "exit_code": 0,
+      "cases": [
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_timestamp-sql:list",
+          "rows": 2097152,
+          "stock_seconds": [
+            12.137046167,
+            12.145239417,
+            12.145023375,
+            12.148507375,
+            12.157077042
+          ],
+          "enabled_seconds": [
+            12.145503083,
+            12.145221292,
+            12.151529042,
+            12.161324833,
+            12.166476542
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 12.382968
+            },
+            {
+              "engine": "enabled",
+              "trial": 0,
+              "warmup": true,
+              "seconds_printed": 12.215033
+            },
+            {
+              "engine": "enabled",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 12.164692
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "seconds_printed": 12.163162
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 12.137046
+            },
+            {
+              "engine": "enabled",
+              "trial": 2,
+              "warmup": false,
+              "seconds_printed": 12.145503
+            },
+            {
+              "engine": "enabled",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 12.145221
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "seconds_printed": 12.145239
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 12.145023
+            },
+            {
+              "engine": "enabled",
+              "trial": 4,
+              "warmup": false,
+              "seconds_printed": 12.151529
+            },
+            {
+              "engine": "enabled",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 12.161325
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "seconds_printed": 12.148507
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 12.157077
+            },
+            {
+              "engine": "enabled",
+              "trial": 6,
+              "warmup": false,
+              "seconds_printed": 12.166477
+            }
+          ]
+        }
+      ],
+      "host_observations": {
+        "samples": 18,
+        "maximum_utc_gap_seconds": 10.0,
+        "external_java_pids_observed": [],
+        "processes_reaching_fifty_percent_cpu": [
+          {
+            "process": "java",
+            "samples_at_or_above_five_percent": 17,
+            "mean_cpu_percent_in_those_samples": 95.2,
+            "max_cpu_percent": 103.2
+          }
+        ]
+      }
+    }
+  ]
+}

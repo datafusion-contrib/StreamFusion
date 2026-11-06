@@ -62,7 +62,7 @@ class DecimalSignEncodingTest {
         List.of(
             rex.makeCall(
                 type,
-                FlinkSqlOperatorTable.PLUS,
+                FlinkSqlOperatorTable.DIVIDE,
                 List.of(input, rex.makeExactLiteral(BigDecimal.ONE, type))),
             rex.makeCast(types.createSqlType(SqlTypeName.DECIMAL, 18, 2), input),
             rex.makeCast(types.createSqlType(SqlTypeName.DECIMAL, 17, 3), input),

@@ -39,6 +39,17 @@ public final class FlinkCompat {
     return precision >= 3 ? 1 : (int) Math.pow(10, 3 - precision);
   }
 
+  public static boolean supportsSubHourLtzRounding() {
+    return true;
+  }
+
+  public static boolean isBuiltinEpochTimestamp(org.apache.calcite.sql.SqlOperator operator) {
+    return operator instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction
+        && ((org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction) operator)
+                .getDefinition()
+            == org.apache.flink.table.functions.BuiltInFunctionDefinitions.TO_TIMESTAMP_LTZ;
+  }
+
   public static org.apache.flink.table.functions.ScalarFunction scalarFunction(
       org.apache.calcite.sql.SqlOperator operator) {
     Object scalarCandidate;

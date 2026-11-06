@@ -67,7 +67,9 @@ NATIVE_OPERATORS = {
         'NativeCalcOperator', 'NativeLookupJoinOperator', 'NativeAsyncLookupJoinOperator',
         'NativeFilterOperator', 'NativeColumnarGroupAggregateOperator',
         'NativeColumnarLocalGroupAggregateOperator',
-        'NativeColumnarJvmGroupOperator', 'NativeColumnarTableFunctionOperator',
+        'NativeColumnarJvmGroupOperator', 'NativeColumnarJvmLocalGroupOperator',
+        'NativeColumnarJvmGlobalGroupOperator', 'NativeColumnarJvmOverOperator',
+        'NativeColumnarTableFunctionOperator',
         'NativeColumnarUpdatingJoinOperator', 'NativeColumnarTopNOperator',
         'NativeColumnarGlobalWindowAggregateOperator')
 }

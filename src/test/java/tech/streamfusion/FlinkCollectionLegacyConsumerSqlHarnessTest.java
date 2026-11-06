@@ -11,22 +11,24 @@ import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
-import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class FlinkCollectionLegacyConsumerSqlHarnessTest {
-  private static final RecoveryExecutionMetrics METRICS = new RecoveryExecutionMetrics();
+  private final RecoveryExecutionMetrics metrics = new RecoveryExecutionMetrics();
 
-  @AfterAll
-  static void closeCluster() {
-    METRICS.close();
+  @AfterEach
+  void closeCluster() {
+    metrics.close();
   }
 
-  private static StreamTableEnvironment environment(int parallelism, String type) {
-    var env = METRICS.environment(new Configuration(), parallelism, 0);
+  private StreamTableEnvironment environment(int parallelism, String type) {
+    var env = metrics.environment(new Configuration(), parallelism, 0);
     env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
@@ -223,13 +225,13 @@ class FlinkCollectionLegacyConsumerSqlHarnessTest {
     }
   }
 
-  private static List<List<Object>> collect(
+  private List<List<Object>> collect(
       String sql, int parallelism, boolean nativeEnabled, boolean expectNative, String... consumed)
       throws Exception {
     return collect("BIGINT", sql, parallelism, nativeEnabled, expectNative, consumed);
   }
 
-  private static List<List<Object>> collect(
+  private List<List<Object>> collect(
       String type,
       String sql,
       int parallelism,
@@ -238,7 +240,7 @@ class FlinkCollectionLegacyConsumerSqlHarnessTest {
       String... consumed)
       throws Exception {
     var previous =
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .map(row -> row.get("jobId"))
             .collect(java.util.stream.Collectors.toSet());
     var table = environment(parallelism, type);
@@ -256,7 +258,7 @@ class FlinkCollectionLegacyConsumerSqlHarnessTest {
       }
     }
     var work =
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .filter(row -> !previous.contains(row.get("jobId")))
             .collect(java.util.stream.Collectors.toList());
     if (expectNative) {

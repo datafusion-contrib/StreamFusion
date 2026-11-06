@@ -13,7 +13,7 @@ buffer, which is the cost the columnar sink exists to avoid.
 
 ## What we did
 
-The sink owns the level-0 file of a primary-key bucket and nothing else:
+The sink owns the level-0 file of a primary-key bucket. Java retains the table writer lifecycle:
 
 - **Merge natively.** Each bucket's routed batches, row kinds included, sit in a native buffer that
   stamps arrival sequence numbers and, on flush, sorts by the memcomparable key rows already used
@@ -36,11 +36,13 @@ The sink owns the level-0 file of a primary-key bucket and nothing else:
 
 ## Why this shape
 
-- **No native compactor and no upstream change.** Compaction, changelog production for later
-  producers, lookup, recovery, and the commit protocol are Paimon's released code operating on
-  files whose content is what Paimon's own writer would have produced. A native compactor would
-  have re-implemented Paimon's universal compaction and its file-level bookkeeping for no throughput
-  gain on the hot path, which is the sort and merge of incoming rows.
+- **Released Java orchestration.** Compaction selection, changelog production for later producers,
+  lookup, recovery and the commit protocol remain Paimon's code. On the modern 2.1/Flink 2.2 path,
+  the released rewriter factory decorates only admitted file-to-file deduplicate rewrites: public
+  paimon-rust reads and merges, and the existing native format writer encodes. There is no custom
+  compaction planner, comparator or reducer. Other rewrites and metadata upgrades delegate to Java.
+  A small same-package bridge supplies the released Flink writer's table-write factory before
+  bucket restoration and on refresh; incompatible runtime classloaders retain the stock provider.
 - **Identical results by construction.** Module and MiniCluster tests write the same changelog
   through the native path and through Paimon's writer into twin tables and compare rows read back,
   every file's metadata, and Parquet footers, across restarts and through in-job compaction.
@@ -53,7 +55,8 @@ The sink owns the level-0 file of a primary-key bucket and nothing else:
 
 ## Consequences
 
-- **Compaction rewrites are stock speed**, as for append tables (31).
+- **Bounded native compaction.** The [connector page](../docs/connectors/paimon.md#compaction)
+  describes exact admission, preflight and failure behavior. Legacy maintenance remains stock.
 - **An idle Paimon writer is closed and reopened.** Paimon's writer sees files, not rows, so
   between checkpoints it can look idle; Paimon then closes it and the next hand-off recreates it
   with a scan of the bucket's committed files. The native data increment is added

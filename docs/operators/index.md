@@ -45,6 +45,21 @@ or construction of an admitted replacement. Those failures still propagate, as d
 errors and other linkage errors. Falling back preserves host planning; it does not repair or
 certify an incompatible native deployment.
 
+## Optional planner extension initialization
+
+Optional connector extensions register into separate temporary rule lists. Only a fully
+registered extension publishes its rules and source-sharing hook. A service-provider or linkage
+failure during discovery or registration skips that extension without retaining partial rules
+or disabling healthy extensions and built-in operators. Registration warnings identify the
+provider and include the original exception; discovery warnings include ServiceLoader's provider
+diagnostic. These initialization warnings are separate from per-operator fallback reasons.
+
+Ordinary programming exceptions and fatal JVM errors still propagate, including when wrapped by
+ServiceLoader. This isolation does not supply a missing stock connector or make an incompatible
+connector usable: a query that actually requires it must still meet Flink's connector requirements.
+Extensions are initialized once per planner classloader; repairing a skipped provider requires
+a fresh planner classloader. No registration work is added to batch processing.
+
 ## Nested values at the Arrow boundary
 
 Reusable row-to-Arrow writers finish and reset nested ARRAY, MAP and ROW children together with

@@ -18,24 +18,12 @@ public final class NativePaimon {
 
   public static native String liveNativeHandles();
 
-  public static native long createSnapshotMerger(
-      Object provider,
-      long inputSchema,
-      long outputSchema,
-      int keys,
-      int runs,
-      int rows,
-      long budget,
-      int[] sequenceColumns,
-      boolean sequenceAscending,
-      boolean firstRow,
-      boolean ignoreDelete,
-      boolean partialUpdate,
-      boolean removeOnDelete);
+  static native long createReader(
+      Object io, String descriptor, long schema, int rows, long budget, boolean kinds);
 
-  public static native boolean snapshotMergerNext(long handle, long array, long schema);
+  static native boolean readerNext(long handle, long array, long schema);
 
-  public static native long snapshotMergerPeakBytes(long handle);
+  static native long readerReservedBytes(long handle);
 
-  public static native void closeSnapshotMerger(long handle);
+  static native void closeReader(long handle);
 }
