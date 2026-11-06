@@ -24,6 +24,29 @@ at operator boundaries remains; JSON_QUERY now participates in that gate too. JS
 connector serialization is unaffected. See the [coverage page](../docs/operators/calc-filter.md#sqljson-evaluation)
 and [measurements](../docs/benchmarks/scalar-functions.md).
 
+## ARRAY/ROW JSON serialization
+
+Comet's `native/spark-expr/src/json_funcs/to_json.rs` prepares struct metadata outside its
+row loop and produces an Arrow string array. StreamFusion follows that preparation pattern,
+but uses Flink's JSON serializer contract: retain NULL fields/elements, sort ROW names by
+Java UTF-16 order on both released lines, escape all JSON controls, and preserve the admitted
+decimal provider's rendering. Spark's null omission, cast formatting and escaping are not
+reused. The released Flink `JsonGenerateUtils` and `SqlJsonUtils.serializeJson` supply the
+semantic reference; 1.18 also sorts its final object despite constructing a schema-ordered tree.
+
+A recursive borrowed-column writer uses original list offsets, struct slices and validity
+buffers. It pre-escapes keys and ignores the internal nested-row-kind sidecar. Existing scalar
+formatters write directly into one Arrow string builder; no per-row DOM or JVM JSON callback
+is needed. The initial scope is final projections of direct ARRAY/ROW fields with nullable
+children and verified leaves. The planner retains computed/intermediate forms and unchecked
+nonnullable getters on Flink, including 1.18 DECIMAL normalization. Existing representation
+gates remain in force; this does not certify arbitrary UTF-8 replacements as Java string identities.
+Serialization itself materializes Flink strings: a cold ARRAY containing a supplementary character
+and U+E000 chooses a different ARRAY_MAX after JSON_STRING has decoded both leaves. Mixed readers
+and representation-sensitive outputs therefore retain whole-Calc generated evaluation. Regression
+tests compare both projection orders and Generic/Binary inputs; standalone final serializers do
+not acquire a JVM evaluator for this restriction.
+
 ## Retained native expression implementation
 
 Comet's `native/spark-expr/src/string_funcs/get_json_object.rs` separates scalar paths from

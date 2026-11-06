@@ -2896,10 +2896,27 @@ DECIMAL retains its declared scale and trailing zeros, using Jackson's BigDecima
 `1.2300` remains `1.2300`, while sufficiently small values use scientific notation
 (`0.000000100` becomes `1.00E-7`). Precision and scale through 38 are native, including NULLs.
 
-Additional scalar inputs and direct nested JSON_OBJECT, JSON_ARRAY and JSON(value) calls
-use the generated Calc, preserving Flink's raw-JSON handling. Collection input columns still
-fall back at the scalar bridge boundary. JSON_STRING applied to an ordinary string column
-containing JSON text quotes it normally. No compatibility opt-in is needed.
+Final Calc projections over direct ARRAY/ROW input columns also serialize in Rust. Containers
+may nest through 32 levels with nullable elements/fields and character, BOOLEAN, TINYINT,
+SMALLINT, INTEGER or BIGINT leaves. Flink 2.2 additionally admits DECIMAL leaves; 1.18's
+different decimal normalization retains generated evaluation. Outer containers may be nullable
+or NOT NULL. Empty arrays and nested NULLs retain their distinct JSON spelling. ROW members
+sort by Java UTF-16 field-name order on both released lines; nested changelog metadata is not
+serialized. The schema and escaped keys are prepared once per batch, and values write directly
+to the Arrow output without a JSON tree or JVM evaluator.
+
+Computed/intermediate container operands, nonnullable nested elements/fields, depth above 32,
+MAP/MULTISET, additional leaf types, and ROW names containing unpaired surrogates, ASCII controls,
+quotes or backslashes retain generated evaluation. Existing owned-string and relational-boundary
+identity gates still apply. Disabling collection expressions retains the preceding generated route.
+Plans that combine string-container serialization with cache-observing comparisons or other
+representation-sensitive outputs retain generated evaluation. Flink's serializer materializes
+the original strings; for example, `JSON_STRING(a), ARRAY_MAX(a)` can change which string wins
+when the same ARRAY contains cold UTF-8 strings. This is successful-value behavior, not exception
+ordering, and is checked in both projection orders.
+Additional scalar inputs and direct nested JSON_OBJECT, JSON_ARRAY and JSON(value) calls also
+use the generated Calc, preserving Flink's raw-JSON handling. JSON_STRING applied to an ordinary
+string column containing JSON text quotes it normally. No compatibility opt-in is needed.
 
 NULL values must have a supported scalar type, for example `CAST(NULL AS STRING)`.
 An operand whose type remains SQL NULL falls back: Flink's JSON node generator cannot

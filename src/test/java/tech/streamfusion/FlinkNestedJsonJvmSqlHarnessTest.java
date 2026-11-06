@@ -57,8 +57,9 @@ class FlinkNestedJsonJvmSqlHarnessTest {
             && (projection.equals("a, r, JSON_QUERY(s, p)")
                 || projection.equals("aa, ar, JSON_QUERY(s, p)"));
     assertTrue(plan.contains("NativeCalc"), plan);
-    if (nativeQuery) {
-      assertTrue(plan.contains("nativeFunctions=[JSON_QUERY]"), plan);
+    boolean nativeString = projection.startsWith("JSON_STRING(");
+    if (nativeQuery || nativeString) {
+      assertTrue(plan.contains("nativeFunctions=[" + (nativeString ? "JSON_STRING" : "JSON_QUERY") + "]"), plan);
       assertTrue(plan.contains("jvmFunctions=[]"), plan);
     } else {
       assertTrue(plan.contains("jsonEvaluation=[JVM]"), plan);

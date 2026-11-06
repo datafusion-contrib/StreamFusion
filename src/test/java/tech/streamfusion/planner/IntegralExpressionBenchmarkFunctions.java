@@ -207,6 +207,10 @@ public final class IntegralExpressionBenchmarkFunctions {
   private static Object value(String type, int row) {
     long v = row * 7919L;
     switch (type) {
+      case "ARRAY<INT>":
+      case "ARRAY<VARCHAR(128)>":
+      case "ROW<z INT,a VARCHAR(128)>":
+        return jsonContainerInput(type, row);
       case "VARCHAR(4096)": return org.apache.flink.table.data.StringData.fromString(
           jsonInputText(row));
       case "BOOLEAN": return row % 2 == 0;
@@ -239,6 +243,29 @@ public final class IntegralExpressionBenchmarkFunctions {
                 * (precision == 4 ? v % 10000 : 9007199254740993L + v));
         return DecimalData.fromBigDecimal(new BigDecimal(unscaled, scale), precision, scale);
     }
+  }
+
+  public static Object jsonContainerInput(String type, int row) {
+    if (type.startsWith("ROW<"))
+      return GenericRowData.of(row % 11 == 0 ? null : jsonContainerInteger(row),
+          row % 13 == 0 ? null : org.apache.flink.table.data.StringData.fromString(jsonContainerText(row)));
+    int width = Integer.parseInt(System.getenv().getOrDefault("SF_INTEGRAL_CONTAINER_WIDTH", "4"));
+    Object[] values = new Object[row % 13 == 0 ? 0 : width];
+    for (int index = 0; index < values.length; index++) {
+      int position = row + index;
+      values[index] = position % 11 == 0 ? null : type.equals("ARRAY<INT>")
+          ? jsonContainerInteger(position)
+          : org.apache.flink.table.data.StringData.fromString(jsonContainerText(position));
+    }
+    return new org.apache.flink.table.data.GenericArrayData(values);
+  }
+
+  private static int jsonContainerInteger(int index) {
+    return index % 17 == 0 ? Integer.MIN_VALUE : index * 7919;
+  }
+
+  public static String jsonContainerText(int index) {
+    return "text-" + index % 1024 + "/\\\"\u0000\ud83d\ude00";
   }
 
   public static List<BigInteger> decimalEpochCoefficients(int precision, int scale) {

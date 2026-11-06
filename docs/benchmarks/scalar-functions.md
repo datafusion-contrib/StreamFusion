@@ -11087,3 +11087,113 @@ and [2,400 raw prepared observations](results/json-reader-schedule-2026-11-06.cs
 Remaining dynamic/branching paths, nested serialization and additional types stay in
 [#506](https://github.com/datafusion-contrib/StreamFusion/issues/506). Hosted checks must
 qualify the exact pushed head separately.
+
+
+## ARRAY/ROW JSON_STRING (2026-11-06)
+
+Final JSON_STRING projections over direct ARRAY/ROW fields now prepare a borrowed Arrow
+writer once per batch and serialize directly into the output string buffer. Nested nullable
+children retain their NULL/empty distinction; ROW keys sort in Java UTF-16 order and the
+internal row-kind sidecar is excluded. Character, BOOLEAN and signed integer leaves are
+verified on both released lines; DECIMAL leaves additionally use 2.2's verified provider.
+Computed/intermediate containers, nonnullable children, additional types and unverified
+field names retain generated evaluation. No new opcode, dependency or switch is introduced.
+
+Qualification uses released Flink 1.18.1/2.2.1 and JDK 11/17 with Java 11 bytecode.
+All **108 focused invocations** pass on the measured release DSO. Tests compare complete
+5,003-row maps and resolved schemas, including Generic/Binary input, nullable/NOT NULL top
+containers, nested arrays/rows, every signed integer width, BOOLEAN/CHAR, decimal extremes,
+controls, isolated surrogates, Unicode field-name order, nested RowKinds and filtered/empty
+results. Admitted cases require consumed NativeCalc and empty JVM evaluator descriptors.
+All **941 Rust core tests** pass. Related tests pass **205 invocations**, with **13**
+released-1.18 capability aborts involving JSON, JSON_QUOTE, SPLIT and selected array functions.
+Those aborts are not passing evidence. The unchanged released JsonFunctionsITCase passes
+**489 + 142** invocations. Final SQL/performance encoder bytecode matches, and candidate/
+previous benchmark fixtures are byte-identical on each released line.
+
+A constructed mixed-expression regression found that JSON_STRING decodes cold string leaves,
+changing the later ARRAY_MAX result for supplementary Unicode versus U+E000. Cache-observing
+sibling readers and other representation-sensitive outputs therefore retain generated
+whole-Calc execution; tests verify both projection orders and collection passthrough.
+An earlier ROW-order prototype was also corrected against released 1.18 before any reported
+timings. The published performance scope contains standalone final serializers, not these
+retained mixed programs.
+
+Release measurements use Apple M4 Pro, macOS 26.5, JDK 17, a 1 GiB heap and parallelism one.
+Each prepared trial has 32,768 rows, eight warmups and seven measurements. ARRAY widths are
+4/32; text contains slash, backslash, quote, NUL and supplementary Unicode. Inputs include
+empty arrays, NULL leaves and independently NULL ROW fields. Bulk cells cover Generic/Binary
+and nullable/NOT NULL combinations at batch size 1,024; tiny cells use nullable Binary rows
+at size 16. Prepared Arrow strings are ordinary Utf8 values. Complete SQL jobs retain the
+production represented-collection conversion.
+
+Stock starts on prebuilt RowData and native on logically equivalent prebuilt Arrow batches.
+The Rust timer starts after input import and ends before output export, retaining production
+Calc execution, output consumption and all intrinsic work. The previous control is the exact
+preceding `57004bcba` encoder/library with its generated whole-Calc callbacks and intrinsic
+conversions. Scalar controls retain preceding native JSON_STRING execution. Each control
+also has an independent stock run; full variability is retained in the linked report.
+
+| Flink | Shape | Stock / native | Previous / native |
+| --- | --- | ---: | ---: |
+| 2.2.1 | int-4 | 8.745-10.312x | 9.739-13.024x |
+| 2.2.1 | int-32 | 1.961-2.191x | 2.692-4.324x |
+| 2.2.1 | string-4 | 2.853-4.047x | 5.098-5.975x |
+| 2.2.1 | string-32 | 2.113-2.624x | 3.596-3.817x |
+| 2.2.1 | row | 7.566-8.939x | 9.735-11.767x |
+| 1.18.1 | int-4 | 8.477-12.285x | 10.063-12.138x |
+| 1.18.1 | int-32 | 1.663-2.217x | 2.647-3.073x |
+| 1.18.1 | string-4 | 2.689-4.327x | 5.288-5.388x |
+| 1.18.1 | string-32 | 2.044-2.866x | 3.459-3.662x |
+| 1.18.1 | row | 6.975-8.087x | 11.296-13.266x |
+
+All **40 bulk** cells beat stock by **1.663-12.285x** and previous
+by **2.647-13.266x**. Ten tiny controls span
+**1.719-4.438x** stock and **5.460-26.487x** previous,
+with **0** stock losses. Four retained scalar controls span
+**0.944-1.005x** previous, with **2** lower candidate medians;
+these are recorded costs/variation, not a claim that existing scalars improve.
+
+Complete jobs process one million runtime rows, using two warmups, five measured trials,
+parallelism one and a 2 GiB heap. They retain planning/submission, rowwise source/sink, JNI
+and both transposes. Medians are seconds:
+
+| Flink | Shape | Paired stock | Previous | Native | Native / stock | Native / previous |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 2.2.1 | int-32 | 0.960 | 1.431 | 0.758 | 0.790 | 0.530 |
+| 2.2.1 | string-32 | 3.254 | 7.052 | 4.414 | 1.357 | 0.626 |
+| 2.2.1 | row | 0.538 | 0.862 | 0.397 | 0.738 | 0.461 |
+| 1.18.1 | int-32 | 1.071 | 1.381 | 0.786 | 0.734 | 0.569 |
+| 1.18.1 | string-32 | 3.274 | 7.019 | 4.415 | 1.349 | 0.629 |
+| 1.18.1 | row | 0.538 | 0.846 | 0.426 | 0.793 | 0.504 |
+
+Complete native/stock elapsed spans **0.734-1.357** with
+**2 losses**; native/previous spans
+**0.461-0.629** with **0 losses**.
+In particular, the wide string-array jobs still lose to stock despite improving on the
+preceding generated evaluator. Passing the prepared operator-format gate does not establish
+a speedup for every row-fed query. The first measured cohort, including its slower scalar
+and complete-job controls, remains separately labeled in the report; it predates the
+Java-only mixed-expression guard and is not relabeled as final-source qualification.
+The audit runs no concurrent tests/builds/benchmarks during timing; desktop/unrelated work
+may remain active, so this is not an idle-machine claim.
+
+Reproduce with the release `integral_expression` example, `JAVA_TOOL_OPTIONS=-Dsf.integral.wholeCalc=true`,
+`SF_INTEGRAL_EXPRESSION=JSON_STRING(v)`, `SF_INTEGRAL_REQUIRED_FUNCTION=JSON_STRING`,
+`SF_INTEGRAL_CONTAINER_WIDTH=4|32`, the report's ARRAY/ROW logical types and NULL/layout
+controls. Previous runs use the saved encoder/runtime and `SF_INTEGRAL_PREVIOUS=true`;
+retained scalar controls additionally set `SF_INTEGRAL_PREVIOUS_NATIVE=true`. Complete jobs
+use `IntegralExpressionPipelineBenchmark` with `sf.integral.containerType`, the same expression
+and width, retaining the runtime source and blackhole sink.
+
+See [per-cell variability, both cohorts, complete trials and provenance](results/json-container-string-2026-11-06.json)
+and [6,480 raw prepared observations](results/json-container-string-2026-11-06.csv.gz).
+The [separate JFR diagnostic](results/json-container-string-profile-2026-11-06.json)
+records allocation/copy stacks inside the input transpose and Flink's source/chaining
+serializers. Its ten Java execution samples cannot establish CPU-time shares or prove a
+dominant bottleneck; inclusive allocation samples overlap, and native interior work is
+unresolved. Profiled durations are excluded from all timing tables. Paired profiling and
+full-job copy/conversion optimization remain in
+[#610](https://github.com/datafusion-contrib/StreamFusion/issues/610).
+Additional SQL/JSON signatures remain in
+[#506](https://github.com/datafusion-contrib/StreamFusion/issues/506).

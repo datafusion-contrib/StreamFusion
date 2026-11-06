@@ -75,6 +75,7 @@ pub(crate) mod integer_string;
 mod is_json;
 mod java_timsort;
 mod json_array;
+mod json_container;
 mod json_exists;
 mod json_object;
 mod json_path;

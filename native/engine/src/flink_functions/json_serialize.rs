@@ -32,10 +32,8 @@ impl ScalarUDFImpl for JsonString {
     }
 
     fn coerce_types(&self, types: &[DataType]) -> Result<Vec<DataType>> {
-        if types.len() != 1 || !supported(&types[0]) {
-            return exec_err!(
-                "JSON_STRING requires a character, boolean, integer, or decimal input"
-            );
+        if types.len() != 1 || !super::json_container::supported(&types[0]) {
+            return exec_err!("JSON_STRING requires a verified scalar, ARRAY, or ROW input");
         }
         Ok(types.to_vec())
     }
@@ -51,7 +49,11 @@ impl ScalarUDFImpl for JsonString {
         };
         let scalar = matches!(input, ColumnarValue::Scalar(_));
         let input = input.to_array(if scalar { 1 } else { args.number_rows })?;
-        let values = JsonColumn::new(&input)?;
+        let values = if supported(input.data_type()) {
+            JsonInput::Scalar(JsonColumn::new(&input)?)
+        } else {
+            JsonInput::Container(super::json_container::JsonContainer::new(&input)?)
+        };
         let nulls = input.logical_nulls();
         let mut output = StringBuilder::with_capacity(input.len(), input.len() * 16);
         for row in 0..input.len() {
@@ -64,6 +66,20 @@ impl ScalarUDFImpl for JsonString {
             }
         }
         finish(output, scalar)
+    }
+}
+
+enum JsonInput<'a> {
+    Scalar(JsonColumn<'a>),
+    Container(super::json_container::JsonContainer<'a>),
+}
+
+impl JsonInput<'_> {
+    fn write(&self, row: usize, out: &mut impl Write) -> fmt::Result {
+        match self {
+            Self::Scalar(values) => values.write(row, out),
+            Self::Container(values) => values.write(row, out),
+        }
     }
 }
 

@@ -1011,7 +1011,7 @@ final class RexExpression {
 
   private static boolean nativeRowRepresentation(RexCall call) {
     return NativeConfig.collectionExpressionsEnabled()
-        && (nativeBasicRow(call) || nativeRepresentedMapConstructor(call)
+        && (nativeBasicRow(call) || nativeJsonStringContainer(call) || nativeRepresentedMapConstructor(call)
             || nativeInputMapProjection(call)
             || isBuiltinDefinition(
                     call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.MAP_ENTRIES)
@@ -1167,6 +1167,7 @@ final class RexExpression {
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
     return GENERATED_COLLECTIONS.contains(call.getOperator().getName())
+        || nativeJsonStringContainer(call)
         || standaloneCollectionExpression(call)
         || call.getOperands().stream().anyMatch(RexExpression::containsGeneratedCollectionFunction);
   }
@@ -2610,6 +2611,12 @@ final class RexExpression {
           "JSON decimal rendering requires the selected Flink line's generated evaluator");
     }
     if ("JSON_STRING".equals(functionName)) {
+      if (nativeJsonStringContainer(call)) {
+        if (call != projectionRoot || !calcProjection)
+          return reject("container JSON_STRING requires a final Calc projection");
+        preserveCollections = true;
+        return emitBuiltinCall(call, 152);
+      }
       if (call.getOperands().size() != 1 || !isJsonScalarValue(call.getOperands().get(0))) {
         return reject("JSON_STRING requires a character, boolean, integer, or decimal scalar");
       }
@@ -3335,6 +3342,43 @@ final class RexExpression {
       case INTEGER:
       case BIGINT:
       case DECIMAL:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static boolean nativeJsonStringContainer(RexCall call) {
+    if (!NativeConfig.collectionExpressionsEnabled()
+        || !call.getOperator().getName().equals("JSON_STRING")
+        || call.getOperands().size() != 1
+        || !(call.getOperands().get(0) instanceof RexInputRef)) return false;
+    RelDataType type = call.getOperands().get(0).getType();
+    return (type.getSqlTypeName() == SqlTypeName.ARRAY || type.getSqlTypeName() == SqlTypeName.ROW)
+        && nativeJsonContainerType(type, 0);
+  }
+
+  private static boolean nativeJsonContainerType(RelDataType type, int depth) {
+    if (depth > 32) return false;
+    switch (type.getSqlTypeName()) {
+      case ARRAY:
+        return type.getComponentType().isNullable()
+            && nativeJsonContainerType(type.getComponentType(), depth + 1);
+      case ROW:
+        return type.getFieldList().stream().allMatch(field ->
+            field.getType().isNullable()
+                && !JsonStringIdentity.containsUnpairedSurrogate(field.getName())
+                && field.getName().chars().noneMatch(c -> c < 32 || c == '"' || c == '\\')
+                && nativeJsonContainerType(field.getType(), depth + 1));
+      case DECIMAL:
+        return tech.streamfusion.compat.JsonRuntimeCompat.PRESERVES_DECIMAL_SCALE;
+      case CHAR:
+      case VARCHAR:
+      case BOOLEAN:
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
         return true;
       default:
         return false;

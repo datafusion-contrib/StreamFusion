@@ -109,18 +109,22 @@ final class CollectionValueIdentity {
   static boolean requiresGeneratedEvaluation(RexProgram program) {
     if (!RexExpression.usesCollectionFunctions(program)) return false;
     if (materializedInputCachesAffectReaders(program)) return true;
-    boolean joins =
-        program.getExprList().stream()
-            .anyMatch(
-                node -> node instanceof RexCall && RexExpression.nativeArrayJoin((RexCall) node));
-    if (joins
+    boolean materializesStrings =
+        program.getProjectList().stream()
+                .map(program::expandLocalRef)
+                .anyMatch(CollectionValueIdentity::containsStringMaterializer)
+            || program.getCondition() != null
+                && containsStringMaterializer(program.expandLocalRef(program.getCondition()));
+    if (materializesStrings
         && program.getProjectList().stream()
             .map(program::expandLocalRef)
             .anyMatch(
                 node ->
                     sensitive(node.getType())
                         && !(node instanceof RexCall
-                            && RexExpression.nativeArrayJoin((RexCall) node)))) return true;
+                            && (RexExpression.nativeArrayJoin((RexCall) node)
+                                || RexExpression.nativeJsonStringContainer((RexCall) node)))))
+      return true;
     return program.getProjectList().stream()
             .anyMatch(ref -> consumerNeedsGeneration(program.expandLocalRef(ref)))
         || program.getCondition() != null
@@ -133,6 +137,7 @@ final class CollectionValueIdentity {
         new RexVisitorImpl<Void>(true) {
           @Override
           public Void visitCall(RexCall call) {
+            if (jsonStringMaterializesInput(call)) found[0] = true;
             if (RexExpression.nativeRepresentedSplit(call)
                 && characterInput(call.getOperands().get(0), false)) {
               RexNode separator = call.getOperands().get(1);
@@ -178,6 +183,25 @@ final class CollectionValueIdentity {
     return found[0] && found[1];
   }
 
+  private static boolean nativeStringMaterializer(RexCall call) {
+    return RexExpression.nativeArrayJoin(call) || jsonStringMaterializesInput(call);
+  }
+
+  private static boolean containsStringMaterializer(RexNode node) {
+    if (node instanceof RexFieldAccess)
+      return containsStringMaterializer(((RexFieldAccess) node).getReferenceExpr());
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    return nativeStringMaterializer(call)
+        || call.getOperands().stream().anyMatch(CollectionValueIdentity::containsStringMaterializer);
+  }
+
+  private static boolean jsonStringMaterializesInput(RexCall call) {
+    // Flink serializes through toString(), warming cached aliases seen by later comparisons.
+    return RexExpression.nativeJsonStringContainer(call)
+        && JsonStringIdentity.containsCharacter(call.getOperands().get(0).getType());
+  }
+
   private static boolean characterInput(RexNode node, boolean skipSplit) {
     if (node instanceof RexInputRef) return JsonStringIdentity.containsCharacter(node.getType());
     if (node instanceof RexFieldAccess)
@@ -190,7 +214,8 @@ final class CollectionValueIdentity {
   }
 
   private static boolean verifiedConsumer(RexCall call) {
-    return RexExpression.nativeRepresentedArrayOperation(call)
+    return RexExpression.nativeJsonStringContainer(call)
+        || RexExpression.nativeRepresentedArrayOperation(call)
         || RexExpression.nativeStringCollectionOperation(call)
         || RexExpression.nativeRepresentedSplit(call)
         || RexExpression.nativeStringArrayItem(call)

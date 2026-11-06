@@ -3,6 +3,8 @@ use arrow::array::{
     Array, ArrayRef, BooleanArray, Decimal128Array, Int16Array, Int32Array, Int64Array, Int8Array,
     StringArray, StructArray,
 };
+use arrow::array::{Int32Builder, ListBuilder, StringBuilder};
+use arrow::buffer::NullBuffer;
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use jni::objects::JValue;
@@ -269,6 +271,9 @@ fn main() {
     };
     let values = (0..rows).map(|i| (!nullable || i % 7 != 0).then(|| value(element, i)));
     let input: ArrayRef = match element {
+        "ARRAY<INT>" | "ARRAY<VARCHAR(128)>" | "ROW<z INT,a VARCHAR(128)>" => {
+            json_container_input(element, rows, nullable)
+        }
         "VARCHAR(4096)" => {
             let corpus = std::env::var("SF_INTEGRAL_CORPUS").unwrap_or_default();
             let documents: Vec<String> = (0..rows).map(|row| json_text(row, &corpus)).collect();
@@ -450,6 +455,72 @@ fn main() {
         }
     }
     java!(env, env.call_static_method(class, "close", "()V", &[]));
+}
+
+fn json_container_input(ty: &str, rows: usize, nullable: bool) -> ArrayRef {
+    let integer = |index: usize| {
+        if index % 17 == 0 {
+            i32::MIN
+        } else {
+            (index as i32).wrapping_mul(7919)
+        }
+    };
+    let text = |index: usize| format!("text-{}/\\\"\0\u{1f600}", index % 1024);
+    let width: usize = std::env::var("SF_INTEGRAL_CONTAINER_WIDTH")
+        .unwrap_or_else(|_| "4".into())
+        .parse()
+        .unwrap();
+    match ty {
+        "ARRAY<INT>" => {
+            let mut lists = ListBuilder::new(Int32Builder::new());
+            for row in 0..rows {
+                let valid = !nullable || row % 7 != 0;
+                if valid && row % 13 != 0 {
+                    for index in row..row + width {
+                        lists
+                            .values()
+                            .append_option((index % 11 != 0).then(|| integer(index)));
+                    }
+                }
+                lists.append(valid);
+            }
+            Arc::new(lists.finish())
+        }
+        "ARRAY<VARCHAR(128)>" => {
+            let mut lists = ListBuilder::new(StringBuilder::new());
+            for row in 0..rows {
+                let valid = !nullable || row % 7 != 0;
+                if valid && row % 13 != 0 {
+                    for index in row..row + width {
+                        lists
+                            .values()
+                            .append_option((index % 11 != 0).then(|| text(index)));
+                    }
+                }
+                lists.append(valid);
+            }
+            Arc::new(lists.finish())
+        }
+        "ROW<z INT,a VARCHAR(128)>" => {
+            let fields = vec![
+                Arc::new(Field::new("z", DataType::Int32, true)),
+                Arc::new(Field::new("a", DataType::Utf8, true)),
+            ]
+            .into();
+            let values: Vec<ArrayRef> = vec![
+                Arc::new(Int32Array::from_iter(
+                    (0..rows).map(|row| (row % 11 != 0).then(|| integer(row))),
+                )),
+                Arc::new(StringArray::from_iter(
+                    (0..rows).map(|row| (row % 13 != 0).then(|| text(row))),
+                )),
+            ];
+            let nulls = nullable
+                .then(|| NullBuffer::from((0..rows).map(|row| row % 7 != 0).collect::<Vec<_>>()));
+            Arc::new(StructArray::new(fields, values, nulls))
+        }
+        _ => panic!("unverified JSON container benchmark type {ty}"),
+    }
 }
 
 fn decimal_epoch_coefficients(precision: u8, scale: i8) -> Vec<i128> {
