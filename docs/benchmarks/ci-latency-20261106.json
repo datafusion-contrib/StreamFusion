@@ -1,0 +1,47 @@
+{
+  "source_commit": "e825aa28740392e3f643a5ebc729613a948f92bb",
+  "source_run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42210778705",
+  "model": "Three Flink 2.2/JDK 11 runtime partitions; maximum observed class times across hosts, including failed/interrupted runs. Scheduling estimates only, not measured speedup or passing-test evidence.",
+  "classes": 773,
+  "classes_with_observed_timings": 770,
+  "old_estimated_minutes": [
+    92.19,
+    74.42,
+    77.17
+  ],
+  "new_estimated_minutes": [
+    81.26,
+    81.26,
+    81.26
+  ],
+  "old_class_counts": [
+    255,
+    255,
+    263
+  ],
+  "new_class_counts": [
+    252,
+    254,
+    267
+  ],
+  "local_fork_diagnostic": {
+    "host": "Apple M4, 10 CPUs, 16 GiB RAM",
+    "java": "Temurin 11.0.28+6",
+    "flink": "1.18.1",
+    "native_mode": "debug, matching CI; not a streaming performance benchmark",
+    "classes": [
+      "FlinkDecimalEpochSqlHarnessTest",
+      "FlinkExactFloatingMathSqlHarnessTest",
+      "FlinkPrimitiveResultTableFunctionSqlHarnessTest",
+      "FlinkGenericDistinctPartialsSqlHarnessTest"
+    ],
+    "cases_each": 447,
+    "skips_each": 0,
+    "failures_each": 0,
+    "case_inventory_sha256": "a660c55ae4722d70a94fcd660545ac7700c4ffc8287be3455b9874eb92b66cb1",
+    "native_library_sha256": "3b85e968477fdedf559912e5f5df2086addaf35e4e5375041c634a2197b81ca1",
+    "one_fork_seconds": 354.31,
+    "two_forks_seconds": 239.08,
+    "limits": "One serial-order paired diagnostic, with fresh JVMs per class and 4 GiB per-fork heaps. Includes Maven and unchanged protobuf regeneration/recompilation in both runs. Not a repeated benchmark, full hosted-CI memory qualification, idle-host claim or forecast of complete CI latency."
+  }
+}

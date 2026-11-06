@@ -26,9 +26,41 @@ RUN = {'id': 10, 'head_sha': 'abc123', 'head_branch': 'feature', 'event': 'push'
 
 class ForkCiStatusTest(unittest.TestCase):
     def result(self, runs, workflow='ci.yml', pr=None):
-        with patch.object(STATUS, 'api', return_value={'workflow_runs': runs}) as api:
+        def response(method, path, data=None):
+            return {'jobs': []} if '/jobs?' in path else {'workflow_runs': runs}
+        with patch.object(STATUS, 'api', side_effect=response) as api:
             result = STATUS.payload(pr or PR, workflow)
         return result, api
+
+    def test_job_table_exposes_links_queue_delay_execution_and_failures(self):
+        run = {**RUN, 'created_at': '2026-11-06T11:30:00Z'}
+        jobs = [
+            {'name': 'Connectors | formats [JDK 11]', 'status': 'completed', 'conclusion': 'success',
+             'started_at': '2026-11-06T13:11:00Z', 'completed_at': '2026-11-06T13:21:05Z',
+             'html_url': RUN['html_url'] + '/job/1'},
+            {'name': 'Runtime', 'status': 'completed', 'conclusion': 'failure',
+             'started_at': '2026-11-06T11:30:00Z', 'completed_at': '2026-11-06T12:45:00Z',
+             'html_url': RUN['html_url'] + '/job/2'},
+            {'name': 'Queued', 'status': 'queued', 'conclusion': None,
+             'started_at': '2026-11-06T11:30:00Z', 'completed_at': None,
+             'html_url': RUN['html_url'] + '/job/3'},
+        ]
+        with patch.object(STATUS, 'pages', return_value=iter(jobs)):
+            summary = STATUS.job_summary('contributor/StreamFusion', run)
+        self.assertIn('101m 00s | 10m 05s', summary)
+        self.assertIn('0m 00s | 75m 00s', summary)
+        self.assertIn('failure', summary)
+        self.assertIn('Connectors \\| formats \\[JDK 11\\]', summary)
+        self.assertIn('/job/1', summary)
+        self.assertIn('| queued | — | — |', summary)
+
+    def test_job_details_do_not_turn_an_active_workflow_green(self):
+        with patch.object(STATUS, 'api', return_value={'workflow_runs': [
+                {**RUN, 'status': 'in_progress', 'conclusion': None}]}), \
+                patch.object(STATUS, 'job_summary', return_value='Individual jobs: success'):
+            result = STATUS.payload(PR, 'ci.yml')
+        self.assertEqual('in_progress', result['status'])
+        self.assertNotIn('conclusion', result)
 
     def test_exact_head_and_branch_are_required(self):
         for change in ({'head_sha': 'old'}, {'head_branch': 'other'}, {'event': 'pull_request'}):
@@ -144,6 +176,8 @@ class ForkCiStatusTest(unittest.TestCase):
                 return {'check_runs': checks}
             if '/actions/workflows/' in path:
                 return {'workflow_runs': [{**RUN, 'conclusion': 'failure'}]}
+            if '/jobs?' in path:
+                return {'jobs': []}
             return {}
         with patch.object(STATUS, 'api', side_effect=response) as api:
             STATUS.mirror('datafusion-contrib/StreamFusion', PR)
@@ -353,6 +387,8 @@ class ForkCiWatchTest(unittest.TestCase):
                             **RUN, 'status': 'completed' if complete else 'in_progress',
                             'conclusion': conclusion if complete else None,
                         }]}
+                    if '/jobs?' in path:
+                        return {'jobs': []}
                     if method == 'POST':
                         checks.append({'id': len(checks) + 1,
                                        'app': {'slug': 'github-actions'}, **copy.deepcopy(data)})

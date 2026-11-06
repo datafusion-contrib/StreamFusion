@@ -46,6 +46,13 @@ canceled, skipped or neutral workflows cannot satisfy the gates; missing or disa
 report action required. Existing GitHub rulesets stay in place. The reporter checks out only
 trusted default-branch code and never executes PR code with its write-capable token.
 
+Each mirrored check includes individual job links, start delays and execution times from the
+fork. Start delay includes prerequisite builds as well as runner queueing; it is not labelled
+as pure runner wait. Queued jobs do not acquire a fictitious execution time from GitHub's
+preallocated start timestamp. The ordinary Java jobs are named **Runtime, connectors and
+formats** because their selection includes all three; Doris's real-server suite remains a
+separate job. Full workflow results continue to control the required gates.
+
 GitHub cron is best effort: a requested fifteen-minute schedule can be delayed or dropped for
 hours. Fork workflow completions do not trigger `workflow_run` in the canonical repository,
 so a single PR-event refresh followed only by cron can leave successful tests displayed as
@@ -140,6 +147,14 @@ only metric-name recognition; workloads, timing and the pinned baseline stay unc
 
 ## Shared debug native libraries
 
+Host and Darwin release builds compile the selected native packages together in one Cargo
+invocation per target, then stage their individual libraries. Previously the host-only image
+path invoked Cargo separately for every package on each Flink line, allowing different feature
+graphs to rebuild shared dependencies. Package selection, mimalloc, platform staging and JNI
+export checks are unchanged. The shell regression verifies both Flink lines, both Darwin
+architectures, every staged library and propagation of native build failures. This removes
+repeated compiler invocations; hosted elapsed-time improvement still needs measurement.
+
 Ordinary CI builds all workspace debug native libraries once in a dedicated Ubuntu 24.04
 job. That job verifies the package dependencies and JNI export boundaries, then uploads only
 the shared libraries as a commit-specific artifact. The eight Java and eleven lake-module
@@ -154,6 +169,8 @@ libraries rather than restoring Cargo intermediates or installing a Rust toolcha
 test job separately compiles its test harnesses and checks every tagged native package in
 isolation once, preserving the checks for dependencies accidentally supplied by the workspace.
 The native build retains Cargo's `--timings` report as a separate diagnostic artifact.
+The Rust test job reads that same dependency cache instead of maintaining another copy;
+it still compiles and runs its own harnesses and standalone package checks.
 
 The Rust test job runs the same 30 GiB free-space preflight as the shared native build,
 before restoring Cargo caches. The post-merge run for #595 exhausted its runner's disk
@@ -166,6 +183,13 @@ Flink suite keep their own build configurations. The debug artifact is scoped to
 workflow run and commit; it is not a release payload or a cache of test outcomes. This replaces
 the independent debug library builds with one without changing test selection or test concurrency.
 Actual elapsed-time savings must be measured in GitHub Actions after this change runs.
+
+Personal-fork branch pushes also save their Cargo dependency caches and prepared pinned Flink
+checkout/Maven caches. Restricting saves to `main` left normal fork development branches unable
+to warm their own caches for subsequent pushes. GitHub keeps those caches scoped to the branch;
+canonical development branches remain read-only and canonical `main` retains its normal writes.
+Native libraries and test results still come from the exact current commit, not the dependency
+cache. The debug-library producer remains the only writer of its shared cache.
 
 Iceberg Rust 0.11 requires Rust 1.95, so the shared toolchain is 1.95.0.
 All Rust workflows, including the consolidated JVM aggregate and nested-scalar diagnostics,
@@ -188,13 +212,12 @@ fixture for every declared module tag and one untagged fixture, requiring each t
 
 ## Java test memory budget
 
-Each ordinary Java matrix job runs at most one Surefire fork at a time with a 4 GiB heap,
+Each ordinary Java matrix job runs at most two Surefire forks at a time with a 4 GiB heap each,
 including the second JVM-boundary/cache verification phase. CI disables fork reuse, so each
 test class gets a fresh JVM. Local Maven defaults keep fork reuse enabled; the CI invocation
-sets `-Dsf.testForks=1 -Dsf.testReuseForks=false` explicitly. The default 8 GiB per-fork heap
+sets `-Dsf.testForks=2 -Dsf.testReuseForks=false` explicitly. The default 8 GiB per-fork heap
 combined with CPU-based fork counts leaves insufficient predictable headroom for Arrow buffers, native
-operators, embedded clusters and the Maven process on hosted runners. One bounded fork
-also keeps independent private clusters from competing across test JVMs.
+operators, embedded clusters and the Maven process on hosted runners.
 
 Released Flink MiniClusters keep completed execution graphs and serialized results in an
 unbounded in-memory archive. Its JVM shutdown hook can retain this archive even after the
@@ -204,12 +227,20 @@ without reflecting into Flink internals or evicting results during a scenario. C
 their shared launcher-session cluster and all within-class lifecycle, failure and recovery checks.
 The tradeoff is additional JVM and native-library startup per class;
 complete CI elapsed time, rather than local function throughput, measures that overhead.
-The 4 GiB cap also leaves room for the temporary copies made while checkpointing and serializing
-large binary collection results; the smaller focused expression matrix does not establish the
-memory requirement of these complete integration scenarios.
+The 4 GiB per-fork cap also leaves room for the temporary copies made while checkpointing and serializing
+large binary collection results. The two configured heaps total at most 8 GiB; Arrow/native
+allocations, Maven, containers and the operating system still need separate headroom.
+A local JDK 11/Flink 1.18 diagnostic ran the same 447 cases without skips or failures in
+354.31 seconds with one fork and 239.08 seconds with two. Both runs use fresh processes per
+class and the same debug native library, matching CI's execution mode. This single pair is
+not a full hosted-CI speedup or memory qualification; the retained
+[diagnostic and scheduling model](benchmarks/ci-latency-20261106.json) states its limits.
 
 The complete test selection, both Flink lines and both JDKs remain required. Tests stay
 serial within the fork, and result, native-route, leak and recovery assertions are unchanged.
+Runtime and lake matrices stop their remaining jobs after a job fails. A failed head cannot
+merge; a subsequent fixed head still requires every matrix member to succeed. This releases
+runners promptly instead of completing an already-failed matrix, and adds no test retries.
 The Java suite logs host memory/swap/CPU counters with `vmstat` every 30 seconds, so a runner
 shutdown retains resource evidence in the job log even when artifact upload cannot run.
 A shutdown signal alone does not prove a JVM or host out-of-memory condition; inspect these
@@ -219,8 +250,10 @@ counters and any JVM diagnostics before assigning a cause. The job timeout remai
 
 Each Flink/JDK pair runs three Java jobs. The complete reactor is compiled first with tests
 deferred; `bin/ci_runtime_test_shards.py` then partitions the compiled runtime classes matching
-Surefire's default `Test*`, `*Test`, `*Tests` and `*TestCase` names. SHA-256 of the relative
-class path assigns each candidate to one shard. Nested classes stay with their outer class,
+Surefire's default `Test*`, `*Test`, `*Tests` and `*TestCase` names. Recorded class durations
+from `dev/ci/runtime-durations.json` place the longest classes first into the least-loaded
+partition. New classes receive a one-second estimate; timing estimates affect placement only,
+never selection. Nested classes stay with their outer class,
 and all parameterized invocations stay together. Empty inventories, empty shards and invalid
 indices fail before test execution rather than restoring an unfiltered Surefire run.
 
@@ -247,6 +280,11 @@ the same limit during the subsequent Fluss tests. The runtime phase alone took a
 141 minutes; the other seven Java jobs passed. Three partitions now distribute the complete
 runtime inventory across more jobs, leaving room for the remaining reactor modules and
 JDK 17 boundary checks under the unchanged timeout.
+The [retained scheduling model](benchmarks/ci-latency-20261106.json) uses the original
+773-class Flink 2.2/JDK 11 inventory and observed maximum report times from all host variants.
+Its largest estimated partition falls from 92.19 to 81.26 minutes with the same classes.
+This is a scheduling estimate, not a measured CI speedup: the source run also contains failed
+and interrupted jobs, and real elapsed time includes setup, queueing and test variability.
 Each job also uploads its selected classes and
 complete-inventory digest as a runtime-partition artifact; failure diagnostics have unique
 shard names and are also requested on cancellation, including job timeouts, when the runner
@@ -481,6 +519,8 @@ yet available as a released CI fixture.
 ## Complete canonical job matrix
 
 Flink 2.2 canonical handoff jobs run in 16 additional required shards on each of JDK 11 and 17.
+The duration-based balancing above applies to runtime shards; canonical jobs retain their
+separate sorted round-robin allocation, independent of runtime duration estimates.
 The existing three runtime shards retain all other default Surefire classes on both Flink lines.
 Both selections are computed from the compiled test inventory: their union is the original
 selection and their intersection is empty. Sorted round-robin allocation bounds the number of

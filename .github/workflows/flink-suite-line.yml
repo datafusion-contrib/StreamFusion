@@ -66,7 +66,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: upstream-suite
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
           workspaces: native -> ../.flink-suite/${{ inputs.line }}/streamfusion-source/native/target
       - name: Build Flink and StreamFusion once
         env:
@@ -97,16 +97,16 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-      - name: Save the isolated suite Maven repository and wrapper on main
-        if: github.ref == 'refs/heads/main' && steps.maven-cache.outputs.cache-hit != 'true'
+      - name: Save the isolated suite Maven repository and wrapper
+        if: (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') && steps.maven-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
             .flink-suite/${{ inputs.line }}/m2
             .flink-suite/${{ inputs.line }}/maven-wrapper
           key: ${{ steps.maven-cache.outputs.cache-primary-key }}
-      - name: Save the compiled pinned Flink checkout on main
-        if: github.ref == 'refs/heads/main' && steps.flink-cache.outputs.cache-hit != 'true'
+      - name: Save the compiled pinned Flink checkout
+        if: (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') && steps.flink-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .flink-suite/${{ inputs.line }}/flink-${{ inputs.version }}
