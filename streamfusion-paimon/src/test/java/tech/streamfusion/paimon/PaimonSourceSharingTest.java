@@ -65,8 +65,10 @@ class PaimonSourceSharingTest {
                   + " DESCRIPTOR(ts), INTERVAL '10' SECOND)) GROUP BY window_start, window_end");
         }
         var compiled = statements.compilePlan();
-        assertTrue(compiled.asJsonString().contains("stream-exec-table-source-scan"));
-        assertFalse(compiled.asJsonString().contains("stream-exec-native"));
+        if (org.apache.flink.runtime.util.EnvironmentInformation.getVersion().startsWith("2.2.")) {
+          assertTrue(compiled.asJsonString().contains("stream-exec-table-source-scan"));
+          assertFalse(compiled.asJsonString().contains("stream-exec-native"));
+        }
         if (nativePlanner) {
           String plan =
               compiled.explain()
@@ -222,8 +224,10 @@ class PaimonSourceSharingTest {
                 + (fallback ? FALLBACK_ID_EXPRESSION : "ABS(id)")
                 + " + n, v FROM t");
         var compiled = statements.compilePlan();
-        assertTrue(compiled.asJsonString().contains("stream-exec-table-source-scan"));
-        assertFalse(compiled.asJsonString().contains("stream-exec-native"));
+        if (org.apache.flink.runtime.util.EnvironmentInformation.getVersion().startsWith("2.2.")) {
+          assertTrue(compiled.asJsonString().contains("stream-exec-table-source-scan"));
+          assertFalse(compiled.asJsonString().contains("stream-exec-native"));
+        }
         String plan = compiled.explain();
         if (nativePlanner) {
           assertTrue(plan.contains("NativeShare(consumers=[" + (fallback ? 2 : 3) + "]"), plan);

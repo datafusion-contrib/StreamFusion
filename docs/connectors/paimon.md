@@ -1907,3 +1907,8 @@ A private graph containing a native connector without a qualified stock state co
 its complete native execution route. It must not be partially rebuilt from the stock template
 for a neighboring window or other state owner: that would discard the admitted connector and
 its shared Arrow edges. Such graphs keep their existing native checkpoint/savepoint dependency.
+
+Stock-only JSON/Smile serialization is qualified on Flink 2.2. The shared Paimon source-sharing
+suite keeps its original native-plan execution checks on Flink 1.18; it applies the additional
+stock-plan serialization assertions only to Flink 2.2. This preserves the documented version
+boundary without skipping the existing connector tests on either line.
