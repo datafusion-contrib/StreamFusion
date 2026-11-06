@@ -19,6 +19,16 @@ import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.types.RowKind;
 
 class CanonicalNormalizerRowKeyJobTest extends CanonicalNormalizerJobTest {
+  private boolean stockJoin;
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"hashmap", "rocksdb"})
+  @org.junit.jupiter.api.Timeout(value = 8, unit = java.util.concurrent.TimeUnit.MINUTES)
+  void stockJoinConsumerRetainsItsIdentitiesAcrossBothSwitches(String backend) throws Exception {
+    stockJoin = true;
+    check("mini", true, backend);
+  }
+
   boolean nested() {
     return false;
   }
@@ -30,6 +40,7 @@ class CanonicalNormalizerRowKeyJobTest extends CanonicalNormalizerJobTest {
 
   @Override
   java.util.Map<String, Long> expected(Path root, String mode) throws Exception {
+    if (stockJoin) return super.expected(root, mode);
     var retained = new java.util.HashMap<String, String>();
     for (String line : Files.readAllLines(oracleInput(root))) {
       var fields = line.split(",", -1);
@@ -100,7 +111,13 @@ class CanonicalNormalizerRowKeyJobTest extends CanonicalNormalizerJobTest {
     Files.writeString(
         root.resolve("query.sql"),
         "INSERT INTO output_table SELECT v,COUNT(*),CAST(0 AS BIGINT) FROM input_table GROUP BY v");
-    Files.delete(root.resolve("right-input.csv"));
+    if (stockJoin) {
+      Files.writeString(
+          root.resolve("query.sql"),
+          "INSERT INTO output_table SELECT l.k.i,l.v,r.v FROM input_table l JOIN right_input_table"
+              + " r ON l.v=r.k");
+      Files.writeString(root.resolve("native-absent-operators"), "NativeColumnarUpdatingJoin");
+    } else Files.delete(root.resolve("right-input.csv"));
     Files.writeString(
         root.resolve("native-operator"),
         "NativeChangelogNormalize,NativeColumnarGroupAgg,RowDataToArrow,ArrowToRowData");

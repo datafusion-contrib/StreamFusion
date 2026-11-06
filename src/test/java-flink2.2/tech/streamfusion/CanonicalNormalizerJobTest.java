@@ -78,7 +78,7 @@ class CanonicalNormalizerJobTest {
     check("empty", nativeFirst, backend);
   }
 
-  private void check(String mode, boolean nativeFirst, String backend) throws Exception {
+  void check(String mode, boolean nativeFirst, String backend) throws Exception {
     var runner = new CanonicalJobRunner(directory);
     var fixture = runner.fixtureJar();
     var baseline = prepare("baseline", mode);
