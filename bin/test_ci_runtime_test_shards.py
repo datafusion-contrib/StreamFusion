@@ -34,13 +34,15 @@ class RuntimeTestShardsTest(unittest.TestCase):
                 path = root / "tech/streamfusion" / (name + ".class")
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.touch()
-            canonical = shards.partition(root, 32, "canonical")
             runtime = shards.partition(root, 3, "runtime")
-            self.assertEqual(Counter("tech/streamfusion/" + n for n in names),
-                             Counter(n for part in canonical + runtime for n in part))
-            self.assertLessEqual(max(map(len, canonical)), 4)
-            self.assertEqual(118, sum(map(len, canonical)))
-            self.assertEqual(canonical, shards.partition(root, 32, "canonical"))
+            for count in (16, 32):
+                with self.subTest(count=count):
+                    canonical = shards.partition(root, count, "canonical")
+                    self.assertEqual(Counter("tech/streamfusion/" + n for n in names),
+                                     Counter(n for part in canonical + runtime for n in part))
+                    self.assertLessEqual(max(map(len, canonical)), (118 + count - 1) // count)
+                    self.assertEqual(118, sum(map(len, canonical)))
+                    self.assertEqual(canonical, shards.partition(root, count, "canonical"))
             with self.assertRaises(ValueError):
                 shards.partition(root, 3, "unknown")
 

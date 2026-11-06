@@ -472,12 +472,16 @@ yet available as a released CI fixture.
 
 ## Complete canonical job matrix
 
-Flink 2.2 canonical handoff jobs run in 32 additional required shards on each of JDK 11 and 17.
+Flink 2.2 canonical handoff jobs run in 16 additional required shards on each of JDK 11 and 17.
 The existing three runtime shards retain all other default Surefire classes on both Flink lines.
 Both selections are computed from the compiled test inventory: their union is the original
 selection and their intersection is empty. Sorted round-robin allocation bounds the number of
 complete-job classes per canonical shard; test methods, inherited parameterized cases, nested
 classes and ORC tag handling are unchanged. Every canonical shard is required by `All CI tests`.
+Each runner uses two fresh 2 GiB Surefire JVMs, with process reuse disabled. This preserves all
+118 canonical classes on each JDK while reducing canonical runner jobs from 64 to 32. The stock
+and native worker processes retain their separate 1 GiB heaps; native memory and containers
+also need headroom. Full hosted CI remains the qualification for this scheduling change.
 
 These jobs share the exact-commit debug native artifact, retain their selection manifests and
 Surefire reports, and enable the existing Docker-backed Kafka canonical cases with
