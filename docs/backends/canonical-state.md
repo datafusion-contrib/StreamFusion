@@ -1730,3 +1730,8 @@ so planning the template cannot mutate the source or sink used for actual execut
 Connector factories that depend on a custom in-memory catalog-table implementation also retain
 the physical route. Stock plan serialization reconstructs a standard catalog table and cannot
 preserve arbitrary subclass fields; such factories are not admitted to portable-template lowering.
+
+Ordinary SQL that requires a stock sink-materialization helper retains its complete physical
+execution and native-checkpoint route. These ordinary helper identities are not yet qualified
+for canonical interchange; fresh planner display IDs must not make a working job fail during
+topology binding. Qualified stock compiled-plan materializer lowering retains its existing path.

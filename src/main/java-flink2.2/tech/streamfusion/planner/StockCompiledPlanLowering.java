@@ -419,6 +419,19 @@ final class StockCompiledPlanLowering {
     }
   }
 
+  static boolean hasOrdinarySinkMaterializer(SqlPlanOrigins.RuntimeGraph graph) {
+    Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    collectOrdinaryNodes(graph.stock.getRootNodes(), nodes);
+    try {
+      for (ExecNode<?> node : nodes)
+        if (node instanceof StreamExecSink && (Boolean) releasedField(node, "upsertMaterialize"))
+          return true;
+      return false;
+    } catch (IOException failure) {
+      throw new TableException("Cannot inspect captured sink materialization", failure);
+    }
+  }
+
   static boolean canBindOrdinary(SqlPlanOrigins.RuntimeGraph graph, ClassLoader loader) {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
