@@ -27,6 +27,8 @@ import org.apache.flink.streaming.api.operators.SimpleOperatorFactory;
 import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.table.api.TableException;
+import org.apache.flink.table.catalog.ContextResolvedTable;
+import org.apache.flink.table.catalog.ExternalCatalogTable;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.planner.calcite.FlinkRelOptClusterFactory;
 import org.apache.flink.table.planner.delegation.PlannerBase;
@@ -37,12 +39,14 @@ import org.apache.flink.table.planner.plan.nodes.exec.serde.CompiledPlanSerdeUti
 import org.apache.flink.table.planner.plan.nodes.exec.spec.DynamicTableSourceSpec;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecCalc;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecExchange;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecTableSourceScan;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWindowAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
 import org.apache.flink.table.planner.plan.schema.TableSourceTable;
 import org.apache.flink.table.planner.plan.stats.FlinkStatistic;
 import org.apache.flink.table.planner.plan.utils.AggregateUtil;
+import org.apache.flink.table.planner.plan.utils.ExecNodeMetadataUtil;
 import org.apache.flink.table.planner.utils.JavaScalaConversionUtil;
 import org.apache.flink.table.runtime.groupwindow.NamedWindowProperty;
 import org.apache.flink.table.runtime.groupwindow.RowtimeAttribute;
@@ -433,8 +437,7 @@ final class StockCompiledPlanLowering {
           && ServiceLoader.load(NativePlannerExtension.class, loader).stream()
               .map(ServiceLoader.Provider::get)
               .anyMatch(extension -> extension.preservesStockSourceState(node))) continue;
-      if (graph.originals.get(node)
-              instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink
+      if (graph.originals.get(node) instanceof StreamExecSink
           && node.getInputEdges().size() == 1
           && ServiceLoader.load(NativePlannerExtension.class, loader).stream()
               .map(ServiceLoader.Provider::get)
@@ -461,11 +464,17 @@ final class StockCompiledPlanLowering {
   static boolean canSerializeStockTemplate(ExecNodeGraph graph) {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
-    return nodes.stream()
-        .noneMatch(
-            node ->
-                org.apache.flink.table.planner.plan.utils.ExecNodeMetadataUtil.isUnsupported(
-                    node.getClass()));
+    return nodes.stream().allMatch(StockCompiledPlanLowering::canSerializeStockNode);
+  }
+
+  static boolean canSerializeStockNode(ExecNode<?> node) {
+    if (ExecNodeMetadataUtil.isUnsupported(node.getClass())) return false;
+    ContextResolvedTable table = null;
+    if (node instanceof StreamExecSink)
+      table = ((StreamExecSink) node).getTableSinkSpec().getContextResolvedTable();
+    else if (node instanceof StreamExecTableSourceScan)
+      table = ((StreamExecTableSourceScan) node).getTableSourceSpec().getContextResolvedTable();
+    return table == null || !(table.getResolvedTable().getOrigin() instanceof ExternalCatalogTable);
   }
 
   static boolean hasUnqualifiedConnectorState(
@@ -483,7 +492,7 @@ final class StockCompiledPlanLowering {
       if (original instanceof StreamExecTableSourceScan
           && extensions.stream().noneMatch(extension -> extension.preservesStockSourceState(node)))
         return true;
-      if (original instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink
+      if (original instanceof StreamExecSink
           && extensions.stream().noneMatch(extension -> extension.preservesStockSinkState(node)))
         return true;
     }
@@ -746,8 +755,7 @@ final class StockCompiledPlanLowering {
     ExecNode<?> result = node;
     if (node instanceof StreamExecTableSourceScan)
       result = lowerSource((StreamExecTableSourceScan) node);
-    else if (node instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink)
-      result = lowerSink(node);
+    else if (node instanceof StreamExecSink) result = lowerSink(node);
     else if (node instanceof StreamExecCalc && NativeConfig.operatorEnabled("calc"))
       result = lowerCalc((StreamExecCalc) node);
     else if (node
@@ -4202,7 +4210,7 @@ final class StockCompiledPlanLowering {
     bindings.forEach(
         (node, binding) -> {
           Transformation<?> transformation = ((ExecNodeBase<?>) node).getTransformation();
-          if (node instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink
+          if (node instanceof StreamExecSink
               || ServiceLoader.load(
                       NativePlannerExtension.class, planner.getFlinkContext().getClassLoader())
                   .stream()

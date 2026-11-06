@@ -1721,3 +1721,8 @@ DataStream-backed table scans, legacy sources/sinks and table-aggregate nodes th
 nonserializable keep their existing physical execution and native checkpoint route. They are
 not forced through portable-plan serialization or claimed as cross-engine canonical coverage.
 Serializable custom SQL connector factories remain covered by the isolated handoff tests.
+
+External inline tables used by `fromDataStream` and `TableResult.collect()` also retain their
+physical execution route: Flink cannot serialize their catalog-table origins. Capturing a
+serializable stock template copies connector instances before runtime-provider translation,
+so planning the template cannot mutate the source or sink used for actual execution.

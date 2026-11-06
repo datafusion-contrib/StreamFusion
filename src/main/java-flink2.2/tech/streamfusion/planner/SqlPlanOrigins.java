@@ -14,8 +14,13 @@ import org.apache.calcite.rel.AbstractRelNode;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.flink.table.planner.calcite.FlinkContext;
+import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
+import org.apache.flink.table.planner.plan.abilities.sink.PartitioningSpec;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeGraph;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecTableSourceScan;
 import org.apache.flink.table.planner.plan.nodes.physical.FlinkPhysicalRel;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 
@@ -25,8 +30,29 @@ final class SqlPlanOrigins {
   private final Map<ExecNode<?>, ExecNode<?>> runtimeNodes = new IdentityHashMap<>();
   private ExecNodeGraph stockGraph;
 
-  List<RelNode> captureStock(List<RelNode> roots) {
-    return capture(roots, (node, exec) -> stockNodes.put(node.getId(), exec));
+  List<RelNode> captureStock(
+      List<RelNode> roots, FlinkContext context, FlinkTypeFactory typeFactory) {
+    return capture(
+        roots,
+        (node, exec) -> {
+          if (StockCompiledPlanLowering.canSerializeStockNode(exec)) {
+            if (exec instanceof StreamExecSink) {
+              var spec = ((StreamExecSink) exec).getTableSinkSpec();
+              var sink = spec.getTableSink(context).copy();
+              // The released print sink copy omits static partitions; restore the declarative
+              // assignment.
+              if (spec.getSinkAbilities() != null)
+                spec.getSinkAbilities().stream()
+                    .filter(ability -> ability instanceof PartitioningSpec)
+                    .forEach(ability -> ability.apply(sink));
+              spec.setTableSink(sink);
+            } else if (exec instanceof StreamExecTableSourceScan) {
+              var spec = ((StreamExecTableSourceScan) exec).getTableSourceSpec();
+              spec.setTableSource(spec.getScanTableSource(context, typeFactory).copy());
+            }
+          }
+          stockNodes.put(node.getId(), exec);
+        });
   }
 
   void stockGraph(ExecNodeGraph graph) {

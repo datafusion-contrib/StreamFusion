@@ -230,7 +230,8 @@ final class NativeStreamPlanner extends StreamPlanner {
                         ShortcutUtils.unwrapContext(roots.get(0)),
                         ShortcutUtils.unwrapTypeFactory(roots.get(0))));
             sqlOrigins = new SqlPlanOrigins();
-            sqlOrigins.stockGraph(stockSqlGraph(sqlOrigins.captureStock(roots)));
+            sqlOrigins.stockGraph(
+                stockSqlGraph(sqlOrigins.captureStock(roots, getFlinkContext(), getTypeFactory())));
             roots = sqlOrigins.mark(roots);
           }
           if (NativeConfig.nativeEnabled() && PhysicalPlanScan.sourceSharingEnabled(roots.get(0))) {
