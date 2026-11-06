@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -46,6 +47,38 @@ def pages(path, key=None):
         page += 1
 
 
+def elapsed(start, end):
+    if not start or not end:
+        return '—'
+    seconds = max(0, int((datetime.fromisoformat(end.replace('Z', '+00:00'))
+                          - datetime.fromisoformat(start.replace('Z', '+00:00'))).total_seconds()))
+    return f'{seconds // 60}m {seconds % 60:02}s'
+
+
+def job_summary(repository, run):
+    jobs = list(pages(f'repos/{repository}/actions/runs/{run["id"]}/jobs?filter=latest', 'jobs'))
+    now = datetime.now(timezone.utc).isoformat()
+    rows = ['\n\nIndividual jobs ([full workflow](' + run['html_url'] + ')):',
+            '\nStart delay includes dependency builds and runner queueing.\n',
+            '| Job | Status | Start delay | Execution |', '|---|---|---:|---:|']
+    for index, job in enumerate(jobs):
+        name = str(job['name'])[:200].replace('\\', '\\\\').replace('\n', ' ').replace('\r', ' ')
+        for character in ('|', '[', ']', '<', '>', '`', '*', '_'):
+            name = name.replace(character, '\\' + character)
+        status = job.get('conclusion') or job['status']
+        started = job.get('started_at') if job['status'] in ('in_progress', 'completed') else None
+        duration = elapsed(started, job.get('completed_at') or now) if started else '—'
+        row = (f'| [{name}]({job["html_url"]}) | {status} | '
+               f'{elapsed(run.get("created_at"), started)} | {duration} |')
+        if sum(len(value.encode()) for value in rows) + len(row.encode()) > 45000:
+            rows.append(f'\n{len(jobs) - index} additional jobs are available in the full workflow.')
+            break
+        rows.append(row)
+    if not jobs:
+        rows.append('| Jobs have not been published yet | queued | — | — |')
+    return '\n'.join(rows)
+
+
 def payload(pr, workflow):
     head = pr['head']
     fork = head.get('repo')
@@ -81,6 +114,7 @@ def payload(pr, workflow):
                     'are also available. '
                     f'See {GUIDE}'),
     }
+    result['output']['summary'] += job_summary(fork['full_name'], run)
     if run['status'] == 'completed':
         # Skipped/neutral runs must never satisfy the required test gates.
         result['conclusion'] = 'success' if run['conclusion'] == 'success' else 'failure'
