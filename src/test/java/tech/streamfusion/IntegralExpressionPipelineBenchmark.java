@@ -26,6 +26,7 @@ class IntegralExpressionPipelineBenchmark {
     boolean fallback = previous && Boolean.getBoolean("sf.integral.fallbackControl");
     boolean booleanInput = Boolean.getBoolean("sf.integral.booleanInput");
     boolean bigintInput = Boolean.getBoolean("sf.integral.bigintInput");
+    boolean stringInput = Boolean.getBoolean("sf.integral.stringInput");
     int decimalPrecision = Integer.getInteger("sf.integral.decimalPrecision", 0);
     int decimalScale = Integer.getInteger("sf.integral.decimalScale", 0);
     int timestampPrecision = Integer.getInteger("sf.integral.timestampPrecision", -1);
@@ -35,7 +36,8 @@ class IntegralExpressionPipelineBenchmark {
     boolean decimalTruth = "decimal-truth".equals(System.getenv("SF_INTEGRAL_CORPUS"));
     String secondary = System.getProperty("sf.integral.secondaryType", "");
     assertTrue(secondary.isEmpty() || secondary.equals("INT") || secondary.equals("BIGINT"));
-    var primary = timestampPrecision >= 0 ? DataTypes.TIMESTAMP_LTZ(timestampPrecision)
+    var primary = stringInput ? DataTypes.VARCHAR(4096)
+        : timestampPrecision >= 0 ? DataTypes.TIMESTAMP_LTZ(timestampPrecision)
         : decimalPrecision > 0 ? DataTypes.DECIMAL(decimalPrecision, decimalScale)
         : booleanInput ? DataTypes.BOOLEAN()
         : bigintInput || epochMillisInput || epochSecondsInput ? DataTypes.BIGINT() : DataTypes.INT();
@@ -63,7 +65,10 @@ class IntegralExpressionPipelineBenchmark {
                   .decimalEpochCoefficients(decimalPrecision, decimalScale) : null;
           var source = env.fromSequence(0, count - 1).map(i -> {
             Object value;
-            if (epochSecondsInput) {
+            if (stringInput) {
+              value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions
+                  .jsonScalarText((int) (i % 1024));
+            } else if (epochSecondsInput) {
               value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.epochSeconds(i);
             } else if (epochMillisInput) {
               value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.epochMillis(i);

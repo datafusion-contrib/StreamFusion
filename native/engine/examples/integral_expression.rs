@@ -240,6 +240,21 @@ fn main() {
     };
     let values = (0..rows).map(|i| (!nullable || i % 7 != 0).then(|| value(element, i)));
     let input: ArrayRef = match element {
+        "VARCHAR(4096)" => {
+            let texts = [
+                String::new(),
+                "plain".into(),
+                "a/b\\c\"d".into(),
+                "\0\t\r\n\x08\x0c\x1f".into(),
+                "\\uD800".into(),
+                "\u{4e2d}\u{6587}\u{1f600}".into(),
+                "{\"a\":1}".into(),
+                "0123456789".repeat(64),
+            ];
+            Arc::new(StringArray::from_iter((0..rows).map(|i| {
+                (!nullable || i % 7 != 0).then_some(texts[i % texts.len()].as_str())
+            })))
+        }
         "BOOLEAN" => Arc::new(BooleanArray::from_iter(
             (0..rows).map(|i| (!nullable || i % 7 != 0).then_some(i % 2 == 0)),
         )),

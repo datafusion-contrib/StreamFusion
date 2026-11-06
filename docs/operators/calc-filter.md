@@ -2773,7 +2773,7 @@ columnar operator, not the language evaluating its JSON expressions.
 
 The generated route covers JSON_QUERY, dynamic JSON_VALUE/JSON_QUERY paths, recursive
 descent, filters, slices, multi-selectors, path functions, and invalid paths handled by
-Flink's policies. It also admits additional JSON_STRING/JSON_OBJECT scalar types and nested
+Flink's policies. It also admits additional JSON_STRING/JSON_OBJECT/JSON_ARRAY scalar types and nested
 constructors, dynamic defaults, nullable-boolean consumers, and short-circuited error or
 typed-conversion expressions that the native encoder declines. JSON_VALUE with `ERROR ON EMPTY`
 or `ERROR ON ERROR` always uses this generated route, including direct projections, so its
@@ -2872,6 +2872,31 @@ Each batch reuses escaped keys and scalar parameters while writing directly to A
 Dynamic/NULL keys, additional scalar value types, and direct nested JSON_OBJECT, JSON_ARRAY
 or JSON(value) expressions use the generated Calc, including the host's failures. An ordinary string containing JSON text is quoted.
 No compatibility opt-in is needed.
+
+### JSON_ARRAY
+
+Flat arrays of character, BOOLEAN, TINYINT, SMALLINT, INTEGER and BIGINT scalar arguments
+execute in Rust. DECIMAL precision/scale through 38 is also native on Flink 2.2, sharing
+the exact scale-preserving/scientific rendering of JSON_STRING. Released 1.18's different
+decimal rendering retains the generated evaluator. Argument order and repeated values
+are preserved. The default ABSENT ON NULL omits SQL NULL elements; explicit NULL ON NULL
+writes JSON nulls. Empty or entirely omitted arrays return `[]`, never SQL NULL. NULL
+arguments must retain a supported scalar type.
+
+The kernel prepares typed column views and scalar arguments once per batch, then writes
+each result directly into the Arrow string builder with the existing Jackson-compatible
+scalar serializer. It handles sliced validity, constant/column mixtures and empty inputs
+without building per-row JSON trees or calling the JVM. Ordinary scalar consumers and
+CASE-selected strings remain ordinary string values. Direct nested JSON_OBJECT, JSON_ARRAY
+and JSON(value) arguments retain the generated route because Flink inserts these as raw
+JSON. Other scalar/container types also retain their existing routes. Remaining JSON
+kernel coverage is tracked by [#506](https://github.com/datafusion-contrib/StreamFusion/issues/506).
+
+The [scalar-array qualification](../benchmarks/scalar-functions.md#flat-scalar-json_array-2026-11-06)
+records both released lines/JDKs, actual consumed Rust execution, previous-path controls
+and release measurements. All 36 prepared bulk cells beat stock by 1.90-5.86x; the seven
+million-row jobs retain both perimeter transposes and take 0.603-0.723 of stock elapsed
+time. These results apply to the measured flat scalar shapes, not all SQL/JSON expressions.
 
 ### IS JSON
 

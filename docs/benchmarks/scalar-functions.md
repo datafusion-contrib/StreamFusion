@@ -10835,3 +10835,69 @@ See the [qualification, complete-job trials and exact provenance](results/decima
 and [4,000 raw prepared samples](results/decimal-epoch-ceil-2026-11-06.csv.gz).
 Remaining temporal signatures stay open in
 [#504](https://github.com/datafusion-contrib/StreamFusion/issues/504).
+
+## Flat scalar JSON_ARRAY (2026-11-06)
+
+Flat scalar JSON_ARRAY now writes directly into Arrow string buffers. CHAR/VARCHAR,
+BOOLEAN and all integer widths qualify on released Flink 1.18.1 and 2.2.1; DECIMAL
+precision/scale through 38 additionally qualifies on 2.2. It reuses the existing
+Jackson-compatible string and decimal writer. Typed column views, logical null masks and
+constant arguments are prepared once per batch, avoiding per-row JSON trees and JVM
+callbacks. Default/explicit ABSENT ON NULL omits SQL NULL elements; NULL ON NULL emits
+JSON null. Empty and entirely omitted arrays return `[]`. Argument order is preserved.
+Released 1.18 decimal rendering, direct nested raw JSON constructors, other scalar types
+and containers retain generated evaluation. There is no new configuration switch.
+
+All **88 focused test invocations** pass across both released Flink lines and JDK 11/17,
+targeting Java 11: **64 new invocations and 24 related JSON_STRING invocations**, four
+fresh JVM processes, no skipped/aborted/failed tests. Complete 5,003-row maps/schema cover
+nullable/NOT NULL Generic/Binary sources, runtime CHAR(8)/VARCHAR, integer extrema,
+booleans, ten DECIMAL precision/scale pairs, NULL policies, constants, empty arrays,
+controls, supplementary and unpaired-surrogate inputs, long text, ordinary consumers,
+CASE-selected strings and lazy/all-filtered divide-by-zero expressions. Pure paths
+require consumed NativeCalc work, no fallback and empty JVM evaluator descriptors.
+Retained nested/complex routes are explicit controls. **930 fresh release Rust core
+tests pass**.
+
+The unchanged released JsonFunctionsITCase also passes with the suite agent on JDK 17:
+**489 invocations on 2.2.1 and 142 on 1.18.1**, no skips/aborts/failures. This is broad
+regression evidence; the focused SQL tests separately establish pure JSON_ARRAY execution.
+Actual preceding `b00ff8538` first compares full map/schema, then fails fifteen expected
+pure-route assertions on 2.2/JDK17 and five on 1.18/JDK17. Retained controls pass. Later
+queries not reached after an assertion are not preceding-parity evidence. Final
+parity/performance encoder instructions match, including nested classes, and the
+candidate/preceding benchmark fixture classes are byte-identical.
+
+Prepared release timing uses production whole-Calc encoding on both versions. The prior
+production encoder and native runtime execute the actual generated whole-Calc JVM bridge;
+its intrinsic conversions and callback remain timed. The raw single-expression encoder
+cannot represent that prior production path. `sf.integral.wholeCalc=true` selects the
+production Calc entry in the benchmark fixture only. Stock starts on prebuilt
+Generic/Binary RowData, native on prebuilt Arrow RecordBatch. The native timer starts
+inside Rust after setup/import and stops before export, retaining production Calc,
+allocations and equivalent string length/first/last checksums. Matched inputs include
+independent NULL positions, INT/BIGINT mixtures, VARCHAR(4096)/INT with NULL and ABSENT
+policies, and 2.2 DECIMAL(38,18)/INT. Text includes quotes/backslashes/controls,
+literal Unicode escape spelling, Chinese/supplementary characters, JSON text and
+640-byte strings. Full-value correctness is established separately by the SQL tests.
+
+Each released line has nullable/nonnullable and Generic/Binary controls at 1,024 rows,
+plus nullable/Binary 16-row controls. Each trial processes 131,072 logical rows with
+sixteen warmups, nine measurements, matched 1 GiB heaps and UTC. All **36 bulk cells**
+beat stock **1.902-5.864x** and actual previous execution **2.676-7.064x**. All **nine tiny
+controls** beat stock **1.711-2.194x** and previous **8.132-13.036x**. Independent stock
+controls, min/max variability and all **4,500 raw samples** remain in the report.
+
+Seven complete million-row jobs cover INT, BIGINT and VARCHAR on both lines and DECIMAL
+on 2.2. The row source, blackhole sink, submission/startup, JNI and both perimeter
+transposes remain measured; every engine uses parallelism one, matched 2 GiB heaps, two
+warmups and five measured repetitions. Each native job verifies consumed NativeCalc work
+and empty JVM evaluator descriptors; each prior job verifies its generated route.
+**All seven beat stock and previous**: native/stock elapsed **0.603-0.723**,
+native/previous **0.605-0.697**. Blackhole timing is not a full-result comparison.
+These gains apply to the measured scalar-array workloads, not every JSON signature.
+
+See the [qualification, complete-job trials and exact source/runtime provenance](results/json-array-scalars-2026-11-06.json)
+and [4,500 raw prepared samples](results/json-array-scalars-2026-11-06.csv.gz).
+JSON_QUERY, dynamic/complex paths, nested serialization and additional types remain in
+[#506](https://github.com/datafusion-contrib/StreamFusion/issues/506).

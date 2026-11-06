@@ -34,6 +34,7 @@ public final class IntegralExpressionBenchmarkFunctions {
   private static boolean longOutput;
   private static boolean stringOutput;
   private static volatile long consumed;
+  private static final String JSON_SCALAR_LONG_TEXT = "0123456789".repeat(64);
   private static final long[] TIMESTAMP_EPOCHS = {Long.MIN_VALUE, Long.MAX_VALUE,
       -62135596800000L, -12219292800000L, -2208988800000L, -86400001, -1, 0, 1,
       951827696123L, 1706659200000L, 1710037800000L, 253402300799999L};
@@ -92,7 +93,14 @@ public final class IntegralExpressionBenchmarkFunctions {
     if (fallbackControl && !previous)
       throw new IllegalStateException("A fallback control requires the preceding encoder");
     String fallbackReason = null;
-    var encoded = fallbackControl ? null
+    boolean wholeCalc = Boolean.getBoolean("sf.integral.wholeCalc");
+    if (wholeCalc && fallbackControl)
+      throw new IllegalArgumentException("A whole-Calc control must use its production encoder");
+    var encoded = fallbackControl ? null : wholeCalc
+        ? RexExpression.encodeCalc(org.apache.calcite.rel.logical.LogicalCalc.create(
+            project.getInput(), org.apache.calcite.rex.RexProgram.create(
+                project.getInput().getRowType(), project.getProjects(), null, project.getRowType(),
+                project.getCluster().getRexBuilder())))
         : RexExpression.encode(project.getProjects().get(0), project);
     if (fallbackControl) {
       var constructor = RexExpression.class.getDeclaredConstructor();
@@ -188,6 +196,8 @@ public final class IntegralExpressionBenchmarkFunctions {
   private static Object value(String type, int row) {
     long v = row * 7919L;
     switch (type) {
+      case "VARCHAR(4096)": return org.apache.flink.table.data.StringData.fromString(
+          jsonScalarText(row));
       case "BOOLEAN": return row % 2 == 0;
       case "TINYINT": return row % 17 == 0 ? Byte.MIN_VALUE : (byte) v;
       case "SMALLINT": return row % 17 == 0 ? Short.MIN_VALUE : (short) v;
@@ -239,6 +249,19 @@ public final class IntegralExpressionBenchmarkFunctions {
       }
     }
     return values;
+  }
+
+  public static String jsonScalarText(int row) {
+    switch (row % 8) {
+      case 0: return "";
+      case 1: return "plain";
+      case 2: return "a/b\\c\"d";
+      case 3: return "\0\t\r\n\b\f\u001f";
+      case 4: return "\\uD800";
+      case 5: return "\u4e2d\u6587\ud83d\ude00";
+      case 6: return "{\"a\":1}";
+      default: return JSON_SCALAR_LONG_TEXT;
+    }
   }
 
   public static long temporalMillis(long row) {

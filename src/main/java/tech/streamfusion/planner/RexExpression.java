@@ -2533,7 +2533,8 @@ final class RexExpression {
     if ("JSON_UNQUOTE".equals(functionName)) {
       return emitCharacterFunction(call, 123, 1, 1);
     }
-    if (("JSON_STRING".equals(functionName) || "JSON_OBJECT".equals(functionName))
+    if (("JSON_STRING".equals(functionName) || "JSON_OBJECT".equals(functionName)
+            || "JSON_ARRAY".equals(functionName))
         && !tech.streamfusion.compat.JsonRuntimeCompat.PRESERVES_DECIMAL_SCALE
         && call.getOperands().stream()
             .anyMatch(operand -> operand.getType().getSqlTypeName() == SqlTypeName.DECIMAL)) {
@@ -2548,6 +2549,9 @@ final class RexExpression {
     }
     if ("JSON_OBJECT".equals(functionName)) {
       return emitJsonObject(call);
+    }
+    if ("JSON_ARRAY".equals(functionName)) {
+      return emitJsonArray(call);
     }
     if ("JSON_VALUE".equals(functionName)) {
       return emitJsonValue(call);
@@ -3166,6 +3170,32 @@ final class RexExpression {
     return emit(args.get(locate ? 1 : 0))
         && emit(args.get(locate ? 0 : 1))
         && (args.size() == 2 || emit(args.get(2)));
+  }
+
+  private boolean emitJsonArray(RexCall call) {
+    List<RexNode> args = call.getOperands();
+    if (args.isEmpty() || !(args.get(0) instanceof RexLiteral)) {
+      return reject("JSON_ARRAY requires a literal NULL policy");
+    }
+    Object nullClause = ((RexLiteral) args.get(0)).getValue();
+    String policy;
+    if (nullClause == SqlJsonConstructorNullClause.NULL_ON_NULL) {
+      policy = "NULL";
+    } else if (nullClause == SqlJsonConstructorNullClause.ABSENT_ON_NULL) {
+      policy = "ABSENT";
+    } else {
+      return reject("JSON_ARRAY: unsupported NULL policy");
+    }
+    if (!args.subList(1, args.size()).stream().allMatch(RexExpression::isJsonScalarValue)) {
+      return reject("JSON_ARRAY requires character, boolean, integer, or decimal scalar values");
+    }
+    add(KIND_CALL, 253, args.size());
+    add(KIND_LIT_STRING, strings.size(), 0);
+    strings.add(policy);
+    for (RexNode arg : args.subList(1, args.size())) {
+      if (!emit(arg)) return false;
+    }
+    return true;
   }
 
   private boolean emitJsonObject(RexCall call) {

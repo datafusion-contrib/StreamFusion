@@ -74,6 +74,7 @@ mod integer_printf;
 pub(crate) mod integer_string;
 mod is_json;
 mod java_timsort;
+mod json_array;
 mod json_exists;
 mod json_object;
 mod json_path;
@@ -322,6 +323,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         250 => integer_printf::boolean_arguments(),
         251 => decimal_epoch::function(false),
         252 => decimal_epoch::function(true),
+        253 => json_array::function(),
         _ => return None,
     })
 }
