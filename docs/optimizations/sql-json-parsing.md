@@ -46,3 +46,35 @@ Final measurements and reproduction commands are on the
 Comet's streaming `get_json_object` and `datafusion-functions-json`'s jiter lookup informed
 the comparison. Their path selection and validation contracts differ from SQL/JSON in Flink;
 see the [semantic note](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/32-sql-json-definite-paths.md).
+
+## Serialize selected JSON_QUERY containers
+
+Verified final JSON_QUERY projections reuse the reader rather than materializing the entire
+document in a JVM JSON tree. Compatible wide documents write the selected container directly
+from the recycled SIMD tape. Documents outside that compatibility gate use the exact reader
+to validate the first document, then retain only the selected subtree in a flat arena with
+child/sibling indexes. Ordinary keys borrow their input span; escaped keys retain decoded
+UTF-16 identity until serialization. Stable grouping keeps the last duplicate value and the
+released provider's order: first insertion positions on 1.18, Java UTF-16 order on 2.2.
+
+The initial recursive-tree implementation lost on wide and deep objects. Profiling exposed
+per-container allocations, deduplication hashing and recursive destruction. The flat arena
+removed those costs, but a 1.18 wide case still lost; a second profile showed duplicate
+validation/parsing, sorting and arena growth. Reusing the compatible SIMD tape avoids that
+second parse and tree construction. Both slower cohorts remain in the measurement record.
+For a 1,024-row 2.2 wide-object allocation probe, Rust allocation calls fall from 104,509 to
+1,170 and cumulative requested bytes from 12,020,122 to 2,200,356. This untimed diagnostic
+excludes JVM allocations and does not measure retained memory.
+
+The final release matrix improves all 40 prepared bulk cells over stock Flink by
+1.35-3.79x and actual preceding execution by 1.56-3.78x; all ten tiny controls improve too.
+Six complete million-row jobs retain JNI and both row/Arrow transposes. Native/stock elapsed
+ranges from 0.757 to 0.960, and native/previous from 0.685 to 0.896. These results apply to
+the measured workloads, rather than every JSON_QUERY shape. See the
+[complete method, slower cohorts and raw observations](../benchmarks/scalar-functions.md#definite-json_query-2026-11-06).
+
+No JVM JSON evaluator handles admitted documents/results, although per-batch JNI recycler
+metadata synchronization remains. The [coverage gate](../operators/calc-filter.md#json_query)
+retains generated evaluation for unverified paths, consumers, types and shared-reader
+combinations. In particular, 2.2 multiple-reader scheduling can change successful values;
+the general fix remains [#608](https://github.com/datafusion-contrib/StreamFusion/issues/608).

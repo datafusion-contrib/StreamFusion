@@ -45,6 +45,14 @@ final class JsonPathSpec {
   }
 
   static String normalize(String path) {
+    return normalize(path, true);
+  }
+
+  static String normalizeDefinite(String path) {
+    return normalize(path, false);
+  }
+
+  private static String normalize(String path, boolean branching) {
     if (unicodeVersion() == null || path.codePoints().anyMatch(c -> c >= 0xd800 && c <= 0xdfff)) {
       return null;
     }
@@ -72,9 +80,11 @@ final class JsonPathSpec {
         return null;
       }
       if (step.group("wildcard") != null) {
+        if (!branching) return null;
         normalized.append("[*]");
       } else if (step.group("index") != null) {
         String[] indexes = step.group("index").split(" *, *", -1);
+        if (!branching && indexes.length != 1) return null;
         for (String index : indexes) {
           try {
             Integer.parseInt(index);

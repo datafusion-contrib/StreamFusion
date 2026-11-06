@@ -78,6 +78,7 @@ mod json_array;
 mod json_exists;
 mod json_object;
 mod json_path;
+mod json_query;
 mod json_serialize;
 mod json_value;
 mod locate;
@@ -324,6 +325,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         251 => decimal_epoch::function(false),
         252 => decimal_epoch::function(true),
         253 => json_array::function(),
+        254 => json_query::function(),
         _ => return None,
     })
 }

@@ -196,7 +196,7 @@ class NativeJsonBufferHistoryTest {
         });
   }
 
-  private static String boundary(int start, String number) {
+  static String boundary(int start, String number) {
     String prefix = "{\"a\":\"ok\",\"padding\":\"";
     String before = prefix + "x".repeat(start - prefix.length() - 6) + "\",\"n\":";
     String tail = ",\"tail\":\"";
@@ -331,7 +331,7 @@ class NativeJsonBufferHistoryTest {
     return buffer.length;
   }
 
-  private static <T> T withBuffer(int size, Supplier<T> action) {
+  static <T> T withBuffer(int size, Supplier<T> action) {
     BufferRecycler recycler = FACTORY._getBufferRecycler();
     char[] original = recycler.allocCharBuffer(BufferRecycler.CHAR_TOKEN_BUFFER);
     recycler.releaseCharBuffer(BufferRecycler.CHAR_TOKEN_BUFFER, new char[size]);

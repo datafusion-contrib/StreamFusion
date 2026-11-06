@@ -10899,5 +10899,113 @@ These gains apply to the measured scalar-array workloads, not every JSON signatu
 
 See the [qualification, complete-job trials and exact source/runtime provenance](results/json-array-scalars-2026-11-06.json)
 and [4,500 raw prepared samples](results/json-array-scalars-2026-11-06.csv.gz).
-JSON_QUERY, dynamic/complex paths, nested serialization and additional types remain in
+Dynamic/complex JSON_QUERY paths, nested serialization and additional types remain in
 [#506](https://github.com/datafusion-contrib/StreamFusion/issues/506).
+
+## Definite JSON_QUERY (2026-11-06)
+
+Verified final VARCHAR projections over direct character documents and definite literal paths
+now run in Rust on both released Flink lines. Strict/lax, WITHOUT/CONDITIONAL/UNCONDITIONAL
+ARRAY wrappers and independent NULL/EMPTY ARRAY/EMPTY OBJECT policies qualify. Other paths,
+ERROR policies, computed documents, non-final string consumers and unverified container
+boundaries retain generated evaluation. Flink 2.2 combinations with another parser or JVM
+evaluator retain row-major execution for shared recycler state; this protects successful
+values, independently of exception ordering. See the [coverage contract](../operators/calc-filter.md#json_query)
+and open [#608](https://github.com/datafusion-contrib/StreamFusion/issues/608).
+
+The writer preserves insertion order on released 1.18 and Java UTF-16 member order on 2.2,
+last duplicate values, version-specific numeric spelling and original surrogate identity
+until final UTF-8 serialization. Compatible wide documents serialize directly from the
+existing recycled SIMD tape. Floating-point nodes, Unicode escape spelling and Jackson
+edge documents retain the exact parser plus a flat selected-tree arena. Neither route
+uses a JVM JSON evaluator; per-batch JNI synchronization of Jackson recycler metadata remains.
+
+All **188 focused invocations** pass on Flink 1.18.1/2.2.1 and JDK 11/17, targeting Java 11.
+These include 56 new QUERY/history invocations, 44 existing history and 88 ARRAY/STRING
+invocations. Complete 5,003-row maps/schema, Generic/Binary and NULL layouts, wrappers,
+policies, signed paths, duplicate/surrogate keys, numeric/depth/token limits and empty
+filtered batches are compared. Pure SQL paths require consumed NativeCalc work, no fallback
+and empty JVM descriptors. Related regression classes pass **148 invocations**, with two
+pre-existing 1.18 JSON_QUOTE/JSON_UNQUOTE capability aborts. Updated 1.18 literal-path route
+contracts execute their value comparisons. Unchanged released JsonFunctionsITCase passes
+**489 + 142 invocations**, without skips/aborts/failures. **935 release Rust core tests pass**.
+
+Actual preceding `e5337b1f9` supplies both its production encoder and native runtime; it
+executes the generated whole-Calc JVM bridge. Candidate/previous benchmark fixtures are
+byte-identical, and final parity/performance encoder instructions match. A generated-route
+control also fixes premature replacement of raw isolated-surrogate member names before
+branching-path selection; the general multi-reader scheduling issue remains open.
+
+Prepared trials use release/System allocation on Apple M4 Pro/macOS arm64, JDK 17, UTC,
+matched 1 GiB heaps and production whole-Calc encoding. Stock starts on prebuilt Generic/
+Binary RowData; native starts on prebuilt Arrow RecordBatch. The Rust timer begins after
+setup/import and ends before export, retaining Calc execution, output consumption, allocation
+and intrinsic conversions/JNI. Independent stock controls accompany actual previous runs.
+Each engine has eight warmups and seven measured samples, alternating stock/native order.
+Mixed trials process 32,768 rows; wide/deep trials process 16,384. Full-value correctness is
+established separately; timed output consumption compares equivalent length/first/last checksums.
+
+Mixed documents cover objects/arrays, missing/null/scalar selections, duplicate escaped keys,
+Unicode/surrogate escapes, decimals/exponents and 640-byte strings. Wide objects contain 32
+reverse-inserted members with three-element arrays; deep objects contain 24 single-member
+levels. Each bulk shape has four nullable/nonnullable and Generic/Binary controls at 1,024 rows.
+
+| Flink | Bulk shape | Stock / native range | Previous / native range |
+| --- | --- | ---: | ---: |
+| 2.2.1 | mixed-without | 2.130-3.355x | 2.058-2.694x |
+| 2.2.1 | mixed-conditional | 1.978-3.510x | 1.984-2.756x |
+| 2.2.1 | mixed-unconditional | 2.424-3.788x | 2.171-3.782x |
+| 2.2.1 | wide-object | 1.639-1.866x | 1.558-1.972x |
+| 2.2.1 | deep-object | 3.015-3.584x | 3.153-3.469x |
+| 1.18.1 | mixed-without | 2.383-3.361x | 2.279-3.443x |
+| 1.18.1 | mixed-conditional | 1.771-3.362x | 1.945-3.593x |
+| 1.18.1 | mixed-unconditional | 2.327-3.720x | 2.093-2.178x |
+| 1.18.1 | wide-object | 1.351-1.748x | 1.613-1.802x |
+| 1.18.1 | deep-object | 3.127-3.416x | 3.245-3.409x |
+
+All **40 bulk cells** improve over stock **1.351-3.788x**
+and actual previous **1.558-3.782x**.
+The ten nullable/Binary 16-row controls range **1.267-2.550x** versus
+stock (0 losses) and **1.802-4.495x** versus previous
+(0 losses). Min/max sample variability and all paired stock controls remain in the report.
+
+Six complete million-row jobs retain row source, blackhole sink, planning/submission, JNI
+and both transposes, with parallelism one, matched 2 GiB heaps, two warmups and five measured
+repetitions. Candidate jobs require consumed NativeCalc and empty JVM descriptors; previous
+jobs require their generated route. Blackhole timing is not a result comparison.
+
+| Flink | Complete job | Stock (s) | Previous (s) | Native (s) | Native / stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | mixed-without | 0.936 | 1.074 | 0.735 | 0.786 |
+| 2.2.1 | mixed-conditional | 0.822 | 0.910 | 0.723 | 0.880 |
+| 2.2.1 | wide-object | 6.150 | 6.069 | 4.655 | 0.757 |
+| 1.18.1 | mixed-without | 0.946 | 1.065 | 0.752 | 0.795 |
+| 1.18.1 | mixed-conditional | 0.812 | 0.869 | 0.779 | 0.960 |
+| 1.18.1 | wide-object | 6.090 | 6.327 | 4.806 | 0.789 |
+
+Complete native/stock elapsed ranges **0.757-0.960**
+(0 losses); native/previous ranges **0.685-0.896**
+(0 losses). These are the measured workloads, without a universal end-to-end claim.
+
+The first implementation lost on wide/deep objects; it was not published as accelerated.
+Profiling identified per-container allocations, legacy deduplication hashing and recursive
+destruction. A flat arena and borrowed ordinary keys remove those costs and accelerate deep
+objects, but an intermediate 1.18 wide case still loses. A second profile identifies
+validation/reparsing, member sorting and arena reallocation; reusing the compatible SIMD
+tape removes the second parse/tree construction. The report retains both slower cohorts
+(720 raw samples each), their source/runtime hashes and untimed allocation diagnostics.
+Requested allocation bytes are cumulative traffic, not retained memory; JVM allocations
+are outside the Rust allocation counter. Sampled runs are excluded from throughput results.
+
+Reproduce with the release `integral_expression` fixture, the record's SQL, VARCHAR(4096),
+NULL/layout/batch controls, `JAVA_TOOL_OPTIONS=-Dsf.integral.wholeCalc=true`,
+`SF_INTEGRAL_CORPUS=json-query|json-query-wide|json-query-deep` and
+`SF_INTEGRAL_REQUIRED_FUNCTION=JSON_QUERY`. Previous controls use the actual saved encoder/
+runtime and `SF_INTEGRAL_PREVIOUS=true`. Complete jobs use
+`IntegralExpressionPipelineBenchmark` with matching expression/corpus and string input.
+
+See [qualification, variability, full job trials and exact provenance](results/json-query-definite-2026-11-06.json)
+and [4,440 raw prepared samples, including both slower cohorts](results/json-query-definite-2026-11-06.csv.gz).
+Remaining dynamic/branching paths, nested serialization and additional types stay in
+[#506](https://github.com/datafusion-contrib/StreamFusion/issues/506). Hosted checks must
+qualify the exact pushed head separately.

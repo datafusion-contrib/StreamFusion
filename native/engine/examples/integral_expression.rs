@@ -251,8 +251,36 @@ fn main() {
                 "{\"a\":1}".into(),
                 "0123456789".repeat(64),
             ];
+            let corpus = std::env::var("SF_INTEGRAL_CORPUS").unwrap_or_default();
+            let documents: Vec<String> = (0..rows)
+                .map(|row| match corpus.as_str() {
+                    "json-query-wide" => {
+                        let fields: Vec<String> = (0..32)
+                            .rev()
+                            .map(|i| format!("\"f{i}\":[{},\"text\",null]", row + i))
+                            .collect();
+                        format!("{{\"a\":{{{}}},\"drop\":true}}", fields.join(","))
+                    }
+                    "json-query-deep" => {
+                        format!("{{\"a\":{}{row}{}}}", "{\"n\":".repeat(24), "}".repeat(24))
+                    }
+                    "json-query" => match row % 8 {
+                        0 => r#"{"a":{"z":7,"a":2.5000,"name":"plain"},"drop":0}"#.into(),
+                        1 => r#"{"a":[1,2.5000,-0,1e10,1e-8],"b":true}"#.into(),
+                        2 => r#"{"a":{"dup":1,"d\u0075p":2,"x":"a/b\\c\"d"}}"#.into(),
+                        3 => {
+                            "{\"a\":{\"\u{4e2d}\u{6587}\":\"\u{1f600}\",\"p\":\"\\uD800\"}}".into()
+                        }
+                        4 => r#"{"a":null}"#.into(),
+                        5 => r#"{"missing":[]}"#.into(),
+                        6 => r#"{"a":"text"}"#.into(),
+                        _ => format!("{{\"a\":{{\"long\":\"{}\"}}}}", "0123456789".repeat(64)),
+                    },
+                    _ => texts[row % texts.len()].clone(),
+                })
+                .collect();
             Arc::new(StringArray::from_iter((0..rows).map(|i| {
-                (!nullable || i % 7 != 0).then_some(texts[i % texts.len()].as_str())
+                (!nullable || i % 7 != 0).then_some(documents[i].as_str())
             })))
         }
         "BOOLEAN" => Arc::new(BooleanArray::from_iter(

@@ -67,7 +67,7 @@ class IntegralExpressionPipelineBenchmark {
             Object value;
             if (stringInput) {
               value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions
-                  .jsonScalarText((int) (i % 1024));
+                  .jsonInputText((int) (i % 1024));
             } else if (epochSecondsInput) {
               value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.epochSeconds(i);
             } else if (epochMillisInput) {

@@ -197,7 +197,7 @@ public final class IntegralExpressionBenchmarkFunctions {
     long v = row * 7919L;
     switch (type) {
       case "VARCHAR(4096)": return org.apache.flink.table.data.StringData.fromString(
-          jsonScalarText(row));
+          jsonInputText(row));
       case "BOOLEAN": return row % 2 == 0;
       case "TINYINT": return row % 17 == 0 ? Byte.MIN_VALUE : (byte) v;
       case "SMALLINT": return row % 17 == 0 ? Short.MIN_VALUE : (short) v;
@@ -261,6 +261,32 @@ public final class IntegralExpressionBenchmarkFunctions {
       case 5: return "\u4e2d\u6587\ud83d\ude00";
       case 6: return "{\"a\":1}";
       default: return JSON_SCALAR_LONG_TEXT;
+    }
+  }
+
+  public static String jsonInputText(int row) {
+    String corpus = System.getenv("SF_INTEGRAL_CORPUS");
+    if (corpus == null || !corpus.startsWith("json-query")) return jsonScalarText(row);
+    if (corpus.equals("json-query-wide")) {
+      StringBuilder document = new StringBuilder("{\"a\":{");
+      for (int i = 31; i >= 0; i--) {
+        if (i != 31) document.append(',');
+        document.append('"').append('f').append(i).append("\":[")
+            .append(row + i).append(",\"text\",null]");
+      }
+      return document.append("},\"drop\":true}").toString();
+    }
+    if (corpus.equals("json-query-deep"))
+      return "{\"a\":" + "{\"n\":".repeat(24) + row + "}".repeat(24) + "}";
+    switch (row % 8) {
+      case 0: return "{\"a\":{\"z\":7,\"a\":2.5000,\"name\":\"plain\"},\"drop\":0}";
+      case 1: return "{\"a\":[1,2.5000,-0,1e10,1e-8],\"b\":true}";
+      case 2: return "{\"a\":{\"dup\":1,\"d\\u0075p\":2,\"x\":\"a/b\\\\c\\\"d\"}}";
+      case 3: return "{\"a\":{\"\u4e2d\u6587\":\"\ud83d\ude00\",\"p\":\"\\uD800\"}}";
+      case 4: return "{\"a\":null}";
+      case 5: return "{\"missing\":[]}";
+      case 6: return "{\"a\":\"text\"}";
+      default: return "{\"a\":{\"long\":\"" + JSON_SCALAR_LONG_TEXT + "\"}}";
     }
   }
 

@@ -233,12 +233,12 @@ impl Output {
     }
 }
 
-struct EscapedDocument {
-    text: String,
-    escapes: Vec<usize>,
+pub(super) struct EscapedDocument {
+    pub text: String,
+    pub escapes: Vec<usize>,
 }
 
-fn escaped_document(units: &[u16]) -> EscapedDocument {
+pub(super) fn escaped_document(units: &[u16]) -> EscapedDocument {
     use std::fmt::Write;
     let mut output = String::new();
     let mut escapes = Vec::new();

@@ -2771,7 +2771,8 @@ remain unchanged; new grammar does not require another Rust parser extension. EX
 marks the generated route with `jsonEvaluation=[JVM]`. A native Calc marker identifies the
 columnar operator, not the language evaluating its JSON expressions.
 
-The generated route covers JSON_QUERY, dynamic JSON_VALUE/JSON_QUERY paths, recursive
+The generated route covers JSON_QUERY outside its definite-path projection gate below,
+dynamic JSON_VALUE/JSON_QUERY paths, recursive
 descent, filters, slices, multi-selectors, path functions, and invalid paths handled by
 Flink's policies. It also admits additional JSON_STRING/JSON_OBJECT/JSON_ARRAY scalar types and nested
 constructors, dynamic defaults, nullable-boolean consumers, and short-circuited error or
@@ -2788,7 +2789,10 @@ date/time, interval, supported timestamp types, and recursively nested ARRAY/ROW
 values with those leaves. The broader MAP/MULTISET boundary requires non-null keys/elements,
 matching the Arrow map key representation, with the existing character MAP exception below. Nullable map values, outer containers and nested array/row values
 remain supported. Nested arguments use Flink internal views over the imported Arrow batch; generated
-results are copied into owned Arrow output vectors before that batch closes. The callback still
+results are copied into owned Arrow output vectors before that batch closes. SQL/JSON programs
+preserve cached Java UTF-16 strings through that boundary without widening the existing container
+type gates. In particular, an isolated surrogate member name must remain distinct from `?` until
+after JSON member selection, duplicate-key resolution and serialization. The callback still
 crosses JNI once per batch, including multi-column results and filtering.
 The existing character-key/character-value MAP boundary remains admitted. Other MAP
 keys and MULTISET elements must be declared non-null; nullable forms retain fallback,
@@ -2820,9 +2824,42 @@ describe those retained fast paths and call out when the generated Calc extends 
 
 ### JSON_QUERY
 
-JSON_QUERY uses the generated Calc with literal or dynamic paths, conditional/unconditional
-array wrappers and EMPTY/ERROR policies. Its output has the same intermediate STRING
-identity restriction as JSON_VALUE.
+Final VARCHAR projections over a direct character field or literal use Rust for verified literal
+definite paths: root, member names (including quoted/escaped names), and signed array indexes.
+The default WITHOUT ARRAY WRAPPER, CONDITIONAL ARRAY WRAPPER and UNCONDITIONAL ARRAY WRAPPER are
+native, with NULL, EMPTY ARRAY or EMPTY OBJECT independently specified ON EMPTY and ON ERROR.
+Strict/lax mode, SQL NULLs, JSON null, missing selections, wrong-type selections, duplicate members
+and validation of unselected values retain the released Flink behavior. Empty filtered batches
+do not evaluate the projection.
+
+The reader validates the document with the shared Jackson runtime profile, then serializes the
+selected tree into Arrow. It does not return a raw JSON substring: 2.2 sorts member names by their
+original Java UTF-16 units; 1.18 retains insertion order, including the original position of a
+replaced key. The last duplicate name wins on both lines. Strings use Jackson-compatible escapes,
+and numeric spelling follows the selected Flink line (1.18 Double or 2.2 BigDecimal semantics).
+The input string carrier preserves cached UTF-16 through selection and member ordering; replacement of
+isolated surrogates happens at the final UTF-8 output boundary. There is no JVM JSON evaluator on
+this route. The existing per-batch JNI synchronization of Jackson recycler metadata remains.
+Wide compatible integer/boolean/null documents write directly from the existing recycled SIMD
+tape. Floating-point nodes, Unicode escape spelling, oversized tapes/documents and Jackson
+edge cases retain the exact reader and a flat arena for the selected tree. Both paths apply
+the same ordering, duplicate-key, wrapper and error-policy rules.
+
+On Flink 2.2, a Calc combining JSON_QUERY with another JSON parser call or a JVM evaluator uses
+generated row-major evaluation. Jackson's numeric limits depend on recycled token-buffer capacity:
+evaluating complete columns in a different order can change successful results. A controlled
+two-reader regression verifies that effect; it is independent of competing exception order.
+The general multi-reader fix is tracked in [#608](https://github.com/datafusion-contrib/StreamFusion/issues/608).
+Flink 1.18 lacks this token-limit interaction and admits multiple verified JSON_QUERY projections.
+Mixed expressions whose kernels cannot consume the represented string carrier stay generated;
+their types are checked during encoding, before physical-plan substitution.
+
+Dynamic/NULL paths, wildcards, index/member unions, slices, recursive descent, filters, path
+functions, ERROR policies, computed document inputs, ARRAY return types, unverified container
+boundaries in other projections, and non-final string
+consumers retain the generated route. The intermediate STRING identity restriction remains the
+same as JSON_VALUE, including non-final operator boundaries. Non-Calc expression encoders do not
+admit this new JSON_QUERY kernel.
 
 ### JSON_QUOTE
 
@@ -2974,7 +3011,7 @@ JSON_VALUE nor JSON_EXISTS exposes them. SQL parity covers empty/single/multiple
 scalar/null inputs, nested signed indexes, duplicate ancestors, escaped names, typed defaults,
 all error policies, predicates and independent definite/wildcard projections. Retained operator
 metrics verify 5,003 rows entering and leaving native Calc. Recursive descent, filters, slices,
-member-name unions, path functions and JSON_QUERY use the generated Calc described above.
+member-name unions, path functions and branching JSON_QUERY use the generated Calc described above.
 
 The wildcard benchmark reads `$.a[*]` from 32-element arrays with 264 bytes of padding.
 Release/mimalloc on an Apple M1 Max, one million rowwise inputs, two warmups and five alternating
@@ -3206,7 +3243,7 @@ Admission first probes the shaded Jackson runtime once per class loader: Flink 2
 Jackson 2.18.2 and its default thread-local recycler pool; Flink 1.18 requires Jackson 2.14.2
 on JDK 11 or 17 and thread-local buffer recycling. Both require successful buffer acquisition, cross-factory
 reuse and release. Missing methods/classes, a different version or pool,
-or probe failure decline the native parser for JSON_VALUE, JSON_EXISTS and IS JSON; Calc
+or probe failure decline the native parser for JSON_VALUE, JSON_QUERY, JSON_EXISTS and IS JSON; Calc
 can use Flink generation when the host runtime and batch boundary types support it.
 JobManagers and TaskManagers must use the same verified shaded Jackson runtime.
 The 2.2 profile admits JDK 11, 17, 21, 24 and 25, selecting the corresponding Unicode version for

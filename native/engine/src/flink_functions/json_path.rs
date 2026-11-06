@@ -6,6 +6,8 @@ mod simd;
 pub(super) use simd::Reader;
 mod runtime;
 pub(super) use runtime::with_reader;
+mod query;
+pub(super) use query::{write_container, write_scalar};
 
 #[derive(Debug)]
 pub(super) struct Path<'a> {
@@ -28,6 +30,12 @@ fn indefinite(steps: &[Step<'_>]) -> bool {
 }
 
 impl<'a> Path<'a> {
+    pub fn definite(&self) -> bool {
+        self.steps
+            .iter()
+            .all(|step| matches!(step, Step::Member(_) | Step::Index(_)))
+    }
+
     // The Java encoder normalizes the mode and admits this same path grammar.
     pub fn parse(path: &'a str, unicode: &str) -> Option<Self> {
         static IDENTIFIERS: std::sync::LazyLock<[regex::Regex; 4]> =
@@ -157,6 +165,17 @@ impl<'a> Path<'a> {
         legacy: bool,
         surrogate_escapes: &'s [usize],
     ) -> Result<(Value<'s>, bool), ()> {
+        self.parse_selected(input, buffer_size, legacy, surrogate_escapes, false)
+    }
+
+    fn parse_selected<'s>(
+        &self,
+        input: &'s str,
+        buffer_size: usize,
+        legacy: bool,
+        surrogate_escapes: &'s [usize],
+        capture_containers: bool,
+    ) -> Result<(Value<'s>, bool), ()> {
         let mut parser = Parser {
             input,
             surrogate_escapes,
@@ -165,6 +184,7 @@ impl<'a> Path<'a> {
             legacy_decimal_exponent: self.legacy_decimal_exponent,
             buffer_size,
             legacy,
+            capture_containers,
         };
         parser.whitespace();
         let root_null = parser.remaining().starts_with("null");
@@ -207,6 +227,7 @@ pub(super) enum Value<'a> {
     Missing,
     Null,
     Container,
+    CapturedContainer(&'a str),
     String(&'a str),
     DecodedString(&'a str),
     Number(&'a str),
@@ -240,6 +261,7 @@ struct Parser<'a> {
     legacy_decimal_exponent: bool,
     buffer_size: usize,
     legacy: bool,
+    capture_containers: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -318,6 +340,8 @@ impl<'a> Parser<'a> {
     }
 
     fn container(&mut self, path: Option<&[Step<'_>]>, depth: usize) -> Result<Value<'a>, ()> {
+        let start = self.pos;
+        let capture = self.capture_containers && path.is_some_and(|steps| steps.is_empty());
         let object = self.consume(b'{');
         if !object {
             self.pos += 1; // '[' was checked by value().
@@ -337,7 +361,11 @@ impl<'a> Parser<'a> {
         };
         self.whitespace();
         if self.consume(end) {
-            return Ok(result);
+            return Ok(if capture {
+                Value::CapturedContainer(&self.input[start..self.pos])
+            } else {
+                result
+            });
         }
         let selected_index = match path.and_then(|steps| steps.first()) {
             Some(Step::Index(index)) if !object => {
@@ -373,7 +401,11 @@ impl<'a> Parser<'a> {
             }
             self.whitespace();
             if self.consume(end) {
-                return Ok(result);
+                return Ok(if capture {
+                    Value::CapturedContainer(&self.input[start..self.pos])
+                } else {
+                    result
+                });
             }
             if !self.consume(b',') {
                 return Err(());
