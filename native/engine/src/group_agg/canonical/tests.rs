@@ -486,7 +486,6 @@ fn native_checkpoint_restore_rebinds_append_liveness_without_changing_the_state_
     }
 }
 
-
 #[test]
 fn append_min_max_preserve_null_initialization_and_signed_extrema_across_switches() {
     let kinds = vec![10, 11];

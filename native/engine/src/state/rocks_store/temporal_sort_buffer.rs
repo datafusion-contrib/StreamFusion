@@ -229,7 +229,9 @@ impl RocksTemporalSortBuffer {
                 continue;
             }
             if value.len() < VALUE_PREFIX_LEN {
-                return Err(DataFusionError::Execution("truncated temporal-sort row".into()));
+                return Err(DataFusionError::Execution(
+                    "truncated temporal-sort row".into(),
+                ));
             }
             rows.push(value[VALUE_PREFIX_LEN..].into());
             if rows.len() == chunk_rows {

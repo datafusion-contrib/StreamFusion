@@ -520,7 +520,10 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
     type Value = TopNPartition;
     fn resident_bytes(&self, value: &TopNPartition) -> usize {
         std::mem::size_of::<TopNPartition>()
-            + value.retract.as_ref().map_or(0, |state| state.resident_bytes())
+            + value
+                .retract
+                .as_ref()
+                .map_or(0, |state| state.resident_bytes())
             + value.capacity() * std::mem::size_of::<TopNRow>()
             + value
                 .iter()
@@ -604,9 +607,10 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
     fn from_raw(&self, bytes: &[u8]) -> TopNPartition {
         if bytes.starts_with(retract_state::STATE_VERSION) {
             return TopNPartition {
-                retract: Some(Box::new(retract_state::RetractingState::decode(
-                    bytes, &self.sort, &self.payload,
-                ).expect("valid persisted retracting state"))),
+                retract: Some(Box::new(
+                    retract_state::RetractingState::decode(bytes, &self.sort, &self.payload)
+                        .expect("valid persisted retracting state"),
+                )),
                 ..Default::default()
             };
         }
@@ -1646,8 +1650,16 @@ fn write_raw_topn_snapshot_partition<'a>(
     }
     let mut fields = vec![
         Field::new(RAW_SNAPSHOT_KEY, DataType::Binary, false),
-        Field::new(RAW_SNAPSHOT_SORT, DataType::Binary, has_bounds || has_retract),
-        Field::new(RAW_SNAPSHOT_ROW, DataType::Binary, has_bounds || has_retract),
+        Field::new(
+            RAW_SNAPSHOT_SORT,
+            DataType::Binary,
+            has_bounds || has_retract,
+        ),
+        Field::new(
+            RAW_SNAPSHOT_ROW,
+            DataType::Binary,
+            has_bounds || has_retract,
+        ),
     ];
     if has_retract {
         fields.push(Field::new(RAW_RETRACT_STATE, DataType::Binary, true));
@@ -1987,7 +1999,9 @@ fn load_topn_batch_raw(
             .expect("normalize snapshot sort keys")
     });
     let rows = column_binary(batch, RAW_SNAPSHOT_ROW);
-    let retract_states = batch.column_by_name(RAW_RETRACT_STATE).map(|_| column_binary(batch, RAW_RETRACT_STATE));
+    let retract_states = batch
+        .column_by_name(RAW_RETRACT_STATE)
+        .map(|_| column_binary(batch, RAW_RETRACT_STATE));
     let stored_kinds = batch.column_by_name("$stored_kind$").map(|array| {
         array
             .as_any()
@@ -2017,11 +2031,20 @@ fn load_topn_batch_raw(
             Some(buffer) => buffer,
             None => groups.insert(ByteKey::from(part), TopNPartition::default()),
         };
-        if let Some(states) = retract_states.as_ref().filter(|states| !states.is_null(row)) {
-            assert!(!buffer.has_state(), "duplicate retracting checkpoint partition");
+        if let Some(states) = retract_states
+            .as_ref()
+            .filter(|states| !states.is_null(row))
+        {
+            assert!(
+                !buffer.has_state(),
+                "duplicate retracting checkpoint partition"
+            );
             let mut state = retract_state::RetractingState::decode(
-                states.value(row), &conv.sort, &conv.payload,
-            ).expect("valid retracting checkpoint partition");
+                states.value(row),
+                &conv.sort,
+                &conv.payload,
+            )
+            .expect("valid retracting checkpoint partition");
             if write_timestamps.is_none() {
                 state.migrate_clocks(restored_at_ms);
             }
@@ -2207,7 +2230,10 @@ impl RetractableTopNRanker {
             .map(|(key, buffer)| {
                 byte_key_bytes(&key.0)
                     + TOPN_BOUND_BYTES
-                    + buffer.retract.as_ref().map_or(0, |state| state.resident_bytes())
+                    + buffer
+                        .retract
+                        .as_ref()
+                        .map_or(0, |state| state.resident_bytes())
                     + buffer.iter().map(topn_entry_bytes).sum::<usize>()
             })
             .sum();
@@ -5409,15 +5435,21 @@ pub extern "system" fn Java_tech_streamfusion_Native_enableStockRetractingTopNSt
             {
                 match unsafe { &mut *(handle as *mut RocksTopNHandle) } {
                     RocksTopNHandle::Retract(ranker) => ranker.enable_stock_state(),
-                    _ => Err(DataFusionError::Execution("stock retracting state requires a retracting ranker".into())),
+                    _ => Err(DataFusionError::Execution(
+                        "stock retracting state requires a retracting ranker".into(),
+                    )),
                 }
             }
             #[cfg(not(feature = "rocksdb-state"))]
-            Err(DataFusionError::Execution("native RocksDB support is unavailable".into()))
+            Err(DataFusionError::Execution(
+                "native RocksDB support is unavailable".into(),
+            ))
         } else {
             match unsafe { &mut *(handle as *mut TopNHandle) } {
                 TopNHandle::Retract(ranker) => ranker.enable_stock_state(),
-                _ => Err(DataFusionError::Execution("stock retracting state requires a retracting ranker".into())),
+                _ => Err(DataFusionError::Execution(
+                    "stock retracting state requires a retracting ranker".into(),
+                )),
             }
         };
         if let Err(error) = result {

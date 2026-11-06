@@ -27,7 +27,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Sessions](../operators/window-aggregate.md) | Automatic partitioned-session binding, operator recovery and selected complete-job handoffs | Native unpartitioned session assignment and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
 | [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
-| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic and processing-time unbounded scalar contracts with automatic binding | Wider job/type matrix, event-time unbounded/views and event-ROWS cleanup |
+| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded V2 scalar contracts with automatic binding | Legacy event-time V1, wider keys/types, DISTINCT/views and bounded event-ROWS cleanup |
 | [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs | Legacy proctime variant, wider schemas and commit-failure matrix |
@@ -40,8 +40,8 @@ processing/native-checkpoint regressions only. Custom stock source/committer fix
 state and external effects in the qualified jobs. Native connector protocols have separate
 qualification: the [Kafka handoff matrices](../connectors/kafka.md#canonical-sink-handoffs-partial)
 include real-broker exactly-once sink and both-native pipelines, writer rescaling, transaction
-ownership and selected process/commit-failure cases. Reader rescaling, discovery, wider schemas
-and broker/coordinator/publication failures remain open; those historical cohorts are not
+ownership and selected process/commit-failure cases. Combining partition discovery with joint reader/writer rescaling, wider schemas
+and broker/coordinator/publication failures remains open; those historical cohorts are not
 implicitly requalified by newer operator libraries. Benchmarking stays deferred under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
