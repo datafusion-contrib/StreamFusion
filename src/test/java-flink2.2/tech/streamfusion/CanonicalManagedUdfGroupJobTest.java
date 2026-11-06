@@ -13,10 +13,7 @@ class CanonicalManagedUdfGroupJobTest extends CanonicalGroupArithmeticJobTest {
         .filter(
             test ->
                 !Boolean.getBoolean("sf.canonical.jvmGroup.job.smoke")
-                    || test.get()[0].equals("continue")
-                        && !(boolean) test.get()[1]
-                        && !(boolean) test.get()[2]
-                        && test.get()[3].equals("hashmap"));
+                    || test.get()[0].equals("continue"));
   }
 
   int cacheEntries() {

@@ -1742,3 +1742,7 @@ installed after the upstream mini-batch implementation was unified. Regression f
 the shared mini-batch handler and require its buffer to be empty after the savepoint barrier.
 Bounded processing ROWS input retention preserves Flink's same-clock CURRENT ROW bookkeeping,
 including the extra retained row after an emptied timestamp bucket advances its cursor to MAX.
+
+The managed-UDF job smoke selection retains both engine orders, both native stores, and ordinary
+SQL plus compiled submission. It limits the scenario to continued input; the default complete-job
+selection still includes no-input re-export, checkpoint recovery and rescaling.
