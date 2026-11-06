@@ -71,9 +71,9 @@ key groups and the retained row descriptor remain unchanged. Duplicate detection
 content through the shared stock-compatible equaliser instead of treating Java representation
 flags as changed data. TTL refresh behavior retains its existing rules.
 
-Ordinary SQL resolves this state owner from the portable stock template when another native
-consumer has no qualified canonical adapter. That consumer retains its stock implementation and
-state identities; the normalizer remains native. The existing mini-batch retracting aggregate
+Ordinary SQL resolves ROW-key normalization from the portable stock template, rebuilding both
+its input representation and state binding. Qualified native consumers remain native; consumers
+without a qualified canonical adapter retain their stock implementation and state identities. The existing mini-batch retracting aggregate
 and ROW-bearing regular-join exclusions are preserved. They do not disable the normalizer's
 portable binding or permit unmatched real state to be discarded.
 

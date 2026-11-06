@@ -347,10 +347,7 @@ final class StockCompiledPlanLowering {
                   || node instanceof NativeColumnarWindowAggExecNode
                   || node instanceof NativeColumnarSessionWindowAggExecNode
                   || node instanceof NativeColumnarGlobalWindowAggExecNode) return true;
-              if (node instanceof NativeChangelogNormalizeExecNode
-                  && rowKeys(
-                      (RowType) node.getOutputType(),
-                      ((NativeChangelogNormalizeExecNode) node).stateKeyColumns())) return true;
+              if (needsNormalizerRowTemplate(node)) return true;
               if (needsStringTemplate(node, graph) || needsGlobalGroupTemplate(node, graph))
                 return true;
               if (node instanceof NativeColumnarGroupAggExecNode
@@ -380,6 +377,13 @@ final class StockCompiledPlanLowering {
               return node instanceof NativeOverAggExecNode
                   && ((NativeOverAggExecNode) node).hasStockArithmeticState();
             });
+  }
+
+  private static boolean needsNormalizerRowTemplate(ExecNode<?> node) {
+    return node instanceof NativeChangelogNormalizeExecNode
+        && rowKeys(
+            (RowType) node.getOutputType(),
+            ((NativeChangelogNormalizeExecNode) node).stateKeyColumns());
   }
 
   private static boolean needsStringTemplate(ExecNode<?> node, SqlPlanOrigins.RuntimeGraph graph) {
@@ -415,7 +419,9 @@ final class StockCompiledPlanLowering {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
     for (ExecNode<?> node : nodes) {
-      if (needsStringTemplate(node, graph) || needsGlobalGroupTemplate(node, graph)) return false;
+      if (needsNormalizerRowTemplate(node)
+          || needsStringTemplate(node, graph)
+          || needsGlobalGroupTemplate(node, graph)) return false;
       if (node instanceof NativeTemporalSortExecNode || node instanceof NativeWindowRankExecNode)
         return false;
       if (node instanceof NativeOverAggExecNode

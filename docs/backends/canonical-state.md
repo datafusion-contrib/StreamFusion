@@ -1680,7 +1680,8 @@ Every operator family remains partial and benchmarking remains deferred under #5
 
 A qualified native normalizer can share a job with a stock consumer whose native canonical
 contract is not admitted. Ordinary SQL reuses the original stock template to bind the normalizer
-and preserve that consumer's original identities and state. It does not continue with unbound
+and preserve that consumer's original identities and state. The normalizer's ROW-key input
+edge is rebuilt from the same template, preserving its nested representation after restore. It does not continue with unbound
 native identities or drop unmatched savepoint state. ROW keys use owned binary companions to
 preserve the original serialized key bytes; canonical export still writes directly from live
 state into stock schemas without an intermediate native snapshot.
