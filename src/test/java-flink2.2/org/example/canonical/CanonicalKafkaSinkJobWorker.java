@@ -160,8 +160,18 @@ public final class CanonicalKafkaSinkJobWorker {
         if (System.nanoTime() > deadline) throw new AssertionError("Source boundary not reached");
         Thread.sleep(10);
       }
-      if (!kafkaInput && !Files.readString(ready).trim().equals(Integer.toString(limit)))
-        throw new AssertionError("Wrong custom source offset");
+      if (!kafkaInput) {
+        String actualOffset = Files.readString(ready).trim();
+        if (!actualOffset.equals(Integer.toString(limit)))
+          throw new AssertionError(
+              "Wrong custom source offset at "
+                  + ready
+                  + ": expected "
+                  + limit
+                  + ", got '"
+                  + actualOffset
+                  + "'");
+      }
       CommonTestUtils.waitForAllTaskRunning(cluster, job.getJobID(), false);
       var actualGraph = cluster.getExecutionGraph(job.getJobID()).get(30, TimeUnit.SECONDS);
       String actualPlan =

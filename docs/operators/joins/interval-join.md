@@ -216,13 +216,24 @@ Wider type/version/failure and connector-protocol requirements remain open
 in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
 
 
-Qualified compiled plans can disable explicit SQL UID generation. Four native-first INNER job
-round trips pass across both clocks and native stores with generated IDs; explicit-UID job
-controls pass too. The runtime state contract uses the actual native primary ID and canonical
-metadata retains the original stock identities automatically. These generated-ID cases do not
-extend the qualified rescale/type/version/failure scope. Ordinary SQL binding is described below
+Qualified compiled plans can disable explicit SQL UID generation. All 84 existing generated-ID
+job cases pass: 32 continued-input switches, 32 residual-predicate cases, eight no-input
+re-exports, four native checkpoint recoveries and eight 64-key rescale cases through 1 → 3 → 2
+tasks. These cover both clocks, native stores and initial engine orders. The runtime state
+contract uses the actual native primary ID and canonical metadata retains the original stock
+identities automatically. Wider type/version/failure requirements remain open. Ordinary SQL
+binding is described below
 under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); see
 [generated operator IDs](../../backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans).
+
+Generated-ID rescale fixtures disable chaining before the first savepoint, matching the
+ordinary-SQL fixture. Flink's generated IDs depend on chain boundaries; a singleton source and
+1 → 3 → 2 downstream tasks otherwise change those IDs even for stock-to-stock restore. Both
+clocks, native stores and initial engine orders retain the same 64 keys and maximum parallelism
+128. This setup preserves the existing unmatched-state rejection; it neither invents identities
+nor drops state. The full existing generated-ID job matrix also retains its continuation,
+residual, no-input and native-checkpoint controls.
+
 
 
 ### Ordinary SQL submission

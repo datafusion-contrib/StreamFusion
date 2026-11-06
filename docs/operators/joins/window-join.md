@@ -122,11 +122,14 @@ they do not qualify the remaining full #569 matrix. Ordinary SQL binding is desc
 See the [savepoint lane](../../upstream-flink-suite.md#window-join-canonical-restore-qualification).
 
 
-Qualified compiled plans also work with explicit SQL UID generation disabled. Four native-first
-INNER TUMBLE job round trips pass across keyed/keyless variants and both native stores, alongside
-explicit-UID controls. State registration uses actual native primary IDs; canonical metadata
-continues to retain the original stock graph identities. Wider generated-ID variant/rescale
-qualification remains open under
+Qualified compiled plans also work with explicit SQL UID generation disabled. All 46 existing
+generated-ID jobs pass across both native stores and initial engine orders: 36 continued-input
+variants, four no-input returns, two native-checkpoint recoveries and four 64-key rescalings.
+Rescale fixes chaining before the first submission, preserving stock-generated identities through
+1 → 3 → 2 tasks at maximum parallelism 128. The same 39 stock/planner identity controls pass.
+State registration uses actual native primary IDs; canonical metadata retains the original stock
+graph identities, and unmatched state still fails restore. Wider key/type/version/failure and
+connector combinations remain open under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). See
 [generated operator IDs](../../backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans).
 
@@ -143,7 +146,11 @@ remains partial under [#569](https://github.com/datafusion-contrib/StreamFusion/
 
 All 46 ordinary SQL window-join handoffs now pass with default SQL UIDs and no compiled artifact,
 covering the same continued-input, no-input, native-checkpoint and 64-key rescale matrix above.
-Generated-ID rescaling disables chaining from the initial job on both engines. Keyed/keyless
+Generated-ID rescaling disables chaining from the initial job on both engines. The compiled-plan
+generated-ID fixture applies this before its first savepoint, matching the ordinary-SQL and
+temporal-join controls. With a singleton source and 1 → 3 → 2 downstream tasks, default chaining
+changes Flink's generated source IDs even for stock-to-stock restore. Stable chaining is part
+of this fixture's stock-compatible identity contract; unmatched real state remains an error. Keyed/keyless
 INNER TUMBLE/HOP/CUMULATE and keyed outer TUMBLE cases retain two custom sources, the transactional
 sink and both transposes; actual native input, clean stock classpaths, stock-only metadata and
 external committed effects are checked. This extends submission coverage without qualifying

@@ -677,7 +677,11 @@ from the initial job on both engines so the original stock IDs stay stable. With
 chaining, changing these parallelisms changes chain boundaries and generated IDs: the first four
 rescale cases failed, and released stock also rejects its own original stock savepoint in that
 configuration. Two stock hash controls verify the distinction. Do not change chaining only at
-restore or drop the resulting unmatched state. The six identity controls verify that the
+restore or drop the resulting unmatched state. The generated-ID window- and interval-join rescale
+fixtures use the same initial chaining restriction as their ordinary-SQL counterparts and the
+generated-ID temporal-join fixture. Their four window and eight interval rescale handoffs retain
+both engine orders, both native stores, all 64 keys and maximum parallelism 128. The six identity
+controls verify that the
 registered contract key equals the actual runtime primary ID, with and without explicit UIDs.
 The original three disabled-UID join controls failed before this change; explicit-UID controls
 already passed.
@@ -1761,3 +1765,8 @@ and an exhausted reader waits for `NoMoreSplits` before ending. Eight focused pr
 include exhausted restored splits and idle readers; four fail against the previous fixture.
 All eight global GROUP BY rescale regressions pass with this source correction. Source offset
 serialization and canonical state schemas are unchanged.
+
+The fixture publishes its staged-input offset atomically after writing the complete readiness
+file. Observers therefore cannot mistake a newly created empty file for the source boundary.
+Kafka handoff workers still require the exact expected offset and include the observed value
+in a mismatch diagnostic; transaction and committed-output assertions remain unchanged.

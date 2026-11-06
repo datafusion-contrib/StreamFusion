@@ -491,7 +491,14 @@ public final class CanonicalFixtureFactory
 
     private void markReady() throws IOException {
       if (!markedReady) {
-        Files.writeString(Path.of(ready), Integer.toString(split.offset));
+        Path target = Path.of(ready).toAbsolutePath();
+        Path temporary = Files.createTempFile(target.getParent(), "source-ready-", ".tmp");
+        try {
+          Files.writeString(temporary, Integer.toString(split.offset));
+          Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+        } finally {
+          Files.deleteIfExists(temporary);
+        }
         markedReady = true;
       }
     }
