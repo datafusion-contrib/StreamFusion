@@ -448,6 +448,14 @@ PR #549 failed downloading `junit-platform-engine:1.9.3` at Surefire startup aft
 had succeeded. Resolving each provider's own graph before the lifecycle covers that gap without
 changing test dependency versions, skipping assertions or retrying tests.
 
+Runtime and canonical jobs also prefetch the ORC execution's separately pinned
+`protobuf-java:2.5.0` through that same retry stage. Surefire resolves this additional classpath
+even when the selected canonical classes contain no ORC tests; reactor `go-offline` does not
+cover it. A JDK 17 canonical shard completed all 190 tests successfully, then failed this later
+download with Maven Central HTTP 429. Prefetching the existing dependency moves that network
+failure into bounded setup retries without changing the dependency version, test selection or
+assertions. Persistent setup failure still fails the job.
+
 [PR #311's post-merge row-format job](https://github.com/datafusion-contrib/StreamFusion/actions/runs/37938400080/job/113846210991)
 failed before compilation because one runner reported published Flink 2.2.1 and Kafka dependencies
 as missing. Other jobs resolved those releases successfully. Separating downloads from tests

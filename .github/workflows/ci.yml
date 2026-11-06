@@ -170,7 +170,7 @@ jobs:
       - name: Resolve Java dependencies before tests
         run: |
           python3 bin/ci-maven-dependencies.py --profile "${{ matrix.line == '1.18' && 'flink-1.18' || '' }}"
-          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
+          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 --artifact com.google.protobuf:protobuf-java:2.5.0
 
       - name: Compile the complete reactor and partition runtime test classes
         run: |
@@ -266,7 +266,7 @@ jobs:
       - name: Resolve Java dependencies before tests
         run: |
           python3 bin/ci-maven-dependencies.py --profile canonical-kafka --projects streamfusion-runtime
-          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
+          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 --artifact com.google.protobuf:protobuf-java:2.5.0
       - name: Compile and partition complete canonical jobs
         run: |
           mvn -B -ntp -Pcanonical-kafka -pl streamfusion-runtime -am test -DskipTests -Dnative.build.skip=true
