@@ -33,7 +33,7 @@ class CanonicalBoundedOverAdmissionTest {
 
   @ParameterizedTest
   @MethodSource("cases")
-  void unqualifiedCompiledContractsKeepTheReleasedStateOwner(String mode, String uids)
+  void compiledContractsSelectQualifiedUnboundedOrReleasedStateOwners(String mode, String uids)
       throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
@@ -76,30 +76,35 @@ class CanonicalBoundedOverAdmissionTest {
     var transforms =
         planner.translatePlan(planner.loadPlan(PlanReference.fromJsonString(portable)));
     var graph = CanonicalRegularJoinPlanTest.graph(planner, table, transforms);
-    assertFalse(
+    var nativeOwners =
         graph.getStreamNodes().stream()
-            .anyMatch(
-                node ->
-                    node.getOperatorFactory() instanceof SimpleOperatorFactory
-                        && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
-                            instanceof NativeOverAggregateOperator),
-        graph.getStreamingPlanAsJSON());
+            .filter(node -> node.getOperatorFactory() instanceof SimpleOperatorFactory)
+            .map(node -> ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator())
+            .filter(NativeOverAggregateOperator.class::isInstance)
+            .collect(java.util.stream.Collectors.toList());
+    if (mode.equals("unbounded")) {
+      assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
+      assertInstanceOf(
+          tech.streamfusion.state.StockOverEventFoldStateContract.class,
+          GroupAggregateStockTestFixture.field(nativeOwners.get(0), "stockStateContract"));
+    } else assertTrue(nativeOwners.isEmpty(), graph.getStreamingPlanAsJSON());
     assertEquals(portable, plan.asJsonString());
     assertFalse(portable.contains("tech.streamfusion"));
-    assertTrue(
-        graph.getStreamNodes().stream()
-            .anyMatch(
-                node -> {
-                  if (!(node.getOperatorFactory() instanceof SimpleOperatorFactory)) return false;
-                  var operator =
-                      ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator();
-                  return operator instanceof KeyedProcessOperator
-                      && ((KeyedProcessOperator<?, ?, ?>) operator)
-                          .getUserFunction()
-                          .getClass()
-                          .getName()
-                          .contains(".operators.over.");
-                }),
-        graph.getStreamingPlanAsJSON());
+    if (!mode.equals("unbounded"))
+      assertTrue(
+          graph.getStreamNodes().stream()
+              .anyMatch(
+                  node -> {
+                    if (!(node.getOperatorFactory() instanceof SimpleOperatorFactory)) return false;
+                    var operator =
+                        ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator();
+                    return operator instanceof KeyedProcessOperator
+                        && ((KeyedProcessOperator<?, ?, ?>) operator)
+                            .getUserFunction()
+                            .getClass()
+                            .getName()
+                            .contains(".operators.over.");
+                  }),
+          graph.getStreamingPlanAsJSON());
   }
 }

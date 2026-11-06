@@ -68,7 +68,18 @@ class CanonicalGroupArithmeticAdmissionTest {
             .map(node -> ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator())
             .filter(NativeColumnarGroupAggregateOperator.class::isInstance)
             .collect(java.util.stream.Collectors.toList());
-    if (java.util.Set.of("distinct", "filter", "composite", "floating", "integer").contains(mode)) {
+    if (mode.equals("min-integer")) {
+      assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
+      var contract =
+          assertInstanceOf(
+              tech.streamfusion.state.StockGroupExtremaStateContract.class,
+              GroupAggregateStockTestFixture.field(nativeOwners.get(0), "stockStateContract"));
+      assertArrayEquals(
+          new int[] {3, 38}, (int[]) GroupAggregateStockTestFixture.field(contract, "kinds"));
+      assertEquals(
+          1, ((String[]) GroupAggregateStockTestFixture.field(contract, "mapNames")).length);
+    } else if (java.util.Set.of("distinct", "filter", "composite", "floating", "integer")
+        .contains(mode)) {
       assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
       var operator = nativeOwners.get(0);
       var contract =

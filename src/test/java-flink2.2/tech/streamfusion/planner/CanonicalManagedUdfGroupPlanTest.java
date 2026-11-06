@@ -85,7 +85,7 @@ class CanonicalManagedUdfGroupPlanTest {
       var node = owners.get(0);
       assertTrue(node.getOperatorName().startsWith("NativeColumnarJvmGroup"));
       var operator = ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator();
-      var captured = field(operator, mini ? "bundleFunction" : "function");
+      var captured = field(operator, mini ? "miniBatchFunction" : "function");
       assertEquals(
           mini
               ? org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction.class
@@ -94,7 +94,7 @@ class CanonicalManagedUdfGroupPlanTest {
       if (mini) {
         assertEquals(
             field(field(stockOperator, "bundleTrigger"), "maxCount"),
-            field(field(operator, "bundleTrigger"), "maxCount"));
+            field(field(operator, "miniBatchTrigger"), "maxCount"));
       }
       assertArrayEquals(
           (LogicalType[]) field(original, "accTypes"), (LogicalType[]) field(captured, "accTypes"));

@@ -1735,3 +1735,10 @@ Ordinary SQL that requires a stock sink-materialization helper retains its compl
 execution and native-checkpoint route. These ordinary helper identities are not yet qualified
 for canonical interchange; fresh planner display IDs must not make a working job fail during
 topology binding. Qualified stock compiled-plan materializer lowering retains its existing path.
+
+The shared two-phase JVM aggregate node also rebuilds its local/global state owners from the
+stock template. This keeps canonical identities, maximum parallelism and serializer contracts
+installed after the upstream mini-batch implementation was unified. Regression fixtures inspect
+the shared mini-batch handler and require its buffer to be empty after the savepoint barrier.
+Bounded processing ROWS input retention preserves Flink's same-clock CURRENT ROW bookkeeping,
+including the extra retained row after an emptied timestamp bucket advances its cursor to MAX.

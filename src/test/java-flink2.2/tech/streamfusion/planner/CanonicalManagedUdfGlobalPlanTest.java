@@ -53,7 +53,7 @@ class CanonicalManagedUdfGlobalPlanTest {
           assertTrue(n.getOperatorName().startsWith("NativeColumnarLocalJvmGroup"));
           assertEquals(0, field(op, "cacheEntries"));
           assertEquals(
-              MiniBatchLocalGroupAggFunction.class, field(op, "bundleFunction").getClass());
+              MiniBatchLocalGroupAggFunction.class, field(op, "miniBatchFunction").getClass());
         } else if (op.getClass() == NativeColumnarJvmGroupOperator.class) {
           globals.add(op);
           assertNotNull(n.getStatePartitioners()[0]);
@@ -62,7 +62,7 @@ class CanonicalManagedUdfGlobalPlanTest {
           assertEquals(cache, field(op, "cacheEntries"));
           assertEquals(uid.equals("DISABLED"), n.getTransformationUID() == null);
           assertEquals(
-              MiniBatchGlobalGroupAggFunction.class, field(op, "bundleFunction").getClass());
+              MiniBatchGlobalGroupAggFunction.class, field(op, "miniBatchFunction").getClass());
         }
       }
       assertEquals(1, locals.size(), nativeGraph.getStreamingPlanAsJSON());
@@ -80,7 +80,7 @@ class CanonicalManagedUdfGlobalPlanTest {
               .orElseThrow();
       assertArrayEquals(
           (LogicalType[]) field(field(original, "function"), "accTypes"),
-          (LogicalType[]) field(field(globals.get(0), "bundleFunction"), "accTypes"));
+          (LogicalType[]) field(field(globals.get(0), "miniBatchFunction"), "accTypes"));
       var output = (JvmGroupPartialTransport) field(locals.get(0), "outputPartials");
       var input = (JvmGroupPartialTransport) field(globals.get(0), "inputPartials");
       assertEquals(output.type(), input.type());

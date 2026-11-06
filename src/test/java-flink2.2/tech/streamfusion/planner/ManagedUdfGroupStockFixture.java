@@ -359,7 +359,8 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
         if (element instanceof StreamRecord)
           nativeOwner.processElement(
               new StreamRecord<>((ArrowBatch) ((StreamRecord<?>) element).getValue()));
-      assertTrue(((Map<?, ?>) field(nativeLocal.getOperator(), "bundle")).isEmpty());
+      assertTrue(
+          ((Map<?, ?>) field(field(nativeLocal.getOperator(), "miniBatch"), "buffer")).isEmpty());
     }
   }
 

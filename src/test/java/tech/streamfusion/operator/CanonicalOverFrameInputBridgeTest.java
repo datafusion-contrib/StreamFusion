@@ -68,7 +68,10 @@ class CanonicalOverFrameInputBridgeTest {
           "native frames must not retain JVM input owners");
       var before = dump(source, shape);
       assertEquals(
-          shape == 2 ? (offset == 0 ? 2 : 6) : (keyless ? offset + 1 : 2 * (offset + 1)),
+          shape == 0 && offset == 0
+              // Stock advances the emptied timestamp bucket to MAX before the next same-clock row.
+              ? (keyless ? 2 : 4)
+              : shape == 2 ? (offset == 0 ? 2 : 6) : (keyless ? offset + 1 : 2 * (offset + 1)),
           before.size());
       byte[][] snapshots =
           fromStore
@@ -78,7 +81,8 @@ class CanonicalOverFrameInputBridgeTest {
         assertTrue(snapshots[i].length > Integer.BYTES);
         int keyGroup = java.nio.ByteBuffer.wrap(snapshots[i]).getInt();
         assertTrue(keyGroup >= 0 && keyGroup < 128);
-        snapshots[i] = java.util.Arrays.copyOfRange(snapshots[i], Integer.BYTES, snapshots[i].length);
+        snapshots[i] =
+            java.util.Arrays.copyOfRange(snapshots[i], Integer.BYTES, snapshots[i].length);
       }
       target = create(shape, keyless, toStore, offset, "target", snapshots);
       assertEquals(before, dump(target, shape));

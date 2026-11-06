@@ -348,6 +348,7 @@ final class StockCompiledPlanLowering {
             node -> {
               if (node instanceof NativeTemporalSortExecNode
                   || node instanceof NativeJvmGroupExecNode
+                  || node instanceof NativeJvmTwoPhaseGroupExecNode
                   || node instanceof NativeColumnarWindowAggExecNode
                   || node instanceof NativeColumnarSessionWindowAggExecNode
                   || node instanceof NativeColumnarGlobalWindowAggExecNode) return true;
