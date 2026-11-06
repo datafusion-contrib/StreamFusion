@@ -5,6 +5,8 @@ use std::borrow::Cow;
 mod simd;
 pub(super) use simd::Reader;
 mod runtime;
+pub(super) use runtime::scheduled;
+pub(crate) use runtime::with_projection_readers;
 pub(super) use runtime::with_reader;
 mod query;
 pub(super) use query::{write_container, write_scalar};

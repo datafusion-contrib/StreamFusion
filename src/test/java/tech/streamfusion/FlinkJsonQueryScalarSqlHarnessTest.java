@@ -57,9 +57,8 @@ class FlinkJsonQueryScalarSqlHarnessTest {
 
   @Test
   void multipleReadersPreserveSharedParserState() throws Exception {
-    boolean legacy = tech.streamfusion.compat.JsonRuntimeCompat.LEGACY_SQL_JSON;
     verify(true, false,
-        "SELECT id,JSON_QUERY(s,'$.a'),JSON_QUERY(s,'$') FROM src", legacy);
+        "SELECT id,JSON_QUERY(s,'$.a'),JSON_QUERY(s,'$') FROM src", true);
     verify(true, true,
         "SELECT id,JSON_QUERY(s,'$.a'),JSON_EXISTS(s,'$.a') FROM src", false);
   }

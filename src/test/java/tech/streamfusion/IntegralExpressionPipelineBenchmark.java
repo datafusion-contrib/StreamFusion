@@ -23,6 +23,7 @@ class IntegralExpressionPipelineBenchmark {
     int warmups = Integer.getInteger("integral.expression.warmups", 2);
     int runs = Integer.getInteger("integral.expression.runs", 5);
     boolean previous = Boolean.getBoolean("sf.integral.previous");
+    boolean previousNative = Boolean.getBoolean("sf.integral.previousNative");
     boolean fallback = previous && Boolean.getBoolean("sf.integral.fallbackControl");
     boolean booleanInput = Boolean.getBoolean("sf.integral.booleanInput");
     boolean bigintInput = Boolean.getBoolean("sf.integral.bigintInput");
@@ -35,14 +36,16 @@ class IntegralExpressionPipelineBenchmark {
     boolean notNull = Boolean.getBoolean("sf.integral.primaryNotNull");
     boolean decimalTruth = "decimal-truth".equals(System.getenv("SF_INTEGRAL_CORPUS"));
     String secondary = System.getProperty("sf.integral.secondaryType", "");
-    assertTrue(secondary.isEmpty() || secondary.equals("INT") || secondary.equals("BIGINT"));
+    assertTrue(secondary.isEmpty() || secondary.equals("INT") || secondary.equals("BIGINT")
+        || secondary.equals("VARCHAR(4096)"));
     var primary = stringInput ? DataTypes.VARCHAR(4096)
         : timestampPrecision >= 0 ? DataTypes.TIMESTAMP_LTZ(timestampPrecision)
         : decimalPrecision > 0 ? DataTypes.DECIMAL(decimalPrecision, decimalScale)
         : booleanInput ? DataTypes.BOOLEAN()
         : bigintInput || epochMillisInput || epochSecondsInput ? DataTypes.BIGINT() : DataTypes.INT();
     var inputType = notNull ? primary.notNull() : primary;
-    var second = secondary.equals("BIGINT") ? DataTypes.BIGINT() : DataTypes.INT();
+    var second = secondary.equals("VARCHAR(4096)") ? DataTypes.VARCHAR(4096)
+        : secondary.equals("BIGINT") ? DataTypes.BIGINT() : DataTypes.INT();
     var sourceType = secondary.isEmpty() ? DataTypes.ROW(DataTypes.FIELD("v", inputType))
         : DataTypes.ROW(DataTypes.FIELD("v", inputType),
             DataTypes.FIELD("n", notNull ? second.notNull() : second));
@@ -93,7 +96,9 @@ class IntegralExpressionPipelineBenchmark {
             if (secondary.isEmpty()) return Row.of(first);
             long index = i + 3;
             Object other;
-            if (secondary.equals("INT")) other = index % 17 == 0 ? Integer.MIN_VALUE
+            if (secondary.equals("VARCHAR(4096)")) other =
+                tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.jsonInputText((int) (index % 1024));
+            else if (secondary.equals("INT")) other = index % 17 == 0 ? Integer.MIN_VALUE
                 : (int) ((index % 2 == 0 ? -1L : 1L) * index * 7919L);
             else other = index % 17 == 0 ? Long.MIN_VALUE
                 : (index % 2 == 0 ? -1L : 1L) * (9007199254740993L + index * 7919L);
@@ -101,9 +106,12 @@ class IntegralExpressionPipelineBenchmark {
           }).returns(ExternalTypeInfo.<Row>of(sourceType));
           table.createTemporaryView("inputs", source,
               Schema.newBuilder().fromRowDataType(sourceType).build());
-          var resultType = table.sqlQuery("SELECT " + expression + " FROM inputs")
-              .getResolvedSchema().getColumnDataTypes().get(0).getLogicalType();
-          table.executeSql("CREATE TABLE output_rows(v " + resultType.asSerializableString()
+          var resultTypes = table.sqlQuery("SELECT " + expression + " FROM inputs")
+              .getResolvedSchema().getColumnDataTypes();
+          var declarations = new java.util.ArrayList<String>();
+          for (int column = 0; column < resultTypes.size(); column++)
+            declarations.add("v" + column + " " + resultTypes.get(column).getLogicalType().asSerializableString());
+          table.executeSql("CREATE TABLE output_rows(" + String.join(",", declarations)
               + ") WITH ('connector'='blackhole')");
           String sql = "INSERT INTO output_rows SELECT " + expression + " FROM inputs";
           var scan = nativeRun ? NativePlanner.install(table) : null;
@@ -113,7 +121,7 @@ class IntegralExpressionPipelineBenchmark {
             assertTrue(plan.contains("RowDataToArrow"), plan);
             assertTrue(plan.contains("ArrowToRowData"), plan);
             assertFalse(scan.functionExecutions().isEmpty());
-            assertEquals(!previous,
+            assertEquals(!previous || previousNative,
                 scan.functionExecutions().stream().allMatch(route -> route.contains("jvm=[]")),
                 scan.functionExecutions().toString());
             assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());

@@ -52,7 +52,7 @@ impl ScalarUDFImpl for JsonQuery {
         }
         let empty = policy(empty)?;
         let error = policy(error)?;
-        let scalar = matches!(input, ColumnarValue::Scalar(_));
+        let scalar = matches!(input, ColumnarValue::Scalar(_)) && !super::json_path::scheduled();
         let input = input.to_array(if scalar { 1 } else { args.number_rows })?;
         let represented = input.as_any().downcast_ref::<StructArray>();
         let caches = represented
@@ -62,6 +62,7 @@ impl ScalarUDFImpl for JsonQuery {
         with_reader(|reader| {
             let legacy = reader.legacy_semantics();
             for (row, document) in text.iter().enumerate() {
+                reader.begin_row(row);
                 if represented.is_some_and(|input| input.is_null(row)) || document.is_none() {
                     output.append_null();
                     continue;

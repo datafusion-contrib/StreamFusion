@@ -76,5 +76,31 @@ the measured workloads, rather than every JSON_QUERY shape. See the
 No JVM JSON evaluator handles admitted documents/results, although per-batch JNI recycler
 metadata synchronization remains. The [coverage gate](../operators/calc-filter.md#json_query)
 retains generated evaluation for unverified paths, consumers, types and shared-reader
-combinations. In particular, 2.2 multiple-reader scheduling can change successful values;
-the general fix remains [#608](https://github.com/datafusion-contrib/StreamFusion/issues/608).
+combinations. The shared-reader state mechanism below addresses the successful-value mismatch
+tracked in [#608](https://github.com/datafusion-contrib/StreamFusion/issues/608).
+
+## Share reader metadata without reordering parser history
+
+Multiple unconditional reader projections over direct fields/literals acquire Jackson's
+metadata once per Calc batch. Each reader receives the buffer capacity that Flink's
+row/projection order would expose, calculated from the original UTF-16 document lengths.
+The actual JSON kernels still evaluate Arrow columns. SQL NULLs and rejected rows do not
+grow the buffer; empty survivor batches do not enter the metadata scope. A thread-local
+guard clears the schedule during normal completion and unwinding, and the common owner
+publishes the final capacity for later parsing.
+
+Ordinary short documents cannot grow the recycled buffer. That common path checks their
+stored byte widths and avoids UTF-16 rescanning and per-row capacity-table allocation.
+Growing documents use one capacity vector per reader. This preserves the released numeric
+token-limit behavior without invoking a JVM JSON evaluator or creating a JSON DOM for
+the scheduling step. Computed/conditional readers, parser calls in the condition and JVM
+evaluator combinations retain generated row-major evaluation on 2.2. The 1.18 profile lacks
+the later token-limit interaction and retains its prior admission outside this native scope.
+
+On the release comparison, 32 bulk cells beat stock by 1.56-9.02x and eight tiny cells by
+1.21-3.25x. Bulk comparisons against the actual preceding implementation span 0.936-2.330x:
+some previously native cases pay up to 6.9% more time for corrected history, while 2.2 QUERY
+pairs remove generated evaluation. Six conversion-inclusive jobs all beat stock, but five
+lose 0.2-2.3% to the preceding control. Keep these costs with the correctness motivation;
+the technique is not a blanket throughput improvement. See the
+[complete method, variability and raw observations](../benchmarks/scalar-functions.md#shared-json-reader-history-2026-11-06).

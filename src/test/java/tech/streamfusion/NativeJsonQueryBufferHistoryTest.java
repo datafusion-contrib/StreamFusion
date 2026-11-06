@@ -72,7 +72,7 @@ class NativeJsonQueryBufferHistoryTest {
     return result;
   }
 
-  private static String query(String document, String mode, JsonQueryWrapper wrapper) {
+  static String query(String document, String mode, JsonQueryWrapper wrapper) {
     try {
       // The released 2.2 API adds a return-type parameter; 1.18 always returns STRING.
       if (QUERY.getParameterCount() == 5)

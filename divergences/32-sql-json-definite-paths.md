@@ -112,14 +112,23 @@ Floating-point nodes, surrogate escapes and other Jackson edges retain the exact
 reader and selected arena. Both writers apply the same released member-order and duplicate
 rules; input buffers, tape storage and output remain under existing batch ownership.
 
-On 2.2, a Calc containing the new native JSON_QUERY and another parser or JVM evaluator stays
-row-major. A controlled released-provider test demonstrates different successful results when
-independent readers change their shared recycler capacity in column order. This restriction
-protects values, rather than the order of independent exceptions. The 1.18 profile has no such
-token-limit interaction. The native kernel retains the existing metadata synchronization;
-JSON documents/results do not cross JNI for evaluation. No new JNI API or dependency is added.
-The general multi-reader scheduling problem remains tracked in
-[#608](https://github.com/datafusion-contrib/StreamFusion/issues/608).
+On 2.2, column-order evaluation of multiple readers can change successful values near the
+released provider's numeric token limits. For unconditional final reader projections over direct
+fields/literals, Calc first computes capacity transitions in row/projection order from original
+UTF-16 document lengths. Kernels still evaluate complete Arrow columns but reset their reader to
+the scheduled capacity before each row. Ordinary short inputs need no per-row table. The scope
+owns one metadata acquisition/release for the batch; a thread-local guard supplies each kernel's
+state and clears it even when evaluation unwinds. The final capacity is published for subsequent
+native/generated calls. No document/result crosses JNI for evaluation and no new JNI API or
+dependency is added.
+
+This follows Comet's thread-local scratch ownership while accounting for Flink's observable
+Jackson recycler history, which Spark's JSON expressions do not require. Computed/conditional
+readers, parser calls in the condition and JVM evaluator combinations retain generated row-major
+execution on 2.2. The 1.18 profile lacks that token-limit interaction and retains its prior
+admission. This repair protects values, rather than independent exception ordering. See
+[#608](https://github.com/datafusion-contrib/StreamFusion/issues/608) and the remaining native
+coverage in [#506](https://github.com/datafusion-contrib/StreamFusion/issues/506).
 
 ## Final UNION forwarding
 

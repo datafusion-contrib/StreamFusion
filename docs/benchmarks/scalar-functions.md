@@ -10908,9 +10908,9 @@ Verified final VARCHAR projections over direct character documents and definite 
 now run in Rust on both released Flink lines. Strict/lax, WITHOUT/CONDITIONAL/UNCONDITIONAL
 ARRAY wrappers and independent NULL/EMPTY ARRAY/EMPTY OBJECT policies qualify. Other paths,
 ERROR policies, computed documents, non-final string consumers and unverified container
-boundaries retain generated evaluation. Flink 2.2 combinations with another parser or JVM
-evaluator retain row-major execution for shared recycler state; this protects successful
-values, independently of exception ordering. See the [coverage contract](../operators/calc-filter.md#json_query)
+boundaries retain generated evaluation. In this measurement snapshot, Flink 2.2 combinations
+with another parser or JVM evaluator retain generated row-major execution for shared recycler
+state. Current combined-reader admission is described by the [coverage contract](../operators/calc-filter.md#json_query)
 and open [#608](https://github.com/datafusion-contrib/StreamFusion/issues/608).
 
 The writer preserves insertion order on released 1.18 and Java UTF-16 member order on 2.2,
@@ -11006,6 +11006,84 @@ runtime and `SF_INTEGRAL_PREVIOUS=true`. Complete jobs use
 
 See [qualification, variability, full job trials and exact provenance](results/json-query-definite-2026-11-06.json)
 and [4,440 raw prepared samples, including both slower cohorts](results/json-query-definite-2026-11-06.csv.gz).
+
+## Shared JSON reader history (2026-11-06)
+
+The fix for [#608](https://github.com/datafusion-contrib/StreamFusion/issues/608) preserves
+successful results that depend on Jackson's recycled input-buffer capacity. Evaluating complete
+columns could otherwise grow the buffer with a later row before a different projection reads
+an earlier row. Compatible final readers now share one batch metadata acquisition/release and
+use capacities computed in Flink row/projection order. No JVM JSON evaluator processes their
+documents or results. Ordinary short documents avoid per-row capacity-table allocation.
+
+Qualification uses Flink 1.18.1/2.2.1, JDK 11/17 and Java 11 bytecode. All **160 focused
+invocations** pass on the final measured DSO, including direct reader-pair comparisons at
+capacities 4,000/8,000/16,000/32,768 and batch sizes 1/3/all. SQL tests compare complete
+5,003-row maps and schema, require consumed NativeCalc with no evaluator descriptors, and
+cover nullable/Binary inputs, filters, empty results and retained generated routes. All
+**938 Rust core tests** pass. A broader related suite passes **1,418 invocations**, with
+14 classified released-1.18 capability aborts: 13 JSON_QUOTE/JSON_UNQUOTE cases and one JSON()
+case. The unchanged released JsonFunctionsITCase passes **489 + 142** invocations. These
+broader runs used the same production source before Cargo-target relocation; the rebuilt DSO
+has a different hash and was requalified in all four focused combinations before measurement.
+
+Performance uses a release build on Apple M4 Pro, macOS 26.5, JDK 17 and a 1 GiB JVM heap.
+Each prepared trial contains 32,768 rows; eight warmups precede seven measured trials. Four
+shapes combine two VALUE readers on the same field, two VALUE readers on independent fields,
+VALUE with IS JSON OBJECT, and two QUERY readers on independent fields. The mixed document
+corpus includes Unicode, escaped/duplicate keys, numeric spelling and 640-byte text. Independent
+fields use different NULL patterns and a corpus offset of three. Bulk measurements cover all
+Generic/Binary and nullable/NOT NULL combinations at batch size 1,024; tiny measurements use
+nullable Binary rows at batch size 16. Growth-sensitive documents are qualified separately
+for correctness; these throughput numbers describe ordinary documents.
+
+Stock starts on prepared RowData and native starts on equivalent Arrow batches. The Rust
+timer excludes input import and output export but includes production Calc, output consumption,
+intrinsic conversions/allocations and recycler metadata JNI. Every output column is checked and
+consumed. The previous control is the actual preceding `b01eba4d5` encoder/library with identical
+benchmark fixture bytecode: previous native execution for VALUE/predicates and 1.18 QUERY,
+previous generated whole-Calc execution with its intrinsic callbacks/conversions for 2.2 QUERY.
+
+| Flink | Batch | Shape | Stock / native | Previous / native |
+| --- | ---: | --- | ---: | ---: |
+| 2.2.1 | 1,024 | Same-field VALUE pair | 7.29-8.03x | 0.971-1.013x |
+| 2.2.1 | 1,024 | Independent VALUE pair | 8.04-9.02x | 0.971-1.015x |
+| 2.2.1 | 1,024 | VALUE + predicate | 5.57-7.94x | 0.988-1.018x |
+| 2.2.1 | 1,024 | Independent QUERY pair | 1.61-2.03x | 2.258-2.330x |
+| 1.18.1 | 1,024 | Same-field VALUE pair | 7.21-7.57x | 0.936-1.004x |
+| 1.18.1 | 1,024 | Independent VALUE pair | 7.46-8.10x | 0.985-1.028x |
+| 1.18.1 | 1,024 | VALUE + predicate | 5.04-6.97x | 0.981-1.003x |
+| 1.18.1 | 1,024 | Independent QUERY pair | 1.56-1.90x | 0.944-0.977x |
+| 2.2.1 | 16 | Four nullable Binary shapes | 1.38-3.25x | 1.280-4.979x |
+| 1.18.1 | 16 | Four nullable Binary shapes | 1.21-3.15x | 1.139-1.367x |
+
+All 40 prepared stock gates win. Fifteen of the 32 bulk cells lose to the preceding
+implementation, with the largest measured duration increase about 6.9%. This is a successful-value
+correctness repair; retaining the preceding column-order history is not a valid control for
+the affected long documents. The report retains those costs rather than calling every path faster.
+
+Complete jobs use one million runtime rows, parallelism one, a 2 GiB heap, two warmups and five
+measured trials. They retain planning/submission, the rowwise source/sink, JNI and both transposes.
+Candidate and previous controls each have their own paired stock runs. Medians below are seconds;
+the linked report retains individual trials and min/max variability.
+
+| Flink | Shape | Paired stock | Previous | Native | Native / stock | Native / previous |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 2.2.1 | Independent VALUE pair | 2.316 | 0.580 | 0.582 | 0.251 | 1.004 |
+| 2.2.1 | VALUE + predicate | 1.769 | 0.621 | 0.631 | 0.357 | 1.017 |
+| 2.2.1 | Independent QUERY pair | 1.672 | 2.370 | 1.409 | 0.842 | 0.595 |
+| 1.18.1 | Independent VALUE pair | 2.328 | 0.588 | 0.589 | 0.253 | 1.002 |
+| 1.18.1 | VALUE + predicate | 1.679 | 0.618 | 0.625 | 0.372 | 1.011 |
+| 1.18.1 | Independent QUERY pair | 1.632 | 1.459 | 1.493 | 0.915 | 1.023 |
+
+All six jobs beat their paired stock controls; five are slower than the preceding implementation,
+by 0.2-2.3%. The audit launched no concurrent tests/builds/benchmarks during timing, but interactive
+desktop and unrelated work remained active. These observations do not establish an idle-machine
+or universal speedup claim. Mixed represented-string SQL boundaries retain their compatibility
+gate even though raw JNI tests verify additional reader-kind combinations.
+
+See [qualification, per-cell variability, complete trials and exact provenance](results/json-reader-schedule-2026-11-06.json)
+and [2,400 raw prepared observations](results/json-reader-schedule-2026-11-06.csv.gz).
 Remaining dynamic/branching paths, nested serialization and additional types stay in
 [#506](https://github.com/datafusion-contrib/StreamFusion/issues/506). Hosted checks must
 qualify the exact pushed head separately.

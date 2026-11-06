@@ -78,6 +78,7 @@ mod json_array;
 mod json_exists;
 mod json_object;
 mod json_path;
+pub(crate) use json_path::with_projection_readers;
 mod json_query;
 mod json_serialize;
 mod json_value;

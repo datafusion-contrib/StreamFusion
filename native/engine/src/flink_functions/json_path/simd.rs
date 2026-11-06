@@ -8,6 +8,7 @@ pub(crate) struct Reader {
     tape: Option<Tape<'static>>,
     buffer_size: usize,
     legacy: bool,
+    row_buffers: Option<Vec<usize>>,
 }
 
 impl Reader {
@@ -18,6 +19,7 @@ impl Reader {
             tape: Some(Tape::null()),
             buffer_size,
             legacy: false,
+            row_buffers: None,
         }
     }
 
@@ -32,6 +34,21 @@ impl Reader {
 
     pub fn buffer_size(&self) -> usize {
         self.buffer_size
+    }
+
+    pub(super) fn with_row_buffers(mut self, capacities: Option<Vec<usize>>) -> Self {
+        self.row_buffers = capacities;
+        self
+    }
+
+    pub(super) fn set_buffer_size(&mut self, capacity: usize) {
+        self.buffer_size = capacity;
+    }
+
+    pub fn begin_row(&mut self, row: usize) {
+        if let Some(capacities) = &self.row_buffers {
+            self.buffer_size = capacities[row];
+        }
     }
 
     pub fn write_query_container(

@@ -1,7 +1,7 @@
 //! Release stock/previous/native integer-expression controls; native timers stay inside Rust.
 use arrow::array::{
     Array, ArrayRef, BooleanArray, Decimal128Array, Int16Array, Int32Array, Int64Array, Int8Array,
-    StringArray,
+    StringArray, StructArray,
 };
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
@@ -31,6 +31,17 @@ struct EncodedProgram {
     long_output: bool,
     #[serde(default)]
     integer_output: Option<String>,
+    #[serde(default = "first_projection")]
+    projection_roots: Vec<usize>,
+    #[serde(default = "one_output")]
+    output_count: usize,
+}
+
+fn first_projection() -> Vec<usize> {
+    vec![0]
+}
+fn one_output() -> usize {
+    1
 }
 
 macro_rules! java {
@@ -44,10 +55,16 @@ macro_rules! java {
 }
 
 fn checksum(batch: &RecordBatch) -> i64 {
+    batch
+        .columns()
+        .iter()
+        .fold(0i64, |sum, array| sum.wrapping_add(column_checksum(array)))
+}
+
+fn column_checksum(array: &ArrayRef) -> i64 {
     macro_rules! sum {
         ($ty:ty) => {
-            batch
-                .column(0)
+            array
                 .as_any()
                 .downcast_ref::<$ty>()
                 .unwrap()
@@ -55,28 +72,19 @@ fn checksum(batch: &RecordBatch) -> i64 {
                 .fold(0i64, |sum, v| sum.wrapping_add(v.map_or(-1, i64::from)))
         };
     }
-    match batch.column(0).data_type() {
+    match array.data_type() {
         DataType::Boolean => sum!(BooleanArray),
         DataType::Int8 => sum!(Int8Array),
         DataType::Int16 => sum!(Int16Array),
         DataType::Int32 => sum!(Int32Array),
         DataType::Int64 => sum!(Int64Array),
-        DataType::Utf8 => batch
-            .column(0)
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .unwrap()
-            .iter()
-            .map(|value| {
-                value.map_or(-1, |value| {
-                    value.len() as i64
-                        + value.as_bytes().first().map_or(0, |v| i64::from(*v))
-                        + value.as_bytes().last().map_or(0, |v| i64::from(*v))
-                })
-            })
-            .sum(),
+        DataType::Utf8 => string_checksum(array, array),
+        DataType::Struct(fields) if fields[0].name() == "utf8" => {
+            let represented = array.as_any().downcast_ref::<StructArray>().unwrap();
+            string_checksum(array, represented.column(0))
+        }
         ty if *ty == timestamp_type() => {
-            let values = TimestampColumn::try_new(batch.column(0).as_ref()).unwrap();
+            let values = TimestampColumn::try_new(array.as_ref()).unwrap();
             (0..values.len()).fold(0i64, |sum, row| {
                 sum.wrapping_add(if values.is_null(row) {
                     -1
@@ -90,6 +98,22 @@ fn checksum(batch: &RecordBatch) -> i64 {
         }
         other => panic!("Unsupported exact-numeric-expression output {other}"),
     }
+}
+
+fn string_checksum(logical: &ArrayRef, text: &ArrayRef) -> i64 {
+    let text = text.as_any().downcast_ref::<StringArray>().unwrap();
+    (0..logical.len())
+        .map(|row| {
+            if logical.is_null(row) {
+                -1
+            } else {
+                let value = text.value(row);
+                value.len() as i64
+                    + value.as_bytes().first().map_or(0, |v| i64::from(*v))
+                    + value.as_bytes().last().map_or(0, |v| i64::from(*v))
+            }
+        })
+        .sum()
 }
 
 fn main() {
@@ -107,6 +131,10 @@ fn main() {
     let expression = std::env::var("SF_INTEGRAL_EXPRESSION")
         .unwrap_or_else(|_| "ABS(v+CAST(1 AS $TYPE))".into());
     let previous_option = format!("-Dsf.integral.previous={previous}");
+    let previous_native_option = format!(
+        "-Dsf.integral.previousNative={}",
+        std::env::var("SF_INTEGRAL_PREVIOUS_NATIVE").is_ok()
+    );
     let expression_option = format!("-Dsf.integral.expression={expression}");
     let secondary = std::env::var("SF_INTEGRAL_SECONDARY_TYPE").unwrap_or_default();
     let secondary_option = format!("-Dsf.integral.secondaryType={secondary}");
@@ -127,6 +155,7 @@ fn main() {
         .option(&cp)
         .option(&lib)
         .option(&previous_option)
+        .option(&previous_native_option)
         .option(&expression_option)
         .option(&secondary_option)
         .option(&legacy_option)
@@ -241,44 +270,8 @@ fn main() {
     let values = (0..rows).map(|i| (!nullable || i % 7 != 0).then(|| value(element, i)));
     let input: ArrayRef = match element {
         "VARCHAR(4096)" => {
-            let texts = [
-                String::new(),
-                "plain".into(),
-                "a/b\\c\"d".into(),
-                "\0\t\r\n\x08\x0c\x1f".into(),
-                "\\uD800".into(),
-                "\u{4e2d}\u{6587}\u{1f600}".into(),
-                "{\"a\":1}".into(),
-                "0123456789".repeat(64),
-            ];
             let corpus = std::env::var("SF_INTEGRAL_CORPUS").unwrap_or_default();
-            let documents: Vec<String> = (0..rows)
-                .map(|row| match corpus.as_str() {
-                    "json-query-wide" => {
-                        let fields: Vec<String> = (0..32)
-                            .rev()
-                            .map(|i| format!("\"f{i}\":[{},\"text\",null]", row + i))
-                            .collect();
-                        format!("{{\"a\":{{{}}},\"drop\":true}}", fields.join(","))
-                    }
-                    "json-query-deep" => {
-                        format!("{{\"a\":{}{row}{}}}", "{\"n\":".repeat(24), "}".repeat(24))
-                    }
-                    "json-query" => match row % 8 {
-                        0 => r#"{"a":{"z":7,"a":2.5000,"name":"plain"},"drop":0}"#.into(),
-                        1 => r#"{"a":[1,2.5000,-0,1e10,1e-8],"b":true}"#.into(),
-                        2 => r#"{"a":{"dup":1,"d\u0075p":2,"x":"a/b\\c\"d"}}"#.into(),
-                        3 => {
-                            "{\"a\":{\"\u{4e2d}\u{6587}\":\"\u{1f600}\",\"p\":\"\\uD800\"}}".into()
-                        }
-                        4 => r#"{"a":null}"#.into(),
-                        5 => r#"{"missing":[]}"#.into(),
-                        6 => r#"{"a":"text"}"#.into(),
-                        _ => format!("{{\"a\":{{\"long\":\"{}\"}}}}", "0123456789".repeat(64)),
-                    },
-                    _ => texts[row % texts.len()].clone(),
-                })
-                .collect();
+            let documents: Vec<String> = (0..rows).map(|row| json_text(row, &corpus)).collect();
             Arc::new(StringArray::from_iter((0..rows).map(|i| {
                 (!nullable || i % 7 != 0).then_some(documents[i].as_str())
             })))
@@ -366,12 +359,21 @@ fn main() {
         let input: ArrayRef = match secondary.as_str() {
             "INT" => Arc::new(Int32Array::from_iter(values.map(|v| v.map(|v| v as i32)))),
             "BIGINT" => Arc::new(Int64Array::from_iter(values)),
+            "VARCHAR(4096)" => {
+                let corpus = std::env::var("SF_INTEGRAL_CORPUS").unwrap_or_default();
+                Arc::new(StringArray::from_iter((0..rows).map(|row| {
+                    (!nullable || row % 11 != 0).then(|| json_text(row + 3, &corpus))
+                })))
+            }
             _ => panic!("Unsupported secondary exact-numeric input {secondary}"),
         };
         fields.push(Field::new("n", input.data_type().clone(), nullable));
         columns.push(input);
     }
     let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
+    let output_names = (0..program.output_count)
+        .map(|index| format!("result{index}"))
+        .collect();
     let mut native = CalcProgram::new(
         program.kinds,
         program.payload,
@@ -379,12 +381,20 @@ fn main() {
         program.longs,
         program.doubles,
         program.strings,
-    );
+    )
+    .with_projections(program.projection_roots, output_names);
     let actual = native.run(batch.clone());
     assert_eq!(actual.num_rows(), rows);
     let timestamp_output = timestamp_type();
+    let output_type = actual.column(0).data_type();
     assert_eq!(
-        actual.column(0).data_type(),
+        if program.string_output
+            && matches!(output_type, DataType::Struct(fields) if fields[0].name() == "utf8")
+        {
+            &DataType::Utf8
+        } else {
+            output_type
+        },
         if program.string_output {
             &DataType::Utf8
         } else if program.boolean_output {
@@ -474,4 +484,41 @@ fn decimal_epoch_coefficients(precision: u8, scale: i8) -> Vec<i128> {
         }
     }
     values
+}
+
+fn json_text(row: usize, corpus: &str) -> String {
+    let texts = [
+        String::new(),
+        "plain".into(),
+        "a/b\\c\"d".into(),
+        "\0\t\r\n\x08\x0c\x1f".into(),
+        "\\uD800".into(),
+        "\u{4e2d}\u{6587}\u{1f600}".into(),
+        "{\"a\":1}".into(),
+        "0123456789".repeat(64),
+    ];
+
+    match corpus {
+        "json-query-wide" => {
+            let fields: Vec<String> = (0..32)
+                .rev()
+                .map(|i| format!("\"f{i}\":[{},\"text\",null]", row + i))
+                .collect();
+            format!("{{\"a\":{{{}}},\"drop\":true}}", fields.join(","))
+        }
+        "json-query-deep" => {
+            format!("{{\"a\":{}{row}{}}}", "{\"n\":".repeat(24), "}".repeat(24))
+        }
+        "json-query" => match row % 8 {
+            0 => r#"{"a":{"z":7,"a":2.5000,"name":"plain"},"drop":0}"#.into(),
+            1 => r#"{"a":[1,2.5000,-0,1e10,1e-8],"b":true}"#.into(),
+            2 => r#"{"a":{"dup":1,"d\u0075p":2,"x":"a/b\\c\"d"}}"#.into(),
+            3 => "{\"a\":{\"\u{4e2d}\u{6587}\":\"\u{1f600}\",\"p\":\"\\uD800\"}}".into(),
+            4 => r#"{"a":null}"#.into(),
+            5 => r#"{"missing":[]}"#.into(),
+            6 => r#"{"a":"text"}"#.into(),
+            _ => format!("{{\"a\":{{\"long\":\"{}\"}}}}", "0123456789".repeat(64)),
+        },
+        _ => texts[row % texts.len()].clone(),
+    }
 }

@@ -90,7 +90,7 @@ impl ScalarUDFImpl for JsonValue {
         })?;
         let empty = Behavior::new(empty, empty_default, self.return_type)?;
         let error = Behavior::new(error, error_default, self.return_type)?;
-        let scalar = matches!(input, ColumnarValue::Scalar(_));
+        let scalar = matches!(input, ColumnarValue::Scalar(_)) && !super::json_path::scheduled();
         let input = input.to_array(if scalar { 1 } else { args.number_rows })?;
         let represented = input.as_any().downcast_ref::<StructArray>();
         let caches = represented
@@ -100,6 +100,7 @@ impl ScalarUDFImpl for JsonValue {
         with_reader(|reader| {
             let legacy = reader.legacy_semantics();
             for (row, document) in input.iter().enumerate() {
+                reader.begin_row(row);
                 if represented.is_some_and(|input| input.is_null(row)) {
                     output.append(Value::Null, legacy)?;
                     continue;

@@ -2845,12 +2845,24 @@ tape. Floating-point nodes, Unicode escape spelling, oversized tapes/documents a
 edge cases retain the exact reader and a flat arena for the selected tree. Both paths apply
 the same ordering, duplicate-key, wrapper and error-policy rules.
 
-On Flink 2.2, a Calc combining JSON_QUERY with another JSON parser call or a JVM evaluator uses
-generated row-major evaluation. Jackson's numeric limits depend on recycled token-buffer capacity:
-evaluating complete columns in a different order can change successful results. A controlled
-two-reader regression verifies that effect; it is independent of competing exception order.
-The general multi-reader fix is tracked in [#608](https://github.com/datafusion-contrib/StreamFusion/issues/608).
-Flink 1.18 lacks this token-limit interaction and admits multiple verified JSON_QUERY projections.
+Multiple unconditional reader projections over direct character fields/literals preserve
+row-major Jackson buffer history while evaluating Arrow columns. Calc prepares each reader's
+per-row capacity in projection order, then each kernel uses that capacity for its row. Ordinary
+short documents avoid per-row capacity-table allocation. The readers share one batch JNI
+metadata acquisition/release and publish the final capacity; no document/result is evaluated
+by the JVM. SQL NULLs and filtered-out rows do not grow the buffer, and empty filtered batches
+skip the entire schedule.
+
+On Flink 2.2, multiple readers with JSON calls in the condition, computed document inputs or
+non-final/conditional consumers retain generated row-major evaluation. A native parser combined
+with a JVM evaluator also retains that route because a callback can change shared recycler
+state. These restrictions protect successful values near Jackson's numeric token limits,
+independently of competing exception order. They apply to JSON_VALUE, JSON_EXISTS and IS JSON
+as well as JSON_QUERY. The scoped correctness repair is tracked in
+[#608](https://github.com/datafusion-contrib/StreamFusion/issues/608); remaining native coverage
+is part of [#506](https://github.com/datafusion-contrib/StreamFusion/issues/506).
+Flink 1.18 lacks the later token-limit interaction and retains its previous admission for
+computed/conditional readers; compatible direct reader projections can share the batch metadata.
 Mixed expressions whose kernels cannot consume the represented string carrier stay generated;
 their types are checked during encoding, before physical-plan substitution.
 

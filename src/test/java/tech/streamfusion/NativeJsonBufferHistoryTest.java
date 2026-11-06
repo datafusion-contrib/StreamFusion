@@ -323,7 +323,7 @@ class NativeJsonBufferHistoryTest {
     return result;
   }
 
-  private static int bufferSize() {
+  static int bufferSize() {
     BufferRecycler recycler = FACTORY._getBufferRecycler();
     char[] buffer = recycler.allocCharBuffer(BufferRecycler.CHAR_TOKEN_BUFFER);
     recycler.releaseCharBuffer(BufferRecycler.CHAR_TOKEN_BUFFER, buffer);

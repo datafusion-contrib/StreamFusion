@@ -493,9 +493,11 @@ final class RexExpression {
       supported = encoder.reject("JSON_QUERY retains generated evaluation for unverified container boundaries");
     }
     if (supported && !encoder.rowFusion
-        && encoder.nativeFunctionCalls.contains("JSON_QUERY")
         && !tech.streamfusion.compat.JsonRuntimeCompat.LEGACY_SQL_JSON
-        && (bufferedJsonCalls(calc.getProgram()) > 1 || !encoder.udfs.isEmpty())) {
+        && bufferedJsonCalls(calc.getProgram()) > 0
+        && (!encoder.udfs.isEmpty()
+            || bufferedJsonCalls(calc.getProgram()) > 1
+                && !scheduledJsonReaders(calc.getProgram()))) {
       encoder = forCalc(calc);
       encoder.jvmExecutionReason =
           "multiple JSON readers require row-major evaluation of shared token-buffer limits";
@@ -817,8 +819,7 @@ final class RexExpression {
       @Override
       public Void visitCall(RexCall call) {
         String name = call.getOperator().getName().toUpperCase(Locale.ROOT);
-        if (name.equals("JSON_VALUE") || name.equals("JSON_QUERY") || name.equals("JSON_EXISTS")
-            || name.startsWith("IS JSON ") || name.startsWith("IS NOT JSON ")) count[0]++;
+        if (bufferedJsonFunction(name)) count[0]++;
         return super.visitCall(call);
       }
     };
@@ -827,6 +828,34 @@ final class RexExpression {
     for (RexLocalRef projection : program.getProjectList())
       program.expandLocalRef(projection).accept(visitor);
     return count[0];
+  }
+
+  private static boolean scheduledJsonReaders(RexProgram program) {
+    if (program.getCondition() != null
+        && containsBufferedJson(program.expandLocalRef(program.getCondition()))) return false;
+    for (RexLocalRef projection : program.getProjectList()) {
+      RexNode node = program.expandLocalRef(projection);
+      if (!containsBufferedJson(node)) continue;
+      if (!(node instanceof RexCall)) return false;
+      RexCall call = (RexCall) node;
+      String name = call.getOperator().getName().toUpperCase(Locale.ROOT);
+      if (!bufferedJsonFunction(name) || call.getOperands().isEmpty()) return false;
+      RexNode document = call.getOperands().get(0);
+      if (!(document instanceof RexInputRef || document instanceof RexLiteral)) return false;
+    }
+    return true;
+  }
+
+  private static boolean bufferedJsonFunction(String name) {
+    return name.equals("JSON_VALUE") || name.equals("JSON_QUERY") || name.equals("JSON_EXISTS")
+        || name.startsWith("IS JSON ") || name.startsWith("IS NOT JSON ");
+  }
+
+  private static boolean containsBufferedJson(RexNode node) {
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    return bufferedJsonFunction(call.getOperator().getName().toUpperCase(Locale.ROOT))
+        || call.getOperands().stream().anyMatch(RexExpression::containsBufferedJson);
   }
 
   private static boolean containsSqlJson(RexNode node) {
