@@ -53,6 +53,34 @@ fn canonical_batch(
     )?)
 }
 
+// Java ListVector replaces the UTF-16 carrier's child name when an Arrow batch crosses
+// a network edge. Its bytes and nullability are unchanged; retain every other field property.
+fn canonical_list_labels(data_type: &DataType) -> DataType {
+    match data_type {
+        DataType::Struct(fields) => DataType::Struct(
+            fields
+                .iter()
+                .map(|field| {
+                    Arc::new(
+                        field
+                            .as_ref()
+                            .clone()
+                            .with_data_type(canonical_list_labels(field.data_type())),
+                    )
+                })
+                .collect(),
+        ),
+        DataType::List(field)
+            if field.data_type() == &DataType::UInt16
+                && !field.is_nullable()
+                && matches!(field.name().as_str(), "unit" | "$data$") =>
+        {
+            DataType::List(Arc::new(field.as_ref().clone().with_name("unit")))
+        }
+        _ => data_type.clone(),
+    }
+}
+
 impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
     fn canonical_schema(&mut self, schema: SchemaRef) -> Result<(), DataFusionError> {
         if self.staged.touched_keys() != 0 {
@@ -64,8 +92,11 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
             if existing
                 .fields()
                 .iter()
-                .map(|field| field.data_type())
-                .ne(schema.fields().iter().map(|field| field.data_type()))
+                .map(|field| canonical_list_labels(field.data_type()))
+                .ne(schema
+                    .fields()
+                    .iter()
+                    .map(|field| canonical_list_labels(field.data_type())))
             {
                 return Err(DataFusionError::Execution(
                     "canonical normalizer schema changed".into(),
@@ -360,6 +391,87 @@ mod tests {
             Field::new("__stored_kind__", DataType::Int8, false),
         ]);
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+    }
+
+    fn named_list_input(name: &str, value: i64) -> RecordBatch {
+        use arrow::array::{ListArray, UInt16Array};
+        use arrow::buffer::OffsetBuffer;
+        let units = ListArray::new(
+            Arc::new(Field::new(name, DataType::UInt16, false)),
+            OffsetBuffer::new(vec![0i32, 1].into()),
+            Arc::new(UInt16Array::from(vec![65])),
+            None,
+        );
+        let string = StructArray::new(
+            vec![Arc::new(Field::new(
+                "java",
+                units.data_type().clone(),
+                true,
+            ))]
+            .into(),
+            vec![Arc::new(units)],
+            None,
+        );
+        RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+            ("payload", Arc::new(string)),
+            ("v", Arc::new(Int64Array::from(vec![value]))),
+            (ROW_KIND_COLUMN, Arc::new(Int8Array::from(vec![2]))),
+        ])
+        .unwrap()
+    }
+
+    fn list_labels_continue<S: KeyedStateStore<NormalizedRow>>(mut target: ChangelogNormalizer<S>) {
+        let mut source = ChangelogNormalizer::new(vec![0], true);
+        source.push(&named_list_input("unit", 10), 0).unwrap();
+        let pointers: Vec<_> = source.rows.iter().collect();
+        let saved = canonical_batch(
+            source.schema.as_ref().unwrap(),
+            source.payload_converter.as_ref().unwrap(),
+            &pointers,
+        )
+        .unwrap();
+        target.import_canonical_rows(&saved).unwrap();
+        for (index, name) in ["$data$", "unit", "$data$"].into_iter().enumerate() {
+            let input = named_list_input(name, 20);
+            let changed = target.push(&input, 0).unwrap();
+            assert_eq!(changed.num_rows(), if index == 0 { 2 } else { 0 });
+            if changed.num_rows() == 2 {
+                let values = changed
+                    .column(2)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                assert_eq!(values.values(), &[10, 20]);
+                assert_eq!(row_kind_column(&changed).unwrap().values(), &[1, 2]);
+            }
+            target
+                .canonical_schema(data_schema(&named_list_input("unit", 20)))
+                .unwrap();
+        }
+        assert_eq!(
+            target
+                .push(&named_list_input("unit", 30), 0)
+                .unwrap()
+                .num_rows(),
+            2
+        );
+        assert!(target
+            .canonical_schema(data_schema(&named_list_input("different", 30)))
+            .is_err());
+    }
+
+    #[test]
+    fn canonical_rows_continue_across_network_list_labels() {
+        list_labels_continue(ChangelogNormalizer::new(vec![0], true));
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    #[test]
+    fn persistent_canonical_rows_continue_across_network_list_labels() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = ChangelogNormalizer::new(vec![0], true).with_backend(store(directory.path()));
+        list_labels_continue(target);
     }
 
     fn represented_input(flags: i8, value: i64) -> RecordBatch {

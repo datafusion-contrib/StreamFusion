@@ -80,3 +80,8 @@ portable binding or permit unmatched real state to be discarded.
 The shipping tests retain both input representations, actual nested row kinds, both stock/native
 stores, exact immediate/continued state, native checkpoint recovery, custom source/coordinator and
 sink state, transpose boundaries and clean stock workers. Benchmarking remains deferred.
+
+When ROW-key input crosses a network edge during rescaling, Arrow Java may rename the internal
+UTF-16 list child. The normalizer preserves the original values and reconciles decoded retained
+rows with the output schema; both canonical restore and subsequent update-before emission accept
+that representation-only rename. Logical schema changes remain rejected.

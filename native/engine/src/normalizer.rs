@@ -465,7 +465,14 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         let parser = converter.parser();
         let mut columns = converter
             .convert_rows(out_rows.iter().map(|row| parser.parse(row)))
-            .expect("decode normalizer payloads");
+            .expect("decode normalizer payloads")
+            .iter()
+            .zip(schema.fields())
+            .map(|(array, field)| {
+                streamfusion_bridge::timestamp::cast_array(array, field.data_type())
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .expect("restore normalizer payload fields");
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         columns.push(Arc::new(Int8Array::from(out_kinds)));
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
