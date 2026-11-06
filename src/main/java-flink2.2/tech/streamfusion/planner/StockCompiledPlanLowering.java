@@ -28,7 +28,7 @@ import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.catalog.ContextResolvedTable;
-import org.apache.flink.table.catalog.ExternalCatalogTable;
+import org.apache.flink.table.catalog.DefaultCatalogTable;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.planner.calcite.FlinkRelOptClusterFactory;
 import org.apache.flink.table.planner.delegation.PlannerBase;
@@ -474,7 +474,8 @@ final class StockCompiledPlanLowering {
       table = ((StreamExecSink) node).getTableSinkSpec().getContextResolvedTable();
     else if (node instanceof StreamExecTableSourceScan)
       table = ((StreamExecTableSourceScan) node).getTableSourceSpec().getContextResolvedTable();
-    return table == null || !(table.getResolvedTable().getOrigin() instanceof ExternalCatalogTable);
+    return table == null
+        || table.getResolvedTable().getOrigin().getClass() == DefaultCatalogTable.class;
   }
 
   static boolean hasUnqualifiedConnectorState(

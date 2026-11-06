@@ -1726,3 +1726,7 @@ External inline tables used by `fromDataStream` and `TableResult.collect()` also
 physical execution route: Flink cannot serialize their catalog-table origins. Capturing a
 serializable stock template copies connector instances before runtime-provider translation,
 so planning the template cannot mutate the source or sink used for actual execution.
+
+Connector factories that depend on a custom in-memory catalog-table implementation also retain
+the physical route. Stock plan serialization reconstructs a standard catalog table and cannot
+preserve arbitrary subclass fields; such factories are not admitted to portable-template lowering.
