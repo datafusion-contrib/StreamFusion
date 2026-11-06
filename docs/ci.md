@@ -169,6 +169,8 @@ libraries rather than restoring Cargo intermediates or installing a Rust toolcha
 test job separately compiles its test harnesses and checks every tagged native package in
 isolation once, preserving the checks for dependencies accidentally supplied by the workspace.
 The native build retains Cargo's `--timings` report as a separate diagnostic artifact.
+The Rust test job reads that same dependency cache instead of maintaining another copy;
+it still compiles and runs its own harnesses and standalone package checks.
 
 The Rust test job runs the same 30 GiB free-space preflight as the shared native build,
 before restoring Cargo caches. The post-merge run for #595 exhausted its runner's disk
@@ -210,13 +212,12 @@ fixture for every declared module tag and one untagged fixture, requiring each t
 
 ## Java test memory budget
 
-Each ordinary Java matrix job runs at most one Surefire fork at a time with a 4 GiB heap,
+Each ordinary Java matrix job runs at most two Surefire forks at a time with a 4 GiB heap each,
 including the second JVM-boundary/cache verification phase. CI disables fork reuse, so each
 test class gets a fresh JVM. Local Maven defaults keep fork reuse enabled; the CI invocation
-sets `-Dsf.testForks=1 -Dsf.testReuseForks=false` explicitly. The default 8 GiB per-fork heap
+sets `-Dsf.testForks=2 -Dsf.testReuseForks=false` explicitly. The default 8 GiB per-fork heap
 combined with CPU-based fork counts leaves insufficient predictable headroom for Arrow buffers, native
-operators, embedded clusters and the Maven process on hosted runners. One bounded fork
-also keeps independent private clusters from competing across test JVMs.
+operators, embedded clusters and the Maven process on hosted runners.
 
 Released Flink MiniClusters keep completed execution graphs and serialized results in an
 unbounded in-memory archive. Its JVM shutdown hook can retain this archive even after the
@@ -226,12 +227,20 @@ without reflecting into Flink internals or evicting results during a scenario. C
 their shared launcher-session cluster and all within-class lifecycle, failure and recovery checks.
 The tradeoff is additional JVM and native-library startup per class;
 complete CI elapsed time, rather than local function throughput, measures that overhead.
-The 4 GiB cap also leaves room for the temporary copies made while checkpointing and serializing
-large binary collection results; the smaller focused expression matrix does not establish the
-memory requirement of these complete integration scenarios.
+The 4 GiB per-fork cap also leaves room for the temporary copies made while checkpointing and serializing
+large binary collection results. The two configured heaps total at most 8 GiB; Arrow/native
+allocations, Maven, containers and the operating system still need separate headroom.
+A local JDK 11/Flink 1.18 diagnostic ran the same 447 cases without skips or failures in
+354.31 seconds with one fork and 239.08 seconds with two. Both runs use fresh processes per
+class and the same debug native library, matching CI's execution mode. This single pair is
+not a full hosted-CI speedup or memory qualification; the retained
+[diagnostic and scheduling model](benchmarks/ci-latency-20261106.json) states its limits.
 
 The complete test selection, both Flink lines and both JDKs remain required. Tests stay
 serial within the fork, and result, native-route, leak and recovery assertions are unchanged.
+Runtime and lake matrices stop their remaining jobs after a job fails. A failed head cannot
+merge; a subsequent fixed head still requires every matrix member to succeed. This releases
+runners promptly instead of completing an already-failed matrix, and adds no test retries.
 The Java suite logs host memory/swap/CPU counters with `vmstat` every 30 seconds, so a runner
 shutdown retains resource evidence in the job log even when artifact upload cannot run.
 A shutdown signal alone does not prove a JVM or host out-of-memory condition; inspect these
