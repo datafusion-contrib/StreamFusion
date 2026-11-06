@@ -347,6 +347,10 @@ final class StockCompiledPlanLowering {
                   || node instanceof NativeColumnarWindowAggExecNode
                   || node instanceof NativeColumnarSessionWindowAggExecNode
                   || node instanceof NativeColumnarGlobalWindowAggExecNode) return true;
+              if (node instanceof NativeChangelogNormalizeExecNode
+                  && rowKeys(
+                      (RowType) node.getOutputType(),
+                      ((NativeChangelogNormalizeExecNode) node).stateKeyColumns())) return true;
               if (needsStringTemplate(node, graph) || needsGlobalGroupTemplate(node, graph))
                 return true;
               if (node instanceof NativeColumnarGroupAggExecNode
@@ -2930,8 +2934,7 @@ final class StockCompiledPlanLowering {
     RowType inputType = (RowType) input.getOutputType();
     int[] keys = reader.forType(int[].class).readValue(definition.path("uniqueKeys"));
     if (!RowDataArrowConverter.supports(inputType)
-        || !ArrowRowTypeSupport.supportsFields(inputType, keys)
-        || Arrays.stream(keys).anyMatch(key -> containsRow(inputType.getTypeAt(key)))) return stock;
+        || !ArrowRowTypeSupport.supportsFields(inputType, keys)) return stock;
     Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
     ((ExecNodeBase<?>) stock).getPersistedConfig().toMap().forEach(config::setString);
     if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
@@ -2952,7 +2955,9 @@ final class StockCompiledPlanLowering {
             serializer, keyType, inputType, retention > 0);
     int maximum = stockMaximum(original);
     var exchange =
-        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
+        (NativeColumnarExchangeExecNode)
+            canonicalJoinInput(
+                input, config, inputType, keys, true, false, rowKeys(inputType, keys));
     exchange.withStateMaxParallelism(maximum);
     var normalize =
         new NativeChangelogNormalizeExecNode(

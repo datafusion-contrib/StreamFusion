@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 static INTEGER_CACHE_HIGH: OnceLock<i32> = OnceLock::new();
 
-pub(super) fn init_java_cache(env: &mut JNIEnv<'_>) {
+pub(crate) fn init_java_cache(env: &mut JNIEnv<'_>) {
     INTEGER_CACHE_HIGH.get_or_init(|| {
         let (mut low, mut high) = (127i32, i32::MAX);
         while low < high {
@@ -39,6 +39,26 @@ pub(super) fn init_java_cache(env: &mut JNIEnv<'_>) {
     });
 }
 
+pub(crate) fn encoded_rows(
+    converter: &RowConverter,
+    fields: &[Arc<Field>],
+    left: &[u8],
+    right: &[u8],
+) -> Result<bool, DataFusionError> {
+    if left == right {
+        return Ok(true);
+    }
+    let parser = converter.parser();
+    let columns = converter.convert_rows([parser.parse(left), parser.parse(right)])?;
+    let values = |row| {
+        columns
+            .iter()
+            .map(|column| ScalarValue::try_from_array(column, row))
+            .collect::<Result<Vec<_>, _>>()
+    };
+    Ok(rows(fields, &values(0)?, &values(1)?, true))
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Record,
@@ -47,7 +67,7 @@ enum Mode {
     Binary,
 }
 
-pub(super) fn rows(
+pub(crate) fn rows(
     fields: &[Arc<Field>],
     left: &[ScalarValue],
     right: &[ScalarValue],

@@ -60,3 +60,22 @@ All five unchanged released normalizer restore programs pass per engine: three a
 imports/input paths and two filtered stock paths. Wider keys/backends, old native graph upgrades,
 shared stateful roles and unqualified consumers remain partial under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+## ROW-key handoff behavior
+
+ROW-bearing unique keys retain their exact stock binary representation through the input exchange
+and direct canonical bridge, including nested row kinds and reserved bytes. Stock key serializers,
+key groups and the retained row descriptor remain unchanged. Duplicate detection compares row
+content through the shared stock-compatible equaliser instead of treating Java representation
+flags as changed data. TTL refresh behavior retains its existing rules.
+
+Ordinary SQL resolves this state owner from the portable stock template when another native
+consumer has no qualified canonical adapter. That consumer retains its stock implementation and
+state identities; the normalizer remains native. The existing mini-batch retracting aggregate
+and ROW-bearing regular-join exclusions are preserved. They do not disable the normalizer's
+portable binding or permit unmatched real state to be discarded.
+
+The shipping tests retain both input representations, actual nested row kinds, both stock/native
+stores, exact immediate/continued state, native checkpoint recovery, custom source/coordinator and
+sink state, transpose boundaries and clean stock workers. Benchmarking remains deferred.

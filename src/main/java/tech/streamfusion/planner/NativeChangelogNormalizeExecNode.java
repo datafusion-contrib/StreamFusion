@@ -60,6 +60,10 @@ public class NativeChangelogNormalizeExecNode extends ExecNodeBase<ArrowBatch>
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
+  int[] stateKeyColumns() {
+    return keyColumns.clone();
+  }
+
   @Override
   @SuppressWarnings("unchecked")
   protected Transformation<ArrowBatch> translateToPlanInternal(

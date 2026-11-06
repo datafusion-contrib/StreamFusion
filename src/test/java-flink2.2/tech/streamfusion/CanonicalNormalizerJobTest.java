@@ -87,7 +87,7 @@ class CanonicalNormalizerJobTest {
     int middle = mode.equals("rescale") ? 128 : 9;
     if (mode.equals("rescale")) {
       Files.createFile(switched.resolve("rescale"));
-      Files.writeString(switched.resolve("native-rescale-family"), "Normalize,UpdatingJoin");
+      Files.writeString(switched.resolve("native-rescale-family"), rescaleFamilies());
       Files.writeString(switched.resolve("prefix-parallelism"), "1");
       Files.writeString(switched.resolve("middle-parallelism"), "3");
       Files.writeString(switched.resolve("suffix-parallelism"), "2");
@@ -171,6 +171,14 @@ class CanonicalNormalizerJobTest {
             switched.resolve((nativeFirst ? "middle" : "suffix") + "-stock-classpath-verified")));
   }
 
+  Path oracleInput(Path root) {
+    return root.resolve("input.csv");
+  }
+
+  String rescaleFamilies() {
+    return "Normalize,UpdatingJoin";
+  }
+
   boolean ordinary() {
     return false;
   }
@@ -240,9 +248,9 @@ class CanonicalNormalizerJobTest {
     return root;
   }
 
-  private static Map<String, Long> expected(Path root, String mode) throws Exception {
+  Map<String, Long> expected(Path root, String mode) throws Exception {
     var left = new HashMap<String, String>();
-    for (String line : Files.readAllLines(root.resolve("input.csv"))) {
+    for (String line : Files.readAllLines(oracleInput(root))) {
       String[] fields = line.split(",");
       if (fields[0].equals("DELETE")) left.remove(fields[1]);
       else left.put(fields[1], fields[2]);

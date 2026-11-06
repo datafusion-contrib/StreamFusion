@@ -362,6 +362,106 @@ mod tests {
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
     }
 
+    fn represented_input(flags: i8, value: i64) -> RecordBatch {
+        let fields = vec![
+            Arc::new(Field::new("value", DataType::Int64, true)),
+            Arc::new(
+                Field::new("kind", DataType::Int8, true)
+                    .with_metadata([("streamfusion.nested-row-kind".into(), "1".into())].into()),
+            ),
+        ];
+        let payload = StructArray::new(
+            fields.into(),
+            vec![
+                Arc::new(Int64Array::from(vec![value])),
+                Arc::new(Int8Array::from(vec![flags])),
+            ],
+            None,
+        );
+        RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+            ("payload", Arc::new(payload)),
+            (ROW_KIND_COLUMN, Arc::new(Int8Array::from(vec![2]))),
+        ])
+        .unwrap()
+    }
+
+    fn represented_continuation<S: KeyedStateStore<NormalizedRow>>(
+        mut target: ChangelogNormalizer<S>,
+    ) {
+        let mut source = ChangelogNormalizer::new(vec![0], true);
+        source.push(&represented_input(0, 10), 0).unwrap();
+        let rows: Vec<_> = source.rows.iter().collect();
+        let saved = canonical_batch(
+            source.schema.as_ref().unwrap(),
+            source.payload_converter.as_ref().unwrap(),
+            &rows,
+        )
+        .unwrap();
+        target.import_canonical_rows(&saved).unwrap();
+        for representation in [0, 4, 8, 16] {
+            assert_eq!(
+                target
+                    .push(&represented_input(representation, 10), 0)
+                    .unwrap()
+                    .num_rows(),
+                0
+            );
+        }
+        let changed = target.push(&represented_input(4, 20), 0).unwrap();
+        assert_eq!(changed.num_rows(), 2);
+        assert_eq!(row_kind_column(&changed).unwrap().values(), &[1, 2]);
+        assert_eq!(
+            target
+                .push(&represented_input(16, 20), 0)
+                .unwrap()
+                .num_rows(),
+            0
+        );
+        // The low bits are the actual nested changelog kind, not a class marker.
+        assert_eq!(
+            target
+                .push(&represented_input(5, 20), 0)
+                .unwrap()
+                .num_rows(),
+            2
+        );
+        assert_eq!(
+            target
+                .push(&represented_input(17, 20), 0)
+                .unwrap()
+                .num_rows(),
+            0
+        );
+    }
+
+    #[test]
+    fn imported_nested_rows_compare_content_without_java_class_markers() {
+        represented_continuation(ChangelogNormalizer::new(vec![0], true));
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    #[test]
+    fn imported_persistent_nested_rows_compare_content_without_java_class_markers() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = RocksStore::create(
+            RocksStoreConfig {
+                table_dir: directory
+                    .path()
+                    .join("state")
+                    .to_string_lossy()
+                    .into_owned(),
+                max_parallelism: 128,
+                options_json: include_str!("../../benches/fixtures/rocks-options.json").into(),
+                ttl_ms: 0,
+                shared_resources: 0,
+            },
+            NormalizerStateCodec,
+        )
+        .unwrap();
+        represented_continuation(ChangelogNormalizer::new(vec![0], true).with_backend(store));
+    }
+
     #[test]
     fn late_bad_row_does_not_partially_import() {
         let mut target = ChangelogNormalizer::new(vec![0], true);

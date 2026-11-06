@@ -1674,3 +1674,13 @@ keyed/global state, cleanup on/off, custom connectors and transpose boundaries, 
 ordinary native recovery and selected 1→3→2 keyed rescaling. The separate 212-check Flink 1.18 run
 is shared-code regression coverage, not canonical qualification. See [exact OVER coverage](../operators/over.md#released-v2-event-time-unbounded-scalar-binding-partial).
 Every operator family remains partial and benchmarking remains deferred under #569.
+
+
+### Mixed consumers of a ROW-key normalizer
+
+A qualified native normalizer can share a job with a stock consumer whose native canonical
+contract is not admitted. Ordinary SQL reuses the original stock template to bind the normalizer
+and preserve that consumer's original identities and state. It does not continue with unbound
+native identities or drop unmatched savepoint state. ROW keys use owned binary companions to
+preserve the original serialized key bytes; canonical export still writes directly from live
+state into stock schemas without an intermediate native snapshot.

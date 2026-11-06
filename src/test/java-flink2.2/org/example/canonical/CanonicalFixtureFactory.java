@@ -456,6 +456,11 @@ public final class CanonicalFixtureFactory
           throw new IOException("source watermark was not requested or is malformed");
         output.emitWatermark(
             new org.apache.flink.api.common.eventtime.Watermark(Long.parseLong(fields[1])));
+      } else if (fields[0].equals("BINARY")) {
+        if (fields.length != 2) throw new IOException("malformed binary source row");
+        output.collect(
+            serializer.deserialize(
+                new DataInputDeserializer(java.util.Base64.getDecoder().decode(fields[1]))));
       } else {
         if (fields.length != type.getFieldCount() + 1)
           throw new IOException("source row does not match its physical schema");

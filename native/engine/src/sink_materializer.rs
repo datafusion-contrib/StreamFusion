@@ -1,6 +1,6 @@
 use crate::*;
 mod canonical;
-mod equal;
+use crate::flink_row_equal as equal;
 mod hash;
 mod serialized;
 mod state;

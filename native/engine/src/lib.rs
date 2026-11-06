@@ -55,6 +55,7 @@ mod logging;
 mod memory;
 mod mini_batch;
 mod normalizer;
+mod flink_row_equal;
 mod over_agg;
 mod owned;
 pub(crate) use owned::own_array_data;

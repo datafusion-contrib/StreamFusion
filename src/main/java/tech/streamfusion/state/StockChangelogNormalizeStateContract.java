@@ -24,7 +24,6 @@ import org.apache.flink.table.types.logical.VarBinaryType;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** The released normalizer's full last row and original write age. */
 public final class StockChangelogNormalizeStateContract implements StockStateContract {
@@ -89,14 +88,37 @@ public final class StockChangelogNormalizeStateContract implements StockStateCon
     }
   }
 
+  private org.apache.arrow.vector.types.pojo.Schema arrowSchema(RowType type) {
+    var schema = ArrowConversion.toArrowSchema(type);
+    return keyType.getChildren().stream()
+            .anyMatch(StockChangelogNormalizeStateContract::containsRow)
+        ? tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(schema)
+        : schema;
+  }
+
+  private static boolean containsRow(org.apache.flink.table.types.logical.LogicalType type) {
+    return type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.ROW)
+        || type.getChildren().stream().anyMatch(StockChangelogNormalizeStateContract::containsRow);
+  }
+
+  private VectorSchemaRoot writeRows(List<RowData> rows) {
+    var root = VectorSchemaRoot.create(arrowSchema(bridgeType), NativeAllocator.SHARED);
+    try {
+      var writer = ArrowConversion.createRowDataArrowWriter(root, bridgeType);
+      for (var row : rows) writer.write(row);
+      writer.finish();
+      return root;
+    } catch (RuntimeException | Error failure) {
+      root.close();
+      throw failure;
+    }
+  }
+
   private void exportNative(long handle, boolean persistent, Native.BatchReceiver receiver) {
     try (ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       try {
         Data.exportSchema(
-            NativeAllocator.SHARED,
-            ArrowConversion.toArrowSchema(rowType),
-            NativeAllocator.DICTIONARIES,
-            schema);
+            NativeAllocator.SHARED, arrowSchema(rowType), NativeAllocator.DICTIONARIES, schema);
         Native.exportChangelogNormalizerCanonical(
             handle, persistent, schema.memoryAddress(), receiver);
       } finally {
@@ -213,8 +235,7 @@ public final class StockChangelogNormalizeStateContract implements StockStateCon
 
   private void importBatch(
       long handle, boolean persistent, List<RowData> rows, boolean validateOnly) {
-    try (VectorSchemaRoot root =
-            RowDataArrowConverter.write(rows, bridgeType, NativeAllocator.SHARED);
+    try (VectorSchemaRoot root = writeRows(rows);
         ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED);
         ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportVectorSchemaRoot(
