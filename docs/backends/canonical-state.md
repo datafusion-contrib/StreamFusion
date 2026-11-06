@@ -1746,3 +1746,8 @@ including the extra retained row after an emptied timestamp bucket advances its 
 The managed-UDF job smoke selection retains both engine orders, both native stores, and ordinary
 SQL plus compiled submission. It limits the scenario to continued input; the default complete-job
 selection still includes no-input re-export, checkpoint recovery and rescaling.
+
+Stock sink timestamp helpers are matched by their exact released operator class, rowtime field
+index and timestamp precision, with the complete surrounding topology still checked. Fresh
+planner display IDs do not change that role. Changed field indexes or precisions remain errors,
+including when their display names happen to match. These helpers are preserved, not omitted.

@@ -134,6 +134,10 @@ final class CanonicalGraphIdentities {
       Class<?> implementation = original.getStreamOperatorClass(loader);
       if (implementation != replacement.getStreamOperatorClass(loader)) return false;
       if (implementation
+          == org.apache.flink.table.runtime.operators.sink.StreamRecordTimestampInserter.class)
+        return java.util.Arrays.equals(
+            timestampDefinition(original), timestampDefinition(replacement));
+      if (implementation
           == org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer.class) {
         // Ordinary translation assigns fresh display IDs to equivalent sink helper stages.
         // Compare the complete immutable executor, including ERROR/DROP and nested constraints.
@@ -143,6 +147,24 @@ final class CanonicalGraphIdentities {
     }
     // Generated factories compile equivalent stock stages into distinct classes.
     return stock.getOperatorName().equals(runtime.getOperatorName());
+  }
+
+  private static int[] timestampDefinition(
+      org.apache.flink.streaming.api.operators.StreamOperatorFactory<?> factory) {
+    try {
+      var type = org.apache.flink.table.runtime.operators.sink.StreamRecordTimestampInserter.class;
+      var index = type.getDeclaredField("rowtimeIndex");
+      var precision = type.getDeclaredField("precision");
+      index.setAccessible(true);
+      precision.setAccessible(true);
+      Object operator =
+          ((org.apache.flink.streaming.api.operators.SimpleOperatorFactory<?>) factory)
+              .getOperator();
+      return new int[] {index.getInt(operator), precision.getInt(operator)};
+    } catch (ReflectiveOperationException failure) {
+      throw new IllegalArgumentException(
+          "Cannot compare released sink timestamp definitions", failure);
+    }
   }
 
   private static byte[] constraintDefinition(

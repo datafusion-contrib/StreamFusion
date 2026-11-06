@@ -230,6 +230,52 @@ class CanonicalGraphIdentitiesTest {
     else assertThrows(IllegalArgumentException.class, () -> bind(stock, runtime, Map.of()));
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"equal", "index", "precision", "sameNameDifferentIndex"})
+  void sinkTimestampDefinitionsDetermineRolesInsteadOfDisplayIds(String variant) {
+    var stock = timestampGraph("StreamRecordTimestampInserter[8]", 0, 3);
+    var runtime =
+        timestampGraph(
+            variant.equals("sameNameDifferentIndex")
+                ? "StreamRecordTimestampInserter[8]"
+                : "StreamRecordTimestampInserter[18]",
+            variant.equals("index") || variant.equals("sameNameDifferentIndex") ? 1 : 0,
+            variant.equals("precision") ? 9 : 3);
+    if (variant.equals("equal"))
+      assertEquals(stock.graph.getStreamNodes().size(), bind(stock, runtime, Map.of()).size());
+    else assertThrows(IllegalArgumentException.class, () -> bind(stock, runtime, Map.of()));
+  }
+
+  private Graph timestampGraph(String name, int field, int precision) {
+    var env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    var type =
+        RowType.of(
+            new org.apache.flink.table.types.logical.TimestampType(3),
+            new org.apache.flink.table.types.logical.TimestampType(3));
+    var info = InternalTypeInfo.<RowData>of(type);
+    var rows =
+        env.fromData(
+                info,
+                GenericRowData.of(
+                    org.apache.flink.table.data.TimestampData.fromEpochMillis(1),
+                    org.apache.flink.table.data.TimestampData.fromEpochMillis(2)))
+            .name("source")
+            .transform(
+                name,
+                info,
+                new org.apache.flink.table.runtime.operators.sink.StreamRecordTimestampInserter(
+                    field, precision));
+    rows.sinkTo(
+            FileSink.forRowFormat(
+                    new Path(directory.resolve("timestamp-sink").toUri()),
+                    new SimpleStringEncoder<RowData>())
+                .build())
+        .name("sink");
+    return new Graph(env.getStreamGraph(false), List.of(rows.getId()), Set.of());
+  }
+
   private Graph constraintGraph(
       String name,
       RowType type,
