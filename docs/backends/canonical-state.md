@@ -1709,3 +1709,9 @@ its shared Arrow edges. Such graphs keep their existing native checkpoint/savepo
 
 Representation-only helpers are excluded when identifying native connector state. A transpose
 may inherit its input's captured source identity without becoming a source-state owner.
+
+Qualified compiled plans retain the unchanged stock execution template and lower it afresh for
+each explanation or submission. Rebinding an already modified private graph can otherwise leave
+a previously attached state contract without its matching canonical backend. Private native
+graphs are retained only where execution requires the existing native-only route. Repeated
+`explain()`/`execute()` therefore preserves canonical backend installation and original identities.

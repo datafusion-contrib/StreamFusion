@@ -44,7 +44,14 @@ final class NativeStreamPlanner extends StreamPlanner {
       InternalPlan plan = super.compilePlan(operations);
       var graph = ((ExecNodeGraphInternalPlan) plan).getExecNodeGraph();
       if (!(graph instanceof SqlPlanOrigins.RuntimeGraph)) return plan;
-      var stock = ((SqlPlanOrigins.RuntimeGraph) graph).stock;
+      var captured = (SqlPlanOrigins.RuntimeGraph) graph;
+      var stock = captured.stock;
+      var loader = getFlinkContext().getClassLoader();
+      boolean nativeOnly =
+          StockCompiledPlanLowering.hasUnqualifiedConnectorState(captured, loader)
+              || !StockCompiledPlanLowering.canBindOrdinary(captured, loader)
+                  && !StockCompiledPlanLowering.requiresStockTemplate(captured);
+      ExecNodeGraph execution = nativeOnly ? graph : stock;
       var context = createSerdeContext();
       var portable =
           new ExecNodeGraphInternalPlan(
@@ -66,7 +73,8 @@ final class NativeStreamPlanner extends StreamPlanner {
                 }
               },
               stock);
-      return new ExecNodeGraphInternalPlan(portable::asJsonString, portable::asSmileBytes, graph) {
+      return new ExecNodeGraphInternalPlan(
+          portable::asJsonString, portable::asSmileBytes, execution) {
         @Override
         public List<String> getSinkIdentifiers() {
           return portable.getSinkIdentifiers();
