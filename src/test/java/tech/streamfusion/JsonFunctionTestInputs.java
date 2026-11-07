@@ -3,6 +3,7 @@ package tech.streamfusion;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.JsonProcessingException;
 import org.apache.flink.table.api.TableEnvironment;
 
 final class JsonFunctionTestInputs {
@@ -97,9 +98,30 @@ final class JsonFunctionTestInputs {
     Throwable nativeError = comparison.nativeRun().rootCause();
     assertNotNull(host, comparison.toString());
     assertNotNull(nativeError, comparison.toString());
-    assertEquals(host.getClass(), nativeError.getClass(), comparison.toString());
-    assertEquals(host.getMessage(), nativeError.getMessage(), comparison.toString());
+    assertSameFailure(host, nativeError, comparison.toString());
     assertEquals(
         NativeFailureParity.Route.NATIVE, comparison.nativeRun().route(), comparison.toString());
+  }
+
+  static void assertSameFailure(Throwable expected, Throwable actual, String context) {
+    assertEquals(expected.getClass(), actual.getClass(), context);
+    if (!(expected instanceof JsonProcessingException)) {
+      assertEquals(expected.getMessage(), actual.getMessage(), context);
+      return;
+    }
+    var host = (JsonProcessingException) expected;
+    var nativeError = (JsonProcessingException) actual;
+    // Jackson's source reference is transient; Flink can return a local or serialized failure.
+    assertEquals(host.getOriginalMessage(), nativeError.getOriginalMessage(), context);
+    var location = host.getLocation();
+    var nativeLocation = nativeError.getLocation();
+    if (location == null || nativeLocation == null) {
+      assertEquals(location, nativeLocation, context);
+      return;
+    }
+    assertEquals(location.getLineNr(), nativeLocation.getLineNr(), context);
+    assertEquals(location.getColumnNr(), nativeLocation.getColumnNr(), context);
+    assertEquals(location.getByteOffset(), nativeLocation.getByteOffset(), context);
+    assertEquals(location.getCharOffset(), nativeLocation.getCharOffset(), context);
   }
 }
