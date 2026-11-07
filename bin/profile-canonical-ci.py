@@ -9,6 +9,7 @@ from pathlib import Path
 import resource
 import shutil
 import subprocess
+import tempfile
 import time
 import xml.etree.ElementTree as ET
 
@@ -103,7 +104,16 @@ def main():
     if args.cds:
         java_home = os.environ.get("JAVA_HOME")
         java = str(Path(java_home) / "bin/java") if java_home else "java"
-        supported = subprocess.run([java, "-Xshare:on", "-version"], capture_output=True, text=True)
+        with tempfile.TemporaryDirectory(prefix="cds-capability-", dir=args.output.resolve().parent) as directory:
+            temporary = Path(directory)
+            classes = temporary / "classes.list"
+            classes.write_text("java/lang/Object\n")
+            empty = temporary / "empty"
+            empty.mkdir()
+            supported = subprocess.run(
+                [java, "-Xshare:dump", f"-XX:SharedClassListFile={classes}",
+                 f"-XX:SharedArchiveFile={temporary / 'probe.jsa'}", "-cp", str(empty)],
+                capture_output=True, text=True, timeout=120)
         if supported.returncode:
             parser.error("This JVM cannot use class-data sharing; omit --cds to measure default/first-tier compilation")
     profile(args.output.resolve(), args.repetitions, args.cds)

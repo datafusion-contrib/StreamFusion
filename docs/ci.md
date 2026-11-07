@@ -649,8 +649,9 @@ evidence file. Complete CI establishes the amortized benefit across its full tes
 Locally, first compile the default runtime with `mvn -pl streamfusion-runtime -am test-compile`
 and a matching native build. Then run
 `python3 bin/profile-canonical-ci.py --output /path/to/new-evidence-directory --repetitions 3 --cds`.
-The `--cds` option requires a JVM supporting class-data sharing. The profiler checks this before
-starting; omitting it retains the default/first-tier comparison on unsupported VMs, such as
+The `--cds` option requires a JVM supporting class-data sharing. The profiler creates and removes
+a small archive before starting, supporting JDK installations without a prebuilt default archive.
+Omitting it retains the default/first-tier comparison on unsupported VMs, such as
 the local ARM JDK 11 build used during this investigation.
 The script preserves concise JSON and failed logs, removes its successful logs/reports and
 temporary fixtures, and leaves normal JVM options unchanged outside each measured subprocess.
