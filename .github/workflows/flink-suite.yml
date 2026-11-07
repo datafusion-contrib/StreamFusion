@@ -26,8 +26,13 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
-  upstream-line:
+  plan:
     if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+    uses: ./.github/workflows/ci-plan.yml
+
+  upstream-line:
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
     name: Flink ${{ matrix.line }}
     strategy:
       fail-fast: false
@@ -45,7 +50,8 @@ jobs:
       inventory_scope: ${{ inputs.inventory_scope || 'all' }}
 
   legacy-delta-audit:
-    if: ${{ (!inputs.sql_inventory) && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
+    needs: plan
+    if: ${{ !inputs.sql_inventory && needs.plan.outputs.tests == 'true' }}
     name: Delta 3.3 / Flink 1.18 host audit
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -73,7 +79,7 @@ jobs:
   all-tests:
     name: All upstream integration tests
     if: ${{ (always() && !cancelled()) && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
-    needs: [upstream-line, legacy-delta-audit]
+    needs: [plan, upstream-line, legacy-delta-audit]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -81,26 +87,32 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           INVENTORY: ${{ inputs.sql_inventory || false }}
+          DOCS_ONLY: ${{ needs.plan.outputs.tests == 'false' }}
         run: |
-          jq -e --arg inventory "$INVENTORY" '
-            length > 0 and all(to_entries[];
-              .value.result == "success" or
-              ($inventory == "true" and .key == "legacy-delta-audit" and .value.result == "skipped"))
+          jq -e --arg inventory "$INVENTORY" --arg docs "$DOCS_ONLY" '
+            .plan.result == "success" and
+            if $docs == "true" then
+              all(to_entries[]; .key == "plan" or .value.result == "skipped")
+            else
+              all(to_entries[];
+                .value.result == "success" or
+                ($inventory == "true" and .key == "legacy-delta-audit" and .value.result == "skipped"))
+            end
           ' <<< "$NEEDS_JSON"
       - uses: actions/checkout@v6
-        if: ${{ !inputs.sql_inventory || inputs.inventory_scope != 'connectors' }}
+        if: ${{ needs.plan.outputs.tests == 'true' && (!inputs.sql_inventory || inputs.inventory_scope != 'connectors') }}
       - uses: actions/download-artifact@v5
-        if: ${{ !inputs.sql_inventory || inputs.inventory_scope != 'connectors' }}
+        if: ${{ needs.plan.outputs.tests == 'true' && (!inputs.sql_inventory || inputs.inventory_scope != 'connectors') }}
         with:
           pattern: runtime-coverage-2.2-*
           path: runtime-coverage/2.2
       - uses: actions/download-artifact@v5
-        if: ${{ !inputs.sql_inventory || inputs.inventory_scope != 'connectors' }}
+        if: ${{ needs.plan.outputs.tests == 'true' && (!inputs.sql_inventory || inputs.inventory_scope != 'connectors') }}
         with:
           pattern: runtime-coverage-1.18-*
           path: runtime-coverage/1.18
       - name: Require every runtime shard and parameterized invocation on both lines
-        if: ${{ !inputs.sql_inventory || inputs.inventory_scope != 'connectors' }}
+        if: ${{ needs.plan.outputs.tests == 'true' && (!inputs.sql_inventory || inputs.inventory_scope != 'connectors') }}
         run: |
           for line in 2.2 1.18; do
             python3 dev/flink-suite/runtime_shards.py aggregate \

@@ -281,7 +281,10 @@ The 1.18 execution contract resource names methods verified in that release's un
 It retains scalar, aggregate, rank, distinct-window and lookup witnesses; it excludes the
 retracting window TVF method absent from that release and the unavailable Delta suite. Agent and
 report summarizer select the same resource. The upstream CI matrix includes both lines and its
-required aggregate check requires every leg to succeed. Each leg archives its own result totals,
+required aggregate check requires every leg to succeed on source-changing pushes, manual runs
+and schedules. [Documentation-only pushes](ci.md#documentation-only-pushes) can reuse exact-base
+coverage only after both required push workflows pass with unchanged tested source; unproven
+baselines still run every leg. Each executed leg archives its own result totals,
 execution-contract counts and diagnostics; the two lines have different upstream corpora and
 host-capability skips. Java, module, image and qualified-artifact jobs also exercise both lines as
 blocking checks. Production support additionally requires the real-cluster upgrade and publication

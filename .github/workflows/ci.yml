@@ -11,13 +11,19 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   RUST_BACKTRACE: "1"
 
 jobs:
-  native-build:
+  plan:
     if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+    uses: ./.github/workflows/ci-plan.yml
+
+  native-build:
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
     name: Shared debug native libraries
     env:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
@@ -63,7 +69,8 @@ jobs:
           retention-days: 7
 
   native-tests:
-    if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
     env:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
@@ -155,6 +162,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
           python3 -m unittest discover -s bin -p 'test_ci_runtime_test_shards.py'
           python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
+          python3 -m unittest discover -s bin -p 'test_ci_plan.py'
           python3 -m unittest discover -s bin -p 'test_profile_ci.py'
           python3 -m unittest discover -s bin -p 'test_package_release.py'
           python3 -m unittest discover -s bin -p 'test_build_release.py'
@@ -458,7 +466,8 @@ jobs:
           retention-days: 7
 
   image-integration:
-    if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
     name: Flink image integration (optimized native build)${{ matrix.suffix }}
     runs-on: ubuntu-22.04
     timeout-minutes: 90
@@ -574,11 +583,20 @@ jobs:
   all-tests:
     name: All CI tests
     if: ${{ (always() && !cancelled()) && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
-    needs: [native-build, native-tests, java-tests, canonical-job-tests, lake-module-tests, image-integration, doris-tests]
+    needs: [plan, native-build, native-tests, java-tests, canonical-job-tests, lake-module-tests, image-integration, doris-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every test job to succeed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-        run: jq -e 'length > 0 and all(.[]; .result == "success")' <<< "$NEEDS_JSON"
+          DOCS_ONLY: ${{ needs.plan.outputs.tests == 'false' }}
+        run: |
+          jq -e --arg docs "$DOCS_ONLY" '
+            .plan.result == "success" and
+            if $docs == "true" then
+              all(to_entries[]; .key == "plan" or .value.result == "skipped")
+            else
+              all(.[]; .result == "success")
+            end
+          ' <<< "$NEEDS_JSON"

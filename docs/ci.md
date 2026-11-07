@@ -2,8 +2,8 @@
 
 Contributor builds and tests run in **personal forks**, using each fork owner's GitHub Actions
 quota instead of the shared `datafusion-contrib` quota. Opening or updating a PR does not launch
-the test matrix in the canonical repository. Canonical `main` still runs the complete post-merge
-checks, the upstream Flink weekly run remains available, and publishing stays upstream.
+the test matrix in the canonical repository. Source-changing canonical `main` pushes still run
+the complete post-merge checks, the upstream Flink weekly run remains available, and publishing stays upstream.
 
 ## Contributing from a personal fork
 
@@ -125,6 +125,30 @@ but skip canceled workflows (`always() && !cancelled()`). An unconditional `alwa
 gate can wait for another runner after the obsolete test jobs have been canceled,
 keeping the workflow's concurrency slot occupied and the replacement run pending.
 Failures and unexpected skipped dependencies still fail the aggregate's result checks.
+
+## Documentation-only pushes
+
+Both required workflows first compare committed paths with a candidate baseline. Only
+`readme.md`, Markdown under `docs/`, and `docs/benchmarks/ci-profile-YYYYMMDD.json` timing
+evidence qualify. Source, tests, workflows, dependency/build configuration, instruction files,
+other data files and unknown paths require the full matrix. Rename detection is disabled so
+moving a source file into `docs/` still counts its deletion from source.
+
+For an existing branch, the candidate is the exact pre-push commit on that branch. For a new
+branch, it is current canonical `main`. Both **CI** and **Upstream Flink suite** must have a
+completed successful **push** run for that exact baseline SHA and branch. A newer failed,
+canceled or running push prevents reuse; manual inventory runs cannot establish coverage.
+Missing history, unavailable API access, missing workflows or incomplete/failed evidence all
+select the full matrix. Manual dispatches and weekly schedules always run the full selection.
+
+When those proofs pass, the documentation push has unchanged tested source. Its native and
+integration jobs are deliberately skipped, and both aggregate checks succeed on the new head
+only when the plan succeeds and every test dependency is skipped. Strict docs builds still
+run. The normal path still requires every test dependency to succeed. This avoids hours of
+retesting unchanged source without letting a docs follow-up hide failures on its base commit.
+The plan uses a read-only token and sparse checkout of its script; its job summary records the
+decision and baseline SHA. Real Git rename/deletion cases and the actual aggregate shell
+scripts are covered by regressions, including unexpected skips, failures and unproven plans.
 
 ## Native execution checks instead of exhaustive benchmark smoke
 
@@ -644,6 +668,10 @@ Recent failure diagnoses:
 - [Reporter 42357436842](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42357436842):
   the runner returned `fsync ... Input/output error` during all three checkout attempts.
   Sparse checkout reduces its repository disk work; it cannot guarantee against runner I/O faults.
+- Reporters [42346046364](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42346046364)
+  and [42309074911](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42309074911)
+  exhausted their six-hour watch deadlines while PR #607's fork CI was still pending.
+  They left required checks pending rather than accepting unfinished tests.
 - [Docs 42308241816](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42308241816):
   the strict documentation build passed, but GitHub Pages remained in `syncing_files` until
   deployment timed out. The subsequent main deployment passed.
