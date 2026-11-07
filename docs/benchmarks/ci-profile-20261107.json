@@ -1,0 +1,137 @@
+{
+  "date": "2026-11-07",
+  "baseline": [
+    {
+      "run": "https://github.com/datafusion-contrib/StreamFusion/actions/runs/42357977614",
+      "sha": "69620d1ac1ac4a37a268a6a9cb92a5ba6af03562",
+      "conclusion": "success",
+      "elapsed_seconds": 19297.0,
+      "runner_seconds": 260387.0,
+      "groups": {
+        "other": {
+          "jobs": 17,
+          "runner_seconds": 10947.0,
+          "max_job_seconds": 2160.0
+        },
+        "java": {
+          "jobs": 12,
+          "runner_seconds": 54209.0,
+          "max_job_seconds": 6286.0
+        },
+        "canonical": {
+          "jobs": 32,
+          "runner_seconds": 195231.0,
+          "max_job_seconds": 8485.0
+        }
+      },
+      "steps": {
+        "Run every selected canonical job": {
+          "executions": 32,
+          "seconds": 187573.0
+        },
+        "Run Java test suite": {
+          "executions": 12,
+          "seconds": 48303.0
+        },
+        "Compile and partition complete canonical jobs": {
+          "executions": 32,
+          "seconds": 4110.0
+        },
+        "Run optional lake module suite": {
+          "executions": 11,
+          "seconds": 4104.0
+        },
+        "Resolve Java dependencies before tests": {
+          "executions": 44,
+          "seconds": 3530.0
+        },
+        "Compile the complete reactor and partition runtime test classes": {
+          "executions": 12,
+          "seconds": 2353.0
+        },
+        "Build optimized core image": {
+          "executions": 2,
+          "seconds": 1493.0
+        },
+        "Check deployed Java 11 bytecode including embedded payloads": {
+          "executions": 12,
+          "seconds": 1463.0
+        }
+      }
+    },
+    {
+      "run": "https://github.com/datafusion-contrib/StreamFusion/actions/runs/42357977753",
+      "sha": "69620d1ac1ac4a37a268a6a9cb92a5ba6af03562",
+      "conclusion": "success",
+      "elapsed_seconds": 7399.0,
+      "runner_seconds": 15254.0,
+      "groups": {
+        "other": {
+          "jobs": 2,
+          "runner_seconds": 212.0,
+          "max_job_seconds": 200.0
+        },
+        "upstream preparation": {
+          "jobs": 2,
+          "runner_seconds": 1262.0,
+          "max_job_seconds": 691.0
+        },
+        "upstream tests": {
+          "jobs": 14,
+          "runner_seconds": 13780.0,
+          "max_job_seconds": 1620.0
+        }
+      },
+      "steps": {
+        "Run unchanged upstream suite with StreamFusion": {
+          "executions": 14,
+          "seconds": 12344.0
+        },
+        "Build Flink and StreamFusion once": {
+          "executions": 2,
+          "seconds": 1059.0
+        },
+        "Download and verify the shared build": {
+          "executions": 14,
+          "seconds": 620.0
+        },
+        "Require declared runtime audit routes": {
+          "executions": 14,
+          "seconds": 235.0
+        },
+        "Restore the shared build": {
+          "executions": 14,
+          "seconds": 210.0
+        },
+        "Run actions/upload-artifact@v4": {
+          "executions": 47,
+          "seconds": 208.0
+        },
+        "Run unchanged legacy Delta SQL tests against released Flink 1.18": {
+          "executions": 1,
+          "seconds": 184.0
+        },
+        "Run actions/checkout@v6": {
+          "executions": 18,
+          "seconds": 121.0
+        }
+      }
+    }
+  ],
+  "limits": [
+    "CI timing observations use the original debug-native test configuration, not SQL throughput benchmarks.",
+    "Complete post-change CI measurements are pending; local probes do not predict a full-workflow speedup."
+  ],
+  "jfr_probe": {
+    "jdk": "17.0.17",
+    "platform": "macOS arm64",
+    "fixture": "stock canonical group aggregate prefix; unchanged clean-process savepoint fixture",
+    "default_compiler_cpu_seconds": 8.745,
+    "first_tier_compiler_cpu_seconds": 1.888,
+    "limits": "One JFR-instrumented diagnostic per setting; Rust compilation was active concurrently. Used to identify compilation cost, not to claim elapsed-time speedup."
+  },
+  "reporter_checkout": {
+    "tracked_blob_bytes": 322940949,
+    "selected_blob_bytes": 41787
+  }
+}

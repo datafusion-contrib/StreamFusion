@@ -155,6 +155,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
           python3 -m unittest discover -s bin -p 'test_ci_runtime_test_shards.py'
           python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
+          python3 -m unittest discover -s bin -p 'test_profile_ci.py'
           python3 -m unittest discover -s bin -p 'test_package_release.py'
           python3 -m unittest discover -s bin -p 'test_build_release.py'
 
@@ -190,6 +191,7 @@ jobs:
           trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
           mvn -B -ntp ${{ matrix.profile }} test -Dnative.build.skip=true \
             "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/runtime-test-includes.txt" \
+            -DskipTests=${{ matrix.shard != 1 }} -Dsf.runtime.tests.skip=false \
             -Dsf.testForks=2 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx4g"
 
       - name: Verify JVM boundary defaults and optional cache on the freshly built native library
@@ -205,6 +207,7 @@ jobs:
           surefire:test@default-test
 
       - name: Check deployed Java 11 bytecode including embedded payloads
+        if: matrix.shard == 1
         run: |
           mvn -B -ntp ${{ matrix.profile }} package -DskipTests -Dnative.build.skip=true
           python3 -m unittest discover -s bin -p 'test_check_java_bytecode.py'
@@ -253,6 +256,8 @@ jobs:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     env:
       SF_KAFKA_INTEGRATION: 'true'
+      # Each handoff starts a fresh worker; optimizing compilation cannot amortize here.
+      JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1'
     steps:
       - uses: actions/checkout@v6
       - name: Free disk space
