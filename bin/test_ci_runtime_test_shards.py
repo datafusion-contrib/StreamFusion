@@ -43,22 +43,31 @@ class RuntimeTestShardsTest(unittest.TestCase):
                     self.assertLessEqual(max(map(len, canonical)), (118 + count - 1) // count)
                     self.assertEqual(118, sum(map(len, canonical)))
                     self.assertEqual(canonical, shards.partition(root, count, "canonical"))
-                    self.assertEqual(canonical, shards.partition(root, count, "canonical", durations={
-                        "tech/streamfusion/CanonicalCase0JobTest": 1000}))
+                    weighted = shards.partition(root, count, "canonical", durations={
+                        "tech/streamfusion/CanonicalCase0JobTest": 1000})
+                    self.assertEqual(Counter(n for part in canonical for n in part),
+                                     Counter(n for part in weighted for n in part))
             with self.assertRaises(ValueError):
                 shards.partition(root, 3, "unknown")
 
     def test_measured_costs_balance_long_classes_without_dropping_new_classes(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            names = {"LongTest": 90, "MediumTest": 60, "ShortTest": 30}
-            for name in (*names, "NewTest"):
-                (root / (name + ".class")).touch()
-            durations = {name: seconds for name, seconds in names.items()}
-            plan = shards.partition(root, 2, durations=durations)
-            self.assertEqual(Counter([*names, "NewTest"]), Counter(name for part in plan for name in part))
-            loads = [sum(durations.get(name, 1) for name in part) for part in plan]
-            self.assertEqual([91, 90], loads)
+        for suite in ("all", "runtime", "canonical"):
+            with self.subTest(suite=suite), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                def class_name(name):
+                    suffix = "Canonical" + name + "JobTest" if suite == "canonical" else name + "Test"
+                    return "tech/streamfusion/" + suffix
+                durations = {class_name(name): seconds for name, seconds in
+                             {"Long": 90, "Medium": 60, "Short": 30}.items()}
+                names = [*durations, class_name("New")]
+                for name in names:
+                    path = root / (name + ".class")
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.touch()
+                plan = shards.partition(root, 2, suite, durations=durations)
+                self.assertEqual(Counter(names), Counter(name for part in plan for name in part))
+                loads = [sum(durations.get(name, 1) for name in part) for part in plan]
+                self.assertEqual([91, 90], loads)
 
     def test_invalid_duration_estimates_fail_before_selecting_tests(self):
         with tempfile.TemporaryDirectory() as directory:

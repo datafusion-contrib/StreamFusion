@@ -54,12 +54,11 @@ def partition(classes, count, suite="all", durations=None):
         return max(0.001, durations.get(name, 1.0))
     shards = [[] for _ in range(count)]
     loads = [0.0] * count
-    ordered = candidates if suite == "canonical" else sorted(
+    ordered = sorted(
         candidates, key=lambda name: (name not in FIRST_SHARD_CLASSES, -cost(name), name))
-    for position, name in enumerate(ordered):
-        index = (position % count if suite == "canonical" else
-                 0 if name in FIRST_SHARD_CLASSES else min(
-                     range(count), key=lambda index: (loads[index], len(shards[index]), index)))
+    for name in ordered:
+        index = 0 if name in FIRST_SHARD_CLASSES else min(
+            range(count), key=lambda index: (loads[index], len(shards[index]), index))
         shards[index].append(name)
         loads[index] += cost(name)
     if any(not shard for shard in shards):

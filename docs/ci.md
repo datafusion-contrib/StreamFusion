@@ -519,17 +519,25 @@ yet available as a released CI fixture.
 ## Complete canonical job matrix
 
 Flink 2.2 canonical handoff jobs run in 16 additional required shards on each of JDK 11 and 17.
-The duration-based balancing above applies to runtime shards; canonical jobs retain their
-separate sorted round-robin allocation, independent of runtime duration estimates.
+Canonical jobs use the same duration-based balancing as runtime shards, with complete-job
+timings retained in `dev/ci/runtime-durations.json`. All 116 runnable canonical classes have
+recorded timings; the two abstract bases have zero cost. New classes use the same one-second
+default as ordinary runtime classes until measured.
 The existing three runtime shards retain all other default Surefire classes on both Flink lines.
 Both selections are computed from the compiled test inventory: their union is the original
-selection and their intersection is empty. Sorted round-robin allocation bounds the number of
-complete-job classes per canonical shard; test methods, inherited parameterized cases, nested
-classes and ORC tag handling are unchanged. Every canonical shard is required by `All CI tests`.
+selection and their intersection is empty. Balancing changes only class placement; test
+methods, inherited parameterized cases, nested classes and ORC tag handling are unchanged.
+Every canonical shard is required by `All CI tests`.
 Each runner uses two fresh 2 GiB Surefire JVMs, with process reuse disabled. This preserves all
 118 canonical classes on each JDK while reducing canonical runner jobs from 64 to 32. The stock
 and native worker processes retain their separate 1 GiB heaps; native memory and containers
 also need headroom. Full hosted CI remains the qualification for this scheduling change.
+
+The first combined run exhausted the three-hour JDK 11 limit after seven classes passed in
+one canonical shard. Its alphabetical round-robin selection combined several of the longest
+job suites. Recorded maximum XML class times from that run now spread this work across the
+same 16 shards per JDK. These times are scheduling hints, not performance measurements or
+passing-test evidence; all assertions and the complete canonical matrix remain required.
 
 These jobs share the exact-commit debug native artifact, retain their selection manifests and
 Surefire reports, and enable the existing Docker-backed Kafka canonical cases with
