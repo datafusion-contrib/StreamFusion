@@ -53,12 +53,13 @@ impl ScalarUDFImpl for IsJson {
         };
         let root = Path::parse("$", literal(unicode)?.unwrap_or(""))
             .ok_or_else(|| exec_datafusion_err!("Unsupported IS JSON runtime profile"))?;
-        let scalar = matches!(input, ColumnarValue::Scalar(_));
+        let scalar = matches!(input, ColumnarValue::Scalar(_)) && !super::json_path::scheduled();
         let input = input.to_array(if scalar { 1 } else { args.number_rows })?;
         let input = as_string_array(&input)?;
         let mut output = BooleanBuilder::with_capacity(input.len());
         with_reader(|reader| {
-            for document in input.iter() {
+            for (row, document) in input.iter().enumerate() {
+                reader.begin_row(row);
                 let valid =
                     document.is_some_and(|document| match reader.read_document(&root, document) {
                         Err(()) => false,

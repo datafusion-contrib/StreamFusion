@@ -1,0 +1,3012 @@
+{
+  "date": "2026-11-06",
+  "issue": 608,
+  "canonical_base": "a9f7c3589a6796e0ccb690d84472134e1212b818",
+  "previous_commit": "b01eba4d55d11462ea8ede141f51bc7223351c5a",
+  "platform": "26.5 arm64",
+  "cpu": "Apple M4 Pro",
+  "scope": "Multiple unconditional final JSON_VALUE/JSON_EXISTS/IS JSON/JSON_QUERY readers over direct character fields or literals. Preserve released row/projection-order recycler capacity while evaluating Arrow columns. The 2.2 planner retains generated evaluation for computed/conditional readers, JSON conditions and JVM evaluator combinations. Existing represented-string compatibility gates still apply; arbitrary mixed SQL reader kinds are not all admitted.",
+  "architecture": "Calc collects compatible direct reader inputs, applies a JSON-free filter, and acquires Jackson recycler metadata once per nonempty batch. A UTF-16-length schedule supplies each kernel the capacity at its row/projection position and publishes the final capacity once. Ordinary short documents avoid per-row tables and UTF-16 scans. TLS scope clears during normal completion and unwinding. Documents/results never enter a JVM JSON evaluator.",
+  "method": "Release whole-Calc production execution with all output columns checked and consumed. Stock starts on prebuilt Generic/Binary RowData; native starts on equivalent prebuilt Arrow RecordBatch. Rust timing starts after import/setup and ends before export; production kernels, intrinsic allocations/conversions and recycler metadata JNI remain timed. The actual preceding encoder/library retain previous native readers or 2.2 generated whole-Calc QUERY, including intrinsic JVM callbacks and conversions. Complete jobs retain planning/submission, runtime source/sink, JNI and both transposes.",
+  "configuration": {
+    "flink": [
+      "1.18.1",
+      "2.2.1"
+    ],
+    "timing_jdk": 17,
+    "focused_jdks": [
+      11,
+      17
+    ],
+    "java_release": 11,
+    "rust": "release --no-default-features; System allocator",
+    "batch_sizes": [
+      1024,
+      16
+    ],
+    "nullable": [
+      false,
+      true
+    ],
+    "binary_rowdata": [
+      false,
+      true
+    ],
+    "session_zone": "UTC",
+    "prepared_rows_per_trial": 32768,
+    "prepared_heap": "-Xmx1g",
+    "warmups": 8,
+    "measurements": 7,
+    "input": "Mixed objects/arrays containing duplicate escaped keys, surrogate escapes, Unicode, decimal/exponent spelling, NULL/missing/scalar selections and 640-byte text. Secondary document columns use an independent NULL pattern and corpus offset three. The performance corpus uses ordinary documents; boundary-growth correctness is qualified separately.",
+    "pipeline_rows": 1000000,
+    "pipeline_parallelism": 1,
+    "pipeline_heap": "-Xmx2g",
+    "pipeline_warmups": 2,
+    "pipeline_measurements": 5,
+    "timing_environment": "No concurrent tests/builds/benchmarks launched by this audit. Interactive desktop and unrelated external work remain active."
+  },
+  "correctness": {
+    "focused": {
+      "22-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=40 succeeded=40 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "22-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=40 succeeded=40 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=40 succeeded=40 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=40 succeeded=40 aborted=0 skipped=0 failed=0"
+        ]
+      }
+    },
+    "related": {
+      "22-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=716 succeeded=716 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=716 succeeded=702 aborted=14 skipped=0 failed=0"
+        ]
+      }
+    },
+    "released_json_suite": {
+      "22": {
+        "exit": 0,
+        "result": [
+          "RESULT found=489 succeeded=489 aborted=0 skipped=0 failed=0"
+        ],
+        "agent_sha256": "4ffbb8a23b993a32f09b2493dbaa92fec1b3ce9c0ec9c9184c9adde829305dd5"
+      },
+      "118": {
+        "exit": 0,
+        "result": [
+          "RESULT found=142 succeeded=142 aborted=0 skipped=0 failed=0"
+        ],
+        "agent_sha256": "4ffbb8a23b993a32f09b2493dbaa92fec1b3ce9c0ec9c9184c9adde829305dd5"
+      }
+    },
+    "rust_core": {
+      "passed": 938,
+      "failed": 0,
+      "ignored": 0
+    },
+    "evidence": "Full maps/schema on 5003 runtime rows with consumed NativeCalc and empty evaluator descriptors for admitted paths. Direct JNI comparisons cover reader pairs, same/independent inputs, scalar literal on either side, controlled capacities 4000/8000/16000/32768 and batches 1/3/all. Include long boundary numbers, nullable/Binary fields, filtering/empty results and retained conditional/computed generated routes. Mixed QUERY/EXISTS pairs are additionally checked at the raw JNI layer; their represented-type SQL combination remains generated.",
+    "related_aborts": "All 14 are released-1.18 capability assumptions: 13 JSON_QUOTE/JSON_UNQUOTE cases and one JSON() case. No unclassified abort, failure or skip.",
+    "qualification_builds": "Focused final qualification uses the same final DSO as performance. Broad related and unchanged released suites ran before Cargo target relocation on DSO b3c09114db0510576e70d0f3f3e66e4a84571d86c4f6de881a802f4a7d094575 with identical production source. The rebuilt final DSO has a different binary hash and was requalified across all four focused combinations.",
+    "excluded": "An incomplete initial performance pilot aborted on the benchmark consumer rejecting the preceding represented-string output. It is not qualification. The final consumer handles both physical representations, validates all output columns and uses identical candidate/previous fixture bytecode."
+  },
+  "interpretation": "All prepared stock gates win. Some bulk cells are slower than the preceding native implementation; this repair corrects previously observable wrong results and retains those costs. Complete-job comparisons include unfavorable previous-control ratios and startup. No machine-idle or universal speedup claim is made.",
+  "provenance": {
+    "source_sha256": {
+      "native/engine/examples/integral_expression.rs": "1f0fff09661086ceccbf97c852342b910a54e645a1df13e500122552135d590b",
+      "native/engine/src/bench.rs": "bdfcfa0798b679642c311f5e75e49b07431e325e05f930185b14b77c14073789",
+      "native/engine/src/calc.rs": "69af17203012fe6875a751375367d34931f159ad61171f24df12491c009ad4ab",
+      "native/engine/src/flink_functions/is_json.rs": "427a8556e2c756d8ad98ee228176094fd81f715e8232cc47eae2ea4db03ee72e",
+      "native/engine/src/flink_functions/json_exists.rs": "0603a83fd852fdadc3bd735b6c6b76ff35f704db8bc5fe8ffecfb00cc13520e6",
+      "native/engine/src/flink_functions/json_path.rs": "5ed1d0d2c17897797df78db43c1317fbcde80c2c8dd6a3b198792ddeeb0ff6d2",
+      "native/engine/src/flink_functions/json_path/runtime.rs": "6c244eed1ce9e5507c31a8100316a4b487e9e53838b3e165124686baeff69632",
+      "native/engine/src/flink_functions/json_path/simd.rs": "5caaae31d7abc2a7c4cdb3e0ee695b82021dd90679f4f46d44f31f937740d562",
+      "native/engine/src/flink_functions/json_query.rs": "17c79c6f0629e3e696139a15183a347066be7ff6bed894188bd896cb3fb20f24",
+      "native/engine/src/flink_functions/json_value.rs": "113f6b0b4e6ff92b5401b9ab31bfe38f1c1dd822f420ab396965e2921e658d85",
+      "native/engine/src/flink_functions/mod.rs": "4ab5caf9318852cbed6096b4ba2ce6175bc3eb92dd9869671bad2fb4d316be41",
+      "src/main/java/tech/streamfusion/planner/RexExpression.java": "75597dc942b414561be71cb7c19b7dccb5fbfedcfc5e003ee9e4fb31ad52a997",
+      "src/test/java/tech/streamfusion/FlinkJsonQueryScalarSqlHarnessTest.java": "7a129fbd60eb522cba3081992d6a5822bfc4ba85c2233735d558619748192cfb",
+      "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "d4323f099498f376a83de94d17c733225500874a61d6f08d62259ce6cccc8915",
+      "src/test/java/tech/streamfusion/NativeJsonBufferHistoryTest.java": "4884fa0efa1f0f9c41d07f65a004ec148182b759b1932558c5cf4c6798194b35",
+      "src/test/java/tech/streamfusion/NativeJsonQueryBufferHistoryTest.java": "7834b7faa8e90c3df843123cb12b4dee436a0ee49aa6735bae8692161c0d0984",
+      "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "65d21cf2b9600cdabe3f4dff5b5724bd5c0b0ef458544400fbb740d2c7d6061b",
+      "src/test/java/tech/streamfusion/FlinkJsonReaderScheduleSqlHarnessTest.java": "8c70043c0c6e08e9c9aac721b8a0b96ec1325d399f7486074878a1ac407247d4",
+      "src/test/java/tech/streamfusion/NativeJsonSharedBufferHistoryTest.java": "77323db9979ee15c7203b61bc4948cb0a069cb543e8ef59c1d2c08f70931db5d"
+    },
+    "fixture_class_sha256": {
+      "22": {
+        "candidate": {
+          "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "d62937b1ffc0170bfe39f2c896c219b1d0bf5b0f1d22e09773c930342828bf58",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$1.class": "ddec3bc05cd073ea4311a6a12e1f986b6b05c65a52cc688009330bae8305d262",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$2.class": "c587633bdc9c67b97dae75b23ade3c3b7d3c2a9e7dc1941752752dce4a7e6e9a",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "bac6a6b3fb6838f62cc6c3b51a12cb4340b80f0defd3680c2feadfd0066a4d07"
+        },
+        "previous": {
+          "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "d62937b1ffc0170bfe39f2c896c219b1d0bf5b0f1d22e09773c930342828bf58",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$1.class": "ddec3bc05cd073ea4311a6a12e1f986b6b05c65a52cc688009330bae8305d262",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$2.class": "c587633bdc9c67b97dae75b23ade3c3b7d3c2a9e7dc1941752752dce4a7e6e9a",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "bac6a6b3fb6838f62cc6c3b51a12cb4340b80f0defd3680c2feadfd0066a4d07"
+        }
+      },
+      "118": {
+        "candidate": {
+          "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "d62937b1ffc0170bfe39f2c896c219b1d0bf5b0f1d22e09773c930342828bf58",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$1.class": "ddec3bc05cd073ea4311a6a12e1f986b6b05c65a52cc688009330bae8305d262",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$2.class": "c587633bdc9c67b97dae75b23ade3c3b7d3c2a9e7dc1941752752dce4a7e6e9a",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "bac6a6b3fb6838f62cc6c3b51a12cb4340b80f0defd3680c2feadfd0066a4d07"
+        },
+        "previous": {
+          "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "d62937b1ffc0170bfe39f2c896c219b1d0bf5b0f1d22e09773c930342828bf58",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$1.class": "ddec3bc05cd073ea4311a6a12e1f986b6b05c65a52cc688009330bae8305d262",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$2.class": "c587633bdc9c67b97dae75b23ade3c3b7d3c2a9e7dc1941752752dce4a7e6e9a",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "bac6a6b3fb6838f62cc6c3b51a12cb4340b80f0defd3680c2feadfd0066a4d07"
+        }
+      }
+    },
+    "runtime": {
+      "candidate": {
+        "libstreamfusion.dylib": "745b36062f2ab561151bbe58f15daf18e0b6a50dd7e5fd7b3c8725b4b4b25c79",
+        "integral_expression": "ebb59292e4c98d2eaf7009698fd548ad7bd78b7ea15cfa30db78992b1ed2ac6a"
+      },
+      "previous": {
+        "libstreamfusion.dylib": "a7cd4ba1a25e69faf4097e8950041e679d65ec0fe9646ce95c98965b6a3282ab",
+        "integral_expression": "21030b711e971aff9657a9274e8b8f29eb2eea22c08b38b3f2430bfe27cbb1ab"
+      }
+    },
+    "encoder_instruction_sha256": {
+      "22": {
+        "tech.streamfusion.planner.RexExpression$1": "2d9b482027a2a28f87b9254285c8c1cfd2e3837e645dff78cc25918f13770ef4",
+        "tech.streamfusion.planner.RexExpression$10": "945bfd0a268503da77b06be76960d5927b7b8563c2d23733587c695e0ff7a798",
+        "tech.streamfusion.planner.RexExpression$2": "53cc33acb677be4c4afbd1471bd71a782531e5e360d06f9d97036ef6869911e7",
+        "tech.streamfusion.planner.RexExpression$3": "9dc530cdc58cdbed52160f5e266b132a6361978db25bcec14f809a7349d6a950",
+        "tech.streamfusion.planner.RexExpression$4": "0f414677ed88ebf71b4b2a843aa3ccbe435496669e0b9bbd952f136e4af70b2c",
+        "tech.streamfusion.planner.RexExpression$5": "dbed4bc676baf0faca21fe1d5efd742749760e5560a74f54011a4cc0fd8d65e0",
+        "tech.streamfusion.planner.RexExpression$6": "a70572b4afde49ff3dcebd7a6bc33c344617f44b276ba73a8d507e0b7595cd4a",
+        "tech.streamfusion.planner.RexExpression$7": "dcfe0d689533917fa3704258c16056e9fabcec6cd809018dc514510ef6a31289",
+        "tech.streamfusion.planner.RexExpression$8": "26ac8ad843486599583bc842be0e793151c7e2948d3eac45b40288f8920cde94",
+        "tech.streamfusion.planner.RexExpression$9": "d0f4682ee5a034b9bc1b102485e2d7bc5c8b848e0dc197fd732e41e8903bcd27",
+        "tech.streamfusion.planner.RexExpression$CalcEncoding": "9adc163617ce1fcebbd0ff0f28951b31c9739eb9dd6f972727fe72b7c68ee134",
+        "tech.streamfusion.planner.RexExpression$IntegralPositionRange": "3b72c33c79136de212aedf4d1f94aaad7450ffd1f4b67143f0c0ce372c1b1e02",
+        "tech.streamfusion.planner.RexExpression": "1f6dd869a83d4aba5cd8a3086b468601a5956e38c22e0b265af20a19422338d6"
+      },
+      "118": {
+        "tech.streamfusion.planner.RexExpression$1": "2d9b482027a2a28f87b9254285c8c1cfd2e3837e645dff78cc25918f13770ef4",
+        "tech.streamfusion.planner.RexExpression$10": "945bfd0a268503da77b06be76960d5927b7b8563c2d23733587c695e0ff7a798",
+        "tech.streamfusion.planner.RexExpression$2": "53cc33acb677be4c4afbd1471bd71a782531e5e360d06f9d97036ef6869911e7",
+        "tech.streamfusion.planner.RexExpression$3": "9dc530cdc58cdbed52160f5e266b132a6361978db25bcec14f809a7349d6a950",
+        "tech.streamfusion.planner.RexExpression$4": "0f414677ed88ebf71b4b2a843aa3ccbe435496669e0b9bbd952f136e4af70b2c",
+        "tech.streamfusion.planner.RexExpression$5": "dbed4bc676baf0faca21fe1d5efd742749760e5560a74f54011a4cc0fd8d65e0",
+        "tech.streamfusion.planner.RexExpression$6": "a70572b4afde49ff3dcebd7a6bc33c344617f44b276ba73a8d507e0b7595cd4a",
+        "tech.streamfusion.planner.RexExpression$7": "dcfe0d689533917fa3704258c16056e9fabcec6cd809018dc514510ef6a31289",
+        "tech.streamfusion.planner.RexExpression$8": "26ac8ad843486599583bc842be0e793151c7e2948d3eac45b40288f8920cde94",
+        "tech.streamfusion.planner.RexExpression$9": "d0f4682ee5a034b9bc1b102485e2d7bc5c8b848e0dc197fd732e41e8903bcd27",
+        "tech.streamfusion.planner.RexExpression$CalcEncoding": "9adc163617ce1fcebbd0ff0f28951b31c9739eb9dd6f972727fe72b7c68ee134",
+        "tech.streamfusion.planner.RexExpression$IntegralPositionRange": "3b72c33c79136de212aedf4d1f94aaad7450ffd1f4b67143f0c0ce372c1b1e02",
+        "tech.streamfusion.planner.RexExpression": "b00716bb69ad7c8b0356bdfd06c29cea32431cc5d8d8272c5442521c53838148"
+      }
+    },
+    "previous_native_git_tree": "ca00c3a59ad62152671f47af1d180f79eb825592",
+    "previous_runtime_source": "Exact b01 production tree. Only identical benchmark example and the benchmark-only multi-output helper assertion change; preceding production encoding and native runtime remain intact.",
+    "cargo_lock_sha256": "864dbbbc38fde636abc9ffe0137dd6587b394e65ab9ba46ba7c24390d55ed16e"
+  },
+  "prepared": {
+    "22": {
+      "0": {
+        "shape": "same-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(v,'$.missing')",
+        "type": "VARCHAR(4096)",
+        "secondary": "",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1416.4657592773438,
+            "min": 1373.2706604003906,
+            "max": 1432.5320129394531
+          },
+          "native": {
+            "median": 178.85336303710938,
+            "min": 171.9512939453125,
+            "max": 182.95669555664062
+          },
+          "prior-stock": {
+            "median": 1365.6730651855469,
+            "min": 1346.2588195800781,
+            "max": 1415.0746459960938
+          },
+          "previous": {
+            "median": 181.24771118164062,
+            "min": 178.01409912109375,
+            "max": 189.20516967773438
+          }
+        }
+      },
+      "4": {
+        "shape": "independent-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(n,'$.a')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1560.2709655761719,
+            "min": 1551.9383544921875,
+            "max": 1575.476318359375
+          },
+          "native": {
+            "median": 187.21896362304688,
+            "min": 184.39102172851562,
+            "max": 192.95883178710938
+          },
+          "prior-stock": {
+            "median": 1580.2739562988281,
+            "min": 1557.1441650390625,
+            "max": 1679.7586975097656
+          },
+          "previous": {
+            "median": 181.73980712890625,
+            "min": 172.68753051757812,
+            "max": 200.31103515625
+          }
+        }
+      },
+      "8": {
+        "shape": "value-predicate",
+        "expression": "JSON_VALUE(v,'$.a'),n IS JSON OBJECT",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 941.198974609375,
+            "min": 924.4728088378906,
+            "max": 1002.5838012695312
+          },
+          "native": {
+            "median": 169.0584716796875,
+            "min": 161.828369140625,
+            "max": 171.25448608398438
+          },
+          "prior-stock": {
+            "median": 1009.1412963867188,
+            "min": 993.2390747070312,
+            "max": 1207.9378662109375
+          },
+          "previous": {
+            "median": 172.03775024414062,
+            "min": 169.52005004882812,
+            "max": 177.62503051757812
+          }
+        }
+      },
+      "12": {
+        "shape": "independent-queries",
+        "expression": "JSON_QUERY(v,'$.a'),JSON_QUERY(n,'$')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1211.4651794433594,
+            "min": 1179.8489990234375,
+            "max": 1251.7738342285156
+          },
+          "native": {
+            "median": 754.4212341308594,
+            "min": 748.3253479003906,
+            "max": 764.7984619140625
+          },
+          "prior-stock": {
+            "median": 1242.218017578125,
+            "min": 1231.103271484375,
+            "max": 1266.1069030761719
+          },
+          "previous": {
+            "median": 1703.6755981445312,
+            "min": 1656.74462890625,
+            "max": 1834.1268005371094
+          }
+        }
+      },
+      "16": {
+        "shape": "same-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(v,'$.missing')",
+        "type": "VARCHAR(4096)",
+        "secondary": "",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 1170.1812744140625,
+            "min": 1161.5753173828125,
+            "max": 1194.0714416503906
+          },
+          "native": {
+            "median": 408.6697998046875,
+            "min": 403.113037109375,
+            "max": 417.7220764160156
+          },
+          "prior-stock": {
+            "median": 1192.6015319824219,
+            "min": 1170.8412170410156,
+            "max": 1210.9375
+          },
+          "previous": {
+            "median": 536.3794860839844,
+            "min": 508.14056396484375,
+            "max": 545.4940795898438
+          }
+        }
+      },
+      "1": {
+        "shape": "same-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(v,'$.missing')",
+        "type": "VARCHAR(4096)",
+        "secondary": "",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1288.03125,
+            "min": 1274.4712829589844,
+            "max": 1345.422119140625
+          },
+          "native": {
+            "median": 176.75906372070312,
+            "min": 173.94384765625,
+            "max": 194.01296997070312
+          },
+          "prior-stock": {
+            "median": 1723.6989135742188,
+            "min": 1381.4888000488281,
+            "max": 1889.5988464355469
+          },
+          "previous": {
+            "median": 178.78469848632812,
+            "min": 172.72186279296875,
+            "max": 182.74942016601562
+          }
+        }
+      },
+      "2": {
+        "shape": "same-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(v,'$.missing')",
+        "type": "VARCHAR(4096)",
+        "secondary": "",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1226.3043518066406,
+            "min": 1185.7197875976562,
+            "max": 1283.8592529296875
+          },
+          "native": {
+            "median": 160.28594970703125,
+            "min": 151.3582763671875,
+            "max": 161.57025146484375
+          },
+          "prior-stock": {
+            "median": 1081.8990173339844,
+            "min": 1061.6582336425781,
+            "max": 1129.248291015625
+          },
+          "previous": {
+            "median": 155.58114624023438,
+            "min": 152.96810913085938,
+            "max": 160.186767578125
+          }
+        }
+      },
+      "3": {
+        "shape": "same-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(v,'$.missing')",
+        "type": "VARCHAR(4096)",
+        "secondary": "",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1261.2253723144531,
+            "min": 1235.1099548339844,
+            "max": 1333.8979187011719
+          },
+          "native": {
+            "median": 156.982421875,
+            "min": 151.2603759765625,
+            "max": 166.74929809570312
+          },
+          "prior-stock": {
+            "median": 1240.4772644042969,
+            "min": 1212.506591796875,
+            "max": 1269.1625061035156
+          },
+          "previous": {
+            "median": 158.1331787109375,
+            "min": 155.91049194335938,
+            "max": 163.11007690429688
+          }
+        }
+      },
+      "5": {
+        "shape": "independent-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(n,'$.a')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1629.5814514160156,
+            "min": 1609.4296569824219,
+            "max": 1647.6415100097656
+          },
+          "native": {
+            "median": 180.67550659179688,
+            "min": 177.56015014648438,
+            "max": 194.79751586914062
+          },
+          "prior-stock": {
+            "median": 1644.8465881347656,
+            "min": 1623.5173645019531,
+            "max": 1881.0564575195312
+          },
+          "previous": {
+            "median": 179.32257080078125,
+            "min": 174.62921142578125,
+            "max": 182.49002075195312
+          }
+        }
+      },
+      "6": {
+        "shape": "independent-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(n,'$.a')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1360.7749938964844,
+            "min": 1346.1799621582031,
+            "max": 1386.7861633300781
+          },
+          "native": {
+            "median": 169.23904418945312,
+            "min": 160.67886352539062,
+            "max": 173.94638061523438
+          },
+          "prior-stock": {
+            "median": 1360.3350219726562,
+            "min": 1324.4247436523438,
+            "max": 1409.3640747070312
+          },
+          "previous": {
+            "median": 168.59307861328125,
+            "min": 160.90011596679688,
+            "max": 178.24044799804688
+          }
+        }
+      },
+      "7": {
+        "shape": "independent-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(n,'$.a')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1446.1479187011719,
+            "min": 1410.2147521972656,
+            "max": 1494.7789306640625
+          },
+          "native": {
+            "median": 165.11663818359375,
+            "min": 163.33517456054688,
+            "max": 176.57852172851562
+          },
+          "prior-stock": {
+            "median": 1403.9472045898438,
+            "min": 1388.8143005371094,
+            "max": 1430.9844970703125
+          },
+          "previous": {
+            "median": 167.54275512695312,
+            "min": 161.23834228515625,
+            "max": 170.40762329101562
+          }
+        }
+      },
+      "9": {
+        "shape": "value-predicate",
+        "expression": "JSON_VALUE(v,'$.a'),n IS JSON OBJECT",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1041.2686462402344,
+            "min": 1030.493408203125,
+            "max": 1067.4476623535156
+          },
+          "native": {
+            "median": 173.57888793945312,
+            "min": 168.0577392578125,
+            "max": 179.37469482421875
+          },
+          "prior-stock": {
+            "median": 1067.3027038574219,
+            "min": 1037.3344421386719,
+            "max": 1172.0072326660156
+          },
+          "previous": {
+            "median": 174.71185302734375,
+            "min": 168.49771118164062,
+            "max": 176.93963623046875
+          }
+        }
+      },
+      "10": {
+        "shape": "value-predicate",
+        "expression": "JSON_VALUE(v,'$.a'),n IS JSON OBJECT",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 893.49365234375,
+            "min": 871.0390625,
+            "max": 1114.4040222167969
+          },
+          "native": {
+            "median": 155.32174682617188,
+            "min": 151.91268920898438,
+            "max": 164.78094482421875
+          },
+          "prior-stock": {
+            "median": 893.8662109375,
+            "min": 851.6591491699219,
+            "max": 1167.48046875
+          },
+          "previous": {
+            "median": 156.5615234375,
+            "min": 150.22659301757812,
+            "max": 163.53353881835938
+          }
+        }
+      },
+      "11": {
+        "shape": "value-predicate",
+        "expression": "JSON_VALUE(v,'$.a'),n IS JSON OBJECT",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1244.5945739746094,
+            "min": 1187.6373291015625,
+            "max": 1368.0534362792969
+          },
+          "native": {
+            "median": 156.7840576171875,
+            "min": 154.34140014648438,
+            "max": 163.91372680664062
+          },
+          "prior-stock": {
+            "median": 1214.9747314453125,
+            "min": 1185.6346130371094,
+            "max": 1327.8783264160156
+          },
+          "previous": {
+            "median": 154.94155883789062,
+            "min": 149.45730590820312,
+            "max": 161.34133911132812
+          }
+        }
+      },
+      "13": {
+        "shape": "independent-queries",
+        "expression": "JSON_QUERY(v,'$.a'),JSON_QUERY(n,'$')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1376.3351440429688,
+            "min": 1338.4488525390625,
+            "max": 1861.1831665039062
+          },
+          "native": {
+            "median": 750.1919860839844,
+            "min": 712.8232421875,
+            "max": 761.28515625
+          },
+          "prior-stock": {
+            "median": 1333.3625793457031,
+            "min": 1314.7773742675781,
+            "max": 1360.4253234863281
+          },
+          "previous": {
+            "median": 1695.0213012695312,
+            "min": 1646.9675903320312,
+            "max": 1756.2942504882812
+          }
+        }
+      },
+      "14": {
+        "shape": "independent-queries",
+        "expression": "JSON_QUERY(v,'$.a'),JSON_QUERY(n,'$')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1231.9971618652344,
+            "min": 1079.0379943847656,
+            "max": 1251.4750366210938
+          },
+          "native": {
+            "median": 655.8329162597656,
+            "min": 624.7456970214844,
+            "max": 679.2348327636719
+          },
+          "prior-stock": {
+            "median": 1113.8114929199219,
+            "min": 1075.79931640625,
+            "max": 1152.8294982910156
+          },
+          "previous": {
+            "median": 1528.01513671875,
+            "min": 1451.4732360839844,
+            "max": 1557.1072998046875
+          }
+        }
+      },
+      "15": {
+        "shape": "independent-queries",
+        "expression": "JSON_QUERY(v,'$.a'),JSON_QUERY(n,'$')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1336.6826171875,
+            "min": 1189.3895568847656,
+            "max": 1413.2169189453125
+          },
+          "native": {
+            "median": 658.0632629394531,
+            "min": 631.9071350097656,
+            "max": 679.0911254882812
+          },
+          "prior-stock": {
+            "median": 1173.5191345214844,
+            "min": 1141.8583984375,
+            "max": 1365.3907775878906
+          },
+          "previous": {
+            "median": 1524.42041015625,
+            "min": 1408.1357116699219,
+            "max": 1571.9388427734375
+          }
+        }
+      },
+      "17": {
+        "shape": "independent-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(n,'$.a')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 1382.1678161621094,
+            "min": 1368.9066772460938,
+            "max": 1417.3316955566406
+          },
+          "native": {
+            "median": 425.1492614746094,
+            "min": 412.3268127441406,
+            "max": 431.7843322753906
+          },
+          "prior-stock": {
+            "median": 1386.2800598144531,
+            "min": 1380.0977172851562,
+            "max": 1396.2262573242188
+          },
+          "previous": {
+            "median": 544.3331604003906,
+            "min": 538.9366149902344,
+            "max": 565.4080810546875
+          }
+        }
+      },
+      "18": {
+        "shape": "value-predicate",
+        "expression": "JSON_VALUE(v,'$.a'),n IS JSON OBJECT",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 926.8989562988281,
+            "min": 909.1631469726562,
+            "max": 993.5048522949219
+          },
+          "native": {
+            "median": 396.7933654785156,
+            "min": 385.3632507324219,
+            "max": 413.7458801269531
+          },
+          "prior-stock": {
+            "median": 1229.021728515625,
+            "min": 1201.5863952636719,
+            "max": 1295.5245971679688
+          },
+          "previous": {
+            "median": 518.8865661621094,
+            "min": 504.3792724609375,
+            "max": 530.7731628417969
+          }
+        }
+      },
+      "19": {
+        "shape": "independent-queries",
+        "expression": "JSON_QUERY(v,'$.a'),JSON_QUERY(n,'$')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 1218.5274658203125,
+            "min": 1072.9230346679688,
+            "max": 1523.9906311035156
+          },
+          "native": {
+            "median": 881.1238403320312,
+            "min": 863.7873229980469,
+            "max": 911.2930297851562
+          },
+          "prior-stock": {
+            "median": 1080.92626953125,
+            "min": 1059.2931213378906,
+            "max": 1093.2273864746094
+          },
+          "previous": {
+            "median": 4386.811584472656,
+            "min": 4252.541839599609,
+            "max": 4434.226989746094
+          }
+        }
+      }
+    },
+    "118": {
+      "0": {
+        "shape": "same-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(v,'$.missing')",
+        "type": "VARCHAR(4096)",
+        "secondary": "",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1375.6039733886719,
+            "min": 1347.1781311035156,
+            "max": 1515.7038269042969
+          },
+          "native": {
+            "median": 189.2178955078125,
+            "min": 183.04571533203125,
+            "max": 196.5548095703125
+          },
+          "prior-stock": {
+            "median": 1348.9163818359375,
+            "min": 1329.4029235839844,
+            "max": 1375.7044372558594
+          },
+          "previous": {
+            "median": 189.7430419921875,
+            "min": 185.9130859375,
+            "max": 191.0985107421875
+          }
+        }
+      },
+      "1": {
+        "shape": "same-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(v,'$.missing')",
+        "type": "VARCHAR(4096)",
+        "secondary": "",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1421.2048950195312,
+            "min": 1408.3086547851562,
+            "max": 1435.3968200683594
+          },
+          "native": {
+            "median": 187.62716674804688,
+            "min": 183.72216796875,
+            "max": 196.7926025390625
+          },
+          "prior-stock": {
+            "median": 1415.3658447265625,
+            "min": 1396.5174255371094,
+            "max": 1582.7001037597656
+          },
+          "previous": {
+            "median": 185.46295166015625,
+            "min": 183.46405029296875,
+            "max": 192.42987060546875
+          }
+        }
+      },
+      "2": {
+        "shape": "same-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(v,'$.missing')",
+        "type": "VARCHAR(4096)",
+        "secondary": "",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1278.3152465820312,
+            "min": 1247.9400634765625,
+            "max": 1310.6142578125
+          },
+          "native": {
+            "median": 177.21939086914062,
+            "min": 167.29736328125,
+            "max": 180.53054809570312
+          },
+          "prior-stock": {
+            "median": 1102.3216247558594,
+            "min": 1088.43994140625,
+            "max": 1167.5669250488281
+          },
+          "previous": {
+            "median": 165.79183959960938,
+            "min": 162.22891235351562,
+            "max": 172.70660400390625
+          }
+        }
+      },
+      "3": {
+        "shape": "same-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(v,'$.missing')",
+        "type": "VARCHAR(4096)",
+        "secondary": "",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1281.7192077636719,
+            "min": 1244.1609497070312,
+            "max": 1341.9392700195312
+          },
+          "native": {
+            "median": 170.32623291015625,
+            "min": 167.16384887695312,
+            "max": 176.01394653320312
+          },
+          "prior-stock": {
+            "median": 1157.2761535644531,
+            "min": 1140.8780517578125,
+            "max": 1224.9984741210938
+          },
+          "previous": {
+            "median": 170.99887084960938,
+            "min": 162.63833618164062,
+            "max": 176.08895874023438
+          }
+        }
+      },
+      "4": {
+        "shape": "independent-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(n,'$.a')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1542.4753723144531,
+            "min": 1513.2738952636719,
+            "max": 1569.665283203125
+          },
+          "native": {
+            "median": 194.99334716796875,
+            "min": 186.03897094726562,
+            "max": 199.86087036132812
+          },
+          "prior-stock": {
+            "median": 1549.3011474609375,
+            "min": 1502.3905639648438,
+            "max": 1616.39404296875
+          },
+          "previous": {
+            "median": 197.68649291992188,
+            "min": 193.169921875,
+            "max": 202.9202880859375
+          }
+        }
+      },
+      "5": {
+        "shape": "independent-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(n,'$.a')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1587.2573852539062,
+            "min": 1559.9416198730469,
+            "max": 1605.6137084960938
+          },
+          "native": {
+            "median": 195.9228515625,
+            "min": 190.8594970703125,
+            "max": 199.0330810546875
+          },
+          "prior-stock": {
+            "median": 1644.1472473144531,
+            "min": 1603.45458984375,
+            "max": 1704.6292724609375
+          },
+          "previous": {
+            "median": 201.34991455078125,
+            "min": 194.9552001953125,
+            "max": 206.4666748046875
+          }
+        }
+      },
+      "6": {
+        "shape": "independent-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(n,'$.a')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1316.5448608398438,
+            "min": 1300.8587951660156,
+            "max": 1336.8390502929688
+          },
+          "native": {
+            "median": 176.40432739257812,
+            "min": 173.81539916992188,
+            "max": 187.48855590820312
+          },
+          "prior-stock": {
+            "median": 1371.7295532226562,
+            "min": 1363.1706237792969,
+            "max": 1387.82373046875
+          },
+          "previous": {
+            "median": 180.25079345703125,
+            "min": 175.14547729492188,
+            "max": 183.96759033203125
+          }
+        }
+      },
+      "7": {
+        "shape": "independent-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(n,'$.a')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1465.3447570800781,
+            "min": 1450.8883056640625,
+            "max": 1513.3412475585938
+          },
+          "native": {
+            "median": 183.90655517578125,
+            "min": 172.71041870117188,
+            "max": 194.61187744140625
+          },
+          "prior-stock": {
+            "median": 1481.2520446777344,
+            "min": 1430.6729736328125,
+            "max": 1500.3217163085938
+          },
+          "previous": {
+            "median": 181.2222900390625,
+            "min": 172.31243896484375,
+            "max": 188.025146484375
+          }
+        }
+      },
+      "8": {
+        "shape": "value-predicate",
+        "expression": "JSON_VALUE(v,'$.a'),n IS JSON OBJECT",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 959.5832824707031,
+            "min": 943.7599182128906,
+            "max": 972.253173828125
+          },
+          "native": {
+            "median": 190.56320190429688,
+            "min": 183.70181274414062,
+            "max": 191.59188842773438
+          },
+          "prior-stock": {
+            "median": 956.7769470214844,
+            "min": 935.7083435058594,
+            "max": 1075.8069458007812
+          },
+          "previous": {
+            "median": 188.812255859375,
+            "min": 179.95199584960938,
+            "max": 190.1397705078125
+          }
+        }
+      },
+      "9": {
+        "shape": "value-predicate",
+        "expression": "JSON_VALUE(v,'$.a'),n IS JSON OBJECT",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1074.7706298828125,
+            "min": 1006.5714416503906,
+            "max": 1097.5621643066406
+          },
+          "native": {
+            "median": 185.55831909179688,
+            "min": 177.343994140625,
+            "max": 192.56210327148438
+          },
+          "prior-stock": {
+            "median": 1182.7850341796875,
+            "min": 1133.2015991210938,
+            "max": 1285.3584289550781
+          },
+          "previous": {
+            "median": 182.0589599609375,
+            "min": 180.78866577148438,
+            "max": 186.10256958007812
+          }
+        }
+      },
+      "10": {
+        "shape": "value-predicate",
+        "expression": "JSON_VALUE(v,'$.a'),n IS JSON OBJECT",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 883.9607238769531,
+            "min": 843.0277404785156,
+            "max": 1067.7210693359375
+          },
+          "native": {
+            "median": 167.28335571289062,
+            "min": 163.9735107421875,
+            "max": 170.39871215820312
+          },
+          "prior-stock": {
+            "median": 883.2804260253906,
+            "min": 875.1068115234375,
+            "max": 912.1284484863281
+          },
+          "previous": {
+            "median": 166.93878173828125,
+            "min": 161.22564697265625,
+            "max": 171.92330932617188
+          }
+        }
+      },
+      "11": {
+        "shape": "value-predicate",
+        "expression": "JSON_VALUE(v,'$.a'),n IS JSON OBJECT",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1170.2448425292969,
+            "min": 1145.8345947265625,
+            "max": 1367.13916015625
+          },
+          "native": {
+            "median": 167.944580078125,
+            "min": 161.72918701171875,
+            "max": 175.37945556640625
+          },
+          "prior-stock": {
+            "median": 998.6928100585938,
+            "min": 970.6014099121094,
+            "max": 1173.1046142578125
+          },
+          "previous": {
+            "median": 168.4417724609375,
+            "min": 160.45123291015625,
+            "max": 170.440673828125
+          }
+        }
+      },
+      "12": {
+        "shape": "independent-queries",
+        "expression": "JSON_QUERY(v,'$.a'),JSON_QUERY(n,'$')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1199.3764343261719,
+            "min": 1121.5413513183594,
+            "max": 1382.8214111328125
+          },
+          "native": {
+            "median": 767.3479614257812,
+            "min": 727.3216247558594,
+            "max": 802.2384643554688
+          },
+          "prior-stock": {
+            "median": 1162.6561279296875,
+            "min": 1128.9075317382812,
+            "max": 1229.1590576171875
+          },
+          "previous": {
+            "median": 724.3448791503906,
+            "min": 695.4002380371094,
+            "max": 741.6051330566406
+          }
+        }
+      },
+      "13": {
+        "shape": "independent-queries",
+        "expression": "JSON_QUERY(v,'$.a'),JSON_QUERY(n,'$')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1319.6156616210938,
+            "min": 1223.6048583984375,
+            "max": 1521.4487609863281
+          },
+          "native": {
+            "median": 760.3963317871094,
+            "min": 716.3912658691406,
+            "max": 832.2893676757812
+          },
+          "prior-stock": {
+            "median": 1242.7024841308594,
+            "min": 1215.4121398925781,
+            "max": 1318.6620178222656
+          },
+          "previous": {
+            "median": 736.2569274902344,
+            "min": 716.7256469726562,
+            "max": 748.6406860351562
+          }
+        }
+      },
+      "14": {
+        "shape": "independent-queries",
+        "expression": "JSON_QUERY(v,'$.a'),JSON_QUERY(n,'$')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1203.4721374511719,
+            "min": 1052.8640747070312,
+            "max": 1319.7746276855469
+          },
+          "native": {
+            "median": 668.6388854980469,
+            "min": 651.2247619628906,
+            "max": 693.8883361816406
+          },
+          "prior-stock": {
+            "median": 1103.0260620117188,
+            "min": 1048.4848022460938,
+            "max": 1257.1614685058594
+          },
+          "previous": {
+            "median": 653.25927734375,
+            "min": 637.0976867675781,
+            "max": 674.74365234375
+          }
+        }
+      },
+      "15": {
+        "shape": "independent-queries",
+        "expression": "JSON_QUERY(v,'$.a'),JSON_QUERY(n,'$')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 1301.1080322265625,
+            "min": 1116.8060302734375,
+            "max": 1364.1459045410156
+          },
+          "native": {
+            "median": 684.7763061523438,
+            "min": 675.8448486328125,
+            "max": 695.0912475585938
+          },
+          "prior-stock": {
+            "median": 1132.3496398925781,
+            "min": 1077.5782165527344,
+            "max": 1441.6364135742188
+          },
+          "previous": {
+            "median": 664.8267211914062,
+            "min": 656.8349304199219,
+            "max": 675.8842468261719
+          }
+        }
+      },
+      "16": {
+        "shape": "same-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(v,'$.missing')",
+        "type": "VARCHAR(4096)",
+        "secondary": "",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 1169.8493957519531,
+            "min": 1137.9356384277344,
+            "max": 1191.5512084960938
+          },
+          "native": {
+            "median": 425.8626403808594,
+            "min": 416.9947204589844,
+            "max": 442.10308837890625
+          },
+          "prior-stock": {
+            "median": 1134.3955993652344,
+            "min": 1111.0928649902344,
+            "max": 1159.5255432128906
+          },
+          "previous": {
+            "median": 524.3492126464844,
+            "min": 519.6482543945312,
+            "max": 527.9032592773438
+          }
+        }
+      },
+      "17": {
+        "shape": "independent-values",
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(n,'$.a')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 1369.5068359375,
+            "min": 1339.4686584472656,
+            "max": 1399.0287780761719
+          },
+          "native": {
+            "median": 434.7623291015625,
+            "min": 418.2344970703125,
+            "max": 465.0866394042969
+          },
+          "prior-stock": {
+            "median": 1347.0636901855469,
+            "min": 1329.3215637207031,
+            "max": 1423.4085083007812
+          },
+          "previous": {
+            "median": 540.2094421386719,
+            "min": 532.4211120605469,
+            "max": 546.4591979980469
+          }
+        }
+      },
+      "18": {
+        "shape": "value-predicate",
+        "expression": "JSON_VALUE(v,'$.a'),n IS JSON OBJECT",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 999.0298156738281,
+            "min": 981.4478454589844,
+            "max": 1109.4512939453125
+          },
+          "native": {
+            "median": 401.5935363769531,
+            "min": 393.951416015625,
+            "max": 412.5150146484375
+          },
+          "prior-stock": {
+            "median": 1128.6112670898438,
+            "min": 1096.906005859375,
+            "max": 1220.3903198242188
+          },
+          "previous": {
+            "median": 549.0074157714844,
+            "min": 546.4299621582031,
+            "max": 574.7273864746094
+          }
+        }
+      },
+      "19": {
+        "shape": "independent-queries",
+        "expression": "JSON_QUERY(v,'$.a'),JSON_QUERY(n,'$')",
+        "type": "VARCHAR(4096)",
+        "secondary": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 1103.9530334472656,
+            "min": 1031.7726135253906,
+            "max": 1202.606201171875
+          },
+          "native": {
+            "median": 909.8714294433594,
+            "min": 908.07470703125,
+            "max": 951.6855773925781
+          },
+          "prior-stock": {
+            "median": 1045.7140502929688,
+            "min": 1018.774658203125,
+            "max": 1279.4545593261719
+          },
+          "previous": {
+            "median": 1036.7215270996094,
+            "min": 1014.0914916992188,
+            "max": 1051.0152282714844
+          }
+        }
+      }
+    }
+  },
+  "complete_job": {
+    "22": {
+      "independent-values": {
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(n,'$.a')",
+        "secondary": "VARCHAR(4096)",
+        "type": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.971437458
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.709411334
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.593141917
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.341895417
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.333345125
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.591830167
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.576339042
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.315718167
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.304561542
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.579097458
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.582267333
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.319493125
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.31325625
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.588398083
+              }
+            ],
+            "stats": {
+              "native": {
+                "median": 0.582267333,
+                "min": 0.576339042,
+                "max": 0.591830167
+              },
+              "stock": {
+                "median": 2.315718167,
+                "min": 2.304561542,
+                "max": 2.333345125
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.769953167
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.7539105
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.590935625
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.250126542
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.235133458
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.581413542
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.584894459
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.265289708
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.234396584
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.561516667
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.56138375
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.228019042
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.275222
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.579874833
+              }
+            ],
+            "stats": {
+              "previous": {
+                "median": 0.579874833,
+                "min": 0.56138375,
+                "max": 0.584894459
+              },
+              "stock": {
+                "median": 2.235133458,
+                "min": 2.228019042,
+                "max": 2.275222
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.2514413633306354,
+        "native_over_previous": 1.0041258903884867
+      },
+      "value-predicate": {
+        "expression": "JSON_VALUE(v,'$.a'),n IS JSON OBJECT",
+        "secondary": "VARCHAR(4096)",
+        "type": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.168471542
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.836032541
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.688739459
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.758858875
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.769009584
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.6454215
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.631122708
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.76870675
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.739869625
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.61928125
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.632368625
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.756066583
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.77212225
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.627144083
+              }
+            ],
+            "stats": {
+              "native": {
+                "median": 0.631122708,
+                "min": 0.61928125,
+                "max": 0.6454215
+              },
+              "stock": {
+                "median": 1.76870675,
+                "min": 1.739869625,
+                "max": 1.77212225
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.169316333
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.840459709
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.644416917
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.733650958
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.736649375
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.620700041
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.623374583
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.758934416
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.753853125
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.612302875
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.624778875
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.744449875
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.747669625
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.6138415
+              }
+            ],
+            "stats": {
+              "previous": {
+                "median": 0.620700041,
+                "min": 0.612302875,
+                "max": 0.624778875
+              },
+              "stock": {
+                "median": 1.747669625,
+                "min": 1.736649375,
+                "max": 1.758934416
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.3568272174005103,
+        "native_over_previous": 1.0167917936386925
+      },
+      "independent-queries": {
+        "expression": "JSON_QUERY(v,'$.a'),JSON_QUERY(n,'$')",
+        "secondary": "VARCHAR(4096)",
+        "type": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.28344925
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.61128525
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.421576875
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.715141
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.662245458
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.414943083
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.404759916
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.659874708
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.677336833
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.409941292
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.386373292
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.672233042
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.706269166
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.408746209
+              }
+            ],
+            "stats": {
+              "native": {
+                "median": 1.408746209,
+                "min": 1.386373292,
+                "max": 1.414943083
+              },
+              "stock": {
+                "median": 1.672233042,
+                "min": 1.659874708,
+                "max": 1.706269166
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.222568917
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.598652125
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.3903925
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.688245375
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.672449875
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.3728695
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.387676875
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.6888155
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.679318209
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.324535709
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.36956025
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.659598292
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.649810834
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.322450416
+              }
+            ],
+            "stats": {
+              "previous": {
+                "median": 2.36956025,
+                "min": 2.322450416,
+                "max": 2.387676875
+              },
+              "stock": {
+                "median": 1.672449875,
+                "min": 1.649810834,
+                "max": 1.6888155
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.8424341426211336,
+        "native_over_previous": 0.5945179950583658
+      }
+    },
+    "118": {
+      "independent-values": {
+        "expression": "JSON_VALUE(v,'$.a'),JSON_VALUE(n,'$.a')",
+        "secondary": "VARCHAR(4096)",
+        "type": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.771136875
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.794460083
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.620049708
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.297732292
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.273660875
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.598701042
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.584046875
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.328678
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.32824575
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.588967375
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.579815
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.328363
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.315503958
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.592730583
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 2.32824575,
+                "min": 2.273660875,
+                "max": 2.328678
+              },
+              "native": {
+                "median": 0.588967375,
+                "min": 0.579815,
+                "max": 0.598701042
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.718338292
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.772592791
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.573119625
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.33760425
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.305112125
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.588475917
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.587853125
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.342214125
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.292284208
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.576879709
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.588074125
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.312884625
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 2.295339875
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.580553083
+              }
+            ],
+            "stats": {
+              "previous": {
+                "median": 0.587853125,
+                "min": 0.576879709,
+                "max": 0.588475917
+              },
+              "stock": {
+                "median": 2.305112125,
+                "min": 2.292284208,
+                "max": 2.342214125
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.2529661548829199,
+        "native_over_previous": 1.0018954564543652
+      },
+      "value-predicate": {
+        "expression": "JSON_VALUE(v,'$.a'),n IS JSON OBJECT",
+        "secondary": "VARCHAR(4096)",
+        "type": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.129190625
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.782587208
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.632184875
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.695845375
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.702368583
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.630358375
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.616521792
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.686564
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.665335916
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.624596958
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.6080665
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.672111666
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.6789785
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.626523833
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 1.6789785,
+                "min": 1.665335916,
+                "max": 1.702368583
+              },
+              "native": {
+                "median": 0.624596958,
+                "min": 0.6080665,
+                "max": 0.630358375
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.378413375
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.80409925
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.638598792
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.721219583
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.738867875
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.660719417
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.6291355
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.730930209
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.746707458
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.616214166
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.618054459
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.742810417
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.725632834
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.603963875
+              }
+            ],
+            "stats": {
+              "previous": {
+                "median": 0.618054459,
+                "min": 0.603963875,
+                "max": 0.660719417
+              },
+              "stock": {
+                "median": 1.738867875,
+                "min": 1.725632834,
+                "max": 1.746707458
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.37201009899769416,
+        "native_over_previous": 1.0105856351406082
+      },
+      "independent-queries": {
+        "expression": "JSON_QUERY(v,'$.a'),JSON_QUERY(n,'$')",
+        "secondary": "VARCHAR(4096)",
+        "type": "VARCHAR(4096)",
+        "corpus": "json-query",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.09241575
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.655000333
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.521156625
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.678426208
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.623860667
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.539749375
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.491866708
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.630402791
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.646705917
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.510318708
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.493025042
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.636927875
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.632298792
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.489988709
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 1.632298792,
+                "min": 1.623860667,
+                "max": 1.646705917
+              },
+              "native": {
+                "median": 1.493025042,
+                "min": 1.489988709,
+                "max": 1.539749375
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 2.044331667
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.65526125
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.459384083
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 1.6777185
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.652011417
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.432198625
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.431848833
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.622080333
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.659957834
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.459350917
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.466734625
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.642866208
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.628765709
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 1.476267792
+              }
+            ],
+            "stats": {
+              "previous": {
+                "median": 1.459350917,
+                "min": 1.431848833,
+                "max": 1.476267792
+              },
+              "stock": {
+                "median": 1.642866208,
+                "min": 1.622080333,
+                "max": 1.659957834
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.9146763137468522,
+        "native_over_previous": 1.0230747276804568
+      }
+    }
+  },
+  "summary": {
+    "bulk_cells": 32,
+    "bulk_stock_speedup": [
+      1.5630150787103863,
+      9.019382218187193
+    ],
+    "bulk_previous_speedup": [
+      0.9355174892911725,
+      2.329884790524186
+    ],
+    "bulk_previous_losses": 15,
+    "tiny_cells": 8,
+    "tiny_stock_speedup": [
+      1.2133066252257656,
+      3.2510177987093947
+    ],
+    "tiny_previous_speedup": [
+      1.1394154092011157,
+      4.978654967296751
+    ],
+    "tiny_stock_losses": 0,
+    "raw_prepared_samples": 2400,
+    "complete_jobs": 6,
+    "complete_stock_losses": 0,
+    "complete_previous_losses": 5,
+    "complete_native_over_stock": [
+      0.2514413633306354,
+      0.9146763137468522
+    ],
+    "complete_native_over_previous": [
+      0.5945179950583658,
+      1.0230747276804568
+    ],
+    "focused_invocations": 160,
+    "related_passed": 1418,
+    "related_aborted": 14,
+    "upstream_invocations": 631
+  }
+}

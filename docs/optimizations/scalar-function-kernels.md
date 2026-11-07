@@ -1562,3 +1562,20 @@ generic DataFusion comparison/zip route, this avoids selecting Boolean bits row 
 The [independent qualification](../benchmarks/scalar-functions.md#primitive-text-least)
 retains the initial loss, process profile, actual preceding controls and slower tiny/full-job
 results. It reruns both string extrema against released Flink after the shared kernel change.
+
+
+## Prepare nested JSON writers once per batch
+
+ARRAY/ROW JSON_STRING prepares borrowed child columns, NULL masks and escaped/sorted ROW keys
+once for each Arrow batch. Recursive writers reuse original list offsets and append directly
+into the output string builder; they do not build a per-row JSON DOM or serialized child
+columns. The existing scalar formatter supplies Flink-compatible leaves. This follows
+Comet's schema-preparation pattern while retaining Flink's NULL fields, control escaping,
+UTF-16 key order and verified decimal rendering. Existing cache/identity gates keep mixed
+materializing readers on generated evaluation.
+
+The [release qualification](../benchmarks/scalar-functions.md#arrayrow-json_string-2026-11-06)
+records **1.663-12.285x** stock and **2.647-13.266x** preceding
+behavior across 40 bulk cells. These operator-format results start with prepared Arrow input.
+Wide string-array complete jobs remain slower than stock with the production conversions
+and both transposes; the report retains all scalar, tiny, initial and complete-job costs.

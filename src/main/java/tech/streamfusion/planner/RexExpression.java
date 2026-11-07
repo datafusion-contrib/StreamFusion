@@ -192,6 +192,7 @@ final class RexExpression {
   private RexNode projectionRoot;
   private int binaryUdfCalls;
   private boolean rowFusion;
+  private boolean calcProjection;
   private boolean unnestOperand;
   private boolean preserveCollections;
   private boolean aliasedFunctionInput;
@@ -484,6 +485,24 @@ final class RexExpression {
       return new CalcEncoding(encoder, encoder.emitRowCalc(calc));
     }
     boolean supported = encoder.emitCalc(calc);
+    if (supported && !encoder.rowFusion && encoder.nativeFunctionCalls.contains("JSON_QUERY")
+        && (calc.getRowType().getFieldList().stream()
+                .anyMatch(field -> rowCalcTypeCode(field.getType(), false) < 0)
+            || encoder.referencedInputs().stream().anyMatch(index -> rowCalcTypeCode(
+                calc.getInput().getRowType().getFieldList().get(index).getType(), false) < 0))) {
+      supported = encoder.reject("JSON_QUERY retains generated evaluation for unverified container boundaries");
+    }
+    if (supported && !encoder.rowFusion
+        && !tech.streamfusion.compat.JsonRuntimeCompat.LEGACY_SQL_JSON
+        && bufferedJsonCalls(calc.getProgram()) > 0
+        && (!encoder.udfs.isEmpty()
+            || bufferedJsonCalls(calc.getProgram()) > 1
+                && !scheduledJsonReaders(calc.getProgram()))) {
+      encoder = forCalc(calc);
+      encoder.jvmExecutionReason =
+          "multiple JSON readers require row-major evaluation of shared token-buffer limits";
+      supported = encoder.emitRowCalc(calc);
+    }
     boolean metadataTypeMismatch = false;
     boolean representation = CollectionValueIdentity.requiresGeneratedEvaluation(calc.getProgram());
     if (supported && !encoder.rowFusion) {
@@ -510,7 +529,8 @@ final class RexExpression {
                                     .TYPE_OF));
     if (supported
         && !encoder.rowFusion
-        && (containsGeneratedCollectionFunction(calc.getProgram()) || metadata || representation)) {
+        && (containsGeneratedCollectionFunction(calc.getProgram()) || metadata || representation
+            || encoder.nativeFunctionCalls.contains("JSON_QUERY"))) {
       String mismatch =
           representation
               ? "collection representations require Flink evaluation for this consumer"
@@ -635,6 +655,7 @@ final class RexExpression {
   }
 
   private boolean emitCalc(Calc calc) {
+    calcProjection = true;
     RexProgram program = calc.getProgram();
     skipMapKeyCaches = program.getCondition() == null
         && program.getProjectList().stream().map(program::expandLocalRef)
@@ -792,6 +813,51 @@ final class RexExpression {
         .anyMatch(project -> containsSqlJson(program.expandLocalRef(project)));
   }
 
+  private static int bufferedJsonCalls(RexProgram program) {
+    int[] count = {0};
+    var visitor = new org.apache.calcite.rex.RexVisitorImpl<Void>(true) {
+      @Override
+      public Void visitCall(RexCall call) {
+        String name = call.getOperator().getName().toUpperCase(Locale.ROOT);
+        if (bufferedJsonFunction(name)) count[0]++;
+        return super.visitCall(call);
+      }
+    };
+    if (program.getCondition() != null)
+      program.expandLocalRef(program.getCondition()).accept(visitor);
+    for (RexLocalRef projection : program.getProjectList())
+      program.expandLocalRef(projection).accept(visitor);
+    return count[0];
+  }
+
+  private static boolean scheduledJsonReaders(RexProgram program) {
+    if (program.getCondition() != null
+        && containsBufferedJson(program.expandLocalRef(program.getCondition()))) return false;
+    for (RexLocalRef projection : program.getProjectList()) {
+      RexNode node = program.expandLocalRef(projection);
+      if (!containsBufferedJson(node)) continue;
+      if (!(node instanceof RexCall)) return false;
+      RexCall call = (RexCall) node;
+      String name = call.getOperator().getName().toUpperCase(Locale.ROOT);
+      if (!bufferedJsonFunction(name) || call.getOperands().isEmpty()) return false;
+      RexNode document = call.getOperands().get(0);
+      if (!(document instanceof RexInputRef || document instanceof RexLiteral)) return false;
+    }
+    return true;
+  }
+
+  private static boolean bufferedJsonFunction(String name) {
+    return name.equals("JSON_VALUE") || name.equals("JSON_QUERY") || name.equals("JSON_EXISTS")
+        || name.startsWith("IS JSON ") || name.startsWith("IS NOT JSON ");
+  }
+
+  private static boolean containsBufferedJson(RexNode node) {
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    return bufferedJsonFunction(call.getOperator().getName().toUpperCase(Locale.ROOT))
+        || call.getOperands().stream().anyMatch(RexExpression::containsBufferedJson);
+  }
+
   private static boolean containsSqlJson(RexNode node) {
     if (node instanceof org.apache.calcite.rex.RexFieldAccess) {
       org.apache.calcite.rex.RexFieldAccess access = ((org.apache.calcite.rex.RexFieldAccess) node);
@@ -945,7 +1011,7 @@ final class RexExpression {
 
   private static boolean nativeRowRepresentation(RexCall call) {
     return NativeConfig.collectionExpressionsEnabled()
-        && (nativeBasicRow(call) || nativeRepresentedMapConstructor(call)
+        && (nativeBasicRow(call) || nativeJsonStringContainer(call) || nativeRepresentedMapConstructor(call)
             || nativeInputMapProjection(call)
             || isBuiltinDefinition(
                     call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.MAP_ENTRIES)
@@ -1101,6 +1167,7 @@ final class RexExpression {
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
     return GENERATED_COLLECTIONS.contains(call.getOperator().getName())
+        || nativeJsonStringContainer(call)
         || standaloneCollectionExpression(call)
         || call.getOperands().stream().anyMatch(RexExpression::containsGeneratedCollectionFunction);
   }
@@ -1159,11 +1226,12 @@ final class RexExpression {
   private boolean emitRowCalc(Calc calc) {
     rowFusion = true;
     RexProgram program = calc.getProgram();
-    preserveCollections =
+    boolean collectionProgram =
         CollectionValueIdentity.requiresStringCarrierEvaluation(calc)
             || (usesCollectionFunctions(program) || usesCollectionScalarUdf(program))
             && program.getExprList().stream()
                 .anyMatch(expression -> CollectionValueIdentity.sensitive(expression.getType()));
+    preserveCollections = collectionProgram || containsSqlJson(program);
     List<RexNode> arguments = new ArrayList<>();
     List<org.apache.flink.table.types.logical.LogicalType> types = new ArrayList<>();
     List<Integer> codes = new ArrayList<>();
@@ -1175,10 +1243,11 @@ final class RexExpression {
             return inputs.computeIfAbsent(
                 input.getIndex(),
                 ignored -> {
-                  int code = rowCalcTypeCode(input.getType(), preserveCollections);
+                  int code = rowCalcTypeCode(input.getType(), collectionProgram);
                   if (code < 0)
                     throw new IllegalArgumentException(
                         "row-fused UDF input type is not supported: " + input.getType());
+                  if (preserveCollections) code = rowCalcTypeCode(input.getType(), true);
                   RexInputRef replacement = new RexInputRef(arguments.size(), input.getType());
                   arguments.add(input);
                   types.add(
@@ -1215,7 +1284,7 @@ final class RexExpression {
         if (LegacyBinaryResults.variableResult(
             projection, Boolean.TRUE.equals(legacyCastBehaviour)))
           variableBinaryProjections.add(projections.size());
-        if (rowCalcTypeCode(projection.getType(), preserveCollections) < 0
+        if (rowCalcTypeCode(projection.getType(), collectionProgram) < 0
             && !LegacyBinaryResults.variableResult(
                 projection, Boolean.TRUE.equals(legacyCastBehaviour)))
           return reject("row-fused UDF output type is not supported: " + projection.getType());
@@ -2533,7 +2602,8 @@ final class RexExpression {
     if ("JSON_UNQUOTE".equals(functionName)) {
       return emitCharacterFunction(call, 123, 1, 1);
     }
-    if (("JSON_STRING".equals(functionName) || "JSON_OBJECT".equals(functionName))
+    if (("JSON_STRING".equals(functionName) || "JSON_OBJECT".equals(functionName)
+            || "JSON_ARRAY".equals(functionName))
         && !tech.streamfusion.compat.JsonRuntimeCompat.PRESERVES_DECIMAL_SCALE
         && call.getOperands().stream()
             .anyMatch(operand -> operand.getType().getSqlTypeName() == SqlTypeName.DECIMAL)) {
@@ -2541,6 +2611,12 @@ final class RexExpression {
           "JSON decimal rendering requires the selected Flink line's generated evaluator");
     }
     if ("JSON_STRING".equals(functionName)) {
+      if (nativeJsonStringContainer(call)) {
+        if (call != projectionRoot || !calcProjection)
+          return reject("container JSON_STRING requires a final Calc projection");
+        preserveCollections = true;
+        return emitBuiltinCall(call, 152);
+      }
       if (call.getOperands().size() != 1 || !isJsonScalarValue(call.getOperands().get(0))) {
         return reject("JSON_STRING requires a character, boolean, integer, or decimal scalar");
       }
@@ -2548,6 +2624,12 @@ final class RexExpression {
     }
     if ("JSON_OBJECT".equals(functionName)) {
       return emitJsonObject(call);
+    }
+    if ("JSON_ARRAY".equals(functionName)) {
+      return emitJsonArray(call);
+    }
+    if ("JSON_QUERY".equals(functionName)) {
+      return emitJsonQuery(call);
     }
     if ("JSON_VALUE".equals(functionName)) {
       return emitJsonValue(call);
@@ -3168,6 +3250,32 @@ final class RexExpression {
         && (args.size() == 2 || emit(args.get(2)));
   }
 
+  private boolean emitJsonArray(RexCall call) {
+    List<RexNode> args = call.getOperands();
+    if (args.isEmpty() || !(args.get(0) instanceof RexLiteral)) {
+      return reject("JSON_ARRAY requires a literal NULL policy");
+    }
+    Object nullClause = ((RexLiteral) args.get(0)).getValue();
+    String policy;
+    if (nullClause == SqlJsonConstructorNullClause.NULL_ON_NULL) {
+      policy = "NULL";
+    } else if (nullClause == SqlJsonConstructorNullClause.ABSENT_ON_NULL) {
+      policy = "ABSENT";
+    } else {
+      return reject("JSON_ARRAY: unsupported NULL policy");
+    }
+    if (!args.subList(1, args.size()).stream().allMatch(RexExpression::isJsonScalarValue)) {
+      return reject("JSON_ARRAY requires character, boolean, integer, or decimal scalar values");
+    }
+    add(KIND_CALL, 253, args.size());
+    add(KIND_LIT_STRING, strings.size(), 0);
+    strings.add(policy);
+    for (RexNode arg : args.subList(1, args.size())) {
+      if (!emit(arg)) return false;
+    }
+    return true;
+  }
+
   private boolean emitJsonObject(RexCall call) {
     List<RexNode> args = call.getOperands();
     if (args.isEmpty() || args.size() % 2 != 1 || !(args.get(0) instanceof RexLiteral)) {
@@ -3234,6 +3342,43 @@ final class RexExpression {
       case INTEGER:
       case BIGINT:
       case DECIMAL:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static boolean nativeJsonStringContainer(RexCall call) {
+    if (!NativeConfig.collectionExpressionsEnabled()
+        || !call.getOperator().getName().equals("JSON_STRING")
+        || call.getOperands().size() != 1
+        || !(call.getOperands().get(0) instanceof RexInputRef)) return false;
+    RelDataType type = call.getOperands().get(0).getType();
+    return (type.getSqlTypeName() == SqlTypeName.ARRAY || type.getSqlTypeName() == SqlTypeName.ROW)
+        && nativeJsonContainerType(type, 0);
+  }
+
+  private static boolean nativeJsonContainerType(RelDataType type, int depth) {
+    if (depth > 32) return false;
+    switch (type.getSqlTypeName()) {
+      case ARRAY:
+        return type.getComponentType().isNullable()
+            && nativeJsonContainerType(type.getComponentType(), depth + 1);
+      case ROW:
+        return type.getFieldList().stream().allMatch(field ->
+            field.getType().isNullable()
+                && !JsonStringIdentity.containsUnpairedSurrogate(field.getName())
+                && field.getName().chars().noneMatch(c -> c < 32 || c == '"' || c == '\\')
+                && nativeJsonContainerType(field.getType(), depth + 1));
+      case DECIMAL:
+        return tech.streamfusion.compat.JsonRuntimeCompat.PRESERVES_DECIMAL_SCALE;
+      case CHAR:
+      case VARCHAR:
+      case BOOLEAN:
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
         return true;
       default:
         return false;
@@ -3479,6 +3624,34 @@ final class RexExpression {
     }
     return reject(
         "SQL/JSON requires the verified Jackson runtime with a shared thread-local token buffer");
+  }
+
+  private boolean emitJsonQuery(RexCall call) {
+    if (!jsonRuntimeAvailable() || JsonPathSpec.unicodeVersion() == null) return false;
+    List<RexNode> args = call.getOperands();
+    if (!calcProjection || call != projectionRoot || call.getType().getSqlTypeName() != SqlTypeName.VARCHAR
+        || args.size() != 5 || !isCharacter(args.get(0))
+        || !(args.get(0) instanceof RexInputRef || args.get(0) instanceof RexLiteral)
+        || !(args.get(1) instanceof RexLiteral) || ((RexLiteral) args.get(1)).isNull()) {
+      return reject("JSON_QUERY requires a final VARCHAR projection over a direct document and literal path");
+    }
+    String path = JsonPathSpec.normalizeDefinite(((RexLiteral) args.get(1)).getValueAs(String.class));
+    String wrapper = jsonSymbol(args.get(2));
+    if (wrapper != null && wrapper.startsWith("WITH_")) wrapper = wrapper.substring(5);
+    String empty = jsonSymbol(args.get(3));
+    String error = jsonSymbol(args.get(4));
+    if (path == null || wrapper == null || empty == null || error == null
+        || !List.of("WITHOUT_ARRAY", "CONDITIONAL_ARRAY", "UNCONDITIONAL_ARRAY").contains(wrapper)
+        || !List.of("NULL", "EMPTY_ARRAY", "EMPTY_OBJECT").contains(empty)
+        || !List.of("NULL", "EMPTY_ARRAY", "EMPTY_OBJECT").contains(error)) {
+      return reject("JSON_QUERY retains generated evaluation for branching paths or ERROR policies");
+    }
+    preserveCollections = true;
+    add(KIND_CALL, 254, 6);
+    if (!emit(args.get(0))) return false;
+    for (String value : new String[] {path, wrapper, empty, error, JsonPathSpec.unicodeVersion()})
+      emitString(value);
+    return true;
   }
 
   private boolean emitJsonValue(RexCall call) {
@@ -4602,7 +4775,7 @@ final class RexExpression {
         && (operand instanceof RexInputRef
             || operand instanceof RexLiteral
             || !unnestOperand && (nativeTotalEpochTimestamp(operand)
-                || call.getKind() == SqlKind.FLOOR && nativeTotalDecimalEpochTimestamp(operand)));
+                || nativeTotalDecimalEpochTimestamp(operand)));
   }
 
   private boolean nativeUtcDateFormat(RexCall call) {
