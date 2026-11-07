@@ -283,6 +283,8 @@ jobs:
             --suite canonical --count 16 --index ${{ matrix.shard }} \
             --output "$RUNNER_TEMP/canonical-job-includes.txt"
       - name: Run every selected canonical job
+        env:
+          SF_CANONICAL_CDS_DIR: ${{ runner.temp }}/canonical-cds
         run: >-
           mvn -B -ntp -Pcanonical-kafka -pl streamfusion-runtime -am test
           -Dnative.build.skip=true
@@ -296,9 +298,22 @@ jobs:
           path: |
             ${{ runner.temp }}/canonical-job-includes.*
             streamfusion-runtime/target/surefire-reports/*
+            ${{ runner.temp }}/canonical-cds/*.log
             **/hs_err_pid*.log
           if-no-files-found: error
           retention-days: 7
+
+      - name: Remove canonical worker class metadata
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          directory = Path(os.environ['RUNNER_TEMP']) / 'canonical-cds'
+          if directory.exists():
+              shutil.rmtree(directory)
+          PY
 
   lake-module-tests:
     needs: native-build

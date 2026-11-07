@@ -120,7 +120,7 @@
   ],
   "limits": [
     "CI timing observations use the original debug-native test configuration, not SQL throughput benchmarks.",
-    "Complete post-change CI measurements are pending; local probes do not predict a full-workflow speedup."
+    "Paired startup probes establish fixture elapsed/CPU costs, not a full-workflow speedup. Complete exact-head workflow outcomes remain required for source changes."
   ],
   "jfr_probe": {
     "jdk": "17.0.17",
@@ -133,5 +133,786 @@
   "reporter_checkout": {
     "tracked_blob_bytes": 322940949,
     "selected_blob_bytes": 41787
+  },
+  "local_startup_profile": {
+    "platform": "macOS 15.3.1 arm64",
+    "flink": "2.2.1",
+    "native_profile": "debug, matching CI correctness tests",
+    "forks": 2,
+    "test_reuse_forks": false,
+    "worker_heap": "1 GiB",
+    "surefire_heap": "2 GiB",
+    "cases_per_trial": 5,
+    "pairs_per_jdk": 2,
+    "limits": "Cold-process fixture timings, not SQL throughput benchmarks. Alternating order on the same machine. The two JDK investigations ran sequentially, after the native build finished.",
+    "jdks": {
+      "11": {
+        "summary": {
+          "default": {
+            "elapsed_seconds": 83.6297905415122,
+            "cpu_seconds": 221.1135905
+          },
+          "startup": {
+            "elapsed_seconds": 73.78828547897865,
+            "cpu_seconds": 90.78451099999998
+          },
+          "elapsed_reduction_percent": 11.767941781043223,
+          "cpu_reduction_percent": 58.942138837006496
+        },
+        "trials": [
+          {
+            "mode": "default",
+            "pair": 1,
+            "elapsed_seconds": 83.75751179200597,
+            "cpu_seconds": 221.812225,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 31.656,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 81.37
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 1,
+            "elapsed_seconds": 73.37978533300338,
+            "cpu_seconds": 90.881081,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 26.703,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 71.528
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 2,
+            "elapsed_seconds": 74.19678562495392,
+            "cpu_seconds": 90.68794099999995,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 72.399,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 26.613
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "default",
+            "pair": 2,
+            "elapsed_seconds": 83.50206929101842,
+            "cpu_seconds": 220.414956,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 81.207,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 31.529
+            },
+            "exit_code": 0
+          }
+        ]
+      },
+      "17": {
+        "summary": {
+          "default": {
+            "elapsed_seconds": 68.04890818800777,
+            "cpu_seconds": 162.9465055
+          },
+          "startup": {
+            "elapsed_seconds": 61.855903729010606,
+            "cpu_seconds": 75.81218450000001
+          },
+          "elapsed_reduction_percent": 9.100813846839284,
+          "cpu_reduction_percent": 53.47418818993942
+        },
+        "trials": [
+          {
+            "mode": "default",
+            "pair": 1,
+            "elapsed_seconds": 67.86366616701707,
+            "cpu_seconds": 161.97813299999999,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 25.753,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 66.122
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 1,
+            "elapsed_seconds": 61.89657191600418,
+            "cpu_seconds": 75.88836900000001,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 22.889,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 60.251
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 2,
+            "elapsed_seconds": 61.815235542017035,
+            "cpu_seconds": 75.73600000000002,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 60.26,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 22.85
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "default",
+            "pair": 2,
+            "elapsed_seconds": 68.23415020899847,
+            "cpu_seconds": 163.914878,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 66.296,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 25.906
+            },
+            "exit_code": 0
+          }
+        ]
+      }
+    }
+  },
+  "hosted_startup_profile": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42407417491",
+    "commit": "fb7192c01319cac20216ed41f9eb35f63c002ebd",
+    "runner": "ubuntu-24.04",
+    "flink": "2.2.1",
+    "native_profile": "debug",
+    "pairs_per_jdk": 3,
+    "cases_per_trial": 5,
+    "jdks": {
+      "11": {
+        "summary": {
+          "default": {
+            "elapsed_seconds": 117.92645338700001,
+            "cpu_seconds": 330.43248299999993,
+            "elapsed_range_seconds": [
+              117.194189876,
+              120.16392531999998
+            ]
+          },
+          "startup": {
+            "elapsed_seconds": 87.5508124590001,
+            "cpu_seconds": 137.55994599999994,
+            "elapsed_range_seconds": [
+              85.881220558,
+              89.18924242099996
+            ]
+          },
+          "elapsed_reduction_percent": 25.758123012752677,
+          "cpu_reduction_percent": 58.36972662279091
+        },
+        "trials": [
+          {
+            "mode": "default",
+            "pair": 1,
+            "elapsed_seconds": 117.92645338700001,
+            "cpu_seconds": 324.00375199999996,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 113.007,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 52.844
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 1,
+            "elapsed_seconds": 85.881220558,
+            "cpu_seconds": 132.668353,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 32.323,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 82.536
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 2,
+            "elapsed_seconds": 89.18924242099996,
+            "cpu_seconds": 137.55994599999994,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 32.933,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 85.881
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "default",
+            "pair": 2,
+            "elapsed_seconds": 120.16392531999998,
+            "cpu_seconds": 337.872201,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 54.646,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 115.37
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "default",
+            "pair": 3,
+            "elapsed_seconds": 117.194189876,
+            "cpu_seconds": 330.43248299999993,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 52.522,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 112.451
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 3,
+            "elapsed_seconds": 87.5508124590001,
+            "cpu_seconds": 137.93500300000005,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 84.103,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 31.876
+            },
+            "exit_code": 0
+          }
+        ]
+      },
+      "17": {
+        "summary": {
+          "default": {
+            "elapsed_seconds": 148.37266312299994,
+            "cpu_seconds": 444.84188399999994,
+            "elapsed_range_seconds": [
+              143.99642337900002,
+              153.75804566300002
+            ]
+          },
+          "startup": {
+            "elapsed_seconds": 111.38754332799999,
+            "cpu_seconds": 195.323077,
+            "elapsed_range_seconds": [
+              110.94318973899999,
+              115.56815583599996
+            ]
+          },
+          "elapsed_reduction_percent": 24.927179317621018,
+          "cpu_reduction_percent": 56.091572303474905
+        },
+        "trials": [
+          {
+            "mode": "default",
+            "pair": 1,
+            "elapsed_seconds": 153.75804566300002,
+            "cpu_seconds": 461.391065,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 147.144,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 71.677
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 1,
+            "elapsed_seconds": 115.56815583599996,
+            "cpu_seconds": 202.62836300000006,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 45.638,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 110.946
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 2,
+            "elapsed_seconds": 110.94318973899999,
+            "cpu_seconds": 195.323077,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 44.797,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 106.317
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "default",
+            "pair": 2,
+            "elapsed_seconds": 143.99642337900002,
+            "cpu_seconds": 444.84188399999994,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 67.244,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 137.617
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "default",
+            "pair": 3,
+            "elapsed_seconds": 148.37266312299994,
+            "cpu_seconds": 437.63090300000005,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 67.002,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 142.028
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 3,
+            "elapsed_seconds": 111.38754332799999,
+            "cpu_seconds": 192.33530099999993,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 106.842,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 40.79
+            },
+            "exit_code": 0
+          }
+        ]
+      }
+    }
+  },
+  "documentation_plan_integration": {
+    "baseline": "69620d1ac1ac4a37a268a6a9cb92a5ba6af03562",
+    "documentation_only": "tests=false",
+    "source_configuration_change": "tests=true",
+    "provenance": "Actual Git diff/fetch and public GitHub push results in an ephemeral repository sharing read-only base objects."
+  },
+  "component_cds_probe": {
+    "jdk": "17.0.17",
+    "platform": "macOS 15.3.1 arm64",
+    "fixture": "24-row bounded canonical group aggregation in independent workers",
+    "native_profile": "debug",
+    "jvm": "-Xmx1g -XX:TieredStopAtLevel=1",
+    "limits": "Two alternating samples per setting. Archives prepared before timing; metadata generation excluded here and included in the paired harness/complete CI measurements. Not SQL throughput evidence.",
+    "stock": [
+      {
+        "name": "default-0",
+        "elapsed_seconds": 2.981888541020453,
+        "cpu_seconds": 2.6149359999999997
+      },
+      {
+        "name": "cds-1",
+        "elapsed_seconds": 1.605371167010162,
+        "cpu_seconds": 1.6272810000000004
+      },
+      {
+        "name": "cds-2",
+        "elapsed_seconds": 1.6035902080475353,
+        "cpu_seconds": 1.6221310000000009
+      },
+      {
+        "name": "default-3",
+        "elapsed_seconds": 2.865925334044732,
+        "cpu_seconds": 2.607488999999998
+      }
+    ],
+    "native": [
+      {
+        "name": "default-0",
+        "elapsed_seconds": 3.1457032080506906,
+        "cpu_seconds": 2.973626
+      },
+      {
+        "name": "cds-1",
+        "elapsed_seconds": 1.6037386250100099,
+        "cpu_seconds": 1.788523999999999
+      },
+      {
+        "name": "cds-2",
+        "elapsed_seconds": 1.606266750022769,
+        "cpu_seconds": 1.7398409999999984
+      },
+      {
+        "name": "default-3",
+        "elapsed_seconds": 3.201918208040297,
+        "cpu_seconds": 3.0162989999999987
+      }
+    ]
+  },
+  "local_cold_cds_harness": {
+    "jdk": "17.0.17",
+    "platform": "macOS arm64",
+    "method": "Fresh archives for each five-case trial, including their creation. Two alternating repetitions. Initial cache implementation; not complete-workflow evidence.",
+    "trials": [
+      {
+        "mode": "default",
+        "pair": 1,
+        "elapsed_seconds": 67.92108533298597,
+        "cpu_seconds": 166.99628400000003,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 25.941,
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 66.038
+        },
+        "exit_code": 0
+      },
+      {
+        "mode": "startup",
+        "pair": 1,
+        "elapsed_seconds": 61.561836541979574,
+        "cpu_seconds": 75.477618,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 22.739,
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 59.968
+        },
+        "exit_code": 0
+      },
+      {
+        "mode": "cds",
+        "pair": 1,
+        "elapsed_seconds": 62.18141200003447,
+        "cpu_seconds": 72.721406,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 60.802,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 29.887
+        },
+        "exit_code": 0,
+        "archives": 2,
+        "archive_bytes": 268402688,
+        "classpath_bytes": 289672758
+      },
+      {
+        "mode": "cds",
+        "pair": 2,
+        "elapsed_seconds": 65.24827841698425,
+        "cpu_seconds": 73.48583699999998,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 63.642,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 32.776
+        },
+        "exit_code": 0,
+        "archives": 2,
+        "archive_bytes": 275087360,
+        "classpath_bytes": 289672758
+      },
+      {
+        "mode": "startup",
+        "pair": 2,
+        "elapsed_seconds": 61.81324520899216,
+        "cpu_seconds": 75.82863100000003,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 60.213,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 22.994
+        },
+        "exit_code": 0
+      },
+      {
+        "mode": "default",
+        "pair": 2,
+        "elapsed_seconds": 68.06525333301397,
+        "cpu_seconds": 165.010067,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 66.178,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 25.866
+        },
+        "exit_code": 0
+      }
+    ],
+    "finding": "Cold archive preparation cancels the elapsed-time benefit for this short selection. Full-job profiling records preparation separately and measures reuse across subsequent invocations."
+  },
+  "local_cds_capability": {
+    "jdk": "11.0.28",
+    "platform": "macOS arm64",
+    "result": "Shared spaces are not supported in this VM. Profiling preflight rejects --cds on this VM; default/first-tier comparisons remain available. Linux x86_64 JDK 11 qualification is required."
+  },
+  "local_cds_reuse_harness": {
+    "jdk": "17.0.17",
+    "platform": "macOS arm64",
+    "method": "One measured preparation phase followed by two alternating repetitions of default, first-tier, and first-tier/CDS settings; all workers remain fresh processes. Preparation is retained separately rather than amortized into a five-case sample.",
+    "summary": {
+      "default": {
+        "elapsed_seconds": 67.87153914599912,
+        "cpu_seconds": 162.326799
+      },
+      "startup": {
+        "elapsed_seconds": 61.76131499998155,
+        "cpu_seconds": 75.39213050000001
+      },
+      "cds": {
+        "elapsed_seconds": 45.60767739600851,
+        "cpu_seconds": 56.519307000000005
+      }
+    },
+    "trials": [
+      {
+        "mode": "cds",
+        "pair": 0,
+        "phase": "preparation",
+        "elapsed_seconds": 66.01354966597864,
+        "cpu_seconds": 73.802615,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 33.475,
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 64.401
+        },
+        "exit_code": 0,
+        "archives": 2,
+        "archive_bytes": 275087360,
+        "classpath_bytes": 289676029
+      },
+      {
+        "mode": "default",
+        "pair": 1,
+        "phase": "measurement",
+        "elapsed_seconds": 68.14139433403034,
+        "cpu_seconds": 163.832328,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 25.78,
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 66.16
+        },
+        "exit_code": 0
+      },
+      {
+        "mode": "startup",
+        "pair": 1,
+        "phase": "measurement",
+        "elapsed_seconds": 61.80798312497791,
+        "cpu_seconds": 75.62726200000003,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 22.921,
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 60.212
+        },
+        "exit_code": 0
+      },
+      {
+        "mode": "cds",
+        "pair": 1,
+        "phase": "measurement",
+        "elapsed_seconds": 45.764000083028805,
+        "cpu_seconds": 56.66402499999999,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 44.171,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 18.543
+        },
+        "exit_code": 0,
+        "archives": 2,
+        "archive_bytes": 275087360,
+        "classpath_bytes": 289676029
+      },
+      {
+        "mode": "cds",
+        "pair": 2,
+        "phase": "measurement",
+        "elapsed_seconds": 45.45135470898822,
+        "cpu_seconds": 56.37458900000002,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 43.824,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 18.377
+        },
+        "exit_code": 0,
+        "archives": 2,
+        "archive_bytes": 275087360,
+        "classpath_bytes": 289676029
+      },
+      {
+        "mode": "startup",
+        "pair": 2,
+        "phase": "measurement",
+        "elapsed_seconds": 61.71464687498519,
+        "cpu_seconds": 75.15699899999998,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 60.096,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 22.779
+        },
+        "exit_code": 0
+      },
+      {
+        "mode": "default",
+        "pair": 2,
+        "phase": "measurement",
+        "elapsed_seconds": 67.60168395796791,
+        "cpu_seconds": 160.82126999999997,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 65.755,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 25.554
+        },
+        "exit_code": 0
+      }
+    ],
+    "limits": "35 passing invocations including preparation. Full hosted qualification and amortized whole-workflow costs remain required."
   }
 }

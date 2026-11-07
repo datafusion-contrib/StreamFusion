@@ -544,6 +544,22 @@ parameterized invocation, native execution evidence, checkpoints and rescaling a
 Ordinary runtime, upstream and release/benchmark jobs retain their usual JVM compilation.
 This is a CI scheduling optimization, not a SQL throughput result. See the
 [CI profile](benchmarks/ci-profile-20261107.json) for measurements and their limits.
+
+Canonical workers also use class-data sharing through `SF_CANONICAL_CDS_DIR`, set only for
+their test step. The first successful worker on each classpath records loaded classes, then
+HotSpot builds a metadata archive. Later stages use that archive in fresh JVMs with
+`-Xshare:on`. A process lock serializes initial archive creation across the two Surefire forks.
+Every scenario still creates its own clusters, native state, user-function instances,
+checkpoints and results; the archive stores class metadata rather than a running application.
+
+[AppCDS requires JAR classpaths](https://docs.oracle.com/en/java/javase/11/tools/java.html),
+so the harness snapshots compiled class directories into deterministic JARs while preserving
+classpath order and resource paths. Compiled directories remain immutable for each Surefire
+fork. Snapshot names derive from their contents; an existing snapshot is checked for corruption
+and retained without changing its timestamp. Changed compiled bytes produce a new snapshot.
+Archive keys include the JDK, VM arguments, classpath, worker class and engine role. Caches live
+under the current runner's temporary directory and are removed after outcomes and failed
+archive diagnostics are uploaded. Default local Maven runs do not enable this cache.
 Each runner uses two fresh 2 GiB Surefire JVMs, with process reuse disabled. This preserves all
 118 canonical classes on each JDK while reducing canonical runner jobs from 64 to 32. The stock
 and native worker processes retain their separate 1 GiB heaps; native memory and containers
@@ -586,16 +602,32 @@ would not eliminate that shared capacity cost.
 
 The **CI startup profile** workflow runs on manual dispatch or changes to its workflow/profiler.
 It builds the exact commit's debug core library once, then compares default and first-tier
-JVM compilation on each of JDK 11 and 17. Three pairs alternate execution order on the same
-runner. Both settings run the identical five cases: stock/native join continuations on both
+JVM compilation, plus first-tier compilation with class metadata archives, on each of JDK 11
+and 17. Archive preparation is recorded once, followed by three repetitions alternating settings
+on the same runner. All settings run the identical five cases: stock/native join continuations on both
 backends, native checkpoint recovery on both backends, and a managed-UDF decimal-key handoff.
 The profiler rejects missing, changed, failed or skipped invocations and retains elapsed/CPU
 times and class outcomes. These are deliberately small timing probes; the complete CI and
 upstream aggregate checks remain the merge requirements.
 
+The initial hosted comparison of first-tier compilation alone passed all 60 invocations.
+Median elapsed time fell from 117.93 to 87.55 seconds on JDK 11 (25.8%) and from 148.37 to
+111.39 seconds on JDK 17 (24.9%); CPU time fell 58.4% and 56.1%, respectively. These compare
+settings within each runner, not JDK performance across different runners.
+An isolated JDK 17 group-aggregation worker probe then reduced startup from about 2.9 to
+1.6 seconds for stock Flink and from 3.2 to 1.6 seconds for native execution with prepared
+metadata. That component probe excludes archive construction; the paired harness includes
+archive preparation as a separate measured phase and reuses it for subsequent timings, matching
+the longer canonical job. The short cold-cache probe, including construction for five cases,
+showed no elapsed-time benefit over first-tier compilation; those measurements remain in the
+evidence file. Complete CI establishes the amortized benefit across its full test selection.
+
 Locally, first compile the default runtime with `mvn -pl streamfusion-runtime -am test-compile`
 and a matching native build. Then run
-`python3 bin/profile-canonical-ci.py --output /path/to/new-evidence-directory --repetitions 3`.
+`python3 bin/profile-canonical-ci.py --output /path/to/new-evidence-directory --repetitions 3 --cds`.
+The `--cds` option requires a JVM supporting class-data sharing. The profiler checks this before
+starting; omitting it retains the default/first-tier comparison on unsupported VMs, such as
+the local ARM JDK 11 build used during this investigation.
 The script preserves concise JSON and failed logs, removes its successful logs/reports and
 temporary fixtures, and leaves normal JVM options unchanged outside each measured subprocess.
 

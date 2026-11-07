@@ -70,7 +70,7 @@ jobs:
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
           mvn -B -ntp -pl streamfusion-runtime -am test-compile -Dnative.build.skip=true
       - name: Alternate default and startup JVM settings on the same runner
-        run: python3 bin/profile-canonical-ci.py --output "$RUNNER_TEMP/ci-startup-profile" --repetitions 3
+        run: python3 bin/profile-canonical-ci.py --output "$RUNNER_TEMP/ci-startup-profile" --repetitions 3 --cds
       - uses: actions/upload-artifact@v4
         if: always()
         with:
