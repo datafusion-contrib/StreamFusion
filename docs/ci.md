@@ -574,7 +574,8 @@ CLI. Add `--json` for reusable evidence. The profiler reads the latest run attem
 all jobs, totals actual completed execution intervals and identifies failed steps. It separates
 workflow elapsed time from summed runner time; job start delays include prerequisites,
 workflow concurrency and runner queueing. Queued jobs do not receive fictitious execution time.
-These observations are not billed minutes and do not isolate pure runner queue time.
+Canceled jobs without a started step also receive no execution interval. These observations
+are not billed minutes and do not isolate pure runner queue time.
 
 The green canonical main run [42357977614](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42357977614)
 took 321.6 minutes elapsed and 72.33 runner-hours. Canonical handoff jobs consumed 54.23

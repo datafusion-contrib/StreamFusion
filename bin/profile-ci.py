@@ -22,7 +22,10 @@ def summarize(run, jobs):
     rows = []
     for job in jobs:
         # GitHub may preallocate started_at for queued jobs. It is not execution evidence.
-        started = job.get("started_at") if job["status"] in ("in_progress", "completed") else None
+        executed = any(step.get("started_at") and step.get("conclusion") != "skipped"
+                       and (step.get("conclusion") or step.get("status") == "in_progress")
+                       for step in job.get("steps", []))
+        started = job.get("started_at") if executed and job["status"] in ("in_progress", "completed") else None
         elapsed = seconds(started, job["completed_at"]) if started and job.get("completed_at") else None
         name = job["name"]
         group = ("canonical" if name.startswith("Canonical savepoint jobs")
@@ -34,7 +37,7 @@ def summarize(run, jobs):
             groups[group]["runner_seconds"] += elapsed
             groups[group]["max_job_seconds"] = max(groups[group]["max_job_seconds"], elapsed)
         for step in job.get("steps", []):
-            if step.get("started_at") and step.get("completed_at"):
+            if step.get("started_at") and step.get("completed_at") and step.get("conclusion") != "skipped":
                 cost = seconds(step["started_at"], step["completed_at"])
                 steps[step["name"]]["executions"] += 1
                 steps[step["name"]]["seconds"] += cost

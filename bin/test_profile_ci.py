@@ -38,12 +38,15 @@ class ProfileCiTest(unittest.TestCase):
                   "html_url": "job", "steps": []}
         skipped = {"name": "skipped", "status": "completed", "conclusion": "skipped",
                    "started_at": None, "completed_at": None, "html_url": "skip"}
-        result = profile.summarize(run, [queued, skipped])
+        canceled = {**queued, "status": "completed", "conclusion": "cancelled",
+                    "completed_at": "2026-11-07T00:04:00Z"}
+        result = profile.summarize(run, [queued, skipped, canceled])
         self.assertFalse(result["complete"])
         self.assertIsNone(result["elapsed_seconds"])
         self.assertEqual(0, result["runner_seconds"])
         self.assertIsNone(result["jobs"][0]["execution_seconds"])
         self.assertIsNone(result["jobs"][0]["start_delay_seconds"])
+        self.assertIsNone(result["jobs"][2]["execution_seconds"])
 
 
 if __name__ == "__main__":
