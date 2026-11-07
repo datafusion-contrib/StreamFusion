@@ -318,9 +318,10 @@ table with the same frame positions and an explicit retention marker. Eviction a
 remove both rows, and native checkpoint restore/rescaling retain the marker and owned payloads.
 Native key-group snapshots carry optional frame input payloads; older snapshots remain readable
 for ordinary execution but cannot invent missing original rows. Direct canonical frame export
-reads live inputs without producing a native snapshot first. This foundation does not yet admit
-stock bounded OVER canonical interchange: its complete stock state and timer projection remains
-part of [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+reads live inputs without producing a native snapshot first. The
+[qualified bounded OVER binding](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial)
+uses these primitives with released stock state and timer contracts; that page lists remaining
+variants under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
 
 Bounded OVER native arithmetic now retains primitive SUM's nullable sum and independent live
@@ -328,17 +329,17 @@ count alongside SUM0, COUNT and widened AVG state. Native frame checkpoints carr
 without serializing evaluated averages. The persistent reader accepts unmarked, version 1 and
 expanded version 2 frame values; memory readers accept the preceding fold-column layouts.
 Native migration preserves known old fields and marks unrecorded arithmetic explicitly. It cannot
-recover history an old implementation discarded. Direct stock bounded projection remains
-unqualified until the full released accumulator/view/buffer/counter/timer contract is installed;
-ordinary native checkpoint migration is not a stock conversion step.
+recover history an old implementation discarded. Stock projection uses the released
+accumulator/buffer/counter/timer contracts in the qualified bounded binding; ordinary native
+checkpoint migration alone is not a stock conversion step.
 
 Bounded event-time RANGE also retains the complete registered timestamp set and last-fired
 timestamp independently of the current cleanup deadline and processed frame. Superseded cleanup
 timers can advance late admission without processing a row. Native memory/key-group snapshots
 and a separate key-group-prefixed RocksDB table preserve that protocol through recovery and
 rescaling; cleanup removes it with the key. Old native snapshots can seed their former cutoff,
-but cannot reconstruct missing historical timers. This closes an information-loss gap for the
-future stock adapter without qualifying bounded stock canonical import/export. Performance
+but cannot reconstruct missing historical timers. The bounded stock adapter uses this retained
+protocol; this native primitive alone does not qualify a handoff. Performance
 validation remains deferred for [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
 The direct bounded OVER frame bridge transfers original inputs and raw arithmetic in one
@@ -347,8 +348,8 @@ live frames; RocksDB visits one partition at a time. Neither path creates a nati
 an intermediate. Import owns input buffers, validates the schema/position/key/protocol before
 installing state, and never reconstructs a raw accumulator by replay. Persistent import rejects
 unowned key groups and duplicate partitions. Normal native checkpoint layouts are unchanged.
-This bridge does not yet write or read Flink's released bounded state descriptors: complete
-stock counters/views and complete automatic planner coverage remain required by
+The stock adapter above this bridge binds Flink's released bounded descriptors and counters.
+Wider views, types and planner combinations remain under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Performance work is deferred.
 
 
@@ -432,16 +433,17 @@ an automatic planner workflow or qualify stateful exchange reassembly.
 
 ### Automatic stock compiled-plan binding
 
-The unmerged Flink 2.2 planner retains a stock compiled plan as the portable artifact. Compiling
+The Flink 2.2 planner retains a stock compiled plan as the portable artifact. Compiling
 SQL writes stock JSON; explaining or executing that artifact with StreamFusion enabled lowers a
 private runtime copy. The copy binds event-time window joins to the actual stock key serializer,
 list/namespace/timer layout and resolved maximum parallelism, and installs canonical metadata
-identity projection automatically. The original JSON remains executable on stock Flink. Ordinary
-SQL submission identities and the other state families are still being consolidated in #569.
+identity projection automatically. The original JSON remains executable on stock Flink. Qualified
+ordinary SQL and other state families use the bindings in the coverage inventory; remaining
+combinations stay open under #569.
 
 Stateless Calc and optional connector source extensions retain their existing admission checks
 when loading a stock artifact. Connectors without a compiled-source extension stay stock. The
-Kafka extension uses its existing source whitelist; this planner support does not qualify broker
+Kafka extension uses its existing source whitelist; this planner component alone does not qualify broker
 offset, transaction or fault-recovery interchange. Unaligned window-join exchange reassembly
 currently retains the stock join state owner rather than eliding its pending work.
 
@@ -490,7 +492,7 @@ The unchanged released event-time and processing-time interval fixtures each imp
 rows and process five new native rows. The three interval and eight window programs all pass on
 both engines. Native execution includes eight native state-owner programs, two verified stock
 window SEMI/ANTI paths and one impossible-interval graph with no join state owner. The latter is
-not native-join credit. Ordinary SQL identities and the remaining full #569 matrix remain open.
+not native-join credit. Remaining ordinary-SQL combinations and the full #569 matrix remain open.
 Benchmarking stays deferred.
 
 ### Processing-time interval payloads and callbacks
@@ -1587,7 +1589,8 @@ remain open under #569.
 Captured one-phase JVM aggregate handlers retain released managed accumulator/data-view state
 behind Arrow boundaries. They use normal stock restore/export and do not introduce native
 snapshot intermediates or StreamFusion serializers. The [managed UDF qualification](../operators/group-by.md#captured-managed-udf-canonical-state-partial) records exact released restore
-witnesses, planner and 56 complete-job scenarios across cached/uncached execution. Mini-batch UDF and wider type/TTL/failure/version coverage remain open under #569.
+witnesses, planner and 56 complete-job scenarios across cached/uncached execution. Wider mini-batch
+UDF contracts and type/TTL/failure/version coverage remain open under #569.
 
 
 Captured one-phase mini-batch UDFs use their actual released bundle function and managed state.
@@ -1607,9 +1610,10 @@ types, keys or connector failure combinations.
 
 Read-only pending-row and cleanup-deadline validation shares the eventual mutation path's
 schema/key checks without installing state. This permits complete-source validation before
-import and preserves retryable source ownership. See the [OVER transfer scope](../operators/over.md#event-time-pending-state-preflight);
-the released event-time stock-state adapter, timer projection, planner binding and complete-job
-qualification remain pending. All fifteen families stay partial; benchmarking remains deferred.
+import and preserves retryable source ownership. See the [OVER transfer scope](../operators/over.md#event-time-pending-state-preflight)
+and the [qualified V2 scalar binding](#unbounded-event-time-v2-over-state-projection) below for
+the released adapter, timers, planner and complete-job scope. Wider variants remain open;
+all fifteen families stay partial and benchmarking remains deferred.
 
 
 ## Event-time OVER cleanup callback foundation
@@ -1624,8 +1628,10 @@ and is not a stock managed descriptor or serializer.
 
 The independent native suite passes 1,360 checks with two existing ignores. Its exact library
 passes 206 Java transfer/callback/recovery controls, including 16 actual released 2.2.1 callback
-comparisons. This is component evidence; the [remaining OVER adapter/planner/job work](../operators/over.md#event-time-cleanup-callback-component)
-remains part of #569. Every family stays partial and benchmarking remains deferred.
+comparisons. This component evidence underpins the
+[qualified V2 scalar binding](#unbounded-event-time-v2-over-state-projection); its wider
+type/view/version and failure matrix remains part of #569. Every family stays partial and
+benchmarking remains deferred.
 
 
 

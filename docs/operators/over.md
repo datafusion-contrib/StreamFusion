@@ -469,9 +469,10 @@ deadline precedes `timestamp + interval + 1`. Memory snapshots and RocksDB check
 the deadline, last-fired timestamp and registered timers together, including pending-only keys
 and backend changes. Timer metadata follows key-group ownership during rescaling. Old native
 snapshots remain readable using their former frame-derived cutoff, but cannot recover discarded
-timer history. Stock bounded canonical projection remains unfinished under
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); this native correction is
-not a cross-engine qualification. Benchmarking remains deferred.
+timer history. The [qualified bounded canonical binding](#automatic-bounded-arithmetic-state-binding-partial)
+uses this retained history; its remaining variants are listed in that scope under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). This native correction
+alone is not a cross-engine qualification. Benchmarking remains deferred.
 
 ## Proctime order
 
