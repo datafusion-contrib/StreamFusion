@@ -80,6 +80,12 @@ or ranking calls; builtin-only frames retain the Rust matcher's coverage below.
 The grouped-aggregate experimental switch does not control OVER. Remaining JVM definition
 and operator-boundary contracts are tracked in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
 
+The bounded processing-time RANGE fallback regression retains all 96 input rows with
+independent partition keys and keeps the source open until the released aggregate has
+evaluated every row. This lets Flink's next-millisecond timers fire before end of input.
+Both routes must produce the complete expected result while retaining the stock fallback;
+the fixture does not compare clock-dependent peer groups between independent runs.
+
 This is functionality under the accepted UDF performance exception. It preserves the JVM
 callback and state ABI and does not imply a Rust aggregate speedup. See the
 [JVM aggregate architecture decision](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/48-jvm-aggregate-managed-state.md).
