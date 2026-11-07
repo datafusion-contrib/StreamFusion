@@ -48,11 +48,30 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  * wall-clock timestamps in the session zone, matching how the host renders event-time windows.
  */
 public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatefulOperator<OUT> {
+  private transient long canonicalInputWatermark;
+
+  @Override
+  public void initializeState(org.apache.flink.runtime.state.StateInitializationContext context)
+      throws Exception {
+    canonicalInputWatermark = Long.MIN_VALUE;
+    super.initializeState(context);
+  }
+
+  @Override
+  protected long canonicalWatermark() {
+    return canonicalInputWatermark;
+  }
+
+  @Override
+  protected void restoreCanonicalWatermark(long watermark) {
+    canonicalInputWatermark = watermark;
+  }
 
   public static final int KIND_RETRACT_SUM = 9;
   public static final int KIND_RETRACT_COUNT = 10;
   public static final int KIND_LIVE_COUNT = 11;
   public static final int KIND_HIDDEN_LIVE_COUNT = 12;
+  public static final int KIND_COUNT_DISTINCT_WITH_COUNTS = 43;
 
   protected static final int TIMESTAMP_PRECISION = 3;
 
@@ -114,10 +133,13 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
 
   /** Aggregate kind code for COUNT, whose partial is always a bigint regardless of value type. */
   protected static final int KIND_COUNT = 3;
+
   private static final int KIND_MIN = 1;
   private static final int KIND_MAX = 2;
 
   private final String timeZoneId;
+  private long windowOffsetMillis;
+  private boolean finalWindows;
   protected final long slideMillis;
   protected final int[] aggregateKinds;
   // One value-column type per aggregate (positionally matching aggregateKinds), so a window can
@@ -205,12 +227,24 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
       int[] keyTypes,
       byte[][] restoredPartitions) {
     return Native.createRocksDBWindowAggregator(
-        windowMillis, slideMillis, cumulative, valueTypes, aggregateKinds, keyTypes,
-        keyTimestampPrecisions(), memoryBudgetBytes(),
-        rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-        rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
-        rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-        rocksdb.aligned(), restoredPartitions,
+        windowMillis,
+        slideMillis,
+        cumulative,
+        valueTypes,
+        aggregateKinds,
+        keyTypes,
+        keyTimestampPrecisions(),
+        memoryBudgetBytes(),
+        rocksdb.tableDirectory(),
+        maxParallelism(),
+        rocksdb.optionsJson(),
+        rocksdb.sharedResourcesHandle(),
+        rocksdb.sourceDirectories(),
+        rocksdb.sourceSnapshotTokens(),
+        rocksdb.keyGroupStart(),
+        rocksdb.keyGroupEnd(),
+        rocksdb.aligned(),
+        restoredPartitions,
         restoredProcessingTimeTimerDeadline());
   }
 
@@ -293,8 +327,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   }
 
   @Override
-  public void open() throws Exception {
-    super.open();
+  protected void configureStateHandle() {
+    super.configureStateHandle();
+    if (usesAlignedWindowAssignment()) Native.setFixedWindowFinalWindows(handle, finalWindows);
+    if (usesAlignedWindowAssignment()) Native.setFixedWindowOffset(handle, windowOffsetMillis);
     zone = ZoneId.of(timeZoneId);
     fixedBoundaryOffset = zone.getRules().isFixedOffset();
     if (fixedBoundaryOffset) {
@@ -332,17 +368,42 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   }
 
   protected final long fixedGridStart(long epochMillis, long gridMillis) {
-    return WindowTimeDomain.gridStart(epochMillis, gridMillis, fixedAssignmentOffsetMillis);
+    return WindowTimeDomain.gridStart(
+        epochMillis,
+        gridMillis,
+        Math.subtractExact(fixedAssignmentOffsetMillis, windowOffsetMillis));
+  }
+
+  public final void setWindowOffsetMillis(long offsetMillis) {
+    if (handle != 0) throw new IllegalStateException("Window offset must be bound before opening");
+    windowOffsetMillis = offsetMillis;
+  }
+
+  public final void setFinalWindows() {
+    if (handle != 0)
+      throw new IllegalStateException("Window mode must be bound before initialization");
+    finalWindows = true;
+  }
+
+  public final boolean isFinalWindow() {
+    return finalWindows;
   }
 
   @Override
   public void processWatermark(Watermark mark) throws Exception {
-    flushPending();
+    if (hasStockStateContract() && mark.getTimestamp() < canonicalInputWatermark)
+      mark = new Watermark(canonicalInputWatermark);
+    flushBeforeWatermark(mark.getTimestamp());
+    canonicalInputWatermark = mark.getTimestamp();
     if (isEventTimeWindow()) {
       emitClosedWindows(mark.getTimestamp());
     }
     publishStateBytes();
     super.processWatermark(mark);
+  }
+
+  protected void flushBeforeWatermark(long watermark) {
+    flushPending();
   }
 
   protected boolean isEventTimeWindow() {
@@ -442,7 +503,17 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
    */
   protected final void updateColumnarProctime(
       VectorSchemaRoot in, long nowMillis, int[] valueColumns, int[] keyColumns, int[] keyTypes) {
-    updateColumnarInternal(in, -1, nowMillis, valueColumns, null, keyColumns, keyTypes);
+    updateColumnarProctime(in, nowMillis, valueColumns, null, keyColumns, keyTypes);
+  }
+
+  protected final void updateColumnarProctime(
+      VectorSchemaRoot in,
+      long nowMillis,
+      int[] valueColumns,
+      int[] filterColumns,
+      int[] keyColumns,
+      int[] keyTypes) {
+    updateColumnarInternal(in, -1, nowMillis, valueColumns, filterColumns, keyColumns, keyTypes);
   }
 
   /**
@@ -564,7 +635,8 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
       countValues[a] = aggregateKinds[a] == KIND_COUNT || aggregateKinds[a] == KIND_RETRACT_COUNT;
       if (countValues[a]) {
         values[a] = new BigIntVector("value" + a, allocator);
-      } else if (isTimestamp(valueTypes[a]) && timestampPrecision(valueTypes[a]) <= 3
+      } else if (isTimestamp(valueTypes[a])
+          && timestampPrecision(valueTypes[a]) <= 3
           && (aggregateKinds[a] == KIND_MIN || aggregateKinds[a] == KIND_MAX)) {
         values[a] = new TimeStampMilliVector("value" + a, allocator);
       } else {
@@ -579,7 +651,8 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
         timestampTargets[a] = new TimestampAccessor(values[a]);
         // Arrow can retain a view only within one root allocator; external roots need a copy.
         if ((aggregateKinds[a] == KIND_MIN || aggregateKinds[a] == KIND_MAX)
-            && timestampPrecision(valueTypes[a]) > 3 && filters[a] == null
+            && timestampPrecision(valueTypes[a]) > 3
+            && filters[a] == null
             && srcValues[a].getAllocator().getRoot() == allocator.getRoot()
             && TimestampAccessor.isComponentTimestamp(srcValues[a].getField())) {
           sharedValues[a] = true;
@@ -646,7 +719,8 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
       return TimestampAccessor.field(name, true).createVector(allocator);
     }
     if (isDecimal(valueType)) {
-      return new DecimalVector(name, allocator, decimalPrecision(valueType), decimalScale(valueType));
+      return new DecimalVector(
+          name, allocator, decimalPrecision(valueType), decimalScale(valueType));
     }
     switch (valueType) {
       case VALUE_BOOLEAN:
@@ -685,7 +759,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
     }
     if (isDecimal(valueType)) {
       ((DecimalVector) value)
-          .setSafe(i, row.getDecimal(column, decimalPrecision(valueType), decimalScale(valueType)).toBigDecimal());
+          .setSafe(
+              i,
+              row.getDecimal(column, decimalPrecision(valueType), decimalScale(valueType))
+                  .toBigDecimal());
       return;
     }
     switch (valueType) {
@@ -778,10 +855,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
     TimestampAccessor.set(vector, row, timestamp);
   }
 
-  /**
-   * Copies row {@code i}'s key from a source Arrow vector into the key vector (int widens to
-   * int64).
-   */
+  /** Copies row {@code i}'s key into the selected stock or legacy native carriage type. */
   private static void setKeyFromVector(FieldVector target, int i, FieldVector source, int keyType) {
     if (source.isNull(i)) {
       target.setNull(i);
@@ -829,14 +903,15 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
       default:
         long value =
             keyType == TYPE_INT ? ((IntVector) source).get(i) : ((BigIntVector) source).get(i);
-        ((BigIntVector) target).setSafe(i, value);
+        if (target instanceof IntVector) ((IntVector) target).setSafe(i, (int) value);
+        else ((BigIntVector) target).setSafe(i, value);
     }
   }
 
   /**
    * The grouping-key type codes for an aggregate's first {@code keyCount} output columns (the keys
-   * lead the row in the host's order). Bigint and int keys are both carried as int64 natively; the
-   * code records the type to read on input and emit on output.
+   * lead the row in the host's order). Legacy native INT keys widen to int64; stock-bound INT keys
+   * retain int32. The code records the type to read on input and emit on output.
    */
   public static int[] keyTypes(RowType outputType, int keyCount) {
     int[] types = new int[keyCount];
@@ -886,7 +961,8 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
           types[j] = TYPE_TIMESTAMP_BASE + LogicalTypeChecks.getPrecision(type);
           break;
         case DECIMAL:
-          types[j] = decimalCode(LogicalTypeChecks.getPrecision(type), LogicalTypeChecks.getScale(type));
+          types[j] =
+              decimalCode(LogicalTypeChecks.getPrecision(type), LogicalTypeChecks.getScale(type));
           break;
         default:
           types[j] = TYPE_BIGINT;
@@ -896,9 +972,15 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   }
 
   /**
-   * Creates the Arrow vector carrying a key column, in the key's natural type (int/bigint widen).
+   * Creates a key vector, retaining stock INT width while preserving legacy native INT widening.
    */
   protected final FieldVector newKeyVector(String name, int keyType) {
+    if (keyType == TYPE_INT
+        && (hasStockStateContract()
+            || (keyTimestampPrecisions().length > 0
+                && keyTimestampPrecisions()[0] == Native.STOCK_KEY_PROJECTION))) {
+      return new IntVector(name, allocator);
+    }
     if (isTimestamp(keyType)) {
       return TimestampAccessor.field(name, true).createVector(allocator);
     }
@@ -931,9 +1013,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
     }
   }
 
-  /**
-   * Copies row {@code i}'s key from the input row into the key vector (int keys widen to int64).
-   */
+  /** Copies row {@code i}'s key into the selected stock or legacy native carriage type. */
   protected static void setKey(FieldVector vector, int i, RowData row, int column, int keyType) {
     if (row.isNullAt(column)) {
       vector.setNull(i);
@@ -946,7 +1026,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
     }
     if (isDecimal(keyType)) {
       ((DecimalVector) vector)
-          .setSafe(i, row.getDecimal(column, decimalPrecision(keyType), decimalScale(keyType)).toBigDecimal());
+          .setSafe(
+              i,
+              row.getDecimal(column, decimalPrecision(keyType), decimalScale(keyType))
+                  .toBigDecimal());
       return;
     }
     switch (keyType) {
@@ -982,8 +1065,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
         ((DateDayVector) vector).setSafe(i, row.getInt(column));
         break;
       default:
-        ((BigIntVector) vector)
-            .setSafe(i, keyType == TYPE_INT ? row.getInt(column) : row.getLong(column));
+        if (vector instanceof IntVector) ((IntVector) vector).setSafe(i, row.getInt(column));
+        else
+          ((BigIntVector) vector)
+              .setSafe(i, keyType == TYPE_INT ? row.getInt(column) : row.getLong(column));
     }
   }
 
@@ -993,7 +1078,8 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
       return null;
     }
     if (isTimestamp(keyType)) {
-      if (TimestampAccessor.isTimestamp(vector)) return new TimestampAccessor(vector).getTimestamp(i);
+      if (TimestampAccessor.isTimestamp(vector))
+        return new TimestampAccessor(vector).getTimestamp(i);
       long nanos = ((BigIntVector) vector).get(i);
       return TimestampData.fromEpochMillis(
           Math.floorDiv(nanos, NANOS_PER_MILLI), (int) Math.floorMod(nanos, NANOS_PER_MILLI));
@@ -1024,7 +1110,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
       case TYPE_DATE:
         return ((DateDayVector) vector).get(i);
       default:
-        long value = ((BigIntVector) vector).get(i);
+        long value =
+            vector instanceof IntVector
+                ? ((IntVector) vector).get(i)
+                : ((BigIntVector) vector).get(i);
         if (keyType == TYPE_INT) {
           return (int) value; // separate return: a ternary would promote both arms to long
         }

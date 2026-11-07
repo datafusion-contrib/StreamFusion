@@ -49,6 +49,20 @@ public final class WindowCalendar {
   }
 
   /**
+   * Renders fixed-offset native session bounds in the stock local domain before rejecting a merge.
+   *
+   * @param start merged epoch start
+   * @param end merged epoch end
+   * @param clock current inclusive epoch watermark
+   */
+  public void rejectExpiredEpochMerge(long start, long end, long clock) {
+    rejectExpiredMerge(
+        TimeWindowUtil.toUtcTimestampMills(start, zone),
+        TimeWindowUtil.toUtcTimestampMills(end, zone),
+        clock);
+  }
+
+  /**
    * Converts input instants to the local assignment domain.
    *
    * @param epochs input epoch milliseconds

@@ -341,22 +341,11 @@ final class KafkaSinkMatcher {
       ctx.decline("kafka sink: " + planned.fallbackReason);
       return null;
     }
-    // A CDC envelope format is Flink's way of writing a changelog to an ordinary kafka table (its
-    // sink requests the full changelog, UPDATE_BEFORE included), so changelog input is exactly the
-    // admitted case there; every other non-upsert format requires an insert-only stream.
-    boolean insertOnly =
-        ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) sink.getInputs().get(0));
-    if (!planned.upsert && !FormatCodes.isCdc(planned.valueFormat.format) && !insertOnly) {
-      ctx.decline("kafka sink: the input is a changelog, not an insert-only stream");
-      return null;
-    }
-    // When sink.parallelism differs from the input's on a changelog edge, stock Flink keys the
-    // edge by primary key (or rejects the plan without one) so same-key changes stay ordered; the
-    // native sink only sets the parallelism, which would rebalance whole batches and let a key's
-    // updates interleave across subtasks. Keep those plans on Flink's own translation.
-    if (planned.sink.parallelism != null && !insertOnly) {
-      ctx.decline(
-          "kafka sink: sink.parallelism on a changelog input (Flink repartitions by primary key)");
+    String inputFallback =
+        inputFallback(
+            planned, ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) sink.getInputs().get(0)));
+    if (inputFallback != null) {
+      ctx.decline(inputFallback);
       return null;
     }
     return new StreamPhysicalNativeKafkaSink(
@@ -366,5 +355,23 @@ final class KafkaSinkMatcher {
         sink.getRowType(),
         planned,
         NativePlanDetails.from(sink));
+  }
+
+  static String inputFallback(Planned planned, boolean insertOnly) {
+    // A CDC envelope format is Flink's way of writing a changelog to an ordinary kafka table (its
+    // sink requests the full changelog, UPDATE_BEFORE included), so changelog input is exactly the
+    // admitted case there; every other non-upsert format requires an insert-only stream.
+    if (!planned.upsert && !FormatCodes.isCdc(planned.valueFormat.format) && !insertOnly) {
+      return "kafka sink: the input is a changelog, not an insert-only stream";
+    }
+    // When sink.parallelism differs from the input's on a changelog edge, stock Flink keys the
+    // edge by primary key (or rejects the plan without one) so same-key changes stay ordered; the
+    // native sink only sets the parallelism, which would rebalance whole batches and let a key's
+    // updates interleave across subtasks. Keep those plans on Flink's own translation.
+    if (planned.sink.parallelism != null && !insertOnly) {
+      return "kafka sink: sink.parallelism on a changelog input (Flink repartitions by primary"
+                 + " key)";
+    }
+    return null;
   }
 }

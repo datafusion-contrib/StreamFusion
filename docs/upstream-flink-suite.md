@@ -15,6 +15,31 @@ native work and unexpected fallback fails. The exhaustive native Criterion smoke
 not a CI gate; see the [CI policy](ci.md#native-execution-checks-instead-of-exhaustive-benchmark-smoke).
 Native execution evidence does not measure throughput.
 
+Window witnesses register operators at their concrete or inherited `open()` implementation,
+then count completed Arrow input at the shared update boundary. Instrumenting an abstract core
+alone does not register an instance when its lifecycle method is declared elsewhere. Delegating
+attached-window overloads count input only at the terminal call. Each of the twenty-four released
+event-time restore programs has an exact execution contract. Split programs require positive
+local input and separate global witnesses for slice merging and final-window merging; repeated
+subtasks of one mode cannot satisfy both. The unmerged #569 integration passes all twenty-four
+original programs in both stock and StreamFusion runs: twenty require native window aggregates,
+three unpartitioned SESSION plans require both their unchanged stock session table function and
+native group aggregation, and one retracting SESSION program requires its stock window aggregate,
+positive native Calc work and the exact unsupported-native-session fallback. The released plans
+have different state owners; grouping an unpartitioned session separately by business key would
+change its semantics. Stock witnesses are registered only after their real state initializes and
+count completed input separately from native rows. Missing either side of a mixed route fails.
+
+A mixed contract can name `StockSessionTableFunction` alongside a native operator. A family
+fallback can append `&&NativeCalcOperator+StockSessionWindowAggregate` to require its actual stock
+state owner and an admitted native boundary as well as the exact reason and absent native family.
+These stock labels never satisfy native rows or restore-only evidence. Native evidence keeps its
+original four columns, an optional fifth native-import count column, and an optional sixth stock
+state-owner count column (with an empty fifth column when necessary). Both verifiers reject stock
+labels placed in the native-input column; the audit reports mixed paths separately. Use the
+portable `bin/canonical-savepoints.sh` entry point: it tests and packages the current agent before
+running either engine, so changed contracts cannot silently use an older agent JAR.
+
 The unchanged `AggregateITCase.testDistinctGroupBy` and `testDistinctWithMultiFilter`
 fixtures require consumed native group-aggregate work, including both local and global
 stages when their released fixture enables splitting. Runtime-route scopes retain every
@@ -1504,6 +1529,343 @@ The upstream test profile pins JUnit 5.14.4 to match Iceberg's release and execu
 and the adjacent compressed port diff record the fixture and entry-point adaptations.
 
 
+## Native witnesses for canonical restore programs
+
+With `streamfusion.flink-suite.canonical=true`, the suite agent binds the inherited released
+`RestoreTestBase.testRestore` invocation to its concrete operator family and program ID.
+The declarations live in `dev/flink-suite/agent/src/main/resources/canonical-native-execution.tsv`.
+Continuation programs require positive consumed input in the declared native family; an
+unrelated Calc, stock fallback, or imported state cannot satisfy that requirement. Program
+selectors normalize hyphens to underscores. Exact family fallbacks require their recorded
+planner reason and no input or imported state in that family.
+
+The released literal-aggregate join program supplies no post-restore input. Its explicit
+`@restore:NativeColumnarUpdatingJoinOperator` contract instead requires successful nonempty
+JNI state import and a successful native operator open, with no resumed native input or
+fallback. The agent records batches after the JNI import returns; failure or opening alone
+cannot prove restoration. Reports retain consumed inputs in the original field and add an
+optional fifth field for imported rows in opened native operators. The verifier exposes
+`native_canonical_import_rows` separately and classifies that scoped proof as `native_restore`.
+These counts establish restored native work, not throughput or future-input continuation.
+
+The released temporal-sort restore fixtures distinguish a secondary-key rowtime sort from a
+single processing-time order. The unchanged rowtime fixture orders by both rowtime and a DOUBLE
+key, so it retains the stock sort under the existing secondary-key gap. Its mixed-route contract
+requires nonempty native Calc input, the explicit secondary-order fallback reason and nonempty
+input in a real stock rowtime sort whose managed state and secondary comparator initialized.
+A Calc alone, opening alone, native-sort input/imports or a successful restore cannot satisfy it.
+This is a stock-state compatibility control, not proof of native temporal-sort state transfer;
+the single-key native sort handoffs retain their separate positive execution requirements. Flink
+elides the processing-time sort into a forward edge. Its exact fixture contract is
+`@elided:TemporalSort`, restricted to `program=temporal_sort_proctime`: at least one job must have
+been submitted successfully, every recorded source-to-sink graph must be complete and contain
+no stock or native sort, and no native sort/state import or fallback may occur. The original
+upstream output and restore assertions remain unchanged. Unknown programs cannot use this
+contract. This route is reported as `ordering_elided` and receives neither native execution nor
+fallback credit. A seventh TSV column carries submitted graphs and raw open/import observations;
+the audit independently validates that evidence and rejects missing graphs or hidden sort work.
+
+Run the contract self-tests with:
+
+```sh
+mvn -f dev/flink-suite/agent/pom.xml -Dstreamfusion.flink-suite.canonical=true \
+  -Dtest=CanonicalRestoreExecutionTest test
+python3 -m unittest discover -s dev/flink-suite -p test_summarize.py
+```
+
+The state adapters and complete compatibility matrix remain tracked by
+[P0 #569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking and
+tuning are deferred until functionality is complete.
+
+Window Top-N uses a separate native operator from ordinary Top-N. The execution agent instruments
+its successful `open` and consumed Arrow batches explicitly, so a window-rank restore contract
+requires work from window Top-N itself even when native aggregates or Calc also run in the plan.
+
+Window-deduplication restore programs require the shared native window-selection operator to
+consume input. Opening it without rows, or running an unrelated native Calc, cannot satisfy
+that gate. Dedicated witness controls cover these cases, retaining the original released
+fixture assertions alongside the native-family requirement.
+
+## Window join canonical restore qualification
+
+The unmerged #569 stock compiled-plan integration passes all eight released Flink 2.2.1
+`WindowJoinEventTimeRestoreTest` programs in the stock control and native lanes, with no failures,
+errors or skips. The six admitted INNER/LEFT/RIGHT/FULL TUMBLE and INNER HOP/CUMULATE programs
+require successful native window-join input. The agent also records successful direct canonical
+imports; each of these six programs imports pending rows into the native state owner.
+
+Released SEMI/ANTI window joins retain their stock implementation. Each has an explicit contract
+requiring the exact planner fallback reason, absence of native window-join input/import, and
+successful input in the initialized stock list/timer owner. An unrelated native Calc, an opened
+but unused stock operator, missing state, or an incorrect fallback cannot satisfy these controls.
+The summary keeps stock state-owner work separate from native input. The original released test
+classes, frozen plans/savepoints and expected outputs are unchanged.
+
+The window-join stock compiled-plan workflow also passes these fixtures in a clean component
+with automatic state and identity binding. Its separate 46-case job matrix covers both engine
+orders and repeated switches. Ordinary SQL identities and the rest of the full #569 matrix
+remain separate requirements. Benchmarking of canonical handoff remains deferred.
+
+## Released canonical savepoint runner
+
+Run the opt-in Flink 2.2.1 canonical lane with JDK 17:
+
+```sh
+bin/canonical-savepoints.sh sql
+bin/canonical-savepoints.sh runtime
+```
+
+The runner packages and tests the execution agent, then runs each selected released test artifact
+on stock and native classpaths. Stock excludes the StreamFusion runtime; a JUnit guard verifies
+that exclusion and initializes the JNI library on the native leg. Restore fixtures are unpacked
+into a disposable working directory, without modifying Flink tests or their original assertions.
+The module rejects other Flink release lines.
+
+`CANONICAL_UPSTREAM_TESTS` selects an explicit comma-separated set of released classes/methods.
+The SQL inventory includes operator restore programs; the runtime inventory includes canonical
+formats, backend switching, timers and savepoint lifecycle. Required execution contracts and
+missing-test checks make partial or stock-only runs fail the native qualification. Broad SQL
+family completion remains work in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569);
+the presence of a runner or a passing stock lifecycle test does not prove native state interchange.
+The selected window-join restore lane passes eight stock and eight native invocations against
+the compiled-plan integration, including its six actual native state owners and two verified
+stock SEMI/ANTI fallbacks. Benchmarking remains deferred.
+
+### Released runtime control qualification
+
+The full seven-class Flink 2.2.1 runtime selection passes 51 active invocations on each configured
+engine classpath, with zero failures or errors. Each lane reports the same one upstream-disabled
+`SavepointITCase.testTriggerSavepointAndResumeWithNoClaim` invocation (FLINK-25427). The active
+controls comprise 16 savepoint-format cases, eight heap/Rocks backend-switch cases, one timer
+case, 18 savepoint lifecycle cases, four stop-with-savepoint cases and four JobMaster triggering
+cases. The original classes and assertions are unchanged.
+
+These controls have no native state-owner execution contracts. They exercise the released Flink
+runtime/backend lifecycle with stock and StreamFusion dependency visibility; they do not establish
+conversion of StreamFusion operator state. Native-family SQL restore witnesses and isolated
+cross-engine job continuations remain separate qualifications.
+
+### Interval restore state-owner proof
+
+The execution agent tracks successful native interval input and direct canonical row import,
+excluding timer-transfer batches from row counts. Seventy-seven canonical witness controls pass,
+including rejection of opened-only, import-only, Calc-only or window-only work for an interval
+restore contract.
+
+The clean compiled-plan integration passes all three unchanged released interval programs and
+all eight window programs on each engine: eleven stock and eleven native-side passes. Each of
+the event-time and processing-time interval programs imports ten pending rows and consumes five
+new native rows. The window selection includes six actual native state owners and two verified
+stock SEMI/ANTI paths.
+
+The pinned impossible-interval LEFT join is already stateless in Flink. Its exact
+`@elided:IntervalJoin` contract requires a successfully submitted complete acyclic graph with no
+join or CoProcess state owner, no native state import, no stateful native operator or fallback,
+and actual native Calc work. Original upstream assertions still check the null-padded rows. The
+audit reports `interval_elided`, separately from native operator and fallback credit. Calc work
+without that submitted-graph evidence cannot pass. Unknown programs cannot reuse the contract.
+Seventy-seven Java witness controls and 48 summary-parser controls include missing/forged graph,
+wrong operator, hidden state/import and failed-submission rejections. Full-job/type/version and
+connector qualification remains tracked by #569; these upstream fixtures do not replace it.
+
+The interval integration additionally passes 84 isolated complete-job handoffs (457 combined
+checks), retaining custom sources, transactional sink effects, both transposes and stock worker
+classpaths without StreamFusion. This includes both clock modes, residual predicates, no-input
+re-export, real checkpoint recovery and 1 → 3 → 2 rescaling. These are StreamFusion integration
+fixtures, separate from the unchanged released upstream programs and their assertions. The
+remaining #569 matrix stays open; benchmarking is deferred.
+
+
+### Temporal canonical restore witnesses
+
+All four unchanged released 2.2.1 `TemporalJoinRestoreTest` programs pass on stock and native.
+The explicit program contracts require actual native temporal input; unrelated Calc work,
+import-only/open-only paths, fallback and unknown programs cannot qualify them. Each native
+program imports four retained temporal rows and consumes four post-restore rows. Instrumentation
+counts row transfer independently of cursor/callback metadata. The row/map-key programs derive
+scalar keys before the temporal boundary; the legacy function fixture uses rowtime. Eighty-eight
+canonical witness controls and 48 summary controls pass. This is upstream compiled-plan restore
+coverage, not the full isolated engine-switch/connector/failure matrix of
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+The separate temporal integration matrix passes 26 isolated complete-job scenarios and 240
+combined checks: both engine orders and native stores, INNER/LEFT, residual predicates, no-input
+re-export, native checkpoint recovery and 64-key rescaling through 1 → 3 → 2 tasks. It retains
+two custom sources, a transactional sink, both transposes and stock classpath exclusion. Pending
+probes/version history survive every cut; final committed output also matches an independent
+version-history oracle. These StreamFusion-owned fixtures preserve all probes until final drain
+and do not qualify intermediate temporal-output commit failures. They complement the unchanged
+released upstream programs; they do not replace their assertions or complete the broader #569
+connector/failure/version/ordinary-SQL matrix. Benchmarking remains deferred.
+
+
+After changing state registration to use actual runtime primary IDs, all 15 unchanged released
+2.2.1 temporal/interval/window restore programs pass on each engine. The native audit verifies
+12 actual join state imports with continued native input, two stock window SEMI/ANTI owners and
+one join elided by Flink. These retain the released programs' original UID settings. Separate
+StreamFusion integration jobs qualify 34 generated-ID round trips and ten explicit-UID controls;
+124 planner/identity and 249 job/runtime/metadata checks pass. The generated-ID job scope is
+listed in [canonical state coverage](backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans).
+Ordinary-SQL optimizer and broader connector/type/version/failure qualification remain open;
+benchmarking is deferred.
+
+
+### Selecting the released first-N restore program
+
+`tech.streamfusion.canonical.FirstNRestoreTest` is a thin subclass of the released
+`RankRestoreTest`; its only override selects `RankTestPrograms.RANK_N_TEST`. It keeps the
+released compiled plan/savepoint fixture, inputs, inherited restore implementation and original
+assertions. The full upstream rank class and all its execution contracts remain intact for
+qualifying other rank adapters.
+
+Select it through the canonical lane with
+`CANONICAL_UPSTREAM_TESTS=tech.streamfusion.canonical.FirstNRestoreTest#testRestore bin/canonical-savepoints.sh sql`.
+The stock leg excludes StreamFusion runtime classes. The native leg requires positive first-N
+input and records actual imported counter batches, excluding the validation-only pass. The
+qualified fixture imports two counters and processes four new rows. Together with the four
+existing join restore classes, the selection passes 31 original programs on each engine. These
+reports overlap previous cohorts and are not cumulative coverage counts. This proves that
+first-N fixture, not the other rank algorithms or all schema/backend/version variants.
+
+
+The normalizer qualification retains all five released `ChangelogNormalizeRestoreTest` programs
+and their original fixtures/assertions. Three native paths each import two canonical rows and
+consume new input; validation-only visits are excluded from import counts. The two pushed-filter
+paths retain the stock normalizer and exact fallback reason. Together with first-N and joins,
+all 36 selected programs pass per engine under their existing strict route contracts. This lane
+does not qualify unrelated aggregate/dedup/rank adapters or replace complete-job connector tests.
+
+
+### Selecting the released eager-dedup restore programs
+
+`tech.streamfusion.canonical.EagerDedupRestoreTest` subclasses the released `DeduplicationRestoreTest`
+and selects its `deduplicate-asc-proctime` and `deduplicate-desc` programs. Inputs, compiled plans,
+savepoint fixtures, inherited restoration and original assertions remain unchanged. The original
+full deduplication class remains unchanged. Its historical ascending-rowtime fixture was
+compiled on Flink 1.19 and omits `outputInsertOnly`; released Flink 2.2.1 therefore selects the
+eager `RowTimeDeduplicateFunction`. It does not exercise the newer watermark-buffered function.
+
+Run it with
+`CANONICAL_UPSTREAM_TESTS=tech.streamfusion.canonical.EagerDedupRestoreTest#testRestore bin/canonical-savepoints.sh sql`.
+Both programs pass on each engine. Each native leg records two actual canonical imports and four
+new input rows in the eager deduplicator; validation-only visits are excluded. The stock leg
+excludes StreamFusion runtime classes. Six new audit controls reject missing/unrelated input and
+ensure validation does not inflate imported-row counts. Together with the selected first-N and
+five normalizer programs, this cohort passes eight programs per engine. These are overlapping
+cohorts, not cumulative coverage counts, and do not qualify the full deduplication family.
+
+
+The full released deduplication class now passes all three programs on stock and native
+classpaths. The ascending-rowtime program also imports two rows and consumes four new rows in
+the eager native owner. Alongside first-N and five normalizer programs, all nine programs pass per
+engine: seven actual native owners and two expected normalizer filter fallbacks. Original inputs,
+historical compiled plans and assertions remain unchanged. Each dedup program explicitly requires
+the eager family in the execution audit. The buffered import hook counts only mutating passes;
+99 audit controls include cases proving that buffered import/input cannot satisfy the historical
+eager contract. These upstream results do not qualify current buffered-rowtime SQL jobs; those
+have separate direct, planner and process tests. Reports overlap earlier selections.
+
+
+### Selecting the released append-rank restore program
+
+`tech.streamfusion.canonical.AppendRankRestoreTest` selects only
+`RankTestPrograms.RANK_TEST_APPEND_FAST_STRATEGY` from the released `RankRestoreTest`. The compiled
+plan, savepoint, source data, inherited restore method and expected results remain unchanged.
+Run it with
+`CANONICAL_UPSTREAM_TESTS=tech.streamfusion.canonical.AppendRankRestoreTest#testRestore bin/canonical-savepoints.sh sql`.
+Its native witness imports three retained rows and processes two new Top-N rows; validation-only
+visits do not count as imports. Stock runs exclude the StreamFusion runtime. The append, first-N,
+normalizer and full dedup selection passes ten original programs per engine; eight require their
+native owners and two keep the expected normalizer-filter fallback. The canonical agent passes
+104 audit controls, including checks that unrelated work or imports alone cannot satisfy append
+continuation. This qualifies the released append fixture and the
+[documented append scope](operators/top-n.md#value-ordered-append-canonical-state-partial), not
+updating/retracting ranks or the full operator/connector/version matrix. Benchmarking is deferred.
+
+
+### Selecting the released updating-rank restore program
+
+`tech.streamfusion.canonical.UpdateRankRestoreTest` selects the released
+`RankTestPrograms.RANK_TEST_UPDATE_FAST_STRATEGY` through a thin subclass. It inherits the original
+restore implementation, compiled plan/savepoint, input, two-field ordering, settings and assertions.
+Select it with `CANONICAL_UPSTREAM_TESTS=tech.streamfusion.canonical.UpdateRankRestoreTest#testRestore bin/canonical-savepoints.sh sql`.
+The fixture imports six retained native rows and processes two new Top-N rows. Shared rank import
+advice records only successful applied transfers, excluding the validation-only pass; unrelated
+operators or import-only execution cannot satisfy continuation.
+
+The updating/append/first-N/normalizer/full-dedup selection passes eleven original programs in both
+engines, with nine required native paths and two expected normalizer-filter fallbacks. All 109
+canonical audit controls pass. Stock controls exclude StreamFusion runtime classes; the bundled
+native library is verified against the qualified debug artifact. This qualifies the selected
+released fixture and the [documented updating subset](operators/top-n.md#updating-canonical-state-partial),
+while the wider operator/connector/version matrix remains open. Benchmarking is deferred.
+
+
+### Selecting the released retracting-rank restore program
+
+`tech.streamfusion.canonical.RetractRankRestoreTest` selects the released
+`RankTestPrograms.RANK_TEST_RETRACT_STRATEGY` through a thin subclass, retaining the original
+compiled plan/savepoint, source schema and changelog settings, input, inherited restore method
+and expected outputs. Select it with
+`CANONICAL_UPSTREAM_TESTS=tech.streamfusion.canonical.RetractRankRestoreTest#testRestore bin/canonical-savepoints.sh sql`.
+It imports six retained native rows and consumes two new Top-N rows. A dedicated witness counts
+only committed data row kinds, excluding count-map/list/bound headers and validation-only visits.
+The `@resume:NativeColumnarTopNOperator` contract requires both a nonempty canonical import into
+an opened Top-N operator and new input through that family; stock-owner work or fallback reasons
+cannot satisfy it. Import counts and new input remain separate evidence fields.
+
+The retract/update/append/first-N/normalizer/full-dedup selection passes twelve original programs
+per engine: ten required native paths and two expected normalizer-filter fallbacks. All 118
+canonical witness controls pass, including metadata-only, validation-only, import-only, open-only,
+wrong-family and fallback rejection. All 49 Python summary controls pass too. Stock test processes
+exclude StreamFusion classes; the embedded native library matches the qualified debug artifact.
+This qualifies the released restore fixture. Complete-process handoffs and the broader coverage
+matrix remain separate checks; see [retracting scope](operators/top-n.md#retracting-canonical-state-partial).
+Benchmarking remains deferred.
+
+
+The complete unchanged released `RankRestoreTest#testRestore` also passes all four original
+programs in each engine, with all four required native paths. Its retracting program separately
+proves six imported rows and two new Top-N rows through the stronger continuation contract.
+These are the same four rank programs selected by the thin classes above, so the qualification
+counts are overlapping, not additive. No program is excluded from this rank-class run.
+
+
+### Released grouped-state canonical resume proofs
+
+The unchanged released Flink 2.2.1 `GroupAggregateRestoreTest#testRestore` selection passes all nine
+stock invocations and five native canonical resumes. Four UDF programs still fail strict native
+execution checks, so the complete native selection remains red. Original queries, fixtures and
+sink assertions remain unchanged.
+
+| Released program | Applied stock groups | New global native rows | New local native rows |
+| --- | ---: | ---: | ---: |
+| `group-aggregate-simple` | 2 | 3 | — |
+| `agg-with-state-ttl-hint` | 2 | 3 | — |
+| `group-aggregate-simple-mini-batch` | 2 | 2 | 3 |
+| `group-aggregate-distinct` | 3 | 7 | — |
+| `group-aggregate-distinct-mini-batch` | 3 | 5 | 7 |
+
+Every program has an explicit selector. Qualified grouped contracts require applied nonempty
+canonical state import and new input in the same opened native grouped owner. Mini-batches
+additionally require new input in the native local stage. The agent records header batches only
+after successful JNI-backed import, excludes validation-only passes, and associates the native
+handle with the operator that subsequently opens. Unknown programs, unrelated Calc work,
+wrong/unopened handles, empty imports, missing stages and import-only or input-only execution
+cannot satisfy the proof. Canonical controls pass 162 Java cases and 51 independent Python
+report/parser cases. These protocol checks do not qualify other operator or connector variants.
+
+Use the normal released runner without editing upstream tests or fixtures:
+
+```sh
+CANONICAL_UPSTREAM_TESTS=org.apache.flink.table.planner.plan.nodes.exec.stream.GroupAggregateRestoreTest#testRestore \
+  bin/canonical-savepoints.sh sql
+```
+
+The [grouped-state coverage page](operators/group-by.md#canonical-localglobal-distinct-mini-batches-partial)
+records the exact scalar/view, type, backend and complete-job qualification. All broader #569
+operator/connector/version requirements remain open; benchmarking remains deferred.
+
 Scalar JVM local/global aggregation additionally contracts the unchanged SQL
 `AggregateITCase.testVarArgsNoGroupBy` and `testVarArgsWithGroupBy` fixtures. Ordinary and single-phase mini-batch variants
 require consumed JVM grouped input. Actual local/global variants require positive input
@@ -1514,3 +1876,9 @@ Route scopes cover each released heap/RocksDB parameter and preserve the existin
 and Flink 1.18 changelog-state fallback variants. These fixtures supplement the typed,
 controlled-clock bundle and checkpoint/savepoint-rescaling checks; unrelated native work
 cannot satisfy either phase contract.
+
+Ordinary DataStream-backed table programs retain their original execution route when Flink's
+released execution-node metadata declares the graph nonserializable. Canonical stock-template
+binding must not force these programs through JSON serialization. Unchanged upstream aggregate,
+nested-table Calc and OVER assertions still run with their original native-execution contracts;
+this boundary does not add DataStream-bridge canonical interchange coverage.

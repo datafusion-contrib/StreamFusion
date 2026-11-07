@@ -1,8 +1,5 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.Native;
-import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.RocksDBNativeStateSupport;
 import java.util.function.LongBinaryOperator;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -14,27 +11,31 @@ import org.apache.flink.streaming.api.operators.TwoInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.Native;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
- * Columnar event-time INNER interval join (Arrow in on both inputs, Arrow out): the join of
- * {@code a JOIN b ON a.k = b.k AND a.rt BETWEEN b.rt + lower AND b.rt + upper}. Each input batch is
- * handed to the native joiner, which buffers it per equi-join key and immediately returns the rows
- * it matches against the other side already buffered — so a pair is emitted once, when the second of
+ * Columnar event-time INNER interval join (Arrow in on both inputs, Arrow out): the join of {@code
+ * a JOIN b ON a.k = b.k AND a.rt BETWEEN b.rt + lower AND b.rt + upper}. Each input batch is handed
+ * to the native joiner, which buffers it per equi-join key and immediately returns the rows it
+ * matches against the other side already buffered — so a pair is emitted once, when the second of
  * its two rows arrives. The buffering, the probe, and the watermark-driven eviction all live
  * natively; this layer moves batches across the bridge and owns the handle's checkpointed state.
  *
- * <p>Flink delivers each input's watermark to {@link #processWatermark1}/{@link #processWatermark2};
- * the base operator combines them into the minimum and calls {@link #processWatermark}, which we
- * override to advance the joiner's eviction frontier before forwarding the watermark downstream
- * with Flink's interval-bound output delay.
+ * <p>Flink delivers each input's watermark to {@link #processWatermark1}/{@link
+ * #processWatermark2}; the base operator combines them into the minimum and calls {@link
+ * #processWatermark}, which we override to advance the joiner's eviction frontier before forwarding
+ * the watermark downstream with Flink's interval-bound output delay.
  *
  * <p>A **proctime** interval join times each row by the operator's processing-time clock (Flink's
- * {@code ProcTimeIntervalJoin} uses the clock, not a row value): the row's time column is stamped with
- * the clock when it is pushed, the interval is measured in processing time, and eviction advances on
- * the clock. A buffered row arriving at {@code now} can no longer match once the clock passes {@code
- * now + max(upper, -lower)} (a future arrival's time only grows), so each batch registers a cleanup
- * timer there; the last one drains the tail (for an outer join, emitting the null-pads). Watermarks
- * are ignored in that mode and the remaining buffer is drained on finish.
+ * {@code ProcTimeIntervalJoin} uses the clock, not a row value): the row's time column is stamped
+ * with the clock when it is pushed, the interval is measured in processing time, and eviction
+ * advances on the clock. A buffered row arriving at {@code now} can no longer match once the clock
+ * passes {@code now + max(upper, -lower)} (a future arrival's time only grows), so each batch
+ * registers a cleanup timer there; the last one drains the tail (for an outer join, emitting the
+ * null-pads). Watermarks do not advance that clock. Canonical-bound operators preserve the original
+ * SQL payload alongside a private cache clock and wait for real callbacks even at end of input; the
+ * legacy unbound path stamps the row time field and drains its remaining buffer on finish.
  */
 public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements TwoInputStreamOperator<ArrowBatch, ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
@@ -50,6 +51,7 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
   private final RowType rightType;
   private final EncodedPredicate predicate;
   private final boolean proctime;
+  private boolean preserveProcessingPayload;
 
   private transient long registeredTimer;
 
@@ -89,6 +91,18 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
   }
 
   @Override
+  public void setStockStateContract(tech.streamfusion.state.StockStateContract contract) {
+    if (contract instanceof tech.streamfusion.state.StockIntervalJoinStateContract) {
+      var interval = (tech.streamfusion.state.StockIntervalJoinStateContract) contract;
+      if (proctime != interval.processingTime())
+        throw new IllegalArgumentException(
+            "The stock interval clock mode differs from the native operator");
+      preserveProcessingPayload = interval.processingTime();
+    }
+    super.setStockStateContract(contract);
+  }
+
+  @Override
   protected long processingTimeTimerDeadlineForSnapshot() {
     return proctime ? registeredTimer : Long.MIN_VALUE;
   }
@@ -113,15 +127,33 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
     return withSchemas(
         (l, r) ->
             Native.createRocksDBIntervalJoiner(
-                leftKeys, rightKeys, keyTimestampPrecisions(),
-                leftTime, rightTime, lowerMillis, upperMillis, joinType, l, r,
-                predicate.kinds, predicate.payload, predicate.childCounts,
-                predicate.boundLongs(), predicate.doubles, predicate.strings,
+                leftKeys,
+                rightKeys,
+                keyTimestampPrecisions(),
+                nativeTime(true),
+                nativeTime(false),
+                lowerMillis,
+                upperMillis,
+                joinType,
+                l,
+                r,
+                predicate.kinds,
+                predicate.payload,
+                predicate.childCounts,
+                predicate.boundLongs(),
+                predicate.doubles,
+                predicate.strings,
                 memoryBudgetBytes(),
-                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
-                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-                rocksdb.aligned(), restoredPartitions,
+                rocksdb.tableDirectory(),
+                maxParallelism(),
+                rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(),
+                rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(),
+                rocksdb.keyGroupStart(),
+                rocksdb.keyGroupEnd(),
+                rocksdb.aligned(),
+                restoredPartitions,
                 restoredProcessingTimeTimerDeadline()));
   }
 
@@ -150,9 +182,22 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
     return withSchemas(
         (l, r) ->
             Native.createIntervalJoiner(
-                leftKeys, rightKeys, leftTime, rightTime, lowerMillis, upperMillis, joinType, l, r,
-                predicate.kinds, predicate.payload, predicate.childCounts, predicate.boundLongs(),
-                predicate.doubles, predicate.strings, memoryBudgetBytes()));
+                leftKeys,
+                rightKeys,
+                nativeTime(true),
+                nativeTime(false),
+                lowerMillis,
+                upperMillis,
+                joinType,
+                l,
+                r,
+                predicate.kinds,
+                predicate.payload,
+                predicate.childCounts,
+                predicate.boundLongs(),
+                predicate.doubles,
+                predicate.strings,
+                memoryBudgetBytes()));
   }
 
   @Override
@@ -160,9 +205,23 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
     return withSchemas(
         (l, r) ->
             Native.restoreIntervalJoinerPartitions(
-                leftKeys, rightKeys, leftTime, rightTime, lowerMillis, upperMillis, joinType, l, r,
-                predicate.kinds, predicate.payload, predicate.childCounts, predicate.boundLongs(),
-                predicate.doubles, predicate.strings, snapshots, memoryBudgetBytes()));
+                leftKeys,
+                rightKeys,
+                nativeTime(true),
+                nativeTime(false),
+                lowerMillis,
+                upperMillis,
+                joinType,
+                l,
+                r,
+                predicate.kinds,
+                predicate.payload,
+                predicate.childCounts,
+                predicate.boundLongs(),
+                predicate.doubles,
+                predicate.strings,
+                snapshots,
+                memoryBudgetBytes()));
   }
 
   @Override
@@ -189,13 +248,57 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
 
   /** Exports both side row types as FFI Arrow schemas for the duration of one native call. */
   private long withSchemas(LongBinaryOperator call) {
-    return withRowSchemas(leftType, rightType, call);
+    return withRowSchemas(nativeType(leftType), nativeType(rightType), call);
+  }
+
+  private RowType nativeType(RowType type) {
+    if (!preserveProcessingPayload) return type;
+    var fields = new java.util.ArrayList<RowType.RowField>();
+    for (var field : type.getFields()) {
+      var physical = field.getType();
+      // Flink carries PROCTIME indicators as NULL placeholders, even when declared NOT NULL.
+      if (org.apache.flink.table.types.logical.utils.LogicalTypeChecks.isProctimeAttribute(
+          physical)) physical = physical.copy(true);
+      fields.add(new RowType.RowField(field.getName(), physical));
+    }
+    String name = "__interval_cache_clock__";
+    while (type.getFieldNames().contains(name)) name += "_";
+    fields.add(
+        new RowType.RowField(name, new org.apache.flink.table.types.logical.BigIntType(false)));
+    return new RowType(fields);
+  }
+
+  private int nativeTime(boolean left) {
+    return preserveProcessingPayload
+        ? (left ? leftType : rightType).getFieldCount()
+        : left ? leftTime : rightTime;
+  }
+
+  private void rearmCanonicalProcessingTimer() {
+    long[] next = Native.intervalJoinCleanupDeadline(handle);
+    long now = getProcessingTimeService().getCurrentProcessingTime();
+    if (next.length != 0 && next[0] <= now) {
+      advance(now);
+      next = Native.intervalJoinCleanupDeadline(handle);
+      if (next.length != 0 && next[0] <= now)
+        throw new IllegalStateException("Interval processing cleanup did not advance its deadline");
+    }
+    if (next.length == 0) {
+      registeredTimer = Long.MIN_VALUE;
+      return;
+    }
+    if (next[0] != registeredTimer) getProcessingTimeService().registerTimer(next[0], this);
+    registeredTimer = next[0];
   }
 
   @Override
   public void open() throws Exception {
     super.open();
     registeredTimer = Long.MIN_VALUE;
+    if (preserveProcessingPayload) {
+      rearmCanonicalProcessingTimer();
+      return;
+    }
     if (proctime && restoredProcessingTimeTimerDeadline() != Long.MIN_VALUE) {
       long deadline = restoredProcessingTimeTimerDeadline();
       long now = getProcessingTimeService().getCurrentProcessingTime();
@@ -272,7 +375,8 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
             proctime,
             now);
       }
-      VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+      VectorSchemaRoot out =
+          Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
         ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
       } else {
@@ -283,6 +387,10 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
     }
     if (proctime) {
       advance(now); // trim the buffers / emit outer null-pads the clock has passed
+      if (preserveProcessingPayload) {
+        rearmCanonicalProcessingTimer();
+        return;
+      }
       // A row buffered at `now` is dead once the clock passes now + max(upper, -lower); schedule a
       // cleanup there so even with no further input the tail (and outer null-pads) drains. now only
       // advances, so the latest boundary scheduled covers every row buffered as of now.
@@ -302,13 +410,17 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
 
   @Override
   public void onProcessingTime(long time) {
+    if (preserveProcessingPayload && time != registeredTimer) return;
+    if (preserveProcessingPayload) registeredTimer = Long.MIN_VALUE;
     advance(getProcessingTimeService().getCurrentProcessingTime());
     publishStateBytes();
+    if (preserveProcessingPayload) rearmCanonicalProcessingTimer();
   }
 
   @Override
   public void finish() throws Exception {
-    if (proctime) {
+    // Stock processing-time state waits for real callbacks; EOF does not advance its clock.
+    if (proctime && !preserveProcessingPayload) {
       advance(Long.MAX_VALUE); // end of input: evict everything (drains outer null-pads)
     }
     super.finish();
@@ -331,7 +443,9 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
     output.emitWatermark(delay == 0 ? mark : new Watermark(mark.getTimestamp() - delay));
   }
 
-  /** Advances the eviction frontier, emitting any null-padded rows for evicted unmatched outer rows. */
+  /**
+   * Advances the eviction frontier, emitting any null-padded rows for evicted unmatched outer rows.
+   */
   private void advance(long threshold) {
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
@@ -342,7 +456,8 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
         Native.advanceIntervalJoiner(
             handle, threshold, outArray.memoryAddress(), outSchema.memoryAddress());
       }
-      VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+      VectorSchemaRoot out =
+          Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
         ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
       } else {

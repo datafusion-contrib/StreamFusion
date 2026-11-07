@@ -372,6 +372,14 @@ retain the stock and previous-implementation controls and their timing limits.
 
 ## Generated processing time
 
+An unobserved PROCTIME indicator uses Flink's typed physical NULL representation. Native Calc
+preserves that marker; PROCTIME_MATERIALIZE reads the existing execution clock when SQL observes
+the value. Logical stock types remain unchanged. Retained state must not receive an eagerly
+materialized clock value, because later changelog retractions must match the saved row. Empty
+and all four changelog row kinds have direct placeholder/materialization checks, with observed
+native times bounded by actual execution. Complete-job coverage includes the
+[retracting-rank handoffs](top-n.md#retained-processing-time-indicators-in-retracting-rank).
+
 Generated scalar expressions and complete-row Calc evaluators bind processing time to the owning
 Calc or Filter task's live `ProcessingTimeService` during operator open. Flink's generated
 `PROCTIME_MATERIALIZE` access therefore works inside CASE/COALESCE selections and predicates,

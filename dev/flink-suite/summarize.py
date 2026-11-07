@@ -32,9 +32,24 @@ def execution_contracts(
             len(fields) != 3
             or not re.fullmatch(r"[\w.$]+#[\w$]+", fields[0])
             or not re.fullmatch(r"\*|\w+=\w+(?:&\w+=\w+)*", fields[1])
-            or not re.fullmatch(r"\w+(?:[+|]\w+)*|!.+", fields[2])
+            or not re.fullmatch(r"\w+(?:[+|]\w+)*|!.+|@restore:\w+|@resume:\w+(?:&&\w+(?:[+|]\w+)*)?|@elided:(?:TemporalSort|IntervalJoin)", fields[2])
+            or fields[2].startswith("!@") and not re.fullmatch(r"!@\w+:.+", fields[2])
         ):
             raise ValueError(f"Invalid native execution contract: {line}")
+        if fields[2] == "@elided:TemporalSort" and (
+            fields[0] != "org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalSortRestoreTest#testRestore"
+            or fields[1] != "program=temporal_sort_proctime"
+        ):
+            raise ValueError("Elided sort proof is restricted to the unchanged PROCTIME fixture")
+        if fields[2] == "@elided:IntervalJoin" and (
+            fields[0] != "org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest#testRestore"
+            or fields[1] != "program=interval_join_negative_interval"
+        ):
+            raise ValueError("Elided interval proof is restricted to the unchanged negative-interval fixture")
+        if "&&" in fields[2]:
+            clauses = fields[2].split("&&")
+            if not fields[2].startswith(("!@", "@resume:")) or len(clauses) != 2 or not re.fullmatch(r"\w+(?:[+|]\w+)*", clauses[1]):
+                raise ValueError(f"Invalid stock state-owner contract: {line}")
         variants = contracts.setdefault(fields[0], {})
         if fields[1] in variants:
             raise ValueError(f"Duplicate native execution contract: {line}")
@@ -42,6 +57,48 @@ def execution_contracts(
     if not contracts:
         raise ValueError("No native execution contracts")
     return contracts
+
+
+def valid_elided_sort_graph(graph, interval=False):
+    if not isinstance(graph, dict) or set(graph) != {"nodes"}:
+        return False
+    nodes = graph["nodes"]
+    if not isinstance(nodes, list) or len(nodes) < 2:
+        return False
+    indexed = {}
+    for node in nodes:
+        if not isinstance(node, dict) or set(node) != {"id", "operator", "inputs", "outputs"}:
+            return False
+        if (type(node["id"]) is not int or node["id"] in indexed
+            or not isinstance(node["operator"], str) or not node["operator"].strip()
+            or "SortOperator" in node["operator"]
+            or interval and ("Join" in node["operator"] or "CoProcess" in node["operator"])):
+            return False
+        if any(not isinstance(node[field], list) or any(type(value) is not int for value in node[field])
+               for field in ("inputs", "outputs")):
+            return False
+        indexed[node["id"]] = node
+    for ident, node in indexed.items():
+        if any(source not in indexed or ident not in indexed[source]["outputs"] for source in node["inputs"]):
+            return False
+        if any(target not in indexed or ident not in indexed[target]["inputs"] for target in node["outputs"]):
+            return False
+    outgoing = Counter((ident, target) for ident, node in indexed.items() for target in node["outputs"])
+    incoming = Counter((source, ident) for ident, node in indexed.items() for source in node["inputs"])
+    if incoming != outgoing:
+        return False
+    degrees = {ident: len(node["inputs"]) for ident, node in indexed.items()}
+    ready = [ident for ident, degree in degrees.items() if degree == 0]
+    visited = 0
+    while ready:
+        ident = ready.pop()
+        visited += 1
+        for target in indexed[ident]["outputs"]:
+            degrees[target] -= 1
+            if degrees[target] == 0:
+                ready.append(target)
+    return (visited == len(indexed) and any(not node["inputs"] for node in nodes)
+            and any(not node["outputs"] for node in nodes) and any(node["outputs"] for node in nodes))
 
 
 def check_execution(
@@ -58,36 +115,96 @@ def check_execution(
         try:
             fields = path.read_text().rstrip("\n").split("\t")
             if (
-                len(fields) != 4
+                len(fields) not in (4, 5, 6, 7)
                 or fields[0] not in contracts
                 or fields[1] not in contracts[fields[0]]
             ):
                 raise ValueError("unknown test or malformed record")
-            test, variant, raw_counts, raw_reasons = fields
+            test, variant, raw_counts, raw_reasons = fields[:4]
             reasons = base64.b64decode(raw_reasons, validate=True).decode().splitlines()
-            counts = {}
-            for item in raw_counts.split(",") if raw_counts else []:
-                if not re.fullmatch(r"\w+=\d+", item):
-                    raise ValueError(f"invalid operator count: {item}")
-                operator, count = item.split("=")
-                if operator in counts:
-                    raise ValueError(f"duplicate operator count: {operator}")
-                counts[operator] = int(count)
+            def parse_counts(raw):
+                counts = {}
+                for item in raw.split(",") if raw else []:
+                    if not re.fullmatch(r"\w+=\d+", item):
+                        raise ValueError(f"invalid operator count: {item}")
+                    operator, count = item.split("=")
+                    if operator in counts:
+                        raise ValueError(f"duplicate operator count: {operator}")
+                    counts[operator] = int(count)
+                return counts
+            counts = parse_counts(raw_counts)
+            restored = parse_counts(fields[4]) if len(fields) >= 5 else {}
+            stock = parse_counts(fields[5]) if len(fields) >= 6 else {}
+            if any(name.startswith("Stock") for name in counts):
+                raise ValueError("stock state-owner work cannot be reported as native input")
+            if any(name not in ("StockSessionTableFunction", "StockSessionWindowAggregate", "StockTemporalSort", "StockWindowJoin") for name in stock):
+                raise ValueError("unknown stock state-owner witness")
+            def work_satisfied(expression):
+                return any(all((stock if operator.startswith("Stock") else counts).get(operator, 0) > 0
+                    for operator in route.split("+")) for route in expression.split("|"))
             observed[test] += 1
             contract = contracts[test][variant]
             matched = False
-            if contract.startswith("!"):
-                if not counts and contract[1:] in reasons:
+            graph_evidence = None
+            if len(fields) == 7:
+                if not contract.startswith("@elided:"):
+                    raise ValueError("unexpected submitted graph evidence")
+                graph_evidence = json.loads(base64.b64decode(fields[6], validate=True).decode())
+            if contract.startswith("@elided:"):
+                interval = contract == "@elided:IntervalJoin"
+                expected_test = ("IntervalJoinRestoreTest" if interval else "TemporalSortRestoreTest")
+                expected_variant = "program=interval_join_negative_interval" if interval else "program=temporal_sort_proctime"
+                valid = (contract in ("@elided:IntervalJoin", "@elided:TemporalSort")
+                    and test == "org.apache.flink.table.planner.plan.nodes.exec.stream." + expected_test + "#testRestore"
+                    and variant == expected_variant
+                    and (not interval or counts.get("NativeCalcOperator", 0) > 0)
+                    and not stock and not restored and not reasons
+                    and set(counts) <= {"NativeCalcOperator"}
+                    and isinstance(graph_evidence, dict)
+                    and set(graph_evidence) == {"submitted_graphs", "native_opened", "native_imports"}
+                    and isinstance(graph_evidence["submitted_graphs"], dict)
+                    and bool(graph_evidence["submitted_graphs"])
+                    and all(isinstance(job, str) and bool(job) and valid_elided_sort_graph(graph, interval)
+                            for job, graph in graph_evidence["submitted_graphs"].items())
+                    and isinstance(graph_evidence["native_opened"], list)
+                    and all(name == "NativeCalcOperator" for name in graph_evidence["native_opened"])
+                    and graph_evidence["native_imports"] == {})
+                matched = bool(valid)
+                if not matched:
+                    problems.append(f"{test} [{variant}]: missing complete submitted graph without elided operator/state work")
+            elif contract.startswith("@restore:"):
+                operator = contract.removeprefix("@restore:")
+                if not counts and not stock and not reasons and restored.get(operator, 0) > 0:
+                    proved += 1
+                    matched = True
+                else:
+                    problems.append(f"{test} [{variant}]: missing native canonical import; observed {restored}")
+            elif contract.startswith("@resume:"):
+                operator, separator, required = contract.removeprefix("@resume:").partition("&&")
+                if counts.get(operator, 0) > 0 and restored.get(operator, 0) > 0 and not stock and not reasons and (not separator or work_satisfied(required)):
+                    proved += 1
+                    matched = True
+                else:
+                    problems.append(f"{test} [{variant}]: missing native canonical import and new input for {operator}")
+            elif contract.startswith("!@"):
+                base_contract, separator, required = contract.partition("&&")
+                operator, reason = base_contract[2:].split(":", 1)
+                if counts.get(operator, 0) == 0 and restored.get(operator, 0) == 0 and reason in reasons and (not separator or work_satisfied(required)):
+                    fallback += 1
+                    matched = True
+                else:
+                    problems.append(
+                        f"{test} [{variant}]: expected {operator} fallback with reason {reason}"
+                    )
+            elif contract.startswith("!"):
+                if not counts and not restored and contract[1:] in reasons:
                     fallback += 1
                     matched = True
                 else:
                     problems.append(
                         f"{test} [{variant}]: expected full fallback with reason {contract[1:]}"
                     )
-            elif any(
-                all(counts.get(operator, 0) > 0 for operator in route.split("+"))
-                for route in contract.split("|")
-            ):
+            elif work_satisfied(contract):
                 proved += 1
                 matched = True
             else:
@@ -97,8 +214,11 @@ def check_execution(
             if observations is not None:
                 native_work = any(count > 0 for count in counts.values())
                 route = (
-                    "mixed" if native_work and reasons else
+                    "interval_elided" if contract == "@elided:IntervalJoin" and matched else
+                    "ordering_elided" if contract == "@elided:TemporalSort" and matched else
+                    "mixed" if native_work and (reasons or stock) else
                     "native" if native_work else
+                    "native_restore" if contract.startswith("@restore:") and matched else
                     "full_fallback" if reasons else "unclassified"
                 )
                 observations.append({
@@ -106,8 +226,11 @@ def check_execution(
                     "variant": variant,
                     "evidence_file": path.name,
                     "native_input_rows": counts,
+                    "native_canonical_import_rows": restored,
+                    "stock_state_owner_rows": stock,
                     "fallback_reasons": reasons,
                     "observed_route": route,
+                    "submitted_graph_evidence": graph_evidence,
                     "expected_contract": contract,
                     "contract_satisfied": matched,
                 })
@@ -354,7 +477,9 @@ def main() -> int:
     print(f"- Expected upstream failures: {len(expected)}")
     print(f"- Skipped: {skipped}")
     print(
-        f"- Execution contracts: {sum(executed.values())} invocations, {proved} native, {fallback} expected fallback"
+        f"- Execution contracts: {sum(executed.values())} invocations, {proved} native, {fallback} expected fallback, "
+        f"{sum(record['contract_satisfied'] and record['observed_route'] == 'ordering_elided' for record in audit['execution_evidence'])} ordering elided, "
+        f"{sum(record['contract_satisfied'] and record['observed_route'] == 'interval_elided' for record in audit['execution_evidence'])} interval elided"
     )
 
     if malformed:

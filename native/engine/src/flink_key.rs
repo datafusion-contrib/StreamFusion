@@ -10,6 +10,7 @@ use streamfusion_bridge::timestamp::{is_timestamp, TimestampColumn, TimestampVal
 
 const DEFAULT_SEED: u32 = 42;
 const MAX_INLINE_BYTES: usize = 7;
+const STOCK_KEY_PROJECTION: i32 = i32::MIN;
 
 pub(crate) fn represented_string(data_type: &DataType) -> bool {
     matches!(data_type, DataType::Struct(fields)
@@ -29,6 +30,7 @@ fn represented_element(data_type: &DataType) -> bool {
 /// precision stream supplies the one detail Arrow loses: Flink timestamp precision.
 struct KeyTypeSchema {
     timestamp_precision: i32,
+    projected: bool,
     children: Vec<KeyTypeSchema>,
     row_kind: Option<usize>,
     map_list: bool,
@@ -92,6 +94,7 @@ fn key_type_schema(field: &Field, precisions: &[i32], cursor: &mut usize) -> Key
     };
     KeyTypeSchema {
         timestamp_precision,
+        projected: false,
         children,
         row_kind,
         map_list,
@@ -700,6 +703,19 @@ fn write_value(
 ) {
     if array.is_null(row) {
         writer.set_null(pos);
+        if schema.projected {
+            // Generated projections reserve mutable variable slots even for NULL fields.
+            // RowDataSerializer instead writes only the null bit; legacy keys retain that layout.
+            match array.data_type() {
+                DataType::Decimal128(precision, _) if *precision > 18 => {
+                    writer.write_variable(pos, &[], 16);
+                }
+                data_type if is_timestamp(data_type) && schema.timestamp_precision > 3 => {
+                    writer.write_variable(pos, &[], 8);
+                }
+                _ => {}
+            }
+        }
         return;
     }
     if represented_element(array.data_type()) || represented_string(array.data_type()) {
@@ -882,7 +898,8 @@ fn write_value(
 /// Encodes one batch's rows, projected to the given key columns, as Flink `BinaryRowData` bytes.
 /// `timestamp_precisions` is a pre-order logical-type stream (one entry per type node); `-1` means
 /// the node is not a timestamp. Arrow does not retain Flink timestamp precision, including inside a
-/// nested key, so the JVM supplies this compact schema sidecar.
+/// nested key, so the JVM supplies this compact schema sidecar. A leading i32::MIN selects
+/// generated-projection key layout at the root; unprefixed descriptors retain serializer layout.
 ///
 /// The schema walk, column handles, and row buffer are set up once per batch and every row is
 /// written into the same reused buffer: the per-row variant of this path was almost entirely
@@ -900,11 +917,22 @@ impl<'a> BinaryRowBatchEncoder<'a> {
         key_columns: &[usize],
         timestamp_precisions: &[i32],
     ) -> Self {
+        let projected = timestamp_precisions.first() == Some(&STOCK_KEY_PROJECTION);
+        let timestamp_precisions = if projected {
+            &timestamp_precisions[1..]
+        } else {
+            timestamp_precisions
+        };
         let mut cursor = 0;
         let schema = batch.schema_ref();
         let schemas: Vec<KeyTypeSchema> = key_columns
             .iter()
-            .map(|&column| key_type_schema(schema.field(column), timestamp_precisions, &mut cursor))
+            .map(|&column| {
+                let mut schema =
+                    key_type_schema(schema.field(column), timestamp_precisions, &mut cursor);
+                schema.projected = projected;
+                schema
+            })
             .collect();
         assert_eq!(
             cursor,

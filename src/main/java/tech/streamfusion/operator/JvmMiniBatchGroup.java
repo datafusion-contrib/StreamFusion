@@ -50,6 +50,10 @@ final class JvmMiniBatchGroup<V> {
     trigger.onElement(input);
   }
 
+  boolean hasPending() {
+    return !buffer.isEmpty();
+  }
+
   void finishBundle() throws Exception {
     if (!buffer.isEmpty()) {
       function.finishBundle(buffer, output);

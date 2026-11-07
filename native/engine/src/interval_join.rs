@@ -6,7 +6,10 @@ use datafusion::logical_expr::{
 use datafusion::physical_expr::ScalarFunctionExpr;
 use streamfusion_bridge::timestamp::TimestampColumn;
 
+mod canonical;
+mod clock;
 mod index;
+mod input;
 mod probe;
 use index::BufferedIndex;
 const INDEX_BUFFER_THRESHOLD: usize = 1024;
@@ -75,6 +78,7 @@ pub(crate) struct IntervalJoiner {
     #[cfg(feature = "rocksdb-state")]
     store_timers_initialized: bool,
     key_timestamp_precisions: Vec<i32>,
+    clock_arities: Option<[usize; 2]>,
 }
 
 /// Estimated footprint of one matched-row-id set entry (an i64 plus the hash-set slot).
@@ -128,6 +132,7 @@ impl IntervalJoiner {
             #[cfg(feature = "rocksdb-state")]
             store_timers_initialized: false,
             key_timestamp_precisions: vec![-1; key_arity],
+            clock_arities: None,
         }
     }
 
@@ -135,6 +140,11 @@ impl IntervalJoiner {
         mut self,
         key_timestamp_precisions: Vec<i32>,
     ) -> Self {
+        self.set_key_timestamp_precisions(key_timestamp_precisions);
+        self
+    }
+
+    fn set_key_timestamp_precisions(&mut self, key_timestamp_precisions: Vec<i32>) {
         self.key_timestamp_precisions = key_timestamp_precisions;
         if let Some((left_rows, right_rows, left_keys, right_keys)) = self.legacy_timer_rows.take()
         {
@@ -172,7 +182,6 @@ impl IntervalJoiner {
         }
         self.rebuild_index(true);
         self.rebuild_index(false);
-        self
     }
 
     #[cfg(feature = "rocksdb-state")]
@@ -375,7 +384,8 @@ impl IntervalJoiner {
         batch: RecordBatch,
         proctime_now: Option<i64>,
     ) -> Result<RecordBatch, DataFusionError> {
-        self.push(batch, true, proctime_now)
+        let output = self.push(batch, true, proctime_now)?;
+        self.user_output(output)
     }
 
     /// Joins an incoming right batch against the buffered left rows, then buffers it. As with {@link
@@ -385,7 +395,8 @@ impl IntervalJoiner {
         batch: RecordBatch,
         proctime_now: Option<i64>,
     ) -> Result<RecordBatch, DataFusionError> {
-        self.push(batch, false, proctime_now)
+        let output = self.push(batch, false, proctime_now)?;
+        self.user_output(output)
     }
 
     fn push(
@@ -394,10 +405,10 @@ impl IntervalJoiner {
         left: bool,
         proctime_now: Option<i64>,
     ) -> Result<RecordBatch, DataFusionError> {
+        let batch = self.clock_input(batch, left, proctime_now)?;
         if let Some(now) = proctime_now {
             self.operator_time = now;
         }
-        let batch = self.stamp(batch, left, proctime_now);
         let expiration = self.expiration_time(!left);
         let (keys, time, offset, previous_expiration) = if left {
             (
@@ -1291,6 +1302,12 @@ impl IntervalJoiner {
                     (&self.right_keys, self.right_time)
                 };
                 for batch in read_ipc_if_present(data_section) {
+                    let schema = if left {
+                        &self.left_data_schema
+                    } else {
+                        &self.right_data_schema
+                    };
+                    let batch = input::retained(batch, schema, self.join_type != JoinKind::Inner)?;
                     let (data, matched) = if self.join_type == JoinKind::Inner {
                         (batch.clone(), vec![false; batch.num_rows()])
                     } else {
@@ -1435,6 +1452,11 @@ impl IntervalJoiner {
     /// never matched are padded in timer order. Flink retains an existing row at horizon equality
     /// and keeps the first registered timer when earlier rows arrive out of order.
     pub(crate) fn advance(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        let output = self.advance_native(watermark)?;
+        self.user_output(output)
+    }
+
+    fn advance_native(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         self.operator_time = watermark.max(0);
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
@@ -1964,8 +1986,28 @@ impl IntervalJoiner {
             return joiner;
         }
         let sections = read_framed_sections(bytes);
-        joiner.left_buffered = read_ipc_if_present(&sections[0]);
-        joiner.right_buffered = read_ipc_if_present(&sections[1]);
+        joiner.left_buffered = read_ipc_if_present(&sections[0])
+            .into_iter()
+            .map(|batch| {
+                input::retained(
+                    batch,
+                    &joiner.left_data_schema,
+                    join_type != JoinKind::Inner,
+                )
+                .expect("valid retained interval input")
+            })
+            .collect();
+        joiner.right_buffered = read_ipc_if_present(&sections[1])
+            .into_iter()
+            .map(|batch| {
+                input::retained(
+                    batch,
+                    &joiner.right_data_schema,
+                    join_type != JoinKind::Inner,
+                )
+                .expect("valid retained interval input")
+            })
+            .collect();
         joiner.left_matched = deserialize_id_set(&sections[2]);
         joiner.right_matched = deserialize_id_set(&sections[3]);
         if sections.len() >= 6 {
@@ -2034,8 +2076,20 @@ impl IntervalJoiner {
                     left_cleanup.extend(Self::decode_cleanup(&sections[4]));
                     right_cleanup.extend(Self::decode_cleanup(&sections[5]));
                 }
-                let left = read_ipc_if_present(&sections[0]);
-                let right = read_ipc_if_present(&sections[1]);
+                let left = read_ipc_if_present(&sections[0])
+                    .into_iter()
+                    .map(|batch| {
+                        input::retained(batch, &left_data_schema, join_type != JoinKind::Inner)
+                            .expect("valid retained interval input")
+                    })
+                    .collect::<Vec<_>>();
+                let right = read_ipc_if_present(&sections[1])
+                    .into_iter()
+                    .map(|batch| {
+                        input::retained(batch, &right_data_schema, join_type != JoinKind::Inner)
+                            .expect("valid retained interval input")
+                    })
+                    .collect::<Vec<_>>();
                 if sections.len() < 6 {
                     legacy_left.extend(left.iter().cloned());
                     legacy_right.extend(right.iter().cloned());

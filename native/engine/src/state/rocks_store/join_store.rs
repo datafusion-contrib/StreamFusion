@@ -328,6 +328,116 @@ impl RocksJoinStore {
         Ok(())
     }
 
+    fn visit_bucket_bytes(
+        key: &[u8],
+        mut bytes: &[u8],
+        consume: &mut dyn FnMut(&[u8], &[u8], RowMeta) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        let rows = take_u32(&mut bytes)?;
+        for _ in 0..rows {
+            let len = take_u32(&mut bytes)?;
+            let payload = take(&mut bytes, len)?;
+            let meta = RowMeta {
+                count: i64::from_le_bytes(take(&mut bytes, 8)?.try_into().unwrap()),
+                num_assoc: i32::from_le_bytes(take(&mut bytes, 4)?.try_into().unwrap()),
+                last_write_ms: i64::from_le_bytes(take(&mut bytes, 8)?.try_into().unwrap()),
+            };
+            consume(key, payload, meta)?;
+        }
+        if !bytes.is_empty() {
+            return Err(invalid_record());
+        }
+        Ok(())
+    }
+
+    fn visit_rows(
+        &mut self,
+        consume: &mut dyn FnMut(&[u8], &[u8], RowMeta) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.end_bundle()?;
+        let db = Arc::clone(&self.inner.db);
+        let side = self.inner.table.expect("paired join table");
+        let mut iterator = db.raw_iterator();
+        iterator.seek_to_first();
+        while iterator.valid() {
+            let db_key = iterator.key().ok_or_else(invalid_record)?;
+            if db_key.len() >= 5
+                && db_key[4] == side
+                && i32::from_be_bytes(db_key[..4].try_into().unwrap()) >= 0
+            {
+                let key = &db_key[5..];
+                let value = iterator.value().ok_or_else(invalid_record)?;
+                let prefix_len = self.inner.value_prefix_len();
+                if value.len() < prefix_len {
+                    return Err(invalid_record());
+                }
+                let bytes = &value[prefix_len..];
+                if self.records && bytes == RECORD_MARKER {
+                    let prefix = self.prefix(key);
+                    let mut records = db.raw_iterator();
+                    records.seek(&prefix);
+                    while records.valid() {
+                        let record_key = records.key().ok_or_else(invalid_record)?;
+                        if !record_key.starts_with(&prefix) {
+                            break;
+                        }
+                        consume(
+                            key,
+                            &record_key[prefix.len()..],
+                            decode_meta(records.value().ok_or_else(invalid_record)?)?,
+                        )?;
+                        records.next();
+                    }
+                    records.status().map_err(re)?;
+                } else {
+                    Self::visit_bucket_bytes(key, bytes, consume)?;
+                }
+            }
+            iterator.next();
+        }
+        iterator.status().map_err(re)
+    }
+
+    fn import_record(
+        &mut self,
+        key: &[u8],
+        payload: &[u8],
+        meta: RowMeta,
+    ) -> Result<(), DataFusionError> {
+        self.ensure_key(key)?;
+        let size = self
+            .indices
+            .get(key)
+            .unwrap()
+            .prefix
+            .len()
+            .saturating_add(payload.len());
+        self.reserve_work(size.saturating_mul(3).saturating_add(256))?;
+        let mut db_key = self.indices.get(key).unwrap().prefix.clone();
+        db_key.extend_from_slice(payload);
+        if self.points.contains_key(&db_key)
+            || self.inner.db.get_pinned(&db_key).map_err(re)?.is_some()
+        {
+            return Err(DataFusionError::Execution(
+                "duplicate canonical join row".into(),
+            ));
+        }
+        self.indices.get_mut(key).unwrap().write_ms = self
+            .indices
+            .get(key)
+            .unwrap()
+            .write_ms
+            .max(meta.last_write_ms);
+        self.points.insert(
+            db_key,
+            Point {
+                original: None,
+                current: Some(meta),
+            },
+        );
+        Ok(())
+    }
+
     pub(crate) fn canonical_keys_by_group(
         &mut self,
     ) -> Result<BTreeMap<i32, Vec<ByteKey>>, DataFusionError> {
@@ -415,6 +525,14 @@ impl KeyedStateStore<JoinBucket> for RocksJoinStore {
     fn remove(&mut self, key: &[u8]) {
         self.inner.remove(key);
     }
+    fn prepare_canonical_import(&mut self, keys: &BinaryArray) -> Result<(), DataFusionError> {
+        if self.records {
+            Ok(())
+        } else {
+            self.inner.prepare_canonical_import(keys)
+        }
+    }
+
     fn begin_batch(
         &mut self,
         batch: &RecordBatch,
@@ -450,6 +568,27 @@ impl KeyedStateStore<JoinBucket> for RocksJoinStore {
 }
 
 impl JoinStateStore for RocksJoinStore {
+    fn visit_canonical_rows(
+        &mut self,
+        consume: &mut dyn FnMut(&[u8], &[u8], RowMeta) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.visit_rows(consume)
+    }
+
+    fn import_canonical_row(
+        &mut self,
+        key: &[u8],
+        payload: &[u8],
+        meta: RowMeta,
+    ) -> Result<isize, DataFusionError> {
+        if self.records {
+            self.import_record(key, payload, meta)?;
+            Ok(0)
+        } else {
+            crate::updating_join::import_bucket_row(&mut self.inner, key, payload, meta)
+        }
+    }
+
     fn attach_read_memory(&mut self, reservation: Option<MemoryReservation>) {
         if self.records {
             self.cache_memory = reservation.as_ref().map(MemoryReservation::new_empty);
@@ -712,3 +851,6 @@ fn decode_meta(bytes: &[u8]) -> Result<RowMeta, DataFusionError> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod canonical_tests;

@@ -47,6 +47,32 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   private final boolean cumulative;
   private final RowType rowType;
   private final boolean keepLastOnTie;
+  private transient long canonicalInputWatermark;
+
+  @Override
+  public void initializeState(org.apache.flink.runtime.state.StateInitializationContext context)
+      throws Exception {
+    canonicalInputWatermark = Long.MIN_VALUE;
+    super.initializeState(context);
+  }
+
+  @Override
+  protected long canonicalWatermark() {
+    return canonicalInputWatermark;
+  }
+
+  @Override
+  protected void restoreCanonicalWatermark(long watermark) {
+    canonicalInputWatermark = watermark;
+  }
+
+  @Override
+  protected void configureStateHandle() {
+    super.configureStateHandle();
+    if (calendarZoneId != null)
+      Native.setWindowRankerCalendar(handle, new WindowCalendar(calendarZoneId, proctime));
+    Native.setWindowRankerKeepLastOnTie(handle, keepLastOnTie);
+  }
 
   private transient long registeredTimer;
   private transient long maxOpenEnd;
@@ -188,8 +214,7 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   // key, so both modes run on the direct store.
   @Override
   protected boolean usesDirectRocksDBState() {
-    return withRowSchema(
-            rowType, address -> Native.rocksdbWindowRankerSupported(address) ? 1L : 0L)
+    return withRowSchema(rowType, address -> Native.rocksdbWindowRankerSupported(address) ? 1L : 0L)
         != 0L;
   }
 
@@ -200,13 +225,27 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
         rowType,
         address ->
             Native.createRocksDBWindowRanker(
-                windowStartColumn, windowEndColumn, partitionColumns, keyTimestampPrecisions(),
-                sortIndices, sortAscending, sortNullsFirst, limit, outputRankNumber,
-                address, memoryBudgetBytes(),
-                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
-                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-                rocksdb.aligned(), restoredPartitions,
+                windowStartColumn,
+                windowEndColumn,
+                partitionColumns,
+                keyTimestampPrecisions(),
+                sortIndices,
+                sortAscending,
+                sortNullsFirst,
+                limit,
+                outputRankNumber,
+                address,
+                memoryBudgetBytes(),
+                rocksdb.tableDirectory(),
+                maxParallelism(),
+                rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(),
+                rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(),
+                rocksdb.keyGroupStart(),
+                rocksdb.keyGroupEnd(),
+                rocksdb.aligned(),
+                restoredPartitions,
                 restoredProcessingTimeTimerDeadline()));
   }
 
@@ -284,12 +323,7 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   @Override
   public void open() throws Exception {
     super.open();
-    if (calendarZoneId != null)
-      Native.setWindowRankerCalendar(handle, new WindowCalendar(calendarZoneId, proctime));
-    // Plan configuration is reapplied after either memory or persistent-state restoration.
-    Native.setWindowRankerKeepLastOnTie(handle, keepLastOnTie);
-    flinkWindowMetrics =
-        new FlinkWindowMetrics(getMetricGroup(), getProcessingTimeService());
+    flinkWindowMetrics = new FlinkWindowMetrics(getMetricGroup(), getProcessingTimeService());
     registeredTimer = Long.MIN_VALUE;
     maxOpenEnd = restoredProcessingTimeTimerDeadline();
     if (proctime && calendarZoneId != null) {
@@ -335,6 +369,9 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
 
   @Override
   public void processWatermark(Watermark mark) throws Exception {
+    if (hasStockStateContract() && mark.getTimestamp() < canonicalInputWatermark)
+      mark = new Watermark(canonicalInputWatermark);
+    canonicalInputWatermark = mark.getTimestamp();
     if (!proctime) {
       flinkWindowMetrics.onWatermark(mark.getTimestamp());
     }
@@ -388,8 +425,7 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
         Native.flushRocksDBWindowRanker(
             handle, threshold, array.memoryAddress(), schema.memoryAddress());
       } else {
-        Native.flushWindowRanker(
-            handle, threshold, array.memoryAddress(), schema.memoryAddress());
+        Native.flushWindowRanker(handle, threshold, array.memoryAddress(), schema.memoryAddress());
       }
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
       if (out.getRowCount() > 0) {
@@ -399,5 +435,4 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
       }
     }
   }
-
 }

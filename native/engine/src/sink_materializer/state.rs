@@ -1,6 +1,34 @@
 use super::*;
+mod canonical;
 #[cfg(feature = "rocksdb-state")]
 pub(super) mod rocks;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct CanonicalHeader {
+    pub linked: bool,
+    pub high: Option<i64>,
+    pub size: i64,
+    pub written: i64,
+    pub rows: usize,
+    pub indexes: usize,
+}
+
+#[derive(Clone)]
+pub(super) struct CanonicalRow {
+    pub payload: Arc<[u8]>,
+    pub position: i64,
+    pub previous: Option<i64>,
+    pub next: Option<i64>,
+    pub next_for: Option<i64>,
+    pub timestamp: Option<i64>,
+}
+
+#[derive(Clone)]
+pub(super) struct CanonicalIndex {
+    pub identity: Identity,
+    pub first: i64,
+    pub last: i64,
+}
 
 #[derive(Clone, Copy)]
 pub(super) enum Strategy {
@@ -293,6 +321,8 @@ struct Shape {
     size: i64,
     nodes: Vec<Links>,
     index: Vec<IndexShape>,
+    #[serde(default)]
+    timestamps: Vec<Option<i64>>,
 }
 
 impl Candidates {
@@ -434,6 +464,7 @@ impl Candidates {
                     size: v.rows.len() as i64,
                     nodes: vec![],
                     index: vec![],
+                    timestamps: v.rows.iter().map(|row| row.timestamp).collect(),
                 },
                 v.rows.iter().map(|r| r.payload.clone()).collect(),
             ),
@@ -458,6 +489,7 @@ impl Candidates {
                         high: v.high,
                         size: v.size,
                         nodes: nodes.iter().map(|n| n.links).collect(),
+                        timestamps: nodes.iter().map(|n| n.row.timestamp).collect(),
                         index: index
                             .iter()
                             .map(|(hash, e)| IndexShape {
@@ -481,8 +513,15 @@ impl Candidates {
         rows: impl Iterator<Item = Vec<u8>>,
         now: i64,
         codec: &RowsCodec,
+        timestamps_required: bool,
     ) -> Self {
         let shape: Shape = serde_json::from_str(shape).expect("materializer state shape");
+        assert!(
+            shape.timestamps.len() == shape.count
+                || !timestamps_required && shape.timestamps.is_empty(),
+            "materializer candidate timestamps disagree with row count"
+        );
+        let mut timestamps = shape.timestamps.into_iter();
         let mut rows = rows;
         let storage = if shape.linked {
             let mut linked = Linked {
@@ -491,7 +530,9 @@ impl Candidates {
                 ..Default::default()
             };
             for links in shape.nodes {
-                let row = codec.candidate(Arc::from(rows.next().expect("linked row")), None, None);
+                let row = codec
+                    .candidate(Arc::from(rows.next().expect("linked row")), None, None)
+                    .with_timestamp(timestamps.next().flatten());
                 linked.put(Node { row, links });
             }
             for index in shape.index {
@@ -515,7 +556,9 @@ impl Candidates {
             let mut values = Values::default();
             for _ in 0..shape.count {
                 values.put(
-                    codec.candidate(Arc::from(rows.next().expect("candidate row")), None, None),
+                    codec
+                        .candidate(Arc::from(rows.next().expect("candidate row")), None, None)
+                        .with_timestamp(timestamps.next().flatten()),
                     None,
                 );
             }

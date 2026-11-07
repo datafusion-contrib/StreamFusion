@@ -1,8 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchTypeInformation;
-import tech.streamfusion.operator.NativeIntervalJoinOperator;
 import java.util.Arrays;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -15,8 +12,14 @@ import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeIntervalJoinOperator;
 
-/** Wraps the native columnar interval-join operator into the plan; Arrow batches on both inputs and out. */
+/**
+ * Wraps the native columnar interval-join operator into the plan; Arrow batches on both inputs and
+ * out.
+ */
 public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
     implements StreamExecNode<ArrowBatch> {
 
@@ -34,6 +37,7 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
   private final RexExpression predicate;
   private final boolean proctime;
   private final int[] keyTimestampPrecisions;
+  private Integer stateMaxParallelism;
 
   public NativeIntervalJoinExecNode(
       ReadableConfig tableConfig,
@@ -74,6 +78,12 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
+  public NativeIntervalJoinExecNode withStateMaxParallelism(int maximum) {
+    if (maximum <= 0) throw new IllegalArgumentException("Maximum parallelism must be positive");
+    stateMaxParallelism = maximum;
+    return this;
+  }
+
   @Override
   @SuppressWarnings("unchecked")
   protected Transformation<ArrowBatch> translateToPlanInternal(
@@ -83,7 +93,9 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
     Transformation<ArrowBatch> right =
         (Transformation<ArrowBatch>) getInputEdges().get(1).translateToPlan(planner);
     int maxParallelism =
-        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), left.getParallelism());
+        stateMaxParallelism != null
+            ? stateMaxParallelism
+            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), left.getParallelism());
     TwoInputTransformation<ArrowBatch, ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createTwoInputTransformation(
             left,

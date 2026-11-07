@@ -28,6 +28,7 @@ public class NativeWindowRankExecNode extends ExecNodeBase<ArrowBatch>
   private static final String TRANSFORMATION = "native-window-rank";
 
   private String calendarZoneId;
+  private int stateMaxParallelism = -1;
   private final int windowStartColumn;
   private final int windowEndColumn;
   private final int[] partitionColumns;
@@ -88,6 +89,16 @@ public class NativeWindowRankExecNode extends ExecNodeBase<ArrowBatch>
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
+  boolean isProcessingTime() {
+    return proctime;
+  }
+
+  public NativeWindowRankExecNode withStateMaxParallelism(int maximum) {
+    if (maximum <= 0) throw new IllegalArgumentException("Invalid window rank maximum parallelism");
+    stateMaxParallelism = maximum;
+    return this;
+  }
+
   public NativeWindowRankExecNode withCalendarZone(String zoneId) {
     calendarZoneId = zoneId;
     return this;
@@ -100,7 +111,9 @@ public class NativeWindowRankExecNode extends ExecNodeBase<ArrowBatch>
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     int maxParallelism =
-        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+        stateMaxParallelism > 0
+            ? stateMaxParallelism
+            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,

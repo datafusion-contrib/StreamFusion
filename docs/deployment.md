@@ -317,3 +317,149 @@ newer shared source. Its negative control demonstrates implicit duplication; the
 compiler flag preserves only the connector's explicit class. A runtime probe executes the
 connector and verifies its dependency resolves from the core JAR. Image CI runs the regression
 before packaging, and the unchanged artifact checker verifies ownership in the real bundle.
+
+## Portable plans, ordinary SQL and canonical handoff
+
+The unmerged [#569 work](https://github.com/datafusion-contrib/StreamFusion/issues/569) binds
+qualified Flink 2.2 window, interval and event-time temporal joins automatically when executing a
+stock compiled SQL plan.
+Retain the same stock JSON artifact, normal connector dependencies and user code on both engines.
+Use Flink's canonical savepoint format to stop the current execution, then restore that savepoint
+with the same artifact on the other engine. With StreamFusion installed and enabled, loading the
+artifact constructs its private native runtime graph and imports the stock state during normal
+initialization. The stock leg needs the stock connector/user JARs and no StreamFusion JARs.
+
+This qualifies the [window-join compiled-plan scope](operators/joins/window-join.md#stock-canonical-savepoint-interoperability),
+not unrestricted SQL submission, every operator variant, or every connector delivery mode. Keep
+the Flink version and maximum parallelism within the qualified matrix. See the
+[canonical state contract](backends/canonical-state.md#automatic-stock-compiled-plan-binding) for
+remaining boundaries. Ordinary native checkpoints do not provide a cross-engine handoff artifact.
+
+The [interval workflow](operators/joins/interval-join.md#released-stock-processing-time-state-adapter)
+now binds both event-time and processing-time stock compiled plans to their matching native state
+adapter. Released restore fixtures pass with actual imported and continued native rows, and all
+84 clean-process interval handoffs pass, including residual predicates, no-input re-export, real
+checkpoint recovery and 1 → 3 → 2 rescaling. Unrestricted SQL identities, additional types/versions,
+failure scenarios and connector protocols retain their separate #569 qualification; keep the
+exact tested scope when choosing a handoff plan.
+
+The [temporal workflow](operators/joins/temporal-join.md#canonical-interchange-partial) also binds
+stock compiled plans automatically. Twenty-six complete-job round trips qualify INNER/LEFT
+continuation, residual predicates, immediate re-export, native checkpoint recovery and 64-key
+rescaling through 1 → 3 → 2 tasks at maximum parallelism 128, on both native stores and with both
+engine orders. The custom sources and transactional sink stay at one task. Those probes remain pending
+until final drain; emitted-output transaction failures have separate ordinary SQL qualification
+below. Full-job TTL expiry and wider schema/version/connector guarantees remain unqualified. Keep the same released Flink version,
+portable plan and normal user dependencies on both engines; stock needs no StreamFusion JARs.
+
+
+The qualified temporal, interval and window compiled-plan handoffs also support
+`table.exec.uid.generation=DISABLED`. Keep the same original stock plan and qualified Flink
+version/maximum parallelism; explicit UIDs or a manual identity map are unnecessary for that
+workflow. For the generated-ID rescale cases, set `pipeline.operator-chaining.enabled=false`
+from the initial job on both engines. Default chained graphs can change their generated IDs
+when parallelism changes, and
+stock also rejects that restore. Changing chaining only at restore cannot repair existing IDs.
+The [generated-ID matrix](backends/canonical-state.md#generated-operator-ids-in-qualified-compiled-plans)
+covers 34 complete jobs plus explicit-UID controls. Ordinary SQL binding has its own qualification
+below; it does not inherit every compiled-plan scenario.
+
+
+Qualified temporal, interval and window joins can also use ordinary SQL submission without a
+compiled artifact. Keep the same SQL, schemas, planner options, connector/user code, released
+Flink version and maximum parallelism on both engines; stop with a canonical savepoint and restore
+through Flink's normal savepoint configuration. StreamFusion retains the original stock logical
+roles during planning and installs the conversion automatically. All 26 temporal and 46 window
+ordinary handoffs pass with default SQL UIDs; two temporal `ALWAYS` controls pass too. Eight
+additional temporal cases recover failures before/after an external sink commit, then switch
+engines without duplicate committed effects. Wider ordinary job matrices,
+ambiguous graph rewrites, other native families/connectors and wide decimal/high-precision timestamp
+keys still need qualification. See the exact
+[ordinary SQL scope](backends/canonical-state.md#ordinary-sql-canonical-handoffs). Existing native
+processing/checkpoint paths remain available for jobs without a stock canonical binding.
+
+
+Regular joins now have the same automatic submission workflow on qualified Flink 2.2.1 paths.
+Stock compiled JSON stays portable; ordinary SQL needs no compiled artifact. The planner captures
+original side layouts/serializers/retention, resolves the original maximum parallelism and preserves
+complete stock identities. The regular-binding cohort passes 164 complete-job scenarios across all six join kinds, three
+stock side layouts, both native stores/submission forms, repeated switching, no-input re-export,
+checkpoint recovery and fixed-maximum rescaling. Eight separate shared-input round trips cover
+the later shared-role fix. Keep the exact [regular-join binding scope](operators/joins/regular-join.md#automatic-planner-binding);
+broader types, backends, versions, connector protocols, TTL and failure/rescale cases remain under qualification.
+
+
+Arrival-ordered first-N now follows the same Flink 2.2.1 canonical stop/restore workflow in both
+normal SQL and portable stock compiled plans. Its qualified scope includes native memory/RocksDB,
+projected/hidden ranks, keyless/empty state, no-input re-export, native checkpoint recovery and
+fixed-maximum rescaling, with custom source/sink state preserved. No manual state or operator
+mapping is required. Keep connector/UDF dependencies on both engines and retain compatible graph
+identities/maxima for native checkpoint upgrades. See the remaining
+[first-N limits](backends/canonical-state.md#stock-compatible-first-n-counters);
+this does not qualify other rank algorithms or the complete connector/version matrix.
+
+
+For the qualified Flink 2.2.1 unfiltered normalizer/join graphs, ordinary SQL submission or the
+same portable stock compiled plan captures canonical state bindings automatically. Stop with a
+canonical savepoint and submit on the other engine using the normal restore option. Stock workers
+require only the usual Flink, connector and user code dependencies; StreamFusion workers install
+StreamFusion as usual. Both native stores and switch orders, repeated no-input returns and
+1→3→2 rescaling at unchanged maxP128 are tested. Sources/sink stay at one task in that rescale
+fixture. This does not qualify changing old native graph identities/maxima, arbitrary upstream
+native consumers or the full connector/delivery matrix; consult
+[canonical coverage](backends/canonical-state.md#automatic-normalizer-binding-and-continued-jobs).
+
+
+Qualified eager deduplication jobs also acquire Flink 2.2.1 canonical bindings automatically through
+ordinary SQL or the same portable compiled plan. No savepoint conversion utility is required.
+Stock Flink needs only its normal connector/user dependencies. The qualified process matrix
+covers marker/row state, mini-batch full-chain/compact modes, empty/keyless state, no-input returns,
+native checkpoint recovery and fixed-maximum rescaling with both native stores and switch orders;
+see [eager dedup coverage](backends/canonical-state.md#automatic-eager-dedup-binding) for the remaining
+buffered qualification, emission/type variants and delivery/version work. Benchmarking is deferred.
+
+
+Proctime bare-update deduplication also follows this workflow with its empty stock-state projection,
+including mini-batch and TTL variants. Ordinary SQL preserves sink constraint-helper identities
+from their actual definitions even when Flink assigns different display IDs. See
+[bare-update and helper coverage](backends/canonical-state.md#bare-update-state-and-sink-helper-identities)
+for the verified cases and remaining limits. Stock workers still require only normal Flink,
+connector and user-code dependencies.
+
+
+Buffered event-time first-row deduplication now installs its separate Flink 2.2.1 waiting-row,
+emitted-marker and event-timer contract through the same submission workflow. It preserves
+pending timers and original marker TTL ages. Qualified ordinary/compiled jobs cover both native
+stores and switch orders, empty/keyless state, no-input returns, native checkpoint recovery and
+fixed-maximum rescaling with custom connectors and both transposes. Broader qualification remains
+open; see
+[buffered canonical coverage](backends/canonical-state.md#buffered-event-time-first-row-state).
+
+
+Normal SQL and portable stock compiled plans now bind the initial Flink 2.2.1 value-ordered append
+Top-N contract automatically, including fast Top-1 and independent variable bounds. The initial
+scope has INT/BIGINT/VARCHAR fields, one sort column and start-one ranges. Stock Flink restores
+projected state with only its normal connector/user dependencies. The verified BIGINT process matrix includes both submission forms/stores/orders, no-input/empty
+handoffs, native checkpoint recovery and fixed-maxP rescaling, with exact stock changelog and
+independent table-state checks. Broader schemas/graphs, rank variants, TTL/failure/version cases
+and the documented startup timeouts remain open.
+See [append canonical coverage](operators/top-n.md#value-ordered-append-canonical-state-partial).
+
+
+Normal Flink 2.2.1 SQL and portable compiled plans also bind the qualified fixed/no-TTL UpdateFast
+rank subset, including fast Top-1 and one/two sort fields over INT/BIGINT/VARCHAR payloads. Ordinary
+updating-rank graphs with unqualified native state owners use their stock template, keeping those
+owners' layouts and identities on Flink. Stock restore requires only normal user/connector
+dependencies. See [updating canonical scope and pending coverage](operators/top-n.md#updating-canonical-state-partial).
+Benchmarking remains deferred.
+
+
+General retracting ranks also bind automatically on Flink 2.2.1 in ordinary SQL and portable stock
+compiled plans. The qualified contract supports INT/BIGINT/VARCHAR payloads, one/two sort fields,
+constant OFFSET/large-limit ranges and non-null INT/BIGINT first-observed bounds. It preserves the
+three independent stock structures and TTL ages through direct canonical projection. Unsupported
+contracts retain stock rank state, and unqualified upstream state owners keep stock layouts.
+The 168-scenario complete-job matrix covers both engine orders/stores/submission forms, custom
+source/sink state and both transposes, no-input/empty handoffs, checkpoint recovery and rescaling
+1→3→2. See [retracting canonical scope and qualification details](operators/top-n.md#retracting-canonical-state-partial).
+Benchmarking remains deferred.

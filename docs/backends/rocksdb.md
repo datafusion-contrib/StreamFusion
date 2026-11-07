@@ -154,7 +154,10 @@ materialize the backend-independent [StreamFusion canonical state format](canoni
 use Flink's full-snapshot writer, producing `KeyGroupsSavepointStateHandle` state. They can restore
 onto either this backend or the memory backend. A direct store scans and decodes its logical rows
 for this operation, so canonical savepoints are intentionally full and more expensive than ordinary
-incremental checkpoints.
+incremental checkpoints. Qualified stock-interchange adapters instead project live state into
+Flink's original descriptors and serializers; see [canonical state](canonical-state.md). Retracting
+MIN/MAX currently use the raw snapshot fallback for their mapped state, including independent
+view-entry TTL ages, rather than the direct per-key aggregate store.
 
 Restoring a canonical savepoint (or legacy raw keyed state) onto this backend decodes the blob key
 groups once at open and bulk-writes them — rows, TTL stamps, watermarks, sequence high-water marks,
@@ -310,3 +313,40 @@ Previously admitted scalar schemas and bytes are unchanged; these MAP-bearing sh
 fell back. Updating Top-N/LIMIT and MAP-bearing updating join inputs still use stock execution until the retained-row
 contract in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437) is implemented.
 Join/partition/order/unique-key contracts remain separately checked.
+
+
+Grouped multiset companion tables reserve identifier zero for the main row and encode aggregate
+positions 0–254 as identifiers 1–255. The codec rejects larger companion positions before opening
+a database; it does not truncate an index into a different table. Scalar-only wide rows do not
+need companion IDs. Canonical DISTINCT planning falls back to the captured stock owner for an
+unencodable view layout; see [grouped-state admission](../operators/group-by.md#native-companion-table-index-admission).
+Wider native companion encoding remains pending in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+Captured JVM UDF aggregate accumulators and data views remain Flink managed state. With the
+RocksDB configuration they use the released embedded RocksDB delegate, rather than the native
+grouped-table codec. The [managed UDF canonical scope](../operators/group-by.md#captured-managed-udf-canonical-state-partial) keeps this distinction explicit; native grouped-table
+coverage does not qualify user accumulator state or its full restore matrix.
+
+
+Captured one-phase mini-batch UDFs retain this same managed RocksDB delegate and released
+serializers. Their transient bundles and optional cached accumulators drain before canonical
+barriers; the [one-phase qualification](../operators/group-by.md#captured-one-phase-udf-mini-batches-partial) includes both stores, backend changes, TTL ages and ordinary recovery. This is separate from
+the native grouped-table codec and from the global owner's separately qualified two-stage contract.
+
+
+Captured local/global UDFs use the same released managed backend at the global owner. Local
+partials are transient Arrow events serialized with the original stock local serializer and
+drain before canonical barriers; they do not use the native grouped-table codec. The
+[two-stage qualification](../operators/group-by.md#captured-localglobal-udf-canonical-handoffs-partial) includes heap/RocksDB, backend changes, original TTL ages, checkpoint returns, local/global UDF
+fault recovery and 56 complete-job handoffs. Wider user/key/type and failure matrices remain open.
+
+
+Captured managed UDF key qualification additionally compares the original canonical key and view
+bytes through heap/RocksDB backend changes for wide decimal, nanosecond timestamp and selected
+composite/nested/container keys. These operators use the released managed backend and key
+serializer, not a new native RocksDB key format. The combined component passes 1,190 focused
+checks and 168 full-job handoffs, including selected heap/RocksDB changes, no-input returns,
+native checkpoint recovery and 1→3→2 key redistribution. Original nested binary-row key payloads
+survive the managed Arrow boundaries. See the [exact key scope and remaining requirements](../operators/group-by.md#captured-managed-udf-key-layouts-partial).
+Benchmarking remains deferred.

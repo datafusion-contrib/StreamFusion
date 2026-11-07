@@ -236,3 +236,90 @@ matching Flink's binary-row serialization boundary. UTF-16 caches remain outside
 join payloads, and parent NULLs remain NULL. Immediate, minibatch and legacy decoded-restore
 paths use the same conversion before row encoding; the declared output schema and outer-join
 NULL padding remain unchanged.
+
+
+## Direct stock canonical state adapter
+
+An explicitly bound Flink 2.2.1 adapter projects the native join's actual left/right retained
+rows, multiplicities, association degrees and original TTL write timestamps into released stock
+state descriptors and serializers. It handles independent scalar, unique-key map and occurrence
+map layouts. Both input sides and every transfer batch validate before any native insertion;
+a malformed right side cannot leave valid left rows imported. Native export visits live state,
+including indexed RocksDB records and legacy buckets, without an intermediate native snapshot.
+
+The clean direct-operator component passes 78 Java controls across six join kinds, three side
+shapes, keyed/keyless paths and both native stores. It covers continued stock/native execution,
+multi-batch transfer, original TTL ages and invalid state, including forced late-batch rejection.
+These BIGINT fixtures use stock heap projections. Automatic binding is described below;
+complete job/connector/type/backend/version/rescale/failure qualification remains open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Existing native processing
+and checkpoints retain their paths. Benchmarking is deferred.
+
+
+### Automatic planner binding
+
+The deployed Flink 2.2.1 planner binds this adapter for qualified stock compiled plans and ordinary
+SQL jobs, preserving stock side schemas, unique-key selectors, serializers, retention, actual
+operator identities and resolved/default maximum parallelism. Ordinary SQL retains its existing
+native mini-batch/input mode. Explicit UIDs and manual mappings are unnecessary. Native filters
+and mini-batch assigners retain original logical roles in the metadata projection. Shared stock
+calculation, filter and watermark roles retain one execution owner, with Arrow reference-count
+sharing rebuilt for their actual consumers.
+
+Fifty-six planner controls and four initial clean-process INNER multiset round trips pass across
+both stores/submission forms. The jobs retain custom changelog sources, the transactional sink
+and both transposes, and compare external materialized results with stock and an independent
+oracle. All 15 unchanged released regular-join restore programs pass per engine with actual native
+state imports; 14 also process new join input, and the literal-aggregate fixture verifies restored
+native execution. Eight additional shared-calculation round trips pass across both engine orders,
+both native stores and both submission forms. All 164 scenarios in the frozen regular-binding job
+matrix also pass: 144 continued-input handoffs, eight no-input re-exports, four native checkpoint
+recoveries and eight rescalings at 1→3→2/maxP128. The later shared-role fix has separate job and
+planner qualification.
+
+Constructed retained payloads, unaligned exchange reassembly, async/changelog state backends and
+unqualified ordinary wide keys are outside this binding scope. Existing native processing and
+checkpoints retain their paths. Complete variant/type/backend/version/TTL/failure/connector and
+broader rescale qualification remains open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking stays deferred. See [automatic regular binding](../../backends/canonical-state.md#automatic-regular-join-binding).
+
+
+Keyless canonical binding preserves the stock singleton/empty-row state context and maximum
+parallelism one. Compiled-plan loading retains INNER and the verified keyless ANTI path with
+payload columns and original source changelogs proven insert-only through known row-preserving
+stages. Four additional process cases cover nullable-left `NOT IN`, pre-savepoint unmatched rows
+retracted by later right input, both native stores and both engine orders. The released ANTI
+restore fixture also requires actual native execution. Other outer/updating keyless joins retain
+stock owners; ordinary native matching still uses the keyless INNER admission described above.
+
+
+Eight keyless INNER clean-process round trips pass across both engine orders, native stores and
+submission forms. They retain duplicate rows and NULL payload keys, and check the stock singleton
+state, external committed effects and an independent nested-loop oracle. The planner selection
+passes 56 controls, including keyless INNER binding and preserved stock owners for unsupported
+keyless outer/updating inputs.
+
+Mini-batch FULL joins with a changing residual predicate remain unqualified. In a new eight-case
+job cohort, every switched result matches the independent oracle, but three uninterrupted stock
+baselines omit an unmatched opposite row. A deterministic released-stock-only control reproduces
+this: after a matched left value changes from 10 to 15 under a `MOD(left,3)<>0` residual,
+immediate FULL join emits both unmatched rows, while mini-batch suppression omits the right row.
+Both stock behavior controls pass; they provide no native interoperability credit. The discrepant
+job evidence is retained, and stock-baseline assertions have not been relaxed. Complete mini-batch
+qualification remains open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+When both inputs reuse the same first-N subplan, ordinary canonical binding retains one
+upstream counter owner and the join's own independent state owner. Two different rank limits
+retain two counters. Batch sharing is rebuilt around those owners. All 32 compiled/ordinary cross-engine job scenarios pass across both stores/orders, including
+no-input re-export and rescaling at 1→3→2/maxP128. Both families prove new native input after
+the barrier, including downstream rows initially pending in a partial transpose. Wider qualification remains in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+Canonical normalizer/join handoffs now preserve upsert input whose join value differs from its
+primary key. The upstream full-row state supplies the old join value for updates and key-only
+tombstones; both state owners bind to their stock identities. The 52 compiled/ordinary process
+scenarios cover both stores/orders, mini-batch barriers, no-input returns, native checkpoints,
+empty state and fixed-max rescaling. Other unqualified upstream native families remain part of
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

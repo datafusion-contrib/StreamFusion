@@ -1,0 +1,298 @@
+use super::*;
+
+impl LocalGroupAggregator {
+    pub(super) fn configure_stock_append_distinct(&mut self) -> Result<(), DataFusionError> {
+        if !self.order.is_empty()
+            || !self.states.is_empty()
+            || !self.scalar_states.is_empty()
+            || self.distinct_view_sources.is_empty()
+            || self
+                .kinds
+                .iter()
+                .any(|kind| !matches!(kind, 0 | 3 | 7 | 8 | 9 | 10 | 11))
+            || self.distinct_view_sources.iter().any(|&slot| {
+                slot < 0 || !matches!(self.kinds.get(slot as usize), Some(&7) | Some(&9))
+            })
+        {
+            return Err(DataFusionError::Execution(
+                "stock local DISTINCT requires drained append partials".into(),
+            ));
+        }
+        self.stock_append_distinct = true;
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_configureLocalGroupStockAppendCanonical<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        if let Err(error) =
+            unsafe { &mut *(handle as *mut LocalGroupAggregator) }.configure_stock_append_distinct()
+        {
+            canonical::throw_error(&mut env, error);
+        }
+    });
+}
+
+pub(super) fn append_group_string_caches(
+    fields: &mut Vec<Field>,
+    columns: &mut Vec<ArrayRef>,
+    keys: usize,
+    slots: &[usize],
+    outputs: Vec<Vec<Option<Arc<[u16]>>>>,
+) {
+    for (&slot, values) in slots.iter().zip(outputs) {
+        if values.iter().any(Option::is_some) {
+            let cache = streamfusion_bridge::string_cache::string_cache_array(
+                values.iter().map(|value| value.as_deref()),
+            );
+            fields.push(streamfusion_bridge::string_cache::string_cache_field(
+                keys + slot,
+                cache.data_type().clone(),
+            ));
+            columns.push(cache);
+        }
+    }
+}
+
+fn partial_bytes(key: &ByteKey, states: &[GroupAggState]) -> usize {
+    byte_key_bytes(&key.0)
+        + std::mem::size_of::<Vec<GroupAggState>>()
+        + states.iter().map(group_agg_state_bytes).sum::<usize>()
+}
+
+impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
+    pub(super) fn string_slots(&self) -> Vec<usize> {
+        self.kinds
+            .iter()
+            .zip(&self.result_types)
+            .enumerate()
+            .filter_map(|(slot, (kind, ty))| {
+                (matches!(kind, 10 | 11) && *ty == DataType::Utf8).then_some(slot)
+            })
+            .collect()
+    }
+
+    pub(super) fn configure_stock_global_merge(&mut self) -> Result<(), DataFusionError> {
+        if !self.mini_batch
+            || self.staged_keys() != 0
+            || !self.global_partials.is_empty()
+            || self.record_count_column >= 0
+            || self
+                .kinds
+                .iter()
+                .any(|kind| !matches!(kind, 0 | 4 | 7 | 9 | 10 | 11 | 22))
+            || self
+                .distinct_view_columns
+                .iter()
+                .enumerate()
+                .any(|(slot, &column)| (column >= 0) != matches!(self.kinds[slot], 7 | 9))
+            || self.value_columns.iter().any(|&column| column < 0)
+            || self.filter_columns.iter().any(|&column| column >= 0)
+            || self
+                .count_columns
+                .iter()
+                .enumerate()
+                .any(|(slot, &column)| (self.kinds[slot] == 4) != (column >= 0))
+        {
+            return Err(DataFusionError::Execution(
+                "stock group merge requires drained scalar/DISTINCT partials with explicit AVG counts"
+                    .into(),
+            ));
+        }
+        self.stock_global_merge = true;
+        Ok(())
+    }
+
+    pub(super) fn stage_stock_partial(
+        &mut self,
+        key: &[u8],
+        batch: &RecordBatch,
+        row: usize,
+    ) -> Result<(), DataFusionError> {
+        let key = ByteKey::from(key);
+        let before = self
+            .global_partials
+            .get(&key)
+            .map_or(0, |states| partial_bytes(&key, states));
+        let states = self.global_partials.entry(key.clone()).or_insert_with(|| {
+            self.kinds
+                .iter()
+                .zip(&self.accumulator_types)
+                .map(|(&kind, ty)| GroupAggState::new(kind, ty))
+                .collect()
+        });
+        for (slot, state) in states.iter_mut().enumerate() {
+            if matches!(self.kinds[slot], 7 | 9) {
+                // Floating DISTINCT folds use the shared Java-map-order bundle below.
+                if ordered_distinct_type(&self.value_types[slot]) {
+                    continue;
+                }
+                let list =
+                    group_partial_map(batch.column(self.distinct_view_columns[slot] as usize));
+                let entries = list
+                    .values()
+                    .as_any()
+                    .downcast_ref::<arrow::array::StructArray>()
+                    .ok_or_else(|| {
+                        DataFusionError::Execution("invalid stock DISTINCT partial".into())
+                    })?;
+                let counts = entries
+                    .column(1)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .ok_or_else(|| {
+                        DataFusionError::Execution("invalid stock DISTINCT membership".into())
+                    })?;
+                let values = DistinctColumn::new(entries.column(0));
+                for entry in
+                    list.value_offsets()[row] as usize..list.value_offsets()[row + 1] as usize
+                {
+                    if counts.is_null(entry) || counts.value(entry) < 0 {
+                        return Err(DataFusionError::Execution(
+                            "invalid append DISTINCT membership".into(),
+                        ));
+                    }
+                    if counts.value(entry) != 0 {
+                        values.update_stock(state, entry, false, true);
+                    }
+                }
+                continue;
+            }
+            let column = self.value_columns[slot] as usize;
+            let values = batch.column(column);
+            if matches!(self.kinds[slot], 10 | 11)
+                && matches!(
+                    values.data_type(),
+                    DataType::Utf8
+                        | DataType::LargeUtf8
+                        | DataType::Utf8View
+                        | DataType::Date32
+                        | DataType::Time32(_)
+                        | DataType::Boolean
+                )
+            {
+                if !values.is_null(row) {
+                    let cache =
+                        streamfusion_bridge::string_cache::string_cache_column(batch, column)
+                            .map(streamfusion_bridge::string_cache::JavaStringCacheColumn::new);
+                    state.accumulate_typed_extreme(
+                        values,
+                        row,
+                        cache.as_ref().and_then(|cache| cache.value(row)),
+                    );
+                }
+            } else {
+                let scalar = ScalarValue::try_from_array(values, row)?;
+                if let Some(value) = num_from_scalar(&scalar) {
+                    if self.kinds[slot] == 4 {
+                        let counts = batch
+                            .column(self.count_columns[slot] as usize)
+                            .as_any()
+                            .downcast_ref::<Int64Array>()
+                            .ok_or_else(|| {
+                                DataFusionError::Execution(
+                                    "stock AVG partial count is not BIGINT".into(),
+                                )
+                            })?;
+                        if counts.is_null(row) {
+                            return Err(DataFusionError::Execution(
+                                "stock AVG partial count is NULL".into(),
+                            ));
+                        }
+                        state.accumulate_merged(value, counts.value(row));
+                    } else {
+                        state.accumulate(value);
+                    }
+                }
+            }
+        }
+        let after = partial_bytes(&key, states);
+        self.global_staging_bytes = self
+            .global_staging_bytes
+            .checked_add_signed(after as isize - before as isize)
+            .expect("stock partial accounting");
+        if self.memory.tracking() {
+            self.memory.record(after as isize - before as isize);
+        }
+        Ok(())
+    }
+
+    pub(super) fn merge_stock_partial(&mut self, key: &ByteKey) -> Result<(), DataFusionError> {
+        let Some(partials) = self.global_partials.remove(key) else {
+            return Ok(());
+        };
+        let bytes = partial_bytes(key, &partials);
+        let state = self
+            .store
+            .get_mut(&key.0)
+            .expect("stock merge retains its group");
+        let before = group_key_state_bytes(state);
+        for (slot, (target, partial)) in state.aggs.iter_mut().zip(partials).enumerate() {
+            if matches!(self.kinds[slot], 7 | 9) {
+                if !ordered_distinct_type(&self.value_types[slot]) {
+                    let set = match &partial {
+                        GroupAggState::Distinct { set, .. }
+                        | GroupAggState::DistinctRunning { counts: set, .. } => set,
+                        _ => unreachable!("stock DISTINCT partial"),
+                    };
+                    set.for_each_scalar(|value, count| {
+                        if count != 0 {
+                            DistinctColumn::merge_stock_scalar(target, &value);
+                        }
+                        Ok(())
+                    })?;
+                }
+                continue;
+            }
+            let GroupAggState::Running { agg, non_null } = partial else {
+                unreachable!("stock scalar partial");
+            };
+            if let RunningAgg::OverStringValue {
+                value, java_utf16, ..
+            } = &agg
+            {
+                if let Some(value) = value {
+                    target.accumulate_string(value, java_utf16.as_deref());
+                }
+            } else {
+                let scalar = agg.emit();
+                if let Some(value) = num_from_scalar(&scalar) {
+                    if matches!(
+                        agg,
+                        RunningAgg::AvgInt { .. }
+                            | RunningAgg::AvgFloat { .. }
+                            | RunningAgg::AvgDecimal { .. }
+                    ) {
+                        target.accumulate_merged(value, non_null);
+                    } else if non_null != 0
+                        || matches!(
+                            agg,
+                            RunningAgg::ZeroSumInt { .. }
+                                | RunningAgg::ZeroSumF32(_)
+                                | RunningAgg::ZeroSumF64(_)
+                        )
+                    {
+                        target.accumulate(value);
+                    }
+                }
+            }
+        }
+        if self.stock_append_only == Some(true) {
+            state.retain_append_presence();
+        }
+        let after = group_key_state_bytes(state);
+        self.global_staging_bytes -= bytes;
+        if self.memory.tracking() {
+            self.memory
+                .record(after as isize - before as isize - bytes as isize);
+        }
+        Ok(())
+    }
+}

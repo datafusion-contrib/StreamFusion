@@ -12,6 +12,153 @@ import org.slf4j.LoggerFactory;
 /** Entry point to the native data plane. Holds the methods backed by the Rust library. */
 public final class Native {
 
+  /** Key descriptor prefix selecting Flink's generated projection layout, including NULL slots. */
+  public static final int STOCK_KEY_PROJECTION = Integer.MIN_VALUE;
+
+  public static native void exportFirstNCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importFirstNCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void validateFirstNCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void exportUpdatingJoinCanonical(
+      long handle, boolean persistent, boolean left, BatchReceiver receiver);
+
+  public static native void importUpdatingJoinCanonical(
+      long handle, boolean persistent, boolean left, long arrayAddress, long schemaAddress);
+
+  public static native void validateUpdatingJoinCanonical(
+      long handle, boolean persistent, boolean left, long arrayAddress, long schemaAddress);
+
+  public static native void exportTumblingAggregatorCanonical(long handle, BatchReceiver receiver);
+
+  public static native void exportWindowRankerCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importWindowRankerCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void restoreWindowRankerCanonicalFrontier(long handle, long frontier);
+
+  /** Raw unbounded OVER folds; DISTINCT memberships, pending rows and timers transfer separately. */
+  public static native void exportOverFoldCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importOverFoldCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void validateOverFoldCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+
+  public static native void bindOverCanonicalDistinct(long handle, int aggregate);
+
+  public static native void exportOverCanonicalDistinct(
+      long handle, int aggregate, BatchReceiver receiver);
+
+  public static native void importOverCanonicalDistinct(
+      long handle, int aggregate, long arrayAddress, long schemaAddress);
+
+  public static native void finishOverCanonicalDistinct(long handle);
+
+  /** Preserve original bounded OVER frame rows before consuming input. */
+  public static native void bindOverCanonicalFrameInputs(long handle);
+
+  public static native void exportOverCanonicalFrameInputs(long handle, BatchReceiver receiver);
+
+  /** Complete retained arithmetic frames, with original rows and raw folds; pending rows transfer separately. */
+  public static native void exportOverCanonicalFrames(long handle, BatchReceiver receiver);
+
+  public static native void importOverCanonicalFrames(
+      long handle, long arrayAddress, long schemaAddress);
+
+  /** Event-time RANGE key protocol, including pending-only keys and empty callbacks. */
+  public static native void exportOverCanonicalRange(long handle, BatchReceiver receiver);
+
+  /** Processing ROWS counters and bucket minima; transfer retained frames before importing it. */
+  public static native void exportOverCanonicalProcessingRows(long handle, BatchReceiver receiver);
+
+  public static native void importOverCanonicalProcessingRows(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void bindOverProcessingRowsCleanupTimers(long handle);
+
+  /** Empty or one deadline, so Long.MIN_VALUE remains a valid timer timestamp. */
+  public static native long[] nextOverProcessingRowsCleanup(long handle);
+
+  public static native void fireOverProcessingRowsCleanup(long handle, long timestamp);
+
+  public static native void bindOverEventCleanupTimers(long handle);
+
+  public static native long[] nextOverEventCleanup(long handle);
+
+  public static native void fireOverEventCleanup(long handle, long timestamp, long currentTime);
+
+  public static native void importOverCanonicalRange(
+      long handle, long arrayAddress, long schemaAddress);
+
+  /** Rowtime OVER input buffers and processing-time cleanup deadlines. */
+  public static native void exportOverPendingCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importOverPendingCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void validateOverPendingCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void exportOverCleanupCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importOverCleanupCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void validateOverCleanupCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void exportSessionAggregatorCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importSessionAggregatorCanonical(
+      long handle, int keyArity, long arrayAddress, long schemaAddress);
+
+  public static native void restoreSessionCanonicalWatermark(long handle, long watermark);
+
+  public static native void configureSessionCanonicalAdmission(
+      long handle, long watermark, Object calendar, boolean epochBounds);
+
+  public static native void advanceSessionCanonicalAdmission(long handle, long watermark);
+
+  public static native void bindSessionCanonicalDistinct(long handle, int aggregate);
+
+  public static native void exportSessionCanonicalDistinct(
+      long handle, int aggregate, BatchReceiver receiver);
+
+  public static native void importSessionCanonicalDistinct(
+      long handle, int aggregate, long arrayAddress, long schemaAddress);
+
+  public static native void finishSessionCanonicalDistinct(long handle);
+
+  public static native void importTumblingAggregatorCanonical(
+      long handle, int keyArity, long arrayAddress, long schemaAddress);
+
+  public static native void restoreTumblingCanonicalWatermark(long handle, long watermark);
+
+  public static native void configureSlicingWindowCanonical(long handle, int countStarAggregate);
+
+  public static native void exportSlicingWindowCanonical(
+      long handle, boolean timers, BatchReceiver receiver);
+
+  public static native void importSlicingWindowCanonical(
+      long handle, int keyArity, boolean timers, long arrayAddress, long schemaAddress);
+
+  public static native void bindWindowCanonicalDistinct(long handle, int aggregate);
+
+  public static native void exportWindowCanonicalDistinct(
+      long handle, int aggregate, BatchReceiver receiver);
+
+  public static native void importWindowCanonicalDistinct(
+      long handle, int aggregate, long arrayAddress, long schemaAddress);
+
+  public static native void finishWindowCanonicalDistinct(long handle);
+
   public static final int AGGREGATE_DISTINCT_TTL = 1 << 10;
   public static final int AGGREGATE_DISTINCT_APPEND = 1 << 11;
 
@@ -242,6 +389,24 @@ public final class Native {
   public static native long intervalJoinerStateBytes(long handle);
 
   public static native long temporalJoinerStateBytes(long handle);
+
+  public static native void bindTemporalJoinCleanupTimers(long handle);
+
+  public static native long[] nextTemporalJoinCleanup(long handle);
+
+  public static native void fireTemporalJoinCleanup(long handle, long timestamp);
+
+  public static native void bindTemporalJoinCanonicalKeys(long handle, int[] precisions);
+
+  public static native void exportTemporalJoinCanonicalRows(long handle, boolean left, BatchReceiver receiver);
+
+  public static native void importTemporalJoinCanonicalRows(long handle, boolean left, long array, long schema);
+
+  public static native void exportTemporalJoinCanonicalMetadata(long handle, BatchReceiver receiver);
+
+  public static native void importTemporalJoinCanonicalMetadata(long handle, long array, long schema);
+
+
 
   public static native long updatingJoinerStateBytes(long handle);
 
@@ -503,6 +668,8 @@ public final class Native {
 
   /** Configures optional secondary argument columns before the local consumes its first batch. */
   public static native void configureLocalGroupAggregateArguments(long handle, int[] auxiliaryColumns);
+
+  public static native void configureLocalGroupStockAppendCanonical(long handle);
 
   /** Folds a batch into the buffered per-key accumulators; emits nothing. */
   public static native void updateLocalGroupAggregator(
@@ -836,6 +1003,16 @@ public final class Native {
   /** Assigns fixed-grid windows on the shifted local timeline, retaining epoch bounds in state. */
   public static native void setFixedWindowAssignmentOffset(long handle, long offsetMillis);
 
+  /** Binds the SQL window offset independently of the local-time-zone assignment shift. */
+  public static native void setFixedWindowOffset(long handle, long offsetMillis);
+
+  /** Final-window partials merge into their named end rather than every overlapping window. */
+  public static native void setFixedWindowFinalWindows(long handle, boolean enabled);
+
+  public static native void setStockWindowPartialBuffer(long handle, boolean enabled);
+
+  public static native void flushStockWindowPartials(long handle, long watermark, boolean force);
+
   /**
    * Attaches released-Flink deadlines to local fixed-window bounds.
    * @param handle fixed-window handle, either heap or persistent
@@ -1092,6 +1269,52 @@ public final class Native {
   /** Serializes the sorter's buffered rows for a checkpoint. */
   public static native byte[] snapshotTemporalSorter(long handle);
 
+  /** Binds independent cache clocks after the original processing-time row payload. */
+  public static native void bindIntervalJoinCanonicalClock(long handle, int leftArity, int rightArity);
+
+  /** Returns no deadline or the earliest actual native cleanup deadline. */
+  public static native long[] intervalJoinCleanupDeadline(long handle);
+
+  public static native void bindIntervalJoinCanonicalKeys(long handle, int[] descriptor);
+
+  public static native void exportIntervalJoinCanonicalRows(
+      long handle, boolean left, BatchReceiver receiver);
+
+  public static native void importIntervalJoinCanonicalRows(
+      long handle, boolean left, long array, long schema);
+
+  public static native void exportIntervalJoinCanonicalTimers(
+      long handle, boolean left, BatchReceiver receiver);
+
+  public static native void importIntervalJoinCanonicalTimers(
+      long handle, boolean left, long array, long schema);
+
+  public static native void exportWindowJoinCanonicalRows(
+      long handle, boolean left, BatchReceiver receiver);
+
+  public static native void importWindowJoinCanonicalRows(
+      long handle, boolean left, long array, long schema);
+
+  /** Live materializer transport: 0 = group headers, 1 = candidates, 2 = matching indexes. */
+  public static native void exportSinkMaterializerCanonical(
+      long handle, int section, BatchReceiver receiver);
+
+  public static native void bindSinkMaterializerCanonical(long handle, long array, long schema);
+
+  public static native void importSinkMaterializerCanonical(
+      long handle, int section, long array, long schema);
+
+  public static native void finishSinkMaterializerCanonicalGroup(long handle);
+
+  public static native void exportTemporalSortCanonicalRows(long handle, BatchReceiver receiver);
+
+  public static native long[] temporalSortCanonicalCutoff(long handle);
+
+  public static native void importTemporalSortCanonicalCutoff(long handle, long[] cutoff);
+
+  public static native void importTemporalSortCanonicalRows(long handle, long array, long schema);
+
+
   /** Rebuilds an event-time sorter from a snapshot and returns a fresh handle. */
   public static native long restoreTemporalSorter(
       int rtColumn, byte[] snapshot, long memoryBudgetBytes);
@@ -1205,6 +1428,25 @@ public final class Native {
 
   public static native void flushKeepLastDeduplicator(
       long handle, long outArrayAddress, long outSchemaAddress);
+
+  public static native void exportEagerDeduplicatorCanonical(
+      long handle, boolean persistent, long rowSchema, BatchReceiver receiver);
+
+  public static native void importEagerDeduplicatorCanonical(
+      long handle, boolean persistent, long array, long schema);
+
+  public static native void validateEagerDeduplicatorCanonical(
+      long handle, boolean persistent, long array, long schema);
+
+  public static native void exportBufferedDeduplicatorCanonical(
+      long handle, long rowSchema, boolean markers, BatchReceiver receiver);
+
+  public static native void importBufferedDeduplicatorCanonical(
+      long handle, long rowSchema, boolean markers, long array, long schema);
+
+  public static native void validateBufferedDeduplicatorCanonical(
+      long handle, long rowSchema, boolean markers, long array, long schema);
+
 
   /** Releases the deduplicator and its per-key state. */
   public static native void closeKeepLastDeduplicator(long handle);
@@ -1371,6 +1613,44 @@ public final class Native {
       long nowMillis,
       long outArrayAddress,
       long outSchemaAddress);
+
+  public static native void configureGroupTypedGlobalCanonical(long handle, boolean persistent);
+
+  public static native void configureGroupTypedCanonical(
+      long handle, boolean persistent, int[] kinds, boolean appendOnly);
+
+  public static native void exportGroupTypedCanonical(
+      long handle, boolean persistent, int slot, BatchReceiver receiver);
+
+  public static native void transferGroupTypedCanonical(
+      long handle, boolean persistent, int slot, long array, long schema, boolean validating);
+
+  public static native void configureGroupArithmeticCanonical(
+      long handle, boolean persistent, int[] aggregateKinds);
+
+  public static native void configureGroupArithmeticCanonicalMode(
+      long handle, boolean persistent, int[] aggregateKinds, boolean appendOnly);
+
+  public static native void exportGroupArithmeticCanonical(
+      long handle, boolean persistent, BatchReceiver receiver);
+
+  public static native void validateGroupArithmeticCanonical(
+      long handle, boolean persistent, long arrayAddress, long schemaAddress);
+
+  public static native void importGroupArithmeticCanonical(
+      long handle, boolean persistent, long arrayAddress, long schemaAddress);
+
+  public static native void configureGroupExtremaCanonical(
+      long handle, boolean persistent, int[] aggregateKinds);
+
+  public static native void exportGroupExtremaCanonical(
+      long handle, boolean persistent, BatchReceiver headerReceiver, BatchReceiver entryReceiver);
+
+  public static native void validateGroupExtremaCanonical(
+      long handle, boolean persistent, boolean entries, long arrayAddress, long schemaAddress);
+
+  public static native void importGroupExtremaCanonical(
+      long handle, boolean persistent, boolean entries, long arrayAddress, long schemaAddress);
 
   /** Flushes the group changes staged across one logical mini-batch. */
   public static native void flushGroupAggregator(
@@ -2393,6 +2673,15 @@ public final class Native {
       byte[][] snapshots,
       long memoryBudgetBytes);
 
+  public static native void exportChangelogNormalizerCanonical(
+      long handle, boolean persistent, long rowSchema, BatchReceiver receiver);
+
+  public static native void importChangelogNormalizerCanonical(
+      long handle, boolean persistent, long array, long schema);
+
+  public static native void validateChangelogNormalizerCanonical(
+      long handle, boolean persistent, long array, long schema);
+
   /** Releases a changelog normalizer handle. */
   public static native void closeChangelogNormalizer(long handle);
 
@@ -2802,6 +3091,36 @@ public final class Native {
   /** Retains each partition's first variable bound independently of its ranked rows. */
   public static native void enableTopNFirstBound(
       long handle, boolean persistent, boolean generateUpdateBefore);
+
+  /** Selects independent retracting data lists, counters and TTL clocks before state transfer. */
+  public static native void enableStockRetractingTopNState(long handle, boolean persistent);
+
+  public static native void exportRetractingTopNCanonical(
+      long handle, boolean persistent, long rowSchemaAddress, BatchReceiver receiver);
+
+  public static native void importRetractingTopNCanonical(
+      long handle, boolean persistent, long arrayAddress, long schemaAddress);
+
+  public static native void validateRetractingTopNCanonical(
+      long handle, boolean persistent, long arrayAddress, long schemaAddress);
+
+  public static native void exportUpdatingTopNCanonical(
+      long handle, boolean persistent, long rowSchemaAddress, BatchReceiver receiver);
+
+  public static native void importUpdatingTopNCanonical(
+      long handle, boolean persistent, long arrayAddress, long schemaAddress);
+
+  public static native void validateUpdatingTopNCanonical(
+      long handle, boolean persistent, long arrayAddress, long schemaAddress);
+
+  public static native void exportAppendTopNCanonical(
+      long handle, boolean persistent, long rowSchema, BatchReceiver receiver);
+
+  public static native void importAppendTopNCanonical(
+      long handle, boolean persistent, long array, long schema);
+
+  public static native void validateAppendTopNCanonical(
+      long handle, boolean persistent, long array, long schema);
 
   /**
    * Pushes an input batch, exporting the top-N changelog (input columns plus the row kind). {@code

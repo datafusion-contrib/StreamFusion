@@ -1,8 +1,5 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.Native;
-import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.RocksDBNativeStateSupport;
 import java.util.function.LongBinaryOperator;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -13,26 +10,30 @@ import org.apache.flink.streaming.api.operators.TwoInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.Native;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
- * Columnar event-time temporal table join (Arrow in on both inputs, Arrow out):
- * {@code probe JOIN versioned FOR SYSTEM_TIME AS OF probe.rowtime ON probe.k = versioned.k}. The
- * probe (left) input is a regular stream; the build (right) input is a versioned changelog (an
- * upsert/retract stream keyed by the equi-join key). Both inputs are buffered natively; on a watermark
- * the native joiner emits, for each buffered probe row the watermark has passed, the join with the
- * build version valid at the probe row's time — a buffer-then-emit-on-watermark flow like the window
- * join, but resolving a versioned lookup rather than a window match. The versioned state, the
- * per-probe-row lookup, and the state cleanup live natively; this layer moves batches across the
- * bridge and owns the handle's checkpointed state.
+ * Columnar event-time temporal table join (Arrow in on both inputs, Arrow out): {@code probe JOIN
+ * versioned FOR SYSTEM_TIME AS OF probe.rowtime ON probe.k = versioned.k}. The probe (left) input
+ * is a regular stream; the build (right) input is a versioned changelog (an upsert/retract stream
+ * keyed by the equi-join key). Both inputs are buffered natively; on a watermark the native joiner
+ * emits, for each buffered probe row the watermark has passed, the join with the build version
+ * valid at the probe row's time — a buffer-then-emit-on-watermark flow like the window join, but
+ * resolving a versioned lookup rather than a window match. The versioned state, the per-probe-row
+ * lookup, and the state cleanup live natively; this layer moves batches across the bridge and owns
+ * the handle's checkpointed state.
  *
- * <p>Flink delivers each input's watermark to {@code processWatermark1}/{@code processWatermark2}; the
- * base operator combines them into the minimum and calls {@link #processWatermark}, which advances the
- * joiner (emitting the now-resolvable probe rows) before forwarding the watermark downstream. Output
- * carries the changelog kind on the {@code $row_kind$} column (the probe row's kind, as Flink does).
+ * <p>Flink delivers each input's watermark to {@code processWatermark1}/{@code processWatermark2};
+ * the base operator combines them into the minimum and calls {@link #processWatermark}, which
+ * advances the joiner (emitting the now-resolvable probe rows) before forwarding the watermark
+ * downstream. Output carries the changelog kind on the {@code $row_kind$} column (the probe row's
+ * kind, as Flink does).
  *
  * <p>Only INNER and LEFT are possible (Flink rejects RIGHT/FULL for a temporal join), so only the
- * build side can be absent; a LEFT join null-pads a probe row that finds no valid version. Processing
- * time is intentionally unsupported — Flink itself rejects a processing-time temporal table join.
+ * build side can be absent; a LEFT join null-pads a probe row that finds no valid version.
+ * Processing time is intentionally unsupported — Flink itself rejects a processing-time temporal
+ * table join.
  */
 public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements TwoInputStreamOperator<ArrowBatch, ArrowBatch, ArrowBatch> {
@@ -46,6 +47,8 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
   private final RowType rightType;
   private final EncodedPredicate predicate;
   private final long stateTtlMillis;
+  private transient java.util.concurrent.ScheduledFuture<?> processingCleanup;
+  private transient long processingCleanupDeadline;
 
   public NativeTemporalJoinOperator(
       int[] leftKeys,
@@ -91,17 +94,33 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
     return withSchemas(
         (l, r) ->
             Native.createRocksDBTemporalJoiner(
-                leftKeys, rightKeys, keyTimestampPrecisions(),
-                leftTime, rightTime, joinType, l, r,
-                predicate.kinds, predicate.payload, predicate.childCounts,
-                predicate.boundLongs(), predicate.doubles, predicate.strings,
+                leftKeys,
+                rightKeys,
+                keyTimestampPrecisions(),
+                leftTime,
+                rightTime,
+                joinType,
+                l,
+                r,
+                predicate.kinds,
+                predicate.payload,
+                predicate.childCounts,
+                predicate.boundLongs(),
+                predicate.doubles,
+                predicate.strings,
                 stateTtlMillis,
                 getProcessingTimeService().getCurrentProcessingTime(),
                 memoryBudgetBytes(),
-                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
-                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-                rocksdb.aligned(), restoredPartitions));
+                rocksdb.tableDirectory(),
+                maxParallelism(),
+                rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(),
+                rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(),
+                rocksdb.keyGroupStart(),
+                rocksdb.keyGroupEnd(),
+                rocksdb.aligned(),
+                restoredPartitions));
   }
 
   @Override
@@ -172,6 +191,10 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
 
   @Override
   protected void closeHandle() {
+    if (processingCleanup != null) {
+      processingCleanup.cancel(false);
+      processingCleanup = null;
+    }
     if (directRocksDBState()) {
       Native.closeRocksDBTemporalJoiner(handle);
     } else {
@@ -196,14 +219,43 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
   }
 
   @Override
+  protected void configureStateHandle() {
+    Native.bindTemporalJoinCleanupTimers(handle);
+  }
+
+  @Override
   public void open() throws Exception {
     super.open();
+    armProcessingCleanup();
+  }
+
+  private void armProcessingCleanup() {
+    if (stateTtlMillis <= 1) return;
+    long[] next = Native.nextTemporalJoinCleanup(handle);
+    if (processingCleanup != null && next.length == 1 && processingCleanupDeadline == next[0])
+      return;
+    if (processingCleanup != null) processingCleanup.cancel(false);
+    processingCleanup = null;
+    if (next.length == 1) {
+      processingCleanupDeadline = next[0];
+      processingCleanup =
+          getProcessingTimeService().registerTimer(next[0], this::fireProcessingCleanup);
+    }
+  }
+
+  private void fireProcessingCleanup(long timestamp) {
+    if (processingCleanup == null || processingCleanupDeadline != timestamp) return;
+    processingCleanup = null;
+    Native.fireTemporalJoinCleanup(handle, timestamp);
+    publishStateBytes();
+    armProcessingCleanup();
   }
 
   @Override
   public void processElement1(StreamRecord<ArrowBatch> element) {
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
     buffer(element.getValue(), true);
+    armProcessingCleanup();
     publishStateBytes();
   }
 
@@ -211,6 +263,7 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
   public void processElement2(StreamRecord<ArrowBatch> element) {
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
     buffer(element.getValue(), false);
+    armProcessingCleanup();
     publishStateBytes();
   }
 
@@ -246,13 +299,14 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
   @Override
   public void processWatermark(Watermark mark) throws Exception {
     advance(mark.getTimestamp());
+    armProcessingCleanup();
     publishStateBytes();
     super.processWatermark(mark);
   }
 
   @Override
   public void finish() throws Exception {
-    advance(Long.MAX_VALUE); // end of input: resolve every remaining buffered probe row
+    advance(Long.MAX_VALUE); // end of input: resolve probes with a queued event callback
     super.finish();
   }
 

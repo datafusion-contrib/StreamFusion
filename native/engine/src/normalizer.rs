@@ -1,5 +1,7 @@
 use crate::*;
 
+mod canonical;
+
 /// Changelog normalization (Flink's `ChangelogNormalize` / `ProcTimeDeduplicateKeepLastRowFunction`,
 /// keep-last on a changelog): turns an upsert or duplicate-bearing changelog into a regular
 /// INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE changelog with no duplication, keyed by the unique key.
@@ -267,6 +269,8 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         // and a key is copied into an owned `ByteKey` only when it first enters the map.
         let mut key_encoder =
             BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_timestamp_precisions);
+        let converter = self.payload_converter.as_ref().unwrap();
+        let fields = self.schema.as_ref().unwrap().fields();
         for row in 0..batch.num_rows() {
             let kind = row_kinds.map(|k| k.value(row)).unwrap_or(0);
             let key = key_encoder.encode(row);
@@ -314,7 +318,15 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
                     }
                     // With TTL on the unchanged-row suppression is disabled: Flink always emits
                     // -U/+U so downstream state keeps refreshing instead of expiring too early.
-                    Some(prev) if prev.payload.as_ref() == current && !ttl.enabled() => {
+                    Some(prev)
+                        if !ttl.enabled()
+                            && crate::flink_row_equal::encoded_rows(
+                                converter,
+                                fields,
+                                &prev.payload,
+                                current,
+                            )? =>
+                    {
                         continue; // unchanged — emit nothing (no state TTL)
                     }
                     Some(prev) => {
@@ -453,7 +465,14 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         let parser = converter.parser();
         let mut columns = converter
             .convert_rows(out_rows.iter().map(|row| parser.parse(row)))
-            .expect("decode normalizer payloads");
+            .expect("decode normalizer payloads")
+            .iter()
+            .zip(schema.fields())
+            .map(|(array, field)| {
+                streamfusion_bridge::timestamp::cast_array(array, field.data_type())
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .expect("restore normalizer payload fields");
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         columns.push(Arc::new(Int8Array::from(out_kinds)));
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)

@@ -96,8 +96,8 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   }
 
   @Override
-  public void open() throws Exception {
-    super.open();
+  protected void configureStateHandle() {
+    super.configureStateHandle();
     if (inputTimestampLtz) {
       var configuredZone = java.time.ZoneId.of(sessionCalendarZoneId);
       if (!configuredZone.getRules().isFixedOffset()) {
@@ -106,6 +106,25 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
             handle, new WindowCalendar(sessionCalendarZoneId, proctime));
       }
     }
+    if (proctime && hasStockStateContract())
+      Native.configureSessionCanonicalAdmission(
+          handle,
+          canonicalWatermark(),
+          new WindowCalendar(sessionCalendarZoneId),
+          java.time.ZoneId.of(sessionCalendarZoneId).getRules().isFixedOffset());
+  }
+
+  @Override
+  public void processWatermark(org.apache.flink.streaming.api.watermark.Watermark mark)
+      throws Exception {
+    super.processWatermark(mark);
+    if (proctime && hasStockStateContract())
+      Native.advanceSessionCanonicalAdmission(handle, canonicalWatermark());
+  }
+
+  @Override
+  public void open() throws Exception {
+    super.open();
     registeredTimer = Long.MIN_VALUE;
     if (proctime) {
       // Reconstruct the earliest remaining deadline, including clipped/rescaled state sources.

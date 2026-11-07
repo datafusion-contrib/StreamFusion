@@ -7,6 +7,9 @@
 //! for a whole bundle's working set in one columnar conversion; a state-TTL value carries its
 //! last-write timestamp as a fixed 8-byte prefix so the compaction filter never parses the row.
 
+#[cfg(test)]
+mod canonical_import_tests;
+mod canonical_transfer;
 mod decoded_cache;
 mod raw_store;
 pub(crate) use raw_store::RocksRawStore;
@@ -130,6 +133,10 @@ pub(crate) trait RocksStateCodec {
     /// their lifetime follows the main row.
     fn multiset_tables(&self) -> Vec<(u8, DataType)> {
         Vec::new()
+    }
+    /// Stock COUNT DISTINCT retains a NULL marker independently of its non-null scalar.
+    fn multiset_null_is_value(&self, _table: usize) -> bool {
+        false
     }
     fn arm_multisets(&self, _value: &mut Self::Value) {}
     fn restore_multiset_entry(
@@ -826,7 +833,9 @@ impl<C: RocksStateCodec> RocksStore<C> {
             let mut probe_keys: Vec<Vec<u8>> = Vec::new();
             let mut probe_meta: Vec<(usize, ByteKey)> = Vec::new();
             for (index, &row) in rows.iter().enumerate() {
-                if row == u32::MAX || elements.is_null(index) {
+                if row == u32::MAX
+                    || elements.is_null(index) && !self.codec.multiset_null_is_value(position)
+                {
                     continue;
                 }
                 let key = encoder.encode(row as usize);
@@ -993,12 +1002,20 @@ impl<C: RocksStateCodec> RocksStore<C> {
     /// Decodes a set of persisted values in one columnar conversion; `None` marks an entry whose
     /// TTL has lapsed (Flink's `NeverReturnExpired`).
     fn decode_values(&self, values: &[&[u8]]) -> Result<Vec<Option<C::Value>>, DataFusionError> {
+        self.decode_values_with_visibility(values, true)
+    }
+
+    fn decode_values_with_visibility(
+        &self,
+        values: &[&[u8]],
+        expire: bool,
+    ) -> Result<Vec<Option<C::Value>>, DataFusionError> {
         let prefix = self.value_prefix_len();
         let live_ts = |value: &&[u8]| {
             let ts = (prefix > 0)
                 .then(|| i64::from_le_bytes(value[..8].try_into().expect("ttl prefix")));
             match ts {
-                Some(t) if self.now_ms >= t.saturating_add(self.config.ttl_ms) => Err(()),
+                Some(t) if expire && self.now_ms >= t.saturating_add(self.config.ttl_ms) => Err(()),
                 other => Ok(other),
             }
         };
@@ -1099,9 +1116,91 @@ impl<C: RocksStateCodec> RocksStore<C> {
     pub(crate) fn finish_canonical_scan(&mut self) {
         self.working.clear();
     }
+
+    /// Reads bounded self-contained canonical rows without expiring or refreshing their TTL ages.
+    pub(crate) fn for_each_canonical_batch(
+        &mut self,
+        chunk_rows: usize,
+        consume: impl FnMut(&[(ByteKey, C::Value)]) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if chunk_rows == 0 || !self.multisets.is_empty() {
+            return Err(DataFusionError::Execution(
+                "bounded canonical scan requires positive chunks and self-contained rows".into(),
+            ));
+        }
+        self.for_each_canonical_header_batch(chunk_rows, consume)
+    }
 }
 
 impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
+    fn prepare_canonical_import(&mut self, keys: &BinaryArray) -> Result<(), DataFusionError> {
+        let mut missing = Vec::new();
+        let mut seen = ahash::HashSet::default();
+        for bytes in keys.iter().flatten() {
+            if bytes.is_empty() || bytes.len() % 8 != 0 {
+                return Err(DataFusionError::Execution(
+                    "invalid canonical BinaryRow key".into(),
+                ));
+            }
+            let key = ByteKey::from(bytes);
+            if !self.working.contains_key(&key) && seen.insert(key.clone()) {
+                if let Some(value) = self
+                    .decoded_cache
+                    .as_mut()
+                    .and_then(|cache| cache.take(&key.0))
+                {
+                    self.working.insert(
+                        key,
+                        Slot::Present {
+                            state: value,
+                            dirty: false,
+                        },
+                    );
+                } else {
+                    missing.push(key);
+                }
+            }
+        }
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let db_keys = missing
+            .iter()
+            .map(|key| self.db_key(&key.0))
+            .collect::<Vec<_>>();
+        let db = Arc::clone(&self.db);
+        let fetched = multi_get_pinned(&db, &db_keys);
+        let mut hit_keys = Vec::new();
+        let mut hit_values = Vec::new();
+        for (key, value) in missing.into_iter().zip(&fetched) {
+            match value {
+                Ok(Some(bytes)) => {
+                    hit_keys.push(key);
+                    hit_values.push(bytes.as_ref());
+                }
+                Ok(None) => {
+                    self.working.insert(key, Slot::Absent { dirty: false });
+                }
+                Err(error) => return Err(re(error.clone())),
+            }
+        }
+        let decoded = self.decode_values_with_visibility(&hit_values, false)?;
+        drop(hit_values);
+        drop(fetched);
+        for (key, state) in hit_keys.into_iter().zip(decoded) {
+            let mut state = state.expect("raw canonical hydration never expires a row");
+            self.codec.arm_multisets(&mut state);
+            self.working.insert(
+                key,
+                Slot::Present {
+                    state,
+                    dirty: false,
+                },
+            );
+        }
+        Ok(())
+    }
+
     fn serializes_values(&self) -> bool {
         true
     }

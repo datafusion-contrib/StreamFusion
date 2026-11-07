@@ -2,10 +2,22 @@ use super::{
     checkpoint_files, copy_checkpoint_db, multi_get_pinned, open_shared_db, prefix_successor, re,
     FlinkWriteBatch, OpenedDb, PAIR_FIRST_TABLE, PAIR_SECOND_TABLE,
 };
+use crate::over_agg::FrameInput;
 use crate::*;
+use arrow::array::Int8Array;
 use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, Direction, IteratorMode, Options, DB};
 use std::sync::Arc;
+
+mod canonical_frames;
+#[cfg(test)]
+mod distinct_tests;
+#[cfg(test)]
+mod frame_inputs_tests;
+#[cfg(test)]
+mod pending_tests;
+mod proc_rows;
+mod range_timers;
 
 /// The OVER aggregate's DB holds one table per state shape, every key led by the PARTITION BY
 /// key's group (BinaryRow-hash routed — identical to the blob partitioner) so rescale clipping is
@@ -33,6 +45,11 @@ const PENDING_TABLE: u8 = PAIR_SECOND_TABLE;
 const FRAMES_TABLE: u8 = 2;
 const STAMPS_TABLE: u8 = 3;
 const DISTINCT_TABLE_BASE: u8 = 4;
+// Bounded frames and unbounded DISTINCT folds never share a store.
+const FRAME_INPUTS_TABLE: u8 = 4;
+const RANGE_TIMERS_TABLE: u8 = 5;
+const FRAME_CLOCKS_TABLE: u8 = 6;
+const PROC_ROWS_TABLE: u8 = 7;
 const KEY_GROUP_LEN: usize = 4;
 const KEY_PREFIX_LEN: usize = 5;
 const PENDING_KEY_LEN: usize = 13;
@@ -40,12 +57,13 @@ const STAMP_LEN: usize = 8;
 const FRAME_SUFFIX_LEN: usize = 16;
 const RT_SIGN_FLIP: u64 = 1 << 63;
 // Arrow row encodings start with a field validity marker, never this ASCII prefix.
-const FRAME_FOLD_VERSION: &[u8] = b"SFOV\x01";
+const FRAME_FOLD_MAGIC: &[u8] = b"SFOV";
 
 /// The late-data watermark and the pending arrival-sequence high-water mark, persisted at
 /// checkpoint under reserved keys whose leading bytes can never be a subtask's key group.
 const WATERMARK_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-over-agg-watermark";
 const SEQ_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-over-agg-seq";
+const FRAME_INPUTS_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-over-frame-inputs";
 
 /// One persisted fold read back from the store: the partition key's arrow-row bytes (the
 /// aggregator's own key encoding), the retention stamp, and the running state scalars in
@@ -63,6 +81,8 @@ pub(crate) struct StoredFrameRow {
     pub(crate) rt: i64,
     pub(crate) seq: u64,
     pub(crate) values: Vec<ScalarValue>,
+    pub(crate) input: Option<FrameInput>,
+    pub(crate) clock: Option<i64>,
 }
 
 /// Persistent backend for the OVER aggregate, every admitted shape. Rowtime: input rows append to
@@ -84,7 +104,8 @@ pub(crate) struct RocksOverAggStore {
     /// `Some` for the bounded shapes: the frame rows' per-aggregate value columns.
     frames_converter: Option<RowConverter>,
     frame_value_types: Vec<DataType>,
-    legacy_frames: Option<(RowConverter, Vec<Option<usize>>)>,
+    frame_version: u8,
+    legacy_frames: Vec<(u8, RowConverter, Vec<Option<usize>>)>,
     /// One element codec per DISTINCT aggregate slot, in gate order.
     distinct_converters: Vec<RowConverter>,
     distinct_element_types: Vec<DataType>,
@@ -97,6 +118,13 @@ pub(crate) struct RocksOverAggStore {
 }
 
 impl RocksOverAggStore {
+    #[cfg(test)]
+    pub(crate) fn insert_frame_fixture(&self, prefix: &[u8], rt: i64, seq: u64, value: &[u8]) {
+        self.db
+            .put(Self::frame_db_key(prefix, rt, seq), value)
+            .unwrap();
+    }
+
     pub(crate) fn create(
         config: RocksStoreConfig,
         state_types: &[DataType],
@@ -127,6 +155,12 @@ impl RocksOverAggStore {
         ];
         for slot in 0..distinct_element_types.len() {
             tables.push((Some(DISTINCT_TABLE_BASE + slot as u8), 0));
+        }
+        if !frame_value_types.is_empty() {
+            tables.push((Some(FRAME_INPUTS_TABLE), 0));
+            tables.push((Some(RANGE_TIMERS_TABLE), 0));
+            tables.push((Some(FRAME_CLOCKS_TABLE), 0));
+            tables.push((Some(PROC_ROWS_TABLE), 0));
         }
         let opened = open_shared_db(&config, &tables)?;
         Self::attach(
@@ -207,6 +241,8 @@ impl RocksOverAggStore {
                             .next_seq
                             .max(u64::from_be_bytes(value[..8].try_into().unwrap()));
                     }
+                } else if key.as_ref() == FRAME_INPUTS_KEY {
+                    writes.put(key, value)?;
                 } else if key.len() >= KEY_GROUP_LEN {
                     let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
                     if store.key_groups.contains(&kg) {
@@ -216,6 +252,7 @@ impl RocksOverAggStore {
             }
         }
         writes.finish()?;
+        store.canonicalize_floating_distinct()?;
         Ok(store)
     }
 
@@ -237,7 +274,7 @@ impl RocksOverAggStore {
             .iter()
             .map(|field| field.data_type().clone())
             .collect();
-        Ok(Self {
+        let mut store = Self {
             db: opened.db,
             _cache: opened.cache,
             max_parallelism: config.max_parallelism,
@@ -249,7 +286,8 @@ impl RocksOverAggStore {
                 .then(|| converter(frame_value_types))
                 .transpose()?,
             frame_value_types: frame_value_types.to_vec(),
-            legacy_frames: None,
+            frame_version: 0,
+            legacy_frames: Vec::new(),
             distinct_converters: distinct_element_types
                 .iter()
                 .map(|element| converter(std::slice::from_ref(element)))
@@ -261,45 +299,65 @@ impl RocksOverAggStore {
             next_seq: 0,
             generation: 0,
             write_batch_size: opened.write_batch_size,
-        })
+        };
+        store.canonicalize_floating_distinct()?;
+        Ok(store)
     }
 
     pub(crate) fn with_frame_compatibility(
         mut self,
-        legacy_types: Vec<DataType>,
-        mapping: Vec<Option<usize>>,
+        layouts: Vec<(u8, Vec<DataType>, Vec<Option<usize>>)>,
     ) -> Self {
-        if legacy_types != self.frame_value_types {
+        for (version, legacy_types, mapping) in layouts {
+            if legacy_types != self.frame_value_types {
+                self.frame_version = self.frame_version.max(version + 1);
+            }
             let converter =
                 RowConverter::new(legacy_types.into_iter().map(SortField::new).collect())
                     .expect("legacy OVER frame codec");
-            self.legacy_frames = Some((converter, mapping));
+            self.legacy_frames.push((version, converter, mapping));
         }
         self
     }
 
     fn decode_frames(&self, values: &[&[u8]]) -> Result<Vec<Vec<ScalarValue>>, DataFusionError> {
         let current = self.frames_converter.as_ref().expect("over frame codec");
-        let Some((legacy, mapping)) = &self.legacy_frames else {
+        if self.legacy_frames.is_empty() {
             return Self::decode_rows(current, values);
-        };
+        }
         let mut out = vec![Vec::new(); values.len()];
-        for old in [false, true] {
-            let selected: Vec<_> = values
-                .iter()
-                .enumerate()
-                .filter_map(
-                    |(index, value)| match value.strip_prefix(FRAME_FOLD_VERSION) {
-                        Some(value) if !old => Some((index, value)),
-                        None if old => Some((index, *value)),
-                        _ => None,
-                    },
+        let mut versions: BTreeMap<u8, Vec<(usize, &[u8])>> = BTreeMap::new();
+        for (index, value) in values.iter().enumerate() {
+            let (version, value) = match value.strip_prefix(FRAME_FOLD_MAGIC) {
+                Some([version, value @ ..]) => (*version, value),
+                Some([]) => {
+                    return Err(DataFusionError::Execution(
+                        "truncated OVER frame codec version".into(),
+                    ))
+                }
+                None => (0, *value),
+            };
+            versions.entry(version).or_default().push((index, value));
+        }
+        for (version, selected) in versions {
+            let legacy = if version == self.frame_version {
+                None
+            } else {
+                Some(
+                    self.legacy_frames
+                        .iter()
+                        .find(|(old, _, _)| *old == version)
+                        .ok_or_else(|| {
+                            DataFusionError::Execution(format!(
+                                "unsupported OVER frame codec version {version}"
+                            ))
+                        })?,
                 )
-                .collect();
+            };
             let bytes: Vec<_> = selected.iter().map(|(_, value)| *value).collect();
-            let decoded = Self::decode_rows(if old { legacy } else { current }, &bytes)?;
+            let decoded = Self::decode_rows(legacy.map_or(current, |(_, codec, _)| codec), &bytes)?;
             for ((index, _), row) in selected.into_iter().zip(decoded) {
-                out[index] = if old {
+                out[index] = if let Some((_, _, mapping)) = legacy {
                     mapping
                         .iter()
                         .zip(&self.frame_value_types)
@@ -451,6 +509,9 @@ impl RocksOverAggStore {
         let mut owners: Vec<usize> = Vec::new();
         let mut positions: Vec<(i64, u64)> = Vec::new();
         let mut values: Vec<Box<[u8]>> = Vec::new();
+        let mut inputs = Vec::new();
+        let mut clocks = Vec::new();
+        let capture_inputs = self.frame_inputs_enabled()?;
         for (owner, prefix) in prefixes.iter().enumerate() {
             for row in self
                 .db
@@ -466,14 +527,28 @@ impl RocksOverAggStore {
                 let seq = u64::from_be_bytes(suffix[8..].try_into().expect("frame seq"));
                 owners.push(owner);
                 positions.push((rt, seq));
+                inputs.push(self.read_frame_input(&db_key, capture_inputs)?);
+                clocks.push(self.read_frame_clock(&db_key)?);
                 values.push(value.into());
             }
         }
         let value_refs: Vec<&[u8]> = values.iter().map(|value| value.as_ref()).collect();
         let decoded = self.decode_frames(&value_refs)?;
         let mut out: Vec<Vec<StoredFrameRow>> = (0..prefixes.len()).map(|_| Vec::new()).collect();
-        for ((owner, (rt, seq)), values) in owners.into_iter().zip(positions).zip(decoded) {
-            out[owner].push(StoredFrameRow { rt, seq, values });
+        for ((((owner, (rt, seq)), values), input), clock) in owners
+            .into_iter()
+            .zip(positions)
+            .zip(decoded)
+            .zip(inputs)
+            .zip(clocks)
+        {
+            out[owner].push(StoredFrameRow {
+                rt,
+                seq,
+                values,
+                input,
+                clock,
+            });
         }
         Ok(out)
     }
@@ -527,9 +602,10 @@ impl RocksOverAggStore {
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         let mut encoded = Vec::new();
         for ((prefix, rt, seq), row) in entries.iter().zip(rows.iter()) {
-            let value = if self.legacy_frames.is_some() {
+            let value = if self.frame_version > 0 {
                 encoded.clear();
-                encoded.extend_from_slice(FRAME_FOLD_VERSION);
+                encoded.extend_from_slice(FRAME_FOLD_MAGIC);
+                encoded.push(self.frame_version);
                 encoded.extend_from_slice(row.data());
                 encoded.as_slice()
             } else {
@@ -547,7 +623,10 @@ impl RocksOverAggStore {
     ) -> Result<(), DataFusionError> {
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (prefix, rt, seq) in entries {
-            writes.delete(Self::frame_db_key(prefix, *rt, *seq))?;
+            let key = Self::frame_db_key(prefix, *rt, *seq);
+            writes.delete(&key)?;
+            writes.delete(Self::frame_input_key(&key))?;
+            writes.delete(Self::frame_clock_key(&key))?;
         }
         writes.finish()
     }
@@ -560,6 +639,9 @@ impl RocksOverAggStore {
         let mut keys: Vec<Box<[u8]>> = Vec::new();
         let mut positions: Vec<(i64, u64)> = Vec::new();
         let mut values: Vec<Box<[u8]>> = Vec::new();
+        let mut inputs = Vec::new();
+        let mut clocks = Vec::new();
+        let capture_inputs = self.frame_inputs_enabled()?;
         for row in self.db.iterator(IteratorMode::Start) {
             let (db_key, value) = row.map_err(re)?;
             if db_key.len() < KEY_PREFIX_LEN + FRAME_SUFFIX_LEN || db_key[4] != FRAMES_TABLE {
@@ -572,18 +654,129 @@ impl RocksOverAggStore {
                     as i64,
                 u64::from_be_bytes(suffix[8..].try_into().expect("frame seq")),
             ));
+            inputs.push(self.read_frame_input(&db_key, capture_inputs)?);
+            clocks.push(self.read_frame_clock(&db_key)?);
             values.push(value.into());
         }
         let value_refs: Vec<&[u8]> = values.iter().map(|value| value.as_ref()).collect();
         let decoded = self.decode_frames(&value_refs)?;
         let mut out: Vec<(Box<[u8]>, Vec<StoredFrameRow>)> = Vec::new();
-        for ((key, (rt, seq)), values) in keys.into_iter().zip(positions).zip(decoded) {
+        for ((((key, (rt, seq)), values), input), clock) in keys
+            .into_iter()
+            .zip(positions)
+            .zip(decoded)
+            .zip(inputs)
+            .zip(clocks)
+        {
+            let row = StoredFrameRow {
+                rt,
+                seq,
+                values,
+                input,
+                clock,
+            };
             match out.last_mut() {
-                Some((last, rows)) if *last == key => rows.push(StoredFrameRow { rt, seq, values }),
-                _ => out.push((key, vec![StoredFrameRow { rt, seq, values }])),
+                Some((last, rows)) if *last == key => rows.push(row),
+                _ => out.push((key, vec![row])),
             }
         }
         Ok(out)
+    }
+
+    pub(crate) fn frame_inputs_enabled(&self) -> Result<bool, DataFusionError> {
+        match self.db.get(FRAME_INPUTS_KEY).map_err(re)?.as_deref() {
+            None => Ok(false),
+            Some([1]) => Ok(true),
+            _ => Err(DataFusionError::Execution(
+                "invalid OVER frame input marker".into(),
+            )),
+        }
+    }
+
+    pub(crate) fn enable_frame_inputs(&mut self) -> Result<(), DataFusionError> {
+        self.db.put(FRAME_INPUTS_KEY, [1]).map_err(re)
+    }
+
+    fn frame_input_key(frame_key: &[u8]) -> Vec<u8> {
+        let mut key = frame_key.to_vec();
+        key[4] = FRAME_INPUTS_TABLE;
+        key
+    }
+
+    pub(crate) fn frame_input_prefix(&self, key_group: i32, key: &[u8]) -> Vec<u8> {
+        Self::frame_input_key(&self.frame_prefix(key_group, key))
+    }
+
+    fn read_frame_input(
+        &self,
+        frame_key: &[u8],
+        enabled: bool,
+    ) -> Result<Option<FrameInput>, DataFusionError> {
+        if !enabled {
+            return Ok(None);
+        }
+        let bytes = self
+            .db
+            .get(Self::frame_input_key(frame_key))
+            .map_err(re)?
+            .ok_or_else(|| {
+                DataFusionError::Execution("missing original OVER frame input".into())
+            })?;
+        FrameInput::decode(&bytes).map(Some)
+    }
+
+    pub(crate) fn write_frame_inputs(
+        &mut self,
+        entries: &[(Vec<u8>, i64, u64)],
+        inputs: &[FrameInput],
+    ) -> Result<(), DataFusionError> {
+        if entries.len() != inputs.len() {
+            return Err(DataFusionError::Execution(
+                "OVER frame input length mismatch".into(),
+            ));
+        }
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        for ((prefix, rt, seq), input) in entries.iter().zip(inputs) {
+            writes.put(
+                Self::frame_input_key(&Self::frame_db_key(prefix, *rt, *seq)),
+                input.encode(),
+            )?;
+        }
+        writes.finish()
+    }
+
+    pub(crate) fn visit_frame_inputs(
+        &self,
+        mut accept: impl FnMut(FrameInput, i64, usize) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if !self.frame_inputs_enabled()? {
+            return Err(DataFusionError::Execution(
+                "OVER frame inputs are not enabled".into(),
+            ));
+        }
+        let mut previous = Vec::new();
+        let mut position = 0;
+        for row in self.db.iterator(IteratorMode::Start) {
+            let (key, _) = row.map_err(re)?;
+            if key.len() < KEY_PREFIX_LEN + FRAME_SUFFIX_LEN || key[4] != FRAMES_TABLE {
+                continue;
+            }
+            let prefix = &key[..key.len() - FRAME_SUFFIX_LEN];
+            if previous != prefix {
+                previous = prefix.to_vec();
+                position = 0;
+            }
+            let suffix = &key[key.len() - FRAME_SUFFIX_LEN..];
+            let rt = (u64::from_be_bytes(suffix[..8].try_into().unwrap()) ^ RT_SIGN_FLIP) as i64;
+            accept(
+                self.read_frame_input(&key, true)?
+                    .expect("enabled frame inputs"),
+                rt,
+                position,
+            )?;
+            position += 1;
+        }
+        Ok(())
     }
 
     /// The `[key_group][STAMPS][key]` row carrying a bounded-shape key's cleanup deadline.
@@ -611,17 +804,51 @@ impl RocksOverAggStore {
         writes.finish()
     }
 
-    /// Every persisted per-key stamp — restore-time retention hydration for the bounded shapes.
+    pub(crate) fn write_cleanup_stamps(
+        &mut self,
+        entries: &[(Vec<u8>, Option<(i64, bool)>)],
+    ) -> Result<(), DataFusionError> {
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        for (key, stamp) in entries {
+            match stamp {
+                Some((stamp, true)) => writes.put(key, stamp.to_le_bytes())?,
+                Some((stamp, false)) => {
+                    let mut value = stamp.to_le_bytes().to_vec();
+                    value.push(0);
+                    writes.put(key, value)?;
+                }
+                None => writes.delete(key)?,
+            }
+        }
+        writes.finish()
+    }
+
     pub(crate) fn scan_stamps(&self) -> Result<Vec<(Box<[u8]>, i64)>, DataFusionError> {
+        Ok(self
+            .scan_cleanup_stamps()?
+            .into_iter()
+            .map(|(key, stamp, _)| (key, stamp))
+            .collect())
+    }
+
+    pub(crate) fn scan_cleanup_stamps(
+        &self,
+    ) -> Result<Vec<(Box<[u8]>, i64, bool)>, DataFusionError> {
         let mut out = Vec::new();
         for row in self.db.iterator(IteratorMode::Start) {
-            let (db_key, value) = row.map_err(re)?;
-            if db_key.len() < KEY_PREFIX_LEN || db_key[4] != STAMPS_TABLE || value.len() != 8 {
+            let (key, value) = row.map_err(re)?;
+            if key.len() < KEY_PREFIX_LEN || key[4] != STAMPS_TABLE {
                 continue;
             }
+            if value.len() != 8 && !(value.len() == 9 && value[8] == 0) {
+                return Err(DataFusionError::Execution(
+                    "invalid OVER cleanup stamp".into(),
+                ));
+            }
             out.push((
-                db_key[KEY_PREFIX_LEN..].into(),
-                i64::from_le_bytes(value[..8].try_into().expect("stamp")),
+                key[KEY_PREFIX_LEN..].into(),
+                i64::from_le_bytes(value[..8].try_into().unwrap()),
+                value.len() == 8,
             ));
         }
         Ok(out)
@@ -643,10 +870,58 @@ impl RocksOverAggStore {
         slot: usize,
         elements: &ArrayRef,
     ) -> Result<Vec<Vec<u8>>, DataFusionError> {
+        let elements = crate::flink_float::canonical_array(elements);
         let rows = self.distinct_converters[slot]
-            .convert_columns(std::slice::from_ref(elements))
+            .convert_columns(std::slice::from_ref(&elements))
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
         Ok(rows.iter().map(|row| row.data().to_vec()).collect())
+    }
+
+    fn canonicalize_floating_distinct(&mut self) -> Result<(), DataFusionError> {
+        let canonical = self
+            .distinct_element_types
+            .iter()
+            .enumerate()
+            .map(|(slot, ty)| {
+                let value = match ty {
+                    DataType::Float64 => ScalarValue::Float64(Some(f64::NAN)),
+                    DataType::Float32 => ScalarValue::Float32(Some(f32::NAN)),
+                    _ => return Ok(None),
+                };
+                self.encode_distinct_elements(slot, &value.to_array()?)
+                    .map(|mut rows| Some(rows.remove(0)))
+            })
+            .collect::<Result<Vec<_>, DataFusionError>>()?;
+        if canonical.iter().all(Option::is_none) {
+            return Ok(());
+        }
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        for row in self.db.iterator(IteratorMode::Start) {
+            let (key, _) = row.map_err(re)?;
+            if key.len() <= KEY_PREFIX_LEN || key[4] < DISTINCT_TABLE_BASE {
+                continue;
+            }
+            let slot = usize::from(key[4] - DISTINCT_TABLE_BASE);
+            let Some(Some(canonical)) = canonical.get(slot) else {
+                continue;
+            };
+            if key.len() < KEY_PREFIX_LEN + canonical.len() {
+                return Err(DataFusionError::Execution(
+                    "truncated floating OVER DISTINCT key".into(),
+                ));
+            }
+            let start = key.len() - canonical.len();
+            let decoded = Self::decode_rows(&self.distinct_converters[slot], &[&key[start..]])?;
+            if crate::flink_float::canonical_scalar(&decoded[0][0]).is_some()
+                && &key[start..] != canonical.as_slice()
+            {
+                let mut normalized = key[..start].to_vec();
+                normalized.extend_from_slice(canonical);
+                writes.put(normalized, [])?;
+                writes.delete(key)?;
+            }
+        }
+        writes.finish()
     }
 
     /// Presence probe for a batch's (key, element) pairs: one multi-get.
@@ -698,6 +973,113 @@ impl RocksOverAggStore {
         )
     }
 
+    pub(crate) fn visit_distinct(
+        &self,
+        slot: usize,
+        key_group: i32,
+        key: &[u8],
+        chunk_rows: usize,
+        mut accept: impl FnMut(Vec<ScalarValue>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if chunk_rows == 0 {
+            return Err(DataFusionError::Execution(
+                "zero DISTINCT chunk size".into(),
+            ));
+        }
+        let prefix = self.distinct_prefix(slot, key_group, key);
+        let mut elements: Vec<Box<[u8]>> = Vec::with_capacity(chunk_rows);
+        for row in self
+            .db
+            .iterator(IteratorMode::From(&prefix, Direction::Forward))
+        {
+            let (db_key, _) = row.map_err(re)?;
+            if !db_key.starts_with(&prefix) {
+                break;
+            }
+            elements.push(db_key[prefix.len()..].into());
+            if elements.len() == chunk_rows {
+                let refs = elements
+                    .iter()
+                    .map(|value| value.as_ref())
+                    .collect::<Vec<_>>();
+                accept(
+                    Self::decode_rows(&self.distinct_converters[slot], &refs)?
+                        .into_iter()
+                        .map(|mut values| values.remove(0))
+                        .collect(),
+                )?;
+                elements.clear();
+            }
+        }
+        if !elements.is_empty() {
+            let refs = elements
+                .iter()
+                .map(|value| value.as_ref())
+                .collect::<Vec<_>>();
+            accept(
+                Self::decode_rows(&self.distinct_converters[slot], &refs)?
+                    .into_iter()
+                    .map(|mut values| values.remove(0))
+                    .collect(),
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn visit_all_distinct(
+        &self,
+        slot: usize,
+        key_types: &[DataType],
+        chunk_rows: usize,
+        mut accept: impl FnMut(Vec<(Box<[u8]>, ScalarValue)>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if chunk_rows == 0 || slot >= self.distinct_element_types.len() {
+            return Err(DataFusionError::Execution(
+                "invalid OVER membership visitor".into(),
+            ));
+        }
+        let mut types = if key_types.is_empty() {
+            vec![DataType::Boolean]
+        } else {
+            key_types.to_vec()
+        };
+        types.push(self.distinct_element_types[slot].clone());
+        let converter = RowConverter::new(types.into_iter().map(SortField::new).collect())?;
+        let key_converter = key_row_converter_from_types(key_types);
+        let mut encoded: Vec<Box<[u8]>> = Vec::with_capacity(chunk_rows);
+        let decode = |encoded: &mut Vec<Box<[u8]>>| {
+            let parser = converter.parser();
+            let columns = converter.convert_rows(encoded.iter().map(|row| parser.parse(row)))?;
+            let key_columns = columns[..key_types.len()].to_vec();
+            let keys = encode_group_keys(&key_converter, &key_columns, encoded.len());
+            let values = columns.last().unwrap();
+            let result = (0..encoded.len())
+                .map(|row| {
+                    Ok((
+                        keys.row(row).data().into(),
+                        ScalarValue::try_from_array(values, row)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, DataFusionError>>()?;
+            encoded.clear();
+            Ok::<_, DataFusionError>(result)
+        };
+        for row in self.db.iterator(IteratorMode::Start) {
+            let (key, _) = row.map_err(re)?;
+            if key.len() <= KEY_PREFIX_LEN || key[4] != DISTINCT_TABLE_BASE + slot as u8 {
+                continue;
+            }
+            encoded.push(key[KEY_PREFIX_LEN..].into());
+            if encoded.len() == chunk_rows {
+                accept(decode(&mut encoded)?)?;
+            }
+        }
+        if !encoded.is_empty() {
+            accept(decode(&mut encoded)?)?;
+        }
+        Ok(())
+    }
+
     /// Stages the range covering everything under `prefix` for deletion — a cleared key's frames
     /// or seen-set.
     pub(crate) fn delete_prefix_range(
@@ -721,9 +1103,22 @@ impl RocksOverAggStore {
         key_timestamp_precisions: &[i32],
         rowtimes: &Int64Array,
     ) -> Result<(), DataFusionError> {
+        let tagged = self.payload_insert_companion(&batch.schema())?;
+        if tagged {
+            let kinds = batch
+                .column(self.payload_schema.fields().len())
+                .as_any()
+                .downcast_ref::<Int8Array>()
+                .expect("validated INSERT companion type");
+            if kinds.iter().any(|kind| kind != Some(0)) {
+                return Err(DataFusionError::Execution(
+                    "OVER pending input must contain only INSERT records".into(),
+                ));
+            }
+        }
         let rows = self
             .payload_converter
-            .convert_columns(batch.columns())
+            .convert_columns(&batch.columns()[..self.payload_schema.fields().len()])
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
         let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, key_timestamp_precisions);
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
@@ -799,9 +1194,65 @@ impl RocksOverAggStore {
             .map(Some)
     }
 
+    pub(crate) fn visit_pending(
+        &self,
+        chunk_rows: usize,
+        mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if chunk_rows == 0 {
+            return Err(DataFusionError::Execution(
+                "zero OVER pending chunk size".into(),
+            ));
+        }
+        let mut rows: Vec<Box<[u8]>> = Vec::with_capacity(chunk_rows);
+        for row in self.db.iterator(IteratorMode::Start) {
+            let (key, value) = row.map_err(re)?;
+            if key.len() != PENDING_KEY_LEN || key[4] != PENDING_TABLE {
+                continue;
+            }
+            if value.len() < 8 {
+                return Err(DataFusionError::Execution(
+                    "truncated OVER pending row".into(),
+                ));
+            }
+            rows.push(value[8..].into());
+            if rows.len() == chunk_rows {
+                accept(
+                    self.decode_payload(&self.payload_schema, rows.iter().map(|row| row.as_ref()))?,
+                )?;
+                rows.clear();
+            }
+        }
+        if !rows.is_empty() {
+            accept(
+                self.decode_payload(&self.payload_schema, rows.iter().map(|row| row.as_ref()))?,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Every committed fold — restore-time retention hydration and canonical savepoints.
     pub(crate) fn scan_folds(&self) -> Result<Vec<StoredOverFold>, DataFusionError> {
-        let mut folds: Vec<(Box<[u8]>, i64, Box<[u8]>)> = Vec::new();
+        let mut folds = Vec::new();
+        self.visit_folds(1024, |chunk| {
+            folds.extend(chunk);
+            Ok(())
+        })?;
+        Ok(folds)
+    }
+
+    /// Decode bounded fold chunks without hydrating the complete persisted state.
+    pub(crate) fn visit_folds(
+        &self,
+        chunk_rows: usize,
+        mut accept: impl FnMut(Vec<StoredOverFold>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if chunk_rows == 0 {
+            return Err(DataFusionError::Execution(
+                "zero OVER fold chunk size".into(),
+            ));
+        }
+        let mut folds: Vec<(Box<[u8]>, i64, Box<[u8]>)> = Vec::with_capacity(chunk_rows);
         for row in self.db.iterator(IteratorMode::Start) {
             let (key, value) = row.map_err(re)?;
             if key.as_ref() == WATERMARK_KEY
@@ -811,19 +1262,40 @@ impl RocksOverAggStore {
             {
                 continue;
             }
+            if value.len() <= STAMP_LEN {
+                return Err(DataFusionError::Execution(
+                    "truncated OVER fold value".into(),
+                ));
+            }
             folds.push((
                 key[KEY_GROUP_LEN + 1..].into(),
                 i64::from_le_bytes(value[..STAMP_LEN].try_into().expect("fold stamp")),
                 value[STAMP_LEN..].into(),
             ));
+            if folds.len() == chunk_rows {
+                self.decode_fold_chunk(&mut folds, &mut accept)?;
+            }
         }
+        if !folds.is_empty() {
+            self.decode_fold_chunk(&mut folds, &mut accept)?;
+        }
+        Ok(())
+    }
+
+    fn decode_fold_chunk(
+        &self,
+        folds: &mut Vec<(Box<[u8]>, i64, Box<[u8]>)>,
+        accept: &mut impl FnMut(Vec<StoredOverFold>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
         let states: Vec<&[u8]> = folds.iter().map(|(_, _, state)| state.as_ref()).collect();
         let states = self.decode_states(&states)?;
-        Ok(folds
-            .into_iter()
-            .zip(states)
-            .map(|((key, stamp, _), state)| StoredOverFold { key, stamp, state })
-            .collect())
+        accept(
+            folds
+                .drain(..)
+                .zip(states)
+                .map(|((key, stamp, _), state)| StoredOverFold { key, stamp, state })
+                .collect(),
+        )
     }
 
     fn decode_payload<'a>(
@@ -831,13 +1303,35 @@ impl RocksOverAggStore {
         schema: &SchemaRef,
         rows: impl Iterator<Item = &'a [u8]>,
     ) -> Result<RecordBatch, DataFusionError> {
+        let tagged = self.payload_insert_companion(schema)?;
         let parser = self.payload_converter.parser();
         let parsed: Vec<_> = rows.map(|bytes| parser.parse(bytes)).collect();
-        let columns = self
+        let count = parsed.len();
+        let mut columns = self
             .payload_converter
             .convert_rows(parsed)
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        if tagged {
+            columns.push(Arc::new(Int8Array::from(vec![0; count])));
+        }
         Ok(RecordBatch::try_new(schema.clone(), columns)?)
+    }
+
+    // INSERT-only OVER needs no stored tag; keep the existing pending-row codec unchanged.
+    fn payload_insert_companion(&self, schema: &SchemaRef) -> Result<bool, DataFusionError> {
+        let arity = self.payload_schema.fields().len();
+        if schema.fields().len() == arity {
+            return Ok(false);
+        }
+        if schema.fields().len() == arity + 1
+            && schema.field(arity).name() == ROW_KIND_COLUMN
+            && schema.field(arity).data_type() == &DataType::Int8
+        {
+            return Ok(true);
+        }
+        Err(DataFusionError::Execution(
+            "OVER pending payload has unowned companion fields".into(),
+        ))
     }
 
     fn decode_states(&self, values: &[&[u8]]) -> Result<Vec<Vec<ScalarValue>>, DataFusionError> {
@@ -994,6 +1488,48 @@ mod tests {
             0..=127,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn cleanup_stamp_reader_preserves_old_armed_and_new_unarmed_values() {
+        let mut store = sum_store("cleanup-ownership");
+        let old = store.stamp_key(1, b"old");
+        let unarmed = store.stamp_key(2, b"unarmed");
+        store
+            .write_stamps(&[(old.clone(), Some(i64::MIN))])
+            .unwrap();
+        store
+            .write_cleanup_stamps(&[(unarmed.clone(), Some((i64::MAX, false)))])
+            .unwrap();
+        assert_eq!(store.db.get(&old).unwrap().unwrap().len(), 8);
+        assert_eq!(store.db.get(&unarmed).unwrap().unwrap().len(), 9);
+        let entries = store
+            .scan_cleanup_stamps()
+            .unwrap()
+            .into_iter()
+            .map(|(key, stamp, armed)| (key.to_vec(), (stamp, armed)))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(entries.get(b"old".as_slice()), Some(&(i64::MIN, true)));
+        assert_eq!(entries.get(b"unarmed".as_slice()), Some(&(i64::MAX, false)));
+        assert_eq!(store.scan_stamps().unwrap().len(), 2);
+        store
+            .write_cleanup_stamps(&[(unarmed.clone(), Some((7, true))), (old, None)])
+            .unwrap();
+        assert_eq!(store.db.get(&unarmed).unwrap().unwrap().len(), 8);
+        assert_eq!(store.scan_cleanup_stamps().unwrap().len(), 1);
+        store.write_cleanup_stamps(&[(unarmed, None)]).unwrap();
+        assert!(store.scan_cleanup_stamps().unwrap().is_empty());
+    }
+
+    #[test]
+    fn malformed_cleanup_stamp_encodings_fail_closed() {
+        let store = sum_store("cleanup-ownership-corrupt");
+        let key = store.stamp_key(0, b"broken");
+        for bytes in [vec![], vec![0; 7], vec![0; 10], vec![1; 9]] {
+            store.db.put(&key, bytes).unwrap();
+            assert!(store.scan_cleanup_stamps().is_err());
+            assert!(store.scan_stamps().is_err());
+        }
     }
 
     fn store_sum_over(name: &str, retention_ms: i64) -> OverWindowAggregator {

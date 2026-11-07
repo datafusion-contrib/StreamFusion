@@ -8,11 +8,22 @@ impl TumblingAggregator {
     }
 
     fn shared_base(&self, end: i64) -> i64 {
-        (end - 1).div_euclid(self.window_millis) * self.window_millis
+        (end + self.effective_assignment_offset() - 1).div_euclid(self.window_millis)
+            * self.window_millis
+            - self.effective_assignment_offset()
     }
 
-    fn shared_assignments(&mut self, slice_ends: &[i64]) -> Vec<Option<(i64, i64)>> {
-        let calendar = self.calendar.as_ref().expect("shared slice calendar");
+    pub(super) fn slice_end_thresholds(
+        &self,
+        ends: impl IntoIterator<Item = i64>,
+    ) -> BTreeMap<i64, i64> {
+        match &self.calendar {
+            Some(calendar) => calendar.end_thresholds(ends),
+            None => ends.into_iter().map(|end| (end, end)).collect(),
+        }
+    }
+
+    pub(super) fn shared_assignments(&mut self, slice_ends: &[i64]) -> Vec<Option<(i64, i64)>> {
         let last_end = |end| {
             if self.cumulative_prefix() {
                 self.shared_base(end) + self.window_millis
@@ -20,7 +31,7 @@ impl TumblingAggregator {
                 end - self.slide_millis + self.window_millis
             }
         };
-        let deadlines = calendar.end_thresholds(
+        let deadlines = self.slice_end_thresholds(
             slice_ends
                 .iter()
                 .copied()
@@ -37,7 +48,7 @@ impl TumblingAggregator {
                 continue;
             }
             let mut timer = end + self.slide_millis;
-            while calendar.end_thresholds([timer])[&timer] <= self.current_watermark {
+            while self.slice_end_thresholds([timer])[&timer] <= self.current_watermark {
                 timer += self.slide_millis;
             }
             let target = if self.cumulative_prefix() {
@@ -54,7 +65,7 @@ impl TumblingAggregator {
         assignments
     }
 
-    fn add_slice_timer(
+    pub(super) fn add_slice_timer(
         &mut self,
         end: i64,
         key: OwnedRow,
@@ -73,7 +84,7 @@ impl TumblingAggregator {
         Ok(added)
     }
 
-    fn persist_slice_timers(&mut self) -> Result<(), DataFusionError> {
+    pub(super) fn persist_slice_timers(&mut self) -> Result<(), DataFusionError> {
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &mut self.store {
             store.put_slice_timers(self.slice_timers.iter().flat_map(|(&end, keys)| {
@@ -84,7 +95,7 @@ impl TumblingAggregator {
         Ok(())
     }
 
-    fn clear_resident_slice_timers(&mut self) {
+    pub(super) fn clear_resident_slice_timers(&mut self) {
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             self.slice_timers.clear();
@@ -93,7 +104,7 @@ impl TumblingAggregator {
         }
     }
 
-    fn slice_key_group(&self, batch: &RecordBatch, row: usize) -> i32 {
+    pub(super) fn slice_key_group(&self, batch: &RecordBatch, row: usize) -> i32 {
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
             return store.key_group(binary_row_hash(
@@ -115,7 +126,12 @@ impl TumblingAggregator {
         let ends = column_i64(batch, "ts")
             .values()
             .iter()
-            .map(|time| time.div_euclid(self.slide_millis) * self.slide_millis + self.slide_millis)
+            .map(|time| {
+                (time + self.effective_assignment_offset()).div_euclid(self.slide_millis)
+                    * self.slide_millis
+                    + self.slide_millis
+                    - self.effective_assignment_offset()
+            })
             .collect::<Vec<_>>();
         let assignments = if discard_closed_windows {
             self.shared_assignments(&ends)
@@ -166,6 +182,20 @@ impl TumblingAggregator {
         batch: &RecordBatch,
     ) -> Result<(), DataFusionError> {
         let assignments = self.shared_assignments(column_i64(batch, "slice_end").values());
+        self.merge_shared_partial(
+            batch,
+            assignments
+                .into_iter()
+                .map(|assignment| assignment.map(|(target, timer)| (target, Some(timer))))
+                .collect(),
+        )
+    }
+
+    pub(super) fn merge_shared_partial(
+        &mut self,
+        batch: &RecordBatch,
+        assignments: Vec<Option<(i64, Option<i64>)>>,
+    ) -> Result<(), DataFusionError> {
         let key_arrays = key_arrays(batch);
         self.key_types = key_types(&key_arrays);
         let encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
@@ -219,7 +249,9 @@ impl TumblingAggregator {
                         .collect::<Vec<_>>(),
                 )?;
             }
-            self.add_slice_timer(timer, key, self.slice_key_group(batch, row))?;
+            if let Some(timer) = timer {
+                self.add_slice_timer(timer, key, self.slice_key_group(batch, row))?;
+            }
         }
         self.memory.set(self.computed_state_bytes());
         self.memory.account()?;
@@ -388,11 +420,7 @@ impl TumblingAggregator {
     pub(super) fn flush_shared(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         #[cfg(feature = "rocksdb-state")]
         self.hydrate_slice_timers()?;
-        let mut deadlines = self
-            .calendar
-            .as_ref()
-            .unwrap()
-            .end_thresholds(self.slice_timers.keys().copied());
+        let mut deadlines = self.slice_end_thresholds(self.slice_timers.keys().copied());
         let mut queue = deadlines
             .iter()
             .map(|(&end, &epoch)| Reverse((epoch, end)))
@@ -478,9 +506,9 @@ impl TumblingAggregator {
                     let first_for_end = !self.slice_timers.contains_key(&next);
                     self.add_slice_timer(next, key.clone(), key_group)?;
                     if first_for_end {
-                        let epoch = *deadlines.entry(next).or_insert_with(|| {
-                            self.calendar.as_ref().unwrap().end_thresholds([next])[&next]
-                        });
+                        let epoch = *deadlines
+                            .entry(next)
+                            .or_insert_with(|| self.slice_end_thresholds([next])[&next]);
                         queue.push(Reverse((epoch, next)));
                     }
                 }

@@ -1,8 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchTypeInformation;
-import tech.streamfusion.operator.NativeColumnarChangelogNormalizeOperator;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -17,6 +14,9 @@ import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTransl
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeColumnarChangelogNormalizeOperator;
 
 /**
  * Wraps the native changelog normalizer into the plan; it consumes and produces Arrow batches,
@@ -30,6 +30,15 @@ public class NativeChangelogNormalizeExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] keyColumns;
   private final boolean generateUpdateBefore;
   private final int[] keyTimestampPrecisions;
+
+  private Integer stateMaxParallelism;
+
+  public NativeChangelogNormalizeExecNode withStateMaxParallelism(int maximum) {
+    if (maximum < 1)
+      throw new IllegalArgumentException("State maximum parallelism must be positive");
+    stateMaxParallelism = maximum;
+    return this;
+  }
 
   public NativeChangelogNormalizeExecNode(
       ReadableConfig tableConfig,
@@ -51,6 +60,10 @@ public class NativeChangelogNormalizeExecNode extends ExecNodeBase<ArrowBatch>
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
+  int[] stateKeyColumns() {
+    return keyColumns.clone();
+  }
+
   @Override
   @SuppressWarnings("unchecked")
   protected Transformation<ArrowBatch> translateToPlanInternal(
@@ -58,11 +71,12 @@ public class NativeChangelogNormalizeExecNode extends ExecNodeBase<ArrowBatch>
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     int maxParallelism =
-        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+        stateMaxParallelism != null
+            ? stateMaxParallelism
+            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     boolean miniBatch = config.get(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED);
-    long miniBatchSize = miniBatch ? tech.streamfusion.compat.FlinkCompat.miniBatchSize(config) : -1;
-    // Flink supports no STATE_TTL hint on ChangelogNormalize, so the job-wide retention is the
-    // whole story.
+    long miniBatchSize =
+        miniBatch ? tech.streamfusion.compat.FlinkCompat.miniBatchSize(config) : -1;
     long stateTtlMillis = config.getStateRetentionTime();
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(

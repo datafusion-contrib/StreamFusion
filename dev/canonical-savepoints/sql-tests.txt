@@ -1,0 +1,16 @@
+org.apache.flink.table.planner.plan.nodes.exec.stream.GroupAggregateRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.DeduplicationRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.RankRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowAggregateEventTimeRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowJoinEventTimeRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowRankRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowDeduplicateEventTimeRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalJoinRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.OverAggregateRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.TableSourceScanRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.TableSinkRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.CalcRestoreTest#testRestore
+org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalSortRestoreTest#testRestore

@@ -396,10 +396,14 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
   }
 
   @Override
-  public void open() throws Exception {
-    super.open();
+  protected void configureStateHandle() {
     if (nonTimeRowNumber) Native.enableNonTimeRowNumber(handle, directRocksDBState());
     if (firstBound) Native.enableTopNFirstBound(handle, directRocksDBState(), generateUpdateBefore);
+  }
+
+  @Override
+  public void open() throws Exception {
+    super.open();
     invalidTopSize = getMetricGroup().counter("topn.invalidTopSize");
     if (!retracting) {
       cacheHitRate = directRocksDBState() ? 0.0 : 1.0;

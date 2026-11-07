@@ -13,7 +13,8 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
       ReadableConfig tableConfig) {
     boolean configuredChangelog =
         tableConfig
-            .getOptional(org.apache.flink.configuration.StateChangelogOptions.ENABLE_STATE_CHANGE_LOG)
+            .getOptional(
+                org.apache.flink.configuration.StateChangelogOptions.ENABLE_STATE_CHANGE_LOG)
             .orElse(false);
     boolean changelog =
         environment == null
@@ -45,18 +46,36 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
       KeyedStateBackendParameters<K> parameters) throws Exception {
     return createNativeKeyedBackend(
         new KeyedBackendContext<>(
-            parameters.getEnv(),
-            parameters.getJobID(),
-            parameters.getOperatorIdentifier(),
-            parameters.getKeySerializer(),
-            parameters.getNumberOfKeyGroups(),
-            parameters.getKeyGroupRange(),
-            parameters.getStateHandles(),
-            parameters.getManagedMemoryFraction(),
-            handles ->
-                delegate.createKeyedStateBackend(
-                    new KeyedStateBackendParametersImpl<>(parameters).setStateHandles(handles)),
-            null));
+                parameters.getEnv(),
+                parameters.getJobID(),
+                parameters.getOperatorIdentifier(),
+                parameters.getKeySerializer(),
+                parameters.getNumberOfKeyGroups(),
+                parameters.getKeyGroupRange(),
+                parameters.getStateHandles(),
+                parameters.getManagedMemoryFraction(),
+                handles ->
+                    delegate.createKeyedStateBackend(
+                        new KeyedStateBackendParametersImpl<>(parameters).setStateHandles(handles)),
+                null)
+            .withStockBackendFactory(
+                (serializer, handles) ->
+                    new org.apache.flink.runtime.state.hashmap.HashMapStateBackend()
+                        .createKeyedStateBackend(
+                            new KeyedStateBackendParametersImpl<>(
+                                parameters.getEnv(),
+                                parameters.getJobID(),
+                                parameters.getOperatorIdentifier(),
+                                serializer,
+                                parameters.getNumberOfKeyGroups(),
+                                parameters.getKeyGroupRange(),
+                                parameters.getKvStateRegistry(),
+                                parameters.getTtlTimeProvider(),
+                                parameters.getMetricGroup(),
+                                parameters.getCustomInitializationMetrics(),
+                                handles,
+                                parameters.getCancelStreamRegistry(),
+                                parameters.getManagedMemoryFraction()))));
   }
 
   @Override

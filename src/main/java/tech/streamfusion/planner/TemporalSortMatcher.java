@@ -47,6 +47,8 @@ final class TemporalSortMatcher {
   }
 
   static String unsupportedReason(StreamPhysicalTemporalSort sort) {
+    if (sort.getCollation().getFieldCollations().size() > 1)
+      return "temporal sort: secondary order keys require the stock sorter";
     return "event-time sort: needs ORDER BY a single time attribute ascending, with input columns the"
         + " Arrow conversion supports";
   }

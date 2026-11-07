@@ -1,5 +1,20 @@
 use crate::*;
 
+mod canonical;
+mod cleanup;
+mod event_cleanup;
+use event_cleanup::EVENT_CLEANUP_ARMED;
+mod proc_rows;
+mod range_flush;
+mod range_timers;
+use proc_rows::{ProcRowsState, PROC_ROW_CLOCK};
+use range_timers::RangeTimers;
+mod distinct_ttl;
+mod frame_inputs;
+pub(crate) use frame_inputs::FrameInput;
+use frame_inputs::FRAME_INPUT_COLUMN;
+mod pending;
+
 mod range_order;
 mod string_first_last;
 use range_order::HeapRangeOrder;
@@ -8,7 +23,29 @@ mod string_views;
 use string_views::StringView;
 
 #[cfg(test)]
+mod bounded_arithmetic_tests;
+#[cfg(test)]
+mod event_rows_tests;
+#[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+fn legacy_frame_fixture(name: &str) -> Vec<u8> {
+    use base64::Engine;
+    let fixtures: serde_json::Value =
+        serde_json::from_str(include_str!("over_agg/legacy_frame_fixtures.json")).unwrap();
+    assert_eq!(
+        fixtures["writer_commit"],
+        "0dd7e98bf246cd2c1e31dfdd438b085111b57473"
+    );
+    base64::engine::general_purpose::STANDARD
+        .decode(
+            fixtures["fixtures"][name]
+                .as_str()
+                .expect("historical OVER fixture"),
+        )
+        .unwrap()
+}
 
 struct HeapSnapshotProbe {
     object: jni::objects::GlobalRef,
@@ -253,6 +290,7 @@ fn over_buffer_value(kind: i64, scalar: &ScalarValue) -> Option<Num> {
 
 pub(crate) struct OverAggState {
     agg: RunningAgg,
+    retracting_sum: bool,
     non_null: i64,
     distinct: Option<DistinctSet>,
     distinct_payload_bytes: usize,
@@ -264,11 +302,26 @@ impl OverAggState {
         let distinct = kind >= 100;
         Self {
             agg: RunningAgg::new_over(if distinct { kind - 100 } else { kind }, value_type),
+            retracting_sum: false,
             non_null: 0,
             distinct: distinct.then(|| DistinctSet::new(value_type)),
             distinct_payload_bytes: 0,
             value_type: value_type.clone(),
         }
+    }
+
+    fn bounded(kind: i64, value_type: &DataType) -> Self {
+        let mut state = Self::new(kind, value_type);
+        state.retracting_sum = matches!(
+            state.agg,
+            RunningAgg::SumI8(_)
+                | RunningAgg::SumI16(_)
+                | RunningAgg::SumI32(_)
+                | RunningAgg::SumI64(_)
+                | RunningAgg::SumF32(_)
+                | RunningAgg::SumF64(_)
+        );
+        state
     }
 
     fn fold(&mut self, value: Num) {
@@ -421,13 +474,14 @@ impl OverAggState {
     }
 
     fn has_count_state(&self) -> bool {
-        matches!(
-            self.agg,
-            RunningAgg::AvgInt { .. }
-                | RunningAgg::AvgFloat { .. }
-                | RunningAgg::AvgDecimal { .. }
-                | RunningAgg::SumDecimal { .. }
-        )
+        self.retracting_sum
+            || matches!(
+                self.agg,
+                RunningAgg::AvgInt { .. }
+                    | RunningAgg::AvgFloat { .. }
+                    | RunningAgg::AvgDecimal { .. }
+                    | RunningAgg::SumDecimal { .. }
+            )
     }
 
     fn state_types(&self) -> Vec<DataType> {
@@ -685,7 +739,10 @@ impl OverAggregator {
             .iter()
             .map(|kind| (kind >= &100).then(|| (vec![0], Vec::new())))
             .collect();
-        let mut stamps: Vec<i64> = Vec::new();
+        // A NULL clock retains a DISTINCT view without inventing an accumulator row.
+        let independent = retention.is_some_and(|(name, _)| name == TTL_TS_COLUMN)
+            && self.kinds.iter().any(|&kind| kind >= 100);
+        let mut stamps: Vec<Option<i64>> = Vec::new();
         for (key, states) in self.keys.iter() {
             keys.push(&key.0);
             let mut column = 0;
@@ -700,7 +757,9 @@ impl OverAggregator {
                 }
             }
             if let Some((_, per_key)) = retention {
-                stamps.push(per_key.get(key).copied().expect("over retention stamp"));
+                let stamp = per_key.get(key).copied();
+                assert!(independent || stamp.is_some(), "over retention stamp");
+                stamps.push(stamp);
             }
         }
         let mut fields = key_fields(&self.key_types);
@@ -732,7 +791,7 @@ impl OverAggregator {
             }
         }
         if let Some((name, _)) = retention {
-            fields.push(Field::new(name, DataType::Int64, false));
+            fields.push(Field::new(name, DataType::Int64, independent));
             columns.push(Arc::new(Int64Array::from(stamps)));
         }
         write_ipc(
@@ -792,7 +851,7 @@ impl OverAggregator {
                     }
                     distinct_column += 1;
                 }
-                if let Some(column) = retention {
+                if let Some(column) = retention.filter(|column| column.is_valid(row)) {
                     stamps.insert(ByteKey::from(key), column.value(row));
                 }
             }
@@ -812,6 +871,8 @@ pub(crate) struct BufferedRow {
 
 #[derive(Clone, Default)]
 struct BufferedExtra {
+    input: Option<FrameInput>,
+    clock: Option<i64>,
     texts: Option<Box<[Option<Arc<str>>]>>,
     caches: Option<Box<[Option<Arc<[u16]>>]>>,
     string_views: Option<Box<[StringView]>>,
@@ -828,7 +889,12 @@ impl BufferedRow {
             self.extra.get_or_insert_with(Default::default).fold_state = Some(state);
         } else if let Some(extra) = &mut self.extra {
             extra.fold_state = None;
-            if extra.texts.is_none() && extra.string_views.is_none() && extra.caches.is_none() {
+            if extra.texts.is_none()
+                && extra.string_views.is_none()
+                && extra.caches.is_none()
+                && extra.input.is_none()
+                && extra.clock.is_none()
+            {
                 self.extra = None;
             }
         }
@@ -871,6 +937,9 @@ impl BufferedRow {
 
     fn text_bytes(&self) -> usize {
         self.views_bytes()
+            + self.input().map_or(0, |input| {
+                input.bytes() + std::mem::size_of::<BufferedExtra>()
+            })
             + self.cache_bytes()
             + self
                 .extra
@@ -913,6 +982,8 @@ impl BufferedRow {
                 && extra.caches.is_none()
                 && extra.string_views.is_none()
                 && extra.fold_state.is_none()
+                && extra.input.is_none()
+                && extra.clock.is_none()
         }) {
             self.extra = None;
         }
@@ -924,6 +995,29 @@ impl BufferedRow {
         } else if let Some(extra) = &mut self.extra {
             extra.string_views = None;
             self.prune_extra();
+        }
+    }
+
+    fn input(&self) -> Option<&FrameInput> {
+        self.extra.as_ref()?.input.as_ref()
+    }
+
+    fn processing_clock(&self) -> Option<i64> {
+        self.extra
+            .as_ref()
+            .and_then(|extra| extra.clock)
+            .or_else(|| self.input().map(|input| input.clock))
+    }
+
+    fn set_processing_clock(&mut self, clock: Option<i64>) {
+        if let Some(clock) = clock {
+            self.extra.get_or_insert_with(Default::default).clock = Some(clock);
+        }
+    }
+
+    fn set_input(&mut self, input: Option<FrameInput>) {
+        if let Some(input) = input {
+            self.extra.get_or_insert_with(Default::default).input = Some(input);
         }
     }
 
@@ -1013,6 +1107,8 @@ impl BufferedRow {
             values,
             extra: (texts.is_some() || fold.is_some()).then(|| {
                 Box::new(BufferedExtra {
+                    input: None,
+                    clock: None,
                     texts,
                     caches: None,
                     string_views: None,
@@ -1026,13 +1122,12 @@ impl BufferedRow {
 /// Bounded-frame event-time OVER (`ROWS BETWEEN n PRECEDING AND CURRENT ROW`, or `RANGE BETWEEN
 /// INTERVAL x PRECEDING AND CURRENT ROW`). Unlike the unbounded {@link OverAggregator}, which folds a
 /// single persistent accumulator per key, a bounded frame drops rows off its trailing edge — so the
-/// running value cannot be maintained incrementally for MIN/MAX (they would need a retractable
-/// multiset). This keeps a per-key sorted buffer of the rows still reachable by some future
-/// frame and **recomputes** each emitted row's aggregate over its frame slice with a fresh
-/// {@link RunningAgg}, sidestepping MIN/MAX retraction. Decimal arithmetic
-/// and floating SUM0 retain their raw fold beside the last frame row so retractions preserve
-/// overflow and rounding history; other aggregates continue to recompute. See divergences/11 for the RANGE backend-order gap.
+/// arithmetic fold retracts expired values while selections need their retained membership.
+/// Numeric SUM/SUM0/AVG and COUNT keep raw state beside the final frame row, preserving count,
+/// overflow and rounding history. Numeric selections recompute their reachable slice; string
+/// selections keep retractable views. See divergences/11 for the state and backend-order model.
 pub(crate) struct BoundedOverAggregator {
+    capture_inputs: bool,
     kinds: Vec<i64>,
     /// One value type per aggregate (aggregates may read different value columns of different types).
     value_types: Vec<DataType>,
@@ -1061,10 +1156,29 @@ impl BoundedOverAggregator {
             .iter()
             .map(|&code| value_data_type(code))
             .collect::<Vec<_>>();
-        let arithmetic_slots = Self::arithmetic_slots(&kinds, &value_types, false);
+        let arithmetic_slots = kinds
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, kind)| {
+                (matches!(kind % 100, 0 | 4 | 22)
+                    || *kind == 3
+                    || (*kind == 103
+                        && matches!(
+                            value_types[slot],
+                            DataType::Int8
+                                | DataType::Int16
+                                | DataType::Int32
+                                | DataType::Int64
+                                | DataType::Float32
+                                | DataType::Float64
+                                | DataType::Decimal128(_, _)
+                        )))
+                .then_some(slot)
+            })
+            .collect::<Vec<_>>();
         let mut fold_types: Vec<DataType> = arithmetic_slots
             .iter()
-            .flat_map(|&slot| OverAggState::new(kinds[slot], &value_types[slot]).state_types())
+            .flat_map(|&slot| OverAggState::bounded(kinds[slot], &value_types[slot]).state_types())
             .collect();
         let arithmetic_width = fold_types.len();
         let string_view_slots = kinds
@@ -1077,6 +1191,7 @@ impl BoundedOverAggregator {
             .collect::<Vec<_>>();
         fold_types.extend(string_view_slots.iter().map(|_| DataType::Binary));
         BoundedOverAggregator {
+            capture_inputs: false,
             value_types,
             range_order: (!rows_frame
                 && (!arithmetic_slots.is_empty() || !string_view_slots.is_empty()))
@@ -1127,8 +1242,8 @@ impl BoundedOverAggregator {
 
     /// Old primitive SUM0 plans used SUM and did not persist a floating-point fold.
     /// Map those fields by aggregate slot, keeping any trailing string views aligned.
-    fn legacy_fold_layout(&self) -> (Vec<DataType>, Vec<Option<usize>>) {
-        let slots = Self::arithmetic_slots(&self.kinds, &self.value_types, true);
+    fn legacy_fold_layout(&self, before_float_zero: bool) -> (Vec<DataType>, Vec<Option<usize>>) {
+        let slots = Self::arithmetic_slots(&self.kinds, &self.value_types, before_float_zero);
         let mut legacy_types = Vec::new();
         let mut offsets = HashMap::default();
         for slot in slots {
@@ -1139,7 +1254,7 @@ impl BoundedOverAggregator {
         let string_offset = legacy_types.len();
         let mut mapping = Vec::new();
         for &slot in &self.arithmetic_slots {
-            let width = OverAggState::new(self.kinds[slot], &self.value_types[slot])
+            let width = OverAggState::bounded(self.kinds[slot], &self.value_types[slot])
                 .state_types()
                 .len();
             mapping
@@ -1206,7 +1321,7 @@ impl BoundedOverAggregator {
     }
 
     /// Folds the batch (`rt` i64, `value0..`, optional `key0..`) into the per-key buffer and returns
-    /// `[result0..]` per input row, each computed by recomputing the aggregate over that row's frame.
+    /// `[result0..]` per input row, retracting arithmetic and updating each selection's frame.
     /// Each aggregate reads its own `value{a}` column.
     fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
         self.update_with_serialized_strings(batch, false, false)
@@ -1217,6 +1332,16 @@ impl BoundedOverAggregator {
         batch: &RecordBatch,
         serialized_strings: bool,
         persistent_strings: bool,
+    ) -> RecordBatch {
+        self.update_with_proc_rows(batch, serialized_strings, persistent_strings, None)
+    }
+
+    fn update_with_proc_rows(
+        &mut self,
+        batch: &RecordBatch,
+        serialized_strings: bool,
+        persistent_strings: bool,
+        mut proc_rows: Option<(&mut HashMap<ByteKey, ProcRowsState>, i64)>,
     ) -> RecordBatch {
         let rt = column_i64(batch, "rt");
         let num_agg = self.kinds.len();
@@ -1274,6 +1399,8 @@ impl BoundedOverAggregator {
                     .any(|column| matches!(column, OverValueColumn::Text(..)))
                     .then(|| {
                         Box::new(BufferedExtra {
+                            input: None,
+                            clock: None,
                             texts: Some(
                                 value_columns
                                     .iter()
@@ -1296,6 +1423,18 @@ impl BoundedOverAggregator {
                         })
                     }),
             });
+            if self.capture_inputs {
+                buffer
+                    .last_mut()
+                    .unwrap()
+                    .set_input(FrameInput::from_projected(batch, row));
+            }
+            if let Some((_, clock)) = &proc_rows {
+                buffer
+                    .last_mut()
+                    .unwrap()
+                    .set_processing_clock(Some(*clock));
+            }
             buffer_index[row] = buffer.len() - 1;
             if track {
                 self.bytes += row_bytes + buffer.last().expect("appended frame row").text_bytes();
@@ -1312,6 +1451,7 @@ impl BoundedOverAggregator {
         let mut string_running: HashMap<ByteKey, (usize, usize, Vec<StringView>)> =
             HashMap::default();
         let mut old_view_bytes = 0;
+        let mut proc_live: HashMap<ByteKey, Vec<usize>> = HashMap::default();
         for &row in &order {
             let key = keys_encoded.row(row).data();
             let i = buffer_index[row];
@@ -1347,24 +1487,46 @@ impl BoundedOverAggregator {
             let cur_rt = buffer[i].rt;
             // ROWS counts physical rows up to and including this one; RANGE covers all rows within the
             // rowtime interval and shares one frame across rows of equal rowtime (ending at the last).
-            let (lower, upper) = if self.rows_frame {
-                (i.saturating_sub(self.offset as usize), i)
+            let proc_expired = proc_rows.as_mut().map(|(states, clock)| {
+                let width = self
+                    .offset
+                    .checked_add(1)
+                    .expect("positive processing ROWS width");
+                let active = proc_live
+                    .entry(ByteKey::from(key))
+                    .or_insert_with(|| (0..i).collect());
+                states
+                    .entry(ByteKey::from(key))
+                    .or_insert_with(|| ProcRowsState::legacy(&buffer[..i], width, *clock))
+                    .advance(buffer, active, i, width)
+            });
+            let (lower, upper) = if proc_rows.is_some() {
+                (0, i)
+            } else if self.rows_frame {
+                let mut lower = i.saturating_sub(self.offset as usize);
+                if cur_rt == i64::MAX {
+                    // Stock's bucket search starts at MAX and uses a strict comparison. Once
+                    // only the MAX bucket remains it accumulates peers without retracting them.
+                    lower = lower.min(buffer.partition_point(|row| row.rt < i64::MAX));
+                }
+                (lower, i)
             } else {
                 let lo = buffer.partition_point(|r| r.rt < cur_rt - self.offset);
                 let hi = buffer.partition_point(|r| r.rt <= cur_rt) - 1;
                 (lo, hi)
             };
-            let mut expired_rows: Vec<usize> =
-                if !self.arithmetic_slots.is_empty() || !self.string_view_slots.is_empty() {
-                    let old_lower = running
-                        .get(key)
-                        .map(|cursor| cursor.0)
-                        .or_else(|| string_running.get(key).map(|cursor| cursor.0))
-                        .unwrap_or(0);
-                    (old_lower..lower).collect()
-                } else {
-                    Vec::new()
-                };
+            let mut expired_rows: Vec<usize> = if let Some(expired) = proc_expired {
+                expired.into_iter().collect()
+            } else if !self.arithmetic_slots.is_empty() || !self.string_view_slots.is_empty() {
+                let old_lower = running
+                    .get(key)
+                    .map(|cursor| cursor.0)
+                    .or_else(|| string_running.get(key).map(|cursor| cursor.0))
+                    .unwrap_or(0);
+                (old_lower..lower).collect()
+            } else {
+                Vec::new()
+            };
             if !expired_rows.is_empty() {
                 if let Some(maps) = &mut self.range_order {
                     let map = maps.get_mut(key).expect("RANGE timestamp map");
@@ -1391,7 +1553,7 @@ impl BoundedOverAggregator {
                             .arithmetic_slots
                             .iter()
                             .map(|&slot| {
-                                OverAggState::new(self.kinds[slot], &self.value_types[slot])
+                                OverAggState::bounded(self.kinds[slot], &self.value_types[slot])
                             })
                             .collect::<Vec<_>>();
                         if i > 0 {
@@ -1405,10 +1567,11 @@ impl BoundedOverAggregator {
                                 let width = state.state_types().len();
                                 let stored = &saved[column..column + width];
                                 let missing = stored.iter().all(ScalarValue::is_null)
-                                    && !matches!(
-                                        self.value_types[slot],
-                                        DataType::Decimal128(_, _)
-                                    );
+                                    && (self.kinds[slot] % 100 == 3
+                                        || !matches!(
+                                            self.value_types[slot],
+                                            DataType::Decimal128(_, _)
+                                        ));
                                 if missing {
                                     for previous in &buffer[..i] {
                                         if let Some(value) = previous.values[slot] {
@@ -1496,7 +1659,10 @@ impl BoundedOverAggregator {
                 .map(|(slot, (&kind, ty))| (slot, OverAggState::new(kind, ty)))
                 .collect();
             if !aggs.is_empty() {
-                for r in &buffer[lower..=upper] {
+                for (index, r) in buffer.iter().enumerate().take(upper + 1).skip(lower) {
+                    if proc_rows.is_some() && proc_live[key].binary_search(&index).is_err() {
+                        continue;
+                    }
                     for (slot, agg) in &mut aggs {
                         if let Some(text) = r.text_value(*slot) {
                             if let Some(cache) = r.java_cache(*slot) {
@@ -1535,7 +1701,22 @@ impl BoundedOverAggregator {
         if self.track {
             self.bytes = self.bytes - old_view_bytes + new_view_bytes;
         }
-        self.evict();
+        if proc_rows.is_some() {
+            for (key, active) in proc_live {
+                let buffer = self.keys.get_mut(&key).unwrap();
+                let mut index = 0;
+                buffer.retain(|_| {
+                    let keep = active.binary_search(&index).is_ok();
+                    index += 1;
+                    keep
+                });
+            }
+            if self.track {
+                self.recompute_bytes();
+            }
+        } else {
+            self.evict();
+        }
 
         let cache_transport = has_string_caches(batch);
         let mut cache_columns = Vec::new();
@@ -1567,12 +1748,15 @@ impl BoundedOverAggregator {
         let mut freed = 0usize;
         self.keys.retain(|key, buffer| {
             let dropped = if rows_frame {
-                let keep = if incremental {
+                let keep = if incremental || self.capture_inputs {
                     (offset as usize).saturating_add(1)
                 } else {
                     (offset as usize).max(1)
                 };
-                let dropped = buffer.len().saturating_sub(keep);
+                let mut dropped = buffer.len().saturating_sub(keep);
+                if buffer.last().is_some_and(|row| row.rt == i64::MAX) {
+                    dropped = dropped.min(buffer.partition_point(|row| row.rt < i64::MAX));
+                }
                 if dropped > 0 {
                     if track {
                         freed += buffer[..dropped]
@@ -1619,8 +1803,14 @@ impl BoundedOverAggregator {
         let mut value_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
         let mut fold_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); self.fold_types.len()];
         let mut stamps: Vec<i64> = Vec::new();
+        let mut inputs: Vec<Option<Vec<u8>>> = Vec::new();
+        let mut clocks = Vec::new();
         for (key, buffer) in self.keys.iter() {
             for row in buffer {
+                clocks.push(row.processing_clock());
+                if self.capture_inputs {
+                    inputs.push(row.input().map(FrameInput::encode));
+                }
                 keys.push(&key.0);
                 rts.push(ScalarValue::Int64(Some(row.rt)));
                 for a in 0..num_agg {
@@ -1659,6 +1849,16 @@ impl BoundedOverAggregator {
             ));
             columns.push(scalars_to_array(scalars, &self.fold_types[column]));
         }
+        if clocks.iter().any(Option::is_some) {
+            fields.push(Field::new(PROC_ROW_CLOCK, DataType::Int64, true));
+            columns.push(Arc::new(Int64Array::from(clocks)));
+        }
+        if self.capture_inputs {
+            fields.push(Field::new(FRAME_INPUT_COLUMN, DataType::Binary, true));
+            columns.push(Arc::new(BinaryArray::from_iter(
+                inputs.iter().map(|value| value.as_deref()),
+            )));
+        }
         if let Some((name, _)) = retention {
             fields.push(Field::new(name, DataType::Int64, false));
             columns.push(Arc::new(Int64Array::from(stamps)));
@@ -1681,6 +1881,19 @@ impl BoundedOverAggregator {
         let num_agg = aggregator.kinds.len();
         for batch in read_ipc(bytes) {
             let retention = retention_stamps(&batch);
+            let clocks = batch.column_by_name(PROC_ROW_CLOCK).map(|column| {
+                column
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .expect("OVER processing clocks")
+            });
+            let inputs = batch.column_by_name(FRAME_INPUT_COLUMN).map(|column| {
+                column
+                    .as_any()
+                    .downcast_ref::<BinaryArray>()
+                    .expect("OVER original frame input")
+            });
+            aggregator.capture_inputs |= inputs.is_some();
             let fold_count = batch
                 .schema()
                 .fields()
@@ -1695,17 +1908,21 @@ impl BoundedOverAggregator {
             let mapping = if fold_count == aggregator.fold_types.len() {
                 (0..fold_count).map(Some).collect::<Vec<_>>()
             } else {
-                let (legacy_types, mapping) = aggregator.legacy_fold_layout();
-                assert_eq!(
-                    fold_count,
-                    legacy_types.len(),
-                    "bounded OVER checkpoint fold layout"
-                );
-                mapping
+                [false, true]
+                    .into_iter()
+                    .map(|old| aggregator.legacy_fold_layout(old))
+                    .find(|(types, _)| types.len() == fold_count)
+                    .expect("bounded OVER checkpoint fold layout")
+                    .1
             };
             // Trailing rt + one value column per agg (+ the optional retention stamp).
-            let arity =
-                batch.num_columns() - 1 - num_agg - fold_count - retention.is_some() as usize;
+            let arity = batch.num_columns()
+                - 1
+                - num_agg
+                - fold_count
+                - retention.is_some() as usize
+                - clocks.is_some() as usize
+                - inputs.is_some() as usize;
             let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
             aggregator.key_types = key_types(&key_arrays);
             let keys_encoded =
@@ -1756,6 +1973,15 @@ impl BoundedOverAggregator {
                     &aggregator.kinds,
                     fold,
                 ));
+                buffer.last_mut().unwrap().set_processing_clock(
+                    clocks.and_then(|clocks| clocks.is_valid(row).then(|| clocks.value(row))),
+                );
+                if let Some(inputs) = inputs {
+                    assert!(inputs.is_valid(row), "missing original OVER frame input");
+                    buffer.last_mut().unwrap().set_input(Some(
+                        FrameInput::decode(inputs.value(row)).expect("restore OVER frame input"),
+                    ));
+                }
                 buffer.last_mut().unwrap().restore_string_views(
                     aggregator.arithmetic_width,
                     &aggregator
@@ -1766,6 +1992,15 @@ impl BoundedOverAggregator {
                 );
             }
         }
+        assert!(
+            !aggregator.capture_inputs
+                || aggregator
+                    .keys
+                    .values()
+                    .flatten()
+                    .all(|row| row.input().is_some()),
+            "mixed legacy and retained OVER frame inputs"
+        );
         if let Some(maps) = &mut aggregator.range_order {
             for (key, rows) in &aggregator.keys {
                 let mut times: Vec<i64> = rows.iter().map(|row| row.rt).collect();
@@ -2241,7 +2476,16 @@ impl OverInner {
             OverInner::Aggregates(inner) => {
                 inner.state_types().len() + inner.kinds.iter().filter(|&&kind| kind >= 100).count()
             }
-            OverInner::Bounded(inner) => 1 + inner.kinds.len() + inner.fold_types.len(),
+            OverInner::Bounded(inner) => {
+                1 + inner.kinds.len()
+                    + inner.fold_types.len()
+                    + inner.capture_inputs as usize
+                    + inner
+                        .keys
+                        .values()
+                        .flatten()
+                        .any(|row| row.processing_clock().is_some()) as usize
+            }
             OverInner::WindowFunctions(inner) => inner
                 .kinds
                 .iter()
@@ -2252,7 +2496,6 @@ impl OverInner {
 
     /// Seeds the key codec from declared key types, so persisted fold keys decode before any
     /// batch arrives.
-    #[cfg(feature = "rocksdb-state")]
     fn seed_key_codec(&mut self, key_types: &[DataType]) {
         match self {
             OverInner::Aggregates(inner) => {
@@ -2461,6 +2704,11 @@ pub(crate) struct OverWindowAggregator {
     /// enforced by event-time watermarks for bounded RANGE, otherwise processing-time touches
     /// and sweeps (divergences/28). Keyed like the inner fold state.
     cleanup_state: HashMap<ByteKey, i64>,
+    range_timers: HashMap<ByteKey, RangeTimers>,
+    proc_rows: HashMap<ByteKey, ProcRowsState>,
+    processing_rows_external_timers: bool,
+    event_cleanup_external_timers: bool,
+    event_cleanup_unarmed: ahash::HashSet<ByteKey>,
     /// Per-key last-write wall clock for the proctime unbounded shape's per-value TTL
     /// (`StateTtlConfig`, OnCreateAndWrite / NeverReturnExpired — stamped on every processed row).
     last_write_ms: HashMap<ByteKey, i64>,
@@ -2499,6 +2747,9 @@ pub(crate) struct OverWindowAggregator {
     #[cfg(feature = "rocksdb-state")]
     distinct_slots: Vec<usize>,
     key_timestamp_precisions: Vec<i32>,
+    canonical_distinct: ahash::HashSet<usize>,
+    canonical_distinct_loading: bool,
+    frame_clock: i64,
 }
 
 impl OverWindowAggregator {
@@ -2528,6 +2779,11 @@ impl OverWindowAggregator {
             min_retention_ms: 0,
             max_retention_ms: 0,
             cleanup_state: HashMap::default(),
+            range_timers: HashMap::default(),
+            proc_rows: HashMap::default(),
+            processing_rows_external_timers: false,
+            event_cleanup_external_timers: false,
+            event_cleanup_unarmed: ahash::HashSet::default(),
             last_write_ms: HashMap::default(),
             pending_rows: HashMap::default(),
             last_sweep_ms: 0,
@@ -2547,6 +2803,9 @@ impl OverWindowAggregator {
             #[cfg(feature = "rocksdb-state")]
             distinct_slots: Vec::new(),
             key_timestamp_precisions: vec![-1; key_arity],
+            canonical_distinct: ahash::HashSet::default(),
+            canonical_distinct_loading: false,
+            frame_clock: i64::MIN,
         }
     }
 
@@ -2575,10 +2834,15 @@ impl OverWindowAggregator {
     }
 
     /// Sets the idle-state retention (`table.exec.state.ttl`) in millis. The max deadline horizon
-    /// is derived natively as Flink's planner does — `minRetentionTime * 3 / 2`, saturating.
+    /// Processing ROWS preserves the planner's signed wrapping `minRetentionTime * 3 / 2`.
+    /// Other existing shapes retain their previous saturating migration horizon.
     pub(crate) fn with_state_retention(mut self, min_retention_ms: i64) -> Self {
         self.min_retention_ms = min_retention_ms.max(0);
-        self.max_retention_ms = self.min_retention_ms.saturating_mul(3) / 2;
+        self.max_retention_ms = if self.processing_rows() {
+            self.min_retention_ms.wrapping_mul(3) / 2
+        } else {
+            self.min_retention_ms.saturating_mul(3) / 2
+        };
         self
     }
 
@@ -2620,16 +2884,32 @@ impl OverWindowAggregator {
     /// Flink's `registerProcessingCleanupTimer`: the deadline moves to `now + maxRetention` only
     /// when the key has none, or the current one would land within a min-retention of now.
     fn register_cleanup(&mut self, key: &[u8], now_ms: i64) {
-        let armed = now_ms.saturating_add(self.max_retention_ms);
+        let (armed, minimum) = if self.processing_rows() || self.event_cleanup_external_timers {
+            (
+                now_ms.wrapping_add(self.max_retention_ms),
+                now_ms.wrapping_add(self.min_retention_ms),
+            )
+        } else {
+            (
+                now_ms.saturating_add(self.max_retention_ms),
+                now_ms.saturating_add(self.min_retention_ms),
+            )
+        };
         match self.cleanup_state.get_mut(key) {
             Some(deadline) => {
-                if now_ms.saturating_add(self.min_retention_ms) > *deadline {
+                if minimum > *deadline {
                     *deadline = armed;
+                    if self.event_cleanup_unarmed.remove(key) {
+                        self.retention_bytes -= byte_key_bytes(key);
+                    }
                 }
             }
             None => {
                 self.retention_bytes += byte_key_bytes(key);
                 self.cleanup_state.insert(ByteKey::from(key), armed);
+                if self.event_cleanup_unarmed.remove(key) {
+                    self.retention_bytes -= byte_key_bytes(key);
+                }
             }
         }
     }
@@ -2662,6 +2942,15 @@ impl OverWindowAggregator {
         if self.cleanup_state.remove(key).is_some() {
             self.retention_bytes -= byte_key_bytes(key);
         }
+        if self.event_cleanup_unarmed.remove(key) {
+            self.retention_bytes -= byte_key_bytes(key);
+        }
+        if let Some(timers) = self.range_timers.remove(key) {
+            self.retention_bytes -= byte_key_bytes(key) + timers.bytes();
+        }
+        if self.proc_rows.remove(key).is_some() {
+            self.retention_bytes -= byte_key_bytes(key) + std::mem::size_of::<ProcRowsState>();
+        }
         if self.last_write_ms.remove(key).is_some() {
             self.retention_bytes -= byte_key_bytes(key);
         }
@@ -2674,6 +2963,9 @@ impl OverWindowAggregator {
     /// shape has no deferral and clears its frame unconditionally (the frame restarts short,
     /// exactly as in Flink).
     fn expire_if_due(&mut self, key: &[u8], now_ms: i64) {
+        if self.event_cleanup_external_timers {
+            return;
+        }
         match self.cleanup_state.get(key) {
             Some(&deadline) if now_ms >= deadline && !self.pending_rows.contains_key(key) => {
                 self.clear_key(key);
@@ -2687,6 +2979,12 @@ impl OverWindowAggregator {
     /// rows pending a watermark) re-arms to `now + maxRetention` instead — Flink's fired timer
     /// re-registering.
     fn maybe_sweep(&mut self, now_ms: i64) {
+        if self.processing_rows_external_timers
+            || self.event_cleanup_external_timers
+            || self.independent_distinct_ttl()
+        {
+            return;
+        }
         if now_ms < self.last_sweep_ms.saturating_add(self.min_retention_ms) {
             return;
         }
@@ -2776,20 +3074,24 @@ impl OverWindowAggregator {
         for row in 0..batch.num_rows() {
             let key = keys_encoded.row(row).data();
             if ttl.enabled() {
-                match self.last_write_ms.get_mut(key) {
-                    Some(ts) => {
-                        if ttl.expired(*ts) {
-                            self.inner.clear_key(key);
-                        }
-                        *ts = now_ms;
-                    }
-                    None => {
-                        self.retention_bytes += byte_key_bytes(key);
-                        self.last_write_ms.insert(ByteKey::from(key), now_ms);
-                    }
+                if self
+                    .last_write_ms
+                    .get(key)
+                    .is_some_and(|&ts| ttl.expired(ts))
+                {
+                    self.expire_value_fold(key);
+                }
+                if self
+                    .last_write_ms
+                    .insert(ByteKey::from(key), now_ms)
+                    .is_none()
+                {
+                    self.retention_bytes += byte_key_bytes(key);
                 }
             } else {
-                self.expire_if_due(key, now_ms);
+                if !self.processing_rows_external_timers {
+                    self.expire_if_due(key, now_ms);
+                }
                 self.register_cleanup(key, now_ms);
             }
         }
@@ -2809,17 +3111,26 @@ impl OverWindowAggregator {
         self.key_converter = Some(key_row_converter_from_types(&key_types));
         self.inner.seed_key_codec(&key_types);
         if let OverInner::Bounded(inner) = &mut self.inner {
-            let (fold_types, fold_mapping) = inner.legacy_fold_layout();
+            inner.capture_inputs |= store
+                .frame_inputs_enabled()
+                .expect("OVER frame input marker");
             let count = inner.kinds.len();
-            let mut legacy_types = inner.value_types.clone();
-            legacy_types.extend(fold_types);
-            let mut mapping: Vec<_> = (0..count).map(Some).collect();
-            mapping.extend(
-                fold_mapping
-                    .into_iter()
-                    .map(|column| column.map(|column| column + count)),
-            );
-            store = store.with_frame_compatibility(legacy_types, mapping);
+            let layouts = [(0, true), (1, false)]
+                .into_iter()
+                .map(|(version, old)| {
+                    let (fold_types, fold_mapping) = inner.legacy_fold_layout(old);
+                    let mut types = inner.value_types.clone();
+                    types.extend(fold_types);
+                    let mut mapping: Vec<_> = (0..count).map(Some).collect();
+                    mapping.extend(
+                        fold_mapping
+                            .into_iter()
+                            .map(|column| column.map(|column| column + count)),
+                    );
+                    (version, types, mapping)
+                })
+                .collect();
+            store = store.with_frame_compatibility(layouts);
             inner.range_order = None;
         }
         self.store_state_types = self.inner.store_state_types();
@@ -2854,14 +3165,21 @@ impl OverWindowAggregator {
     /// `adopt_restored_stamps`: fold stamps read from the value prefixes (a pre-retention writer's
     /// `i64::MIN` stamped `restored_at + max`, the enable-flip migration), and the deferral counts
     /// re-derived from the pending table's payload (the pending key is the arrival sequence, so
-    /// only the payload's PARTITION BY columns identify the key). Pending-only keys deliberately
-    /// get no stamp, exactly as memory mode stamps only fold-state keys — deferral protects them
-    /// regardless.
+    /// only the payload's PARTITION BY columns identify the key). Separate deadline rows preserve
+    /// pending-only and late-only keys, overriding older fold-prefix deadlines when present.
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn adopt_store_retention(
         &mut self,
         restored_at_ms: i64,
     ) -> Result<(), DataFusionError> {
+        if self.processing_rows() {
+            let before = self.proc_rows_bytes();
+            for (key, bytes) in self.store.as_ref().unwrap().scan_proc_rows()? {
+                self.proc_rows
+                    .insert(ByteKey(key), ProcRowsState::decode(&bytes)?);
+            }
+            self.retention_bytes = self.retention_bytes - before + self.proc_rows_bytes();
+        }
         if self.value_ttl_on() {
             // The proctime unbounded fold: the fold stamps are last-write clocks. A pre-TTL
             // writer's i64::MIN adopts the restore clock as a fresh last write, Flink's
@@ -2883,21 +3201,45 @@ impl OverWindowAggregator {
             let stamps = store.scan_stamps()?;
             let frames = store.scan_frames()?;
             let pending = store.scan_pending(&store.payload_schema())?;
+            for (key, bytes) in store.scan_range_timers()? {
+                self.range_timers
+                    .insert(ByteKey(key), RangeTimers::decode(&bytes)?);
+            }
             for (key, stamp) in stamps {
                 self.retention_bytes += byte_key_bytes(&key);
                 self.cleanup_state.insert(ByteKey(key), stamp);
             }
             for (key, rows) in frames {
+                let legacy_timers = !self.range_timers.contains_key(&*key);
                 if !self.cleanup_state.contains_key(&*key) {
-                    for row in rows {
+                    for row in &rows {
                         self.register_range_cleanup(&key, row.rt);
                     }
+                }
+                if legacy_timers {
+                    self.range_timers.insert(
+                        ByteKey(key.clone()),
+                        RangeTimers {
+                            last: rows.last().map(|row| row.rt),
+                            armed: self.cleanup_state.get(&*key).copied().into_iter().collect(),
+                        },
+                    );
                 }
             }
             if let Some(pending) = pending {
                 self.register_range_batch(&pending);
                 self.persist_range_stamps(&pending)?;
             }
+            self.retention_bytes = self
+                .cleanup_state
+                .keys()
+                .map(|key| byte_key_bytes(&key.0))
+                .sum::<usize>()
+                + self
+                    .range_timers
+                    .iter()
+                    .map(|(key, timers)| byte_key_bytes(&key.0) + timers.bytes())
+                    .sum::<usize>();
             return Ok(());
         }
         if !self.deadline_cleaning() {
@@ -2930,6 +3272,23 @@ impl OverWindowAggregator {
                 self.retention_bytes += byte_key_bytes(&fold.key);
                 self.cleanup_state.insert(ByteKey(fold.key), stamp);
             }
+        }
+        // New checkpoints carry every armed deadline, including pending-only and late-only keys.
+        // The fold prefix remains the fallback for checkpoints written before that metadata existed.
+        let stamps = self
+            .store
+            .as_ref()
+            .expect("over rocksdb store")
+            .scan_cleanup_stamps()?;
+        for (key, stamp, armed) in stamps {
+            let key = ByteKey(key);
+            if !armed && self.event_cleanup_unarmed.insert(key.clone()) {
+                self.retention_bytes += byte_key_bytes(&key.0);
+            }
+            if !self.cleanup_state.contains_key(&key) {
+                self.retention_bytes += byte_key_bytes(&key.0);
+            }
+            self.cleanup_state.insert(key, stamp);
         }
         if self.proctime {
             return Ok(()); // proctime buffers nothing pending — no deferral counts
@@ -2974,6 +3333,15 @@ impl OverWindowAggregator {
         let state_count = self.store_state_types.len();
         let bounded = matches!(self.inner, OverInner::Bounded(_));
         for bytes in snapshots {
+            let (bytes, cleanup) = Self::split_cleanup(bytes);
+            for batch in read_ipc_if_present(cleanup) {
+                if self.deadline_cleaning()
+                    || self.range_offset().is_some()
+                    || self.processing_rows()
+                {
+                    self.write_store_cleanup(&batch)?;
+                }
+            }
             let (bytes, _) = Self::split_range_order(bytes);
             if bytes.len() < 12 {
                 continue;
@@ -3032,6 +3400,7 @@ impl OverWindowAggregator {
         let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
         let store = self.store.as_mut().expect("over rocksdb store");
         let mut entries = Vec::with_capacity(batch.num_rows());
+        let mut present = Vec::with_capacity(batch.num_rows());
         let mut key_groups = Vec::with_capacity(batch.num_rows());
         for row in 0..batch.num_rows() {
             let key_group = store.key_group(binary_row_hash(
@@ -3041,14 +3410,19 @@ impl OverWindowAggregator {
                 &self.key_timestamp_precisions,
             ));
             key_groups.push(key_group);
+            if stamps.is_some_and(|stamps| stamps.is_null(row)) {
+                continue;
+            }
+            present.push(row as u32);
             entries.push((
                 store.fold_key(key_group, keys_encoded.row(row).data()),
                 stamps.map_or(i64::MIN, |stamps| stamps.value(row)),
             ));
         }
+        let indices = UInt32Array::from(present);
         let state_columns: Vec<ArrayRef> = (arity..arity + state_count)
-            .map(|column| batch.column(column).clone())
-            .collect();
+            .map(|column| take(batch.column(column), &indices, None))
+            .collect::<Result<_, _>>()?;
         store.write_folds(&entries, &state_columns)?;
         for slot in 0..self.distinct_slots.len() {
             let list = batch
@@ -3078,24 +3452,70 @@ impl OverWindowAggregator {
     }
 
     /// One restored bounded-frame batch (`[key0.., rt, value0.., stamp?]`, one row per buffered
-    /// row) into the frames table under fresh sequences in blob order, with one stamp row per key.
+    /// row) into the frames table. Proctime preserves its ordering counter; event-time peers
+    /// receive fresh tie sequences in blob order. Each key also retains its cleanup stamp.
     #[cfg(feature = "rocksdb-state")]
     fn import_frame_batch(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         let stamps = retention_stamps(batch);
+        let clocks = batch.column_by_name(PROC_ROW_CLOCK).map(|column| {
+            column
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("OVER processing clocks")
+        });
+        let inputs = batch
+            .column_by_name(FRAME_INPUT_COLUMN)
+            .map(|column| {
+                column
+                    .as_any()
+                    .downcast_ref::<BinaryArray>()
+                    .ok_or_else(|| {
+                        DataFusionError::Execution("OVER frame inputs must be binary".into())
+                    })
+            })
+            .transpose()?;
+        let original = inputs
+            .map(|inputs| {
+                (0..batch.num_rows())
+                    .map(|row| {
+                        if inputs.is_null(row) {
+                            return Err(DataFusionError::Execution(
+                                "missing original OVER frame input".into(),
+                            ));
+                        }
+                        FrameInput::decode(inputs.value(row))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
         let value_count = match &self.inner {
             OverInner::Bounded(inner) => inner.kinds.len() + inner.fold_types.len(),
             _ => unreachable!("bounded frame import"),
         };
-        let arity = batch.num_columns() - 1 - value_count - stamps.is_some() as usize;
+        let arity = batch.num_columns()
+            - 1
+            - value_count
+            - stamps.is_some() as usize
+            - clocks.is_some() as usize
+            - inputs.is_some() as usize;
         let key_columns: Vec<usize> = (0..arity).collect();
         let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
         let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
         let rt = column_i64(batch, "rt");
-        let seq_start = self
-            .store
-            .as_mut()
-            .expect("over rocksdb store")
-            .allocate_seqs(batch.num_rows());
+        let store = self.store.as_mut().expect("over rocksdb store");
+        let seq_start = if self.proctime {
+            if rt.iter().any(|time| time.is_none_or(|time| time < 0)) {
+                return Err(DataFusionError::Execution(
+                    "invalid proctime OVER arrival sequence".into(),
+                ));
+            }
+            if let Some(maximum) = rt.values().iter().max() {
+                store.adopt_next_seq(*maximum as u64 + 1);
+            }
+            0
+        } else {
+            store.allocate_seqs(batch.num_rows())
+        };
         let store = self.store.as_ref().expect("over rocksdb store");
         let mut writes: Vec<(Vec<u8>, i64, u64)> = Vec::with_capacity(batch.num_rows());
         let mut stamp_entries: Vec<(Vec<u8>, Option<i64>)> = Vec::new();
@@ -3111,7 +3531,11 @@ impl OverWindowAggregator {
             writes.push((
                 store.frame_prefix(key_group, key),
                 rt.value(row),
-                seq_start + row as u64,
+                if self.proctime {
+                    rt.value(row) as u64
+                } else {
+                    seq_start + row as u64
+                },
             ));
             if let Some(stamps) = stamps {
                 if stamped.insert(ByteKey::from(key)) {
@@ -3123,7 +3547,22 @@ impl OverWindowAggregator {
             .map(|column| batch.column(column).clone())
             .collect();
         let store = self.store.as_mut().expect("over rocksdb store");
+        if let Some(original) = &original {
+            store.enable_frame_inputs()?;
+            store.write_frame_inputs(&writes, original)?;
+            if let OverInner::Bounded(inner) = &mut self.inner {
+                inner.capture_inputs = true;
+            }
+        }
         store.write_frames(&writes, &value_columns)?;
+        if let Some(clocks) = clocks {
+            store.write_frame_clocks(
+                &writes,
+                &(0..batch.num_rows())
+                    .map(|row| clocks.is_valid(row).then(|| clocks.value(row)))
+                    .collect::<Vec<_>>(),
+            )?;
+        }
         store.write_stamps(&stamp_entries)
     }
 
@@ -3134,7 +3573,9 @@ impl OverWindowAggregator {
         &mut self,
         snapshot_dir: &str,
     ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
+        self.ensure_canonical_distinct_ready()?;
         let watermark = self.watermark;
+        self.sync_store_cleanup()?;
         self.store
             .as_mut()
             .expect("over rocksdb store")
@@ -3156,9 +3597,14 @@ impl OverWindowAggregator {
         if matches!(self.inner, OverInner::Bounded(_)) {
             self.store_range_deletes
                 .push(store.frame_prefix(key_group, key));
+            self.store_range_deletes
+                .push(store.frame_input_prefix(key_group, key));
+            self.store_range_deletes
+                .push(store.frame_clock_prefix(key_group, key));
             self.store_tombstones.push(store.stamp_key(key_group, key));
         } else {
             self.store_tombstones.push(store.fold_key(key_group, key));
+            self.store_tombstones.push(store.stamp_key(key_group, key));
             for slot in 0..self.distinct_slots.len() {
                 self.store_range_deletes
                     .push(store.distinct_prefix(slot, key_group, key));
@@ -3243,12 +3689,14 @@ impl OverWindowAggregator {
     /// resident — nothing folds here; emission and the per-key fold are watermark-driven
     /// (`flush`) — while the deadline bookkeeping runs exactly as on memory state.
     pub(crate) fn push(&mut self, batch: RecordBatch, now_ms: i64) -> Result<(), DataFusionError> {
+        self.ensure_canonical_distinct_ready()?;
         #[cfg(feature = "rocksdb-state")]
         let batch = if self.store.is_some() {
             strip_string_caches(&Self::normalize_interval_columns(&batch))
         } else {
             batch
         };
+        self.align_pending_schema(&batch)?;
         self.input_schema = Some(batch.schema());
         let on_time = self.admission_mask(&batch, now_ms)?;
         let input_rows = batch.num_rows();
@@ -3355,20 +3803,27 @@ impl OverWindowAggregator {
         let Some(offset) = self.range_offset() else {
             return;
         };
-        let minimum = rt.saturating_add(offset).saturating_add(1);
+        let minimum = rt.wrapping_add(offset).wrapping_add(1);
         let maximum = rt
-            .saturating_add((offset as f64 * 1.5) as i64)
-            .saturating_add(1);
-        match self.cleanup_state.get_mut(key) {
+            .wrapping_add((offset as f64 * 1.5) as i64)
+            .wrapping_add(1);
+        let registered = match self.cleanup_state.get_mut(key) {
             Some(deadline) => {
                 if *deadline < minimum {
                     *deadline = maximum;
+                    true
+                } else {
+                    false
                 }
             }
             None => {
                 self.retention_bytes += byte_key_bytes(key);
                 self.cleanup_state.insert(ByteKey::from(key), maximum);
+                true
             }
+        };
+        if registered {
+            self.register_range_timer(key, maximum);
         }
     }
 
@@ -3380,6 +3835,7 @@ impl OverWindowAggregator {
         let keys = encode_keys(&mut self.key_converter, &arrays, batch.num_rows());
         let rt = rt_to_millis(batch.column(self.rt_column));
         for row in 0..batch.num_rows() {
+            self.register_range_timer(keys.row(row).data(), rt.value(row));
             self.register_range_cleanup(keys.row(row).data(), rt.value(row));
         }
         if let OverInner::Bounded(inner) = &mut self.inner {
@@ -3416,6 +3872,7 @@ impl OverWindowAggregator {
         if self.range_offset().is_none() {
             return;
         }
+        self.fire_range_timers(watermark);
         let due: Vec<ByteKey> = self
             .cleanup_state
             .iter()
@@ -3439,14 +3896,16 @@ impl OverWindowAggregator {
             .map(|key| {
                 (
                     store.stamp_key(self.store_fold_key_group(&key.0), &key.0),
-                    self.cleanup_state.get(key).copied(),
+                    self.cleanup_state
+                        .get(key)
+                        .map(|&stamp| (stamp, !self.event_cleanup_unarmed.contains(key))),
                 )
             })
             .collect();
         self.store
             .as_mut()
             .expect("over rocksdb store")
-            .write_stamps(&entries)
+            .write_cleanup_stamps(&entries)
     }
 
     fn admission_mask(
@@ -3473,6 +3932,20 @@ impl OverWindowAggregator {
                 .map(|rt| Some(rt.is_some_and(|rt| rt > self.watermark)))
                 .collect());
         };
+        if self.range_offset().is_some() {
+            return Ok(times
+                .iter()
+                .enumerate()
+                .map(|(row, rt)| {
+                    let last = self
+                        .range_timers
+                        .get(keys.row(row).data())
+                        .and_then(|timers| timers.last)
+                        .unwrap_or(0);
+                    Some(rt.is_some_and(|rt| rt > last))
+                })
+                .collect());
+        }
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
             let mut encoder = BinaryRowBatchEncoder::new(
@@ -3516,7 +3989,6 @@ impl OverWindowAggregator {
     /// One key's persisted retention stamp for a fold write-back: the cleanup deadline (rowtime
     /// shapes), the last-write clock (the proctime per-value TTL), or `i64::MIN` while retention
     /// is off.
-    #[cfg(feature = "rocksdb-state")]
     fn fold_stamp(&self, key: &[u8]) -> i64 {
         if self.deadline_cleaning() {
             self.cleanup_state.get(key).copied().unwrap_or(i64::MIN)
@@ -3809,6 +4281,8 @@ impl OverWindowAggregator {
                             (index + 1 == row_count && !inner.fold_types.is_empty())
                                 .then(|| row.values[inner.kinds.len()..].to_vec()),
                         );
+                        frame.set_input(row.input);
+                        frame.set_processing_clock(row.clock);
                         frame.restore_string_views(
                             inner.arithmetic_width,
                             &inner
@@ -3847,12 +4321,18 @@ impl OverWindowAggregator {
 
         let projected = self.keyed_subbatch(batch, Arc::new(rt.clone()));
         let serialized_strings = self.proctime && has_string_caches(&projected);
+        let proc_enabled = self.processing_rows();
+        let proc_bytes = self.proc_rows_bytes();
         let aggregates = match &mut self.inner {
-            OverInner::Bounded(inner) => {
-                inner.update_with_serialized_strings(&projected, serialized_strings, true)
-            }
+            OverInner::Bounded(inner) => inner.update_with_proc_rows(
+                &projected,
+                serialized_strings,
+                true,
+                proc_enabled.then_some((&mut self.proc_rows, self.frame_clock)),
+            ),
             _ => self.inner.update(&projected),
         };
+        self.retention_bytes = self.retention_bytes - proc_bytes + self.proc_rows_bytes();
 
         let OverInner::Bounded(inner) = &self.inner else {
             unreachable!("bounded store fold on a non-bounded shape");
@@ -3863,15 +4343,31 @@ impl OverWindowAggregator {
         let mut touched_out: Vec<(ByteKey, Vec<u8>, usize)> = Vec::with_capacity(touched.len());
         for (owner, (key, key_group)) in touched.iter().enumerate() {
             let kept = inner.keys.get(&*key.0).map_or(0, Vec::len);
+            let live = proc_enabled.then(|| {
+                inner.keys[&*key.0]
+                    .iter()
+                    .map(|row| row.rt)
+                    .collect::<ahash::HashSet<_>>()
+            });
             let full = loaded_meta[owner].len() + appended_meta[owner].len();
             let cut = full - kept;
-            for &(row_rt, seq) in loaded_meta[owner].iter().take(cut) {
-                deletes.push((prefixes[owner].clone(), row_rt, seq));
+            for (index, &(row_rt, seq)) in loaded_meta[owner].iter().enumerate() {
+                if live
+                    .as_ref()
+                    .map_or(index < cut, |live| !live.contains(&row_rt))
+                {
+                    deletes.push((prefixes[owner].clone(), row_rt, seq));
+                }
             }
             let appended_cut = cut.saturating_sub(loaded_meta[owner].len());
-            for &(row_rt, seq, row) in appended_meta[owner].iter().skip(appended_cut) {
-                writes.push((prefixes[owner].clone(), row_rt, seq));
-                write_rows.push(row);
+            for (index, &(row_rt, seq, row)) in appended_meta[owner].iter().enumerate() {
+                if live
+                    .as_ref()
+                    .map_or(index >= appended_cut, |live| live.contains(&row_rt))
+                {
+                    writes.push((prefixes[owner].clone(), row_rt, seq));
+                    write_rows.push(row);
+                }
             }
             let stamp_key = self
                 .store
@@ -3920,7 +4416,19 @@ impl OverWindowAggregator {
             value_columns.push(scalars_to_array(scalars, ty));
         }
         let store = self.store.as_mut().expect("over rocksdb store");
+        if inner.capture_inputs {
+            let original = write_rows
+                .iter()
+                .map(|&row| {
+                    FrameInput::from_projected(&projected, row).expect("bound OVER frame input")
+                })
+                .collect::<Vec<_>>();
+            store.write_frame_inputs(&writes, &original)?;
+        }
         store.write_frames(&writes, &value_columns)?;
+        if proc_enabled {
+            store.write_frame_clocks(&writes, &vec![Some(self.frame_clock); writes.len()])?;
+        }
         store.delete_frames(&deletes)?;
         Ok((aggregates, touched_out))
     }
@@ -4046,6 +4554,8 @@ impl OverWindowAggregator {
         batch: RecordBatch,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        self.ensure_canonical_distinct_ready()?;
+        self.frame_clock = now_ms;
         #[cfg(feature = "rocksdb-state")]
         let batch = if self.store.is_some() {
             Self::normalize_interval_columns(&batch)
@@ -4066,9 +4576,23 @@ impl OverWindowAggregator {
         let n = batch.num_rows();
         let seq: Int64Array = (0..n as i64).map(|i| self.next_seq + i).collect();
         self.next_seq += n as i64;
-        let aggregates = self
-            .inner
-            .update(&self.keyed_subbatch(&batch, Arc::new(seq)));
+        let projected = self.keyed_subbatch(&batch, Arc::new(seq));
+        let aggregates = if self.processing_rows() {
+            let before = self.proc_rows_bytes();
+            let OverInner::Bounded(inner) = &mut self.inner else {
+                unreachable!()
+            };
+            let out = inner.update_with_proc_rows(
+                &projected,
+                false,
+                false,
+                Some((&mut self.proc_rows, now_ms)),
+            );
+            self.retention_bytes = self.retention_bytes - before + self.proc_rows_bytes();
+            out
+        } else {
+            self.inner.update(&projected)
+        };
         self.account()?;
         Ok(Self::append_aggregates(&batch, &aggregates))
     }
@@ -4111,11 +4635,8 @@ impl OverWindowAggregator {
     /// Emits the rows the watermark has completed (input columns + running aggregates) and keeps the
     /// rest buffered. Returns an empty batch when nothing is complete. `now_ms` is the host's
     /// processing-time reading — the cleanup-deadline clock.
-    pub(crate) fn flush(
-        &mut self,
-        watermark: i64,
-        now_ms: i64,
-    ) -> Result<RecordBatch, DataFusionError> {
+    fn flush_inner(&mut self, watermark: i64, now_ms: i64) -> Result<RecordBatch, DataFusionError> {
+        self.ensure_canonical_distinct_ready()?;
         self.watermark = self.watermark.max(watermark);
         if self.deadline_cleaning() {
             self.maybe_sweep(now_ms);
@@ -4173,7 +4694,7 @@ impl OverWindowAggregator {
     fn keyed_subbatch(&self, source: &RecordBatch, rt: ArrayRef) -> RecordBatch {
         let complete = source;
         let mut fields = vec![Field::new("rt", DataType::Int64, false)];
-        let mut columns: Vec<ArrayRef> = vec![rt];
+        let mut columns: Vec<ArrayRef> = vec![rt.clone()];
         for (a, &value_column) in self.value_columns.iter().enumerate() {
             fields.push(Field::new(
                 format!("value{a}"),
@@ -4190,6 +4711,7 @@ impl OverWindowAggregator {
             ));
             columns.push(complete.column(key).clone());
         }
+        self.project_frame_input(source, &mut fields, &mut columns, &rt);
         for (a, &value_column) in self.value_columns.iter().enumerate() {
             if let Some(cache) = string_cache_column(complete, value_column) {
                 fields.push(string_cache_field(a + 1, cache.data_type().clone()));
@@ -4202,10 +4724,18 @@ impl OverWindowAggregator {
 
     #[cfg(test)]
     pub(crate) fn snapshot(&mut self) -> Vec<u8> {
+        self.ensure_canonical_distinct_ready()
+            .expect("incomplete DISTINCT restore");
         let accumulators = self.snapshot_accumulators();
         let buffer = self.snapshot_buffer();
         let range_order = self.snapshot_range_order();
-        Self::snapshot_parts(self.next_seq, accumulators, buffer, range_order)
+        Self::snapshot_parts(
+            self.next_seq,
+            accumulators,
+            buffer,
+            range_order,
+            self.snapshot_cleanup(),
+        )
     }
 
     /// The per-key state batch, with a trailing cleanup stamp for bounded RANGE or enabled TTL.
@@ -4374,6 +4904,7 @@ impl OverWindowAggregator {
     }
 
     fn split_range_order(bytes: &[u8]) -> (&[u8], &[u8]) {
+        let (bytes, _) = Self::split_cleanup(bytes);
         const TAG: &[u8; 8] = b"SFOVR001";
         if !bytes.ends_with(TAG) {
             return (bytes, &[]);
@@ -4391,6 +4922,7 @@ impl OverWindowAggregator {
         accumulators: Vec<u8>,
         buffer: Vec<u8>,
         range_order: Vec<u8>,
+        cleanup: Vec<u8>,
     ) -> Vec<u8> {
         // Prefix the proctime arrival counter so the sequence continues across a checkpoint.
         let mut out = next_seq.to_le_bytes().to_vec();
@@ -4402,6 +4934,12 @@ impl OverWindowAggregator {
             out.extend_from_slice(&range_order);
             out.extend_from_slice(&len.to_le_bytes());
             out.extend_from_slice(b"SFOVR001");
+        }
+        if !cleanup.is_empty() {
+            let len = u32::try_from(cleanup.len()).expect("cleanup metadata size");
+            out.extend_from_slice(&cleanup);
+            out.extend_from_slice(&len.to_le_bytes());
+            out.extend_from_slice(b"SFOVC001");
         }
         out
     }
@@ -4425,6 +4963,7 @@ impl OverWindowAggregator {
         max_parallelism: usize,
         timestamp_precisions: &[i32],
     ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        self.ensure_canonical_distinct_ready()?;
         let store = self.store.as_ref().expect("over rocksdb store");
         self.next_seq = store.next_seq() as i64;
         if matches!(self.inner, OverInner::Bounded(_)) {
@@ -4446,6 +4985,8 @@ impl OverWindowAggregator {
                             (index + 1 == row_count && !inner.fold_types.is_empty())
                                 .then(|| row.values[inner.kinds.len()..].to_vec()),
                         );
+                        frame.set_input(row.input);
+                        frame.set_processing_clock(row.clock);
                         frame.restore_string_views(
                             inner.arithmetic_width,
                             &inner
@@ -4471,6 +5012,25 @@ impl OverWindowAggregator {
             }
             for slot in 0..self.distinct_slots.len() {
                 let agg = self.distinct_slots[slot];
+                if self.independent_distinct_ttl() {
+                    let mut members = Vec::new();
+                    self.store.as_ref().unwrap().visit_all_distinct(
+                        slot,
+                        &self.store_key_types,
+                        1024,
+                        |chunk| {
+                            members.extend(chunk);
+                            Ok(())
+                        },
+                    )?;
+                    let OverInner::Aggregates(inner) = &mut self.inner else {
+                        unreachable!()
+                    };
+                    for (key, element) in members {
+                        inner.states(&key)[agg].remember_distinct(element);
+                    }
+                    continue;
+                }
                 for fold in &folds {
                     let key_group = self.store_fold_key_group(&fold.key);
                     let elements = self
@@ -4503,6 +5063,8 @@ impl OverWindowAggregator {
         max_parallelism: usize,
         timestamp_precisions: &[i32],
     ) -> BTreeMap<i32, Vec<u8>> {
+        self.ensure_canonical_distinct_ready()
+            .expect("incomplete DISTINCT restore");
         // The retention stamp is one more trailing state column; it partitions with its row.
         let state_columns = self.inner.snapshot_state_columns()
             + (self.deadline_cleaning() || self.range_offset().is_some() || self.value_ttl_on())
@@ -4526,10 +5088,23 @@ impl OverWindowAggregator {
             max_parallelism,
             timestamp_precisions,
         );
+        let cleanup = Self::partition_snapshot(
+            &self.snapshot_cleanup(),
+            if self.range_offset().is_some() || self.processing_rows() {
+                3
+            } else if self.event_cleanup_external_timers || !self.event_cleanup_unarmed.is_empty() {
+                2
+            } else {
+                1
+            },
+            max_parallelism,
+            timestamp_precisions,
+        );
         let mut groups: Vec<i32> = accumulators
             .keys()
             .chain(buffer.keys())
             .chain(range_order.keys())
+            .chain(cleanup.keys())
             .copied()
             .collect();
         groups.sort_unstable();
@@ -4549,6 +5124,10 @@ impl OverWindowAggregator {
                         .map(Self::merge_snapshot_batches)
                         .unwrap_or_default(),
                     range_order
+                        .get(&key_group)
+                        .map(Self::merge_snapshot_batches)
+                        .unwrap_or_default(),
+                    cleanup
                         .get(&key_group)
                         .map(Self::merge_snapshot_batches)
                         .unwrap_or_default(),
@@ -4624,10 +5203,11 @@ impl OverWindowAggregator {
     }
 
     fn merge_snapshot_batches(batches: &Vec<RecordBatch>) -> Vec<u8> {
-        write_ipc(
-            &concat_batches(&batches[0].schema(), batches.iter())
-                .expect("merge over raw partitions"),
-        )
+        let schema = Arc::new(
+            Schema::try_merge(batches.iter().map(|batch| batch.schema().as_ref().clone()))
+                .expect("compatible over raw partition schemas"),
+        );
+        write_ipc(&concat_batches(&schema, batches.iter()).expect("merge over raw partitions"))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -4657,6 +5237,7 @@ impl OverWindowAggregator {
             )
             .with_state_retention(min_retention_ms);
         }
+        let (bytes, cleanup) = Self::split_cleanup(bytes);
         let (bytes, range_order) = Self::split_range_order(bytes);
         let next_seq = i64::from_le_bytes(bytes[0..8].try_into().expect("next_seq"));
         let accumulators_len = u32::from_le_bytes(bytes[8..12].try_into().expect("len")) as usize;
@@ -4665,6 +5246,13 @@ impl OverWindowAggregator {
             "truncated over snapshot"
         );
         let mut stamps: HashMap<ByteKey, i64> = HashMap::default();
+        let has_ttl_column = accumulators_len > 0
+            && arrow::ipc::reader::StreamReader::try_new(&bytes[12..12 + accumulators_len], None)
+                .expect("over accumulator schema")
+                .schema()
+                .fields()
+                .iter()
+                .any(|field| field.name() == TTL_TS_COLUMN);
         let inner = if accumulators_len == 0 {
             OverInner::new(value_types.clone(), kinds.clone(), frame_kind, frame_offset)
         } else {
@@ -4693,6 +5281,11 @@ impl OverWindowAggregator {
             min_retention_ms: 0,
             max_retention_ms: 0,
             cleanup_state: HashMap::default(),
+            range_timers: HashMap::default(),
+            proc_rows: HashMap::default(),
+            processing_rows_external_timers: false,
+            event_cleanup_external_timers: false,
+            event_cleanup_unarmed: ahash::HashSet::default(),
             last_write_ms: HashMap::default(),
             pending_rows: HashMap::default(),
             last_sweep_ms: 0,
@@ -4712,6 +5305,9 @@ impl OverWindowAggregator {
             #[cfg(feature = "rocksdb-state")]
             distinct_slots: Vec::new(),
             key_timestamp_precisions: vec![-1; key_arity],
+            canonical_distinct: ahash::HashSet::default(),
+            canonical_distinct_loading: false,
+            frame_clock: i64::MIN,
         }
         .with_state_retention(min_retention_ms);
         let buffer = &bytes[12 + accumulators_len..];
@@ -4724,7 +5320,8 @@ impl OverWindowAggregator {
                 aggregator.buffered.push(batch);
             }
         }
-        aggregator.adopt_restored_stamps(stamps, restored_at_ms);
+        aggregator.restore_cleanup(cleanup, &mut stamps);
+        aggregator.adopt_restored_stamps(stamps, restored_at_ms, has_ttl_column);
         aggregator.restore_range_order(range_order);
         aggregator
     }
@@ -4735,7 +5332,12 @@ impl OverWindowAggregator {
     /// migration), a fresh last-write for the per-value TTL. With retention off any restored
     /// stamps are shed. Pending-row counts are never snapshotted; they re-derive from the
     /// restored buffer.
-    fn adopt_restored_stamps(&mut self, stamps: HashMap<ByteKey, i64>, restored_at_ms: i64) {
+    fn adopt_restored_stamps(
+        &mut self,
+        stamps: HashMap<ByteKey, i64>,
+        restored_at_ms: i64,
+        has_ttl_column: bool,
+    ) {
         if self.range_offset().is_some() {
             self.cleanup_state = stamps;
             self.retention_bytes = self
@@ -4744,9 +5346,20 @@ impl OverWindowAggregator {
                 .map(|key| byte_key_bytes(&key.0))
                 .sum();
             self.migrate_range_frames();
+            self.migrate_range_timers();
             for batch in self.buffered.clone() {
                 self.register_range_batch(&batch);
             }
+            self.retention_bytes = self
+                .cleanup_state
+                .keys()
+                .map(|key| byte_key_bytes(&key.0))
+                .sum::<usize>()
+                + self
+                    .range_timers
+                    .iter()
+                    .map(|(key, timers)| byte_key_bytes(&key.0) + timers.bytes())
+                    .sum::<usize>();
         } else if self.deadline_cleaning() {
             self.cleanup_state = stamps;
             let stamp = restored_at_ms.saturating_add(self.max_retention_ms);
@@ -4759,11 +5372,19 @@ impl OverWindowAggregator {
                 .keys()
                 .chain(self.pending_rows.keys())
                 .map(|key| byte_key_bytes(&key.0))
-                .sum();
+                .sum::<usize>()
+                + self.proc_rows_bytes()
+                + self
+                    .event_cleanup_unarmed
+                    .iter()
+                    .map(|key| byte_key_bytes(&key.0))
+                    .sum::<usize>();
         } else if self.value_ttl_on() {
             self.last_write_ms = stamps;
-            for key in self.inner.state_keys() {
-                self.last_write_ms.entry(key).or_insert(restored_at_ms);
+            if !(has_ttl_column && self.independent_distinct_ttl()) {
+                for key in self.inner.state_keys() {
+                    self.last_write_ms.entry(key).or_insert(restored_at_ms);
+                }
             }
             self.retention_bytes = self
                 .last_write_ms
@@ -4809,7 +5430,10 @@ impl OverWindowAggregator {
         let mut accumulator_batches = Vec::new();
         let mut buffer_batches = Vec::new();
         let mut range_batches = Vec::new();
+        let mut cleanup_batches = Vec::new();
         for bytes in snapshots {
+            let (bytes, cleanup) = Self::split_cleanup(bytes);
+            cleanup_batches.extend(read_ipc_if_present(cleanup));
             let (bytes, range_order) = Self::split_range_order(bytes);
             range_batches.extend(read_ipc_if_present(range_order));
             if bytes.len() < 12 {
@@ -4824,7 +5448,28 @@ impl OverWindowAggregator {
                 12 + accumulator_len <= bytes.len(),
                 "truncated over raw key-group snapshot"
             );
-            accumulator_batches.extend(read_ipc_if_present(&bytes[12..12 + accumulator_len]));
+            for batch in read_ipc_if_present(&bytes[12..12 + accumulator_len]) {
+                let migrate_clock = proctime
+                    && min_retention_ms > 0
+                    && matches!(frame_kind, 0 | 3)
+                    && kinds.iter().any(|&kind| kind >= 100)
+                    && retention_stamps(&batch).is_none();
+                if migrate_clock {
+                    let mut fields = batch.schema().fields().to_vec();
+                    fields.push(Arc::new(Field::new(TTL_TS_COLUMN, DataType::Int64, true)));
+                    let mut columns = batch.columns().to_vec();
+                    columns.push(Arc::new(Int64Array::from(vec![
+                        restored_at_ms;
+                        batch.num_rows()
+                    ])));
+                    accumulator_batches.push(
+                        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                            .expect("migrated OVER TTL clock"),
+                    );
+                } else {
+                    accumulator_batches.push(batch);
+                }
+            }
             buffer_batches.extend(read_ipc_if_present(&bytes[12 + accumulator_len..]));
         }
         let accumulators = (!accumulator_batches.is_empty())
@@ -4836,6 +5481,9 @@ impl OverWindowAggregator {
         let range_order = (!range_batches.is_empty())
             .then(|| Self::merge_snapshot_batches(&range_batches))
             .unwrap_or_default();
+        let cleanup = (!cleanup_batches.is_empty())
+            .then(|| Self::merge_snapshot_batches(&cleanup_batches))
+            .unwrap_or_default();
         OverWindowAggregator::restore(
             value_types,
             kinds,
@@ -4845,7 +5493,7 @@ impl OverWindowAggregator {
             frame_kind,
             frame_offset,
             proctime,
-            &Self::snapshot_parts(next_seq, accumulators, buffer, range_order),
+            &Self::snapshot_parts(next_seq, accumulators, buffer, range_order, cleanup),
             min_retention_ms,
             restored_at_ms,
         )

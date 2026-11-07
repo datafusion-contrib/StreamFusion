@@ -20,7 +20,9 @@ import tech.streamfusion.operator.ConstantArrowBatchKeySelector;
 import tech.streamfusion.operator.NativeColumnarLocalWindowAggregateOperator;
 import tech.streamfusion.operator.NativeWindowOperatorCore;
 
-/** Wraps the columnar local (pre-aggregate) window operator into the plan; Arrow batches in and out. */
+/**
+ * Wraps the columnar local (pre-aggregate) window operator into the plan; Arrow batches in and out.
+ */
 public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatch>
     implements StreamExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
 
@@ -37,6 +39,17 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
   private final int[] aggregateKinds;
   private final boolean timestampLtz;
   private final int[] keyTimestampPrecisions;
+  private int stockMaxParallelism = -1;
+  private String stockSessionTimeZone;
+  private long windowOffset;
+
+  public NativeColumnarLocalWindowAggExecNode withStockLocalState(
+      int maxParallelism, String timeZone, long offset) {
+    stockMaxParallelism = maxParallelism;
+    stockSessionTimeZone = timeZone;
+    windowOffset = offset;
+    return this;
+  }
 
   public NativeColumnarLocalWindowAggExecNode(
       ReadableConfig tableConfig,
@@ -84,39 +97,55 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
     // digits; only a TIMESTAMP_LTZ rowtime shifts boundaries into the session zone. The zone is
     // read by the window-attached ingest, which must invert exactly the shift the upstream window
     // aggregate's boundary rendering applied.
-    String timeZoneId =
-        timestampLtz ? planner.getTableConfig().getLocalTimeZone().getId() : "UTC";
+    String sessionZone =
+        stockSessionTimeZone == null
+            ? planner.getTableConfig().getLocalTimeZone().getId()
+            : stockSessionTimeZone;
+    String timeZoneId = timestampLtz ? sessionZone : "UTC";
     int maxParallelism =
-        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+        stockMaxParallelism > 0
+            ? stockMaxParallelism
+            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     // The local half sits upstream of the exchange, so its batches carry no destination tag; the
     // operator sets its own subtask-local key context in open(). This selector exists only so
     // Flink creates the keyed backend for the raw-state plumbing and is never consulted.
     ConstantArrowBatchKeySelector stateKeySelector = new ConstantArrowBatchKeySelector(0);
+    var operator =
+        new NativeColumnarLocalWindowAggregateOperator(
+            sliceMillis,
+            sliceMillis,
+            timeColumn,
+            windowStartColumn,
+            windowEndColumn,
+            valueColumns,
+            filterColumns,
+            keyColumns,
+            NativeWindowOperatorCore.keyTypes((RowType) getOutputType(), keyColumns.length),
+            valueTypes,
+            aggregateKinds,
+            timeZoneId,
+            keyTimestampPrecisions,
+            maxParallelism);
+    operator.setWindowOffsetMillis(windowOffset);
+    if (stockSessionTimeZone != null) operator.useStockLocalCheckpointing();
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
-            new NativeColumnarLocalWindowAggregateOperator(
-                sliceMillis,
-                sliceMillis,
-                timeColumn,
-                windowStartColumn,
-                windowEndColumn,
-                valueColumns,
-                filterColumns,
-                keyColumns,
-                NativeWindowOperatorCore.keyTypes((RowType) getOutputType(), keyColumns.length),
-                valueTypes,
-                aggregateKinds,
-                timeZoneId,
-                keyTimestampPrecisions,
-                maxParallelism),
+            operator,
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);
     transformation.setMaxParallelism(maxParallelism);
     transformation.setStateKeySelector(stateKeySelector);
     transformation.setStateKeyType(Types.INT);
+    if (stockSessionTimeZone != null)
+      transformation.setName(
+          "NativeColumnarLocalWindowAggregate"
+              + (windowEndColumn >= 0 ? "Final" : "Slice")
+              + "["
+              + getId()
+              + "]");
     return transformation;
   }
 }

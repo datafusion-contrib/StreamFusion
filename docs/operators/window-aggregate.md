@@ -7,6 +7,97 @@ and the two-phase local/global split — and the windowing-TVF operator that ass
 window(s) ahead of a downstream consumer (an aggregate, a [window join](joins/window-join.md), or
 window Top-N/dedup).
 
+Timestamp grouping keys retain their millisecond and sub-millisecond components in memory and
+direct RocksDB, including NULLs and epochs outside the signed nanosecond range. The declared
+RocksDB key schema matches the live vectors before input, so restore can import those keys
+immediately. Sixteen ordinary-checkpoint controls cover TIMESTAMP/TIMESTAMP_LTZ at precision
+0/3/6/9, both stores, NULLs, negative epochs and extended-range values.
+
+## Stock canonical savepoint interoperability
+
+The native transfer foundation can explicitly bind COUNT(DISTINCT) slots, project each scalar
+cardinality and visit its retained values as flat, namespaced rows. Import validates every
+namespace/key/slot against the scalar state. Set-based imports validate the cardinality against
+their membership; counted imports preserve the independent stock scalar and exact counters.
+Duplicate and orphaned membership is rejected, with additional cardinality checks for sets. Export restores
+any draining accumulator before calling the writer, including on writer failure. NULL markers in
+released byte-set accumulators do not contribute to COUNT and are omitted from membership rows.
+Incoming C Data is consumed before slot validation, so malformed requests release exported buffers.
+The view helper writes stock MapState in each slice namespace, retaining its key/value
+serializers and NULL-marker descriptor. It reconstructs grouping keys with the stock binary
+projection, validates view namespaces against scalar accumulators, and transfers shared membership
+bits or full signed counters independently for each aggregate. Flink selects multiplicity counters
+for HOP even with append-only input, so the planner derives the layout from released aggregate
+information instead of inferring it from the input changelog.
+
+The multiplicity-bearing native accumulator has a separate kind and retains values, exact counters
+and the scalar count in its native checkpoint state. Existing set-based checkpoint formats remain
+unchanged. Snapshot restoration copies the saved scalar exactly; pane merging uses stock counter
+transitions. Those operations must differ when counters wrap, because the scalar is not always the
+number of positive counters. Canonical export visits the live counters directly, without a native
+snapshot. The stock artifact retains only stock scalar/MapView serializers. Native/JNI tests cover
+signed extrema, overflow, duplicate updates, snapshot restoration and atomic import failures.
+The kernel accepts the row-kind sidecar used by production columnar batches. Snapshot reads retain
+the live counted map and its charged capacity instead of replacing it behind memory accounting.
+
+On Flink 2.2.1, ordinary SQL and portable stock compiled plans can bind the released synchronous
+window accumulator contract automatically. The binding preserves the original generated or user
+operator identity, actual key and accumulator serializers, maximum parallelism, persisted clock
+and time zone. It derives hidden counts, AVG intermediate fields and DISTINCT data views from
+released aggregate information. Canonical export visits live native state directly, without first
+writing a native snapshot; the resulting bound state uses stock serializers and state descriptors.
+
+Fixed-window and SESSION restore installs calendar, SQL offset and final-window mode before
+import. Input-watermark progress survives canonical and native recovery; stale watermarks cannot
+reopen closed event-time windows. Processing-time fixed windows reconstruct their pending timers
+from imported state, including timers that are already overdue. SESSION recovery retains the
+watermark admission rules used by the stock merging processor.
+
+Local/global fixed-window plans drain local partials at snapshot barriers. Global processing keeps
+the released slice/final distinction and flushes partial buffers before forwarding a watermark.
+Stock-bound INT grouping keys retain INT32 across new input, restored state and typed RocksDB;
+unbound legacy native INT state keeps its existing INT64 carriage. The stock projection descriptor
+selects the physical key schema consistently for fixed windows and sessions.
+
+The final v18 112-job cohort passes fixed TUMBLE, partitioned SESSION, COUNT(DISTINCT) and
+local/global TUMBLE handoffs, 28 cases per query. It covers both engine orders, ordinary SQL and
+portable plans, memory/RocksDB, no-input returns, native-checkpoint recovery and keyed rescaling
+through 1→3→2 tasks with 64 keys and maximum parallelism 128. Both transposes, custom stock source
+and committer state, isolated stock classpaths and independently checked committed effects remain
+in the jobs. All 112 cases pass on the same production sources and frozen native library as the
+1,572-test regression cohort. The earlier v17 cohort also passed, but is a separate overlapping run.
+
+The final Flink 2.2.1 regression cohort passes 1,572 tests with zero failures, errors or skips:
+544 planner checks, 544 actual canonical/operator lifecycle checks, 437 direct contract checks and
+47 ordinary operator regressions. Actual operator checks include event and processing clocks,
+TUMBLE/HOP/CUMULATE/SESSION, four time zones, keyed/global state, INT/BIGINT keys, DISTINCT,
+no-input returns and native-checkpoint recovery; these axes belong to their individual fixtures
+and do not describe a complete Cartesian product. The native suite passes 1,301 controls with two
+existing ignored tests, and a no-default-features library build passes. Shared Flink 1.18 passes
+47 processing/checkpoint checks; this is not stock-compatible canonical qualification there.
+These separate cohorts overlap and must not be added into an overall coverage percentage.
+
+Processing-time fixed windows apply each aggregate's FILTER mask when preparing native input,
+including after native-checkpoint recovery. Empty selections retain their window liveness and
+produce the corresponding empty aggregate result. Independent MIN/MAX and DISTINCT recovery
+controls cover false and NULL masks on both state paths.
+
+Qualification remains partial. The released event-time restore suite passes all 24 programs on
+each engine, including fixed-window DISTINCT splitting and SQL offsets. Twenty programs show
+positive state import and new native input; one CDC program is an explicit stock window control. Eight single-owner contracts require both witnesses. Two-stage imports belong to
+the slice owner; six DISTINCT-split final owners receive processing credit only from these released
+fixtures, because their saved final state is empty. Separate agent controls verify handle, owner,
+phase and invocation association; open-only or unrelated work cannot stand in for import.
+Three unpartitioned SESSION programs now execute typed native GROUP BY after the stock session
+table function. Their grouped savepoint state is empty, so they receive processing credit only;
+separate nonempty GROUP BY jobs establish that adapter's interchange scope. Native unpartitioned
+session assignment remains unqualified. Partitioned sessions use the separate window contract. Retracting window inputs, asynchronous state,
+unaligned checkpoints, unsupported aggregate/view schemas, session FILTER and processing-time
+partial-window plans retain stock owners. Wider schemas, filtered/value-type combinations,
+connector transactions, writer rescaling and failure/version matrices remain tracked in
+[P0 #569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred
+while functional interoperability is completed.
+
 ## Parallelism and state key groups
 
 The two-phase global window aggregate without business grouping keys is a SINGLETON:

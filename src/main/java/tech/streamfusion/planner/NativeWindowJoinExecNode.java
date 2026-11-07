@@ -26,6 +26,15 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
   private static final String TRANSFORMATION = "native-window-join";
 
   private String calendarZoneId;
+  private Integer stateMaxParallelism;
+
+  public NativeWindowJoinExecNode withStateMaxParallelism(int maximum) {
+    if (maximum < 1)
+      throw new IllegalArgumentException("State maximum parallelism must be positive");
+    stateMaxParallelism = maximum;
+    return this;
+  }
+
   private final int[] leftKeys;
   private final int[] rightKeys;
   private final int leftWindowStart;
@@ -104,7 +113,9 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
     Transformation<ArrowBatch> right =
         (Transformation<ArrowBatch>) getInputEdges().get(1).translateToPlan(planner);
     int maxParallelism =
-        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), left.getParallelism());
+        stateMaxParallelism != null
+            ? stateMaxParallelism
+            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), left.getParallelism());
     TwoInputTransformation<ArrowBatch, ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createTwoInputTransformation(
             left,

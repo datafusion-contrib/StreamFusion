@@ -1894,3 +1894,21 @@ reader projections contain only declared fields; Arrow file writes retain the or
 value buffers while excluding these execution sidecars. Nested ROWs loaded from files have
 INSERT kind, matching Flink. Top-level changelog columns retain their existing contract.
 See [nested Java scalar results](../operators/calc-filter.md#nested-java-scalar-results).
+
+### Compiled SQL plans
+
+Compiling SQL retains the existing native source-sharing execution graph in memory while
+exporting a stock Flink JSON/Smile plan. Exporting that plan does not change the graph used by
+`execute()` or `explain()`. Paimon reader and writer state remain outside the qualified
+cross-engine canonical-savepoint contracts; persisted stock plans use the documented
+restore-time planner admission rather than claiming native Paimon state interchange.
+
+A private graph containing a native connector without a qualified stock state contract keeps
+its complete native execution route. It must not be partially rebuilt from the stock template
+for a neighboring window or other state owner: that would discard the admitted connector and
+its shared Arrow edges. Such graphs keep their existing native checkpoint/savepoint dependency.
+
+Stock-only JSON/Smile serialization is qualified on Flink 2.2. The shared Paimon source-sharing
+suite keeps its original native-plan execution checks on Flink 1.18; it applies the additional
+stock-plan serialization assertions only to Flink 2.2. This preserves the documented version
+boundary without skipping the existing connector tests on either line.

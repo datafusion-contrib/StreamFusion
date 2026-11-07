@@ -2,6 +2,7 @@
 
 from collections import Counter
 import copy
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -23,17 +24,50 @@ def plain(element):
 
 
 class RuntimeTestShardsTest(unittest.TestCase):
-    def test_measured_costs_balance_long_classes_without_dropping_new_classes(self):
+    def test_canonical_jobs_and_runtime_are_a_complete_disjoint_bounded_partition(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            names = {"LongTest": 90, "MediumTest": 60, "ShortTest": 30}
-            for name in (*names, "NewTest"):
-                (root / (name + ".class")).touch()
-            durations = {name: seconds for name, seconds in names.items()}
-            plan = shards.partition(root, 2, durations)
-            self.assertEqual(Counter([*names, "NewTest"]), Counter(name for part in plan for name in part))
-            loads = [sum(durations.get(name, 1) for name in part) for part in plan]
-            self.assertEqual([91, 90], loads)
+            names = {f"CanonicalCase{index}JobTest" for index in range(118)}
+            names.update(f"Case{index}Test" for index in range(20))
+            names.add("CanonicalStateContractTest")
+            for name in names | {"Helper", "CanonicalCase0JobTest$Nested"}:
+                path = root / "tech/streamfusion" / (name + ".class")
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+            runtime = shards.partition(root, 3, "runtime")
+            for count in (16, 32):
+                with self.subTest(count=count):
+                    canonical = shards.partition(root, count, "canonical")
+                    self.assertEqual(Counter("tech/streamfusion/" + n for n in names),
+                                     Counter(n for part in canonical + runtime for n in part))
+                    self.assertLessEqual(max(map(len, canonical)), (118 + count - 1) // count)
+                    self.assertEqual(118, sum(map(len, canonical)))
+                    self.assertEqual(canonical, shards.partition(root, count, "canonical"))
+                    weighted = shards.partition(root, count, "canonical", durations={
+                        "tech/streamfusion/CanonicalCase0JobTest": 1000})
+                    self.assertEqual(Counter(n for part in canonical for n in part),
+                                     Counter(n for part in weighted for n in part))
+            with self.assertRaises(ValueError):
+                shards.partition(root, 3, "unknown")
+
+    def test_measured_costs_balance_long_classes_without_dropping_new_classes(self):
+        for suite in ("all", "runtime", "canonical"):
+            with self.subTest(suite=suite), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                def class_name(name):
+                    suffix = "Canonical" + name + "JobTest" if suite == "canonical" else name + "Test"
+                    return "tech/streamfusion/" + suffix
+                durations = {class_name(name): seconds for name, seconds in
+                             {"Long": 90, "Medium": 60, "Short": 30}.items()}
+                names = [*durations, class_name("New")]
+                for name in names:
+                    path = root / (name + ".class")
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.touch()
+                plan = shards.partition(root, 2, suite, durations=durations)
+                self.assertEqual(Counter(names), Counter(name for part in plan for name in part))
+                loads = [sum(durations.get(name, 1) for name in part) for part in plan]
+                self.assertEqual([91, 90], loads)
 
     def test_invalid_duration_estimates_fail_before_selecting_tests(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -41,7 +75,7 @@ class RuntimeTestShardsTest(unittest.TestCase):
             (root / "ExampleTest.class").touch()
             for value in (-1, float("nan"), float("inf"), "1", True):
                 with self.subTest(value=value), self.assertRaises(ValueError):
-                    shards.partition(root, 1, {"ExampleTest": value})
+                    shards.partition(root, 1, durations={"ExampleTest": value})
 
     def test_default_names_are_complete_disjoint_stable_and_pinned_suites_stay_together(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -127,6 +161,18 @@ class RuntimeTestShardsTest(unittest.TestCase):
 class SuffixTests {
 @org.junit.jupiter.params.ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(ints={1,2})
 void repeated(int value) throws Exception { ''' + body('"parameter-" + value') + " } }")
+            (source / "CanonicalParentJobTest.java").write_text('''package tech.streamfusion;
+class CanonicalParentJobTest {
+@org.junit.jupiter.params.ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(ints={1,2})
+void inherited(int value) throws Exception { ''' + body('getClass().getSimpleName() + value') + ''' }
+@org.junit.jupiter.api.Nested class Context {
+@org.junit.jupiter.api.Test void nested() throws Exception { ''' + body('CanonicalParentJobTest.this.getClass().getSimpleName() + "-nested"') + ''' }
+}
+}''')
+            (source / "CanonicalChildJobTest.java").write_text('''package tech.streamfusion;
+class CanonicalChildJobTest extends CanonicalParentJobTest {
+@org.junit.jupiter.api.Test void own() throws Exception { ''' + body('"child-only"') + ''' }
+}''')
 
             def run(*options):
                 result = subprocess.run(["mvn", "-B", "-ntp", "test", *options], cwd=root,
@@ -157,6 +203,21 @@ void repeated(int value) throws Exception { ''' + body('"parameter-" + value') +
                         actual.update(run(f"-Dsf.runtime.testIncludesFile={output}"))
                     self.assertEqual(baseline, actual)
                     self.assertEqual(expected_markers, {path.name for path in selected.iterdir()})
+
+            for path in selected.iterdir():
+                path.unlink()
+            actual = Counter()
+            inventories = set()
+            for suite in ("runtime", "canonical"):
+                for index in (1, 2):
+                    output = root / f"{suite}-{index}.txt"
+                    shards.write_selection(root / "target/test-classes", 2, index, output, suite)
+                    inventories.add(json.loads(output.with_suffix(".json").read_text())[
+                        "complete_inventory_sha256"])
+                    actual.update(run(f"-Dsf.runtime.testIncludesFile={output}"))
+            self.assertEqual(1, len(inventories))
+            self.assertEqual(baseline, actual)
+            self.assertEqual(expected_markers, {path.name for path in selected.iterdir()})
 
             for path in selected.iterdir():
                 path.unlink()

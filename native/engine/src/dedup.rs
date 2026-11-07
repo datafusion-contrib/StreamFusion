@@ -1,3 +1,4 @@
+mod canonical;
 #[cfg(test)]
 mod indexed_tests;
 mod pending;
@@ -169,8 +170,9 @@ impl KeepFirstDeduplicator {
     /// Buffers an input batch (no output); emission is watermark-driven (`flush`). `now_ms` is the
     /// host's wall-clock reading for this call (only read when state TTL is on).
     pub(crate) fn push(&mut self, batch: &RecordBatch, now_ms: i64) -> Result<(), DataFusionError> {
+        let schema = self.schema.clone().unwrap_or_else(|| data_schema(batch));
+        let batch = crate::logical_input::insert_only(batch.clone(), &schema, "buffered dedup")?;
         self.snapshot_cache = None;
-        let schema = batch.schema();
         self.schema = Some(schema.clone());
         // Drop late rows (rowtime already below the watermark) with a columnar filter, counting
         // them as Flink's processElement does before any per-key state is consulted.
@@ -179,7 +181,7 @@ impl KeepFirstDeduplicator {
             .iter()
             .map(|v| Some(v.unwrap() >= self.current_watermark))
             .collect();
-        let live = filter_record_batch(batch, &live_mask).expect("dedup late filter");
+        let live = filter_record_batch(&batch, &live_mask).expect("dedup late filter");
         self.late_drops += (batch.num_rows() - live.num_rows()) as u64;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
@@ -560,7 +562,15 @@ impl KeepFirstDeduplicator {
             fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
             columns.push(Arc::new(Int64Array::from(fired)));
         }
-        Some(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("dedup emitted"))
+        Some(
+            RecordBatch::try_new_with_options(
+                Arc::new(Schema::new(fields)),
+                columns,
+                &arrow::record_batch::RecordBatchOptions::new()
+                    .with_row_count(Some(self.emitted.len())),
+            )
+            .expect("dedup emitted"),
+        )
     }
 
     fn snapshot_partitions(
@@ -633,7 +643,13 @@ impl KeepFirstDeduplicator {
                     .iter()
                     .map(|column| take(column, &indices, None).expect("partition dedup snapshot"))
                     .collect();
-                RecordBatch::try_new(batch.schema(), columns).expect("partitioned dedup snapshot")
+                RecordBatch::try_new_with_options(
+                    batch.schema(),
+                    columns,
+                    &arrow::record_batch::RecordBatchOptions::new()
+                        .with_row_count(Some(rows.len())),
+                )
+                .expect("partitioned dedup snapshot")
             };
             let pending_part = pending_by_group
                 .get(&key_group)
@@ -855,7 +871,13 @@ impl KeepFirstDeduplicator {
                     fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
                     columns.push(Arc::new(Int64Array::from(stamps)));
                 }
-                RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("dedup emitted")
+                RecordBatch::try_new_with_options(
+                    Arc::new(Schema::new(fields)),
+                    columns,
+                    &arrow::record_batch::RecordBatchOptions::new()
+                        .with_row_count(Some(entries.len())),
+                )
+                .expect("dedup emitted")
             });
             snapshots.insert(group, self.snapshot_parts(pending_part, emitted_part));
         }

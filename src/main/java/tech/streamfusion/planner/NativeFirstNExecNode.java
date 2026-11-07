@@ -1,5 +1,6 @@
 package tech.streamfusion.planner;
 
+import java.util.Arrays;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -22,6 +23,21 @@ public class NativeFirstNExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] precisions;
   private final int limit;
   private final boolean outputRank;
+  private Integer stateMaxParallelism;
+
+  public NativeFirstNExecNode withStateMaxParallelism(int maximum) {
+    if (maximum < 1)
+      throw new IllegalArgumentException("State maximum parallelism must be positive");
+    stateMaxParallelism = maximum;
+    return this;
+  }
+
+  boolean sameStateDefinition(NativeFirstNExecNode other) {
+    return limit == other.limit
+        && outputRank == other.outputRank
+        && Arrays.equals(partitions, other.partitions)
+        && Arrays.equals(precisions, other.precisions);
+  }
 
   public NativeFirstNExecNode(
       ReadableConfig config,
@@ -52,7 +68,9 @@ public class NativeFirstNExecNode extends ExecNodeBase<ArrowBatch>
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     int maxParallelism =
-        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+        stateMaxParallelism != null
+            ? stateMaxParallelism
+            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,

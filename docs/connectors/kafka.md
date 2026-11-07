@@ -140,3 +140,307 @@ makes the byte-array boundary the measured bottleneck.
 If a native decode fails after other partition batches from the same poll have decoded,
 the source closes those un-emitted Arrow batches immediately before propagating the error.
 This releases staged off-heap memory without waiting for the abandoned-batch Cleaner.
+
+## Portable compiled-plan source admission
+
+The Flink 2.2 compiled-plan loader can ask the optional Kafka planner extension to apply its
+existing source whitelist to a stock table-source node. Admitted scans use the same native decode
+source and sharing behavior as ordinary planning; unsupported configurations keep the stock scan.
+The portable artifact remains stock JSON. The source handoff subset below has separate real-broker
+qualification; sink transactions and the wider failure/type/version matrix remain unfinished under
+[canonical handoff](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+## Canonical source handoffs (partial)
+
+The native Kafka source keeps Flink's reader split and enumerator state serializers. Canonical
+handoff therefore retains those stock bytes rather than translating them through a native snapshot.
+The ordinary SQL planner also binds the original source and host sink/helper identities: inserting
+a stateless Arrow boundary must not change the IDs of their durable state. Optional connector
+extensions must explicitly declare stock source-state preservation before participating in that
+binding; other native source implementations receive no inferred compatibility guarantee.
+
+Qualification passes fourteen real-broker scenarios on Flink 2.2.1 with released Kafka connector
+5.0.0-2.2: four continued-input, four no-input return, two native-checkpoint recovery and four
+source-rescale cases. Ordinary SQL and portable compiled plans cover both initial engine orders;
+native-checkpoint recovery starts on StreamFusion. Source parallelism changes 1→3→2 with fixed
+maximum parallelism. A three-partition JSON source produces three nullable BIGINT fields into a
+custom committing sink. Each stage checks exact external committed rows, actual native source
+output, portable metadata and stock worker classpaths without StreamFusion code. Metadata checks
+decode the saved partition offsets through the released source serializer and require all three
+splits, nonempty coordinator state and stable canonical operator identities. A separate 839-check
+planner/identity regression cohort also passes; it does not add connector delivery scenarios.
+The existing native checkpoints retain their native graph identities; canonical handoff artifacts
+use the stock identities. Eight existing grouped-aggregate INT-key rescale jobs also pass with
+the updated isolated runner. Twenty-two shared Flink 1.18 processing/connector checks pass; these
+do not establish canonical compatibility on 1.18.
+
+These fourteen scenarios do not qualify native Kafka sink transactions, writer rescaling, topic
+patterns, security/schema/format variations, broker/coordinator failures or cross-version migration.
+Source rescaling keeps the custom sink singleton and disables chaining for that test. Partition
+discovery and both-native source/sink pipelines have separate qualification below.
+Benchmarking remains deferred for #569.
+
+### Partition discovery across engine switches (partial)
+
+The combined source corpus now passes all 22 real-broker cases on the committed production tree:
+the original fourteen scenarios plus eight partition-discovery round trips. Discovery covers
+ordinary SQL and portable compiled plans, both initial engine orders and partitions added either
+between stopped jobs or while restored readers are already running. Reader parallelism changes
+1→3→2 while the topic grows from one to three to five partitions. In live cases the restored job
+must consume one probe from an old partition before any partition is added, so initial source
+startup cannot substitute for periodic discovery.
+
+The schema remains three nullable BIGINT fields in JSON on Flink 2.2.1, connector 5.0.0-2.2 and
+the Confluent Kafka 7.6.1 test broker. A custom committing sink stays at one task. Exact saved
+offsets use independent expectations: `0=5`, then `0=6,1=2,2=1`, then
+`0=7,1=2,2=1,3=2,4=1`. These require actual consumption on newly discovered partitions and
+preservation of prior positions. Each canonical artifact also retains every discovered split,
+nonempty coordinator state and stock identities, with no StreamFusion serializer dependency.
+Committed rows must match all thirteen input records after the repeated switches; native source
+output and stock worker classpaths are checked at each advancing stage. Enumeration and split
+serialization still delegate to the released connector without a conversion utility or a native
+snapshot intermediate.
+
+Run all 22 cases with:
+
+```sh
+SF_KAFKA_INTEGRATION=true mvn -Pcanonical-kafka -pl streamfusion-runtime -am \
+  -Dtest=CanonicalKafkaSourceJobTest,CanonicalKafkaPartitionDiscoveryJobTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+The new class alone runs eight; its one-case smoke is only a debugging subset. The corpus does not establish discovery through broker/coordinator
+outages, topic patterns/deletion, broader schemas/security/versions or simultaneous native Kafka
+reader/writer rescaling. Those remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+The functional lane uses a real optional JSON artifact and an isolated stock classpath. With Docker
+available and the native core, Kafka and JSON libraries built, run from the repository root:
+
+```sh
+SF_KAFKA_INTEGRATION=true mvn -Pcanonical-kafka -pl streamfusion-runtime -am test \
+  -Dtest=CanonicalKafkaSourceJobTest -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dsf.extraJvmArgs="-Djava.library.path=${PWD}/native/target/debug"
+```
+
+For a targeted checkpoint fixture run, add `-Dsf.canonical.kafka.mode=checkpoint`; omit it for the
+complete matrix. This is a correctness lane, independent of the benchmark environment flag.
+
+
+## Canonical sink handoffs (partial)
+
+Native Kafka serialization is synchronous and owns no durable state. Its unchanged Flink Kafka
+writer and committer retain their released state codecs and transaction ownership. Canonical
+identity binding treats the encoder as an explicitly declared stateless representation stage and
+retains the original source/writer/committer identities. Optional sink extensions must opt into
+that contract; unsupported implementations receive no inferred compatibility claim. A helper that
+actually owns state still fails canonical export rather than silently losing it.
+
+Portable stock plans now use the same sink admission checks as ordinary SQL, including type/format,
+constraint enforcement, sink abilities, changelog mode, materialization and repartitioning rules.
+The submission artifact stays stock JSON; native encoding is installed only in the runtime graph.
+The compiled-plan adapter supplies the original input schema to admission without executing a
+synthetic input. Runtime records continue over the actual restored source edge.
+
+The consolidated 36-case real-broker sink matrix passes: eight continued-input, eight no-input,
+four native-job checkpoint recovery, eight writer-rescale cases with generated hashes and chaining
+disabled, and eight writer-rescale cases with automatic UID generation and normal chaining. Both
+SQL/compiled submissions, initial engine orders where applicable, and incrementing/pooling names
+are covered. The source stays singleton while writer parallelism changes 1→3→2 at fixed maximum
+parallelism. The query has three nullable BIGINT fields, a custom source and an exactly-once Kafka
+sink. Source offsets, transaction prefixes/ownership/precommitted transactions, native encoded
+row counts (including partial barrier batches), clean stock classpaths and exact `read_committed`
+records are checked after each switch. Native execution is witnessed by the actual submitted job
+graph and row counters. The separate 875-check cohort includes fourteen Kafka source jobs and
+sixty-six sink admission/graph controls; its cases overlap earlier cohorts. Twenty-two shared
+Flink 1.18 checks establish processing regressions only.
+
+Changing parallelism with generated hashes can change chaining and therefore stock identities.
+Both unchanged stock-to-stock SQL/compiled controls reproduce the same unmatched source ID.
+Disable chaining consistently for that policy, or retain stable UIDs. The qualified automatic-UID
+ordinary SQL cases submit once per worker. Extra planner previews consume execution-node IDs and
+can change the subsequent ordinary-SQL UID namespace differently between engines; portability for
+that planning history remains unfinished in #569. A portable compiled plan retains its original
+UID namespace. No failed restore enables unmatched-state acceptance or drops source/writer state.
+
+The separate both-native matrix below also exercises independently starting source/sink tasks.
+Its decoder schema can allocate Arrow buffers before another task publishes the memory budget.
+Startup adopts those live buffers into the shared budget before publication, preserving their
+release balance; an insufficient initial cap still fails normally.
+
+Broker/coordinator failures, failures around external commits, further formats/schemas/security,
+upsert/CDC delivery, source partition discovery and wider both-native source/sink combinations remain open
+under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Canonical interchange
+is qualified only on the released Flink/connector versions stated above. Benchmarking is deferred.
+
+Use the source handoff command above with `-Dtest=CanonicalKafkaSinkJobTest` for the sink lane.
+`-Dsf.canonical.kafka.sink.mode=checkpoint` selects checkpoint recovery; omit it for all cases.
+
+
+## Canonical native source and sink pipelines (partial)
+
+A separate 36-case matrix passes with a three-partition Kafka source replacing the custom source
+in the sink matrix above. It repeats both submission forms, initial engine orders, transaction
+naming strategies, no-input returns, native-job checkpoint recovery and both writer-rescale
+policies. The schema is three nullable BIGINT fields in JSON on released Flink 2.2.1 and Kafka
+connector 5.0.0-2.2. Reader parallelism stays one; writer parallelism changes 1→3→2.
+
+Every claimed native leg checks the actual submitted job graph and output counters for native
+Kafka decoding and encoding, with no RowData/Arrow transpose operators. Saved split offsets and
+nonempty coordinator state, writer transaction ownership and precommits, stock identities and
+exact `read_committed` effects are checked after the switches. Stock workers cannot load
+StreamFusion classes. This also qualifies the startup memory-accounting fix with real independent
+source/writer tasks. The ordinary-SQL planner-preview UID limitation above remains open.
+
+Run the sink command with `-Dtest=CanonicalKafkaPipelineJobTest` for this complete matrix. Generated
+hash rescaling disables chaining consistently; automatic-UID rescaling keeps normal chaining.
+Joint reader/writer rescaling has the additional qualification below. Combining it with partition
+discovery, schemas/formats/security, upsert/CDC delivery and failures around broker/coordinator/
+transaction commits needs further qualification under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+## Joint Kafka reader and writer rescaling (partial)
+
+A further eight real-broker cases pass while both source readers and exactly-once writers change
+parallelism 1→3→2 across repeated canonical engine switches. They cover ordinary SQL and portable
+compiled plans, both initial engine orders, and incrementing/pooling transaction ownership with
+automatic UIDs and normal chaining. Source maximum parallelism remains 128. The schema stays
+three nullable BIGINT fields in JSON, with three existing input partitions, on released Flink
+2.2.1, Kafka connector 5.0.0-2.2 and the Confluent Kafka 7.6.1 test broker.
+
+Workers also record an independent `read_committed` scan before requesting the savepoint.
+A failed precommit assertion reports that boundary, the engine order and the complete saved
+writer inventory; the precommit and external exactly-once assertions remain required.
+
+Every savepoint checks actual reader and writer parallelism, exact offsets for all three splits,
+nonempty coordinator state, writer prefixes/ownership/precommitted transactions and stable stock
+state identities. External `read_committed` results must contain exactly the expected five, nine
+and thirteen records at successive cuts. Advancing native legs must execute both decoding and
+encoding; their submitted plans contain neither transpose. Stock workers exclude StreamFusion
+classes, and canonical metadata contains stock dependencies.
+
+The final 44-case corpus passes all eight joint-rescale cases and reruns the original 36 native
+source/sink pipeline controls on the same test sources and native libraries. The earlier isolated
+eight-case run overlaps this corpus. Production connector code and state formats are unchanged.
+
+```sh
+SF_KAFKA_INTEGRATION=true mvn -Pcanonical-kafka -pl streamfusion-runtime -am \
+  -Dtest=CanonicalKafkaReaderWriterRescaleJobTest,CanonicalKafkaPipelineJobTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+This qualifies joint rescaling with a fixed input partition set. Partition discovery combined
+with joint rescaling, wider schemas/security/versions and additional failure/delivery boundaries
+remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+## Transaction ownership at handoff
+
+Keep the original transactional prefix across an engine switch, and stop the previous owner before
+starting its replacement. Other running applications must use distinct prefixes. Configure the
+transaction timeout to exceed the maximum checkpoint and restart duration, as required by
+[Flink's Kafka delivery contract](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/connectors/datastream/kafka/#fault-tolerance).
+Canonical state conversion preserves the connector's protocol and cannot repair transactions
+aborted by a competing producer or expired by the broker.
+
+The released Kafka connector reports a fenced commit as a known failed committable. Flink can
+therefore complete a stop/savepoint even though the corresponding records were not committed.
+A successful savepoint pointer alone does not establish delivery under conflicting ownership.
+Do not treat such an artifact as a successful handoff, reset the transactional prefix, or roll
+back to an older savepoint after new effects have already committed.
+
+## Canonical task-manager recovery (partial)
+
+Sixteen real-broker scenarios pass after terminating the only TaskManager before another
+savepoint: eight use the custom row source and eight use native Kafka decoding and encoding.
+Both SQL/compiled submissions, initial engine orders and transaction naming strategies are
+covered at singleton parallelism, with the three nullable BIGINT fields and released versions
+above. The worker waits for actual output at the broker before termination, requires a FAILED
+job and no new savepoint pointer, and checks that only the previous prefix was committed.
+Restoring its last valid canonical savepoint then commits the remaining input exactly once,
+followed by another engine switch and exact external-output checks. The row-source fixture
+retains its transpose boundary; the Kafka pipeline verifies that neither transpose executes.
+
+The separate sixteen-case conflicting-owner lane checks the fencing boundary above. It requires
+actual failed-committable metrics, advanced saved source positions and missing committed effects;
+it rejects that savepoint. Its retry uses the earlier valid savepoint only after an independent
+check proves that no new effects committed. These are negative ownership controls, not a delivery
+guarantee with competing owners. Current-attempt input counters prevent aborted broker records
+from satisfying retry readiness. Native execution, stock classpath exclusion and exact saved
+reader/writer state checks remain mandatory.
+
+TaskManager termination runs normal shutdown code. Abrupt process death has the separate subset
+below. Broker/coordinator outages, failures during savepoint upload/finalization and additional
+external-commit boundaries require separate qualification. The wider connector/type/version
+matrix remains open under #569.
+Run `CanonicalKafkaSinkFailureJobTest,CanonicalKafkaPipelineFailureJobTest` for task-manager
+recovery and `CanonicalKafkaSinkFencingJobTest,CanonicalKafkaPipelineFencingJobTest` for the
+ownership controls, using the functional Kafka command above. Benchmarking remains deferred.
+
+## Canonical batch boundaries and abrupt-process recovery (partial)
+
+A separate 70-check cohort passes 24 controlled canonical batch-boundary scenarios, sixteen
+abrupt-process recovery scenarios, eight existing grouped-state rescale jobs and 22 admission
+checks. The new Kafka scenarios cover both SQL/compiled submissions, initial engine orders and
+transaction naming strategies, using singleton source/writer tasks, three nullable BIGINT fields,
+JSON and the released versions above. These counts overlap other regression cohorts.
+
+The 24 boundary scenarios use a custom row source and the actual RowData-to-Arrow boundary before
+native Kafka encoding. Eight cover partial batches, eight include no-input engine switches and
+eight reach a full five-row batch. The fixture explicitly disables the default 50 ms latency
+flush timer. Before requesting the savepoint, it checks actual transpose input and encoded-row
+counters, including the exact pending-row count. After the barrier, every pre-barrier row must
+have been encoded, saved reader/writer state must match, and committed Kafka records must be exact.
+Source readiness alone does not prove that a partial batch remains pending.
+
+The sixteen process cases halt the worker JVM after new records reach the broker and before
+another savepoint. They bypass producer close, finally blocks and shutdown hooks. Eight use the
+custom row source, requiring exactly three encoded rows and one pending row before death; eight
+use native Kafka decoding/encoding, requiring four encoded rows and no transpose. The last valid
+canonical savepoint is retried only after checking that the interrupted attempt committed no new
+effects. Recovery must clean up its actual lingering transactions, commit the remaining input
+exactly once, and preserve exact output through another engine switch. Stock processes remain
+free of StreamFusion classes.
+
+Run `CanonicalKafkaSinkBarrierJobTest,CanonicalKafkaSinkProcessFailureJobTest,CanonicalKafkaPipelineProcessFailureJobTest`
+with the functional Kafka command for the full forty-case matrix. Adding
+`-Dsf.canonical.kafka.fixture.smoke=true` selects five cases; it does not qualify the full matrix.
+The 70-check regression selection also includes `CanonicalGroupArithmeticIntJobTest` and
+`CanonicalKafkaSinkAdmissionTest`. The separate 94-check ordinary sink/pipeline/admission cohort
+passes against the preceding worker sources and the same native libraries; it does not silently
+requalify every historical operator cohort against this newer fixture.
+
+Client failure after completed savepoints has the separate subset below. Broker/coordinator
+outages, capture/upload/finalization failures and the wider schema/security/discovery/version
+matrix remain open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+The production latency timer and ordinary native checkpoint paths are unchanged. Benchmarking
+remains deferred.
+
+## Client failure after canonical completion (partial)
+
+Sixteen additional real-broker cases pass when the client JVM dies after a canonical savepoint
+and the job finish, before reporting the savepoint location. Eight use the custom row source and
+eight use native Kafka decoding/encoding. Both submission forms, initial engine orders and
+transaction naming strategies retain the singleton tasks, schema and released versions above.
+The row-source cases also retain controlled partial batches before the canonical barrier.
+
+The tests require the original five-row prefix, then nine committed records at the completed
+cut. They find exactly one completed artifact in that stage's isolated output directory and use
+it for normal restore on the other engine, with no new input. That restore must process zero new
+records, preserve the saved positions and transaction ownership, and leave exactly nine external
+effects. Another switch and four new records must produce exactly thirteen effects. The original
+completed artifact is checked alongside the subsequent canonical artifacts for stable stock IDs,
+source/coordinator state, writer precommits and serializer dependencies. Stock workers exclude
+StreamFusion code throughout.
+
+Recovery uses the completed canonical cut after the nine effects committed. Restarting from the
+older five-row savepoint is not a safe response to losing the client's result. This lane checks
+client death after successful completion; it does not qualify every failure during commit or
+metadata publication, or an automatic search for the correct artifact in a deployment.
+
+The full 86-check cohort includes these sixteen cases and reruns the preceding 70 boundary,
+process-recovery, grouped-state and admission checks against the updated fixtures and the same
+verified native libraries. Run `CanonicalKafkaSinkCompletionFailureJobTest,CanonicalKafkaPipelineCompletionFailureJobTest`
+for all sixteen completion cases, or add `-Dsf.canonical.kafka.fixture.smoke=true` for two.
+Broader delivery/failure guarantees remain open under #569. Benchmarking remains deferred.

@@ -34,11 +34,28 @@ public class NativeColumnarTopNExecNode extends ExecNodeBase<ArrowBatch>
   private final boolean nonTimeRowNumber;
   private final boolean outputRankNumber;
   private final boolean retracting;
-  // Update-fast mode: the unique-key columns identifying the row a record replaces (null otherwise).
+  // Update-fast mode: the unique-key columns identifying the row a record replaces (null
+  // otherwise).
   private final int[] rowKeyColumns;
   private final boolean generateUpdateBefore;
   private final int[] rowKeyTimestampPrecisions;
   private final int[] keyTimestampPrecisions;
+  private Integer stateMaxParallelism;
+
+  public boolean hasRetractingState() {
+    return retracting;
+  }
+
+  public boolean hasUniqueRowKeyState() {
+    return rowKeyColumns != null;
+  }
+
+  public NativeColumnarTopNExecNode withStateMaxParallelism(int maximum) {
+    if (maximum < 1)
+      throw new IllegalArgumentException("State maximum parallelism must be positive");
+    stateMaxParallelism = maximum;
+    return this;
+  }
 
   public NativeColumnarTopNExecNode(
       ReadableConfig tableConfig,
@@ -135,8 +152,11 @@ public class NativeColumnarTopNExecNode extends ExecNodeBase<ArrowBatch>
     // per-record intermediate rank windows. The final materialized Top-N is identical; with
     // mini-batch off, the per-input-row changelog remains byte-identical to the host path.
     // Hidden-rank OFFSET mutates retained row kinds on each emission, affecting later equality.
+    // Stock bindings preserve the released per-record changelog, including under table
+    // mini-batching.
     boolean netDiff =
-        !nonTimeRowNumber
+        stateMaxParallelism == null
+            && !nonTimeRowNumber
             && !firstBound
             && config.get(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED)
             && !(retracting && offset > 0 && !outputRankNumber && rowKeyColumns == null);
@@ -145,7 +165,9 @@ public class NativeColumnarTopNExecNode extends ExecNodeBase<ArrowBatch>
     // aggregates, so ranks have no per-operator override to resolve.
     long stateTtlMillis = config.getStateRetentionTime();
     int maxParallelism =
-        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+        stateMaxParallelism != null
+            ? stateMaxParallelism
+            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,

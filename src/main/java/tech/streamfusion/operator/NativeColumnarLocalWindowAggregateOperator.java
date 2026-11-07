@@ -26,6 +26,25 @@ import tech.streamfusion.Native;
  */
 public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOperatorCore<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+  private boolean stockLocalCheckpointing;
+
+  public void useStockLocalCheckpointing() {
+    stockLocalCheckpointing = true;
+  }
+
+  @Override
+  protected org.apache.flink.streaming.api.operators.OperatorSnapshotFutures snapshotCanonicalState(
+      long checkpointId,
+      long timestamp,
+      org.apache.flink.runtime.checkpoint.CheckpointOptions options,
+      org.apache.flink.runtime.state.CheckpointStreamFactory streams)
+      throws Exception {
+    if (!stockLocalCheckpointing)
+      return super.snapshotCanonicalState(checkpointId, timestamp, options, streams);
+    if (Native.localWindowBufferReady(handle, Long.MAX_VALUE))
+      throw new IllegalStateException("Local window partials were not drained before the barrier");
+    return new org.apache.flink.streaming.api.operators.OperatorSnapshotFutures();
+  }
 
   private final int timeColumn;
   // Window-attached mode (Nexmark q5): the input rows already carry their window in these columns
@@ -146,8 +165,7 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
   public void prepareSnapshotPreBarrier(long checkpointId) {
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      Native.drainPartialTumblingAggregator(
-          handle, array.memoryAddress(), schema.memoryAddress());
+      Native.drainPartialTumblingAggregator(handle, array.memoryAddress(), schema.memoryAddress());
       emitPartial(Data.importVectorSchemaRoot(allocator, array, schema, dictionaries));
     }
     publishStateBytes();

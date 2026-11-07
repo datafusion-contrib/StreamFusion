@@ -47,6 +47,13 @@ pub(crate) trait KeyedStateStore<V> {
     fn insert(&mut self, key: ByteKey, value: V) -> &mut V;
     fn remove(&mut self, key: &[u8]);
 
+    /// Makes actual savepoint keys resident before merging another transfer chunk. This reads
+    /// raw state without expiring or refreshing it while the canonical import is in progress.
+    /// Companion tables remain separate; their canonical import must follow the main rows.
+    fn prepare_canonical_import(&mut self, _keys: &BinaryArray) -> Result<(), DataFusionError> {
+        Ok(())
+    }
+
     /// Hydrates the working set with every key the given batch can touch (the batch's key columns
     /// under the operator's BinaryRow encoding). Called before the operator folds the batch.
     fn begin_batch(

@@ -117,6 +117,23 @@ public final class StreamFusionSuiteAgent {
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder.visit(Advice.to(RecordJobResult.class).on(named("toJobExecutionResult"))))
+        .type(
+            namedOneOf(
+                "org.apache.flink.table.runtime.operators.window.tvf.operator.UnalignedWindowTableFunctionOperator",
+                "org.apache.flink.table.runtime.operators.window.tvf.common.WindowAggOperator",
+                "org.apache.flink.table.runtime.operators.sort.RowTimeSortOperator",
+                "org.apache.flink.table.runtime.operators.join.window.WindowJoinOperator"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder
+                    .visit(
+                        Advice.to(BindStockWindowState.class)
+                            .on(named("open").and(takesArguments(0))))
+                    .visit(
+                        Advice.to(RecordStockWindowInput.class)
+                            .on(
+                                namedOneOf("processElement", "processElement1", "processElement2")
+                                    .and(takesArguments(1)))))
         .type(named("org.apache.paimon.flink.FlinkTestBase"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -165,18 +182,134 @@ public final class StreamFusionSuiteAgent {
                 builder.visit(
                     Advice.to(ApplyLegacyPaimonRestore.class)
                         .on(named("createPipeline").and(takesArguments(4)))))
-        .type(named("tech.streamfusion.planner.PhysicalPlanScan"))
+        .type(
+            namedOneOf(
+                "tech.streamfusion.planner.PhysicalPlanScan",
+                "tech.streamfusion.planner.StockCompiledPlanLowering"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder
                     .visit(Advice.to(RecordFallback.class).on(named("recordFallback")))
                     .visit(Advice.to(RecordSqlPlan.class).on(named("optimizeConfigured"))))
+        .type(
+            namedOneOf(
+                "tech.streamfusion.state.StockGroupTypedStateContract",
+                "tech.streamfusion.state.StockGroupArithmeticStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(Advice.to(RecordCanonicalGroupImport.class).on(named("batch")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockJoinStateContract$Side"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalJoinImport.class).on(named("importBatch")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockIntervalJoinStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalIntervalJoinImport.class).on(named("send")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockTemporalJoinStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalTemporalJoinImport.class).on(named("send")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockChangelogNormalizeStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalNormalizerImport.class).on(named("importBatch")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockBufferedDedupStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalBufferedDedupImport.class)
+                            .on(named("importBatch")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockDedupStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalEagerDedupImport.class).on(named("importBatch")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockAppendTopNStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalRankImport.class).on(named("importBatch")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockUpdatingTopNStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalRankImport.class).on(named("importBatch")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockRetractingTopNStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalRetractingRankImport.class).on(named("batch")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockFirstNStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalFirstNImport.class).on(named("importBatch")))
+                    : builder)
+        .type(
+            namedOneOf(
+                "tech.streamfusion.state.StockSlicingWindowStateContract",
+                "tech.streamfusion.state.StockSessionWindowStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalWindowImport.class).on(named("importBatch")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockWindowRankStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalWindowRankImport.class).on(named("importBatch")))
+                    : builder)
+        .type(named("tech.streamfusion.state.StockWindowJoinStateContract"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RecordCanonicalWindowJoinImport.class).on(named("send")))
+                    : builder)
         .type(namedOneOf(NativeExecution.testClasses()))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
-                builder.visit(
-                    Advice.to(RequireNativeExecution.class)
-                        .on(namedOneOf(NativeExecution.testMethods(type.getName())))))
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder
+                    : builder.visit(
+                        Advice.to(RequireNativeExecution.class)
+                            .on(namedOneOf(NativeExecution.testMethods(type.getName())))))
+        .type(named("org.apache.flink.table.planner.plan.nodes.exec.testutils.RestoreTestBase"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                    ? builder.visit(
+                        Advice.to(RequireCanonicalRestoreExecution.class).on(named("testRestore")))
+                    : builder)
         .type(
             namedOneOf(
                 "tech.streamfusion.operator.NativeCalcOperator",
@@ -188,10 +321,23 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeColumnarJvmOverOperator",
                 "tech.streamfusion.operator.NativeColumnarTableFunctionOperator",
                 "tech.streamfusion.operator.NativeColumnarGroupAggregateOperator",
+                "tech.streamfusion.operator.NativeColumnarDeduplicateOperator",
+                "tech.streamfusion.operator.NativeColumnarKeepLastDeduplicateOperator",
+                "tech.streamfusion.operator.NativeColumnarChangelogNormalizeOperator",
                 "tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator",
+                "tech.streamfusion.operator.NativeIntervalJoinOperator",
+                "tech.streamfusion.operator.NativeTemporalJoinOperator",
+                "tech.streamfusion.operator.NativeWindowJoinOperator",
                 "tech.streamfusion.operator.NativeColumnarTopNOperator",
+                "tech.streamfusion.operator.NativeColumnarWindowRankOperator",
+                "tech.streamfusion.operator.NativeColumnarTemporalSortOperator",
+                "tech.streamfusion.operator.NativeColumnarFirstNOperator",
                 "tech.streamfusion.operator.NativeWindowOperatorCore",
+                "tech.streamfusion.operator.NativeRowWindowOperatorCore",
+                "tech.streamfusion.operator.NativeColumnarWindowAggregateOperator",
+                "tech.streamfusion.operator.NativeColumnarLocalWindowAggregateOperator",
+                "tech.streamfusion.operator.NativeColumnarSessionWindowAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarGlobalWindowAggregateOperator"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) -> {
@@ -200,7 +346,9 @@ public final class StreamFusionSuiteAgent {
                   || type.getName().endsWith("NativeColumnarLocalGroupAggregateOperator")) {
                 return builder.visit(Advice.to(RecordNativeBatch.class).on(named("update")));
               }
-              if (type.getName().endsWith("NativeColumnarTopNOperator")) {
+              if (type.getName().endsWith("NativeColumnarTopNOperator")
+                  || type.getName().endsWith("NativeColumnarKeepLastDeduplicateOperator")
+                  || type.getName().endsWith("NativeColumnarChangelogNormalizeOperator")) {
                 return builder.visit(Advice.to(RecordNativeBatch.class).on(named("push")));
               }
               if (type.getName().endsWith("NativeColumnarUpdatingJoinOperator")) {
@@ -209,12 +357,20 @@ public final class StreamFusionSuiteAgent {
               if (type.getName().endsWith("NativeWindowOperatorCore")) {
                 return builder.visit(
                     Advice.to(RecordNativeBatch.class)
-                        .on(namedOneOf("updateColumnarInternal", "updateColumnarAttached")));
+                        .on(
+                            named("updateColumnarInternal")
+                                .or(named("updateColumnarAttached").and(takesArguments(7)))));
+              }
+              if (type.getName().endsWith("NativeRowWindowOperatorCore")
+                  || type.getName().endsWith("NativeColumnarWindowAggregateOperator")
+                  || type.getName().endsWith("NativeColumnarLocalWindowAggregateOperator")
+                  || type.getName().endsWith("NativeColumnarSessionWindowAggregateOperator")) {
+                return builder;
               }
               return builder.visit(
                   Advice.to(RecordNativeElement.class)
                       .on(
-                          named("processElement")
+                          namedOneOf("processElement", "processElement1", "processElement2")
                               .and(
                                   takesArgument(
                                       0,
@@ -254,9 +410,11 @@ public final class StreamFusionSuiteAgent {
         .type(named(NATIVE_STATEFUL_OPERATOR))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
-                builder.visit(
-                    Advice.to(ReportNativeMemoryState.class)
-                        .on(named("initializeState").and(takesArguments(1)))))
+                builder
+                    .visit(
+                        Advice.to(ReportNativeMemoryState.class)
+                            .on(named("initializeState").and(takesArguments(1))))
+                    .visit(Advice.to(BindNativeExecution.class).on(named("open"))))
         .type(named(NATIVE_PARQUET_WRITER_FACTORY))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -433,15 +591,20 @@ public final class StreamFusionSuiteAgent {
 
   public static final class RecordSubmittedJob {
     @Advice.OnMethodEnter
-    static Object enter(@Advice.AllArguments Object[] arguments) {
-      return SqlInventory.submitting(arguments);
+    static Object[] enter(@Advice.AllArguments Object[] arguments) throws Exception {
+      return new Object[] {
+        SqlInventory.submitting(arguments), NativeExecution.submitting(arguments)
+      };
     }
 
     @Advice.OnMethodExit(onThrowable = Throwable.class)
     static void exit(
-        @Advice.Enter Object scope, @Advice.Return Object client, @Advice.Thrown Throwable failure)
+        @Advice.Enter Object[] scope,
+        @Advice.Return Object client,
+        @Advice.Thrown Throwable failure)
         throws Exception {
-      SqlInventory.submitted(scope, client, failure);
+      SqlInventory.submitted(scope[0], client, failure);
+      NativeExecution.submitted(scope[1], client, failure);
     }
   }
 
@@ -561,7 +724,8 @@ public final class StreamFusionSuiteAgent {
     }
 
     @Advice.OnMethodExit(onThrowable = Throwable.class)
-    static void exit(@Advice.Enter NativeExecution.Scope scope, @Advice.Thrown Throwable failure) {
+    public static void exit(
+        @Advice.Enter NativeExecution.Scope scope, @Advice.Thrown Throwable failure) {
       try {
         NativeExecution.finish(scope);
       } catch (AssertionError proofFailure) {
@@ -570,6 +734,136 @@ public final class StreamFusionSuiteAgent {
         }
         failure.addSuppressed(proofFailure);
       }
+    }
+  }
+
+  public static final class RequireCanonicalRestoreExecution {
+    @Advice.OnMethodEnter
+    static NativeExecution.Scope enter(
+        @Advice.This Object fixture, @Advice.Argument(0) Object program) {
+      return NativeExecution.beginRestore(fixture.getClass().getName(), fixture, program);
+    }
+
+    @Advice.OnMethodExit(onThrowable = Throwable.class)
+    static void exit(@Advice.Enter NativeExecution.Scope scope, @Advice.Thrown Throwable failure) {
+      if (scope == null) return;
+      RequireNativeExecution.exit(scope, failure);
+    }
+  }
+
+  public static final class RecordCanonicalGroupImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(0) long handle,
+        @Advice.Argument(2) java.util.List<?> rows,
+        @Advice.Argument(3) boolean validating) {
+      if (!validating) NativeExecution.restoredGroup(handle, rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalNormalizerImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(2) java.util.List<?> rows, @Advice.Argument(3) boolean validateOnly) {
+      if (!validateOnly)
+        NativeExecution.restored("NativeColumnarChangelogNormalizeOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalBufferedDedupImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(3) java.util.List<?> rows, @Advice.Argument(4) boolean validateOnly) {
+      if (!validateOnly) NativeExecution.restored("NativeColumnarDeduplicateOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalEagerDedupImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(0) java.util.List<?> rows, @Advice.Argument(3) boolean validateOnly) {
+      if (!validateOnly)
+        NativeExecution.restored("NativeColumnarKeepLastDeduplicateOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalRankImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(2) java.util.List<?> rows, @Advice.Argument(3) boolean validateOnly) {
+      if (!validateOnly) NativeExecution.restored("NativeColumnarTopNOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalRetractingRankImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.This Object contract,
+        @Advice.Argument(2) java.util.List<?> rows,
+        @Advice.Argument(3) boolean validating)
+        throws ReflectiveOperationException {
+      if (validating || rows.isEmpty()) return;
+      var field = contract.getClass().getDeclaredField("rowType");
+      field.setAccessible(true);
+      Object rowType = field.get(contract);
+      int tagColumn = (int) rowType.getClass().getMethod("getFieldCount").invoke(rowType) + 3;
+      int dataRows = 0;
+      for (Object row : rows) {
+        byte tag = (byte) row.getClass().getMethod("getByte", int.class).invoke(row, tagColumn);
+        if (tag >= 0 && tag <= 3) dataRows++;
+      }
+      NativeExecution.restored("NativeColumnarTopNOperator", dataRows);
+    }
+  }
+
+  public static final class RecordCanonicalFirstNImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(1) java.util.List<?> rows, @Advice.Argument(2) boolean validateOnly) {
+      if (!validateOnly) NativeExecution.restored("NativeColumnarFirstNOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalJoinImport {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(3) java.util.List<?> rows) {
+      NativeExecution.restored("NativeColumnarUpdatingJoinOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalIntervalJoinImport {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.Argument(2) java.util.List<?> rows, @Advice.Argument(3) boolean timers) {
+      if (!timers) NativeExecution.restored("NativeIntervalJoinOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalTemporalJoinImport {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(1) int side, @Advice.Argument(2) java.util.List<?> rows) {
+      if (side >= 0) NativeExecution.restored("NativeTemporalJoinOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalWindowImport {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(0) java.util.List<?> rows, @Advice.Argument(1) long handle) {
+      NativeExecution.restoredWindow(handle, rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalWindowRankImport {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(0) java.util.List<?> rows) {
+      NativeExecution.restored("NativeColumnarWindowRankOperator", rows.size());
+    }
+  }
+
+  public static final class RecordCanonicalWindowJoinImport {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(2) java.util.List<?> rows) {
+      NativeExecution.restored("NativeWindowJoinOperator", rows.size());
     }
   }
 
@@ -603,6 +897,20 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodExit
     static void exit(@Advice.This Object operator) {
       NativeExecution.opened(operator);
+    }
+  }
+
+  public static final class BindStockWindowState {
+    @Advice.OnMethodExit
+    static void exit(@Advice.This Object operator) {
+      NativeExecution.stockOpened(operator);
+    }
+  }
+
+  public static final class RecordStockWindowInput {
+    @Advice.OnMethodExit
+    static void exit(@Advice.This Object operator) {
+      NativeExecution.stockCompleted(operator);
     }
   }
 

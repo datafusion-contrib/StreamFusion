@@ -150,22 +150,9 @@ final class DorisSinkRuntime {
     long retention = config.getStateRetentionTime();
     long ttl =
         strategy == ExecutionConfigOptions.SinkUpsertMaterializeStrategy.LEGACY ? retention : 0;
-    boolean adaptive = strategy == ExecutionConfigOptions.SinkUpsertMaterializeStrategy.ADAPTIVE;
-    Long high =
-        adaptive
-            ? config.get(
-                ExecutionConfigOptions.TABLE_EXEC_SINK_UPSERT_MATERIALIZE_ADAPTIVE_THRESHOLD_HIGH)
-            : null;
-    Long low =
-        adaptive
-            ? config.get(
-                ExecutionConfigOptions.TABLE_EXEC_SINK_UPSERT_MATERIALIZE_ADAPTIVE_THRESHOLD_LOW)
-            : null;
     NativeSinkMaterializer operator =
-        strategy == ExecutionConfigOptions.SinkUpsertMaterializeStrategy.LEGACY
-            ? new NativeSinkMaterializer(keys, timestampPrecisions, inputUpsertKeys, ttl, groups)
-            : new StrategyMaterializer(
-                type, strategy, keys, timestampPrecisions, inputUpsertKeys, groups, high, low);
+        SinkMaterializerFactory.create(
+            type, keys, timestampPrecisions, inputUpsertKeys, ttl, groups, strategy, config);
     var materialized =
         new OneInputTransformation<>(
             routed,
@@ -176,77 +163,5 @@ final class DorisSinkRuntime {
             false);
     FlinkKeyGroupUtils.applyColumnarKeying(materialized, groups);
     return materialized;
-  }
-
-  /** Retains released Flink 2.2's state strategy and backend-dependent threshold validation. */
-  private static final class StrategyMaterializer extends NativeSinkMaterializer {
-    private final ExecutionConfigOptions.SinkUpsertMaterializeStrategy strategy;
-    private final Long high;
-    private final Long low;
-    private final int[] matchPrecisions;
-    private boolean serializedKeys;
-    private long effectiveHigh;
-    private long effectiveLow;
-
-    StrategyMaterializer(
-        RowType type,
-        ExecutionConfigOptions.SinkUpsertMaterializeStrategy strategy,
-        int[] keys,
-        int[] precisions,
-        int[] upsertKeys,
-        int groups,
-        Long high,
-        Long low) {
-      super(keys, precisions, upsertKeys, 0, groups);
-      this.strategy = strategy;
-      int[] match =
-          upsertKeys == null || upsertKeys.length == 0
-              ? java.util.stream.IntStream.range(0, type.getFieldCount()).toArray()
-              : upsertKeys;
-      matchPrecisions = FlinkKeyGroupUtils.timestampPrecisions(type, match);
-      this.high = high;
-      this.low = low;
-    }
-
-    @Override
-    protected void beforeHandleCreation() {
-      String backend = getKeyedStateStore().getBackendTypeIdentifier().trim();
-      boolean heap = backend.equalsIgnoreCase("heap") || backend.equalsIgnoreCase("hashmap");
-      serializedKeys = !heap;
-      if (strategy == ExecutionConfigOptions.SinkUpsertMaterializeStrategy.ADAPTIVE) {
-        effectiveHigh = high == null ? (heap ? 400 : 50) : high;
-        effectiveLow = low == null ? (heap ? 300 : 40) : low;
-        org.apache.flink.util.Preconditions.checkArgument(effectiveHigh > effectiveLow);
-      }
-    }
-
-    @Override
-    protected int strategyMode() {
-      switch (strategy) {
-        case VALUE:
-          return 1;
-        case MAP:
-          return serializedKeys ? 4 : 2;
-        case ADAPTIVE:
-          return serializedKeys ? 5 : 3;
-        default:
-          return 0;
-      }
-    }
-
-    @Override
-    protected int[] matchTimestampPrecisions() {
-      return matchPrecisions;
-    }
-
-    @Override
-    protected long adaptiveHighThreshold() {
-      return effectiveHigh;
-    }
-
-    @Override
-    protected long adaptiveLowThreshold() {
-      return effectiveLow;
-    }
   }
 }

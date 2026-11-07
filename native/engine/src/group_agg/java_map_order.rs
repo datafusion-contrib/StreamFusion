@@ -34,6 +34,10 @@ impl<K: Clone + Ord> JavaMapOrder<K> {
         }
     }
 
+    pub(crate) fn capacity(&self) -> usize {
+        self.buckets.len()
+    }
+
     pub(crate) fn clear(&mut self) {
         self.buckets.fill(Bucket::default());
         self.nodes = Vec::new();

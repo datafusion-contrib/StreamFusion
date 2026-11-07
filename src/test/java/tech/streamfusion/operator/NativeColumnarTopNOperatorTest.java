@@ -45,6 +45,11 @@ class NativeColumnarTopNOperatorTest {
   }
 
   private static NativeColumnarTopNOperator operator(long stateTtlMillis, long limit) {
+    return operator(stateTtlMillis, limit, false);
+  }
+
+  private static NativeColumnarTopNOperator operator(
+      long stateTtlMillis, long limit, boolean before) {
     return new NativeColumnarTopNOperator(
         new int[] {0},
         new int[] {-1},
@@ -58,7 +63,7 @@ class NativeColumnarTopNOperatorTest {
         false,
         null,
         null,
-        false,
+        before,
         false,
         -1,
         stateTtlMillis,
@@ -66,29 +71,59 @@ class NativeColumnarTopNOperatorTest {
   }
 
   @ParameterizedTest
-  @org.junit.jupiter.params.provider.CsvSource({"false,false", "false,true", "true,false", "true,true"})
-  void appendTop1RetainsTieExpiryAndCanonicalBackendContinuation(boolean writeRocks,
-      boolean readRocks) throws Exception {
+  @org.junit.jupiter.params.provider.CsvSource({
+    "false,false,false",
+    "false,true,false",
+    "true,false,false",
+    "true,true,false",
+    "false,false,true",
+    "false,true,true",
+    "true,false,true",
+    "true,true,true"
+  })
+  void appendTop1RetainsTieExpiryAndCanonicalBackendContinuation(
+      boolean writeRocks, boolean readRocks, boolean beforeImages) throws Exception {
     OperatorSubtaskState snapshot;
-    try (var allocator = new RootAllocator(); var before = harness(operator(1000, 1), 1, 0)) {
-      if (writeRocks) before.setStateBackend(new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
-          .createFromConfig(new org.apache.flink.configuration.Configuration(), getClass().getClassLoader()));
+    try (var allocator = new RootAllocator();
+        var before = harness(operator(1000, 1, beforeImages), 1, 0)) {
+      if (writeRocks)
+        before.setStateBackend(
+            new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
+                .createFromConfig(
+                    new org.apache.flink.configuration.Configuration(),
+                    getClass().getClassLoader()));
       before.setup(new ArrowBatchSerializer());
       before.open();
       before.setProcessingTime(5000);
       before.processElement(new StreamRecord<>(batch(allocator, row(1, 5), row(1, 3))));
-      assertEquals(List.of(change(RowKind.INSERT, 1, 5), change(RowKind.DELETE, 1, 5),
-          change(RowKind.INSERT, 1, 3)), collect(before));
+      assertEquals(
+          beforeImages
+              ? List.of(
+                  change(RowKind.INSERT, 1, 5),
+                  change(RowKind.UPDATE_BEFORE, 1, 5),
+                  change(RowKind.UPDATE_AFTER, 1, 3))
+              : List.of(change(RowKind.INSERT, 1, 5), change(RowKind.UPDATE_AFTER, 1, 3)),
+          collect(before));
       before.setProcessingTime(5800);
       before.processElement(new StreamRecord<>(batch(allocator, row(1, 3), row(1, 8))));
       assertEquals(List.of(), collect(before));
-      snapshot = before.snapshotWithLocalState(1, 1,
-          org.apache.flink.runtime.checkpoint.SavepointType.savepoint(
-              org.apache.flink.core.execution.SavepointFormatType.CANONICAL)).getJobManagerOwnedState();
+      snapshot =
+          before
+              .snapshotWithLocalState(
+                  1,
+                  1,
+                  org.apache.flink.runtime.checkpoint.SavepointType.savepoint(
+                      org.apache.flink.core.execution.SavepointFormatType.CANONICAL))
+              .getJobManagerOwnedState();
     }
-    try (var allocator = new RootAllocator(); var restored = harness(operator(1000, 1), 1, 0)) {
-      if (readRocks) restored.setStateBackend(new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
-          .createFromConfig(new org.apache.flink.configuration.Configuration(), getClass().getClassLoader()));
+    try (var allocator = new RootAllocator();
+        var restored = harness(operator(1000, 1, beforeImages), 1, 0)) {
+      if (readRocks)
+        restored.setStateBackend(
+            new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
+                .createFromConfig(
+                    new org.apache.flink.configuration.Configuration(),
+                    getClass().getClassLoader()));
       restored.setup(new ArrowBatchSerializer());
       restored.initializeState(snapshot);
       restored.open();
@@ -97,8 +132,14 @@ class NativeColumnarTopNOperatorTest {
       assertEquals(List.of(), collect(restored));
       restored.setProcessingTime(6800);
       restored.processElement(new StreamRecord<>(batch(allocator, row(1, 8), row(1, 7))));
-      assertEquals(List.of(change(RowKind.INSERT, 1, 8), change(RowKind.DELETE, 1, 8),
-          change(RowKind.INSERT, 1, 7)), collect(restored));
+      assertEquals(
+          beforeImages
+              ? List.of(
+                  change(RowKind.INSERT, 1, 8),
+                  change(RowKind.UPDATE_BEFORE, 1, 8),
+                  change(RowKind.UPDATE_AFTER, 1, 7))
+              : List.of(change(RowKind.INSERT, 1, 8), change(RowKind.UPDATE_AFTER, 1, 7)),
+          collect(restored));
     }
   }
 

@@ -31,34 +31,61 @@ cached inner aggregates unchanged. Append-only duplicate reads do not refresh me
 setting another filter bit does. Retracting counters write on admitted updates. Native raw
 keyed snapshots preserve both the shared deadlines and cached values independently.
 
+## Unbounded OVER: independent accumulator and DISTINCT view lifetimes
+
+Released Flink 2.2.1 puts value TTL on the processing-time unbounded OVER accumulator but
+opens its DISTINCT MapViews without TTL. Native expiry therefore resets only scalar folds;
+existing memberships continue suppressing duplicates. Untouched raw scalar ages remain intact
+and membership-only keys need no synthetic accumulator. Memory checkpoints distinguish their
+absent scalar through a nullable TTL clock; persistent membership tables survive without a fold
+row. Old pre-TTL snapshots adopt the restore clock, while an explicitly absent accumulator does
+not. The stock canonical adapter keeps the released state schemas and serializers unchanged.
+This follows Flink's lifecycle within the existing incremental OVER architecture rather than
+Arroyo's per-timestamp window-execution retention. Benchmarking is deferred under #569.
+
 ## Temporal join and OVER: lazy check for the cleanup timer
 
 Flink retention-bounds the temporal join not with per-value TTL but with one per-key
 processing-time cleanup timer (deadline `now + 1.5×retention`, moved under a hysteresis rule,
-clearing the key's whole state when it fires). The native operator keeps the same deadline in a
-per-key map and enforces it lazily — at each key touch, plus a once-per-retention silent sweep —
-instead of registering a timer. Firing emits nothing and only affects what later probes see, so
-the substitution is observably identical within the per-call clock sampling above. One narrowing:
-Flink also re-arms the deadline when a key's event-time timer fires; we replicate that for keys
-firing buffered probe rows, but a build-only key's single fire-time re-arm — observable only when
-the watermark trails the wall clock by more than half the retention — is not replicated, so such
-a key expires at the deadline its last push registered (never sooner than one full max retention
-after its last write).
+clearing the key's whole state when it fires). The operator runtime now schedules one callback
+for the minimum native per-key deadline. Each callback expires all keys due at its timestamp,
+then schedules the next minimum. Moving the minimum cancels the prior callback. Cleanup remains
+silent; retained per-key clocks re-arm native checkpoint recovery without a second persisted host
+timer. The zero-or-one deadline result keeps `Long.MIN_VALUE` valid. Processing clock additions
+and the planner-derived max retention preserve released Java-long wraparound.
 
-On the persistent RocksDB backend the same lazy + sweep scheme narrows once more: the memory
-path visits every buffered key at each watermark advance and can clear an expired key whose rows
-all sit above the watermark, while the backend only sees the keys the watermark actually fires
-(visiting the rest would mean a full state read per advance). Such a key's state lingers until
-its next fire or the once-per-retention sweep — silent either way, since a fired deadline emits
-nothing and the expiry decision at the eventual fire uses the same deadline.
+Callback-driven execution disables lazy touch/sweep expiry, preserving mailbox input/callback
+ordering. Native standalone callers retain lazy enforcement unless they bind host cleanup timers.
+Both stores force expiry independently of event time when the callback fires. Finish retains
+updated native deadlines without re-registering callbacks on a stopped processing-time service.
 
-The OVER aggregate's deadline shapes (rowtime frames and proctime bounded ROWS) make the same
-lazy + sweep substitution. Flink's fired timer defers a rowtime key that still has buffered rows
+Both stores now refresh cleanup on actual event callbacks, including build-only callbacks.
+Independent event callback ownership survives cleanup and recovery. Watermarks without callbacks
+do not prune build versions; this preserves released Flink behavior for late probes. Native
+checkpoints preserve signed per-key probe cursors, registered event values and orphan callbacks,
+including metadata-only key groups. Representative released 2.2.1 temporal canonical transfer is verified directly from live state;
+the stock compiled-plan loader now binds it automatically, while complete-job qualification
+remains unfinished.
+
+The OVER aggregate's rowtime deadline shapes retain the same lazy + sweep substitution. Flink's fired timer defers a rowtime key that still has buffered rows
 awaiting a watermark, re-registering from the fire time (`fire + max`); our deferral re-arm runs
 at the next lazy check or sweep instead (`check-time now + max`), which keeps the state
 marginally longer — silent, and bounded by the lazy-check granularity. Bounded RANGE over rowtime
 takes no retention because Flink's own function accepts none: its cleanup is the event-time frame
 eviction derived from the frame bound, which the native buffer already applies.
+
+Processing-time bounded ROWS now uses host processing-time callbacks in the operator runtime.
+A single scheduled callback tracks the minimum of its native per-key cleanup deadlines; moving
+that minimum cancels the prior callback. Each callback clears all keys due at its timestamp,
+then re-arms the next deadline. This is equivalent to the released per-key queue because cleanup
+is silent and these admitted aggregates have no user cleanup callbacks. The native state retains
+all per-key deadlines, so native file/key-group restore and stock canonical import re-arm the
+correct timer without adding a second persisted global timer. A zero-or-one JNI deadline result
+keeps `Long.MIN_VALUE` valid. Callback-driven mode disables lazy touch/sweep expiration, preventing
+premature cleanup of a newly registered past timer at the same host clock tick. Original native
+standalone callers retain their lazy mode. The processing-time ROWS path also preserves Java's
+wrapping retention/deadline arithmetic. Its stock canonical adapter exports the actual cleanup
+ValueState and Void timer; idle state is already retired when a savepoint barrier arrives.
 
 ## Retracting Top-N: whole-buffer expiry
 

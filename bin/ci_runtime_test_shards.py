@@ -23,15 +23,26 @@ FIRST_SHARD_CLASSES = AUDIT_CLASSES | {
 DURATIONS = Path(__file__).resolve().parents[1] / "dev/ci/runtime-durations.json"
 
 
-def partition(classes, count, durations=None):
-    if count < 1:
-        raise ValueError("Shard count must be positive")
+def candidates_for_suite(classes, suite):
+    if suite not in ("all", "runtime", "canonical"):
+        raise ValueError("Unknown test suite")
     candidates = sorted(
         path.relative_to(classes).with_suffix("").as_posix()
         for path in classes.rglob("*.class")
         if "$" not in path.name
         and any(fnmatch.fnmatchcase(path.stem, pattern) for pattern in DEFAULT_INCLUDES)
     )
+    if suite == "all":
+        return candidates
+    return [name for name in candidates
+            if (name.startswith("tech/streamfusion/Canonical") and name.endswith("JobTest"))
+            == (suite == "canonical")]
+
+
+def partition(classes, count, suite="all", durations=None):
+    if count < 1:
+        raise ValueError("Shard count must be positive")
+    candidates = candidates_for_suite(classes, suite)
     if not candidates:
         raise ValueError("No compiled Surefire test candidates found")
     if durations is None:
@@ -43,7 +54,9 @@ def partition(classes, count, durations=None):
         return max(0.001, durations.get(name, 1.0))
     shards = [[] for _ in range(count)]
     loads = [0.0] * count
-    for name in sorted(candidates, key=lambda name: (name not in FIRST_SHARD_CLASSES, -cost(name), name)):
+    ordered = sorted(
+        candidates, key=lambda name: (name not in FIRST_SHARD_CLASSES, -cost(name), name))
+    for name in ordered:
         index = 0 if name in FIRST_SHARD_CLASSES else min(
             range(count), key=lambda index: (loads[index], len(shards[index]), index))
         shards[index].append(name)
@@ -53,12 +66,14 @@ def partition(classes, count, durations=None):
     return [sorted(shard) for shard in shards]
 
 
-def write_selection(classes, count, index, output):
+def write_selection(classes, count, index, output, suite="all"):
     if index not in range(1, count + 1):
         raise ValueError("Shard index must be between 1 and the shard count")
-    shards = partition(classes, count)
+    shards = partition(classes, count, suite)
     output.write_text("".join(name + ".java\n" for name in shards[index - 1]))
-    manifest = {"shard": index, "count": count, "classes": shards[index - 1],
+    manifest = {"shard": index, "count": count, "suite": suite, "classes": shards[index - 1],
+                "complete_inventory_sha256": hashlib.sha256(
+                    json.dumps(candidates_for_suite(classes, "all")).encode()).hexdigest(),
                 "inventory_sha256": hashlib.sha256(
                     json.dumps(sorted(name for shard in shards for name in shard)).encode()).hexdigest(),
                 "shard_sizes": list(map(len, shards))}
@@ -73,9 +88,10 @@ def main():
     parser.add_argument("--count", type=int, required=True)
     parser.add_argument("--index", type=int, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--suite", choices=("all", "runtime", "canonical"), default="all")
     args = parser.parse_args()
     try:
-        write_selection(args.classes, args.count, args.index, args.output)
+        write_selection(args.classes, args.count, args.index, args.output, args.suite)
     except (OSError, ValueError) as error:
         parser.exit(1, f"Runtime test partition failed: {error}\n")
 

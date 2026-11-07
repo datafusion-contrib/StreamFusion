@@ -42,6 +42,24 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] keyTimestampPrecisions;
   private final int windowStartColumn;
   private final int windowEndColumn;
+  private int stateMaxParallelism = -1;
+  private String stateSessionTimeZoneId;
+  private long windowOffsetMillis;
+
+  public NativeColumnarWindowAggExecNode withWindowOffset(long offsetMillis) {
+    windowOffsetMillis = offsetMillis;
+    return this;
+  }
+
+  public NativeColumnarWindowAggExecNode withStateMaxParallelism(int maxParallelism) {
+    stateMaxParallelism = maxParallelism;
+    return this;
+  }
+
+  public NativeColumnarWindowAggExecNode withStateTimeZone(String timeZoneId) {
+    stateSessionTimeZoneId = timeZoneId;
+    return this;
+  }
 
   public NativeColumnarWindowAggExecNode(
       ReadableConfig tableConfig,
@@ -129,37 +147,46 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
-    // A local-zoned rowtime renders window bounds in the session zone; a plain TIMESTAMP renders them
+    // A local-zoned rowtime renders window bounds in the session zone; a plain TIMESTAMP renders
+    // them
     // as the raw wall-clock, i.e. in UTC (the bounds' millis are already the wall-clock).
-    String timeZoneId =
-        timestampLtz ? planner.getTableConfig().getLocalTimeZone().getId() : "UTC";
+    String sessionTimeZoneId =
+        stateSessionTimeZoneId == null
+            ? planner.getTableConfig().getLocalTimeZone().getId()
+            : stateSessionTimeZoneId;
+    String timeZoneId = timestampLtz ? sessionTimeZoneId : "UTC";
     RowType outputType = (RowType) getOutputType();
     int maxParallelism =
-        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+        stateMaxParallelism > 0
+            ? stateMaxParallelism
+            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+    var operator =
+        new NativeColumnarWindowAggregateOperator(
+            cumulative,
+            windowMillis,
+            slideMillis,
+            timeColumn,
+            valueColumns,
+            filterColumns,
+            keyColumns,
+            NativeWindowOperatorCore.keyTypes(outputType, keyColumns.length),
+            valueTypes,
+            aggregateKinds,
+            timeZoneId,
+            timestampLtz,
+            sessionTimeZoneId,
+            outputType,
+            proctime,
+            keyTimestampPrecisions,
+            maxParallelism,
+            windowStartColumn,
+            windowEndColumn);
+    operator.setWindowOffsetMillis(windowOffsetMillis);
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
-            new NativeColumnarWindowAggregateOperator(
-                cumulative,
-                windowMillis,
-                slideMillis,
-                timeColumn,
-                valueColumns,
-                filterColumns,
-                keyColumns,
-                NativeWindowOperatorCore.keyTypes(outputType, keyColumns.length),
-                valueTypes,
-                aggregateKinds,
-                timeZoneId,
-                timestampLtz,
-                planner.getTableConfig().getLocalTimeZone().getId(),
-                outputType,
-                proctime,
-                keyTimestampPrecisions,
-                maxParallelism,
-                windowStartColumn,
-                windowEndColumn),
+            operator,
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);

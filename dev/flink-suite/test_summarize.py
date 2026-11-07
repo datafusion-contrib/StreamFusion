@@ -174,6 +174,9 @@ class NativeExecutionSummaryTest(unittest.TestCase):
             "",
             "garbage",
             f"{self.CALC}\t*\tNativeCalcOperator\n{self.CALC}\t*\tNativeCalcOperator",
+            f"{self.CALC}\t*\t!@MissingReason",
+            f"{self.CALC}\t*\t!@:reason",
+            f"{self.CALC}\t*\t!@NativeCalcOperator:",
         ):
             with self.subTest(content=content):
                 path.write_text(content)
@@ -196,6 +199,18 @@ class NativeExecutionSummaryTest(unittest.TestCase):
             "NativeColumnarWindowAggregateOperator=1",
             reasons=self.FALLBACK_REASON,
         )
+        self.assertTrue(self.check({self.FALLBACK: 1})[2])
+
+    def test_family_fallback_allows_other_native_work_but_rejects_wrong_admission(self):
+        self.contracts[self.FALLBACK] = {
+            "*": f"!@NativeColumnarChangelogNormalizeOperator:{self.FALLBACK_REASON}"
+        }
+        self.record(self.FALLBACK, "NativeCalcOperator=3", reasons=self.FALLBACK_REASON)
+        self.assertEqual((0, 1, []), self.check({self.FALLBACK: 1}))
+        self.record(self.FALLBACK, "NativeColumnarChangelogNormalizeOperator=1",
+                    reasons=self.FALLBACK_REASON)
+        self.assertTrue(self.check({self.FALLBACK: 1})[2])
+        self.record(self.FALLBACK, "NativeCalcOperator=3", reasons="different reason")
         self.assertTrue(self.check({self.FALLBACK: 1})[2])
 
     def test_split_distinct_requires_work_from_both_window_stages(self):
@@ -313,6 +328,304 @@ class ProcessExitSummaryTest(unittest.TestCase):
         for xml in (None, "<broken", "<other/>", '<testsuite tests="2"><testcase/></testsuite>',
                     '<testsuite tests="NaN"/>', '<testsuite tests="-1"/>'):
             self.assertNotEqual(0, self.summarize(xml, 0, marker))
+
+
+class CanonicalRestoreSummaryTest(unittest.TestCase):
+    TEST = "org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore"
+    FAMILY = "NativeColumnarUpdatingJoinOperator"
+
+    def check(self, contract, counts="", imported=None, reasons="", stock=None):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            encoded = base64.b64encode(reasons.encode()).decode()
+            suffix = "" if imported is None else "\t" + imported
+            if stock is not None:
+                suffix = "\t" + (imported or "") + "\t" + stock
+            (root / "one.tsv").write_text(f"{self.TEST}\t*\t{counts}\t{encoded}{suffix}\n")
+            observations = []
+            result = summarize.check_execution(root, Counter({self.TEST: 1}),
+                {self.TEST: {"*": contract}}, observations)
+            return result, observations
+
+    def test_mixed_sessions_require_native_work_and_real_stock_state(self):
+        contract = "NativeColumnarGroupAggregateOperator+StockSessionTableFunction"
+        for counts, stock in (("", "StockSessionTableFunction=3"),
+                              ("NativeColumnarGroupAggregateOperator=3", ""),
+                              ("NativeColumnarGroupAggregateOperator=3", "StockSessionTableFunction=0")):
+            with self.subTest(counts=counts, stock=stock):
+                self.assertTrue(self.check(contract, counts=counts, stock=stock)[0][2])
+        result, observations = self.check(contract, counts="NativeColumnarGroupAggregateOperator=3",
+                                           stock="StockSessionTableFunction=2")
+        self.assertEqual((1, 0, []), result)
+        self.assertEqual({"StockSessionTableFunction": 2}, observations[0]["stock_state_owner_rows"])
+        self.assertNotIn("StockSessionTableFunction", observations[0]["native_input_rows"])
+        self.assertEqual("mixed", observations[0]["observed_route"])
+
+    def test_secondary_temporal_sort_requires_real_stock_owner_and_native_calc(self):
+        absent = "NativeColumnarTemporalSortOperator"
+        reason = "temporal sort: secondary order keys require the stock sorter"
+        contract = "!@" + absent + ":" + reason + "&&NativeCalcOperator+StockTemporalSort"
+        for fields in ({}, {"counts": "NativeCalcOperator=2"}, {"stock": "StockTemporalSort=2"},
+                       {"counts": "NativeCalcOperator=2", "stock": "StockTemporalSort=2"},
+                       {"counts": "NativeCalcOperator=2," + absent + "=1", "stock": "StockTemporalSort=2", "reasons": reason}):
+            self.assertTrue(self.check(contract, **fields)[0][2])
+        result, observations = self.check(contract, counts="NativeCalcOperator=2", stock="StockTemporalSort=2", reasons=reason)
+        self.assertEqual((0, 1, []), result)
+        self.assertEqual("mixed", observations[0]["observed_route"])
+
+    def test_window_join_fallback_requires_the_real_stock_state_owner(self):
+        reason = "window join: semi/anti retain the released stock state owner"
+        contract = "!@NativeWindowJoinOperator:" + reason + "&&StockWindowJoin"
+        for fields in ({}, {"counts": "NativeCalcOperator=2", "reasons": reason},
+                       {"stock": "StockWindowJoin=2"},
+                       {"stock": "StockWindowJoin=0", "reasons": reason},
+                       {"stock": "StockWindowJoin=2", "counts": "NativeWindowJoinOperator=1", "reasons": reason},
+                       {"stock": "StockWindowJoin=2", "imported": "NativeWindowJoinOperator=1", "reasons": reason}):
+            self.assertTrue(self.check(contract, **fields)[0][2])
+        result, observations = self.check(contract, stock="StockWindowJoin=2", reasons=reason)
+        self.assertEqual((0, 1, []), result)
+        self.assertEqual({"StockWindowJoin": 2}, observations[0]["stock_state_owner_rows"])
+        self.assertNotIn("StockWindowJoin", observations[0]["native_input_rows"])
+
+    def test_stock_work_cannot_be_counterfeited_as_native_rows(self):
+        result, _ = self.check("NativeColumnarGroupAggregateOperator+StockSessionTableFunction",
+            counts="NativeColumnarGroupAggregateOperator=3,StockSessionTableFunction=2")
+        self.assertTrue(result[2])
+
+    def test_session_fallback_requires_owner_calc_and_exact_reason(self):
+        absent = "NativeColumnarSessionWindowAggregateOperator"
+        reason = "window aggregate: retracting state contract is not bound"
+        contract = "!@" + absent + ":" + reason + "&&NativeCalcOperator+StockSessionWindowAggregate"
+        for counts, stock, reasons in (("", "StockSessionWindowAggregate=3", reason),
+                                      ("NativeCalcOperator=2", "", reason),
+                                      ("NativeCalcOperator=2", "StockSessionWindowAggregate=3", ""),
+                                      ("NativeCalcOperator=2," + absent + "=1", "StockSessionWindowAggregate=3", reason)):
+            with self.subTest(counts=counts, stock=stock, reasons=reasons):
+                self.assertTrue(self.check(contract, counts=counts, stock=stock, reasons=reasons)[0][2])
+        result, observations = self.check(contract, counts="NativeCalcOperator=2",
+            stock="StockSessionWindowAggregate=3", reasons=reason)
+        self.assertEqual((0, 1, []), result)
+        self.assertEqual("mixed", observations[0]["observed_route"])
+
+    def test_resume_requires_import_and_new_input_from_the_same_family(self):
+        contract = "@resume:" + self.FAMILY
+        for fields in ({}, {"counts": self.FAMILY + "=2"},
+                       {"imported": self.FAMILY + "=3"},
+                       {"counts": self.FAMILY + "=2", "imported": self.FAMILY + "=0"},
+                       {"counts": "NativeCalcOperator=2", "imported": self.FAMILY + "=3"},
+                       {"counts": self.FAMILY + "=2", "imported": "NativeCalcOperator=3"},
+                       {"counts": self.FAMILY + "=2", "imported": self.FAMILY + "=3", "stock": "StockSessionTableFunction=2"},
+                       {"counts": self.FAMILY + "=2", "imported": self.FAMILY + "=3", "reasons": "unexpected fallback"}):
+            with self.subTest(fields=fields):
+                self.assertTrue(self.check(contract, **fields)[0][2])
+        result, observations = self.check(contract, counts=self.FAMILY + "=2", imported=self.FAMILY + "=3")
+        self.assertEqual((1, 0, []), result)
+        self.assertEqual("native", observations[0]["observed_route"])
+        self.assertEqual({self.FAMILY: 3}, observations[0]["native_canonical_import_rows"])
+
+    def test_two_phase_resume_requires_local_work_and_global_import_and_input(self):
+        local = "NativeColumnarLocalGroupAggregateOperator"
+        contract = "@resume:" + self.FAMILY + "&&" + local
+        for fields in ({"counts": self.FAMILY + "=2", "imported": self.FAMILY + "=3"},
+                       {"counts": local + "=2", "imported": self.FAMILY + "=3"},
+                       {"counts": self.FAMILY + "=2," + local + "=3"},
+                       {"counts": self.FAMILY + "=2," + local + "=0", "imported": self.FAMILY + "=3"},
+                       {"counts": self.FAMILY + "=2," + local + "=3", "imported": local + "=3"}):
+            with self.subTest(fields=fields):
+                self.assertTrue(self.check(contract, **fields)[0][2])
+        result, _ = self.check(contract, counts=self.FAMILY + "=2," + local + "=3", imported=self.FAMILY + "=3")
+        self.assertEqual((1, 0, []), result)
+
+    def test_resume_companion_grammar_is_loaded_and_rejects_malformed_clauses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "contracts.tsv"
+            for suffix, valid in (("&&LocalOperator", True), ("&&LocalOperator+ExchangeOperator", True),
+                                  ("&&", False), ("&&Local&&Other", False), ("&Local", False)):
+                with self.subTest(suffix=suffix):
+                    contract = "@resume:" + self.FAMILY + suffix
+                    path.write_text("Probe#testRestore\t*\t" + contract + "\n")
+                    if valid:
+                        self.assertEqual(contract, summarize.execution_contracts(path)["Probe#testRestore"]["*"])
+                    else:
+                        with self.assertRaises(ValueError): summarize.execution_contracts(path)
+
+    def test_restore_only_proof_cannot_include_stock_input(self):
+        result, _ = self.check("@restore:" + self.FAMILY, imported=self.FAMILY + "=3",
+                               stock="StockSessionTableFunction=2")
+        self.assertTrue(result[2])
+
+    def test_restore_only_evidence_is_separate_from_input_rows(self):
+        result, observations = self.check("@restore:" + self.FAMILY, imported=self.FAMILY + "=3")
+        self.assertEqual((1, 0, []), result)
+        self.assertEqual({}, observations[0]["native_input_rows"])
+        self.assertEqual({self.FAMILY: 3}, observations[0]["native_canonical_import_rows"])
+        self.assertEqual("native_restore", observations[0]["observed_route"])
+
+    def test_empty_zero_or_another_family_cannot_prove_import(self):
+        for imported in (None, "", self.FAMILY + "=0", "NativeCalcOperator=3"):
+            with self.subTest(imported=imported):
+                result, _ = self.check("@restore:" + self.FAMILY, imported=imported)
+                self.assertTrue(result[2])
+
+    def test_import_cannot_replace_consumed_input(self):
+        result, _ = self.check(self.FAMILY, imported=self.FAMILY + "=3")
+        self.assertTrue(result[2])
+
+    def test_restore_only_contract_rejects_input_or_fallback(self):
+        for counts, reasons in ((self.FAMILY + "=1", ""), ("", "join unsupported")):
+            result, _ = self.check("@restore:" + self.FAMILY, counts=counts,
+                imported=self.FAMILY + "=3", reasons=reasons)
+            self.assertTrue(result[2])
+
+    def test_import_does_not_satisfy_full_or_family_fallback(self):
+        for contract in ("!join unsupported", "!@" + self.FAMILY + ":join unsupported"):
+            result, _ = self.check(contract, imported=self.FAMILY + "=3", reasons="join unsupported")
+            self.assertTrue(result[2])
+
+    def test_invalid_import_counts_cannot_satisfy_restore(self):
+        for imported in (self.FAMILY + "=-1", self.FAMILY + "=bad", self.FAMILY + "=3," + self.FAMILY + "=4"):
+            result, _ = self.check("@restore:" + self.FAMILY, imported=imported)
+            self.assertTrue(result[2])
+
+    def test_recorded_import_does_not_weaken_an_input_contract(self):
+        result, observations = self.check(self.FAMILY, counts=self.FAMILY + "=2", imported=self.FAMILY + "=3")
+        self.assertEqual((1, 0, []), result)
+        self.assertEqual("native", observations[0]["observed_route"])
+
+class ElidedTemporalSortSummaryTest(unittest.TestCase):
+    TEST = "org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalSortRestoreTest#testRestore"
+    VARIANT = "program=temporal_sort_proctime"
+    CONTRACT = "@elided:TemporalSort"
+
+    def evidence(self):
+        return {"submitted_graphs": {"job": {"nodes": [
+            {"id": 1, "operator": "SourceOperator", "inputs": [], "outputs": [2]},
+            {"id": 2, "operator": "StreamSink", "inputs": [1], "outputs": []}]}},
+            "native_opened": [], "native_imports": {}}
+
+    def check(self, evidence=None, *, native="", imported="", stock="", reasons="", extra=True,
+              test=None, variant=None, contract=None):
+        test = test or self.TEST
+        variant = variant or self.VARIANT
+        contract = contract or self.CONTRACT
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            reason = base64.b64encode(reasons.encode()).decode()
+            fields = [test, variant, native, reason, imported, stock]
+            if extra:
+                import json
+                fields.append(base64.b64encode(json.dumps(evidence).encode()).decode())
+            (root / "case.tsv").write_text("\t".join(fields) + "\n")
+            observations = []
+            result = summarize.check_execution(root, Counter({test: 1}),
+                {test: {variant: contract}}, observations)
+            return result, observations
+
+    def test_submitted_sort_free_graph_is_separate_from_native_and_fallback_credit(self):
+        for native in ("", "NativeCalcOperator=3"):
+            evidence = self.evidence()
+            if native:
+                evidence["native_opened"] = ["NativeCalcOperator"]
+            result, observations = self.check(evidence, native=native)
+            self.assertEqual((0, 0, []), result)
+            self.assertEqual("ordering_elided", observations[0]["observed_route"])
+            self.assertTrue(observations[0]["contract_satisfied"])
+
+    def test_empty_or_malformed_graphs_cannot_prove_elision(self):
+        import copy
+        invalid = [None, {}, {"submitted_graphs": {}}, self.evidence() | {"extra": 1}]
+        for mode in ("no_jobs", "single_node", "unknown_edge", "duplicate_node", "duplicate_edge", "unconnected_cycle",
+                     "stock_sort", "native_sort", "missing_factory", "native_open", "native_import"):
+            evidence = copy.deepcopy(self.evidence())
+            graph = evidence["submitted_graphs"]["job"]
+            if mode == "no_jobs": evidence["submitted_graphs"] = {}
+            elif mode == "single_node": graph["nodes"] = graph["nodes"][:1]
+            elif mode == "unknown_edge": graph["nodes"][0]["outputs"] = [999]
+            elif mode == "duplicate_node": graph["nodes"].append(graph["nodes"][0])
+            elif mode == "duplicate_edge": graph["nodes"][0]["outputs"] = [2, 2]
+            elif mode == "unconnected_cycle":
+                graph["nodes"].extend([
+                    {"id": 3, "operator": "Map", "inputs": [4], "outputs": [4]},
+                    {"id": 4, "operator": "Map", "inputs": [3], "outputs": [3]}])
+            elif mode == "stock_sort": graph["nodes"][0]["operator"] = "RowTimeSortOperator"
+            elif mode == "native_sort": graph["nodes"][0]["operator"] = "NativeColumnarTemporalSortOperator"
+            elif mode == "missing_factory": graph["nodes"][0]["operator"] = ""
+            elif mode == "native_open": evidence["native_opened"] = ["NativeColumnarTemporalSortOperator"]
+            elif mode == "native_import": evidence["native_imports"] = {"NativeColumnarTemporalSortOperator": 3}
+            invalid.append(evidence)
+        for evidence in invalid:
+            with self.subTest(evidence=evidence):
+                self.assertTrue(self.check(evidence)[0][2])
+        self.assertTrue(self.check(extra=False)[0][2])
+
+    def test_stateful_work_and_fallbacks_cannot_be_hidden_as_elision(self):
+        for fields in ({"native": "NativeColumnarTemporalSortOperator=3"},
+                       {"imported": "NativeColumnarTemporalSortOperator=3"},
+                       {"stock": "StockSessionTableFunction=3"}, {"reasons": "sort unsupported"}):
+            with self.subTest(fields=fields):
+                self.assertTrue(self.check(self.evidence(), **fields)[0][2])
+
+    def test_elision_does_not_apply_to_rowtime_unknown_programs_or_other_classes(self):
+        for fields in ({"variant": "program=temporal_sort_rowtime"}, {"variant": "program=unknown"},
+                       {"test": "org.example.Other#testRestore"}):
+            self.assertTrue(self.check(self.evidence(), **fields)[0][2])
+        self.assertTrue(self.check(self.evidence(), contract="NativeColumnarTemporalSortOperator")[0][2])
+
+    def test_registry_restricts_elision_to_the_original_stateless_program(self):
+        for test, variant, valid in ((self.TEST, self.VARIANT, True),
+                                     (self.TEST, "program=temporal_sort_rowtime", False),
+                                     (self.TEST, "*", False), ("org.example.Other#testRestore", self.VARIANT, False)):
+            with tempfile.TemporaryDirectory() as temporary:
+                file = Path(temporary) / "contracts.tsv"
+                file.write_text(f"{test}\t{variant}\t{self.CONTRACT}\n")
+                if valid:
+                    self.assertEqual(self.CONTRACT, summarize.execution_contracts(file)[test][variant])
+                else:
+                    with self.assertRaises(ValueError): summarize.execution_contracts(file)
+
+
+class ElidedIntervalJoinSummaryTest(unittest.TestCase):
+    TEST = "org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest#testRestore"
+    VARIANT = "program=interval_join_negative_interval"
+    CONTRACT = "@elided:IntervalJoin"
+    evidence = ElidedTemporalSortSummaryTest.evidence
+    check = ElidedTemporalSortSummaryTest.check
+
+    def test_impossible_interval_requires_calc_and_a_complete_graph(self):
+        evidence = self.evidence()
+        evidence["native_opened"] = ["NativeCalcOperator"]
+        result, observations = self.check(evidence, native="NativeCalcOperator=5")
+        self.assertEqual((0, 0, []), result)
+        self.assertEqual("interval_elided", observations[0]["observed_route"])
+        self.assertTrue(self.check(evidence)[0][2])
+        self.assertTrue(self.check(native="NativeCalcOperator=5", extra=False)[0][2])
+        self.assertTrue(self.check({}, native="NativeCalcOperator=5")[0][2])
+
+    def test_join_state_and_unrelated_work_cannot_be_hidden(self):
+        import copy
+        for operator in ("NativeIntervalJoinOperator", "KeyedCoProcessOperator", "RowTimeIntervalJoin"):
+            evidence = copy.deepcopy(self.evidence())
+            evidence["submitted_graphs"]["job"]["nodes"][0]["operator"] = operator
+            self.assertTrue(self.check(evidence, native="NativeCalcOperator=5")[0][2])
+        for fields in ({"native": "NativeIntervalJoinOperator=5"},
+                       {"native": "NativeCalcOperator=5", "imported": "NativeIntervalJoinOperator=3"},
+                       {"native": "NativeCalcOperator=5", "reasons": "interval unsupported"},
+                       {"native": "NativeCalcOperator=5", "stock": "StockWindowJoin=3"}):
+            self.assertTrue(self.check(self.evidence(), **fields)[0][2])
+
+    def test_other_programs_cannot_use_negative_interval_proof(self):
+        for variant in ("program=interval_join_event_time", "program=interval_join_proc_time", "program=unknown"):
+            self.assertTrue(self.check(self.evidence(), native="NativeCalcOperator=5", variant=variant)[0][2])
+
+    def test_registry_only_accepts_the_pinned_program(self):
+        for variant in (self.VARIANT, "*", "program=interval_join_event_time"):
+            with tempfile.TemporaryDirectory() as temporary:
+                file = Path(temporary) / "contracts.tsv"
+                file.write_text(f"{self.TEST}\t{variant}\t{self.CONTRACT}\n")
+                if variant == self.VARIANT:
+                    self.assertEqual(self.CONTRACT, summarize.execution_contracts(file)[self.TEST][variant])
+                else:
+                    with self.assertRaises(ValueError): summarize.execution_contracts(file)
 
 
 if __name__ == "__main__":

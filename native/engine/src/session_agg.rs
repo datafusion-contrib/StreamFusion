@@ -1,6 +1,9 @@
 use crate::window_calendar::WindowCalendar;
 use crate::*;
 
+mod admission;
+mod canonical;
+
 /// One open session for a key: its end (the latest element's timestamp plus the gap) and the
 /// incremental accumulators folding in its rows. The start is the map key that holds it.
 pub(crate) struct Session {
@@ -57,6 +60,7 @@ pub(crate) struct SessionAggregator {
     gap_millis: i64,
     calendar: Option<WindowCalendar>,
     next_timer_deadline: i64,
+    admission: Option<admission::SessionAdmission>,
     aggregates: Vec<WindowAggregate>,
     // Keyed by the arrow-row memcomparable key encoding, like the other aggregators (see
     // `TumblingAggregator::key_converter`).
@@ -67,6 +71,8 @@ pub(crate) struct SessionAggregator {
     pub(crate) late_drops: u64,
     pub(crate) memory: OperatorMemory,
     key_timestamp_precisions: Vec<i32>,
+    canonical_distinct: std::collections::HashSet<usize>,
+    canonical_distinct_counts: HashMap<(i64, OwnedRow, usize), i64>,
     /// Persistent-state mode: committed sessions live in the persistent store; the `sessions` map
     /// holds only the current bundle's touched keys (each hydrated wholesale on first touch —
     /// merging needs the key's neighboring sessions — written through at the bundle boundary, then
@@ -100,6 +106,7 @@ impl SessionAggregator {
             gap_millis,
             calendar: None,
             next_timer_deadline: i64::MIN,
+            admission: None,
             aggregates: build_aggregates(&kinds, &value_types),
             sessions: HashMap::default(),
             key_converter: None,
@@ -108,6 +115,8 @@ impl SessionAggregator {
             late_drops: 0,
             memory: OperatorMemory::unaccounted(),
             key_timestamp_precisions: Vec::new(),
+            canonical_distinct: std::collections::HashSet::new(),
+            canonical_distinct_counts: HashMap::default(),
             #[cfg(feature = "rocksdb-state")]
             store: None,
             #[cfg(feature = "rocksdb-state")]
@@ -299,9 +308,17 @@ impl SessionAggregator {
                     end = end.max(overlap_end);
                 }
                 let deadline = deadlines.as_ref().map_or(end, |ends| ends[&end]);
-                if deadline <= self.current_watermark {
+                let expired = self
+                    .admission
+                    .as_ref()
+                    .map_or(deadline <= self.current_watermark, |admission| {
+                        deadline.saturating_sub(1) <= admission.watermark
+                    });
+                if expired {
                     if merging {
-                        if let Some(calendar) = &self.calendar {
+                        if let Some(admission) = &self.admission {
+                            admission.reject_merge(start, end);
+                        } else if let Some(calendar) = &self.calendar {
                             calendar.reject_expired_merge(
                                 start,
                                 end,

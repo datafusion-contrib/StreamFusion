@@ -2,9 +2,17 @@ package tech.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
@@ -13,6 +21,7 @@ import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -204,16 +213,82 @@ class FlinkJvmOverSqlHarnessTest {
   }
 
   @org.junit.jupiter.api.Test
-  void boundedProcessingTimeRangeRetainsExplicitFallback() {
+  void boundedProcessingTimeRangeRetainsExplicitFallback(@TempDir Path directory) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
-              () -> environment(metrics, 1),
-              "SELECT id,test_aggregate(v) OVER (PARTITION BY k ORDER BY pt RANGE BETWEEN INTERVAL"
+              () ->
+                  proctimeFallbackEnvironment(
+                      metrics, directory.resolve(UUID.randomUUID() + ".complete").toString()),
+              "SELECT id,test_aggregate(v) OVER (PARTITION BY id ORDER BY pt RANGE BETWEEN INTERVAL"
                   + " '1' SECOND PRECEDING AND CURRENT ROW) FROM src");
       runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+      var expected = new ArrayList<java.util.List<Object>>();
+      for (int id = 0; id < 96; id++) {
+        expected.add(Arrays.asList("+I", id, id % 7 == 0 ? null : (long) id % 13));
+      }
+      assertEquals(NativeParity.multiset(expected), NativeParity.multiset(runs.host().rows()));
       assertFalse(runs.nativeRun().plan().contains("NativeJvmOver"));
       assertEquals(0, metrics.counterValue("jvmOverRows"));
+    }
+  }
+
+  private static TableEnvironment proctimeFallbackEnvironment(
+      RecoveryExecutionMetrics metrics, String completion) {
+    var env = metrics.environment(new Configuration(), 1, 0);
+    env.disableOperatorChaining();
+    var source =
+        env.fromSequence(0, 95)
+            .flatMap(
+                (Long id, org.apache.flink.util.Collector<Row> output) -> {
+                  output.collect(Row.of(id.intValue(), id % 7 == 0 ? null : id % 13));
+                  if (id == 95) {
+                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+                    while (!Files.exists(Path.of(completion))) {
+                      if (System.nanoTime() >= deadline) {
+                        throw new IllegalStateException(
+                            "Processing-time RANGE did not evaluate all 96 rows before end of input");
+                      }
+                      Thread.sleep(10);
+                    }
+                  }
+                })
+            .returns(Types.ROW_NAMED(new String[] {"id", "v"}, Types.INT, Types.LONG));
+    var table = StreamTableEnvironment.create(env);
+    table.createTemporaryView(
+        "src",
+        source,
+        Schema.newBuilder()
+            .column("id", DataTypes.INT())
+            .column("v", DataTypes.BIGINT())
+            .columnByExpression("pt", "PROCTIME()")
+            .build());
+    table.createTemporarySystemFunction("test_aggregate", new CompletingSum(completion));
+    return table;
+  }
+
+  @org.apache.flink.table.annotation.FunctionHint(
+      input = @org.apache.flink.table.annotation.DataTypeHint("BIGINT"),
+      output = @org.apache.flink.table.annotation.DataTypeHint("BIGINT"))
+  public static class CompletingSum extends PortableSqlFixtures.Sum {
+    private final String completion;
+    private int evaluated;
+
+    public CompletingSum(String completion) {
+      this.completion = completion;
+    }
+
+    @Override
+    public Long getValue(PortableSqlFixtures.SumState state) {
+      Long result = super.getValue(state);
+      if (++evaluated == 96) {
+        try {
+          Files.createFile(Path.of(completion));
+        } catch (IOException failure) {
+          throw new UncheckedIOException(failure);
+        }
+      }
+      return result;
     }
   }
 

@@ -1,6 +1,11 @@
 use crate::*;
 
+pub(crate) mod canonical_distinct;
+
+mod counted_distinct;
 mod floating_distinct;
+pub(crate) use counted_distinct::CountedDistinctAccumulator;
+pub(crate) const COUNT_DISTINCT_WITH_COUNTS: i64 = 43;
 mod floating_extreme;
 mod retracting_window;
 mod scalar_extreme;
@@ -663,6 +668,7 @@ pub(crate) enum WindowAggregate {
     RetractingCount,
     Builtin(AggregateFunctionExpr),
     FloatingDistinctCount(AggregateFunctionExpr, DataType),
+    CountedDistinct(DataType),
     IntegerAvg(DataType),
     WrappingIntSum,
     WrappingNarrowSum(DataType),
@@ -683,7 +689,7 @@ pub(crate) enum WindowAggregate {
 impl WindowAggregate {
     pub(crate) fn state_requires_restore(&self) -> bool {
         match self {
-            Self::Count => false,
+            Self::Count | Self::CountedDistinct(_) => false,
             Self::Builtin(aggregate)
                 if !aggregate.is_distinct()
                     && matches!(aggregate.fun().name(), "sum" | "count" | "min" | "max") =>
@@ -716,6 +722,7 @@ impl WindowAggregate {
 
     fn new(kind: i64, value_type: &DataType) -> Self {
         match (kind, value_type) {
+            (COUNT_DISTINCT_WITH_COUNTS, _) => WindowAggregate::CountedDistinct(value_type.clone()),
             (
                 22,
                 DataType::Int8
@@ -811,6 +818,9 @@ impl WindowAggregate {
             WindowAggregate::FloatingDistinctCount(_, value_type) => Box::new(
                 floating_distinct::FloatingDistinctCountAccumulator::new(value_type),
             ),
+            WindowAggregate::CountedDistinct(value_type) => {
+                Box::new(CountedDistinctAccumulator::new(value_type))
+            }
             WindowAggregate::Builtin(aggregate) => aggregate
                 .create_accumulator()
                 .expect("failed to create accumulator"),
@@ -846,6 +856,9 @@ impl WindowAggregate {
 
     pub(crate) fn state_fields(&self) -> Vec<Field> {
         match self {
+            WindowAggregate::CountedDistinct(value_type) => {
+                CountedDistinctAccumulator::fields(value_type)
+            }
             WindowAggregate::Count => vec![Field::new("count", DataType::Int64, false)],
             WindowAggregate::ZeroSum(_) => vec![Field::new("sum", self.result_type(), true)],
             WindowAggregate::RetractingSum(value_type) => vec![
@@ -901,6 +914,7 @@ impl WindowAggregate {
     /// The aggregate's output type (e.g. int64 for a sum of int64, float64 for a sum of float64).
     pub(crate) fn result_type(&self) -> DataType {
         match self {
+            WindowAggregate::CountedDistinct(_) => DataType::Int64,
             WindowAggregate::Count => DataType::Int64,
             WindowAggregate::ZeroSum(value_type) => RunningAgg::new(22, value_type).result_type(),
             WindowAggregate::RetractingSum(value_type) => value_type.clone(),
@@ -1057,7 +1071,7 @@ pub(crate) fn scalars_to_array(scalars: Vec<ScalarValue>, data_type: &DataType) 
     }
 }
 
-/// Exports an accumulator's intermediate state and rebuilds its live state from that snapshot.
+/// Exports intermediate state, retaining counted state and rebuilding draining factories.
 /// DataFusion's `state` API is consuming for some implementations, such as string
 /// `COUNT(DISTINCT ...)`, while merging the state back into other implementations would double
 /// their values. Replacing the accumulator handles both contracts uniformly.
@@ -1066,16 +1080,33 @@ pub(crate) fn snapshot_accumulator_state(
     create: impl FnOnce() -> Box<dyn Accumulator>,
 ) -> Vec<ScalarValue> {
     let state = accumulator.state().expect("state");
+    // Counted state is non-draining. Rebuilding would compact its map behind managed-memory
+    // accounting, changing the live footprint without updating its reservation.
+    if (accumulator.as_ref() as &dyn std::any::Any).is::<CountedDistinctAccumulator>() {
+        return state;
+    }
     let arrays: Vec<ArrayRef> = state
         .iter()
         .map(|scalar| scalar.to_array().expect("state array"))
         .collect();
     let mut replacement = create();
-    replacement
-        .merge_batch(&arrays)
+    restore_accumulator_state(&mut replacement, &arrays)
         .expect("failed to restore live accumulator state");
     *accumulator = replacement;
     state
+}
+
+pub(crate) fn restore_accumulator_state(
+    accumulator: &mut Box<dyn Accumulator>,
+    states: &[ArrayRef],
+) -> Result<(), DataFusionError> {
+    if let Some(counted) = (accumulator.as_mut() as &mut dyn std::any::Any)
+        .downcast_mut::<CountedDistinctAccumulator>()
+    {
+        counted.restore_exact(states)
+    } else {
+        accumulator.merge_batch(states)
+    }
 }
 
 /// A typed NULL scalar of the given type (the value an aggregate reports when it has no live input).
@@ -1360,6 +1391,13 @@ impl RunningAgg {
             };
             return Self::new(8, &sum_type);
         }
+        if matches!(kind, 10 | 11) && *value_type == DataType::Utf8 {
+            return OverStringValue {
+                value: None,
+                java_utf16: None,
+                kind,
+            };
+        }
         if matches!(kind, 10 | 11)
             && matches!(
                 value_type,
@@ -1524,7 +1562,7 @@ impl RunningAgg {
             (SumF64(s), Num::F64(v)) => *s = Some(s.map_or(v, |sum| sum + v)),
             (MinF64(m), Num::F64(v)) => *m = Some(m.map_or(v, |x| if v < x { v } else { x })),
             (MaxF64(m), Num::F64(v)) => *m = Some(m.map_or(v, |x| if v > x { v } else { x })),
-            (Count(c), _) => *c += 1,
+            (Count(c), _) => *c = c.wrapping_add(1),
             (SumDecimal { sum, overflow, .. }, Num::I128(v)) => {
                 accumulate_decimal_sum(sum, overflow, v)
             }
@@ -1591,7 +1629,7 @@ impl RunningAgg {
             (SumI16(s), Num::I16(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
             (SumI8(s), Num::I8(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
             (SumF32(s), Num::F32(v)) => *s = Some(s.unwrap_or(0.0) - v),
-            (Count(c), _) => *c -= 1,
+            (Count(c), _) => *c = c.wrapping_sub(1),
             (SumDecimal { sum, overflow, .. }, Num::I128(v)) => {
                 accumulate_decimal_sum(sum, overflow, v.wrapping_neg())
             }
@@ -2167,5 +2205,14 @@ mod avg_tests {
         ])
         .unwrap();
         assert_eq!(avg.evaluate().unwrap(), ScalarValue::Int64(Some(i64::MIN)));
+    }
+
+    #[test]
+    fn retained_count_uses_java_wrapping_arithmetic_on_both_edges() {
+        let mut count = RunningAgg::Count(i64::MAX);
+        count.fold(Num::I64(0));
+        assert_eq!(count.emit(), ScalarValue::Int64(Some(i64::MIN)));
+        count.retract(Num::I64(0));
+        assert_eq!(count.emit(), ScalarValue::Int64(Some(i64::MAX)));
     }
 }

@@ -1,7 +1,7 @@
 use super::*;
 use arrow::array::Float64Array;
 
-fn batch(values: &[(i64, i64, i64, i8)]) -> RecordBatch {
+pub(super) fn batch(values: &[(i64, i64, i64, i8)]) -> RecordBatch {
     let schema = Arc::new(Schema::new(vec![
         Field::new("sink_key", DataType::Int64, false),
         Field::new("input_key", DataType::Int64, false),
@@ -20,7 +20,7 @@ fn batch(values: &[(i64, i64, i64, i8)]) -> RecordBatch {
     .unwrap()
 }
 
-fn rows(batch: &RecordBatch) -> Vec<(i64, i64, i64, i8)> {
+pub(super) fn rows(batch: &RecordBatch) -> Vec<(i64, i64, i64, i8)> {
     if batch.num_rows() == 0 {
         return vec![];
     }
@@ -36,7 +36,7 @@ fn rows(batch: &RecordBatch) -> Vec<(i64, i64, i64, i8)> {
         .collect()
 }
 
-fn materializer(upsert: bool, ttl: i64) -> SinkMaterializer {
+pub(super) fn materializer(upsert: bool, ttl: i64) -> SinkMaterializer {
     SinkMaterializer::new(
         vec![0],
         vec![-1],
@@ -447,7 +447,7 @@ fn array_nan_serialization_retains_explicit_binary_carriers_across_restore() {
 }
 
 #[cfg(feature = "rocksdb-state")]
-fn disk_materializer(
+pub(super) fn disk_materializer(
     path: &std::path::Path,
     upsert: bool,
     strategy: Strategy,
@@ -621,7 +621,7 @@ fn disk_keeps_large_single_key_candidate_sets_outside_the_operator_budget() {
 }
 
 #[cfg(feature = "rocksdb-state")]
-fn disk_options_json() -> String {
+pub(super) fn disk_options_json() -> String {
     serde_json::to_string(&crate::state::rocks_config::FlinkRocksOptions {
         max_background_threads: 2,
         max_open_files: -1,

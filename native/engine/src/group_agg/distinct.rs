@@ -189,6 +189,98 @@ impl<'a> DistinctColumn<'a> {
         }
     }
 
+    pub(super) fn update_stock(
+        &self,
+        state: &mut GroupAggState,
+        row: usize,
+        retract: bool,
+        append: bool,
+    ) -> bool {
+        let (set, live, aggregate) = match state {
+            GroupAggState::Distinct { set, live } => (set, live, None),
+            GroupAggState::DistinctRunning { counts, agg, live } => (counts, live, Some(agg)),
+            _ => unreachable!("stock COUNT/SUM DISTINCT scalar"),
+        };
+        let is_null = match self {
+            Self::I64(a) => a.is_null(row),
+            Self::I32(a) => a.is_null(row),
+            Self::I16(a) => a.is_null(row),
+            Self::I8(a) => a.is_null(row),
+            Self::F32(a) => a.is_null(row),
+            Self::F64(a) => a.is_null(row),
+            Self::Date(a) => a.is_null(row),
+            Self::Time(a) => a.is_null(row),
+            Self::Decimal(a) => a.is_null(row),
+            Self::Boolean(a) => a.is_null(row),
+            Self::Timestamp(a) => a.is_null(row),
+            Self::String(a) => a.is_null(row),
+            Self::Scalar(a) => a.is_null(row),
+        };
+        if is_null {
+            let null = match self {
+                Self::I64(a) => ScalarValue::try_from(a.data_type()),
+                Self::I32(a) => ScalarValue::try_from(a.data_type()),
+                Self::I16(a) => ScalarValue::try_from(a.data_type()),
+                Self::I8(a) => ScalarValue::try_from(a.data_type()),
+                Self::F32(a) => ScalarValue::try_from(a.data_type()),
+                Self::F64(a) => ScalarValue::try_from(a.data_type()),
+                Self::Date(a) => ScalarValue::try_from(a.data_type()),
+                Self::Time(a) => ScalarValue::try_from(a.data_type()),
+                Self::Decimal(a) => ScalarValue::try_from(a.data_type()),
+                Self::Boolean(a) => ScalarValue::try_from(a.data_type()),
+                Self::Timestamp(_) => Ok(ScalarValue::Struct(Arc::new(
+                    streamfusion_bridge::timestamp::timestamp_array([None]),
+                ))),
+                Self::String(a) => ScalarValue::try_from(a.data_type()),
+                Self::Scalar(a) => ScalarValue::try_from(a.data_type()),
+            }
+            .expect("typed DISTINCT NULL");
+            set.change_scalar(&null, Change::Stock { retract, append });
+            return false;
+        }
+        let changed = self.change(set, row, Change::Stock { retract, append });
+        if changed {
+            if let Some(aggregate) = aggregate {
+                if retract {
+                    aggregate.retract(self.num(row));
+                } else {
+                    aggregate.fold(self.num(row));
+                }
+                *live = if append {
+                    1
+                } else {
+                    live.wrapping_add(if retract { -1 } else { 1 })
+                };
+            } else {
+                *live = live.wrapping_add(if retract { -1 } else { 1 });
+            }
+        }
+        changed
+    }
+
+    pub(super) fn merge_stock_scalar(state: &mut GroupAggState, value: &ScalarValue) {
+        let (set, live, aggregate) = match state {
+            GroupAggState::Distinct { set, live } => (set, live, None),
+            GroupAggState::DistinctRunning { counts, agg, live } => (counts, live, Some(agg)),
+            _ => unreachable!("stock COUNT/SUM DISTINCT scalar"),
+        };
+        let changed = set.change_scalar(
+            value,
+            Change::Stock {
+                retract: false,
+                append: true,
+            },
+        );
+        if !value.is_null() && changed {
+            if let Some(aggregate) = aggregate {
+                aggregate.fold(distinct_num(value));
+                *live = 1;
+            } else {
+                *live = live.wrapping_add(1);
+            }
+        }
+    }
+
     pub(super) fn update(
         &self,
         state: &mut GroupAggState,
@@ -287,6 +379,7 @@ impl ScalarValues {
 
 #[derive(Clone, Copy)]
 enum Change {
+    Stock { retract: bool, append: bool },
     Add(i64),
     Delta(i64),
     Remove,
@@ -347,6 +440,31 @@ impl<K: Eq + Hash + Clone> Multiplicities<K> {
             }
         }
         match change {
+            Change::Stock { retract, append } => {
+                let old = self.counts.get(key).copied().unwrap_or(0);
+                if append {
+                    if old != 0 || retract {
+                        return false;
+                    }
+                    self.counts.insert(key.to_owned(), 1);
+                    return true;
+                }
+                let next = if retract {
+                    old.wrapping_sub(1)
+                } else {
+                    old.wrapping_add(1)
+                };
+                if next == 0 {
+                    self.counts.remove(key);
+                } else {
+                    self.counts.insert(key.to_owned(), next);
+                }
+                if retract {
+                    next == 0
+                } else {
+                    next == 1
+                }
+            }
             Change::Delta(delta) => {
                 let old = self.counts.get(key).copied().unwrap_or(0);
                 let next = old.wrapping_add(delta);
@@ -460,7 +578,7 @@ impl DistinctSet {
             _ => Self::Scalar(Multiplicities::new()),
         }
     }
-    pub(super) fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         each_map!(self, m, m.counts.len())
     }
     pub(crate) fn capacity_bytes(&self) -> usize {
@@ -501,6 +619,36 @@ impl DistinctSet {
             Self::Timestamp(m) => m.entries(|v| timestamp_scalar(*v)),
             Self::Scalar(m) => m.entries(|value| value.0.clone()),
         }
+    }
+    pub(crate) fn for_each_scalar(
+        &self,
+        mut consume: impl FnMut(ScalarValue, i64) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        macro_rules! visit {
+            ($map:expr, $scalar:expr) => {
+                for (key, &count) in &$map.counts {
+                    consume(($scalar)(key), count)?;
+                }
+            };
+        }
+        match self {
+            Self::I64(m) => visit!(m, |v: &i64| ScalarValue::Int64(Some(*v))),
+            Self::I32(m) => visit!(m, |v: &i32| ScalarValue::Int32(Some(*v))),
+            Self::I16(m) => visit!(m, |v: &i16| ScalarValue::Int16(Some(*v))),
+            Self::I8(m) => visit!(m, |v: &i8| ScalarValue::Int8(Some(*v))),
+            Self::F32(m) => visit!(m, |v: &u32| ScalarValue::Float32(Some(f32::from_bits(*v)))),
+            Self::F64(m) => visit!(m, |v: &u64| ScalarValue::Float64(Some(f64::from_bits(*v)))),
+            Self::Date(m) => visit!(m, |v: &i32| ScalarValue::Date32(Some(*v))),
+            Self::Time(m) => visit!(m, |v: &i32| ScalarValue::Time32Millisecond(Some(*v))),
+            Self::Decimal(m, p, s) => {
+                visit!(m, |v: &i128| ScalarValue::Decimal128(Some(*v), *p, *s))
+            }
+            Self::String(m) => visit!(m, |v: &String| ScalarValue::Utf8(Some(v.clone()))),
+            Self::Boolean(m) => visit!(m, |v: &bool| ScalarValue::Boolean(Some(*v))),
+            Self::Timestamp(m) => visit!(m, |v: &i128| timestamp_scalar(*v)),
+            Self::Scalar(m) => visit!(m, |v: &ValueKey| v.0.clone()),
+        }
+        Ok(())
     }
     #[cfg(feature = "rocksdb-state")]
     pub(super) fn drain_journal(&mut self) -> Vec<(ScalarValue, Option<i64>)> {
@@ -546,38 +694,36 @@ impl DistinctSet {
         }
     }
 
-    pub(super) fn scalar_count(&self, value: &ScalarValue) -> i64 {
+    pub(crate) fn scalar_count(&self, value: &ScalarValue) -> i64 {
+        self.scalar_entry(value).unwrap_or(0)
+    }
+
+    pub(crate) fn scalar_entry(&self, value: &ScalarValue) -> Option<i64> {
         match (self, value) {
             (Self::Timestamp(m), ScalarValue::Decimal128(Some(nanos), 38, 0)) => {
-                m.counts.get(nanos).copied().unwrap_or(0)
+                m.counts.get(nanos).copied()
             }
-            (Self::I64(m), ScalarValue::Int64(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
-            (Self::I32(m), ScalarValue::Int32(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
-            (Self::I16(m), ScalarValue::Int16(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
-            (Self::I8(m), ScalarValue::Int8(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
+            (Self::I64(m), ScalarValue::Int64(Some(v))) => m.counts.get(v).copied(),
+            (Self::I32(m), ScalarValue::Int32(Some(v))) => m.counts.get(v).copied(),
+            (Self::I16(m), ScalarValue::Int16(Some(v))) => m.counts.get(v).copied(),
+            (Self::I8(m), ScalarValue::Int8(Some(v))) => m.counts.get(v).copied(),
             (Self::F32(m), ScalarValue::Float32(Some(v))) => m
                 .counts
                 .get(&crate::flink_float::canonical_f32(*v).to_bits())
-                .copied()
-                .unwrap_or(0),
+                .copied(),
             (Self::F64(m), ScalarValue::Float64(Some(v))) => m
                 .counts
                 .get(&crate::flink_float::canonical_f64(*v).to_bits())
-                .copied()
-                .unwrap_or(0),
-            (Self::Date(m), ScalarValue::Date32(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
-            (Self::Time(m), ScalarValue::Time32Millisecond(Some(v))) => {
-                m.counts.get(v).copied().unwrap_or(0)
-            }
+                .copied(),
+            (Self::Date(m), ScalarValue::Date32(Some(v))) => m.counts.get(v).copied(),
+            (Self::Time(m), ScalarValue::Time32Millisecond(Some(v))) => m.counts.get(v).copied(),
             (Self::Decimal(m, p, s), ScalarValue::Decimal128(Some(v), vp, vs))
                 if p == vp && s == vs =>
             {
-                m.counts.get(v).copied().unwrap_or(0)
+                m.counts.get(v).copied()
             }
-            (Self::String(m), ScalarValue::Utf8(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
-            (Self::Boolean(m), ScalarValue::Boolean(Some(v))) => {
-                m.counts.get(v).copied().unwrap_or(0)
-            }
+            (Self::String(m), ScalarValue::Utf8(Some(v))) => m.counts.get(v).copied(),
+            (Self::Boolean(m), ScalarValue::Boolean(Some(v))) => m.counts.get(v).copied(),
             (Self::Timestamp(m), ScalarValue::Struct(array))
                 if streamfusion_bridge::timestamp::is_component_timestamp(array.data_type())
                     && !array.is_null(0) =>
@@ -588,16 +734,14 @@ impl DistinctSet {
                 m.counts
                     .get(&column.value(0).expect("timestamp value").nanos())
                     .copied()
-                    .unwrap_or(0)
             }
             (Self::Scalar(m), value) => {
                 let canonical = crate::flink_float::canonical_scalar(value);
                 m.counts
                     .get(&ValueKey(canonical.as_ref().unwrap_or(value).clone()))
                     .copied()
-                    .unwrap_or(0)
             }
-            _ => 0,
+            _ => None,
         }
     }
 
@@ -703,14 +847,14 @@ impl DistinctSet {
         }
     }
 
-    pub(super) fn merge_scalar_delta(&mut self, value: &ScalarValue, delta: i64) -> bool {
+    pub(crate) fn merge_scalar_delta(&mut self, value: &ScalarValue, delta: i64) -> bool {
         self.change_scalar(value, Change::Delta(delta))
     }
 
     pub(crate) fn remove_scalar(&mut self, v: &ScalarValue) -> bool {
         self.change_scalar(v, Change::Remove)
     }
-    pub(super) fn insert_restored(&mut self, v: ScalarValue, n: i64) {
+    pub(crate) fn insert_restored(&mut self, v: ScalarValue, n: i64) {
         self.change_value(v, Change::Restore(n));
     }
     pub(super) fn insert_imported(&mut self, v: ScalarValue, n: i64) {

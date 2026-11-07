@@ -1,8 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchTypeInformation;
-import tech.streamfusion.operator.NativeColumnarGroupAggregateOperator;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -16,6 +13,9 @@ import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeColumnarGroupAggregateOperator;
 
 /** Wraps the columnar non-windowed GROUP BY operator into the plan; Arrow batches in and out. */
 public class NativeColumnarGroupAggExecNode extends ExecNodeBase<ArrowBatch>
@@ -36,6 +36,49 @@ public class NativeColumnarGroupAggExecNode extends ExecNodeBase<ArrowBatch>
   // job-wide table.exec.state.ttl at translate time, hint winning — Flink's StateMetadata rule.
   private final long stateTtlHintMillis;
   private final int[] keyTimestampPrecisions;
+  private Integer stateMaxParallelism;
+
+  public boolean hasStockGroupPartials() {
+    for (int i = 0; i < aggregateKinds.length; i++) {
+      int kind = aggregateKinds[i];
+      if (kind != 0
+          && kind != 1
+          && kind != 2
+          && kind != 4
+          && kind != 7
+          && kind != 9
+          && kind != 10
+          && kind != 11
+          && kind != 22
+          && kind != 23) return false;
+      int type = valueTypes[i];
+      if (type < 0 || type == 7 || type > 10) return false;
+      if ((kind == 22 || kind == 23) && type != 0) return false;
+    }
+    return true;
+  }
+
+  public boolean hasStockDistinctState() {
+    for (int kind : aggregateKinds) if (kind == 7 || kind == 9) return true;
+    return false;
+  }
+
+  public boolean hasStringExtrema() {
+    for (int i = 0; i < aggregateKinds.length; i++)
+      if (valueTypes[i] == 3
+          && (aggregateKinds[i] == 1
+              || aggregateKinds[i] == 2
+              || aggregateKinds[i] == 10
+              || aggregateKinds[i] == 11)) return true;
+    return false;
+  }
+
+  public NativeColumnarGroupAggExecNode withStateMaxParallelism(int maximum) {
+    if (maximum < 1)
+      throw new IllegalArgumentException("State maximum parallelism must be positive");
+    stateMaxParallelism = maximum;
+    return this;
+  }
 
   public NativeColumnarGroupAggExecNode(
       ReadableConfig tableConfig,
@@ -80,9 +123,12 @@ public class NativeColumnarGroupAggExecNode extends ExecNodeBase<ArrowBatch>
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     int maxParallelism =
-        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+        stateMaxParallelism != null
+            ? stateMaxParallelism
+            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     boolean miniBatch = config.get(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED);
-    long miniBatchSize = miniBatch ? tech.streamfusion.compat.FlinkCompat.miniBatchSize(config) : -1;
+    long miniBatchSize =
+        miniBatch ? tech.streamfusion.compat.FlinkCompat.miniBatchSize(config) : -1;
     long stateTtlMillis =
         stateTtlHintMillis >= 0 ? stateTtlHintMillis : config.getStateRetentionTime();
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
@@ -90,7 +136,12 @@ public class NativeColumnarGroupAggExecNode extends ExecNodeBase<ArrowBatch>
             input,
             createTransformationMeta(TRANSFORMATION, config),
             new NativeColumnarGroupAggregateOperator(
-                aggregateKinds, valueTypes, valueColumns, keyColumns, filterColumns, countColumns,
+                aggregateKinds,
+                valueTypes,
+                valueColumns,
+                keyColumns,
+                filterColumns,
+                countColumns,
                 distinctViewColumns,
                 recordCountColumn,
                 generateUpdateBefore,

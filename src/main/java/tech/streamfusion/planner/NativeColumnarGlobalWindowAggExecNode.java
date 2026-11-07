@@ -1,9 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchTypeInformation;
-import tech.streamfusion.operator.NativeColumnarGlobalWindowAggregateOperator;
-import tech.streamfusion.operator.NativeWindowOperatorCore;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -17,6 +13,10 @@ import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTransl
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeColumnarGlobalWindowAggregateOperator;
+import tech.streamfusion.operator.NativeWindowOperatorCore;
 
 /**
  * Wraps the columnar global (merge) window operator into the plan: partial-state Arrow batches in,
@@ -35,6 +35,23 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<ArrowBat
   private final int[] aggregateKinds;
   private final boolean timestampLtz;
   private final int[] keyTimestampPrecisions;
+  private int stockMaxParallelism = -1;
+  private String stockSessionTimeZone;
+  private long windowOffset;
+  private boolean finalWindows;
+
+  public NativeColumnarGlobalWindowAggExecNode withFinalWindows() {
+    finalWindows = true;
+    return this;
+  }
+
+  public NativeColumnarGlobalWindowAggExecNode withStockState(
+      int maxParallelism, String timeZone, long offset) {
+    stockMaxParallelism = maxParallelism;
+    stockSessionTimeZone = timeZone;
+    windowOffset = offset;
+    return this;
+  }
 
   public NativeColumnarGlobalWindowAggExecNode(
       ReadableConfig tableConfig,
@@ -72,34 +89,51 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<ArrowBat
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
-    String timeZoneId =
-        timestampLtz ? planner.getTableConfig().getLocalTimeZone().getId() : "UTC";
+    String sessionZone =
+        stockSessionTimeZone == null
+            ? planner.getTableConfig().getLocalTimeZone().getId()
+            : stockSessionTimeZone;
+    String timeZoneId = timestampLtz ? sessionZone : "UTC";
     RowType outputType = (RowType) getOutputType();
     int maxParallelism =
-        keyColumns.length == 0
-            ? 1
-            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+        stockMaxParallelism > 0
+            ? stockMaxParallelism
+            : keyColumns.length == 0
+                ? 1
+                : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+    var operator =
+        new NativeColumnarGlobalWindowAggregateOperator(
+            windowMillis,
+            slideMillis,
+            cumulative,
+            NativeWindowOperatorCore.keyTypes(outputType, keyColumns.length),
+            valueTypes,
+            aggregateKinds,
+            timeZoneId,
+            timestampLtz,
+            sessionZone,
+            outputType,
+            keyTimestampPrecisions,
+            maxParallelism);
+    operator.setWindowOffsetMillis(windowOffset);
+    if (finalWindows) operator.setFinalWindows();
+    if (stockSessionTimeZone != null) operator.useStockGlobalBuffering();
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
-            new NativeColumnarGlobalWindowAggregateOperator(
-                windowMillis,
-                slideMillis,
-                cumulative,
-                NativeWindowOperatorCore.keyTypes(outputType, keyColumns.length),
-                valueTypes,
-                aggregateKinds,
-                timeZoneId,
-                timestampLtz,
-                planner.getTableConfig().getLocalTimeZone().getId(),
-                outputType,
-                keyTimestampPrecisions,
-                maxParallelism),
+            operator,
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);
     FlinkKeyGroupUtils.applyColumnarKeying(transformation, maxParallelism);
+    if (stockSessionTimeZone != null)
+      transformation.setName(
+          "NativeColumnarGlobalWindowAggregate"
+              + (finalWindows ? "Final" : "Slice")
+              + "["
+              + getId()
+              + "]");
     return transformation;
   }
 }

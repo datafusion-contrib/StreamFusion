@@ -1,6 +1,8 @@
 use crate::*;
 use arrow::array::Int32Builder;
 
+mod canonical;
+
 /// Flink's AppendOnlyFirstNFunction: only accepted arrivals write the per-key counter.
 pub(crate) struct FirstN<S: FirstNStore = MemoryStateStore<ArrivalCount>> {
     partitions: Vec<usize>,

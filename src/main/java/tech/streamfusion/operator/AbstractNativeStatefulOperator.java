@@ -17,12 +17,16 @@ import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.MapListRepresentation;
-import tech.streamfusion.compat.FlinkStreamOperator;
+import tech.streamfusion.compat.FlinkCanonicalStreamOperator;
 import tech.streamfusion.compat.RuntimeCompat;
+import tech.streamfusion.state.CanonicalKeyedStateBackend;
 import tech.streamfusion.state.CanonicalNativeState;
+import tech.streamfusion.state.CanonicalProjection;
 import tech.streamfusion.state.RocksDBNativeKeyedStateBackend;
 import tech.streamfusion.state.RocksDBNativeState;
 import tech.streamfusion.state.RocksDBNativeStateSupport;
+import tech.streamfusion.state.StockCanonicalSnapshot;
+import tech.streamfusion.state.StockStateContract;
 
 /**
  * Lifecycle shared by every native operator whose hot state lives in Rust: the handle, its task
@@ -39,7 +43,8 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  * else (budget reservation, restore/snapshot plumbing, handle release) is identical across
  * operators and lives here.
  */
-public abstract class AbstractNativeStatefulOperator<OUT> extends FlinkStreamOperator<OUT> {
+public abstract class AbstractNativeStatefulOperator<OUT>
+    extends FlinkCanonicalStreamOperator<OUT> {
 
   private final String stateLabel;
   private final int[] keyTimestampPrecisions;
@@ -55,6 +60,20 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends FlinkStreamOpe
   private transient long rocksdbSnapshotStoreHandle;
   private transient NativeMemoryBudget memoryBudget;
   private transient long restoredProcessingTimeTimerDeadline;
+  private StockStateContract stockStateContract;
+  private transient CanonicalProjection canonicalProjection;
+
+  public void setStockStateContract(StockStateContract contract) {
+    stockStateContract = contract;
+  }
+
+  @Override
+  public <K> org.apache.flink.runtime.state.KeyedStateBackend<K> getKeyedStateBackend() {
+    var backend = super.<K>getKeyedStateBackend();
+    return backend instanceof CanonicalKeyedStateBackend
+        ? ((CanonicalKeyedStateBackend<K>) backend).delegate()
+        : backend;
+  }
 
   /**
    * @param stateLabel human-readable operator name, used in backend logs and errors
@@ -89,7 +108,9 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends FlinkStreamOpe
     return snapshotRawPartitions();
   }
 
-  /** Captures immutable state for asynchronous backend serialization when an operator supports it. */
+  /**
+   * Captures immutable state for asynchronous backend serialization when an operator supports it.
+   */
   protected boolean writeAsyncMemorySnapshot(
       CheckpointableKeyedStateBackend<?> backend, long timerDeadline) throws Exception {
     return false;
@@ -124,9 +145,9 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends FlinkStreamOpe
   }
 
   /**
-   * The processing-time timer deadline the typed RocksDB store restored from its checkpoint —
-   * the direct-store analog of the snapshot store's deadline. A timer-carrying operator with a
-   * typed store overrides this with its handle's accessor.
+   * The processing-time timer deadline the typed RocksDB store restored from its checkpoint — the
+   * direct-store analog of the snapshot store's deadline. A timer-carrying operator with a typed
+   * store overrides this with its handle's accessor.
    */
   protected long rocksdbTimerDeadline() {
     return Long.MIN_VALUE;
@@ -135,9 +156,7 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends FlinkStreamOpe
   protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
     byte[][] partitions = snapshotRawPartitions();
     long deadline =
-        carriesProcessingTimeTimer()
-            ? processingTimeTimerDeadlineForSnapshot()
-            : Long.MIN_VALUE;
+        carriesProcessingTimeTimer() ? processingTimeTimerDeadlineForSnapshot() : Long.MIN_VALUE;
     return Native.checkpointRocksDBSnapshotStore(
         rocksdbSnapshotStoreHandle, partitions, deadline, snapshotDirectory);
   }
@@ -186,12 +205,23 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends FlinkStreamOpe
 
   @Override
   public void initializeState(StateInitializationContext context) throws Exception {
+    var backend = super.getKeyedStateBackend();
+    canonicalProjection =
+        backend instanceof CanonicalKeyedStateBackend
+            ? ((CanonicalKeyedStateBackend<?>) backend).projection()
+            : null;
     super.initializeState(context);
+    if (stockStateContract != null) {
+      stockStateContract.initializeOperatorState(
+          context.getOperatorStateStore(), context.isRestored());
+      if (context.isRestored()) restoreCanonicalWatermark(stockStateContract.restoredWatermark());
+    }
     if (getKeyedStateBackend() != null) {
       int deployedMaxParallelism = RuntimeCompat.maxParallelism(getRuntimeContext());
       checkState(
           maxParallelism == deployedMaxParallelism,
-          "Native %s state max parallelism changed after planning: expected %s key groups, deployed %s",
+          "Native %s state max parallelism changed after planning: expected %s key groups, deployed"
+              + " %s",
           stateLabel,
           maxParallelism,
           deployedMaxParallelism);
@@ -285,10 +315,41 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends FlinkStreamOpe
                   : Long.MIN_VALUE;
             }
           });
+      initializeStockState();
       return;
     }
     handle =
         snapshots.isEmpty() ? createHandle() : restoreRawHandle(snapshots.toArray(new byte[0][]));
+    initializeStockState();
+  }
+
+  private void initializeStockState() throws Exception {
+    configureStateHandle();
+    if (stockStateContract != null)
+      stockStateContract.configureNativeState(handle, directRocksDBState());
+    if (canonicalProjection != null && canonicalProjection.isRestored()) {
+      if (stockStateContract == null) {
+        throw new IllegalStateException(
+            "stock savepoint has no native state contract for " + stateLabel);
+      }
+      stockStateContract.importState(canonicalProjection.backend(), handle, directRocksDBState());
+      publishStateBytes();
+    }
+    String storage = rocksdbState ? directRocksDBState ? "rocksdb" : "rocksdb-snapshot" : "memory";
+    getMetricGroup().gauge("nativeStateStorage", () -> storage);
+  }
+
+  /** Binds runtime modes before restored logical state is transferred into the native handle. */
+  protected void configureStateHandle() {}
+
+  protected long canonicalWatermark() {
+    return Long.MIN_VALUE;
+  }
+
+  protected void restoreCanonicalWatermark(long watermark) {}
+
+  protected final boolean hasStockStateContract() {
+    return stockStateContract != null;
   }
 
   @Override
@@ -299,9 +360,53 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends FlinkStreamOpe
   }
 
   @Override
+  protected org.apache.flink.streaming.api.operators.OperatorSnapshotFutures snapshotCanonicalState(
+      long checkpointId,
+      long timestamp,
+      org.apache.flink.runtime.checkpoint.CheckpointOptions options,
+      org.apache.flink.runtime.state.CheckpointStreamFactory streamFactory)
+      throws Exception {
+    if (stockStateContract == null
+        || !options.getCheckpointType().isSavepoint()
+        || ((org.apache.flink.runtime.checkpoint.SavepointType) options.getCheckpointType())
+                .getFormatType()
+            != org.apache.flink.core.execution.SavepointFormatType.CANONICAL) {
+      return null;
+    }
+    if (canonicalProjection == null) {
+      throw new IllegalStateException("stock canonical snapshot backend was not installed");
+    }
+    beforeSnapshotState();
+    stockStateContract.snapshotOperatorState(canonicalWatermark());
+    var backend = canonicalProjection.backend();
+    stockStateContract.exportState(backend, handle, directRocksDBState());
+    var result =
+        StockCanonicalSnapshot.capture(
+            backend,
+            getOperatorStateBackend(),
+            checkpointId,
+            timestamp,
+            streamFactory,
+            options,
+            getContainingTask().getCancelables());
+    try {
+      stockStateContract.clear(backend);
+      return result;
+    } catch (Exception | Error failure) {
+      try {
+        result.cancel();
+      } catch (Exception | Error cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+      throw failure;
+    }
+  }
+
+  @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
     beforeSnapshotState();
+    if (stockStateContract != null) stockStateContract.snapshotOperatorState(canonicalWatermark());
     // Native RocksDB state checkpoints through the keyed backend. Standalone memory state uses the
     // same managed canonical representation that RocksDB materializes for a canonical savepoint.
     if (rocksdbState) {
@@ -310,12 +415,9 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends FlinkStreamOpe
     CheckpointableKeyedStateBackend<?> backend =
         (CheckpointableKeyedStateBackend<?>) getKeyedStateBackend();
     long timerDeadline =
-        carriesProcessingTimeTimer()
-            ? processingTimeTimerDeadlineForSnapshot()
-            : Long.MIN_VALUE;
+        carriesProcessingTimeTimer() ? processingTimeTimerDeadlineForSnapshot() : Long.MIN_VALUE;
     if (!writeAsyncMemorySnapshot(backend, timerDeadline)) {
-      CanonicalNativeState.write(
-          backend, snapshotCanonicalPartitions(), stateLabel, timerDeadline);
+      CanonicalNativeState.write(backend, snapshotCanonicalPartitions(), stateLabel, timerDeadline);
     }
   }
 
@@ -337,6 +439,7 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends FlinkStreamOpe
       memoryBudget.close();
       memoryBudget = null;
     }
+    if (canonicalProjection != null) canonicalProjection.close();
     super.close();
   }
 

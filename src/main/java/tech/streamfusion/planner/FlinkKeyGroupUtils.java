@@ -35,6 +35,15 @@ public final class FlinkKeyGroupUtils {
     return result.stream().mapToInt(Integer::intValue).toArray();
   }
 
+  static int[] stockKeyDescriptor(
+      org.apache.flink.table.types.logical.RowType inputType, int[] keys) {
+    int[] precisions = timestampPrecisions(inputType, keys);
+    int[] descriptor = new int[precisions.length + 1];
+    descriptor[0] = tech.streamfusion.Native.STOCK_KEY_PROJECTION;
+    System.arraycopy(precisions, 0, descriptor, 1, precisions.length);
+    return descriptor;
+  }
+
   private static void appendTimestampPrecisions(
       org.apache.flink.table.types.logical.LogicalType type, List<Integer> result) {
     var root = type.getTypeRoot();

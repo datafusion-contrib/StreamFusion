@@ -1,9 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchTypeInformation;
-import tech.streamfusion.operator.ConstantArrowBatchKeySelector;
-import tech.streamfusion.operator.NativeColumnarTemporalSortOperator;
 import java.util.Collections;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.dag.Transformation;
@@ -18,10 +14,14 @@ import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTransl
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.ConstantArrowBatchKeySelector;
+import tech.streamfusion.operator.NativeColumnarTemporalSortOperator;
 
 /**
- * Wraps the native columnar event-time sorter into the plan; it consumes and produces Arrow batches,
- * buffering each and emitting the rows a watermark completes in ascending rowtime order.
+ * Wraps the native columnar event-time sorter into the plan; it consumes and produces Arrow
+ * batches, buffering each and emitting the rows a watermark completes in ascending rowtime order.
  */
 public class NativeTemporalSortExecNode extends ExecNodeBase<ArrowBatch>
     implements StreamExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
@@ -29,6 +29,7 @@ public class NativeTemporalSortExecNode extends ExecNodeBase<ArrowBatch>
   private static final String TRANSFORMATION = "native-temporal-sort";
 
   private final int rowtimeColumn;
+  private final int maxParallelism;
 
   public NativeTemporalSortExecNode(
       ReadableConfig tableConfig,
@@ -36,6 +37,16 @@ public class NativeTemporalSortExecNode extends ExecNodeBase<ArrowBatch>
       RowType outputType,
       String description,
       int rowtimeColumn) {
+    this(tableConfig, inputProperty, outputType, description, rowtimeColumn, 1);
+  }
+
+  public NativeTemporalSortExecNode(
+      ReadableConfig tableConfig,
+      InputProperty inputProperty,
+      RowType outputType,
+      String description,
+      int rowtimeColumn,
+      int maxParallelism) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-temporal-sort_1"),
@@ -44,6 +55,7 @@ public class NativeTemporalSortExecNode extends ExecNodeBase<ArrowBatch>
         outputType,
         description);
     this.rowtimeColumn = rowtimeColumn;
+    this.maxParallelism = maxParallelism;
   }
 
   @Override
@@ -52,19 +64,28 @@ public class NativeTemporalSortExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
+    if (input instanceof OneInputTransformation) {
+      var factory = ((OneInputTransformation<?, ?>) input).getOperatorFactory();
+      if (factory instanceof org.apache.flink.streaming.api.operators.SimpleOperatorFactory
+          && ((org.apache.flink.streaming.api.operators.SimpleOperatorFactory<?>) factory)
+                  .getOperator()
+              instanceof tech.streamfusion.operator.RowDataToArrowOperator)
+        input.setMaxParallelism(maxParallelism);
+    }
     ConstantArrowBatchKeySelector emptyKeySelector = new ConstantArrowBatchKeySelector(0);
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
-            new NativeColumnarTemporalSortOperator(rowtimeColumn, (RowType) getOutputType()),
+            new NativeColumnarTemporalSortOperator(
+                rowtimeColumn, (RowType) getOutputType(), maxParallelism),
             ArrowBatchTypeInformation.INSTANCE,
             1,
             false);
     // Flink's RowTimeSortOperator is keyed by EmptyRowDataKeySelector and runs after a singleton
     // exchange. Keep the same one logical key: its raw state can move on restore but cannot shard.
     transformation.setParallelism(1);
-    transformation.setMaxParallelism(1);
+    transformation.setMaxParallelism(maxParallelism);
     transformation.setStateKeySelector(emptyKeySelector);
     transformation.setStateKeyType(Types.INT);
     return transformation;

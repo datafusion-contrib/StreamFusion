@@ -39,6 +39,48 @@ impl PendingRows {
             + self.chunks.capacity() * (size_of::<u64>() + size_of::<Chunk>() + 1)
     }
 
+    pub(super) fn contains_key(&self, key: &[u8]) -> bool {
+        self.candidates.contains_key(key)
+    }
+
+    pub(super) fn visit_batches(
+        &self,
+        chunk_rows: usize,
+        mut visitor: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if chunk_rows == 0 {
+            return Err(DataFusionError::Execution(
+                "pending row chunks must be positive".into(),
+            ));
+        }
+        for chunk in self.chunks.values() {
+            let mut live = Vec::with_capacity(chunk_rows);
+            let mut emit = |indices: &[u32]| -> Result<(), DataFusionError> {
+                let indices = UInt32Array::from(indices.to_vec());
+                let columns = chunk
+                    .batch
+                    .columns()
+                    .iter()
+                    .map(|column| take(column, &indices, None))
+                    .collect::<Result<Vec<_>, _>>()?;
+                visitor(RecordBatch::try_new(chunk.batch.schema(), columns)?)
+            };
+            for (index, key) in chunk.keys.iter().enumerate() {
+                if key.is_some() {
+                    live.push(index as u32);
+                }
+                if live.len() == chunk_rows {
+                    emit(&live)?;
+                    live.clear();
+                }
+            }
+            if !live.is_empty() {
+                emit(&live)?;
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn improves(&self, key: &[u8], time: i64) -> bool {
         self.candidates.get(key).is_none_or(|old| time < old.time)
     }

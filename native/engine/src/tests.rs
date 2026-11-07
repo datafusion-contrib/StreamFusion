@@ -2360,9 +2360,13 @@ fn bounded_rows_over_sums_the_frame_slice() {
     over.push(batch, 0).unwrap();
     let out = over.flush(2000, 0).unwrap();
     assert_eq!(out.num_rows(), 3);
-    // Epoch zero is late. The remaining rows use their actual preceding frame.
-    assert_eq!(values(&out, 1), vec![20, 30, 100]); // v passed through
-    assert_eq!(values(&out, 3), vec![20, 50, 100]);
+    // Epoch zero is late. Event timers emit the remaining rows by timestamp across keys.
+    assert_eq!(
+        rt_to_millis(out.column(2)).values().as_ref(),
+        &[500, 1000, 2000]
+    );
+    assert_eq!(values(&out, 1), vec![100, 20, 30]); // v passed through
+    assert_eq!(values(&out, 3), vec![100, 20, 50]);
 }
 
 // Bounded RANGE frame (1 SECOND PRECEDING): each row's SUM covers the rows within 1000ms of it,
@@ -5204,8 +5208,8 @@ fn topn_is_per_partition() {
     let out = ranker
         .push(&topn_batch(vec![1, 2, 1], vec![5, 7, 3]), 0)
         .unwrap();
-    // p1: +I5; p2: +I7; p1 sees 3 < 5 -> -D5 then +I3 (delete first, as the host emits).
-    assert_eq!(row_kinds(&out), vec![0, 0, 3, 0]);
+    // Constant Top-1 has a unique partition key: replacements use the host's update changelog.
+    assert_eq!(row_kinds(&out), vec![0, 0, 1, 2]);
     assert_eq!(values(&out, 0), vec![1, 2, 1, 1]); // partition of each emitted row
     assert_eq!(values(&out, 1), vec![5, 7, 5, 3]);
 }
@@ -7504,7 +7508,7 @@ fn temporal_join_retention_watermark_fire_re_registers_the_deadline() {
 
 // Flink's enablement quirk, replicated exactly: `stateCleaningEnabled = minRetentionTime > 1` —
 // strictly greater than ONE millisecond, not zero. A 1ms retention never cleans, and its
-// checkpoints stay in the two-section pre-retention format.
+// checkpoints still carry cursor/callback metadata, with an empty cleanup section.
 #[test]
 fn temporal_join_retention_of_one_millisecond_disables_cleaning() {
     let mut joiner = temporal_joiner(JoinKind::Inner).with_state_retention(1);
@@ -7521,7 +7525,10 @@ fn temporal_join_retention_of_one_millisecond_disables_cleaning() {
         values(&joiner.advance(i64::MAX, i64::MAX).unwrap(), 4),
         vec![10]
     );
-    assert_eq!(read_framed_sections(&joiner.snapshot()).len(), 2);
+    let sections = read_framed_sections(&joiner.snapshot());
+    assert_eq!(sections.len(), 4);
+    assert!(sections[2].is_empty());
+    assert_eq!(&sections[3][..2], &[1, 0]);
 }
 
 // Keys never touched again are reclaimed by the silent once-per-min-retention sweep — the lazy
@@ -7556,8 +7563,7 @@ fn temporal_join_retention_sweep_reclaims_untouched_keys_silently() {
     assert_eq!(deadline_keys, vec![2]);
 }
 
-// The snapshot carries each key's ABSOLUTE deadline (a third framed section, written only while
-// cleaning is on); a restore keeps it as-is rather than re-stamping from the restore clock.
+// The snapshot carries each key's ABSOLUTE deadline in the third framed section; a restore keeps it as-is rather than re-stamping from the restore clock.
 #[test]
 fn temporal_join_retention_deadline_rides_the_snapshot_absolutely() {
     let mut writer = temporal_joiner(JoinKind::LeftOuter).with_state_retention(2000);
@@ -7568,7 +7574,7 @@ fn temporal_join_retention_deadline_rides_the_snapshot_absolutely() {
         )
         .unwrap();
     let snapshot = writer.snapshot();
-    assert_eq!(read_framed_sections(&snapshot).len(), 3);
+    assert_eq!(read_framed_sections(&snapshot).len(), 4);
 
     let restore = || {
         TemporalJoiner::restore(
@@ -7654,7 +7660,7 @@ fn temporal_join_pre_retention_snapshot_stamps_a_full_deadline_at_restore() {
         )
         .unwrap();
     let snapshot = writer.snapshot();
-    assert_eq!(read_framed_sections(&snapshot).len(), 2); // retention off: pre-TTL format
+    assert_eq!(read_framed_sections(&snapshot).len(), 4); // source retention remains disabled
 
     let restore = || {
         TemporalJoiner::restore(
@@ -10180,7 +10186,7 @@ fn component_timestamp_topn_checkpoint_preserves_fractional_order_and_payload() 
     let next = make(1);
     let actual = restored.push(&next, 0).unwrap();
     assert_eq!(actual, ranker.push(&next, 0).unwrap());
-    assert_eq!(row_kinds(&actual), vec![3, 0]);
+    assert_eq!(row_kinds(&actual), vec![1, 2]);
     let sorted = TimestampColumn::try_new(actual.column(1).as_ref()).unwrap();
     assert_eq!(sorted.value(0).unwrap().nano_of_milli(), 999999);
     assert_eq!(sorted.value(1).unwrap().nano_of_milli(), 1);
