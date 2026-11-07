@@ -46,7 +46,7 @@ still runs when the host fails. SQL expressions consume source rows rather than 
   substitution for the native-enabled failure attempts.
 
 SQL/JSON failure comparisons require the same root exception class, Jackson's original
-diagnostic, and every reported line, column, byte and character offset. Jackson's transient
+diagnostic and request payload, and every reported line, column, byte and character offset. Jackson's transient
 source reference can disappear when Flink serializes a task failure, changing only the
 appended source label from `REDACTED` to `UNKNOWN`. That transport label is excluded from
 comparison; other exception messages still compare exactly. A regression compares a real

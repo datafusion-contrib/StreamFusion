@@ -3,7 +3,7 @@ package tech.streamfusion;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.JsonProcessingException;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.JsonParseException;
 import org.apache.flink.table.api.TableEnvironment;
 
 final class JsonFunctionTestInputs {
@@ -105,14 +105,16 @@ final class JsonFunctionTestInputs {
 
   static void assertSameFailure(Throwable expected, Throwable actual, String context) {
     assertEquals(expected.getClass(), actual.getClass(), context);
-    if (!(expected instanceof JsonProcessingException)) {
+    if (!(expected instanceof JsonParseException)) {
       assertEquals(expected.getMessage(), actual.getMessage(), context);
       return;
     }
-    var host = (JsonProcessingException) expected;
-    var nativeError = (JsonProcessingException) actual;
+    var host = (JsonParseException) expected;
+    var nativeError = (JsonParseException) actual;
     // Jackson's source reference is transient; Flink can return a local or serialized failure.
     assertEquals(host.getOriginalMessage(), nativeError.getOriginalMessage(), context);
+    assertEquals(
+        host.getRequestPayloadAsString(), nativeError.getRequestPayloadAsString(), context);
     var location = host.getLocation();
     var nativeLocation = nativeError.getLocation();
     if (location == null || nativeLocation == null) {

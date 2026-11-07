@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.JsonLocation;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.JsonParseException;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.util.RequestPayload;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.util.InstantiationUtil;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,8 @@ class JsonFunctionTestInputsTest {
     for (Throwable different :
         new Throwable[] {
           new JsonParseException(null, "different error", location),
+          new JsonParseException(null, "invalid document", location)
+              .withRequestPayload(new RequestPayload("different payload")),
           new JsonParseException(null, "invalid document", new JsonLocation(null, 3, 5, 3, 4)),
           new JsonParseException(null, "invalid document", new JsonLocation(null, 3, 5, 2, 6)),
           new JsonParseException(null, "invalid document", new JsonLocation(null, 4, 5, 2, 4)),
