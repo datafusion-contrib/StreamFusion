@@ -60,6 +60,10 @@ import tech.streamfusion.state.StockOverEventFoldStateContract;
 
 class CanonicalEventUnboundedOverInteropTest {
   static Stream<Arguments> modes() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allModes());
+  }
+
+  private static Stream<Arguments> allModes() {
     return Stream.of("BIGINT", "FLOAT", "DOUBLE")
         .flatMap(
             type ->

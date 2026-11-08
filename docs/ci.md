@@ -614,15 +614,27 @@ and metadata sharing enabled, replacing estimates from the earlier JVM settings.
 same 118 classes, including two abstract bases, the largest modeled shard falls from 7,417.10
 to 6,110.50 class-seconds while average work stays 5,995.60. This rebalances existing work;
 the complete hosted matrix establishes its actual effect on job and workflow time.
-Canonical jobs set `JAVA_TOOL_OPTIONS=-XX:TieredStopAtLevel=1`, inherited by Maven, Surefire
-and the isolated stock/native workers. These short-lived workers repeatedly pay for HotSpot
+Canonical jobs set `JAVA_TOOL_OPTIONS="-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m"`,
+inherited by Maven, Surefire and the isolated stock/native workers. These short-lived workers repeatedly pay for HotSpot
 optimizing compilation and exit before amortizing it. First-tier compilation reduces that
 startup CPU cost while preserving fresh processes, both backends, both directions, every
 parameterized invocation, native execution evidence, checkpoints and rescaling assertions.
 The ordinary runtime test step also uses first-tier compilation after its separate paired
-qualification. Upstream, JVM-boundary and release/benchmark jobs retain usual compilation.
+qualification. First-tier test runs reserve a 512 MiB compiler cache: the local canonical
+operator matrix exhausted the default 48 MiB cache and HotSpot stopped compilation. The larger
+reservation prevents that limit from forcing the remaining test code into the interpreter; it
+is a capacity correction, with no new throughput or hosted CI timing claim. Upstream, JVM-boundary and release/benchmark jobs retain usual compilation.
 This is a CI scheduling optimization, not a SQL throughput result. See the
 [CI profile](benchmarks/ci-profile-20261107.json) for measurements and their limits.
+
+For local canonical iteration, `-Dstreamfusion.test.canonicalSmoke=true` selects deterministic
+representatives from the largest positive operator matrices. Every individual parameter value and
+every pair of values present in the original provider remains represented. Existing release
+assumptions still apply; a skipped case does not qualify a native path. Named corruption and
+regression providers remain exhaustive. This is an iteration check, not full matrix qualification;
+omitting the flag retains every invocation in its original order. CI does not set this flag and
+continues to run the complete matrices. Batch operators and release lines in these short checks,
+then use the complete matrix for the final qualification.
 
 Canonical workers also use class-data sharing through `SF_CANONICAL_CDS_DIR`, set only for
 their test step. The first successful worker on each classpath records loaded classes, then

@@ -35,6 +35,10 @@ class CanonicalTemporalSortInteropTest {
   }
 
   static Stream<Arguments> modes() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allModes());
+  }
+
+  private static Stream<Arguments> allModes() {
     var out = new ArrayList<Arguments>();
     for (String type :
         List.of("long", "string", "decimal", "array", "row", "double", "binary", "map", "reserved"))

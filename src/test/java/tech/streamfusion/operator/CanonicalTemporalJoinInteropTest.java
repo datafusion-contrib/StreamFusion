@@ -55,6 +55,10 @@ class CanonicalTemporalJoinInteropTest {
   }
 
   static Stream<Arguments> cases() throws Exception {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() throws Exception {
     var result = new ArrayList<Arguments>();
     for (String scenario : CanonicalTemporalMetadataFixtureTest.traces().keySet())
       for (boolean stock : new boolean[] {false, true})

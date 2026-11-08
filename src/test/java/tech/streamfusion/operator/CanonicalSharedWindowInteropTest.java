@@ -63,6 +63,10 @@ class CanonicalSharedWindowInteropTest {
   @TempDir Path directory;
 
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     var result = new ArrayList<Arguments>();
     for (String shape : List.of("HOP", "CUMULATE"))
       for (String zone : List.of("UTC", "+05:45", "Europe/Berlin", "America/New_York"))

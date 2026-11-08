@@ -197,7 +197,7 @@ jobs:
 
       - name: Run Java test suite
         env:
-          JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1'
+          JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m'
         run: |
           nproc
           free -m
@@ -212,7 +212,7 @@ jobs:
       - name: Verify shared canonical handoffs on Flink 1.18
         if: matrix.line == '1.18' && matrix.shard == 1
         env:
-          JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1'
+          JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m'
         run: >-
           mvn -B -ntp -Pflink-1.18 -pl streamfusion-runtime -am test
           -Dnative.build.skip=true -Dsf.runtime.tests.skip=false
@@ -287,7 +287,7 @@ jobs:
     env:
       SF_KAFKA_INTEGRATION: 'true'
       # Each handoff starts a fresh worker; optimizing compilation cannot amortize here.
-      JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1'
+      JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m'
     steps:
       - uses: actions/checkout@v6
       - name: Free disk space

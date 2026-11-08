@@ -49,6 +49,10 @@ class CanonicalWindowJoinInteropTest {
   static final long BASE = Instant.parse("2025-03-09T06:59:58Z").toEpochMilli();
 
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     var values = new ArrayList<Arguments>();
     for (String kind : List.of("INNER", "LEFT", "RIGHT", "FULL"))
       for (boolean stockStore : new boolean[] {false, true})

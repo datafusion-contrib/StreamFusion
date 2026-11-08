@@ -37,6 +37,10 @@ class CanonicalIntervalJoinInteropTest {
   static final SavepointType CANONICAL = SavepointType.savepoint(SavepointFormatType.CANONICAL);
 
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     var cases = new ArrayList<Arguments>();
     for (int kind = 0; kind < 4; kind++)
       for (boolean stockDisk : new boolean[] {false, true})

@@ -47,6 +47,10 @@ class CanonicalBoundedRangeInteropTest {
   }
 
   static Stream<Arguments> modes() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allModes());
+  }
+
+  private static Stream<Arguments> allModes() {
     var out = new ArrayList<Arguments>();
     for (String type : List.of("BIGINT", "FLOAT", "DOUBLE", "DECIMAL(38,2)"))
       for (boolean keyless : new boolean[] {false, true})
