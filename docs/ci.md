@@ -837,6 +837,18 @@ Both settings use released Flink's normal generated-code splitting configuration
 comparisons have no JFR or fixture timers, hold the current worker/heap settings fixed,
 and compare individual case outcomes across all 2,759 invocations in each trial.
 
+`hotspot_mode=canonical-parallel` investigates the remaining savepoint execution cost
+without adding required runners. It selects eight complete classes with comparable measured
+durations (108–181 seconds on JDK 17 in the latest complete source run), retaining all
+64 cases. One separate preparation phase runs those same cases and prepares worker
+metadata. Two alternating pairs then compare two fresh 2 GiB parent forks with four fresh
+1 GiB parent forks, holding the total parent heap cap at 4 GiB. Each running parent still
+starts its existing fresh 1 GiB engine worker; the maximum configured parent-plus-worker
+heaps are 6 GiB and 8 GiB respectively. Both variants use the existing first-tier compiler,
+released Flink configuration and metadata archives. Preparation cost, complete case outcomes,
+elapsed/CPU time and `vmstat` samples are retained. This is a controlled diagnostic;
+the complete matrix remains necessary before changing the required savepoint worker count.
+
 The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
 4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.
 It retains the exact cases, outcomes and total 8 GiB heap cap; additional VM overhead is still

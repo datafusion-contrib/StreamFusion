@@ -14,7 +14,7 @@ on:
       hotspot_mode:
         description: 'Attribute slow classes or compare their worker counts'
         type: choice
-        options: [attribution, parallel, plan-cache]
+        options: [attribution, parallel, plan-cache, canonical-parallel]
         default: attribution
 
 permissions:
@@ -205,10 +205,18 @@ jobs:
           github-token: ${{ github.token }}
           path: native/target/debug
       - name: Compile the unchanged complete runtime inventory
+        env:
+          HOTSPOT_MODE: ${{ inputs.hotspot_mode }}
         run: |
-          python3 bin/ci-maven-dependencies.py --projects streamfusion-runtime
+          profile=()
+          profile_name=''
+          if [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
+            profile=(-Pcanonical-kafka)
+            profile_name='canonical-kafka'
+          fi
+          python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects streamfusion-runtime
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
-          mvn -B -ntp -pl streamfusion-runtime -am test-compile -Dnative.build.skip=true
+          mvn -B -ntp "${profile[@]}" -pl streamfusion-runtime -am test-compile -Dnative.build.skip=true
       - name: Attribute measured slow classes under current CI worker settings
         env:
           HOTSPOT_MODE: ${{ inputs.hotspot_mode }}
@@ -221,12 +229,20 @@ jobs:
           fi
           nproc
           free -m
-          python3 bin/profile-runtime-ci.py "${args[@]}" --output "$RUNNER_TEMP/runtime-hotspots"
+          vmstat -w 15 > "$RUNNER_TEMP/runtime-hotspots-vmstat.txt" &
+          memory_sampler=$!
+          trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
+          if [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
+            python3 bin/profile-canonical-ci.py --parallel --repetitions 2 --output "$RUNNER_TEMP/runtime-hotspots"
+          else
+            python3 bin/profile-runtime-ci.py "${args[@]}" --output "$RUNNER_TEMP/runtime-hotspots"
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: runtime-hotspots-${{ inputs.hotspot_mode }}-jdk${{ matrix.jdk }}
           path: |
             ${{ runner.temp }}/runtime-hotspots/
+            ${{ runner.temp }}/runtime-hotspots-vmstat.txt
             streamfusion-runtime/target/surefire-reports/*runtime-profile*
           retention-days: 7
