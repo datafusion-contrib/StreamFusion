@@ -37,12 +37,12 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 The established complete-job qualification is on released Flink 2.2.1. Flink 1.18.1 now shares the
 planner, metadata projection, state contracts and canonical backend. Complete-job controls cover
-First-N, grouped arithmetic, regular joins, normalization and eager deduplication on both native
-stores. Component controls additionally cover typed/grouped state, ranks, fixed TUMBLE windows,
-interval joins, temporal state and processing-time OVER. Legacy HOP/CUMULATE canonical binding
-retains stock operators because released shared-pane timer continuation differs; session TVFs
-are unavailable, buffered dedup uses the older eager owner, and event-time unbounded OVER V1
-remains unqualified. These same-line controls do not qualify the whole
+First-N, grouped arithmetic, regular joins, normalization, eager deduplication and qualified fixed
+windows (including two-phase and DISTINCT controls) on both native stores. Component controls additionally cover typed/grouped state, ranks, fixed TUMBLE/HOP/CUMULATE
+windows, interval joins, temporal state and processing-time OVER. Shared-window binding preserves
+1.18's uninitialized timer-service watermark until the first post-restore watermark; it uses the
+same stock state and timer serializers as 2.2. Session TVFs are unavailable in 1.18, buffered dedup
+uses the older eager owner, and event-time unbounded OVER V1 remains unqualified. These same-line controls do not qualify the whole
 1.18 operator inventory or cross-line upgrades. Custom stock source/committer fixtures retain their
 state and external effects in the qualified jobs. Native connector protocols have separate
 qualification: the [Kafka handoff matrices](../connectors/kafka.md#canonical-sink-handoffs-partial)
@@ -109,8 +109,9 @@ release the visitor; overlapping live writes and compaction do not change its ca
 The general adapters retain their existing per-key and inventory working sets; very large individual
 values and these working sets require separate qualification. Shared capture and timer controls pass
 on both releases, with representative operator matrices and isolated First-N, grouped arithmetic,
-regular-join, normalization and eager-deduplication jobs on 1.18. The current 1.18 cohort passes 861
-checks and skips 138 documented window exclusions. Released 2.2 restore controls additionally pass
+regular-join, normalization and eager-deduplication jobs on 1.18. The earlier 1.18 cohort passed 861
+checks with 138 window exclusions; shared windows are now separately qualified by 295 runtime
+checks and 408 planner checks, with 54 SESSION TVF capability skips. Released 2.2 restore controls additionally pass
 six stock and six native invocations across First-N, append/update/retract ranks and eager dedup,
 with positive native canonical-import and subsequent-input evidence. Representative checks do not
 replace the exhaustive CI matrix or expand the partial stock-layout inventory above.

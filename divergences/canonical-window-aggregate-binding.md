@@ -22,3 +22,13 @@ ownership transfer. Flink-specific namespaces, timer reconstruction and UNION wa
 are required for stock restore. Arroyo does not provide that stock state contract. Canonical
 qualification remains partial under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569),
 with benchmarking explicitly deferred by the maintainer.
+
+
+Released Flink 1.18's slicing operator restores processor progress but does not initialize its
+internal timer service watermark in `open()`; released 2.2 does. Its window combiner can therefore
+re-register an already-fired slice while handling late input before the first new watermark.
+The shared native window contract carries one transient initialization flag to reproduce that
+release behavior and clears it at the first watermark. Memory captures retain the flag; restoring
+an operator initializes it according to the released lifecycle. No alternate state layout or
+forked Flink runtime is required. Shared-window tests restore the independent stock reference at
+every tested checkpoint boundary, so the comparison covers equal restoration lifecycles.

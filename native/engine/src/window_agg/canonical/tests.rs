@@ -811,3 +811,58 @@ fn buffered_partial_namespaces_survive_late_barriers_and_dormant_state_handoffs(
         }
     }
 }
+
+#[test]
+fn legacy_timer_watermark_replays_only_before_the_first_post_restore_watermark() {
+    for cumulative in [false, true] {
+        for persistent in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("state");
+            let mut source = shared(
+                persistent.then_some(path.as_path()),
+                false,
+                cumulative,
+                true,
+            );
+            let batch = |time| {
+                RecordBatch::try_from_iter(vec![
+                    ("key0", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+                    ("value0", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+                    ("ts", Arc::new(Int64Array::from(vec![time])) as ArrayRef),
+                ])
+                .unwrap()
+            };
+            source.update(&batch(100)).unwrap();
+            assert_eq!(source.flush(1000).unwrap().num_rows(), 1);
+            let mut target = shared(None, false, cumulative, true);
+            copy_shared(&mut source, &mut target, false);
+            target.timer_watermark_uninitialized = true;
+            let mut captured = shared(None, false, cumulative, true);
+            crate::state::canonical_memory::CanonicalMemoryState::copy_state(
+                &mut target,
+                &mut captured,
+            )
+            .unwrap();
+            for value in [&mut target, &mut captured] {
+                value.update(&batch(500)).unwrap();
+                let output = value.flush(2000).unwrap();
+                let ends = output
+                    .column_by_name("window_end")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                assert_eq!(ends.values().as_ref(), &[1000, 2000]);
+                value.update(&batch(500)).unwrap();
+                let output = value.flush(3000).unwrap();
+                let ends = output
+                    .column_by_name("window_end")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                assert_eq!(ends.values().as_ref(), &[3000]);
+            }
+        }
+    }
+}

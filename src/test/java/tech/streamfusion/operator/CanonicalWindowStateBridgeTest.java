@@ -102,7 +102,7 @@ class CanonicalWindowStateBridgeTest {
             : Native.createTumblingAggregator(
                 shared ? 3000 : 1000, 1000, new int[] {0, 0}, new int[] {0, 3}, 1 << 24);
     try {
-      if (shared) Native.configureSlicingWindowCanonical(handle, 1);
+      if (shared) Native.configureSlicingWindowCanonical(handle, 1, true);
       assertThrows(RuntimeException.class, () -> importRows(handle, mode, shared));
       assertEquals(0, exportedRows(handle, shared));
       importRows(handle, "valid", shared);

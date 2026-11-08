@@ -1853,10 +1853,19 @@ kinds; their validity-only input contract is shared without conflating the two e
 
 ## Flink 1.18 canonical binding
 
-The shared canonical planner and state contracts now cover qualified fixed TUMBLE state and the
-stateless local barrier on released Flink 1.18.1, using both native stores. HOP/CUMULATE canonical
-binding retains the stock owner: the released shared-pane timer/buffer continuation differs from
-Flink 2.2 and needs a separate adapter before interchange can be qualified. Session TVFs are not
-available in released 1.18. Processing-time component controls avoid the legacy stock operator's
-overflow/stalled-buffer behavior under extreme future watermarks. The broader complete-job and
-shared-window matrices above remain Flink 2.2 qualification.
+The shared canonical planner and state contracts cover fixed TUMBLE/HOP/CUMULATE state and the
+stateless local barrier on released Flink 1.18.1, using both native stores. Released 1.18 leaves the
+window timer service's watermark at MIN after restore, even though it restores the processor's
+progress. Before the first new watermark, its combiner can register an already-fired slice again.
+The native shared-window contract retains this release behavior; 2.2 initializes timer progress
+from the savepoint. Checkpoint comparisons restore the stock reference at the same boundary as
+the tested owner, including stock-to-stock controls, rather than comparing different lifecycles.
+
+The 1.18 cohort passes 295 runtime checks and 408 planner checks. It includes late input, regional
+zones, SQL offsets, DISTINCT views, timer-only captures, canonical returns and native recovery.
+Six isolated complete-job controls additionally switch engines through TUMBLE, two-phase TUMBLE
+and DISTINCT TUMBLE on both native stores; the same job fixtures are shared between both releases.
+The 54 SESSION TVF cases are skipped because that SQL feature is unavailable in released 1.18.
+Processing-time controls avoid the older stock operator's overflow/stalled-buffer behavior under
+extreme future watermarks. These controls do not qualify every aggregate layout or cross-line
+upgrades; the broader complete-job matrices above remain separate qualification.

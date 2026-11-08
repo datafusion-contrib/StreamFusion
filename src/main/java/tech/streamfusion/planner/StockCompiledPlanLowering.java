@@ -910,8 +910,6 @@ final class StockCompiledPlanLowering {
     if (definition.path("needRetraction").asBoolean())
       return windowFallback(stock, "retracting state contract is not bound");
     var spec = windowing.getWindow();
-    if (!FlinkPlanCompat.sharedWindowCanonical() && !(spec instanceof TumblingWindowSpec))
-      return windowFallback(stock, "released shared-pane continuation is not yet bound");
     boolean session = FlinkCompat.isSessionWindow(spec);
     if (session && local != null)
       return windowFallback(stock, "SESSION partial boundaries are not bound");

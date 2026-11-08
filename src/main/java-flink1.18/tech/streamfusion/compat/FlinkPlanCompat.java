@@ -10,7 +10,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.serde.SerdeContext;
 public final class FlinkPlanCompat {
   private FlinkPlanCompat() {}
 
-  public static boolean sharedWindowCanonical() {
+  public static boolean restoresWindowTimerWatermark() {
     return false;
   }
 

@@ -330,6 +330,7 @@ pub(crate) struct TumblingAggregator {
     calendar: Option<WindowCalendar>,
     next_timer_deadline: i64,
     shared_slices: bool,
+    timer_watermark_uninitialized: bool,
     slice_timers: BTreeMap<i64, BTreeMap<OwnedRow, i32>>,
     aggregates: Vec<WindowAggregate>,
     exact_panes: bool,
@@ -406,6 +407,7 @@ impl TumblingAggregator {
             calendar: None,
             next_timer_deadline: i64::MIN,
             shared_slices: false,
+            timer_watermark_uninitialized: false,
             slice_timers: BTreeMap::new(),
             live_count: kinds
                 .iter()
@@ -1307,6 +1309,7 @@ impl TumblingAggregator {
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         self.snapshot_cache = None;
         self.current_watermark = self.current_watermark.max(watermark);
+        self.timer_watermark_uninitialized = false;
         if self.shared_slices {
             return self.flush_shared(watermark);
         }

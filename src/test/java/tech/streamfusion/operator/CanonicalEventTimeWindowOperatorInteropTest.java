@@ -96,9 +96,21 @@ class CanonicalEventTimeWindowOperatorInteropTest {
         assertEquals(expected, output(plan, nativeRun));
         nativeRun.prepareSnapshotPreBarrier(3);
         var checkpoint = nativeRun.snapshot(3, 0);
-        try (var resumed = nativeHarness(plan, rocks)) {
+        reference.prepareSnapshotPreBarrier(3);
+        stockAgain.prepareSnapshotPreBarrier(3);
+        var referenceCheckpoint =
+            reference.snapshotWithLocalState(3, 0, CANONICAL).getJobManagerOwnedState();
+        var stockCheckpoint =
+            stockAgain.snapshotWithLocalState(3, 0, CANONICAL).getJobManagerOwnedState();
+        try (var resumed = nativeHarness(plan, rocks);
+            var restoredReference = plan.stock(rocks);
+            var restoredStock = plan.stock(!rocks)) {
           resumed.initializeState(checkpoint);
           resumed.open();
+          restoredReference.initializeState(referenceCheckpoint);
+          restoredReference.open();
+          restoredStock.initializeState(stockCheckpoint);
+          restoredStock.open();
           resumed.prepareSnapshotPreBarrier(4);
           var afterCheckpoint =
               resumed.snapshotWithLocalState(4, 0, CANONICAL).getJobManagerOwnedState();
@@ -106,17 +118,17 @@ class CanonicalEventTimeWindowOperatorInteropTest {
             stockAfterCheckpoint.initializeState(afterCheckpoint);
             stockAfterCheckpoint.open();
             var late = input(999L, 100L, 100);
-            plan.send(reference, late);
-            plan.send(stockAgain, late);
+            plan.send(restoredReference, late);
+            plan.send(restoredStock, late);
             plan.send(stockAfterCheckpoint, late);
             send(plan, resumed, late);
-            reference.processWatermark(new Watermark(BASE + 5999));
-            stockAgain.processWatermark(new Watermark(BASE + 5999));
+            restoredReference.processWatermark(new Watermark(BASE + 5999));
+            restoredStock.processWatermark(new Watermark(BASE + 5999));
             stockAfterCheckpoint.processWatermark(new Watermark(BASE + 5999));
             resumed.processWatermark(new Watermark(BASE + 5999));
-            expected = plan.output(reference);
+            expected = plan.output(restoredReference);
             assertFalse(expected.isEmpty());
-            assertEquals(expected, plan.output(stockAgain));
+            assertEquals(expected, plan.output(restoredStock));
             assertEquals(expected, plan.output(stockAfterCheckpoint));
             assertEquals(expected, output(plan, resumed));
             resumed.prepareSnapshotPreBarrier(5);
@@ -129,13 +141,13 @@ class CanonicalEventTimeWindowOperatorInteropTest {
               emptyStock.open();
               emptyNative.processWatermark(new Watermark(BASE + 1));
               var closed = input(777L, 77L, 1000);
-              plan.send(reference, closed);
+              plan.send(restoredReference, closed);
               plan.send(emptyStock, closed);
               send(plan, emptyNative, closed);
-              reference.processWatermark(new Watermark(BASE + 9999));
+              restoredReference.processWatermark(new Watermark(BASE + 9999));
               emptyStock.processWatermark(new Watermark(BASE + 9999));
               emptyNative.processWatermark(new Watermark(BASE + 9999));
-              assertEquals(List.of(), plan.output(reference));
+              assertEquals(List.of(), plan.output(restoredReference));
               assertEquals(List.of(), plan.output(emptyStock));
               assertEquals(List.of(), output(plan, emptyNative));
             }

@@ -164,17 +164,25 @@ class CanonicalSharedWindowInteropTest {
       var exported =
           view.snapshotWithLocalState(2, 0, SavepointType.savepoint(SavepointFormatType.CANONICAL))
               .getJobManagerOwnedState();
-      try (var restored = plan.stock(!persistent)) {
+      reference.prepareSnapshotPreBarrier(2);
+      var stockExported =
+          reference
+              .snapshotWithLocalState(2, 0, SavepointType.savepoint(SavepointFormatType.CANONICAL))
+              .getJobManagerOwnedState();
+      try (var restored = plan.stock(!persistent);
+          var stockReference = plan.stock(persistent)) {
+        stockReference.initializeState(stockExported);
+        stockReference.open();
         restored.initializeState(exported);
         restored.open();
         for (var row : suffix) {
-          plan.send(reference, row);
+          plan.send(stockReference, row);
           plan.send(restored, row);
         }
         for (long watermark : new long[] {BASE + 2999, BASE + 4999, Long.MAX_VALUE}) {
-          reference.processWatermark(new Watermark(watermark));
+          stockReference.processWatermark(new Watermark(watermark));
           restored.processWatermark(new Watermark(watermark));
-          assertEquals(plan.output(reference), plan.output(restored));
+          assertEquals(plan.output(stockReference), plan.output(restored));
         }
       }
     } finally {
@@ -460,9 +468,8 @@ class CanonicalSharedWindowInteropTest {
         boolean integerKey)
         throws Exception {
       org.junit.jupiter.api.Assumptions.assumeTrue(
-          tech.streamfusion.compat.FlinkPlanCompat.sharedWindowCanonical()
-              || shape.equals("TUMBLE"),
-          "Flink 1.18 shared-pane timer continuation remains unqualified");
+          !shape.equals("SESSION") || tech.streamfusion.compat.CanonicalTestCompat.flink22(),
+          "Released Flink 1.18 does not provide SESSION table functions");
       this.integerKey = integerKey;
       this.processingTime = processingTime;
       this.tumbling = shape.equals("TUMBLE");

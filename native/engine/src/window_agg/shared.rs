@@ -154,6 +154,10 @@ impl TumblingAggregator {
                     .or_insert_with(Vec::new)
                     .push(row as u32);
                 timers.entry((timer, key)).or_insert(row);
+                // Released 1.18 combiners see MIN until the first watermark after restore.
+                if self.timer_watermark_uninitialized {
+                    timers.entry((target, key)).or_insert(row);
+                }
             }
         }
         #[cfg(feature = "rocksdb-state")]
@@ -250,7 +254,11 @@ impl TumblingAggregator {
                 )?;
             }
             if let Some(timer) = timer {
-                self.add_slice_timer(timer, key, self.slice_key_group(batch, row))?;
+                let group = self.slice_key_group(batch, row);
+                if self.timer_watermark_uninitialized {
+                    self.add_slice_timer(target, key.clone(), group)?;
+                }
+                self.add_slice_timer(timer, key, group)?;
             }
         }
         self.memory.set(self.computed_state_bytes());

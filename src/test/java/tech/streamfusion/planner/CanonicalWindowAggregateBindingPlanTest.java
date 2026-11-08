@@ -186,21 +186,6 @@ class CanonicalWindowAggregateBindingPlanTest {
                         && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
                             instanceof NativeRowWindowOperatorCore)
             .collect(java.util.stream.Collectors.toList());
-    if (!tech.streamfusion.compat.FlinkPlanCompat.sharedWindowCanonical()
-        && !shape.equals("TUMBLE")) {
-      assertTrue(owners.isEmpty(), graph.getStreamingPlanAsJSON());
-      assertTrue(
-          graph.getStreamNodes().stream()
-              .anyMatch(
-                  n ->
-                      n.getOperatorFactory() instanceof SimpleOperatorFactory
-                          && tech.streamfusion.compat.FlinkPlanCompat.windowOperator()
-                              .isInstance(
-                                  ((SimpleOperatorFactory<?>) n.getOperatorFactory())
-                                      .getOperator())),
-          graph.getStreamingPlanAsJSON());
-      return;
-    }
     assertEquals(1, owners.size(), graph.getStreamingPlanAsJSON());
     var owner = owners.get(0);
     var operator = ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();

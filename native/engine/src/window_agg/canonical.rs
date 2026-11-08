@@ -595,11 +595,12 @@ pub extern "system" fn Java_tech_streamfusion_Native_configureSlicingWindowCanon
     _class: JClass<'local>,
     handle: jlong,
     count_star: jint,
+    restores_timer_watermark: jni::sys::jboolean,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
-        if let Err(error) = unsafe { &mut *(handle as *mut TumblingAggregator) }
-            .enable_canonical_slicing(count_star)
-        {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        aggregator.timer_watermark_uninitialized = restores_timer_watermark == 0;
+        if let Err(error) = aggregator.enable_canonical_slicing(count_star) {
             report_error(&mut env, error);
         }
     });
@@ -773,6 +774,7 @@ impl crate::state::canonical_memory::CanonicalMemoryState for TumblingAggregator
             .as_ref()
             .map(|_| key_row_converter_from_types(&self.key_types));
         target.current_watermark = self.current_watermark;
+        target.timer_watermark_uninitialized = self.timer_watermark_uninitialized;
         target.next_timer_deadline = self.next_timer_deadline;
         target.canonical_distinct = self.canonical_distinct.clone();
         let codec = target.key_converter.as_ref();

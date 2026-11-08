@@ -217,7 +217,12 @@ public final class StockSlicingWindowStateContract implements StockStateContract
   public void configureNativeState(long handle, boolean persistent) {
     if (finalWindows != null) Native.setFixedWindowFinalWindows(handle, true);
     for (var view : distinctViews) view.configure(handle);
-    if (shared) Native.configureSlicingWindowCanonical(handle, countStar);
+    if (shared)
+      Native.configureSlicingWindowCanonical(
+          handle,
+          countStar,
+          processingTime
+              || tech.streamfusion.compat.FlinkPlanCompat.restoresWindowTimerWatermark());
     if (!processingTime) Native.restoreTumblingCanonicalWatermark(handle, restoredWatermark());
   }
 

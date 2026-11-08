@@ -226,7 +226,7 @@ class CanonicalWindowDistinctBridgeTest {
               parts,
               1 << 24);
       Native.bindWindowCanonicalDistinct(restored, 0);
-      if (!shape.equals("TUMBLE")) Native.configureSlicingWindowCanonical(restored, 1);
+      if (!shape.equals("TUMBLE")) Native.configureSlicingWindowCanonical(restored, 1, true);
       assertEquals(expected, countedRows(restored, type));
       long target = restored;
       Object third = strings ? StringData.fromString("third") : 30L;
@@ -379,7 +379,7 @@ class CanonicalWindowDistinctBridgeTest {
             : Native.createTumblingAggregator(
                 shape.equals("HOP") ? 3000 : 1000, 1000, types, kinds, 1 << 24);
     Native.bindWindowCanonicalDistinct(handle, 0);
-    if (!shape.equals("TUMBLE")) Native.configureSlicingWindowCanonical(handle, 1);
+    if (!shape.equals("TUMBLE")) Native.configureSlicingWindowCanonical(handle, 1, true);
     return handle;
   }
 
