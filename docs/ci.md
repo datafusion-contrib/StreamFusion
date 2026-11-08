@@ -258,6 +258,12 @@ reuse and usual compiler settings. The default 8 GiB per-fork heap
 combined with CPU-based fork counts leaves insufficient predictable headroom for Arrow buffers, native
 operators, embedded clusters and the Maven process on hosted runners.
 
+Savepoint CI uses four fresh 1 GiB parent forks per job, each retaining its existing fresh
+1 GiB engine worker for a handoff stage. The configured parent heaps total 4 GiB, with
+8 GiB of combined parent/worker heaps when all four workers run. The required matrix
+remains 32 jobs; first-tier compilation, immutable metadata sharing and fresh engine
+process boundaries remain in place. The test step records processors, memory and `vmstat`.
+
 Released Flink MiniClusters keep completed execution graphs and serialized results in an
 unbounded in-memory archive. Its JVM shutdown hook can retain this archive even after the
 cluster stops, so closing private clusters or rotating the shared cluster does not reliably
@@ -892,12 +898,21 @@ released Flink configuration and metadata archives. Preparation cost, complete c
 elapsed/CPU time and `vmstat` samples are retained. This is a controlled diagnostic;
 the complete matrix remains necessary before changing the required savepoint worker count.
 
-The JDK 17 comparison passed all 320 invocations including preparation, with no skips.
-Two-fork measurement medians were 563.81 seconds elapsed and 1,257.75 seconds CPU;
-four-fork medians were 414.06 seconds and 1,427.05 seconds, a 26.6% elapsed reduction
-with 13.5% more CPU. Recorded samples showed zero swap use. JDK 11 is still running;
-the required savepoint matrix retains its existing budget until the comparison and full
-source qualification justify a change.
+The [completed savepoint worker comparison](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42518477689)
+passed all 640 invocations across both JDKs including preparation, with no skips. Timed
+measurement medians across two alternating pairs:
+
+| JDK | Two parent forks | Four parent forks | Elapsed reduction | CPU increase |
+| --- | ---: | ---: | ---: | ---: |
+| 11 | 665.69 s | 540.48 s | 18.8% | 19.6% |
+| 17 | 563.81 s | 414.06 s | 26.6% | 13.5% |
+
+Separate preparation took 739.42 seconds on JDK 11 and 601.76 seconds on JDK 17;
+each phase retained the same two metadata archives. Recorded samples showed zero swap
+use on both runners. These comparisons select four fresh 1 GiB parents for the existing
+savepoint jobs. Full source CI must still qualify all recovery assertions, cold setup,
+complete class inventories and the combined configuration. This is test execution
+throughput within each runner, not fewer cases or additional required runners.
 
 The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
 4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.

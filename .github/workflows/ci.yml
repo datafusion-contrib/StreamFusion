@@ -300,12 +300,16 @@ jobs:
       - name: Run every selected canonical job
         env:
           SF_CANONICAL_CDS_DIR: ${{ runner.temp }}/canonical-cds
-        run: >-
-          mvn -B -ntp -Pcanonical-kafka -pl streamfusion-runtime -am test
-          -Dnative.build.skip=true
-          -Dsf.protobuf.checkStaleness=true
-          "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/canonical-job-includes.txt"
-          -Dsf.testForks=2 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx2g"
+        run: |
+          nproc
+          free -m
+          vmstat -w 30 &
+          memory_sampler=$!
+          trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
+          mvn -B -ntp -Pcanonical-kafka -pl streamfusion-runtime -am test \
+            -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
+            "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/canonical-job-includes.txt" \
+            -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx1g"
       - name: Retain canonical job selection and outcomes
         if: always()
         uses: actions/upload-artifact@v4

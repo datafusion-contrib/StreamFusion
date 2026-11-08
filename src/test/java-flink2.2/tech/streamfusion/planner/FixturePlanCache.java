@@ -23,7 +23,8 @@ final class FixturePlanCache {
   }
 
   <T extends Serializable> T get(List<?> key, Factory<T> factory) throws Exception {
-    return get(key, factory, Boolean.parseBoolean(System.getProperty("sf.fixturePlanCache", "true")));
+    return get(
+        key, factory, Boolean.parseBoolean(System.getProperty("sf.fixturePlanCache", "true")));
   }
 
   synchronized <T extends Serializable> T get(List<?> key, Factory<T> factory, boolean enabled)

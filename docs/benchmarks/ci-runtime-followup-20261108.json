@@ -1451,9 +1451,444 @@
             "classpath_bytes": 616543936
           }
         ]
+      },
+      "jdk11": {
+        "conclusion": "success",
+        "summary": {
+          "cds-two": {
+            "elapsed_seconds": {
+              "median": 665.6887523945,
+              "min": 664.0776844879999,
+              "max": 667.2998203010002
+            },
+            "cpu_seconds": {
+              "median": 1639.1745665000003,
+              "min": 1639.087966,
+              "max": 1639.2611670000006
+            }
+          },
+          "cds-four": {
+            "elapsed_seconds": {
+              "median": 540.4832705485001,
+              "min": 539.5995113240001,
+              "max": 541.367029773
+            },
+            "cpu_seconds": {
+              "median": 1960.3121140000003,
+              "min": 1957.0703070000006,
+              "max": 1963.5539209999997
+            }
+          }
+        },
+        "elapsed_reduction_percent": 18.80841179840167,
+        "cpu_increase_percent": 19.591418392105698,
+        "vmstat": {
+          "samples": 211,
+          "maximum_swap_used_kib": 0,
+          "minimum_free_plus_buffers_cache_kib": 12203408
+        },
+        "trials": [
+          {
+            "mode": "cds-two",
+            "pair": 0,
+            "phase": "preparation",
+            "forks": 2,
+            "heap": "2g",
+            "elapsed_seconds": 739.416401076,
+            "cpu_seconds": 1715.58499,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 240.45,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 164.449,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 238.921,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 163.532,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 164.337,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 160.16,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 162.668,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 165.08
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 260157440,
+            "classpath_bytes": 616542090
+          },
+          {
+            "mode": "cds-two",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 2,
+            "heap": "2g",
+            "elapsed_seconds": 664.0776844879999,
+            "cpu_seconds": 1639.087966,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 161.573,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 163.173,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 163.862,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 170.246,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 168.206,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 163.073,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 161.073,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 160.765
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 260157440,
+            "classpath_bytes": 616542090
+          },
+          {
+            "mode": "cds-four",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 539.5995113240001,
+            "cpu_seconds": 1957.0703070000006,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 261.674,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 264.944,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 270.765,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 271.605,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 257.55,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 251.479,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 258.122,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 262.365
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 260157440,
+            "classpath_bytes": 616542090
+          },
+          {
+            "mode": "cds-four",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 541.367029773,
+            "cpu_seconds": 1963.5539209999997,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 262.017,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 246.771,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 263.874,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 263.732,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 260.406,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 258.969,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 258.347,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 276.33
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 260157440,
+            "classpath_bytes": 616542090
+          },
+          {
+            "mode": "cds-two",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 2,
+            "heap": "2g",
+            "elapsed_seconds": 667.2998203010002,
+            "cpu_seconds": 1639.2611670000006,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 167.75,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 163.298,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 162.353,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 163.064,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 165.416,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 164.159,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 159.055,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 165.023
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 260157440,
+            "classpath_bytes": 616542090
+          }
+        ]
       }
     },
-    "limits": "Preparation cost is recorded separately; timing comparisons use prepared immutable metadata. Full required matrix must establish cold job setup, complete coverage, memory and whole-workflow costs. CPU increases are reported; sampled memory counters are not peak RSS."
+    "limits": "Preparation cost is recorded separately; timing comparisons use prepared immutable metadata. Full required matrix must establish cold job setup, complete coverage, memory and whole-workflow costs. CPU increases are reported; sampled memory counters are not peak RSS.",
+    "sha": "6b2297c3f3b66c0041576a655543743bf1cd4716",
+    "conclusion": "success"
   },
   "fixture_plan_cache": {
     "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42517795512",
@@ -1959,5 +2394,24 @@
       }
     },
     "limits": "Selected workload comparison under each recorded worker budget; no whole-matrix claim and no multiplication with separate concurrency probes. Full CI must qualify defaults, remaining fixtures, native/recovery assertions and combined settings."
-  }
+  },
+  "selected_settings": {
+    "runtime": {
+      "forks": 4,
+      "heap_per_fork_gib": 2,
+      "required_jobs": 12
+    },
+    "canonical": {
+      "parent_forks": 4,
+      "parent_heap_per_fork_gib": 1,
+      "fresh_engine_worker_heap_gib": 1,
+      "required_jobs": 32
+    },
+    "fixture_plan_cache": {
+      "default_enabled": true,
+      "scope": "Two execution-test fixture builders, independent deserialization, bounded128entries32MiB each"
+    },
+    "protobuf_staleness": "Only later lifecycle calls within the same immutable CI job; initial compilation and local defaults regenerate normally."
+  },
+  "full_source_qualification": "pending"
 }
