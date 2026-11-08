@@ -761,9 +761,16 @@ skip counts, including the additional JVM-boundary verification on JDK 17.
 
 All twelve runners reported four CPUs, with zero swap usage in the recorded `vmstat`
 samples. These before/after hosted measurements include runner and cache variability;
-the alternating paired probes above separately test the selected settings. The parent
-workflow's savepoint jobs are still running, so these runtime results do not establish
-complete CI qualification or whole-workflow elapsed savings.
+the alternating paired probes above separately test the selected settings. The complete
+source workflow subsequently passed in 161.6 minutes elapsed and 38.57 runner-hours,
+compared with 194.8 minutes and 44.74 runner-hours previously (17.0% and 13.8% reductions).
+All 32 savepoint artifacts retained the same partition inventories and class-level outcomes:
+116 runnable classes, 3,620 cases and no skips per JDK. Savepoint execution changed little,
+from 27.19 to 26.48 runner-hours, and its longest job increased from 70.5 to 73.0 minutes.
+Both exact-head aggregates and strict docs passed;
+[PR #614](https://github.com/datafusion-contrib/StreamFusion/pull/614) merged with its tested
+head unchanged. These final measurements are recorded on the follow-up branch to preserve
+that qualification.
 
 Two further observations identify follow-up measurements without claiming an optimization.
 One completed runtime job compiled its 1,029 test sources three times, taking approximately
@@ -797,6 +804,26 @@ earlier probe: its JDK 11 elapsed time was dominated by the string-collection cl
 The completed full Flink 2.2/JDK 11 jobs recorded 46.5–52.9% mean idle CPU in 30-second
 `vmstat` samples. That observation motivates this comparison but does not prove that
 additional processes improve its elapsed time or CPU cost.
+
+JDK 11 compilation recordings identify the compiler by `compileLevel`; newer JDKs expose
+the compiler name directly. The reader supports both schemas. Verified test outcomes,
+elapsed/CPU measurements and fixture timings are saved before optional JFR decoding so
+an attribution failure retains those measurements for offline analysis without repeating
+the test execution.
+The larger JDK 11 recordings also exceeded the consumer's 512 MiB constant-pool budget;
+postprocessing now allows a 2 GiB reader heap after the test JVMs have exited. Both real
+JDK schemas were decoded successfully, and the raw failed recordings were removed after
+recovering their attribution locally.
+
+The [completed attribution](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42511164171)
+retained all 2,759 cases without skips on both JDKs. On JDK 17 the fixture timers recorded
+1,245.10 summed seconds in repeated aggregate/state plan construction, versus 148.70
+seconds in private metrics-cluster startup and close. These intervals overlap across forks.
+Both JDKs repeatedly sampled Flink's generated-code splitter and parser; inclusive frame
+counts overlap and are not exact CPU attribution. The released 2.2.1 runtime bytecode
+confirms that generated classes enter the splitter with the configured threshold.
+The [follow-up evidence](benchmarks/ci-runtime-followup-20261108.json) retains class outcomes,
+timers, sample summaries and the Java 11 postprocessing limitation.
 
 The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
 4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.

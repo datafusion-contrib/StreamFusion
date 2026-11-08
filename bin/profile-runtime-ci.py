@@ -127,8 +127,6 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                          "elapsed_seconds": elapsed,
                          "cpu_seconds": after.ru_utime + after.ru_stime - before.ru_utime - before.ru_stime,
                          "outcomes": counts, "classes": classes}
-                if jfr:
-                    trial["jfr"] = ci_jfr.summarize(list(recording_dir.glob("*.jfr")), java_home, len(selection))
                 if hotspots:
                     files = list(fixture_directory.glob("*.txt"))
                     if len(files) != len(selection):
@@ -138,6 +136,9 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                                                for m in re.finditer(r"\[ci-fixture-timing\] (\S+) calls=(\d+) nanoseconds=(\d+)", file.read_text())]
                 trials.append(trial)
                 (output / "summary.json").write_text(json.dumps(trials, indent=2) + "\n")
+                if jfr:
+                    trial["jfr"] = ci_jfr.summarize(list(recording_dir.glob("*.jfr")), java_home, len(selection))
+                    (output / "summary.json").write_text(json.dumps(trials, indent=2) + "\n")
                 print(f"{mode} {pair + 1}: {elapsed:.2f}s elapsed, {trial['cpu_seconds']:.2f}s CPU, "
                       f"{counts['tests'] - counts['skipped']} passed, {counts['skipped']} existing skips", flush=True)
                 log.unlink()

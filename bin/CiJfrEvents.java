@@ -49,7 +49,14 @@ class CiJfrEvents {
           }
           line.append(']');
         } else if (type.equals("jdk.Compilation")) {
-          line.append(',').append(quote(event.getString("compiler")));
+          String compiler;
+          if (event.getEventType().getField("compiler") != null) {
+            compiler = event.getString("compiler");
+          } else {
+            int level = event.getShort("compileLevel");
+            compiler = level == 4 ? "c2" : level >= 1 && level <= 3 ? "c1" : "level-" + level;
+          }
+          line.append(',').append(quote(compiler));
           line.append(',').append(event.getDuration().toNanos() / 1_000_000_000.0);
         } else if (type.equals("jdk.ObjectAllocationSample")) {
           line.append(',').append(quote(event.getClass("objectClass").getName()));

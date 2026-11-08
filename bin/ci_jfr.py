@@ -35,7 +35,7 @@ def summarize(recordings, java_home, expected_recordings=4):
     if len(recordings) != expected_recordings:
         raise ValueError(f"Expected {expected_recordings} fresh recorded test JVMs, found {len(recordings)}")
     for recording in recordings:
-        command = [str(java_home / "bin/java"), "-Xmx512m", "--source", "11",
+        command = [str(java_home / "bin/java"), "-Xmx2g", "--source", "11",
                    str(Path(__file__).with_name("CiJfrEvents.java")), str(recording)]
         with subprocess.Popen(command, stdout=subprocess.PIPE, text=True) as process:
             try:
