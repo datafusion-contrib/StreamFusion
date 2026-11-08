@@ -587,7 +587,8 @@ archive diagnostics are uploaded. Default local Maven runs do not enable this ca
 Each runner uses two fresh 2 GiB Surefire JVMs, with process reuse disabled. This preserves all
 118 canonical classes on each JDK while reducing canonical runner jobs from 64 to 32. The stock
 and native worker processes retain their separate 1 GiB heaps; native memory and containers
-also need headroom. Full hosted CI remains the qualification for this scheduling change.
+also need headroom. The complete 32-shard hosted canonical matrix passed on both JDKs;
+the full CI and upstream aggregates remain required for source changes.
 
 The first combined run exhausted the three-hour JDK 11 limit after seven classes passed in
 one canonical shard. Its alphabetical round-robin selection combined several of the longest
@@ -624,6 +625,31 @@ workflow took 123.3 minutes elapsed but only 4.23 runner-hours: start delays dom
 elapsed time while the larger CI matrix competes for runners. Increasing shard counts alone
 would not eliminate that shared capacity cost.
 
+The [updated complete canonical matrix](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42415314977)
+passed all 32 shards with the same test selection. Summed runner time fell from 54.23 to
+27.19 hours (49.9%), and the longest canonical job fell from 141.4 to 70.5 minutes.
+These full-job times include archive preparation, compilation and artifact handling.
+The [updated upstream workflow](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42415315130)
+passed in 110.2 minutes elapsed and 4.01 runner-hours. Its unchanged JVM settings and
+different start delays mean that observed difference does not establish an upstream optimization.
+Comparisons between hosted runs also include runner and cache variability; within-run paired
+startup probes below help isolate the JVM settings.
+
+Both complete source-head workflows passed. The full CI comparison, including every required
+runtime, connector, image, Rust and savepoint job, was:
+
+| Measurement | Baseline | Updated | Reduction |
+| --- | ---: | ---: | ---: |
+| Workflow elapsed | 321.6 min | 194.8 min | 39.4% |
+| Summed runner execution | 72.33 h | 44.74 h | 38.1% |
+| Canonical runner execution | 54.23 h | 27.19 h | 49.9% |
+| Longest canonical job | 141.4 min | 70.5 min | 50.2% |
+
+Ordinary Java jobs now consume 14.55 runner-hours and the remaining jobs 3.00 hours.
+The longest ordinary Java job took 103.6 minutes. These tests retain their usual JVM settings
+and are the largest remaining execution cost. Elapsed time also includes shared runner capacity and
+dependency delays. These results measure CI turnaround and execution cost, not SQL throughput.
+
 The **CI startup profile** workflow runs on manual dispatch or changes to its workflow/profiler.
 It builds the exact commit's debug core library once, then compares default and first-tier
 JVM compilation, plus first-tier compilation with class metadata archives, on each of JDK 11
@@ -638,6 +664,22 @@ The initial hosted comparison of first-tier compilation alone passed all 60 invo
 Median elapsed time fell from 117.93 to 87.55 seconds on JDK 11 (25.8%) and from 148.37 to
 111.39 seconds on JDK 17 (24.9%); CPU time fell 58.4% and 56.1%, respectively. These compare
 settings within each runner, not JDK performance across different runners.
+
+The subsequent [hosted archive comparison](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42415314960)
+passed all 100 invocations, including preparation. Median five-case elapsed times were:
+
+| JDK | Default | First-tier | First-tier + prepared archive | Reduction vs default |
+| --- | ---: | ---: | ---: | ---: |
+| 11 | 182.86 s | 134.36 s | 109.76 s | 40.0% |
+| 17 | 141.17 s | 104.96 s | 77.33 s | 45.2% |
+
+Prepared-archive ranges were 109.10–110.72 seconds on JDK 11 and 76.96–78.40 seconds on
+JDK 17 across three repetitions. CPU medians fell from 553.82 to 225.61 seconds (59.3%)
+and from 415.20 to 145.84 seconds (64.9%), respectively. The separate preparation phase,
+including five passing cases and archive construction, took 189.88 seconds on JDK 11 and
+105.39 seconds on JDK 17. These are comparisons within each runner; the different default
+times between runs and JDKs also show why probe results cannot establish whole-workflow savings.
+
 An isolated JDK 17 group-aggregation worker probe then reduced startup from about 2.9 to
 1.6 seconds for stock Flink and from 3.2 to 1.6 seconds for native execution with prepared
 metadata. That component probe excludes archive construction; the paired harness includes
