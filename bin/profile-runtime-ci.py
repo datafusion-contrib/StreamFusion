@@ -81,8 +81,7 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
     modes = (("plan-cache", "current") if plan_cache else ("current",) if hotspots
              else ("startup", "parallel") if parallel else ("default", "startup"))
     try:
-        java_home = Path(os.environ["JAVA_HOME"]) if jfr or plan_cache else None
-        java_major = int(re.search(r'^JAVA_VERSION="(\d+)', (java_home / "release").read_text(), re.M)[1]) if hotspots or plan_cache else None
+        java_home = Path(os.environ["JAVA_HOME"]) if jfr else None
         if jfr:
             ci_jfr.configuration(java_home, temporary / "runtime.jfc")
         for pair in range(repetitions):
@@ -96,7 +95,8 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                 command = ["mvn", "-B", "-ntp", "-pl", "streamfusion-runtime"]
                 if line == "1.18":
                     command.append("-Pflink-1.18")
-                forks, heap = (4, "2g") if mode == "parallel" or (hotspots or plan_cache) and java_major >= 17 else (2, "4g")
+                forks, heap = (4, "2g") if mode == "parallel" or hotspots or plan_cache else (2, "4g")
+                fixture_cache = hotspots or mode == "plan-cache"
                 extra = f"-Xmx{heap}"
                 if jfr:
                     recording_dir = output / "jfr" / mode
@@ -109,8 +109,7 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                 if hotspots:
                     fixture_directory = temporary / "fixture-timings"
                     command.append(f"-Dsf.fixtureTimingsDirectory={fixture_directory}")
-                if plan_cache:
-                    command.append(f"-Dsf.fixturePlanCache={str(mode == 'plan-cache').lower()}")
+                command.append(f"-Dsf.fixturePlanCache={str(fixture_cache).lower()}")
                 log = output / (suffix + ".log")
                 before = resource.getrusage(resource.RUSAGE_CHILDREN)
                 start = time.monotonic()
@@ -127,7 +126,7 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                 expected = cases
                 trial = {"mode": mode, "pair": pair + 1, "line": line,
                          "forks": forks, "heap": heap, "instrumented": jfr,
-                         "fixture_plan_cache": mode == "plan-cache",
+                         "fixture_plan_cache": fixture_cache,
                          "elapsed_seconds": elapsed,
                          "cpu_seconds": after.ru_utime + after.ru_stime - before.ru_utime - before.ru_stime,
                          "outcomes": counts, "classes": classes}

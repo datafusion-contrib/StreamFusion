@@ -778,7 +778,7 @@ in that observed job. Reanalysis of the earlier default-JVM JFR recordings found
 seconds of main-thread retry sleeps inside result collection and 80.72 seconds waiting on
 futures in the string-collection class. Recorded waits exclude short unrecorded waits,
 overlap asynchronous work and are not CPU time. They do not establish removable delay,
-safe fixture reuse, or a measured benefit from changing polling. No test fixture was changed.
+safe fixture reuse, or a measured benefit from changing polling.
 
 Repeated lifecycle invocations now set `sf.protobuf.checkStaleness=true` after the job's
 initial complete compilation. The protobuf generator otherwise rewrites unchanged test
@@ -852,16 +852,33 @@ The [follow-up evidence](benchmarks/ci-runtime-followup-20261108.json) retains c
 timers, sample summaries and the Java 11 postprocessing limitation.
 
 The `hotspot_mode=plan-cache` experiment compares two alternating pairs on each JDK.
-Only the two aggregate/state fixture builders participate: an opt-in cache retains
+Only the two aggregate/state fixture builders participate: a cache retains
 serialized unopened operator definitions, keyed by all planning inputs. Every fixture
 deserializes independent operators, functions and serializers, then creates its existing
 fresh harness/backend and runs every original assertion, snapshot and recovery stage.
 The cache retains at most 128 definitions and 32 MiB per fixture builder; it never retains
-open operators, backend state or a shared running job. Ordinary tests keep this experiment
-disabled until measured improvement and full coverage qualification establish its value.
+open operators, backend state or a shared running job. These fixture builders enable it
+by default; `-Dsf.fixturePlanCache=false` retains uncached construction for comparisons.
 Both settings use released Flink's normal generated-code splitting configuration. Timed
 comparisons have no JFR or fixture timers, hold the current worker/heap settings fixed,
 and compare individual case outcomes across all 2,759 invocations in each trial.
+
+The [completed fixture comparison](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42517795512)
+passed all 22,072 invocations across both JDKs without failures, errors or skips, retaining
+identical individual case outcomes between settings. Medians across two alternating pairs:
+
+| JDK | Reference elapsed | Cached definitions | Elapsed reduction | CPU reduction |
+| --- | ---: | ---: | ---: | ---: |
+| 11 | 1,042.88 s | 675.31 s | 35.2% | 52.5% |
+| 17 | 1,068.60 s | 568.39 s | 46.8% | 58.8% |
+
+Those recorded comparisons used the preceding PR's worker budgets: two 4 GiB forks on
+JDK 11 and four 2 GiB forks on JDK 17. They establish fixture-construction savings within
+those selected workloads, not a complete-matrix improvement or a product of separate
+worker and cache gains. Future hotspot/cache comparisons follow the current four-fork
+2 GiB budget. Worker-only and compiler comparisons explicitly disable fixture caching;
+the cache comparison explicitly toggles it, and attribution runs use the current default.
+Complete required CI must qualify the combined configuration and every remaining fixture.
 
 `hotspot_mode=canonical-parallel` investigates the remaining savepoint execution cost
 without adding required runners. It selects eight complete classes with comparable measured
@@ -874,6 +891,13 @@ heaps are 6 GiB and 8 GiB respectively. Both variants use the existing first-tie
 released Flink configuration and metadata archives. Preparation cost, complete case outcomes,
 elapsed/CPU time and `vmstat` samples are retained. This is a controlled diagnostic;
 the complete matrix remains necessary before changing the required savepoint worker count.
+
+The JDK 17 comparison passed all 320 invocations including preparation, with no skips.
+Two-fork measurement medians were 563.81 seconds elapsed and 1,257.75 seconds CPU;
+four-fork medians were 414.06 seconds and 1,427.05 seconds, a 26.6% elapsed reduction
+with 13.5% more CPU. Recorded samples showed zero swap use. JDK 11 is still running;
+the required savepoint matrix retains its existing budget until the comparison and full
+source qualification justify a change.
 
 The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
 4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.
