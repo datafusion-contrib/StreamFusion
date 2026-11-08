@@ -26,6 +26,7 @@ import tech.streamfusion.NativePlannerTestEnvironment;
 import tech.streamfusion.operator.*;
 
 final class ManagedUdfGroupStockFixture implements AutoCloseable {
+  private static final FixturePlanCache PLANS = new FixturePlanCache();
   static final RowType INPUT = RowType.of(new BigIntType(), new BigIntType());
   static final RowType OUTPUT = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
   private final RowType inputType, outputType, keyType;
@@ -75,55 +76,13 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
     inputType = RowType.of(inputFields.toArray(new LogicalType[0]));
     inputFields.add(new BigIntType());
     outputType = RowType.of(inputFields.toArray(new LogicalType[0]));
-    var config = new Configuration();
-    config.setString("streamfusion.native.enabled", "false");
-    config.setString("pipeline.max-parallelism", "128");
-    var table = NativePlannerTestEnvironment.create(config);
-    table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(mini));
-    table.getConfig().set("table.exec.mini-batch.size", "5");
-    table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
-    table.getConfig().set("table.optimizer.agg-phase-strategy", global ? "TWO_PHASE" : "ONE_PHASE");
-    table.getConfig().set("table.exec.state.ttl", ttl + " ms");
-    table.createTemporarySystemFunction(
-        "fixture_history",
-        faulting
-            ? org.example.canonical.FaultingMergeHistoryAggregate.class
-            : global
-                ? CanonicalFixtureFactory.MergeHistoryAggregate.class
-                : CanonicalFixtureFactory.HistoryAggregate.class);
-    table.registerCatalog(
-        "fixture",
-        new org.apache.flink.table.catalog.GenericInMemoryCatalog("fixture", "db") {
-          @Override
-          public Optional<org.apache.flink.table.factories.Factory> getFactory() {
-            return Optional.of(new CanonicalFixtureFactory());
-          }
-        });
-    table.useCatalog("fixture");
-    table.executeSql(
-        "CREATE TABLE input_table("
-            + keyDdl(keyType)
-            + ",v BIGINT) WITH"
-            + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready','insert-only'='false')");
-    table.useCatalog("default_catalog");
-    table.executeSql(
-        "CREATE TABLE output_table("
-            + keyDdl(keyType)
-            + ",h BIGINT,n BIGINT) WITH ('connector'='blackhole')");
-    var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var graph =
-        CanonicalRegularJoinPlanTest.graph(
-            planner,
-            table,
-            CanonicalRegularJoinPlanTest.translate(
-                planner,
-                "INSERT INTO output_table SELECT "
-                    + keyColumns(keyType)
-                    + ",fixture_history(v),COUNT(*) FROM fixture.db.input_table GROUP BY "
-                    + keyColumns(keyType)));
+        PLANS.get(
+            List.of(mini, ttl, global, faulting, keyType),
+            () -> plan(mini, ttl, global, faulting, keyType));
     tech.streamfusion.CiFixtureTimings.record("managed-udf.plan", planningStarted);
     var node =
-        graph.getStreamNodes().stream()
+        graph.stream()
             .filter(
                 n -> {
                   if (!(n.getOperatorFactory() instanceof SimpleOperatorFactory)) return false;
@@ -147,7 +106,7 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
     JvmGroupPartialTransport transport = null;
     if (global) {
       var localNode =
-          graph.getStreamNodes().stream()
+          graph.stream()
               .filter(
                   n ->
                       n.getOperatorFactory() instanceof SimpleOperatorFactory
@@ -239,6 +198,57 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
       nativeOwner = null;
       harness = stock;
     }
+  }
+
+  private static FixtureNodes plan(
+      boolean mini, long ttl, boolean global, boolean faulting, RowType keyType) throws Exception {
+    var config = new Configuration();
+    config.setString("streamfusion.native.enabled", "false");
+    config.setString("pipeline.max-parallelism", "128");
+    var table = NativePlannerTestEnvironment.create(config);
+    table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(mini));
+    table.getConfig().set("table.exec.mini-batch.size", "5");
+    table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+    table.getConfig().set("table.optimizer.agg-phase-strategy", global ? "TWO_PHASE" : "ONE_PHASE");
+    table.getConfig().set("table.exec.state.ttl", ttl + " ms");
+    table.createTemporarySystemFunction(
+        "fixture_history",
+        faulting
+            ? org.example.canonical.FaultingMergeHistoryAggregate.class
+            : global
+                ? CanonicalFixtureFactory.MergeHistoryAggregate.class
+                : CanonicalFixtureFactory.HistoryAggregate.class);
+    table.registerCatalog(
+        "fixture",
+        new org.apache.flink.table.catalog.GenericInMemoryCatalog("fixture", "db") {
+          @Override
+          public Optional<org.apache.flink.table.factories.Factory> getFactory() {
+            return Optional.of(new CanonicalFixtureFactory());
+          }
+        });
+    table.useCatalog("fixture");
+    table.executeSql(
+        "CREATE TABLE input_table("
+            + keyDdl(keyType)
+            + ",v BIGINT) WITH"
+            + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready','insert-only'='false')");
+    table.useCatalog("default_catalog");
+    table.executeSql(
+        "CREATE TABLE output_table("
+            + keyDdl(keyType)
+            + ",h BIGINT,n BIGINT) WITH ('connector'='blackhole')");
+    var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
+    var graph =
+        CanonicalRegularJoinPlanTest.graph(
+            planner,
+            table,
+            CanonicalRegularJoinPlanTest.translate(
+                planner,
+                "INSERT INTO output_table SELECT "
+                    + keyColumns(keyType)
+                    + ",fixture_history(v),COUNT(*) FROM fixture.db.input_table GROUP BY "
+                    + keyColumns(keyType)));
+    return new FixtureNodes(graph.getStreamNodes());
   }
 
   static String keyColumns(RowType keys) {

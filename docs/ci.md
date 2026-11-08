@@ -825,6 +825,18 @@ confirms that generated classes enter the splitter with the configured threshold
 The [follow-up evidence](benchmarks/ci-runtime-followup-20261108.json) retains class outcomes,
 timers, sample summaries and the Java 11 postprocessing limitation.
 
+The `hotspot_mode=plan-cache` experiment compares two alternating pairs on each JDK.
+Only the two aggregate/state fixture builders participate: an opt-in cache retains
+serialized unopened operator definitions, keyed by all planning inputs. Every fixture
+deserializes independent operators, functions and serializers, then creates its existing
+fresh harness/backend and runs every original assertion, snapshot and recovery stage.
+The cache retains at most 128 definitions and 32 MiB per fixture builder; it never retains
+open operators, backend state or a shared running job. Ordinary tests keep this experiment
+disabled until measured improvement and full coverage qualification establish its value.
+Both settings use released Flink's normal generated-code splitting configuration. Timed
+comparisons have no JFR or fixture timers, hold the current worker/heap settings fixed,
+and compare individual case outcomes across all 2,759 invocations in each trial.
+
 The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
 4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.
 It retains the exact cases, outcomes and total 8 GiB heap cap; additional VM overhead is still

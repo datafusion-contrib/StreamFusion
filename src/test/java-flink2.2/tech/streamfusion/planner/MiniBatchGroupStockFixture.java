@@ -31,6 +31,7 @@ import tech.streamfusion.operator.*;
 import tech.streamfusion.state.*;
 
 final class MiniBatchGroupStockFixture implements AutoCloseable {
+  private static final FixturePlanCache PLANS = new FixturePlanCache();
   final KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness;
   final RowDataKeySelector selector;
   final RowType inputType, outputType, accumulatorType, seedType;
@@ -52,9 +53,13 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
     this.global = global;
     var stock =
         tech.streamfusion.CiFixtureTimings.measure(
-            "minibatch.stock-plan", () -> graph(type, global, false, distinct));
+            "minibatch.stock-plan",
+            () ->
+                PLANS.get(
+                    List.of(type, global, false, distinct),
+                    () -> new FixtureNodes(graph(type, global, false, distinct).getStreamNodes())));
     StreamNode node =
-        stock.getStreamNodes().stream()
+        stock.stream()
             .filter(
                 n -> {
                   Object op = operator(n);
@@ -83,7 +88,7 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
     harness.setup((TypeSerializer<RowData>) node.getTypeSerializerOut());
     if (global) {
       var localNode =
-          stock.getStreamNodes().stream()
+          stock.stream()
               .filter(
                   n -> {
                     Object localOp = operator(n);
@@ -107,17 +112,21 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
     }
     var nativeGraph =
         tech.streamfusion.CiFixtureTimings.measure(
-            "minibatch.native-plan", () -> graph(type, global, true, distinct));
+            "minibatch.native-plan",
+            () ->
+                PLANS.get(
+                    List.of(type, global, true, distinct),
+                    () -> new FixtureNodes(graph(type, global, true, distinct).getStreamNodes())));
     template =
         (NativeColumnarGroupAggregateOperator)
-            nativeGraph.getStreamNodes().stream()
+            nativeGraph.stream()
                 .map(MiniBatchGroupStockFixture::operator)
                 .filter(NativeColumnarGroupAggregateOperator.class::isInstance)
                 .findFirst()
-                .orElseThrow(() -> new AssertionError(nativeGraph.getStreamingPlanAsJSON()));
+                .orElseThrow(() -> new AssertionError(nativeGraph.toString()));
     seedTemplate =
         global
-            ? nativeGraph.getStreamNodes().stream()
+            ? nativeGraph.stream()
                 .map(MiniBatchGroupStockFixture::operator)
                 .filter(NativeColumnarLocalGroupAggregateOperator.class::isInstance)
                 .findFirst()

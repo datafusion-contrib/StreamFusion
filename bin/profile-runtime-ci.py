@@ -68,7 +68,7 @@ def outcomes(reports, suffix, line, selection=CLASSES):
     return cases, dict(totals), classes
 
 
-def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False, slow_mix=False):
+def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False, slow_mix=False, plan_cache=False):
     if "TieredStopAtLevel" in os.environ.get("JAVA_TOOL_OPTIONS", ""):
         raise ValueError("Remove inherited TieredStopAtLevel before the default trial")
     output.mkdir(parents=True, exist_ok=False)
@@ -77,11 +77,12 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
     reports = ROOT / "streamfusion-runtime/target/surefire-reports"
     trials = []
     expected = None
-    selection = HOTSPOTS if hotspots or slow_mix else CLASSES
-    modes = ("current",) if hotspots else (("startup", "parallel") if parallel else ("default", "startup"))
+    selection = HOTSPOTS if hotspots or slow_mix or plan_cache else CLASSES
+    modes = (("plan-cache", "current") if plan_cache else ("current",) if hotspots
+             else ("startup", "parallel") if parallel else ("default", "startup"))
     try:
-        java_home = Path(os.environ["JAVA_HOME"]) if jfr else None
-        java_major = int(re.search(r'^JAVA_VERSION="(\d+)', (java_home / "release").read_text(), re.M)[1]) if hotspots else None
+        java_home = Path(os.environ["JAVA_HOME"]) if jfr or plan_cache else None
+        java_major = int(re.search(r'^JAVA_VERSION="(\d+)', (java_home / "release").read_text(), re.M)[1]) if hotspots or plan_cache else None
         if jfr:
             ci_jfr.configuration(java_home, temporary / "runtime.jfc")
         for pair in range(repetitions):
@@ -95,7 +96,7 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                 command = ["mvn", "-B", "-ntp", "-pl", "streamfusion-runtime"]
                 if line == "1.18":
                     command.append("-Pflink-1.18")
-                forks, heap = (4, "2g") if mode == "parallel" or hotspots and java_major >= 17 else (2, "4g")
+                forks, heap = (4, "2g") if mode == "parallel" or (hotspots or plan_cache) and java_major >= 17 else (2, "4g")
                 extra = f"-Xmx{heap}"
                 if jfr:
                     recording_dir = output / "jfr" / mode
@@ -108,6 +109,8 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                 if hotspots:
                     fixture_directory = temporary / "fixture-timings"
                     command.append(f"-Dsf.fixtureTimingsDirectory={fixture_directory}")
+                if plan_cache:
+                    command.append(f"-Dsf.fixturePlanCache={str(mode == 'plan-cache').lower()}")
                 log = output / (suffix + ".log")
                 before = resource.getrusage(resource.RUSAGE_CHILDREN)
                 start = time.monotonic()
@@ -124,6 +127,7 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                 expected = cases
                 trial = {"mode": mode, "pair": pair + 1, "line": line,
                          "forks": forks, "heap": heap, "instrumented": jfr,
+                         "fixture_plan_cache": mode == "plan-cache",
                          "elapsed_seconds": elapsed,
                          "cpu_seconds": after.ru_utime + after.ru_stime - before.ru_utime - before.ru_stime,
                          "outcomes": counts, "classes": classes}
@@ -157,15 +161,16 @@ def main():
     modes.add_argument("--parallel", action="store_true", help="Compare two 4 GiB vs four 2 GiB fresh C1 forks")
     modes.add_argument("--jfr", action="store_true", help="Capture one instrumented default/C1 pair; not timing evidence")
     modes.add_argument("--hotspots", action="store_true", help="Attribute five measured slow classes under current CI settings")
+    modes.add_argument("--plan-cache", action="store_true", help="Compare independent fixtures built from serialized unopened plans")
     parser.add_argument("--slow-mix", action="store_true", help="Use the five measured slow classes for paired comparisons")
     args = parser.parse_args()
-    if (args.hotspots or args.slow_mix) and args.line != "2.2":
+    if (args.hotspots or args.slow_mix or args.plan_cache) and args.line != "2.2":
         parser.error("The measured hotspot inventory requires Flink 2.2")
     if args.repetitions < 2 and not (args.jfr or args.hotspots):
         parser.error("Use at least two pairs to alternate execution order")
     if (args.jfr or args.hotspots) and args.repetitions != 1:
         parser.error("Use --repetitions 1 for the separate JFR attribution pass")
-    profile(args.output.resolve(), args.repetitions, args.line, args.parallel, args.jfr or args.hotspots, args.hotspots, args.slow_mix)
+    profile(args.output.resolve(), args.repetitions, args.line, args.parallel, args.jfr or args.hotspots, args.hotspots, args.slow_mix, args.plan_cache)
 
 
 if __name__ == "__main__":

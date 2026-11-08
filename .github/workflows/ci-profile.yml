@@ -14,7 +14,7 @@ on:
       hotspot_mode:
         description: 'Attribute slow classes or compare their worker counts'
         type: choice
-        options: [attribution, parallel]
+        options: [attribution, parallel, plan-cache]
         default: attribution
 
 permissions:
@@ -216,6 +216,8 @@ jobs:
           args=(--line 2.2 --repetitions 1 --hotspots)
           if [[ "$HOTSPOT_MODE" == 'parallel' ]]; then
             args=(--line 2.2 --repetitions 2 --slow-mix --parallel)
+          elif [[ "$HOTSPOT_MODE" == 'plan-cache' ]]; then
+            args=(--line 2.2 --repetitions 2 --plan-cache)
           fi
           nproc
           free -m
