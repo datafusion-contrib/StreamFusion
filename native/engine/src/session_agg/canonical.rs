@@ -290,9 +290,11 @@ impl SessionAggregator {
                     if count < 0 && !matches!(aggregate, WindowAggregate::CountedDistinct(_)) {
                         return Err(invalid("negative DISTINCT cardinality"));
                     }
-                    if let Some(counted) = (accumulator.as_mut() as &mut dyn std::any::Any)
-                        .downcast_mut::<crate::aggregates::CountedDistinctAccumulator>(
-                    ) {
+                    if let Some(counted) = (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                        .expect("captured accumulator")
+                        as &mut dyn std::any::Any)
+                        .downcast_mut::<crate::aggregates::CountedDistinctAccumulator>()
+                    {
                         counted.set_cardinality(count);
                     }
                     expected_counts
@@ -411,4 +413,66 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreSessionCanonicalWate
             watermark + 1
         };
     });
+}
+
+impl crate::state::canonical_memory::CanonicalMemoryState for SessionAggregator {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.key_types = self.key_types.clone();
+        target.key_converter = self
+            .key_converter
+            .as_ref()
+            .map(|_| key_row_converter_from_types(&self.key_types));
+        target.current_watermark = self.current_watermark;
+        target.next_timer_deadline = self.next_timer_deadline;
+        target.canonical_distinct = self.canonical_distinct.clone();
+        let codec = target.key_converter.as_ref();
+        let copy_key = |key: &OwnedRow| {
+            codec
+                .expect("captured key codec")
+                .parser()
+                .parse(key.row().data())
+                .owned()
+        };
+        target.canonical_distinct_counts = self
+            .canonical_distinct_counts
+            .iter()
+            .map(|((end, key, slot), count)| ((*end, copy_key(key), *slot), *count))
+            .collect();
+        for (key, sessions) in &mut self.sessions {
+            let mut copied = BTreeMap::new();
+            for (&start, session) in sessions {
+                let accumulators = session
+                    .accumulators
+                    .iter_mut()
+                    .zip(&self.aggregates)
+                    .map(|(value, aggregate)| {
+                        crate::aggregates::capture_accumulator(value, aggregate)
+                    })
+                    .collect();
+                copied.insert(
+                    start,
+                    Session {
+                        end: session.end,
+                        accumulators,
+                    },
+                );
+            }
+            target.sessions.insert(copy_key(key), copied);
+        }
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copySessionAggregatorCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<SessionAggregator>(env, source, target);
 }

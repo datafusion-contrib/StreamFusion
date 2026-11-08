@@ -20,9 +20,9 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
  * Append-only streaming Top-N, fed Arrow batches and emitting Arrow batches. The changelog flows
- * Arrow with no per-operator transpose; each partitioned shuffle stays columnar where the input is a
- * columnar producer, and the row↔Arrow conversion happens only at the host edges. The output batch
- * carries the changelog kind on its {@code $row_kind$} column. Unbounded non-time ROW_NUMBER
+ * Arrow with no per-operator transpose; each partitioned shuffle stays columnar where the input is
+ * a columnar producer, and the row↔Arrow conversion happens only at the host edges. The output
+ * batch carries the changelog kind on its {@code $row_kind$} column. Unbounded non-time ROW_NUMBER
  * retains every row and selects row-identity update pairs after handle creation/restoration.
  */
 public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<ArrowBatch>
@@ -75,10 +75,25 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
       long miniBatchSize,
       long stateTtlMillis,
       int maxParallelism) {
-    this(partitionColumns, keyTimestampPrecisions, rowType, sortIndices, sortAscending,
-        sortNullsFirst, offset, limit, outputRankNumber, retracting, rowKeyColumns,
-        rowKeyTimestampPrecisions, generateUpdateBefore, netDiff, miniBatchSize,
-        stateTtlMillis, maxParallelism, -1);
+    this(
+        partitionColumns,
+        keyTimestampPrecisions,
+        rowType,
+        sortIndices,
+        sortAscending,
+        sortNullsFirst,
+        offset,
+        limit,
+        outputRankNumber,
+        retracting,
+        rowKeyColumns,
+        rowKeyTimestampPrecisions,
+        generateUpdateBefore,
+        netDiff,
+        miniBatchSize,
+        stateTtlMillis,
+        maxParallelism,
+        -1);
   }
 
   public NativeColumnarTopNOperator(
@@ -252,26 +267,63 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
           rowType,
           schemaAddress ->
               Native.createRocksDBUpdateFastTopNRanker(
-                  partitionColumns, keyTimestampPrecisions(), rowKeyColumns,
-                  rowKeyTimestampPrecisions, sortIndices, sortAscending, sortNullsFirst, offset, limit,
-                  rankEndColumn, outputRankNumber, generateUpdateBefore, stateTtlMillis, now,
-                  memoryBudgetBytes(), schemaAddress, rocksdb.tableDirectory(), maxParallelism(),
-                  rocksdb.optionsJson(), rocksdb.sharedResourcesHandle(),
-                  rocksdb.sourceDirectories(), rocksdb.sourceSnapshotTokens(),
-                  rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(), rocksdb.aligned(),
+                  partitionColumns,
+                  keyTimestampPrecisions(),
+                  rowKeyColumns,
+                  rowKeyTimestampPrecisions,
+                  sortIndices,
+                  sortAscending,
+                  sortNullsFirst,
+                  offset,
+                  limit,
+                  rankEndColumn,
+                  outputRankNumber,
+                  generateUpdateBefore,
+                  stateTtlMillis,
+                  now,
+                  memoryBudgetBytes(),
+                  schemaAddress,
+                  rocksdb.tableDirectory(),
+                  maxParallelism(),
+                  rocksdb.optionsJson(),
+                  rocksdb.sharedResourcesHandle(),
+                  rocksdb.sourceDirectories(),
+                  rocksdb.sourceSnapshotTokens(),
+                  rocksdb.keyGroupStart(),
+                  rocksdb.keyGroupEnd(),
+                  rocksdb.aligned(),
                   restoredPartitions));
     }
     return withMapListSchema(
         rowType,
         schemaAddress ->
             Native.createRocksDBTopNRanker(
-                partitionColumns, keyTimestampPrecisions(), sortIndices, sortAscending,
-                sortNullsFirst, offset, limit, rankEndColumn, outputRankNumber, retracting, generateUpdateBefore, netDiff,
-                stateTtlMillis, now, memoryBudgetBytes(), schemaAddress, rocksdb.tableDirectory(),
-                maxParallelism(), rocksdb.optionsJson(), rocksdb.sharedResourcesHandle(),
-                rocksdb.sourceDirectories(), rocksdb.sourceSnapshotTokens(),
-                rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(), rocksdb.aligned(),
-                  restoredPartitions));
+                partitionColumns,
+                keyTimestampPrecisions(),
+                sortIndices,
+                sortAscending,
+                sortNullsFirst,
+                offset,
+                limit,
+                rankEndColumn,
+                outputRankNumber,
+                retracting,
+                generateUpdateBefore,
+                netDiff,
+                stateTtlMillis,
+                now,
+                memoryBudgetBytes(),
+                schemaAddress,
+                rocksdb.tableDirectory(),
+                maxParallelism(),
+                rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(),
+                rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(),
+                rocksdb.keyGroupStart(),
+                rocksdb.keyGroupEnd(),
+                rocksdb.aligned(),
+                restoredPartitions));
   }
 
   @Override
@@ -380,8 +432,19 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyTopNCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBTopNRanker(handle);
     } else {
       Native.closeTopNRanker(handle);
@@ -393,6 +456,12 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
     return directRocksDBState()
         ? Native.rocksdbTopNRankerStateBytes(handle)
         : Native.topNRankerStateBytes(handle);
+  }
+
+  @Override
+  protected void configureCapturedHandle(long captured, boolean persistent) {
+    if (nonTimeRowNumber) Native.enableNonTimeRowNumber(captured, persistent);
+    if (firstBound) Native.enableTopNFirstBound(captured, persistent, generateUpdateBefore);
   }
 
   @Override

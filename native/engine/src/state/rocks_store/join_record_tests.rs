@@ -93,11 +93,17 @@ fn measured_store(path: &std::path::Path) -> (RocksStore<JoinStateCodec>, Option
     let (mut options, cache) = resolved.build(None).unwrap();
     options.enable_statistics();
     let opened = OpenedDb {
-        db: Arc::new(
-            DB::open_cf_with_opts(&options, path, [("default", options.clone())]).unwrap(),
+        db: StateDb::live(
+            Arc::new(
+                DB::open_cf_with_opts(&options, path, [("default", options.clone())]).unwrap(),
+            ),
+            None,
+            Arc::new(StateClock::new(0)),
+            1024,
+            path,
         ),
         cache,
-        clock: Arc::new(AtomicI64::new(0)),
+        clock: Arc::new(StateClock::new(0)),
         write_batch_size: resolved.write_batch_size,
     };
     (

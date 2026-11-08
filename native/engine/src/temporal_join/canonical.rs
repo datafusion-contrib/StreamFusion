@@ -327,3 +327,28 @@ pub extern "system" fn Java_tech_streamfusion_Native_importTemporalJoinCanonical
 }
 
 mod metadata;
+
+impl crate::state::canonical_memory::CanonicalMemoryState for TemporalJoiner {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.left_state = self.left_state.clone();
+        target.right_state = self.right_state.clone();
+        target.metadata = self.metadata.clone();
+        target.cleanup_state = self.cleanup_state.clone();
+        target.last_sweep_ms = self.last_sweep_ms.clone();
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyTemporalJoinCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<TemporalJoiner>(env, source, target);
+}

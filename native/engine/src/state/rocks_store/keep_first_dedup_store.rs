@@ -5,6 +5,7 @@ use super::{
 use crate::*;
 use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, IteratorMode, Options, DB};
+#[cfg(test)]
 use std::sync::Arc;
 
 /// Two tables share the keep-first deduplicator's DB, keyed `[key_group i32 BE][table u8][key
@@ -40,7 +41,7 @@ pub(crate) struct StoredCandidate {
 /// KVs written through on arrival, a push probes exactly the keys its batch touches with one
 /// multi_get per table, and a watermark firing range-reads the pending table.
 pub(crate) struct RocksKeepFirstDedupStore {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
     key_types: Vec<DataType>,

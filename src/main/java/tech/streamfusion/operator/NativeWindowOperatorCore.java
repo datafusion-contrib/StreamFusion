@@ -295,8 +295,19 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
 
   /** Releases the native aggregator handle. */
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyWindowAggregatorCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBWindowAggregator(handle);
     } else {
       Native.closeTumblingAggregator(handle);
@@ -324,6 +335,19 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   @Override
   protected void beforeSnapshotState() {
     flushPending();
+  }
+
+  @Override
+  protected void configureCapturedHandle(long captured, boolean persistent) {
+    if (!usesAlignedWindowAssignment()) return;
+    Native.setFixedWindowFinalWindows(captured, finalWindows);
+    Native.setFixedWindowOffset(captured, windowOffsetMillis);
+    var configured = ZoneId.of(timeZoneId);
+    if (configured.getRules().isFixedOffset()) {
+      Native.setFixedWindowAssignmentOffset(captured, WindowTimeDomain.offsetMillis(timeZoneId));
+    } else if (permitsRegionalCalendar()) {
+      Native.setFixedWindowCalendar(captured, new WindowCalendar(timeZoneId));
+    }
   }
 
   @Override

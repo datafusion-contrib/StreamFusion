@@ -33,7 +33,8 @@ mechanics shared across every operator TTL applies to.
 ## Canonical savepoint adapter
 
 The shared adapter also binds released Flink 1.18.1. Native RocksDB snapshots pin their read view
-at the barrier and convert retained rows asynchronously; memory captures use bounded spill storage.
+at the barrier and convert retained rows asynchronously. Memory captures copy mutable retained state
+and share immutable payloads; stock conversion runs asynchronously through an independent backend.
 The older release's generated equality compares row kinds, so unchanged UPDATE_AFTER input retains
 its released emission behavior. The runtime comparison mode is set again after restore and does
 not change the stored row schema. Wider complete-job qualification remains separate.

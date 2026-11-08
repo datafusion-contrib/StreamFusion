@@ -90,7 +90,8 @@ list child name during Arrow row decoding must not invalidate the output schema.
 ## Canonical state adapter
 
 Eager value-state exports can use a pinned native RocksDB snapshot with asynchronous stock
-serialization; memory exports use bounded spill capture. Planner binding and focused state
+serialization. Memory exports capture independent native state and convert asynchronously through a
+temporary stock backend. Planner binding and focused state
 interchange controls also run on Flink 1.18.1. Buffered, window and other timer-bearing layouts
 retain separate projection and qualification requirements. This does not qualify every 1.18
 emission variant or cross-version upgrades.

@@ -81,11 +81,12 @@ class CanonicalFirstNOperatorSnapshotTest {
     }
   }
 
-  @org.junit.jupiter.api.Test
-  void backendDisposalWaitsForTheAsynchronousCanonicalReader() throws Exception {
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void backendDisposalWaitsForTheAsynchronousCanonicalReader(boolean rocks) throws Exception {
     var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
     org.apache.flink.streaming.api.operators.OperatorSnapshotFutures futures = null;
-    var source = nativeHarness(true);
+    var source = nativeHarness(rocks);
     try {
       source.open();
       push(source, List.of(GenericRowData.of(1L, 10L)));
@@ -115,9 +116,7 @@ class CanonicalFirstNOperatorSnapshotTest {
       assertThrows(
           java.util.concurrent.TimeoutException.class,
           () -> closing.get(100, java.util.concurrent.TimeUnit.MILLISECONDS));
-      var saved =
-          new org.apache.flink.streaming.api.operators.OperatorSnapshotFinalizer(futures)
-              .getJobManagerOwnedState();
+      var saved = tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(futures);
       closing.get(5, java.util.concurrent.TimeUnit.SECONDS);
       try (var stock = harness(true, false, true, 0)) {
         stock.initializeState(saved);
@@ -186,6 +185,97 @@ class CanonicalFirstNOperatorSnapshotTest {
       }
     }
     return output;
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void deferredAdaptersReadPinnedVersionsAndDoNoConversionAtCapture(boolean rocks)
+      throws Exception {
+    DeferredContract.exports.set(0);
+    try (var source = nativeHarness(rocks)) {
+      ((NativeOperator) source.getOperator()).setStockStateContract(new DeferredContract());
+      source.open();
+      push(source, List.of(GenericRowData.of(1L, 10L), GenericRowData.of(2L, 20L)));
+      var first = capture(source, 10);
+      org.apache.flink.streaming.api.operators.OperatorSnapshotFutures second = null;
+      try {
+        push(source, List.of(GenericRowData.of(1L, 30L), GenericRowData.of(2L, 40L)));
+        second = capture(source, 11);
+        push(source, List.of(GenericRowData.of(1L, 50L), GenericRowData.of(2L, 60L)));
+        assertEquals(0, DeferredContract.exports.get(), "capture must not run the adapter");
+        var later = tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(second);
+        var earlier = tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(first);
+        assertEquals(2, DeferredContract.exports.get());
+        try (var before = harness(true, false, true, 0);
+            var after = harness(true, false, true, 0)) {
+          before.initializeState(earlier);
+          after.initializeState(later);
+          before.open();
+          after.open();
+          var suffix = List.<RowData>of(GenericRowData.of(1L, 70L), GenericRowData.of(2L, 80L));
+          assertEquals(List.of("1|70|2", "2|80|2"), stockPush(before, suffix));
+          assertEquals(List.of("1|70|3", "2|80|3"), stockPush(after, suffix));
+        }
+      } finally {
+        first.cancel();
+        if (second != null) second.cancel();
+      }
+    }
+  }
+
+  private static org.apache.flink.streaming.api.operators.OperatorSnapshotFutures capture(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> source, long id)
+      throws Exception {
+    source.prepareSnapshotPreBarrier(id);
+    return source
+        .getOperator()
+        .snapshotState(
+            id,
+            0,
+            org.apache.flink.runtime.checkpoint.CheckpointOptions.forConfig(
+                SavepointType.savepoint(SavepointFormatType.CANONICAL),
+                org.apache.flink.runtime.state.CheckpointStorageLocationReference.getDefault(),
+                true,
+                false,
+                0),
+            new org.apache.flink.runtime.state.memory.MemCheckpointStreamFactory(16 * 1024 * 1024));
+  }
+
+  private static final class DeferredContract
+      implements tech.streamfusion.state.StockStateContract {
+    private static final java.util.concurrent.atomic.AtomicInteger exports =
+        new java.util.concurrent.atomic.AtomicInteger();
+    private final tech.streamfusion.state.StockStateContract delegate = contract(false, 0);
+
+    @Override
+    public org.apache.flink.api.common.typeutils.TypeSerializer<RowData> keySerializer() {
+      return delegate.keySerializer();
+    }
+
+    @Override
+    public java.util.Map<String, org.apache.flink.api.common.state.StateDescriptor.Type>
+        stateDescriptors() {
+      return delegate.stateDescriptors();
+    }
+
+    @Override
+    public void exportState(
+        org.apache.flink.runtime.state.CheckpointableKeyedStateBackend<RowData> backend,
+        long handle,
+        boolean persistent)
+        throws Exception {
+      exports.incrementAndGet();
+      delegate.exportState(backend, handle, persistent);
+    }
+
+    @Override
+    public void importState(
+        org.apache.flink.runtime.state.CheckpointableKeyedStateBackend<RowData> backend,
+        long handle,
+        boolean persistent)
+        throws Exception {
+      delegate.importState(backend, handle, persistent);
+    }
   }
 
   private static final class NativeOperator extends NativeColumnarFirstNOperator {

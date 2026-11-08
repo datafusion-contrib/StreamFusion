@@ -1779,8 +1779,10 @@ processing cleanup and the wider rescale/version/failure/connector matrix remain
 
 Processing-time unbounded scalar folds on native RocksDB now pin the existing database at the
 savepoint barrier. Flink's asynchronous canonical writer reads bounded frames and serializes them
-with the released stock accumulator/key serializers. Memory folds use a bounded spill file;
-conversion there remains synchronous. Ordinary checkpoints keep their native format. Shared
+with the released stock accumulator/key serializers. Memory folds capture independent native
+counters, frames and retention metadata, then convert through an independent stock backend
+asynchronously. This visits resident state and can retain an additional copy; broader qualification
+of the new capture path is ongoing. Ordinary checkpoints keep their native format. Shared
 Flink 1.18 component controls cover the processing-time fold contract; event-time unbounded V1
 remains a stock canonical fallback. The wider complete-job matrices above qualify Flink 2.2 only.
 Benchmarking is deferred.

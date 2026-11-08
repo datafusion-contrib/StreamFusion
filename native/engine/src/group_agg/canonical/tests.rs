@@ -585,3 +585,35 @@ fn min_max_native_checkpoint_rebinds_initialization_before_cached_before_images(
         ScalarValue::Int64(Some(7))
     );
 }
+
+#[test]
+fn independent_memory_captures_retain_raw_counters_ages_and_deleted_keys() {
+    use crate::state::canonical_memory::CanonicalMemoryState;
+    let mut live = owner(vec![0, 3], 1000);
+    seed(&mut live, 1, 2, 100);
+    let expected_first = frame(&live);
+    let mut first = owner(vec![0, 3], 1000);
+    live.copy_state(&mut first).unwrap();
+    seed(&mut live, 1, 3, 200);
+    seed(&mut live, 2, 1, 200);
+    let expected_second = frame(&live);
+    let mut second = owner(vec![0, 3], 1000);
+    live.copy_state(&mut second).unwrap();
+    live.store.remove(&key(1).0);
+    seed(&mut live, 2, 4, 300);
+    drop(live);
+    assert_eq!(frame(&second), expected_second);
+    assert_eq!(frame(&first), expected_first);
+}
+
+#[test]
+fn memory_capture_rejects_an_insufficient_budget_before_copying_resident_groups() {
+    use crate::state::canonical_memory::CanonicalMemoryState;
+    let mut live = owner(vec![0], 0);
+    seed(&mut live, 1, 2, 100);
+    live.memory.set(1024);
+    let mut target = owner(vec![0], 0).with_memory_budget(1).unwrap();
+    assert!(live.copy_state(&mut target).is_err());
+    assert_eq!(target.store.iter().count(), 0);
+    assert_eq!(live.store.iter().count(), 1);
+}

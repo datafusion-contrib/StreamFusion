@@ -1,28 +1,15 @@
 use super::*;
-use rocksdb::SnapshotWithThreadMode;
-
 /// An owned MVCC view with bounded forward reads in native key-group order.
 pub(crate) struct RocksReadSnapshot {
-    // Fields drop in declaration order. The Arc allocation remains stable until after snapshot.
-    snapshot: SnapshotWithThreadMode<'static, DB>,
-    _db: Arc<DB>,
+    view: Arc<database::ReadView>,
     after: Option<Vec<u8>>,
     finished: bool,
 }
 
 impl RocksReadSnapshot {
-    pub(crate) fn new(db: &Arc<DB>) -> Self {
-        let owner = Arc::clone(db);
-        // The private snapshot and every iterator remain inside this owner. No borrowed database
-        // escapes, and declaration order releases the snapshot before its last database reference.
-        let snapshot = unsafe {
-            std::mem::transmute::<SnapshotWithThreadMode<'_, DB>, SnapshotWithThreadMode<'static, DB>>(
-                owner.snapshot(),
-            )
-        };
+    pub(crate) fn new(db: &StateDb) -> Self {
         Self {
-            snapshot,
-            _db: owner,
+            view: db.pin(),
             after: None,
             finished: false,
         }
@@ -41,7 +28,7 @@ impl RocksReadSnapshot {
         });
         let mut rows = Vec::new();
         let mut bytes = 0;
-        for entry in self.snapshot.iterator(mode) {
+        for entry in self.view.iterator(mode) {
             let (key, value) = entry.map_err(re)?;
             if after
                 .as_ref()
@@ -76,7 +63,7 @@ impl<C: RocksStateCodec + Clone> RocksStore<C> {
     ) -> Result<RocksCanonicalSnapshot<C>, DataFusionError> {
         self.checkpoint("")?;
         let opened = OpenedDb {
-            db: Arc::clone(&self.db),
+            db: self.db.clone(),
             cache: self._cache.clone(),
             clock: Arc::clone(&self.clock),
             write_batch_size: self.write_batch_size,
@@ -115,11 +102,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ttl_compaction_cannot_remove_a_captured_version() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = RocksStoreConfig {
+            table_dir: directory
+                .path()
+                .join("state")
+                .to_string_lossy()
+                .into_owned(),
+            max_parallelism: 128,
+            options_json: include_str!("../../../benches/fixtures/rocks-options.json").into(),
+            ttl_ms: 1000,
+            shared_resources: 0,
+        };
+        let opened = open_shared_db(&config, &[(None, 1000)]).unwrap();
+        let key = 7i32.to_be_bytes();
+        let mut value = 1500i64.to_le_bytes().to_vec();
+        value.extend(2i32.to_le_bytes());
+        opened.clock.store(1500, Ordering::Release);
+        opened.db.put(key, &value).unwrap();
+        opened.db.flush().unwrap();
+        let mut snapshot = RocksReadSnapshot::new(&opened.db);
+        opened.clock.store(10_000, Ordering::Release);
+        opened.db.compact_range(None::<&[u8]>, None::<&[u8]>);
+        assert_eq!(
+            snapshot.next_batch(|_| true).unwrap()[0].1.as_ref(),
+            value.as_slice()
+        );
+        drop(snapshot);
+        opened.db.compact_range(None::<&[u8]>, None::<&[u8]>);
+        assert!(
+            opened.db.get(key).unwrap().is_none(),
+            "TTL compaction resumes after the last reader closes"
+        );
+    }
+
+    #[test]
     fn pinned_chunks_survive_updates_deletes_compaction_and_owner_close() {
         let directory = tempfile::tempdir().unwrap();
         let mut options = Options::default();
         options.create_if_missing(true);
-        let db = Arc::new(DB::open(&options, directory.path()).unwrap());
+        let raw = Arc::new(
+            DB::open_cf_with_opts(&options, directory.path(), [("default", options.clone())])
+                .unwrap(),
+        );
+        let db = StateDb::live(
+            raw,
+            None,
+            Arc::new(StateClock::new(0)),
+            1024,
+            directory.path(),
+        );
         for index in 0u32..2051 {
             db.put(index.to_be_bytes(), index.to_le_bytes()).unwrap();
         }

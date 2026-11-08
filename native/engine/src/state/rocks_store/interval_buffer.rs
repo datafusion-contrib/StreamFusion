@@ -7,6 +7,7 @@ use crate::*;
 use arrow::row::{RowConverter, SortField};
 use rocksdb::Cache;
 use rocksdb::{Direction, IteratorMode, Options, DB};
+#[cfg(test)]
 use std::sync::Arc;
 
 mod canonical;
@@ -52,7 +53,7 @@ pub(crate) struct BufferedIntervalRow {
 /// rows were eagerly removed. On restore new sequences start above the persisted high-water marks,
 /// so restored and new row ids never collide.
 pub(crate) struct RocksIntervalBuffer {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
     converters: (RowConverter, RowConverter),

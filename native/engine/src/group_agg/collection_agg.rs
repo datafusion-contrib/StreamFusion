@@ -115,6 +115,7 @@ fn primitive(value: &ScalarValue) -> Option<i64> {
     }
 }
 
+#[derive(Clone)]
 enum CollectionStorage {
     Primitive(TypedCollectionState<PrimitiveType>),
     Float(TypedCollectionState<FloatElement>),
@@ -123,6 +124,7 @@ enum CollectionStorage {
     String(TypedCollectionState<StringElement>),
 }
 
+#[derive(Clone)]
 pub(crate) struct CollectionState {
     storage: CollectionStorage,
 }
@@ -329,6 +331,7 @@ impl CollectionElement for PrimitiveType {
     serialize = "C: Serialize, C::Value: Serialize",
     deserialize = "C: Deserialize<'de>, C::Value: Deserialize<'de>"
 ))]
+#[derive(Clone)]
 struct TypedCollectionState<C: CollectionElement> {
     kind: i64,
     element: C,

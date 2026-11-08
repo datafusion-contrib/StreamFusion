@@ -67,6 +67,7 @@ pub(super) fn compact_value(value: ScalarValue) -> ScalarValue {
 
 /// Append-only first/last retain one scalar; retractable first/last retain arrival order.
 /// SINGLE_VALUE counts every element, including NULL, and can fail during accumulation.
+#[derive(Clone)]
 pub(crate) struct OrderedValueState {
     kind: i64,
     value: ScalarValue,

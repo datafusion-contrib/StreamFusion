@@ -91,7 +91,7 @@ pub(super) enum Action {
     Restore(Arc<[u8]>),
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Values {
     rows: Vec<Candidate>,
     payload_bytes: usize,
@@ -122,10 +122,12 @@ struct Links {
     next: Option<i64>,
     next_for: Option<i64>,
 }
+#[derive(Clone)]
 struct Node {
     row: Candidate,
     links: Links,
 }
+#[derive(Clone)]
 struct Index {
     identity: Identity,
     serialized: Option<Arc<[u8]>>,
@@ -133,7 +135,7 @@ struct Index {
     last: i64,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Linked {
     nodes: std::collections::HashMap<i64, Node>,
     index: std::collections::HashMap<i32, Vec<Index>>,
@@ -296,11 +298,13 @@ impl Linked {
     }
 }
 
+#[derive(Clone)]
 enum Storage {
     Value(Values),
     Linked(Linked),
 }
 
+#[derive(Clone)]
 pub(super) struct Candidates {
     storage: Storage,
     pub(super) written_at: i64,

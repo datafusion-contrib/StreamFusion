@@ -19,22 +19,27 @@ fn merge_into(
 ) {
     for ((target, source), aggregate) in into.iter_mut().zip(from.iter_mut()).zip(aggregates) {
         if matches!(aggregate, WindowAggregate::ScalarExtreme { .. }) {
-            let value = (source.as_ref() as &dyn std::any::Any)
+            let value = (crate::aggregates::raw_accumulator(source.as_mut())
+                .expect("captured accumulator") as &mut dyn std::any::Any)
                 .downcast_ref::<crate::aggregates::ScalarExtremeAccumulator>()
                 .expect("scalar extrema factory")
                 .value();
-            (target.as_mut() as &mut dyn std::any::Any)
+            (crate::aggregates::raw_accumulator(target.as_mut()).expect("captured accumulator")
+                as &mut dyn std::any::Any)
                 .downcast_mut::<crate::aggregates::ScalarExtremeAccumulator>()
                 .expect("scalar extrema factory")
                 .merge_value(value);
             continue;
         }
         if matches!(aggregate, WindowAggregate::TimestampExtreme { .. }) {
-            let timestamp = (target.as_mut() as &mut dyn std::any::Any)
+            let timestamp = (crate::aggregates::raw_accumulator(target.as_mut())
+                .expect("captured accumulator")
+                as &mut dyn std::any::Any)
                 .downcast_mut::<crate::aggregates::TimestampExtremeAccumulator>()
                 .expect("timestamp extrema factory");
             timestamp.merge_value(
-                (source.as_ref() as &dyn std::any::Any)
+                (crate::aggregates::raw_accumulator(source.as_mut()).expect("captured accumulator")
+                    as &mut dyn std::any::Any)
                     .downcast_ref::<crate::aggregates::TimestampExtremeAccumulator>()
                     .expect("timestamp extrema factory")
                     .value(),
@@ -398,14 +403,18 @@ impl SessionAggregator {
                 }
                 for (i, accumulator) in accumulators.iter_mut().enumerate() {
                     if let Some(column) = &scalar_columns[i] {
-                        (accumulator.as_mut() as &mut dyn std::any::Any)
+                        (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_mut::<crate::aggregates::ScalarExtremeAccumulator>()
                             .expect("scalar extrema factory")
                             .update_rows(column, indices.values());
                         continue;
                     }
                     if let Some(column) = &timestamps[i] {
-                        (accumulator.as_mut() as &mut dyn std::any::Any)
+                        (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_mut::<crate::aggregates::TimestampExtremeAccumulator>()
                             .expect("timestamp extrema factory")
                             .update_rows(column, indices.values())?;

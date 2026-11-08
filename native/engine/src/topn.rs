@@ -3125,6 +3125,7 @@ fn diff_top(
 /// a record that does not strictly improve on the current top-1 is dropped without touching state or output, so
 /// a same-sort-key update keeps the stale payload. Matching Flink's materialized result means
 /// reproducing exactly that.
+#[derive(Clone)]
 pub(crate) struct UpdatableRow {
     pub(crate) sort: OwnedRow,
     pub(crate) payload: Arc<OwnedRow>,

@@ -89,7 +89,9 @@ impl SessionAggregator {
             for (key, sessions) in &mut self.sessions {
                 for session in sessions.values_mut() {
                     let entries = if counted {
-                        (session.accumulators[index].as_ref() as &dyn std::any::Any)
+                        (crate::aggregates::raw_accumulator(session.accumulators[index].as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_ref::<CountedDistinctAccumulator>()
                             .unwrap()
                             .entries()
@@ -234,7 +236,8 @@ impl SessionAggregator {
             }
             let candidate = candidates.get_mut(&entry).unwrap();
             if let Some(counts) = counts {
-                (candidate.as_mut() as &mut dyn std::any::Any)
+                (crate::aggregates::raw_accumulator(candidate.as_mut())
+                    .expect("captured accumulator") as &mut dyn std::any::Any)
                     .downcast_mut::<CountedDistinctAccumulator>()
                     .unwrap()
                     .import_entry(

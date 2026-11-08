@@ -87,6 +87,22 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyOverCanonicalMemoryState(source, target);
+  }
+
+  @Override
+  protected void prepareCapturedReader(long captured) {
+    Native.prepareOverCanonicalReadView(captured);
+  }
+
+  @Override
+  protected void configureCapturedHandle(long captured, boolean persistent) {
+    if (eventCleanupTimers) Native.bindOverEventCleanupTimers(captured);
+  }
+
+  @Override
   protected void configureStateHandle() {
     if (eventCleanupTimers) Native.bindOverEventCleanupTimers(handle);
   }
@@ -283,7 +299,12 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
       processingCleanup.cancel(false);
       processingCleanup = null;
     }
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBOverAggregator(handle);
     } else {
       Native.closeOverAggregator(handle);

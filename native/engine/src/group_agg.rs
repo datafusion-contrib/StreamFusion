@@ -346,6 +346,7 @@ fn group_partial_map(column: &ArrayRef) -> &arrow::array::ListArray {
 /// batches touch, point-read from the store — so every aggregate also maintains the running value
 /// its emit needs (the distinct cardinality, the SUM(DISTINCT) fold, the current extreme), which
 /// the backend persists in the main row.
+#[derive(Clone)]
 pub(crate) enum GroupAggState {
     Mapped(Box<MappedExtreme>),
     Collection(Box<CollectionState>),
@@ -1080,6 +1081,7 @@ impl GroupAggState {
 
 /// Per-key accumulator state with a live record count, or a presence marker for stock append-only
 /// state whose generated accumulator has no input counter.
+#[derive(Clone)]
 pub(crate) struct GroupKeyState {
     accumulator_present: bool,
     aggs: Vec<GroupAggState>,
@@ -1485,6 +1487,7 @@ fn ordered_distinct_type(data_type: &DataType) -> bool {
 const DISTINCT_VIEW_SOURCE: &str = "streamfusion.distinct-view-source";
 const DISTINCT_VIEW_SEPARATOR: &str = "streamfusion.distinct-view-separator";
 
+#[derive(Clone)]
 struct NumericViewBuffer {
     order: NumericMapOrder,
     counts: Vec<Option<DistinctSet>>,

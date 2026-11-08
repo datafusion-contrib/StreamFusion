@@ -175,3 +175,27 @@ pub extern "system" fn Java_tech_streamfusion_Native_importWindowJoinCanonicalRo
 
 #[cfg(test)]
 mod tests;
+
+impl crate::state::canonical_memory::CanonicalMemoryState for WindowJoiner {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.left_schema = self.left_schema.clone();
+        target.right_schema = self.right_schema.clone();
+        target.left_buffered = self.left_buffered.clone();
+        target.right_buffered = self.right_buffered.clone();
+        target.current_watermark = self.current_watermark.clone();
+        target.next_timer_deadline = self.next_timer_deadline.clone();
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyWindowJoinCanonicalMemoryState<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<WindowJoiner>(env, source, target);
+}

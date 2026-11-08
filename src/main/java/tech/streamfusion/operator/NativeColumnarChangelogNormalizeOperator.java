@@ -142,8 +142,19 @@ public class NativeColumnarChangelogNormalizeOperator
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyChangelogNormalizerCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBChangelogNormalizer(handle);
     } else {
       Native.closeChangelogNormalizer(handle);

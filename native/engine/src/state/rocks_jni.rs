@@ -2189,7 +2189,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalJoiner
             .with_store(store);
             let restored = read_restored_partitions(&mut env, &restored_partitions);
             joiner.import_partitions(&restored)?;
-            joiner.adopt_store_retention(now_millis)?;
+            if !crate::state::rocks_store::in_frozen_scope() {
+                joiner.adopt_store_retention(now_millis)?;
+            }
             joiner.with_read_through_budget(memory_budget_bytes)
         });
         boxed_or_throw(&mut env, joiner)
@@ -3265,7 +3267,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBOverAggregator
             .with_store(store, key_types);
             let restored = read_restored_partitions(&mut env, &restored_partitions);
             aggregator.import_partitions(&restored)?;
-            aggregator.adopt_store_retention(now_millis)?;
+            if !crate::state::rocks_store::in_frozen_scope() {
+                aggregator.adopt_store_retention(now_millis)?;
+            }
             aggregator.with_read_through_budget(memory_budget_bytes)
         });
         boxed_or_throw(&mut env, aggregator)

@@ -953,6 +953,7 @@ pub(crate) struct KeepLastDeduplicator<S: KeyedStateStore<DedupRow> = MemoryDedu
 /// The resident default backend for the dedup store (see `state/` for the seam).
 pub(crate) type MemoryDedupStore = MemoryStateStore<DedupRow>;
 
+#[derive(Clone)]
 pub(crate) struct DedupRow {
     rowtime: i64,
     payload: Arc<[u8]>,

@@ -1,9 +1,5 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.Native;
-import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
-import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -12,16 +8,18 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import tech.streamfusion.Native;
+import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
  * Non-windowed {@code GROUP BY} aggregation, fed Arrow batches and emitting Arrow batches (the
  * native kernel reads/writes the row kind on the batch's {@code $row_kind$} column). A native
  * changelog chain pays no per-operator transpose; the row↔Arrow conversion happens only at the host
- * edges (inserted by the transition pass), and each keyed shuffle stays columnar where the input is a
- * columnar producer.
+ * edges (inserted by the transition pass), and each keyed shuffle stays columnar where the input is
+ * a columnar producer.
  */
-public class NativeColumnarGroupAggregateOperator
-    extends AbstractNativeStatefulOperator<ArrowBatch>
+public class NativeColumnarGroupAggregateOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
 
   private final int[] aggregateKinds;
@@ -72,30 +70,49 @@ public class NativeColumnarGroupAggregateOperator
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyGroupAggregatorCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected boolean usesDirectRocksDBState() {
     return Native.rocksdbGroupAggregatorSupported(aggregateKinds, valueTypes);
   }
 
   @Override
   protected RocksDBNativeStateSupport resolveRocksDBState(boolean rawStateRestored) {
-    return resolveRocksDB(
-        rawStateRestored,
-        () -> true,
-        stateTtlMillis);
+    return resolveRocksDB(rawStateRestored, () -> true, stateTtlMillis);
   }
 
   @Override
   protected long createRocksDBHandle(
       RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     return Native.createRocksDBGroupAggregator(
-        aggregateKinds, valueTypes, valueColumns, keyColumns, keyTimestampPrecisions(),
-        filterColumns, countColumns, distinctViewColumns, recordCountColumn,
-        generateUpdateBefore, miniBatch, stateTtlMillis,
-        getProcessingTimeService().getCurrentProcessingTime(), memoryBudgetBytes(),
-        rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-        rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
-        rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-        rocksdb.aligned(), restoredPartitions);
+        aggregateKinds,
+        valueTypes,
+        valueColumns,
+        keyColumns,
+        keyTimestampPrecisions(),
+        filterColumns,
+        countColumns,
+        distinctViewColumns,
+        recordCountColumn,
+        generateUpdateBefore,
+        miniBatch,
+        stateTtlMillis,
+        getProcessingTimeService().getCurrentProcessingTime(),
+        memoryBudgetBytes(),
+        rocksdb.tableDirectory(),
+        maxParallelism(),
+        rocksdb.optionsJson(),
+        rocksdb.sharedResourcesHandle(),
+        rocksdb.sourceDirectories(),
+        rocksdb.sourceSnapshotTokens(),
+        rocksdb.keyGroupStart(),
+        rocksdb.keyGroupEnd(),
+        rocksdb.aligned(),
+        restoredPartitions);
   }
 
   @Override
@@ -108,18 +125,39 @@ public class NativeColumnarGroupAggregateOperator
   @Override
   protected long createHandle() {
     return Native.createGroupAggregator(
-        aggregateKinds, valueTypes, valueColumns, keyColumns, keyTimestampPrecisions(),
-        filterColumns, countColumns, distinctViewColumns, recordCountColumn,
-        generateUpdateBefore, miniBatch, stateTtlMillis, memoryBudgetBytes());
+        aggregateKinds,
+        valueTypes,
+        valueColumns,
+        keyColumns,
+        keyTimestampPrecisions(),
+        filterColumns,
+        countColumns,
+        distinctViewColumns,
+        recordCountColumn,
+        generateUpdateBefore,
+        miniBatch,
+        stateTtlMillis,
+        memoryBudgetBytes());
   }
 
   @Override
   protected long restoreRawHandle(byte[][] snapshots) {
     return Native.restoreGroupAggregatorPartitions(
-        aggregateKinds, valueTypes, valueColumns, keyColumns, keyTimestampPrecisions(),
-        filterColumns, countColumns, distinctViewColumns, recordCountColumn, generateUpdateBefore,
-        miniBatch, stateTtlMillis, getProcessingTimeService().getCurrentProcessingTime(),
-        snapshots, memoryBudgetBytes());
+        aggregateKinds,
+        valueTypes,
+        valueColumns,
+        keyColumns,
+        keyTimestampPrecisions(),
+        filterColumns,
+        countColumns,
+        distinctViewColumns,
+        recordCountColumn,
+        generateUpdateBefore,
+        miniBatch,
+        stateTtlMillis,
+        getProcessingTimeService().getCurrentProcessingTime(),
+        snapshots,
+        memoryBudgetBytes());
   }
 
   @Override
@@ -137,7 +175,12 @@ public class NativeColumnarGroupAggregateOperator
 
   @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBGroupAggregator(handle);
     } else {
       Native.closeGroupAggregator(handle);

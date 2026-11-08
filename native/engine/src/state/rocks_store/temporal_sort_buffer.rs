@@ -2,6 +2,7 @@ use super::{checkpoint_files, copy_checkpoint_db, open_shared_db, re, FlinkWrite
 use crate::*;
 use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, IteratorMode, Options, DB};
+#[cfg(test)]
 use std::sync::Arc;
 
 /// `[key_group i32 BE][arrival_seq u64 BE]` — the fixed layout of every buffered row's key, valued
@@ -23,7 +24,7 @@ const LAST_EMITTED_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-temporal-sort-las
 /// removes and returns the completed rows stably sorted by rowtime (scan order is sequence order,
 /// so equal-rowtime rows keep arrival order, as the memory path's stable sort does).
 pub(crate) struct RocksTemporalSortBuffer {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     converter: RowConverter,
     schema: SchemaRef,

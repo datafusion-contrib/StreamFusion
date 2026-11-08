@@ -139,6 +139,7 @@ public final class CanonicalStateBackend extends FlinkStateBackendCompat {
     CanonicalProjection projection =
         new CanonicalProjection(
             () -> context.stockBackendFactory().create(serializer, stockHandles),
+            () -> context.stockBackendFactory().create(serializer, java.util.List.of()),
             !stockHandles.isEmpty());
     try {
       if (projection.isRestored()) {

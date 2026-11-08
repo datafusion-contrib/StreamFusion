@@ -25,8 +25,13 @@ import tech.streamfusion.operator.NativeAllocator;
  */
 final class StockNativeValueSnapshot<V> implements FullSnapshotResources<RowData> {
   @FunctionalInterface
+  interface Entry<V> {
+    void write(RowData key, V value, long written) throws Exception;
+  }
+
+  @FunctionalInterface
   interface Decoder<V> {
-    void decode(RowData row, StockValueSnapshot.Entry<V> entry) throws Exception;
+    void decode(RowData row, Entry<V> entry) throws Exception;
   }
 
   private final TypeSerializer<RowData> keys;

@@ -1,6 +1,7 @@
 use super::{decimal_map_order::DecimalMapOrder, java_map_order::JavaMapOrder, OrdF64};
 use crate::*;
 
+#[derive(Clone)]
 enum Order {
     Decimal(DecimalMapOrder),
     Floating(JavaMapOrder<Option<FloatingKey>>),
@@ -69,6 +70,7 @@ impl Ord for FloatingKey {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct NumericMapOrder {
     data_type: DataType,
     order: Order,

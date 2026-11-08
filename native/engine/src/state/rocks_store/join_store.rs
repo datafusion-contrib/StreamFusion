@@ -105,7 +105,7 @@ impl RocksJoinStore {
             return Ok(());
         }
         self.reserve_work(key.len().saturating_mul(4).saturating_add(512))?;
-        let db = Arc::clone(&self.inner.db);
+        let db = self.inner.db.clone();
         let db_key = self.inner.db_key(key);
         let prefix = self.prefix(key);
         let value = db.get_pinned(&db_key).map_err(re)?;
@@ -248,7 +248,7 @@ impl RocksJoinStore {
     }
 
     fn commit_points(&mut self) -> Result<(), DataFusionError> {
-        let db = Arc::clone(&self.inner.db);
+        let db = self.inner.db.clone();
         let mut writes = FlinkWriteBatch::new(&db, self.inner.write_batch_size);
         for prefix in &self.replaced {
             writes.delete_range(prefix, &prefix_successor(prefix))?;
@@ -294,7 +294,7 @@ impl RocksJoinStore {
     }
 
     fn commit_imported_buckets(&mut self) -> Result<(), DataFusionError> {
-        let db = Arc::clone(&self.inner.db);
+        let db = self.inner.db.clone();
         let mut writes = FlinkWriteBatch::new(&db, self.inner.write_batch_size);
         for (key, slot) in &self.inner.working {
             match slot {
@@ -355,7 +355,7 @@ impl RocksJoinStore {
         consume: &mut dyn FnMut(&[u8], &[u8], RowMeta) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         self.end_bundle()?;
-        let db = Arc::clone(&self.inner.db);
+        let db = self.inner.db.clone();
         let side = self.inner.table.expect("paired join table");
         let mut iterator = db.raw_iterator();
         iterator.seek_to_first();
@@ -445,7 +445,7 @@ impl RocksJoinStore {
             return self.inner.canonical_keys_by_group();
         }
         self.end_bundle()?;
-        let db = Arc::clone(&self.inner.db);
+        let db = self.inner.db.clone();
         let side = self.inner.table.expect("paired join table");
         let mut groups: BTreeMap<i32, Vec<ByteKey>> = BTreeMap::new();
         for item in db.iterator(IteratorMode::Start) {
@@ -628,7 +628,7 @@ impl JoinStateStore for RocksJoinStore {
                 );
             }
         }
-        let db = Arc::clone(&self.inner.db);
+        let db = self.inner.db.clone();
         let fetched = multi_get_pinned(&db, &probes);
         for (key, value) in probes.iter().zip(fetched) {
             let meta = value

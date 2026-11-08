@@ -135,15 +135,12 @@ public final class StockChangelogNormalizeStateContract implements StockStateCon
           STATE,
           new RowDataSerializer(rowType),
           ttl,
-          () -> withNativeSchema(
-              schema -> Native.captureChangelogNormalizerCanonicalSnapshot(handle, schema)),
+          () ->
+              withNativeSchema(
+                  schema -> Native.captureChangelogNormalizerCanonicalSnapshot(handle, schema)),
           bridgeType,
           decoder());
-    return context.value(
-        STATE,
-        new RowDataSerializer(rowType),
-        ttl,
-        receiver -> visit(handle, persistent, receiver));
+    return null;
   }
 
   @Override
@@ -161,7 +158,8 @@ public final class StockChangelogNormalizeStateContract implements StockStateCon
         });
   }
 
-  private void visit(long handle, boolean persistent, StockValueSnapshot.Entry<RowData> receiver)
+  private void visit(
+      long handle, boolean persistent, StockNativeValueSnapshot.Entry<RowData> receiver)
       throws Exception {
     var decode = decoder();
     exportNative(

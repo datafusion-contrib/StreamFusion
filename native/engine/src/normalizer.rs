@@ -36,6 +36,7 @@ pub(crate) struct ChangelogNormalizer<S: KeyedStateStore<NormalizedRow> = Memory
 /// The resident default backend for the normalizer store (see `state/` for the seam).
 pub(crate) type MemoryNormalizerStore = MemoryStateStore<NormalizedRow>;
 
+#[derive(Clone)]
 pub(crate) struct NormalizedRow {
     payload: Arc<[u8]>,
     staged: bool,

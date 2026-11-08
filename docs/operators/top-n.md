@@ -429,7 +429,7 @@ These are callback/schema checks, not additional UDF type admission or throughpu
 The shared First-N path also runs on Flink 1.18.1. Focused controls cover real operator snapshots,
 native checkpoints and isolated native/stock/native process handoffs with both native stores.
 RocksDB exports pin an MVCC read view and convert in Flink's asynchronous writer; memory exports
-use bounded barrier-time spill capture. Concurrent-capture and cancellation controls check reader
+capture independent native state and convert asynchronously through a temporary stock backend. Concurrent-capture and cancellation controls check reader
 ownership independently of the live operator. This qualification does not extend automatically to
 all rank algorithms or cross-version upgrades.
 

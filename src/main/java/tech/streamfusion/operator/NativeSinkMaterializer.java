@@ -117,7 +117,18 @@ public class NativeSinkMaterializer extends AbstractNativeStatefulOperator<Arrow
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copySinkMaterializerCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
     Native.closeSinkMaterializer(handle);
   }
 

@@ -288,6 +288,7 @@ fn over_buffer_value(kind: i64, scalar: &ScalarValue) -> Option<Num> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct OverAggState {
     agg: RunningAgg,
     retracting_sum: bool,
@@ -2021,6 +2022,7 @@ pub(crate) fn is_window_function_kind(kind: i64) -> bool {
 /// DataFusion accumulators (DataFusion's window evaluators expose no serializable state); we own the
 /// small running state so it checkpoints, computing it incrementally in rowtime order like Flink's
 /// own `OverAggregate` (see divergences/11).
+#[derive(Clone)]
 pub(crate) enum WindowFnState {
     /// `ROW_NUMBER()` over `ROWS UNBOUNDED PRECEDING` — a per-partition counter (1-based).
     RowNumber(i64),

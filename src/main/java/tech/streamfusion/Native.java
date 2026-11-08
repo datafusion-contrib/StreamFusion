@@ -34,6 +34,51 @@ public final class Native {
 
   public static native void closeCanonicalSnapshot(long snapshot);
 
+  public static native long pinCanonicalDatabases(String directory);
+
+  public static native long createCanonicalMemoryContext();
+
+  public static native void copyGroupAggregatorCanonicalMemoryState(long source, long target);
+
+  public static native void copyOverCanonicalMemoryState(long source, long target);
+
+  public static native void copyFirstNCanonicalMemoryState(long source, long target);
+
+  public static native void copyTopNCanonicalMemoryState(long source, long target);
+
+  public static native void copyWindowAggregatorCanonicalMemoryState(long source, long target);
+
+  public static native void copySessionAggregatorCanonicalMemoryState(long source, long target);
+
+  public static native void copyUpdatingJoinCanonicalMemoryState(long source, long target);
+
+  public static native void copyWindowJoinCanonicalMemoryState(long source, long target);
+
+  public static native void copyIntervalJoinCanonicalMemoryState(long source, long target);
+
+  public static native void copyTemporalJoinCanonicalMemoryState(long source, long target);
+
+  public static native void copyTemporalSortCanonicalMemoryState(long source, long target);
+
+  public static native void copyWindowRankCanonicalMemoryState(long source, long target);
+
+  public static native void copyBufferedDeduplicatorCanonicalMemoryState(long source, long target);
+
+  public static native void copySinkMaterializerCanonicalMemoryState(long source, long target);
+
+  public static native void copyChangelogNormalizerCanonicalMemoryState(long source, long target);
+
+  public static native void copyEagerDeduplicatorCanonicalMemoryState(long source, long target);
+
+  public static native long withCanonicalDatabases(
+      long snapshot, java.util.function.LongSupplier factory);
+
+  public static native void closeCanonicalDatabases(long snapshot);
+
+  public static native void cancelCanonicalDatabases(long snapshot);
+
+  public static native void prepareOverCanonicalReadView(long handle);
+
   public static native void exportFirstNCanonical(long handle, BatchReceiver receiver);
 
   public static native void importFirstNCanonical(

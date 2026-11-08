@@ -35,6 +35,7 @@ impl WindowResultColumn {
     }
 
     fn push(&mut self, accumulator: &mut dyn Accumulator) -> Result<(), DataFusionError> {
+        let accumulator = crate::aggregates::raw_accumulator(accumulator)?;
         match self {
             Self::Scalars(values) => values.push(accumulator.evaluate()?),
             Self::Timestamps(values) => values.push(
@@ -992,19 +993,25 @@ impl TumblingAggregator {
                 for (accumulator, value) in accumulators.iter_mut().zip(pane) {
                     match value {
                         ExactPaneValue::Extreme { value, .. } => {
-                            (accumulator.as_mut() as &mut dyn std::any::Any)
+                            (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                                .expect("captured accumulator")
+                                as &mut dyn std::any::Any)
                                 .downcast_mut::<crate::aggregates::TimestampExtremeAccumulator>()
                                 .expect("timestamp extrema factory")
                                 .merge_value(*value);
                         }
                         ExactPaneValue::ScalarExtreme { value, .. } => {
-                            (accumulator.as_mut() as &mut dyn std::any::Any)
+                            (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                                .expect("captured accumulator")
+                                as &mut dyn std::any::Any)
                                 .downcast_mut::<crate::aggregates::ScalarExtremeAccumulator>()
                                 .expect("scalar pane factory")
                                 .merge_value(*value);
                         }
                         ExactPaneValue::Count(count) => {
-                            (accumulator.as_mut() as &mut dyn std::any::Any)
+                            (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                                .expect("captured accumulator")
+                                as &mut dyn std::any::Any)
                                 .downcast_mut::<crate::aggregates::WindowCountAccumulator>()
                                 .expect("timestamp pane COUNT factory")
                                 .merge_count(*count);
@@ -1249,21 +1256,27 @@ impl TumblingAggregator {
                                 .is_none_or(|nulls| nulls.is_valid(row as usize))
                         })
                         .count() as i64;
-                    (accumulator.as_mut() as &mut dyn std::any::Any)
+                    (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                        .expect("captured accumulator")
+                        as &mut dyn std::any::Any)
                         .downcast_mut::<crate::aggregates::WindowCountAccumulator>()
                         .expect("window count factory")
                         .merge_count(count);
                     continue;
                 }
                 if let Some(column) = &scalar_columns[i] {
-                    (accumulator.as_mut() as &mut dyn std::any::Any)
+                    (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                        .expect("captured accumulator")
+                        as &mut dyn std::any::Any)
                         .downcast_mut::<crate::aggregates::ScalarExtremeAccumulator>()
                         .expect("scalar extrema factory")
                         .update_rows(column, selected_rows);
                     continue;
                 }
                 if let Some(column) = &timestamps[i] {
-                    (accumulator.as_mut() as &mut dyn std::any::Any)
+                    (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                        .expect("captured accumulator")
+                        as &mut dyn std::any::Any)
                         .downcast_mut::<crate::aggregates::TimestampExtremeAccumulator>()
                         .expect("timestamp extrema factory")
                         .update_rows(column, selected_rows)?;
@@ -1589,14 +1602,18 @@ impl TumblingAggregator {
                 let accumulators = self.accumulators(start, end, key.clone());
                 for (i, accumulator) in accumulators.iter_mut().enumerate() {
                     if let Some(column) = &scalar_columns[i] {
-                        (accumulator.as_mut() as &mut dyn std::any::Any)
+                        (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_mut::<crate::aggregates::ScalarExtremeAccumulator>()
                             .expect("scalar extrema factory")
                             .merge_value(column.value(row));
                         continue;
                     }
                     if let Some(column) = &timestamps[i] {
-                        (accumulator.as_mut() as &mut dyn std::any::Any)
+                        (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_mut::<crate::aggregates::TimestampExtremeAccumulator>()
                             .expect("timestamp extrema factory")
                             .update_row(column, row)?;
@@ -1863,7 +1880,9 @@ impl TumblingAggregator {
                     let ScalarValue::Int64(count) = scalars[column] else {
                         panic!("COUNT partial state");
                     };
-                    (accumulator.as_mut() as &mut dyn std::any::Any)
+                    (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                        .expect("captured accumulator")
+                        as &mut dyn std::any::Any)
                         .downcast_mut::<crate::aggregates::WindowCountAccumulator>()
                         .expect("window count factory")
                         .merge_count(count.unwrap_or(0));

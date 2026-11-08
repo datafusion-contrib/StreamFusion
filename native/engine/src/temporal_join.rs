@@ -8,6 +8,7 @@ pub(crate) const CLEANUP_AT_COLUMN: &str = "__cleanup_at__";
 
 /// One buffered probe-side (left) row of a temporal join: its data values, its event time, and its
 /// changelog `RowKind` (forwarded onto the emitted joined row, as Flink does).
+#[derive(Clone)]
 pub(crate) struct LeftEntry {
     row: JoinRow,
     time: i64,

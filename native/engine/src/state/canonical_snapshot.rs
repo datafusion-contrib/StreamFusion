@@ -73,3 +73,24 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeCanonicalSnapshot<'loc
         }
     });
 }
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pinCanonicalDatabases<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    directory: jni::objects::JString<'local>,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let directory: String = env
+            .get_string(&directory)
+            .expect("canonical database directory")
+            .into();
+        match FrozenDatabases::capture(std::path::Path::new(&directory)) {
+            Ok(frozen) => Box::into_raw(Box::new(frozen)) as jlong,
+            Err(error) => {
+                let _ = env.throw_new("tech/streamfusion/NativeException", error.to_string());
+                0
+            }
+        }
+    })
+}

@@ -823,3 +823,36 @@ mod tests {
         assert_eq!(chunks, vec![1024, 1024, 1]);
     }
 }
+
+impl crate::state::canonical_memory::CanonicalMemoryState for ChangelogNormalizer {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.rows = self.rows.clone();
+        target.schema = self.schema.clone();
+        target.payload_converter = self.schema.as_ref().map(|schema| {
+            RowConverter::new(
+                schema
+                    .fields()
+                    .iter()
+                    .map(|field| SortField::new(field.data_type().clone()))
+                    .collect(),
+            )
+            .expect("captured payload codec")
+        });
+        target.last_sweep_ms = self.last_sweep_ms;
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyChangelogNormalizerCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<ChangelogNormalizer>(env, source, target);
+}

@@ -19,6 +19,8 @@ public final class CanonicalKeyedStateBackend<K>
     implements CheckpointableKeyedStateBackend<K>, CheckpointListener {
   private final CheckpointableKeyedStateBackend<K> delegate;
   private final CanonicalProjection projection;
+  private final org.apache.flink.util.ResourceGuard canonicalReaders =
+      new org.apache.flink.util.ResourceGuard();
   private org.apache.flink.util.function.SupplierWithException<SavepointResources<?>, Exception>
       canonicalSnapshot;
   private org.apache.flink.util.function.ThrowingRunnable<Exception> nativeSnapshot;
@@ -31,6 +33,14 @@ public final class CanonicalKeyedStateBackend<K>
 
   public CheckpointableKeyedStateBackend<K> delegate() {
     return delegate;
+  }
+
+  public AutoCloseable retainCanonicalReader() throws IOException {
+    return canonicalReaders.acquireResource();
+  }
+
+  public void closeCanonicalReaders() {
+    canonicalReaders.close();
   }
 
   public CanonicalProjection projection() {
@@ -47,6 +57,7 @@ public final class CanonicalKeyedStateBackend<K>
 
   @Override
   public void close() throws IOException {
+    canonicalReaders.close();
     Throwable failure = null;
     try {
       delegate.close();
@@ -64,6 +75,7 @@ public final class CanonicalKeyedStateBackend<K>
 
   @Override
   public void dispose() {
+    canonicalReaders.close();
     Throwable failure = null;
     try {
       delegate.dispose();

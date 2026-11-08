@@ -298,3 +298,27 @@ fn import_from_java(
         }
     });
 }
+
+impl crate::state::canonical_memory::CanonicalMemoryState for UpdatingJoiner {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.left_state = self.left_state.clone();
+        target.right_state = self.right_state.clone();
+        target.last_sweep_ms = self.last_sweep_ms.clone();
+        target.clock_ms = self.clock_ms.clone();
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyUpdatingJoinCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<UpdatingJoiner>(env, source, target);
+}

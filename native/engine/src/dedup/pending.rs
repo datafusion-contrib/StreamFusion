@@ -10,6 +10,7 @@ struct Candidate {
     ordinal: u64,
 }
 
+#[derive(Clone)]
 struct Chunk {
     batch: RecordBatch,
     keys: Vec<Option<ByteKey>>,
@@ -17,7 +18,7 @@ struct Chunk {
 }
 
 /// Indexed winners retain Arrow chunks; sparse chunks compact independently, amortizing replacements.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct PendingRows {
     candidates: HashMap<ByteKey, Candidate>,
     chunks: HashMap<u64, Chunk>,

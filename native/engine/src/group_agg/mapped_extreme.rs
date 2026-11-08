@@ -1,5 +1,6 @@
 use super::*;
 
+#[derive(Clone)]
 pub(crate) struct MappedExtreme {
     pub(super) is_min: bool,
     pub(super) counts: BTreeMap<MinMaxKey, i64>,

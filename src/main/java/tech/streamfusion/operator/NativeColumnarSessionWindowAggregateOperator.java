@@ -52,9 +52,20 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
       int[] keyTimestampPrecisions,
       int maxParallelism) {
     this(
-        gapMillis, timeColumn, valueColumns, keyColumns, keyTypes, valueTypes, aggregateKinds,
-        timeZoneId, !"UTC".equals(timeZoneId), timeZoneId, outputType, proctime,
-        keyTimestampPrecisions, maxParallelism);
+        gapMillis,
+        timeColumn,
+        valueColumns,
+        keyColumns,
+        keyTypes,
+        valueTypes,
+        aggregateKinds,
+        timeZoneId,
+        !"UTC".equals(timeZoneId),
+        timeZoneId,
+        outputType,
+        proctime,
+        keyTimestampPrecisions,
+        maxParallelism);
   }
 
   public NativeColumnarSessionWindowAggregateOperator(
@@ -93,6 +104,20 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
     this.keyColumns = keyColumns;
     this.keyTypes = keyTypes;
     this.proctime = proctime;
+  }
+
+  @Override
+  protected void configureCapturedHandle(long captured, boolean persistent) {
+    super.configureCapturedHandle(captured, persistent);
+    if (inputTimestampLtz && !java.time.ZoneId.of(sessionCalendarZoneId).getRules().isFixedOffset())
+      Native.setSessionWindowCalendar(
+          captured, new WindowCalendar(sessionCalendarZoneId, proctime));
+    if (proctime && hasStockStateContract())
+      Native.configureSessionCanonicalAdmission(
+          captured,
+          canonicalWatermark(),
+          new WindowCalendar(sessionCalendarZoneId),
+          java.time.ZoneId.of(sessionCalendarZoneId).getRules().isFixedOffset());
   }
 
   @Override
@@ -148,11 +173,22 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   protected long createRocksDBHandle(
       RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     return Native.createRocksDBSessionAggregator(
-        gapMillis, valueTypes, aggregateKinds, keyTypes, keyTimestampPrecisions(),
-        memoryBudgetBytes(), rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-        rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
-        rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-        rocksdb.aligned(), restoredPartitions,
+        gapMillis,
+        valueTypes,
+        aggregateKinds,
+        keyTypes,
+        keyTimestampPrecisions(),
+        memoryBudgetBytes(),
+        rocksdb.tableDirectory(),
+        maxParallelism(),
+        rocksdb.optionsJson(),
+        rocksdb.sharedResourcesHandle(),
+        rocksdb.sourceDirectories(),
+        rocksdb.sourceSnapshotTokens(),
+        rocksdb.keyGroupStart(),
+        rocksdb.keyGroupEnd(),
+        rocksdb.aligned(),
+        restoredPartitions,
         restoredProcessingTimeTimerDeadline());
   }
 
@@ -197,7 +233,8 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
 
   @Override
   protected long createHandle() {
-    return Native.createSessionAggregator(gapMillis, valueTypes, aggregateKinds, memoryBudgetBytes());
+    return Native.createSessionAggregator(
+        gapMillis, valueTypes, aggregateKinds, memoryBudgetBytes());
   }
 
   @Override
@@ -243,8 +280,19 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copySessionAggregatorCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBSessionAggregator(handle);
     } else {
       Native.closeSessionAggregator(handle);

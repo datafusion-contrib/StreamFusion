@@ -417,3 +417,26 @@ mod tests {
         assert_eq!(pool.reserved(), 0);
     }
 }
+
+impl crate::state::canonical_memory::CanonicalMemoryState for FirstNHandle {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        let (Self::Memory(source), Self::Memory(target)) = (self, target) else {
+            return Err(invalid("memory capture requires two memory handles"));
+        };
+        target.memory.set(source.memory.state_bytes);
+        target.memory.account()?;
+        target.rows = source.rows.clone();
+        target.last_sweep_ms = source.last_sweep_ms;
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyFirstNCanonicalMemoryState<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<FirstNHandle>(env, source, target);
+}

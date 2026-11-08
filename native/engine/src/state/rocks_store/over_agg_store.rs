@@ -144,7 +144,7 @@ pub(crate) struct StoredFrameRow {
 /// the persisted arrival counter. Retention is enforced by the operator's lazy schemes — a
 /// compaction filter cannot honor the pending-row deferral — so no table installs one.
 pub(crate) struct RocksOverAggStore {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
     key_groups: std::ops::RangeInclusive<i32>,

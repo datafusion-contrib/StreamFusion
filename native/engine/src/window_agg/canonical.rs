@@ -533,7 +533,9 @@ impl TumblingAggregator {
                     if count < 0 && !matches!(aggregate, WindowAggregate::CountedDistinct(_)) {
                         return Err(invalid("negative DISTINCT cardinality"));
                     }
-                    if let Some(counted) = (accumulator.as_mut() as &mut dyn std::any::Any)
+                    if let Some(counted) = (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                        .expect("captured accumulator")
+                        as &mut dyn std::any::Any)
                         .downcast_mut::<CountedDistinctAccumulator>()
                     {
                         counted.set_cardinality(count);
@@ -757,4 +759,81 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTumblingCanonicalWat
             store.adopt_restored(progress, i64::MIN);
         }
     });
+}
+
+impl crate::state::canonical_memory::CanonicalMemoryState for TumblingAggregator {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.key_types = self.key_types.clone();
+        target.key_converter = self
+            .key_converter
+            .as_ref()
+            .map(|_| key_row_converter_from_types(&self.key_types));
+        target.current_watermark = self.current_watermark;
+        target.next_timer_deadline = self.next_timer_deadline;
+        target.canonical_distinct = self.canonical_distinct.clone();
+        let codec = target.key_converter.as_ref();
+        let copy_key = |key: &OwnedRow| {
+            codec
+                .expect("captured key codec")
+                .parser()
+                .parse(key.row().data())
+                .owned()
+        };
+        target.canonical_distinct_counts = self
+            .canonical_distinct_counts
+            .iter()
+            .map(|((end, key, slot), count)| ((*end, copy_key(key), *slot), *count))
+            .collect();
+        self.require_flushed_partial_buffer()?;
+        target.shared_slices = self.shared_slices;
+        target.exact_panes = self.exact_panes;
+        target.live_count = self.live_count;
+        target.slice_timers = self
+            .slice_timers
+            .iter()
+            .map(|(end, keys)| {
+                (
+                    *end,
+                    keys.iter()
+                        .map(|(key, group)| (copy_key(key), *group))
+                        .collect(),
+                )
+            })
+            .collect();
+        for (&end, window) in &mut self.windows {
+            let mut keys = HashMap::default();
+            for (key, values) in &mut window.keys {
+                let values = values
+                    .iter_mut()
+                    .zip(&self.aggregates)
+                    .map(|(value, aggregate)| {
+                        crate::aggregates::capture_accumulator(value, aggregate)
+                    })
+                    .collect();
+                keys.insert(copy_key(key), values);
+            }
+            target.windows.insert(
+                end,
+                AlignedWindow {
+                    start: window.start,
+                    keys,
+                },
+            );
+        }
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyWindowAggregatorCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<TumblingAggregator>(env, source, target);
 }

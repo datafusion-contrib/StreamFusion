@@ -73,7 +73,7 @@ public final class StockFirstNStateContract implements StockStateContract {
           () -> Native.captureFirstNCanonicalSnapshot(handle),
           BRIDGE,
           this::decode);
-    return context.value(STATE, IntSerializer.INSTANCE, ttl, receiver -> visit(handle, receiver));
+    return null;
   }
 
   @Override
@@ -90,7 +90,8 @@ public final class StockFirstNStateContract implements StockStateContract {
         });
   }
 
-  private void visit(long handle, StockValueSnapshot.Entry<Integer> receiver) throws Exception {
+  private void visit(long handle, StockNativeValueSnapshot.Entry<Integer> receiver)
+      throws Exception {
     Native.exportFirstNCanonical(
         handle,
         (arrayAddress, schemaAddress) -> {
@@ -109,7 +110,8 @@ public final class StockFirstNStateContract implements StockStateContract {
         });
   }
 
-  private void decode(RowData row, StockValueSnapshot.Entry<Integer> receiver) throws Exception {
+  private void decode(RowData row, StockNativeValueSnapshot.Entry<Integer> receiver)
+      throws Exception {
     byte[] encoded = row.getBinary(0);
     var key = new BinaryRowData(keyType.getFieldCount());
     key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);

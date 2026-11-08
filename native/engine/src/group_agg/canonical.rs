@@ -506,3 +506,42 @@ fn transfer<'local>(
 
 #[cfg(test)]
 mod tests;
+
+impl crate::state::canonical_memory::CanonicalMemoryState for GroupAggregator {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        if self.staged_keys() != 0 || !self.deferred_batches.is_empty() {
+            return Err(invalid(
+                "pending aggregate input must be flushed before capture",
+            ));
+        }
+        target.value_types = self.value_types.clone();
+        target.accumulator_types = self.accumulator_types.clone();
+        target.result_types = self.result_types.clone();
+        target.state_types = self.state_types.clone();
+        target.store = self.store.clone();
+        target.global_partials = self.global_partials.clone();
+        target.global_staging_bytes = self.global_staging_bytes;
+        target.numeric_views = self.numeric_views.clone();
+        target.extreme_partials = self.extreme_partials.clone();
+        target.list_partials = self.list_partials.clone();
+        target.sum_partials = self.sum_partials.clone();
+        target.stock_bundle_capacity = self.stock_bundle_capacity;
+        target.last_input_ms = self.last_input_ms;
+        target.last_sweep_ms = self.last_sweep_ms;
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyGroupAggregatorCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<GroupAggregator>(env, source, target);
+}

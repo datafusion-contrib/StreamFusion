@@ -3,7 +3,7 @@ use super::*;
 pub(crate) const RANGE_LAST: &str = "__over_last_triggering_ts";
 pub(crate) const RANGE_ARMED: &str = "__over_event_timers";
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct RangeTimers {
     pub(crate) last: Option<i64>,
     pub(crate) armed: Vec<i64>,

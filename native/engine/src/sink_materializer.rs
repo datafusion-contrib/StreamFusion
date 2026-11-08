@@ -34,6 +34,7 @@ impl Identity {
     }
 }
 
+#[derive(Clone)]
 struct Candidate {
     hash: i32,
     serialized: Option<Arc<[u8]>>,

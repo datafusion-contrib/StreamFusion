@@ -54,7 +54,12 @@ class CanonicalTemporalJoinPlanTest {
     if (mode.equals("unaligned")) {
       table.getConfig().set("execution.checkpointing.interval", "1 s");
       table.getConfig().set("execution.checkpointing.unaligned.enabled", "true");
-    } else if (mode.equals("changelog")) table.getConfig().set(org.apache.flink.configuration.StateChangelogOptions.ENABLE_STATE_CHANGE_LOG.key(), "true");
+    } else if (mode.equals("changelog"))
+      table
+          .getConfig()
+          .set(
+              org.apache.flink.configuration.StateChangelogOptions.ENABLE_STATE_CHANGE_LOG.key(),
+              "true");
     else if (mode.equals("disabled"))
       table.getConfig().set("streamfusion.operator.temporalJoin.enabled", "false");
     else table.getConfig().set("table.exec.async-state.enabled", "true");

@@ -114,15 +114,12 @@ public final class StockDedupStateContract implements StockStateContract {
           STATE,
           valueSerializer(),
           stateRetention > 0,
-          () -> withNativeSchema(
-              schema -> Native.captureEagerDeduplicatorCanonicalSnapshot(handle, schema)),
+          () ->
+              withNativeSchema(
+                  schema -> Native.captureEagerDeduplicatorCanonicalSnapshot(handle, schema)),
           bridgeType,
           decoder());
-    return context.value(
-        STATE,
-        valueSerializer(),
-        stateRetention > 0,
-        receiver -> visit(handle, persistent, receiver));
+    return null;
   }
 
   @Override
@@ -140,7 +137,8 @@ public final class StockDedupStateContract implements StockStateContract {
         });
   }
 
-  private void visit(long handle, boolean persistent, StockValueSnapshot.Entry<Object> receiver)
+  private void visit(
+      long handle, boolean persistent, StockNativeValueSnapshot.Entry<Object> receiver)
       throws Exception {
     var decoder = decoder();
     scan(

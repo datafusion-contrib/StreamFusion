@@ -444,3 +444,38 @@ pub extern "system" fn Java_tech_streamfusion_Native_importIntervalJoinCanonical
 
 #[cfg(test)]
 pub(super) mod tests;
+
+impl crate::state::canonical_memory::CanonicalMemoryState for IntervalJoiner {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.left_buffered = self.left_buffered.clone();
+        target.right_buffered = self.right_buffered.clone();
+        target.left_buffered_rows = self.left_buffered_rows.clone();
+        target.right_buffered_rows = self.right_buffered_rows.clone();
+        target.left_matched = self.left_matched.clone();
+        target.right_matched = self.right_matched.clone();
+        target.left_next_id = self.left_next_id.clone();
+        target.right_next_id = self.right_next_id.clone();
+        target.operator_time = self.operator_time.clone();
+        target.left_expiration = self.left_expiration.clone();
+        target.right_expiration = self.right_expiration.clone();
+        target.left_cleanup = self.left_cleanup.clone();
+        target.right_cleanup = self.right_cleanup.clone();
+        target.legacy_timer_rows = self.legacy_timer_rows.clone();
+        target.clock_arities = self.clock_arities.clone();
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyIntervalJoinCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<IntervalJoiner>(env, source, target);
+}

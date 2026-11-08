@@ -15,21 +15,20 @@ import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
- * Regular (non-windowed) updating join, fed Arrow batches on both inputs and emitting Arrow batches.
- * Supports INNER, LEFT/RIGHT/FULL outer, and SEMI/ANTI: the native joiner keeps a per-side keyed
- * multiset and, for the outer/semi/anti families, a per-row match-degree to emit and retract
+ * Regular (non-windowed) updating join, fed Arrow batches on both inputs and emitting Arrow
+ * batches. Supports INNER, LEFT/RIGHT/FULL outer, and SEMI/ANTI: the native joiner keeps a per-side
+ * keyed multiset and, for the outer/semi/anti families, a per-row match-degree to emit and retract
  * null-padded (outer) or bare (semi/anti) rows as a row's degree crosses 0↔1 — a faithful port of
  * Flink's {@code StreamingJoinOperator}/{@code StreamingSemiAntiJoinOperator}. The changelog flows
- * Arrow with no per-operator transpose; the row↔Arrow conversion happens only at the host edges. Each
- * input batch is folded into its side and the join changelog it produces is emitted immediately
- * (carrying the changelog kind on the output batch's {@code $row_kind$} column).
+ * Arrow with no per-operator transpose; the row↔Arrow conversion happens only at the host edges.
+ * Each input batch is folded into its side and the join changelog it produces is emitted
+ * immediately (carrying the changelog kind on the output batch's {@code $row_kind$} column).
  *
  * <p>The left/right input schemas are handed to the joiner at construction (exported through the C
  * Data Interface) so an outer join can type the null-padding for a side before its first batch
  * arrives.
  */
-public class NativeColumnarUpdatingJoinOperator
-    extends AbstractNativeStatefulOperator<ArrowBatch>
+public class NativeColumnarUpdatingJoinOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements TwoInputStreamOperator<ArrowBatch, ArrowBatch, ArrowBatch> {
 
   private final int[] leftKeys;
@@ -115,8 +114,7 @@ public class NativeColumnarUpdatingJoinOperator
   protected void beforeHandleCreation() {
     boundPredLongs =
         predBinding.bind(
-            predLongs,
-            new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
+            predLongs, new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
   }
 
   @Override
@@ -138,15 +136,36 @@ public class NativeColumnarUpdatingJoinOperator
         rightType,
         (left, right) ->
             Native.createRocksDBUpdatingJoiner(
-                leftKeys, rightKeys, filterNulls, keyTimestampPrecisions(), joinType, left, right,
-                predKinds, predPayload, predChildCounts, boundPredLongs, predDoubles, predStrings,
-                leftJoinKeyUnique, rightJoinKeyUnique, miniBatch,
-                leftStateTtlMillis, rightStateTtlMillis,
-                getProcessingTimeService().getCurrentProcessingTime(), memoryBudgetBytes(),
-                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
-                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-                rocksdb.aligned(), restoredPartitions));
+                leftKeys,
+                rightKeys,
+                filterNulls,
+                keyTimestampPrecisions(),
+                joinType,
+                left,
+                right,
+                predKinds,
+                predPayload,
+                predChildCounts,
+                boundPredLongs,
+                predDoubles,
+                predStrings,
+                leftJoinKeyUnique,
+                rightJoinKeyUnique,
+                miniBatch,
+                leftStateTtlMillis,
+                rightStateTtlMillis,
+                getProcessingTimeService().getCurrentProcessingTime(),
+                memoryBudgetBytes(),
+                rocksdb.tableDirectory(),
+                maxParallelism(),
+                rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(),
+                rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(),
+                rocksdb.keyGroupStart(),
+                rocksdb.keyGroupEnd(),
+                rocksdb.aligned(),
+                restoredPartitions));
   }
 
   @Override
@@ -228,8 +247,19 @@ public class NativeColumnarUpdatingJoinOperator
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyUpdatingJoinCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBUpdatingJoiner(handle);
     } else {
       Native.closeUpdatingJoiner(handle);
@@ -345,21 +375,17 @@ public class NativeColumnarUpdatingJoinOperator
       if (directRocksDBState()) {
         if (left) {
           Native.pushLeftRocksDBUpdatingJoiner(
-              handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
-              batchReceiver);
+              handle, inArray.memoryAddress(), inSchema.memoryAddress(), now, batchReceiver);
         } else {
           Native.pushRightRocksDBUpdatingJoiner(
-              handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
-              batchReceiver);
+              handle, inArray.memoryAddress(), inSchema.memoryAddress(), now, batchReceiver);
         }
       } else if (left) {
         Native.pushLeftUpdatingJoiner(
-            handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
-            batchReceiver);
+            handle, inArray.memoryAddress(), inSchema.memoryAddress(), now, batchReceiver);
       } else {
         Native.pushRightUpdatingJoiner(
-            handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
-            batchReceiver);
+            handle, inArray.memoryAddress(), inSchema.memoryAddress(), now, batchReceiver);
       }
     }
   }

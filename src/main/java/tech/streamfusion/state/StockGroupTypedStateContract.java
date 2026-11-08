@@ -217,11 +217,7 @@ public final class StockGroupTypedStateContract implements StockStateContract {
           bridgeType,
           this::decode);
     }
-    return context.value(
-        STATE,
-        new RowDataSerializer(accumulatorType),
-        ttl,
-        receiver -> visit(handle, persistent, receiver));
+    return null;
   }
 
   @Override
@@ -240,7 +236,8 @@ public final class StockGroupTypedStateContract implements StockStateContract {
     for (var view : views) view.exportState(backend, keyType, handle, persistent);
   }
 
-  private void visit(long handle, boolean persistent, StockValueSnapshot.Entry<RowData> receiver)
+  private void visit(
+      long handle, boolean persistent, StockNativeValueSnapshot.Entry<RowData> receiver)
       throws Exception {
     configureNativeState(handle, persistent);
     Native.exportGroupTypedCanonical(
@@ -298,7 +295,8 @@ public final class StockGroupTypedStateContract implements StockStateContract {
     }
   }
 
-  private void decode(RowData row, StockValueSnapshot.Entry<RowData> receiver) throws Exception {
+  private void decode(RowData row, StockNativeValueSnapshot.Entry<RowData> receiver)
+      throws Exception {
     byte[] encoded = row.getBinary(0);
     var key = new BinaryRowData(keyType.getFieldCount());
     key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);

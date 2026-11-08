@@ -387,6 +387,7 @@ enum Change {
     Import(i64),
 }
 
+#[derive(Clone)]
 pub(crate) struct Multiplicities<K> {
     counts: ahash::HashMap<K, i64>,
     journal: Option<Box<ahash::HashSet<K>>>,
@@ -520,6 +521,7 @@ impl<K: Eq + Hash + Clone> Multiplicities<K> {
 
 // Fixed-schema keys keep value hashing independent of ScalarValue's type tag. Persistence still
 // writes the original typed scalar entries; decimal precision and scale belong to the map.
+#[derive(Clone)]
 pub(crate) enum DistinctSet {
     I64(Multiplicities<i64>),
     I32(Multiplicities<i32>),

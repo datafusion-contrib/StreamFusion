@@ -54,7 +54,7 @@ pub(crate) struct StoredRightVersion {
 /// path runs over its maps. The store key is `[key_group i32 BE][key arrow-row]` (the table byte
 /// stripped), so map order equals scan order.
 pub(crate) struct RocksTemporalJoinStore {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
     key_types: Vec<DataType>,

@@ -15,7 +15,6 @@ import org.apache.flink.runtime.checkpoint.SavepointType;
 import org.apache.flink.runtime.state.CheckpointStorageLocationReference;
 import org.apache.flink.runtime.state.SavepointResources;
 import org.apache.flink.runtime.state.memory.MemCheckpointStreamFactory;
-import org.apache.flink.streaming.api.operators.OperatorSnapshotFinalizer;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
@@ -99,7 +98,7 @@ class CanonicalFirstNMvccSnapshotTest {
     return contract(false, ttl)
         .snapshot(
             new StockSnapshotContext(
-                keys, 128, new org.apache.flink.runtime.state.KeyGroupRange(0, 127), directory),
+                keys, 128, new org.apache.flink.runtime.state.KeyGroupRange(0, 127)),
             handle,
             true);
   }
@@ -122,7 +121,7 @@ class CanonicalFirstNMvccSnapshotTest {
               new MemCheckpointStreamFactory(64 * 1024 * 1024),
               options,
               cancelables);
-      return new OperatorSnapshotFinalizer(futures).getJobManagerOwnedState();
+      return tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(futures);
     }
   }
 }

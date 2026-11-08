@@ -42,13 +42,13 @@ pub(super) fn partial_type() -> DataType {
     partials(std::iter::empty()).data_type().clone()
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Clone)]
 struct ListViewTimestamps {
     values: VecDeque<i64>,
     pending_retractions: VecDeque<i64>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub(crate) struct ListAggState {
     append_only: bool,
     prefix: Option<String>,

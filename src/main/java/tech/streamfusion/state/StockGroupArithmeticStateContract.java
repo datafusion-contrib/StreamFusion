@@ -135,11 +135,7 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
           bridgeType,
           this::decode);
     }
-    return context.value(
-        STATE,
-        new RowDataSerializer(accumulatorType),
-        ttl,
-        receiver -> visit(handle, persistent, receiver));
+    return null;
   }
 
   @Override
@@ -157,7 +153,8 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
         });
   }
 
-  private void visit(long handle, boolean persistent, StockValueSnapshot.Entry<RowData> receiver)
+  private void visit(
+      long handle, boolean persistent, StockNativeValueSnapshot.Entry<RowData> receiver)
       throws Exception {
     configureNativeState(handle, persistent);
     Native.exportGroupArithmeticCanonical(
@@ -214,7 +211,8 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
     }
   }
 
-  private void decode(RowData row, StockValueSnapshot.Entry<RowData> receiver) throws Exception {
+  private void decode(RowData row, StockNativeValueSnapshot.Entry<RowData> receiver)
+      throws Exception {
     byte[] encoded = row.getBinary(0);
     var key = new BinaryRowData(keyType.getFieldCount());
     key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);

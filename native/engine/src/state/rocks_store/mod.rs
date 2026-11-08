@@ -10,6 +10,9 @@
 #[cfg(test)]
 mod canonical_import_tests;
 mod canonical_snapshot;
+mod database;
+pub(crate) use database::{in_frozen_scope, FrozenDatabases, StateDb};
+use database::{StateClock, StateWrite};
 mod canonical_transfer;
 pub(crate) use canonical_snapshot::{RocksCanonicalSnapshot, RocksReadSnapshot};
 mod decoded_cache;
@@ -44,6 +47,7 @@ use rocksdb::{
     Cache, CompactionDecision, DBPinnableSlice, Direction, IteratorMode, Options, WriteBatch,
     WriteOptions, DB,
 };
+use std::path::Path;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
@@ -55,7 +59,7 @@ const SNAPSHOT_TIMER_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-timer";
 pub(super) const TIMER_DEADLINE_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-timer-deadline";
 
 /// Reads a store's persisted timer deadline; `i64::MIN` when none was written.
-pub(super) fn stored_timer_deadline(db: &DB) -> Result<i64, DataFusionError> {
+pub(super) fn stored_timer_deadline(db: &StateDb) -> Result<i64, DataFusionError> {
     Ok(db
         .get(TIMER_DEADLINE_KEY)
         .map_err(re)?
@@ -271,14 +275,14 @@ enum Slot<V> {
 /// same cap while restoring or committing buffered native state, with WAL disabled on every
 /// physical write just like Flink's `RocksDBWriteBatchWrapper`.
 struct FlinkWriteBatch<'a> {
-    db: &'a DB,
+    db: &'a dyn StateWrite,
     options: WriteOptions,
     max_bytes: usize,
     batch: WriteBatch,
 }
 
 impl<'a> FlinkWriteBatch<'a> {
-    fn new(db: &'a DB, max_bytes: usize) -> Self {
+    fn new(db: &'a dyn StateWrite, max_bytes: usize) -> Self {
         Self {
             db,
             options: flink_write_options(),
@@ -292,16 +296,23 @@ impl<'a> FlinkWriteBatch<'a> {
         key: K,
         value: V,
     ) -> Result<(), DataFusionError> {
+        if !self.db.allow_put(key.as_ref(), value.as_ref())? {
+            return Ok(());
+        }
         self.batch.put(key, value);
         self.flush_if_full()
     }
 
     fn delete<K: AsRef<[u8]>>(&mut self, key: K) -> Result<(), DataFusionError> {
+        if !self.db.allow_delete(key.as_ref())? {
+            return Ok(());
+        }
         self.batch.delete(key);
         self.flush_if_full()
     }
 
     fn delete_range<K: AsRef<[u8]>>(&mut self, from: K, to: K) -> Result<(), DataFusionError> {
+        self.db.allow_delete_range()?;
         self.batch.delete_range(from, to);
         self.flush_if_full()
     }
@@ -320,7 +331,7 @@ impl<'a> FlinkWriteBatch<'a> {
     fn flush(&mut self) -> Result<(), DataFusionError> {
         if !self.batch.is_empty() {
             let batch = std::mem::take(&mut self.batch);
-            self.db.write_opt(batch, &self.options).map_err(re)?;
+            self.db.write_batch(batch, &self.options)?;
         }
         Ok(())
     }
@@ -361,7 +372,7 @@ fn prefix_successor(prefix: &[u8]) -> Vec<u8> {
 }
 
 pub(crate) struct RocksStore<C: RocksStateCodec> {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     config: RocksStoreConfig,
     codec: C,
@@ -379,7 +390,7 @@ pub(crate) struct RocksStore<C: RocksStateCodec> {
     removed_multiset_keys: ahash::HashSet<ByteKey>,
     converter: RowConverter,
     now_ms: i64,
-    clock: Arc<AtomicI64>,
+    clock: Arc<StateClock>,
     generation: i64,
     write_batch_size: usize,
     working: ahash::HashMap<ByteKey, Slot<C::Value>>,
@@ -392,9 +403,9 @@ const PAIR_SECOND_TABLE: u8 = 1;
 const MULTISET_MAIN_TABLE: u8 = 0;
 
 struct OpenedDb {
-    db: Arc<DB>,
+    db: StateDb,
     cache: Option<Cache>,
-    clock: Arc<AtomicI64>,
+    clock: Arc<StateClock>,
     write_batch_size: usize,
 }
 
@@ -405,6 +416,9 @@ fn open_shared_db(
     config: &RocksStoreConfig,
     ttls: &[(Option<u8>, i64)],
 ) -> Result<OpenedDb, DataFusionError> {
+    if let Some(frozen) = database::frozen_open(Path::new(&config.table_dir))? {
+        return Ok(frozen);
+    }
     std::fs::create_dir_all(&config.table_dir).map_err(ioe)?;
     let resolved = crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
         .map_err(DataFusionError::Plan)?;
@@ -412,7 +426,7 @@ fn open_shared_db(
         .build(config.shared())
         .map_err(DataFusionError::Plan)?;
     let write_batch_size = resolved.write_batch_size;
-    let clock = Arc::new(AtomicI64::new(0));
+    let clock = Arc::new(StateClock::new(0));
     if ttls.iter().any(|&(_, ttl)| ttl > 0) {
         let filter_clock = Arc::clone(&clock);
         let table_ttls: Vec<(Option<u8>, i64)> = ttls.to_vec();
@@ -422,6 +436,9 @@ fn open_shared_db(
         let mut remaining = 0u64;
         let mut now = 0i64;
         options.set_compaction_filter("streamfusion-state-ttl", move |_level, key, value| {
+            if filter_clock.pinned() {
+                return CompactionDecision::Keep;
+            }
             if remaining == 0 {
                 now = filter_clock.load(Ordering::Relaxed);
                 remaining = refresh_after;
@@ -449,6 +466,13 @@ fn open_shared_db(
         DB::open_cf_with_opts(&options, &config.table_dir, [("default", options.clone())])
             .map_err(re)?,
     );
+    let db = StateDb::live(
+        db,
+        cache.clone(),
+        Arc::clone(&clock),
+        write_batch_size,
+        Path::new(&config.table_dir),
+    );
     Ok(OpenedDb {
         db,
         cache,
@@ -462,18 +486,15 @@ fn open_shared_db(
 /// RocksDB can skip sorting through its virtual comparator and thread-local lookup context.
 /// Pins must not escape into the operator's resident state.
 fn multi_get_pinned<'db>(
-    db: &'db DB,
+    db: &'db StateDb,
     keys: &[Vec<u8>],
 ) -> Vec<Result<Option<DBPinnableSlice<'db>>, rocksdb::Error>> {
-    let cf = db
-        .cf_handle("default")
-        .expect("registered default column family");
     if keys.windows(2).all(|pair| pair[0] <= pair[1]) {
-        return db.batched_multi_get_cf(cf, keys, true);
+        return db.multi_get_pinned(keys, true);
     }
     let mut order: Vec<usize> = (0..keys.len()).collect();
     order.sort_unstable_by(|&a, &b| keys[a].cmp(&keys[b]));
-    let fetched = db.batched_multi_get_cf(cf, order.iter().map(|&i| &keys[i]), true);
+    let fetched = db.multi_get_pinned(order.iter().map(|&i| &keys[i]), true);
     let mut original_order: Vec<_> = (0..keys.len()).map(|_| None).collect();
     for (index, value) in order.into_iter().zip(fetched) {
         original_order[index] = Some(value);
@@ -682,7 +703,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
-            db: Arc::clone(&opened.db),
+            db: opened.db.clone(),
             _cache: opened.cache.clone(),
             config,
             codec,
@@ -952,7 +973,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
         {
             return Ok(());
         }
-        let db = Arc::clone(&self.db);
+        let db = self.db.clone();
         let mut writes = FlinkWriteBatch::new(&db, self.write_batch_size);
         // A removed key's committed companion ranges go first, so a key re-created in the same
         // bundle keeps the element puts written below.
@@ -1087,6 +1108,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
         let mut keys = std::collections::BTreeMap::<i32, Vec<ByteKey>>::new();
         let mut all_keys = Vec::new();
         for row in self.db.iterator(IteratorMode::Start) {
+            database::check_cancelled()?;
             let (db_key, value) = row.map_err(re)?;
             if db_key.len() < prefix || db_key.as_ref() == SNAPSHOT_TIMER_KEY {
                 continue;
@@ -1170,7 +1192,7 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
             .iter()
             .map(|key| self.db_key(&key.0))
             .collect::<Vec<_>>();
-        let db = Arc::clone(&self.db);
+        let db = self.db.clone();
         let fetched = multi_get_pinned(&db, &db_keys);
         let mut hit_keys = Vec::new();
         let mut hit_values = Vec::new();
@@ -1349,7 +1371,7 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
             return self.probe_multisets(batch, key_columns, precisions);
         }
         let db_keys: Vec<_> = missing.iter().map(|key| self.db_key(&key.0)).collect();
-        let db = Arc::clone(&self.db);
+        let db = self.db.clone();
         let fetched = multi_get_pinned(&db, &db_keys);
         let mut hit_keys = Vec::new();
         let mut hit_values = Vec::new();
@@ -1441,7 +1463,7 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
     }
 }
 
-fn re(error: rocksdb::Error) -> DataFusionError {
+fn re(error: impl std::error::Error + Send + Sync + 'static) -> DataFusionError {
     DataFusionError::External(Box::new(error))
 }
 fn ioe(error: std::io::Error) -> DataFusionError {
@@ -1598,6 +1620,9 @@ impl RocksSnapshotStore {
 }
 
 fn copy_checkpoint_db(source: &str, destination: &str) -> Result<(), DataFusionError> {
+    if database::in_frozen_scope() {
+        return Ok(());
+    }
     std::fs::create_dir_all(destination).map_err(ioe)?;
     for entry in std::fs::read_dir(source).map_err(ioe)? {
         let entry = entry.map_err(ioe)?;
@@ -1620,6 +1645,9 @@ fn checkpoint_files(
     snapshot_dir: &str,
     generation: i64,
 ) -> Result<RocksCheckpointManifest, DataFusionError> {
+    if snapshot_dir.is_empty() {
+        return Ok(RocksCheckpointManifest::absent());
+    }
     let snapshot_path = std::path::Path::new(snapshot_dir);
     if snapshot_path.exists() {
         std::fs::remove_dir_all(snapshot_path).map_err(ioe)?;
@@ -1683,8 +1711,15 @@ mod batch_read_tests {
             .map(<[u8]>::to_vec)
             .collect();
         for _ in 0..2 {
-            let db =
-                DB::open_cf_with_opts(&options, &path, [("default", options.clone())]).unwrap();
+            let db = StateDb::live(
+                Arc::new(
+                    DB::open_cf_with_opts(&options, &path, [("default", options.clone())]).unwrap(),
+                ),
+                None,
+                Arc::new(StateClock::new(0)),
+                1024,
+                &path,
+            );
             // Exercise both memtable and SST reads, with misses, duplicates and empty values.
             db.put(b"a", b"first").unwrap();
             for flush in [false, true] {

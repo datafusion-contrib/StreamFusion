@@ -57,7 +57,12 @@ class CanonicalIntervalJoinPlanTest {
       table.getConfig().set("execution.checkpointing.unaligned.enabled", "true");
     } else if (mode.equals("cleanup"))
       table.getConfig().set("table.exec.interval-join.min-cleanup-interval", "1 s");
-    else if (mode.equals("changelog")) table.getConfig().set(org.apache.flink.configuration.StateChangelogOptions.ENABLE_STATE_CHANGE_LOG.key(), "true");
+    else if (mode.equals("changelog"))
+      table
+          .getConfig()
+          .set(
+              org.apache.flink.configuration.StateChangelogOptions.ENABLE_STATE_CHANGE_LOG.key(),
+              "true");
     var plan = table.compilePlanSql(query("INNER", "rt", mode.equals("negative")));
     assertFalse(plan.explain().contains("NativeIntervalJoin"), plan.explain());
     assertFalse(plan.asJsonString().contains("tech.streamfusion"));

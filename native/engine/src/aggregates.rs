@@ -1,3 +1,4 @@
+mod shared_snapshot;
 use crate::*;
 
 pub(crate) mod canonical_distinct;
@@ -661,6 +662,7 @@ impl Accumulator for DoubleAvgAccumulator {
 /// narrow/int32/float wrapping sums are small custom accumulators so their results match the host
 /// exactly. All expose mergeable partial state, so windows accumulate incrementally and checkpoint
 /// uniformly.
+#[derive(Clone)]
 pub(crate) enum WindowAggregate {
     Count,
     ZeroSum(DataType),
@@ -1075,6 +1077,19 @@ pub(crate) fn scalars_to_array(scalars: Vec<ScalarValue>, data_type: &DataType) 
 /// DataFusion's `state` API is consuming for some implementations, such as string
 /// `COUNT(DISTINCT ...)`, while merging the state back into other implementations would double
 /// their values. Replacing the accumulator handles both contracts uniformly.
+pub(crate) fn raw_accumulator(
+    accumulator: &mut dyn Accumulator,
+) -> Result<&mut dyn Accumulator, DataFusionError> {
+    shared_snapshot::raw(accumulator)
+}
+
+pub(crate) fn capture_accumulator(
+    accumulator: &mut Box<dyn Accumulator>,
+    aggregate: &WindowAggregate,
+) -> Box<dyn Accumulator> {
+    shared_snapshot::capture(accumulator, aggregate)
+}
+
 pub(crate) fn snapshot_accumulator_state(
     accumulator: &mut Box<dyn Accumulator>,
     create: impl FnOnce() -> Box<dyn Accumulator>,
@@ -1082,7 +1097,9 @@ pub(crate) fn snapshot_accumulator_state(
     let state = accumulator.state().expect("state");
     // Counted state is non-draining. Rebuilding would compact its map behind managed-memory
     // accounting, changing the live footprint without updating its reservation.
-    if (accumulator.as_ref() as &dyn std::any::Any).is::<CountedDistinctAccumulator>() {
+    if (accumulator.as_ref() as &dyn std::any::Any).is::<CountedDistinctAccumulator>()
+        || shared_snapshot::counted(accumulator.as_ref())
+    {
         return state;
     }
     let arrays: Vec<ArrayRef> = state
@@ -1100,6 +1117,9 @@ pub(crate) fn restore_accumulator_state(
     accumulator: &mut Box<dyn Accumulator>,
     states: &[ArrayRef],
 ) -> Result<(), DataFusionError> {
+    if let Some(result) = shared_snapshot::restore(accumulator.as_mut(), states) {
+        return result;
+    }
     if let Some(counted) = (accumulator.as_mut() as &mut dyn std::any::Any)
         .downcast_mut::<CountedDistinctAccumulator>()
     {
@@ -1184,7 +1204,7 @@ impl ValueColumn<'_> {
 /// accumulator call — matching DataFusion's accumulators exactly: integer SUM wraps on overflow (as
 /// `sum_udaf` and the int-sum accumulator do), and all four skip null values. The value type is
 /// fixed per aggregator, so each variant pairs a kind with that type. See divergences/11.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum RunningAgg {
     OverStringValue {
         value: Option<Arc<str>>,

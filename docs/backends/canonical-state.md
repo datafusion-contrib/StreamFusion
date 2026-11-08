@@ -69,22 +69,37 @@ Continued input updates the live database independently; concurrent savepoints o
 These exports construct neither a stock-schema database nor a complete intermediate state file.
 The backend retains its working directory and memory-pool ownership until readers finish or cancel.
 
-The same value-state layouts on memory capture into bounded
-spill storage at the barrier. Each entry is serialized immediately into one file with a fixed
-key-group index; the immutable file then feeds the same asynchronous Flink writer. This avoids
-copying the complete native map into Java heap. Unlike the MVCC path, conversion still runs in the
-synchronous barrier phase. Cancellation, failed capture and completed writing release the file.
+The remaining native RocksDB contracts pin the same database read views and run their existing
+stock-state adapters on Flink's asynchronous writer thread. Each savepoint owns an independent
+native reader and a temporary stock-schema RocksDB backend, including disk-backed timer queues.
+This reuses the qualified map/list/timer conversion logic instead of duplicating every layout in a
+second streaming codec. It adds temporary disk I/O compared with the direct value-state cursors.
+The captured decoder cannot modify live state; TTL compaction retains entries until the last pinned
+reader releases its view, and each reader uses its own captured clock.
 
-Both paths retain the original TTL write ages and bound decoded working memory by the current
-frame/entry and owned key-group count. Very large individual values remain a separate limit.
-Conversion cost, barrier duration and spill I/O have not been benchmarked.
+Memory-backed operators capture independent native state graphs before returning from the barrier.
+They copy mutable maps and counters and share immutable Arrow buffers and row payloads. Windows
+and sessions additionally share accumulator versions, detaching before either owner mutates them.
+Stock conversion and serialization run asynchronously through the same independent stock backend.
+Memory capture still visits resident state and can retain a second copy of mutable state; it does
+not provide the constant-time barrier behavior of a RocksDB snapshot. Unbound private native
+recovery paths retain their existing capture mechanisms.
 
-Other state contracts and stock imports use Flink's released RocksDB backend as the temporary
-stock-schema view, including disk-backed timer queues. Canonical-capable jobs reserve Flink
-state-backend managed memory for that view even when their live native state is in memory. They no longer require a complete heap
-projection. Clearing that view uses a captured state iterator, preserving key/namespace serializers
-and the caller's key context without collecting every key. Large individual values and the remaining
-operator-specific import working sets still require separate qualification.
+Both capture paths preserve original TTL write ages and independently own overlapping savepoints.
+Cancellation signals the native reader before waiting for conversion to leave its critical section;
+completion, failure and cancellation release the captured handle, database views and backend lease.
+The backend cannot dispose its working directory or native memory authority while readers remain.
+Canonical-capable jobs reserve Flink state-backend managed memory for the temporary stock view even
+when live native state uses memory. Imports also use that released RocksDB backend. Clearing a view
+uses a captured state iterator, preserving serializers and the caller's key context without
+collecting every key.
+
+The direct cursors bound decoded working memory by the current frame/entry and owned key groups.
+The general adapters retain their existing per-key and inventory working sets; very large individual
+values and these working sets require separate qualification. The new memory capture mechanisms
+are undergoing the broader operator and complete-job qualification; the family inventory above
+describes stock-layout scope, not a claim that every asynchronous path has passed both releases.
+Conversion cost, barrier duration and temporary I/O have not been benchmarked.
 
 Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending
 input and snapshots managed operator metadata; the keyed backend's `savepoint()` hook captures stock

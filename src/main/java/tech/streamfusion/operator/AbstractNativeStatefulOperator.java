@@ -62,6 +62,7 @@ public abstract class AbstractNativeStatefulOperator<OUT>
   private transient long restoredProcessingTimeTimerDeadline;
   private StockStateContract stockStateContract;
   private transient CanonicalProjection canonicalProjection;
+  private transient CanonicalKeyedStateBackend<?> canonicalBackend;
 
   public void setStockStateContract(StockStateContract contract) {
     stockStateContract = contract;
@@ -118,6 +119,18 @@ public abstract class AbstractNativeStatefulOperator<OUT>
 
   /** Releases the native handle. */
   protected abstract void closeHandle();
+
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    return null;
+  }
+
+  protected void configureCapturedHandle(long captured, boolean persistent) {}
+
+  protected void prepareCapturedReader(long captured) {}
+
+  protected void closeCapturedHandle(long captured, boolean persistent) {
+    throw new UnsupportedOperationException("native state disposer is not bound");
+  }
 
   /** The native state's tracked footprint in bytes (zero when unaccounted). */
   protected abstract long stateBytesHandle();
@@ -206,6 +219,10 @@ public abstract class AbstractNativeStatefulOperator<OUT>
   @Override
   public void initializeState(StateInitializationContext context) throws Exception {
     var backend = super.getKeyedStateBackend();
+    canonicalBackend =
+        backend instanceof CanonicalKeyedStateBackend
+            ? (CanonicalKeyedStateBackend<?>) backend
+            : null;
     canonicalProjection =
         backend instanceof CanonicalKeyedStateBackend
             ? ((CanonicalKeyedStateBackend<?>) backend).projection()
@@ -348,31 +365,91 @@ public abstract class AbstractNativeStatefulOperator<OUT>
 
   private org.apache.flink.runtime.state.SavepointResources<?> prepareStockCanonicalSnapshot()
       throws Exception {
+    if (!directRocksDBState()) {
+      var copier = memoryStateCopier();
+      if (copier == null)
+        throw new IllegalStateException("No asynchronous memory capture for " + stateLabel);
+      return captureFrozenState(false, copier);
+    }
     var direct =
         stockStateContract.snapshot(
             new tech.streamfusion.state.StockSnapshotContext(
                 stockStateContract.keySerializer(),
                 maxParallelism,
                 ((CheckpointableKeyedStateBackend<?>) getKeyedStateBackend()).getKeyGroupRange(),
-                java.nio.file.Path.of(
-                    getContainingTask()
-                        .getEnvironment()
-                        .getIOManager()
-                        .getSpillingDirectoriesPaths()[0]),
-                rocksdbSupport == null ? () -> null : rocksdbSupport::retainCanonicalReader),
+                rocksdbSupport::retainCanonicalReader),
             handle,
-            directRocksDBState());
-    if (direct != null) return direct;
-    var backend = canonicalProjection.backend();
-    stockStateContract.exportState(backend, handle, directRocksDBState());
-    var resources = backend.savepoint();
+            true);
+    return direct == null ? captureFrozenState(true, null) : direct;
+  }
+
+  private org.apache.flink.runtime.state.SavepointResources<?> captureFrozenState(
+      boolean persistent, java.util.function.LongConsumer copy) throws Exception {
+    var retained =
+        rocksdbSupport != null
+            ? rocksdbSupport.retainCanonicalReader()
+            : canonicalBackend.retainCanonicalReader();
+    long captured = 0, pinned = 0;
     try {
-      stockStateContract.clear(backend);
-      return resources;
+      var contract =
+          org.apache.flink.util.InstantiationUtil.clone(
+              stockStateContract, getUserCodeClassloader());
+      contract.initializeOperatorState(getOperatorStateBackend(), true);
+      if (persistent) {
+        checkpointRocksDBHandle("");
+        pinned = Native.pinCanonicalDatabases(rocksdbSupport.tableDirectory());
+        captured =
+            rocksdbSupport.createCanonicalHandle(
+                pinned, () -> createRocksDBHandle(rocksdbSupport, new byte[0][]));
+      } else {
+        pinned = Native.createCanonicalMemoryContext();
+        captured = createHandle();
+      }
+      if (captured == 0)
+        throw new IllegalStateException("canonical native constructor returned no handle");
+      configureCapturedHandle(captured, persistent);
+      contract.configureNativeState(captured, persistent);
+      if (!persistent) copy.accept(captured);
+      final long owned = captured, ownedPin = pinned;
+      var resources =
+          new tech.streamfusion.state.StockDeferredSnapshot(
+              contract.keySerializer(),
+              ((CheckpointableKeyedStateBackend<?>) getKeyedStateBackend()).getKeyGroupRange(),
+              contract,
+              owned,
+              ownedPin,
+              persistent,
+              canonicalProjection::fresh,
+              () -> {
+                try {
+                  closeCapturedHandle(owned, persistent);
+                } finally {
+                  try {
+                    Native.closeCanonicalDatabases(ownedPin);
+                  } finally {
+                    retained.close();
+                  }
+                }
+              },
+              () -> {
+                if (persistent) prepareCapturedReader(owned);
+              });
+      return new org.apache.flink.runtime.state.SavepointResources<>(
+          resources, org.apache.flink.runtime.state.SnapshotExecutionType.ASYNCHRONOUS);
     } catch (Exception | Error failure) {
       try {
-        resources.getSnapshotResources().release();
-      } catch (Exception | Error cleanup) {
+        if (captured != 0) closeCapturedHandle(captured, persistent);
+      } catch (Throwable cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+      try {
+        if (pinned != 0) Native.closeCanonicalDatabases(pinned);
+      } catch (Throwable cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+      try {
+        retained.close();
+      } catch (Throwable cleanup) {
         failure.addSuppressed(cleanup);
       }
       throw failure;
@@ -459,6 +536,7 @@ public abstract class AbstractNativeStatefulOperator<OUT>
 
   @Override
   public void close() throws Exception {
+    if (canonicalBackend != null) canonicalBackend.closeCanonicalReaders();
     if (handle != 0) {
       closeHandle();
       handle = 0;

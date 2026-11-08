@@ -756,3 +756,67 @@ mod tests {
         assert!(canonical_batch(&schema, &converter, false, &[(&key, &row)]).is_err());
     }
 }
+
+impl crate::state::canonical_memory::CanonicalMemoryState for KeepLastDeduplicator {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.rows = self.rows.clone();
+        target.schema = self.schema.clone();
+        target.payload_converter = self.schema.as_ref().map(|schema| {
+            RowConverter::new(
+                schema
+                    .fields()
+                    .iter()
+                    .map(|field| SortField::new(field.data_type().clone()))
+                    .collect(),
+            )
+            .expect("captured payload codec")
+        });
+        target.last_sweep_ms = self.last_sweep_ms;
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyEagerDeduplicatorCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<KeepLastDeduplicator>(env, source, target);
+}
+
+impl crate::state::canonical_memory::CanonicalMemoryState for KeepFirstDeduplicator {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.pending = self.pending.clone();
+        target.pending_rows = self.pending_rows.clone();
+        target.emitted = self.emitted.clone();
+        target.current_watermark = self.current_watermark.clone();
+        target.last_sweep_ms = self.last_sweep_ms.clone();
+        target.key_types = self.key_types.clone();
+        target.key_converter = self
+            .key_converter
+            .as_ref()
+            .map(|_| key_row_converter_from_types(&self.key_types));
+        target.schema = self.schema.clone();
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyBufferedDeduplicatorCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<KeepFirstDeduplicator>(env, source, target);
+}

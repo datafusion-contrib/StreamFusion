@@ -3,6 +3,12 @@ package tech.streamfusion.compat;
 public final class CanonicalTestCompat {
   private CanonicalTestCompat() {}
 
+  public static org.apache.flink.runtime.checkpoint.OperatorSubtaskState finishSnapshot(
+      org.apache.flink.streaming.api.operators.OperatorSnapshotFutures futures) throws Exception {
+    return org.apache.flink.streaming.api.operators.OperatorSnapshotFinalizer.create(futures)
+        .getJobManagerOwnedState();
+  }
+
   public static boolean flink22() {
     return true;
   }

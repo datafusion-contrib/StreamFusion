@@ -847,3 +847,60 @@ mod tests {
         assert_eq!(pool.reserved(), 0);
     }
 }
+
+fn captured_converters(
+    source: &Option<TopNConverters>,
+    schema: &Option<SchemaRef>,
+    partitions: &[usize],
+    sort: &[SortColumn],
+) -> Option<TopNConverters> {
+    source.as_ref().map(|source| {
+        let schema = schema.as_ref().expect("captured rank schema");
+        let mut captured = TopNConverters::build(
+            &RecordBatch::new_empty(Arc::clone(schema)),
+            schema.fields().len(),
+            partitions,
+            sort,
+        );
+        captured.sort = Arc::clone(&source.sort);
+        captured.payload = Arc::clone(&source.payload);
+        captured
+    })
+}
+
+impl crate::state::canonical_memory::CanonicalMemoryState for TopNHandle {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        macro_rules! copy {
+            ($source:expr, $target:expr) => {{
+                $target.memory.set($source.memory.state_bytes);
+                $target.memory.account()?;
+                $target.groups = $source.groups.clone();
+                $target.schema = $source.schema.clone();
+                $target.converters = captured_converters(
+                    &$source.converters,
+                    &$source.schema,
+                    &$source.partition_columns,
+                    &$source.sort_columns,
+                );
+                $target.last_sweep_ms = $source.last_sweep_ms;
+                Ok(())
+            }};
+        }
+        match (self, target) {
+            (Self::Append(source), Self::Append(target)) => copy!(source, target),
+            (Self::Retract(source), Self::Retract(target)) => copy!(source, target),
+            (Self::UpdateFast(source), Self::UpdateFast(target)) => copy!(source, target),
+            _ => Err(invalid("memory rank algorithm changed during capture")),
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyTopNCanonicalMemoryState<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<TopNHandle>(env, source, target);
+}

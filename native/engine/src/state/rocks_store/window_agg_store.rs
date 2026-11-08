@@ -5,6 +5,7 @@ use super::{
 use crate::*;
 use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, Direction, IteratorMode, Options, ReadOptions, DB};
+#[cfg(test)]
 use std::sync::Arc;
 
 /// `[key_group i32 BE][window_end i64 BE, sign-flipped][group key arrow-row bytes]` — the layout of
@@ -45,7 +46,7 @@ pub(crate) struct StoredWindowGroup {
 /// the touched groups back at the bundle boundary, and a watermark firing range-scans each key
 /// group's closed prefix. Windows close by watermark, so values carry no TTL prefix.
 pub(crate) struct RocksWindowAggStore {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
     key_groups: std::ops::RangeInclusive<i32>,

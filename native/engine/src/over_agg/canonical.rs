@@ -438,3 +438,147 @@ pub extern "system" fn Java_tech_streamfusion_Native_validateOverFoldCanonical<'
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(feature = "rocksdb-state")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_prepareOverCanonicalReadView<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let operator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
+        if let Err(error) = operator.prepare_canonical_read_view() {
+            let _ = env.throw_new("tech/streamfusion/NativeException", error.to_string());
+        }
+    });
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl OverWindowAggregator {
+    fn prepare_canonical_read_view(&mut self) -> Result<(), DataFusionError> {
+        let store = self.store.as_ref().expect("canonical RocksDB reader");
+        if self.processing_rows() {
+            for (key, bytes) in store.scan_proc_rows()? {
+                self.proc_rows
+                    .insert(ByteKey(key), ProcRowsState::decode(&bytes)?);
+            }
+        }
+        if self.range_offset().is_some() {
+            for (key, stamp) in store.scan_stamps()? {
+                self.cleanup_state.insert(ByteKey(key), stamp);
+            }
+            for (key, bytes) in store.scan_range_timers()? {
+                self.range_timers
+                    .insert(ByteKey(key), RangeTimers::decode(&bytes)?);
+            }
+        } else {
+            for (key, stamp, armed) in store.scan_cleanup_stamps()? {
+                let key = ByteKey(key);
+                if !armed {
+                    self.event_cleanup_unarmed.insert(key.clone());
+                }
+                self.cleanup_state.insert(key, stamp);
+            }
+        }
+        self.retention_bytes = self.proc_rows_bytes()
+            + self
+                .cleanup_state
+                .keys()
+                .map(|key| byte_key_bytes(&key.0))
+                .sum::<usize>()
+            + self
+                .range_timers
+                .iter()
+                .map(|(key, timers)| byte_key_bytes(&key.0) + timers.bytes())
+                .sum::<usize>()
+            + self
+                .event_cleanup_unarmed
+                .iter()
+                .map(|key| byte_key_bytes(&key.0))
+                .sum::<usize>();
+        self.memory.set(self.retention_bytes);
+        self.memory.account()
+    }
+}
+
+fn captured_key_converter(
+    source: &Option<RowConverter>,
+    types: &[DataType],
+) -> Option<RowConverter> {
+    source.as_ref().map(|_| key_row_converter_from_types(types))
+}
+
+impl crate::state::canonical_memory::CanonicalMemoryState for OverWindowAggregator {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        match (&self.inner, &mut target.inner) {
+            (OverInner::Aggregates(source), OverInner::Aggregates(target)) => {
+                target.value_types = source.value_types.clone();
+                target.keys = source.keys.clone();
+                target.key_types = source.key_types.clone();
+                target.key_converter =
+                    captured_key_converter(&source.key_converter, &source.key_types);
+                target.bytes = source.bytes;
+            }
+            (OverInner::Bounded(source), OverInner::Bounded(target)) => {
+                target.value_types = source.value_types.clone();
+                target.fold_types = source.fold_types.clone();
+                target.range_order = source.range_order.clone();
+                target.keys = source.keys.clone();
+                target.key_types = source.key_types.clone();
+                target.key_converter =
+                    captured_key_converter(&source.key_converter, &source.key_types);
+                target.bytes = source.bytes;
+            }
+            (OverInner::WindowFunctions(source), OverInner::WindowFunctions(target)) => {
+                target.keys = source.keys.clone();
+                target.key_types = source.key_types.clone();
+                target.key_converter =
+                    captured_key_converter(&source.key_converter, &source.key_types);
+                target.bytes = source.bytes;
+            }
+            _ => return Err(invalid("incompatible memory capture handles")),
+        }
+        target.buffered = self.buffered.clone();
+        target.input_schema = self.input_schema.clone();
+        target.next_seq = self.next_seq;
+        target.watermark = self.watermark;
+        target.late_drops = self.late_drops;
+        target.cleanup_state = self.cleanup_state.clone();
+        target.range_timers = self.range_timers.clone();
+        target.proc_rows = self.proc_rows.clone();
+        target.event_cleanup_unarmed = self.event_cleanup_unarmed.clone();
+        target.last_write_ms = self.last_write_ms.clone();
+        target.pending_rows = self.pending_rows.clone();
+        target.last_sweep_ms = self.last_sweep_ms;
+        target.retention_bytes = self.retention_bytes;
+        let key_types = match &self.inner {
+            OverInner::Aggregates(inner) => &inner.key_types,
+            OverInner::Bounded(inner) => &inner.key_types,
+            OverInner::WindowFunctions(inner) => &inner.key_types,
+        };
+        target.key_converter = self.key_converter.as_ref().map(|_| {
+            let types = self.input_schema.as_ref().map(|schema| {
+                self.key_columns
+                    .iter()
+                    .map(|&column| schema.field(column).data_type().clone())
+                    .collect::<Vec<_>>()
+            });
+            key_row_converter_from_types(types.as_deref().unwrap_or(key_types))
+        });
+        target.frame_clock = self.frame_clock;
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyOverCanonicalMemoryState<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<OverWindowAggregator>(env, source, target);
+}

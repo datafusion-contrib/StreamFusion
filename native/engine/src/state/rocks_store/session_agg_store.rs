@@ -5,6 +5,7 @@ use super::{
 use crate::*;
 use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, Direction, IteratorMode, Options, DB};
+#[cfg(test)]
 use std::sync::Arc;
 
 /// `[key_group i32 BE][group key arrow-row bytes][session_start i64 BE, sign-flipped]` — the
@@ -48,7 +49,7 @@ pub(crate) struct StoredSession {
 /// scans the open sessions — the same per-open-session cost as the memory path's firing walk.
 /// Sessions close by watermark, so values carry no TTL prefix.
 pub(crate) struct RocksSessionAggStore {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
     key_groups: std::ops::RangeInclusive<i32>,

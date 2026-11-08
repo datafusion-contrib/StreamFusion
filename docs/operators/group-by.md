@@ -3124,7 +3124,9 @@ their existing verified representation contract.
 
 Canonical planner/state machinery is shared with Flink 1.18.1. Arithmetic and typed scalar
 accumulators without shared DISTINCT views can stream from a pinned native RocksDB snapshot into
-Flink's asynchronous canonical writer. Memory captures use bounded serialized spill storage.
+Flink's asynchronous canonical writer. Memory captures copy mutable native accumulator/view state
+and convert through an independent stock backend asynchronously. This capture visits resident state
+and can retain an additional copy; broader qualification of the new capture path is ongoing.
 Focused same-line operator restore controls pass; the wider complete-job matrix remains separate.
 DISTINCT views, managed UDFs and other layouts still use the disk-backed stock projection.
 

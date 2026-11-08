@@ -25,6 +25,7 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
   private final boolean aligned;
   private final long stateTtlMillis;
   private final NativeRocksSharedResources.Lease sharedResources;
+  private boolean canonicalReadView;
 
   private RocksDBNativeStateSupport(
       RocksDBNativeKeyedStateBackend<?> backend, long stateTtlMillis) {
@@ -82,6 +83,15 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
     return null;
   }
 
+  public long createCanonicalHandle(long snapshot, java.util.function.LongSupplier factory) {
+    try {
+      canonicalReadView = true;
+      return Native.withCanonicalDatabases(snapshot, factory);
+    } finally {
+      canonicalReadView = false;
+    }
+  }
+
   public AutoCloseable retainCanonicalReader() throws java.io.IOException {
     return backend.retainCanonicalReader();
   }
@@ -107,11 +117,11 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
   }
 
   public String[] sourceDirectories() {
-    return sourceDirectories;
+    return canonicalReadView ? new String[] {tableDirectory()} : sourceDirectories;
   }
 
   public String[] sourceSnapshotTokens() {
-    return sourceSnapshotTokens;
+    return canonicalReadView ? new String[] {"0"} : sourceSnapshotTokens;
   }
 
   /**
@@ -119,7 +129,7 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
    * wholesale file-adoption fast path; anything else clips by key-group range at recovery.
    */
   public boolean aligned() {
-    return aligned;
+    return canonicalReadView || aligned;
   }
 
   /**

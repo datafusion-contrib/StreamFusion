@@ -84,7 +84,9 @@ impl TumblingAggregator {
                     // Restore before invoking the writer: some released DataFusion factories drain
                     // their set when reading state, and a failed receiver must leave the job intact.
                     let entries = if counted {
-                        (accumulators[index].as_ref() as &dyn std::any::Any)
+                        (crate::aggregates::raw_accumulator(accumulators[index].as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_ref::<CountedDistinctAccumulator>()
                             .unwrap()
                             .entries()
@@ -237,7 +239,8 @@ impl TumblingAggregator {
             }
             let candidate = candidates.get_mut(&entry).unwrap();
             if let Some(counts) = counts {
-                (candidate.as_mut() as &mut dyn std::any::Any)
+                (crate::aggregates::raw_accumulator(candidate.as_mut())
+                    .expect("captured accumulator") as &mut dyn std::any::Any)
                     .downcast_mut::<CountedDistinctAccumulator>()
                     .unwrap()
                     .import_entry(

@@ -155,11 +155,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
           () -> Native.captureOverFoldCanonicalSnapshot(handle),
           bridge,
           decoder());
-    return context.value(
-        STATE,
-        new RowDataSerializer(accumulatorType),
-        ttl,
-        receiver -> visit(handle, persistent, receiver));
+    return null;
   }
 
   @Override
@@ -177,7 +173,8 @@ public final class StockOverFoldStateContract implements StockStateContract {
         });
   }
 
-  private void visit(long handle, boolean persistent, StockValueSnapshot.Entry<RowData> receiver)
+  private void visit(
+      long handle, boolean persistent, StockNativeValueSnapshot.Entry<RowData> receiver)
       throws Exception {
     var decoder = decoder();
     Native.exportOverFoldCanonical(

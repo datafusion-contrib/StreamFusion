@@ -67,6 +67,13 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   }
 
   @Override
+  protected void configureCapturedHandle(long captured, boolean persistent) {
+    if (calendarZoneId != null)
+      Native.setWindowRankerCalendar(captured, new WindowCalendar(calendarZoneId, proctime));
+    Native.setWindowRankerKeepLastOnTie(captured, keepLastOnTie);
+  }
+
+  @Override
   protected void configureStateHandle() {
     super.configureStateHandle();
     if (calendarZoneId != null)
@@ -305,8 +312,19 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyWindowRankCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBWindowRanker(handle);
     } else {
       Native.closeWindowRanker(handle);
