@@ -2,11 +2,12 @@ name: CI startup profile
 
 on:
   workflow_dispatch:
-  push:
-    branches: ['**']
-    paths:
-      - '.github/workflows/ci-profile.yml'
-      - 'bin/profile-canonical-ci.py'
+    inputs:
+      suite:
+        description: 'Paired JVM comparison to run'
+        type: choice
+        options: [runtime, canonical]
+        default: runtime
 
 permissions:
   contents: read
@@ -46,6 +47,7 @@ jobs:
 
   paired:
     needs: native
+    if: inputs.suite == 'canonical'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -78,4 +80,52 @@ jobs:
           path: |
             ${{ runner.temp }}/ci-startup-profile/
             streamfusion-runtime/target/surefire-reports/*ci-profile*
+          retention-days: 7
+
+  runtime:
+    needs: native
+    if: inputs.suite == 'runtime'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        jdk: ['11', '17']
+        line: ['1.18', '2.2']
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+          cache: maven
+      - uses: actions/download-artifact@v5
+        with:
+          name: ci-profile-native-${{ github.sha }}
+          path: native/target/debug
+      - name: Compile the unchanged runtime cases once
+        env:
+          FLINK_LINE: ${{ matrix.line }}
+        run: |
+          profile=()
+          profile_name=''
+          if [[ "$FLINK_LINE" == '1.18' ]]; then
+            profile=(-Pflink-1.18)
+            profile_name='flink-1.18'
+          fi
+          python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects streamfusion-runtime
+          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
+          mvn -B -ntp "${profile[@]}" -pl streamfusion-runtime -am test-compile -Dnative.build.skip=true
+      - name: Compare runtime JVM compilation with identical assertions
+        run: >-
+          python3 bin/profile-runtime-ci.py --output "$RUNNER_TEMP/runtime-startup-profile"
+          --line '${{ matrix.line }}' --repetitions 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-startup-profile-flink${{ matrix.line }}-jdk${{ matrix.jdk }}
+          path: |
+            ${{ runner.temp }}/runtime-startup-profile/
+            streamfusion-runtime/target/surefire-reports/*runtime-profile*
           retention-days: 7

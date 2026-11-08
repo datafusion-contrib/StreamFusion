@@ -657,8 +657,22 @@ in 15 seconds, each using 11 seconds of runner execution. Both plans verified th
 two successful push workflows, every build/test dependency skipped, and both aggregates passed.
 The strict documentation build also passed. Source/configuration changes still require full tests.
 
-The **CI startup profile** workflow runs on manual dispatch or changes to its workflow/profiler.
-It builds the exact commit's debug core library once, then compares default and first-tier
+The **CI startup profile** workflow is an explicitly dispatched diagnostic, keeping profiling
+cost outside ordinary pushes and merges. Select `runtime` (the default) or `canonical`.
+Both build the exact commit's debug core library once.
+
+The runtime comparison covers Flink 1.18/2.2 and JDK 11/17. It runs the unchanged OVER,
+decimal negate/absolute-value, string collection and stateful SQL rescaling classes with the
+same two fresh 4 GiB Surefire forks as runtime CI. Three pairs alternate default and first-tier
+compilation on each runner. Every trial must retain all 305 discovered cases, including exactly
+two existing skips on Flink 2.2 or 58 on Flink 1.18. The profiler compares individual case names
+and outcomes as a multiset, rejects missing classes, new skips, failures or inconsistent reports,
+and records elapsed/CPU and per-class times. Run it locally after compiling the matching line:
+`python3 bin/profile-runtime-ci.py --line 2.2 --repetitions 3 --output /path/to/new-evidence-directory`.
+This diagnostic establishes whether compiler settings help the ordinary runtime mix; the complete
+required workflows remain the qualification for any CI setting change.
+
+The canonical diagnostic compares default and first-tier
 JVM compilation, plus first-tier compilation with class metadata archives, on each of JDK 11
 and 17. Archive preparation is recorded once, followed by three repetitions alternating settings
 on the same runner. All settings run the identical five cases: stock/native join continuations on both
