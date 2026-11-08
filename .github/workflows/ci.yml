@@ -133,6 +133,22 @@ jobs:
           - line: '1.18'
             profile: '-Pflink-1.18'
             suffix: ' (Flink 1.18)'
+          - line: '2.2'
+            jdk: '11'
+            forks: 2
+            heap: '4g'
+          - line: '2.2'
+            jdk: '17'
+            forks: 4
+            heap: '2g'
+          - line: '1.18'
+            jdk: '11'
+            forks: 4
+            heap: '2g'
+          - line: '1.18'
+            jdk: '17'
+            forks: 4
+            heap: '2g'
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:
@@ -164,6 +180,8 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
           python3 -m unittest discover -s bin -p 'test_ci_plan.py'
           python3 -m unittest discover -s bin -p 'test_profile_ci.py'
+          python3 -m unittest discover -s bin -p 'test_profile_runtime_ci.py'
+          python3 -m unittest discover -s bin -p 'test_ci_jfr.py'
           python3 -m unittest discover -s bin -p 'test_package_release.py'
           python3 -m unittest discover -s bin -p 'test_build_release.py'
 
@@ -190,17 +208,22 @@ jobs:
           python3 bin/ci_runtime_test_shards.py \
             --classes streamfusion-runtime/target/test-classes \
             --suite runtime --count 3 --index ${{ matrix.shard }} \
+            --line '${{ matrix.line }}' \
             --output "$RUNNER_TEMP/runtime-test-includes.txt"
 
       - name: Run Java test suite
+        env:
+          JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1'
         run: |
+          nproc
+          free -m
           vmstat -w 30 &
           memory_sampler=$!
           trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
           mvn -B -ntp ${{ matrix.profile }} test -Dnative.build.skip=true \
             "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/runtime-test-includes.txt" \
             -DskipTests=${{ matrix.shard != 1 }} -Dsf.runtime.tests.skip=false \
-            -Dsf.testForks=2 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx4g"
+            -Dsf.testForks=${{ matrix.forks }} -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx${{ matrix.heap }}"
 
       - name: Verify JVM boundary defaults and optional cache on the freshly built native library
         if: matrix.jdk == '17' && matrix.shard == 1

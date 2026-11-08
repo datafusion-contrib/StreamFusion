@@ -39,14 +39,16 @@ def candidates_for_suite(classes, suite):
             == (suite == "canonical")]
 
 
-def partition(classes, count, suite="all", durations=None):
+def partition(classes, count, suite="all", durations=None, line=None):
     if count < 1:
         raise ValueError("Shard count must be positive")
     candidates = candidates_for_suite(classes, suite)
     if not candidates:
         raise ValueError("No compiled Surefire test candidates found")
     if durations is None:
-        durations = json.loads(DURATIONS.read_text())["seconds"]
+        recorded = json.loads(DURATIONS.read_text())
+        durations = {**recorded["seconds"],
+                     **recorded.get("seconds_by_line", {}).get(line, {})}
     if any(not isinstance(value, (int, float)) or isinstance(value, bool)
            or not math.isfinite(value) or value < 0 for value in durations.values()):
         raise ValueError("Class duration estimates must be finite nonnegative numbers")
@@ -66,12 +68,13 @@ def partition(classes, count, suite="all", durations=None):
     return [sorted(shard) for shard in shards]
 
 
-def write_selection(classes, count, index, output, suite="all"):
+def write_selection(classes, count, index, output, suite="all", line=None):
     if index not in range(1, count + 1):
         raise ValueError("Shard index must be between 1 and the shard count")
-    shards = partition(classes, count, suite)
+    shards = partition(classes, count, suite, line=line)
     output.write_text("".join(name + ".java\n" for name in shards[index - 1]))
-    manifest = {"shard": index, "count": count, "suite": suite, "classes": shards[index - 1],
+    manifest = {"shard": index, "count": count, "suite": suite, "flink_line": line,
+                "classes": shards[index - 1],
                 "complete_inventory_sha256": hashlib.sha256(
                     json.dumps(candidates_for_suite(classes, "all")).encode()).hexdigest(),
                 "inventory_sha256": hashlib.sha256(
@@ -89,9 +92,10 @@ def main():
     parser.add_argument("--index", type=int, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--suite", choices=("all", "runtime", "canonical"), default="all")
+    parser.add_argument("--line", choices=("1.18", "2.2"), help="Use this Flink line's recorded costs")
     args = parser.parse_args()
     try:
-        write_selection(args.classes, args.count, args.index, args.output, args.suite)
+        write_selection(args.classes, args.count, args.index, args.output, args.suite, args.line)
     except (OSError, ValueError) as error:
         parser.exit(1, f"Runtime test partition failed: {error}\n")
 

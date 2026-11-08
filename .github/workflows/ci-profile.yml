@@ -2,11 +2,12 @@ name: CI startup profile
 
 on:
   workflow_dispatch:
-  push:
-    branches: ['**']
-    paths:
-      - '.github/workflows/ci-profile.yml'
-      - 'bin/profile-canonical-ci.py'
+    inputs:
+      suite:
+        description: 'Paired JVM comparison to run'
+        type: choice
+        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only]
+        default: runtime
 
 permissions:
   contents: read
@@ -15,7 +16,7 @@ env:
   RUST_BACKTRACE: '1'
 
 concurrency:
-  group: ci-startup-profile-${{ github.ref }}
+  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}
   cancel-in-progress: true
 
 jobs:
@@ -34,18 +35,27 @@ jobs:
         with:
           workspaces: native
           shared-key: debug-jvm
-          save-if: false
-      - run: cargo build --manifest-path native/Cargo.toml -p streamfusion --lib --locked
+          save-if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+      - run: cargo build --manifest-path native/Cargo.toml --workspace --lib --locked --timings
       - uses: actions/upload-artifact@v4
+        if: inputs.suite != 'native-only'
         with:
           name: ci-profile-native-${{ github.sha }}
           path: native/target/debug/libstreamfusion.so
           compression-level: 1
           retention-days: 1
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-profile-native-timings-${{ github.sha }}
+          path: native/target/cargo-timings
+          retention-days: 1
+          if-no-files-found: ignore
 
   paired:
     needs: native
+    if: inputs.suite == 'canonical'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -78,4 +88,60 @@ jobs:
           path: |
             ${{ runner.temp }}/ci-startup-profile/
             streamfusion-runtime/target/surefire-reports/*ci-profile*
+          retention-days: 7
+
+  runtime:
+    needs: native
+    if: inputs.suite != 'canonical' && inputs.suite != 'native-only'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.suite == 'runtime-jfr' && '[{"jdk":"17","line":"2.2","jfr":true}]' || inputs.suite == 'runtime-parallel' && '[{"jdk":"11","line":"1.18"},{"jdk":"17","line":"1.18"},{"jdk":"11","line":"2.2"},{"jdk":"17","line":"2.2"},{"jdk":"17","line":"2.2","jfr":true}]' || '[{"jdk":"11","line":"1.18"},{"jdk":"17","line":"1.18"},{"jdk":"11","line":"2.2"},{"jdk":"17","line":"2.2"}]') }}
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+          cache: maven
+      - uses: actions/download-artifact@v5
+        with:
+          name: ci-profile-native-${{ github.sha }}
+          path: native/target/debug
+      - name: Compile the unchanged runtime cases once
+        env:
+          FLINK_LINE: ${{ matrix.line }}
+        run: |
+          profile=()
+          profile_name=''
+          if [[ "$FLINK_LINE" == '1.18' ]]; then
+            profile=(-Pflink-1.18)
+            profile_name='flink-1.18'
+          fi
+          python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects streamfusion-runtime
+          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
+          mvn -B -ntp "${profile[@]}" -pl streamfusion-runtime -am test-compile -Dnative.build.skip=true
+      - name: Compare runtime JVM compilation with identical assertions
+        env:
+          PROFILE_SUITE: ${{ inputs.suite }}
+          RECORD_JFR: ${{ matrix.jfr }}
+          FLINK_LINE: ${{ matrix.line }}
+        run: |
+          args=(--line "$FLINK_LINE" --repetitions 3)
+          if [[ "$RECORD_JFR" == 'true' ]]; then
+            args=(--line "$FLINK_LINE" --repetitions 1 --jfr)
+          elif [[ "$PROFILE_SUITE" == 'runtime-parallel' ]]; then
+            args+=(--parallel)
+          fi
+          python3 bin/profile-runtime-ci.py --output "$RUNNER_TEMP/runtime-startup-profile" "${args[@]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-startup-profile-flink${{ matrix.line }}-jdk${{ matrix.jdk }}${{ matrix.jfr && '-jfr' || '' }}
+          path: |
+            ${{ runner.temp }}/runtime-startup-profile/
+            streamfusion-runtime/target/surefire-reports/*runtime-profile*
           retention-days: 7
