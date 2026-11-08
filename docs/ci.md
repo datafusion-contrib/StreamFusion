@@ -705,9 +705,13 @@ The `runtime-parallel` diagnostic holds first-tier compilation fixed and compare
 It retains the exact cases, outcomes and total 8 GiB heap cap; additional VM overhead is still
 part of the measured workload and full CI qualification. It also runs a separate JDK 17/Flink 2.2
 JFR attribution pair, selectable alone as `runtime-jfr`. That pair records Java execution/native
-method samples, every compiler activity event and sampled allocations. Summaries retain sample
+method samples, every compiler activity event and sampled allocations. A small Java 11-compatible
+reader consumes `RecordingFile` directly and streams compact events to the summarizer; it avoids
+the JDK XML printer's large buffered rendering, which exhausted its heap on the initial real trace.
+Summaries retain sample
 counts and top stack frames, compiler activity durations and allocation weights; successful raw
-recordings are removed. Inclusive stack counts overlap, native samples do not resolve Rust
+recordings are removed. Java execution and native-method samples remain separate: native samples
+include blocking I/O and are not CPU attribution. Inclusive stack counts overlap, native samples do not resolve Rust
 internals, compiler activity intervals are not compiler CPU seconds, and allocation weights are
 sampled estimates. Instrumented elapsed times are excluded from speedup comparisons.
 
