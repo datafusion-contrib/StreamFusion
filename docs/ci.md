@@ -685,6 +685,21 @@ and records elapsed/CPU and per-class times. Run it locally after compiling the 
 This diagnostic establishes whether compiler settings help the ordinary runtime mix; the complete
 required workflows remain the qualification for any CI setting change.
 
+The [completed runtime compiler comparison](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42489473910)
+retained all 7,320 discovered invocations: 6,600 passed and 720 had their existing skips,
+with identical individual outcomes between settings. Uninstrumented medians across three pairs:
+
+| Flink / JDK | Default elapsed | First-tier elapsed | Elapsed reduction | CPU reduction |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18 / 11 | 203.95 s | 173.22 s | 15.1% | 53.1% |
+| 1.18 / 17 | 244.90 s | 221.26 s | 9.7% | 47.6% |
+| 2.2 / 11 | 325.16 s | 285.18 s | 12.3% | 37.2% |
+| 2.2 / 17 | 275.08 s | 255.63 s | 7.1% | 28.7% |
+
+The decimal negate/absolute-value class showed little elapsed change, while other classes
+benefited more. These measurements establish improvements for the selected test mix and do
+not establish a full-workflow improvement; the complete CI run remains necessary.
+
 The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
 4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.
 It retains the exact cases, outcomes and total 8 GiB heap cap; additional VM overhead is still

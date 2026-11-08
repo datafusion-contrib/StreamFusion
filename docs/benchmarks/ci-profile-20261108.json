@@ -75,5 +75,1168 @@
   "limits": [
     "Scheduling estimates sum class report seconds; two forks overlap and startup/setup/queue delays are excluded. They are not workflow elapsed times or passing-test evidence.",
     "Runtime measurements precede any additional compiler-setting change; complete hosted workflows qualify the final source changes."
-  ]
+  ],
+  "runtime_compilation_profile": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42489473910",
+    "sha": "9821ce6be2234d61f1bdd02dbc3b3613065173be",
+    "conclusion": "success",
+    "config": "Two fresh 4 GiB forks, unchanged debug native engine, three alternating default/first-tier pairs per combination.",
+    "combinations": {
+      "flink1.18-jdk11": {
+        "summary": {
+          "default": {
+            "elapsed_seconds": {
+              "median": 203.9458192090001,
+              "min": 202.79778757999998,
+              "max": 204.71983645199998
+            },
+            "cpu_seconds": {
+              "median": 494.31329600000004,
+              "min": 489.98091100000005,
+              "max": 496.833946
+            }
+          },
+          "startup": {
+            "elapsed_seconds": {
+              "median": 173.22019086900013,
+              "min": 173.13100227999996,
+              "max": 173.83509189800003
+            },
+            "cpu_seconds": {
+              "median": 232.06250700000004,
+              "min": 232.047587,
+              "max": 232.65092599999988
+            }
+          }
+        },
+        "trials": [
+          {
+            "mode": "default",
+            "pair": 1,
+            "line": "1.18",
+            "elapsed_seconds": 204.71983645199998,
+            "cpu_seconds": 489.98091100000005,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 58
+            },
+            "classes": {
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 101.8
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 54,
+                "seconds": 50.707
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 67.84
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 94.657
+              }
+            }
+          },
+          {
+            "mode": "startup",
+            "pair": 1,
+            "line": "1.18",
+            "elapsed_seconds": 173.83509189800003,
+            "cpu_seconds": 232.047587,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 58
+            },
+            "classes": {
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 76.646
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 54,
+                "seconds": 34.738
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 52.004
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 92.198
+              }
+            }
+          },
+          {
+            "mode": "startup",
+            "pair": 2,
+            "line": "1.18",
+            "elapsed_seconds": 173.13100227999996,
+            "cpu_seconds": 232.65092599999988,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 58
+            },
+            "classes": {
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 51.834
+              },
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 75.768
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 92.411
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 54,
+                "seconds": 34.702
+              }
+            }
+          },
+          {
+            "mode": "default",
+            "pair": 2,
+            "line": "1.18",
+            "elapsed_seconds": 202.79778757999998,
+            "cpu_seconds": 494.31329600000004,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 58
+            },
+            "classes": {
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 100.31
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 67.51
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 95.392
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 54,
+                "seconds": 47.962
+              }
+            }
+          },
+          {
+            "mode": "default",
+            "pair": 3,
+            "line": "1.18",
+            "elapsed_seconds": 203.9458192090001,
+            "cpu_seconds": 496.833946,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 58
+            },
+            "classes": {
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 67.582
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 94.692
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 54,
+                "seconds": 48.242
+              },
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 102.058
+              }
+            }
+          },
+          {
+            "mode": "startup",
+            "pair": 3,
+            "line": "1.18",
+            "elapsed_seconds": 173.22019086900013,
+            "cpu_seconds": 232.06250700000004,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 58
+            },
+            "classes": {
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 75.897
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 54,
+                "seconds": 34.464
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 92.427
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 52.207
+              }
+            }
+          }
+        ]
+      },
+      "flink2.2-jdk11": {
+        "summary": {
+          "default": {
+            "elapsed_seconds": {
+              "median": 325.157427266,
+              "min": 323.282925983,
+              "max": 325.7791269510001
+            },
+            "cpu_seconds": {
+              "median": 918.5318189999998,
+              "min": 913.7014669999999,
+              "max": 921.506825
+            }
+          },
+          "startup": {
+            "elapsed_seconds": {
+              "median": 285.18333302100007,
+              "min": 280.1123747470001,
+              "max": 288.041900723
+            },
+            "cpu_seconds": {
+              "median": 576.9010010000001,
+              "min": 555.643866,
+              "max": 595.0367590000003
+            }
+          }
+        },
+        "trials": [
+          {
+            "mode": "default",
+            "pair": 1,
+            "line": "2.2",
+            "elapsed_seconds": 323.282925983,
+            "cpu_seconds": 921.506825,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 2
+            },
+            "classes": {
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 118.414
+              },
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 114.367
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 79.888
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 268.373
+              }
+            }
+          },
+          {
+            "mode": "startup",
+            "pair": 1,
+            "line": "2.2",
+            "elapsed_seconds": 285.18333302100007,
+            "cpu_seconds": 576.9010010000001,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 2
+            },
+            "classes": {
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 97.676
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 116.624
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 270.738
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 63.539
+              }
+            }
+          },
+          {
+            "mode": "startup",
+            "pair": 2,
+            "line": "2.2",
+            "elapsed_seconds": 280.1123747470001,
+            "cpu_seconds": 555.643866,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 2
+            },
+            "classes": {
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 97.708
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 113.325
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 62.238
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 268.025
+              }
+            }
+          },
+          {
+            "mode": "default",
+            "pair": 2,
+            "line": "2.2",
+            "elapsed_seconds": 325.7791269510001,
+            "cpu_seconds": 913.7014669999999,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 2
+            },
+            "classes": {
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 82.036
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 116.257
+              },
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 117.2
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 261.663
+              }
+            }
+          },
+          {
+            "mode": "default",
+            "pair": 3,
+            "line": "2.2",
+            "elapsed_seconds": 325.157427266,
+            "cpu_seconds": 918.5318189999998,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 2
+            },
+            "classes": {
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 268.658
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 118.9
+              },
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 117.945
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 77.762
+              }
+            }
+          },
+          {
+            "mode": "startup",
+            "pair": 3,
+            "line": "2.2",
+            "elapsed_seconds": 288.041900723,
+            "cpu_seconds": 595.0367590000003,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 2
+            },
+            "classes": {
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 63.299
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 118.642
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 279.756
+              },
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 98.64
+              }
+            }
+          }
+        ]
+      },
+      "flink1.18-jdk17": {
+        "summary": {
+          "default": {
+            "elapsed_seconds": {
+              "median": 244.896312212,
+              "min": 243.32275730800006,
+              "max": 245.46900487899995
+            },
+            "cpu_seconds": {
+              "median": 671.1815510000002,
+              "min": 658.5725470000003,
+              "max": 673.9759250000001
+            }
+          },
+          "startup": {
+            "elapsed_seconds": {
+              "median": 221.25941893399994,
+              "min": 218.30699487799995,
+              "max": 221.57741452899995
+            },
+            "cpu_seconds": {
+              "median": 351.732326,
+              "min": 347.0194909999998,
+              "max": 354.69427699999983
+            }
+          }
+        },
+        "trials": [
+          {
+            "mode": "default",
+            "pair": 1,
+            "line": "1.18",
+            "elapsed_seconds": 244.896312212,
+            "cpu_seconds": 673.9759250000001,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 58
+            },
+            "classes": {
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 130.075
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 54,
+                "seconds": 63.551
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 82.88
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 105.269
+              }
+            }
+          },
+          {
+            "mode": "startup",
+            "pair": 1,
+            "line": "1.18",
+            "elapsed_seconds": 221.25941893399994,
+            "cpu_seconds": 351.732326,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 58
+            },
+            "classes": {
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 109.119
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 54,
+                "seconds": 42.328
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 69.977
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 105.611
+              }
+            }
+          },
+          {
+            "mode": "startup",
+            "pair": 2,
+            "line": "1.18",
+            "elapsed_seconds": 218.30699487799995,
+            "cpu_seconds": 347.0194909999998,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 58
+            },
+            "classes": {
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 67.17
+              },
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 107.195
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 104.631
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 54,
+                "seconds": 41.144
+              }
+            }
+          },
+          {
+            "mode": "default",
+            "pair": 2,
+            "line": "1.18",
+            "elapsed_seconds": 245.46900487899995,
+            "cpu_seconds": 671.1815510000002,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 58
+            },
+            "classes": {
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 128.006
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 86.556
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 108.092
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 54,
+                "seconds": 63.446
+              }
+            }
+          },
+          {
+            "mode": "default",
+            "pair": 3,
+            "line": "1.18",
+            "elapsed_seconds": 243.32275730800006,
+            "cpu_seconds": 658.5725470000003,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 58
+            },
+            "classes": {
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 83.549
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 106.092
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 54,
+                "seconds": 61.865
+              },
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 128.044
+              }
+            }
+          },
+          {
+            "mode": "startup",
+            "pair": 3,
+            "line": "1.18",
+            "elapsed_seconds": 221.57741452899995,
+            "cpu_seconds": 354.69427699999983,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 58
+            },
+            "classes": {
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 109.156
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 54,
+                "seconds": 42.688
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 105.953
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 69.745
+              }
+            }
+          }
+        ]
+      },
+      "flink2.2-jdk17": {
+        "summary": {
+          "default": {
+            "elapsed_seconds": {
+              "median": 275.08177918399997,
+              "min": 271.334130427,
+              "max": 275.56597753899996
+            },
+            "cpu_seconds": {
+              "median": 704.340897,
+              "min": 698.4284930000006,
+              "max": 710.21061
+            }
+          },
+          "startup": {
+            "elapsed_seconds": {
+              "median": 255.633542303,
+              "min": 246.939534116,
+              "max": 261.8432373979999
+            },
+            "cpu_seconds": {
+              "median": 502.00817300000006,
+              "min": 493.55655499999983,
+              "max": 508.6954189999999
+            }
+          }
+        },
+        "trials": [
+          {
+            "mode": "default",
+            "pair": 1,
+            "line": "2.2",
+            "elapsed_seconds": 275.56597753899996,
+            "cpu_seconds": 710.21061,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 2
+            },
+            "classes": {
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 102.087
+              },
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 94.99
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 70.583
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 220.26
+              }
+            }
+          },
+          {
+            "mode": "startup",
+            "pair": 1,
+            "line": "2.2",
+            "elapsed_seconds": 255.633542303,
+            "cpu_seconds": 502.00817300000006,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 2
+            },
+            "classes": {
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 85.105
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 101.686
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 227.904
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 63.185
+              }
+            }
+          },
+          {
+            "mode": "startup",
+            "pair": 2,
+            "line": "2.2",
+            "elapsed_seconds": 261.8432373979999,
+            "cpu_seconds": 508.6954189999999,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 2
+            },
+            "classes": {
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 87.236
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 102.334
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 66.315
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 229.589
+              }
+            }
+          },
+          {
+            "mode": "default",
+            "pair": 2,
+            "line": "2.2",
+            "elapsed_seconds": 275.08177918399997,
+            "cpu_seconds": 704.340897,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 2
+            },
+            "classes": {
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 69.41
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 101.293
+              },
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 96.459
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 217.272
+              }
+            }
+          },
+          {
+            "mode": "default",
+            "pair": 3,
+            "line": "2.2",
+            "elapsed_seconds": 271.334130427,
+            "cpu_seconds": 698.4284930000006,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 2
+            },
+            "classes": {
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 214.742
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 100.576
+              },
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 94.117
+              },
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 68.754
+              }
+            }
+          },
+          {
+            "mode": "startup",
+            "pair": 3,
+            "line": "2.2",
+            "elapsed_seconds": 246.939534116,
+            "cpu_seconds": 493.55655499999983,
+            "outcomes": {
+              "tests": 305,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 2
+            },
+            "classes": {
+              "tech.streamfusion.StatefulSqlRescaleTest": {
+                "tests": 31,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 2,
+                "seconds": 57.143
+              },
+              "tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest": {
+                "tests": 13,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 101.166
+              },
+              "tech.streamfusion.FlinkStringCollectionSqlHarnessTest": {
+                "tests": 80,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 223.61
+              },
+              "tech.streamfusion.FlinkJvmOverSqlHarnessTest": {
+                "tests": 181,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 83.121
+              }
+            }
+          }
+        ]
+      }
+    },
+    "discovered_invocations": 7320,
+    "passing_invocations": 6600,
+    "existing_skips": 720
+  }
 }
