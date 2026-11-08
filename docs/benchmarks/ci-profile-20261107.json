@@ -1,0 +1,1800 @@
+{
+  "date": "2026-11-07",
+  "baseline": [
+    {
+      "run": "https://github.com/datafusion-contrib/StreamFusion/actions/runs/42357977614",
+      "sha": "69620d1ac1ac4a37a268a6a9cb92a5ba6af03562",
+      "conclusion": "success",
+      "elapsed_seconds": 19297.0,
+      "runner_seconds": 260387.0,
+      "groups": {
+        "other": {
+          "jobs": 17,
+          "runner_seconds": 10947.0,
+          "max_job_seconds": 2160.0
+        },
+        "java": {
+          "jobs": 12,
+          "runner_seconds": 54209.0,
+          "max_job_seconds": 6286.0
+        },
+        "canonical": {
+          "jobs": 32,
+          "runner_seconds": 195231.0,
+          "max_job_seconds": 8485.0
+        }
+      },
+      "steps": {
+        "Run every selected canonical job": {
+          "executions": 32,
+          "seconds": 187573.0
+        },
+        "Run Java test suite": {
+          "executions": 12,
+          "seconds": 48303.0
+        },
+        "Compile and partition complete canonical jobs": {
+          "executions": 32,
+          "seconds": 4110.0
+        },
+        "Run optional lake module suite": {
+          "executions": 11,
+          "seconds": 4104.0
+        },
+        "Resolve Java dependencies before tests": {
+          "executions": 44,
+          "seconds": 3530.0
+        },
+        "Compile the complete reactor and partition runtime test classes": {
+          "executions": 12,
+          "seconds": 2353.0
+        },
+        "Build optimized core image": {
+          "executions": 2,
+          "seconds": 1493.0
+        },
+        "Check deployed Java 11 bytecode including embedded payloads": {
+          "executions": 12,
+          "seconds": 1463.0
+        }
+      }
+    },
+    {
+      "run": "https://github.com/datafusion-contrib/StreamFusion/actions/runs/42357977753",
+      "sha": "69620d1ac1ac4a37a268a6a9cb92a5ba6af03562",
+      "conclusion": "success",
+      "elapsed_seconds": 7399.0,
+      "runner_seconds": 15254.0,
+      "groups": {
+        "other": {
+          "jobs": 2,
+          "runner_seconds": 212.0,
+          "max_job_seconds": 200.0
+        },
+        "upstream preparation": {
+          "jobs": 2,
+          "runner_seconds": 1262.0,
+          "max_job_seconds": 691.0
+        },
+        "upstream tests": {
+          "jobs": 14,
+          "runner_seconds": 13780.0,
+          "max_job_seconds": 1620.0
+        }
+      },
+      "steps": {
+        "Run unchanged upstream suite with StreamFusion": {
+          "executions": 14,
+          "seconds": 12344.0
+        },
+        "Build Flink and StreamFusion once": {
+          "executions": 2,
+          "seconds": 1059.0
+        },
+        "Download and verify the shared build": {
+          "executions": 14,
+          "seconds": 620.0
+        },
+        "Require declared runtime audit routes": {
+          "executions": 14,
+          "seconds": 235.0
+        },
+        "Restore the shared build": {
+          "executions": 14,
+          "seconds": 210.0
+        },
+        "Run actions/upload-artifact@v4": {
+          "executions": 47,
+          "seconds": 208.0
+        },
+        "Run unchanged legacy Delta SQL tests against released Flink 1.18": {
+          "executions": 1,
+          "seconds": 184.0
+        },
+        "Run actions/checkout@v6": {
+          "executions": 18,
+          "seconds": 121.0
+        }
+      }
+    }
+  ],
+  "limits": [
+    "CI timing observations use the original debug-native test configuration, not SQL throughput benchmarks.",
+    "Paired startup probes establish fixture elapsed/CPU costs, not a full-workflow speedup. Complete exact-head workflow outcomes remain required for source changes.",
+    "Before/after full-workflow times come from separate successful hosted runs; queueing, hardware and cache variability are included. Required test inventory is retained."
+  ],
+  "jfr_probe": {
+    "jdk": "17.0.17",
+    "platform": "macOS arm64",
+    "fixture": "stock canonical group aggregate prefix; unchanged clean-process savepoint fixture",
+    "default_compiler_cpu_seconds": 8.745,
+    "first_tier_compiler_cpu_seconds": 1.888,
+    "limits": "One JFR-instrumented diagnostic per setting; Rust compilation was active concurrently. Used to identify compilation cost, not to claim elapsed-time speedup."
+  },
+  "reporter_checkout": {
+    "tracked_blob_bytes": 322940949,
+    "selected_blob_bytes": 41787
+  },
+  "local_startup_profile": {
+    "platform": "macOS 15.3.1 arm64",
+    "flink": "2.2.1",
+    "native_profile": "debug, matching CI correctness tests",
+    "forks": 2,
+    "test_reuse_forks": false,
+    "worker_heap": "1 GiB",
+    "surefire_heap": "2 GiB",
+    "cases_per_trial": 5,
+    "pairs_per_jdk": 2,
+    "limits": "Cold-process fixture timings, not SQL throughput benchmarks. Alternating order on the same machine. The two JDK investigations ran sequentially, after the native build finished.",
+    "jdks": {
+      "11": {
+        "summary": {
+          "default": {
+            "elapsed_seconds": 83.6297905415122,
+            "cpu_seconds": 221.1135905
+          },
+          "startup": {
+            "elapsed_seconds": 73.78828547897865,
+            "cpu_seconds": 90.78451099999998
+          },
+          "elapsed_reduction_percent": 11.767941781043223,
+          "cpu_reduction_percent": 58.942138837006496
+        },
+        "trials": [
+          {
+            "mode": "default",
+            "pair": 1,
+            "elapsed_seconds": 83.75751179200597,
+            "cpu_seconds": 221.812225,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 31.656,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 81.37
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 1,
+            "elapsed_seconds": 73.37978533300338,
+            "cpu_seconds": 90.881081,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 26.703,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 71.528
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 2,
+            "elapsed_seconds": 74.19678562495392,
+            "cpu_seconds": 90.68794099999995,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 72.399,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 26.613
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "default",
+            "pair": 2,
+            "elapsed_seconds": 83.50206929101842,
+            "cpu_seconds": 220.414956,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 81.207,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 31.529
+            },
+            "exit_code": 0
+          }
+        ]
+      },
+      "17": {
+        "summary": {
+          "default": {
+            "elapsed_seconds": 68.04890818800777,
+            "cpu_seconds": 162.9465055
+          },
+          "startup": {
+            "elapsed_seconds": 61.855903729010606,
+            "cpu_seconds": 75.81218450000001
+          },
+          "elapsed_reduction_percent": 9.100813846839284,
+          "cpu_reduction_percent": 53.47418818993942
+        },
+        "trials": [
+          {
+            "mode": "default",
+            "pair": 1,
+            "elapsed_seconds": 67.86366616701707,
+            "cpu_seconds": 161.97813299999999,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 25.753,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 66.122
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 1,
+            "elapsed_seconds": 61.89657191600418,
+            "cpu_seconds": 75.88836900000001,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 22.889,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 60.251
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 2,
+            "elapsed_seconds": 61.815235542017035,
+            "cpu_seconds": 75.73600000000002,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 60.26,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 22.85
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "default",
+            "pair": 2,
+            "elapsed_seconds": 68.23415020899847,
+            "cpu_seconds": 163.914878,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 66.296,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 25.906
+            },
+            "exit_code": 0
+          }
+        ]
+      }
+    }
+  },
+  "hosted_startup_profile": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42407417491",
+    "commit": "fb7192c01319cac20216ed41f9eb35f63c002ebd",
+    "runner": "ubuntu-24.04",
+    "flink": "2.2.1",
+    "native_profile": "debug",
+    "pairs_per_jdk": 3,
+    "cases_per_trial": 5,
+    "jdks": {
+      "11": {
+        "summary": {
+          "default": {
+            "elapsed_seconds": 117.92645338700001,
+            "cpu_seconds": 330.43248299999993,
+            "elapsed_range_seconds": [
+              117.194189876,
+              120.16392531999998
+            ]
+          },
+          "startup": {
+            "elapsed_seconds": 87.5508124590001,
+            "cpu_seconds": 137.55994599999994,
+            "elapsed_range_seconds": [
+              85.881220558,
+              89.18924242099996
+            ]
+          },
+          "elapsed_reduction_percent": 25.758123012752677,
+          "cpu_reduction_percent": 58.36972662279091
+        },
+        "trials": [
+          {
+            "mode": "default",
+            "pair": 1,
+            "elapsed_seconds": 117.92645338700001,
+            "cpu_seconds": 324.00375199999996,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 113.007,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 52.844
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 1,
+            "elapsed_seconds": 85.881220558,
+            "cpu_seconds": 132.668353,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 32.323,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 82.536
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 2,
+            "elapsed_seconds": 89.18924242099996,
+            "cpu_seconds": 137.55994599999994,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 32.933,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 85.881
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "default",
+            "pair": 2,
+            "elapsed_seconds": 120.16392531999998,
+            "cpu_seconds": 337.872201,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 54.646,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 115.37
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "default",
+            "pair": 3,
+            "elapsed_seconds": 117.194189876,
+            "cpu_seconds": 330.43248299999993,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 52.522,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 112.451
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 3,
+            "elapsed_seconds": 87.5508124590001,
+            "cpu_seconds": 137.93500300000005,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 84.103,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 31.876
+            },
+            "exit_code": 0
+          }
+        ]
+      },
+      "17": {
+        "summary": {
+          "default": {
+            "elapsed_seconds": 148.37266312299994,
+            "cpu_seconds": 444.84188399999994,
+            "elapsed_range_seconds": [
+              143.99642337900002,
+              153.75804566300002
+            ]
+          },
+          "startup": {
+            "elapsed_seconds": 111.38754332799999,
+            "cpu_seconds": 195.323077,
+            "elapsed_range_seconds": [
+              110.94318973899999,
+              115.56815583599996
+            ]
+          },
+          "elapsed_reduction_percent": 24.927179317621018,
+          "cpu_reduction_percent": 56.091572303474905
+        },
+        "trials": [
+          {
+            "mode": "default",
+            "pair": 1,
+            "elapsed_seconds": 153.75804566300002,
+            "cpu_seconds": 461.391065,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 147.144,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 71.677
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 1,
+            "elapsed_seconds": 115.56815583599996,
+            "cpu_seconds": 202.62836300000006,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 45.638,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 110.946
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 2,
+            "elapsed_seconds": 110.94318973899999,
+            "cpu_seconds": 195.323077,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 44.797,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 106.317
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "default",
+            "pair": 2,
+            "elapsed_seconds": 143.99642337900002,
+            "cpu_seconds": 444.84188399999994,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 67.244,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 137.617
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "default",
+            "pair": 3,
+            "elapsed_seconds": 148.37266312299994,
+            "cpu_seconds": 437.63090300000005,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 67.002,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 142.028
+            },
+            "exit_code": 0
+          },
+          {
+            "mode": "startup",
+            "pair": 3,
+            "elapsed_seconds": 111.38754332799999,
+            "cpu_seconds": 192.33530099999993,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 106.842,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 40.79
+            },
+            "exit_code": 0
+          }
+        ]
+      }
+    }
+  },
+  "documentation_plan_integration": {
+    "baseline": "69620d1ac1ac4a37a268a6a9cb92a5ba6af03562",
+    "documentation_only": "tests=false",
+    "source_configuration_change": "tests=true",
+    "provenance": "Actual Git diff/fetch and public GitHub push results in an ephemeral repository sharing read-only base objects."
+  },
+  "component_cds_probe": {
+    "jdk": "17.0.17",
+    "platform": "macOS 15.3.1 arm64",
+    "fixture": "24-row bounded canonical group aggregation in independent workers",
+    "native_profile": "debug",
+    "jvm": "-Xmx1g -XX:TieredStopAtLevel=1",
+    "limits": "Two alternating samples per setting. Archives prepared before timing; metadata generation excluded here and included in the paired harness/complete CI measurements. Not SQL throughput evidence.",
+    "stock": [
+      {
+        "name": "default-0",
+        "elapsed_seconds": 2.981888541020453,
+        "cpu_seconds": 2.6149359999999997
+      },
+      {
+        "name": "cds-1",
+        "elapsed_seconds": 1.605371167010162,
+        "cpu_seconds": 1.6272810000000004
+      },
+      {
+        "name": "cds-2",
+        "elapsed_seconds": 1.6035902080475353,
+        "cpu_seconds": 1.6221310000000009
+      },
+      {
+        "name": "default-3",
+        "elapsed_seconds": 2.865925334044732,
+        "cpu_seconds": 2.607488999999998
+      }
+    ],
+    "native": [
+      {
+        "name": "default-0",
+        "elapsed_seconds": 3.1457032080506906,
+        "cpu_seconds": 2.973626
+      },
+      {
+        "name": "cds-1",
+        "elapsed_seconds": 1.6037386250100099,
+        "cpu_seconds": 1.788523999999999
+      },
+      {
+        "name": "cds-2",
+        "elapsed_seconds": 1.606266750022769,
+        "cpu_seconds": 1.7398409999999984
+      },
+      {
+        "name": "default-3",
+        "elapsed_seconds": 3.201918208040297,
+        "cpu_seconds": 3.0162989999999987
+      }
+    ]
+  },
+  "local_cold_cds_harness": {
+    "jdk": "17.0.17",
+    "platform": "macOS arm64",
+    "method": "Fresh archives for each five-case trial, including their creation. Two alternating repetitions. Initial cache implementation; not complete-workflow evidence.",
+    "trials": [
+      {
+        "mode": "default",
+        "pair": 1,
+        "elapsed_seconds": 67.92108533298597,
+        "cpu_seconds": 166.99628400000003,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 25.941,
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 66.038
+        },
+        "exit_code": 0
+      },
+      {
+        "mode": "startup",
+        "pair": 1,
+        "elapsed_seconds": 61.561836541979574,
+        "cpu_seconds": 75.477618,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 22.739,
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 59.968
+        },
+        "exit_code": 0
+      },
+      {
+        "mode": "cds",
+        "pair": 1,
+        "elapsed_seconds": 62.18141200003447,
+        "cpu_seconds": 72.721406,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 60.802,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 29.887
+        },
+        "exit_code": 0,
+        "archives": 2,
+        "archive_bytes": 268402688,
+        "classpath_bytes": 289672758
+      },
+      {
+        "mode": "cds",
+        "pair": 2,
+        "elapsed_seconds": 65.24827841698425,
+        "cpu_seconds": 73.48583699999998,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 63.642,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 32.776
+        },
+        "exit_code": 0,
+        "archives": 2,
+        "archive_bytes": 275087360,
+        "classpath_bytes": 289672758
+      },
+      {
+        "mode": "startup",
+        "pair": 2,
+        "elapsed_seconds": 61.81324520899216,
+        "cpu_seconds": 75.82863100000003,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 60.213,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 22.994
+        },
+        "exit_code": 0
+      },
+      {
+        "mode": "default",
+        "pair": 2,
+        "elapsed_seconds": 68.06525333301397,
+        "cpu_seconds": 165.010067,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 66.178,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 25.866
+        },
+        "exit_code": 0
+      }
+    ],
+    "finding": "Cold archive preparation cancels the elapsed-time benefit for this short selection. Full-job profiling records preparation separately and measures reuse across subsequent invocations."
+  },
+  "local_cds_capability": {
+    "jdk": "11.0.28",
+    "platform": "macOS arm64",
+    "result": "Shared spaces are not supported in this VM. Profiling preflight rejects --cds on this VM; default/first-tier comparisons remain available. Linux x86_64 JDK 11 qualification is required."
+  },
+  "local_cds_reuse_harness": {
+    "jdk": "17.0.17",
+    "platform": "macOS arm64",
+    "method": "One measured preparation phase followed by two alternating repetitions of default, first-tier, and first-tier/CDS settings; all workers remain fresh processes. Preparation is retained separately rather than amortized into a five-case sample.",
+    "summary": {
+      "default": {
+        "elapsed_seconds": 67.87153914599912,
+        "cpu_seconds": 162.326799
+      },
+      "startup": {
+        "elapsed_seconds": 61.76131499998155,
+        "cpu_seconds": 75.39213050000001
+      },
+      "cds": {
+        "elapsed_seconds": 45.60767739600851,
+        "cpu_seconds": 56.519307000000005
+      }
+    },
+    "trials": [
+      {
+        "mode": "cds",
+        "pair": 0,
+        "phase": "preparation",
+        "elapsed_seconds": 66.01354966597864,
+        "cpu_seconds": 73.802615,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 33.475,
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 64.401
+        },
+        "exit_code": 0,
+        "archives": 2,
+        "archive_bytes": 275087360,
+        "classpath_bytes": 289676029
+      },
+      {
+        "mode": "default",
+        "pair": 1,
+        "phase": "measurement",
+        "elapsed_seconds": 68.14139433403034,
+        "cpu_seconds": 163.832328,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 25.78,
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 66.16
+        },
+        "exit_code": 0
+      },
+      {
+        "mode": "startup",
+        "pair": 1,
+        "phase": "measurement",
+        "elapsed_seconds": 61.80798312497791,
+        "cpu_seconds": 75.62726200000003,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 22.921,
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 60.212
+        },
+        "exit_code": 0
+      },
+      {
+        "mode": "cds",
+        "pair": 1,
+        "phase": "measurement",
+        "elapsed_seconds": 45.764000083028805,
+        "cpu_seconds": 56.66402499999999,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 44.171,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 18.543
+        },
+        "exit_code": 0,
+        "archives": 2,
+        "archive_bytes": 275087360,
+        "classpath_bytes": 289676029
+      },
+      {
+        "mode": "cds",
+        "pair": 2,
+        "phase": "measurement",
+        "elapsed_seconds": 45.45135470898822,
+        "cpu_seconds": 56.37458900000002,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 43.824,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 18.377
+        },
+        "exit_code": 0,
+        "archives": 2,
+        "archive_bytes": 275087360,
+        "classpath_bytes": 289676029
+      },
+      {
+        "mode": "startup",
+        "pair": 2,
+        "phase": "measurement",
+        "elapsed_seconds": 61.71464687498519,
+        "cpu_seconds": 75.15699899999998,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 60.096,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 22.779
+        },
+        "exit_code": 0
+      },
+      {
+        "mode": "default",
+        "pair": 2,
+        "phase": "measurement",
+        "elapsed_seconds": 67.60168395796791,
+        "cpu_seconds": 160.82126999999997,
+        "outcomes": {
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.CanonicalRegularJoinJobTest": 65.755,
+          "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 25.554
+        },
+        "exit_code": 0
+      }
+    ],
+    "limits": "35 passing invocations including preparation. Full hosted qualification and amortized whole-workflow costs remain required."
+  },
+  "hosted_cds_profile": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42415314960",
+    "sha": "b802a9bb748bd2cae03dbfe889d385e37ea54994",
+    "jdk17": {
+      "summary": {
+        "default": {
+          "elapsed_seconds": {
+            "median": 141.166160704,
+            "min": 140.6400094280001,
+            "max": 142.21447415800003
+          },
+          "cpu_seconds": {
+            "median": 415.19863900000007,
+            "min": 413.10939,
+            "max": 415.58044000000007
+          }
+        },
+        "startup": {
+          "elapsed_seconds": {
+            "median": 104.95907191399999,
+            "min": 103.53652561500007,
+            "max": 105.65072571899998
+          },
+          "cpu_seconds": {
+            "median": 177.01212799999993,
+            "min": 175.981925,
+            "max": 177.36054899999993
+          }
+        },
+        "cds": {
+          "elapsed_seconds": {
+            "median": 77.33326984399991,
+            "min": 76.96412499099995,
+            "max": 78.40167669499994
+          },
+          "cpu_seconds": {
+            "median": 145.83987900000005,
+            "min": 145.5175129999997,
+            "max": 146.27282299999996
+          }
+        }
+      },
+      "trials": [
+        {
+          "mode": "cds",
+          "pair": 0,
+          "phase": "preparation",
+          "elapsed_seconds": 105.39168885700002,
+          "cpu_seconds": 172.714812,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 101.395,
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 61.575
+          },
+          "exit_code": 0,
+          "archives": 2,
+          "archive_bytes": 268787712,
+          "classpath_bytes": 615145249
+        },
+        {
+          "mode": "default",
+          "pair": 1,
+          "phase": "measurement",
+          "elapsed_seconds": 141.166160704,
+          "cpu_seconds": 415.19863900000007,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 135.406,
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 66.314
+          },
+          "exit_code": 0
+        },
+        {
+          "mode": "startup",
+          "pair": 1,
+          "phase": "measurement",
+          "elapsed_seconds": 104.95907191399999,
+          "cpu_seconds": 175.981925,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 38.718,
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 101.019
+          },
+          "exit_code": 0
+        },
+        {
+          "mode": "cds",
+          "pair": 1,
+          "phase": "measurement",
+          "elapsed_seconds": 78.40167669499994,
+          "cpu_seconds": 145.83987900000005,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 42.566,
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 74.453
+          },
+          "exit_code": 0,
+          "archives": 2,
+          "archive_bytes": 268787712,
+          "classpath_bytes": 615145249
+        },
+        {
+          "mode": "cds",
+          "pair": 2,
+          "phase": "measurement",
+          "elapsed_seconds": 76.96412499099995,
+          "cpu_seconds": 146.27282299999996,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 42.792,
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 73.041
+          },
+          "exit_code": 0,
+          "archives": 2,
+          "archive_bytes": 268787712,
+          "classpath_bytes": 615145249
+        },
+        {
+          "mode": "startup",
+          "pair": 2,
+          "phase": "measurement",
+          "elapsed_seconds": 105.65072571899998,
+          "cpu_seconds": 177.36054899999993,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 40.145,
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 101.622
+          },
+          "exit_code": 0
+        },
+        {
+          "mode": "default",
+          "pair": 2,
+          "phase": "measurement",
+          "elapsed_seconds": 140.6400094280001,
+          "cpu_seconds": 413.10939,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 134.859,
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 65.095
+          },
+          "exit_code": 0
+        },
+        {
+          "mode": "default",
+          "pair": 3,
+          "phase": "measurement",
+          "elapsed_seconds": 142.21447415800003,
+          "cpu_seconds": 415.58044000000007,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 136.426,
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 65.47
+          },
+          "exit_code": 0
+        },
+        {
+          "mode": "startup",
+          "pair": 3,
+          "phase": "measurement",
+          "elapsed_seconds": 103.53652561500007,
+          "cpu_seconds": 177.01212799999993,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 38.146,
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 99.609
+          },
+          "exit_code": 0
+        },
+        {
+          "mode": "cds",
+          "pair": 3,
+          "phase": "measurement",
+          "elapsed_seconds": 77.33326984399991,
+          "cpu_seconds": 145.5175129999997,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 42.562,
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 73.286
+          },
+          "exit_code": 0,
+          "archives": 2,
+          "archive_bytes": 268787712,
+          "classpath_bytes": 615145249
+        }
+      ]
+    },
+    "limits": [
+      "Each JDK compares three settings on the same runner with three alternating repetitions of five identical passing cases, after a separate measured archive preparation.",
+      "Archive preparation includes five real test cases; it is excluded from prepared-archive medians and retained separately.",
+      "These debug-native startup probes measure CI latency, not SQL throughput or whole-workflow speedup."
+    ],
+    "jdk11": {
+      "summary": {
+        "default": {
+          "elapsed_seconds": {
+            "median": 182.86028124400013,
+            "min": 181.79918595000004,
+            "max": 186.55096086100002
+          },
+          "cpu_seconds": {
+            "median": 553.821106,
+            "min": 543.9238700000001,
+            "max": 554.5075800000002
+          }
+        },
+        "startup": {
+          "elapsed_seconds": {
+            "median": 134.36420290599995,
+            "min": 134.16712256000005,
+            "max": 135.3861625919999
+          },
+          "cpu_seconds": {
+            "median": 228.76967600000003,
+            "min": 226.3424449999999,
+            "max": 231.6337190000001
+          }
+        },
+        "cds": {
+          "elapsed_seconds": {
+            "median": 109.75906833399995,
+            "min": 109.10101061300008,
+            "max": 110.720504033
+          },
+          "cpu_seconds": {
+            "median": 225.6141859999999,
+            "min": 225.18512400000003,
+            "max": 228.06244499999994
+          }
+        }
+      },
+      "trials": [
+        {
+          "mode": "cds",
+          "pair": 0,
+          "phase": "preparation",
+          "elapsed_seconds": 189.88457543200002,
+          "cpu_seconds": 303.531212,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 184.803,
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 124.805
+          },
+          "exit_code": 0,
+          "archives": 2,
+          "archive_bytes": 256028672,
+          "classpath_bytes": 615143403
+        },
+        {
+          "mode": "default",
+          "pair": 1,
+          "phase": "measurement",
+          "elapsed_seconds": 181.79918595000004,
+          "cpu_seconds": 543.9238700000001,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 174.654,
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 80.452
+          },
+          "exit_code": 0
+        },
+        {
+          "mode": "startup",
+          "pair": 1,
+          "phase": "measurement",
+          "elapsed_seconds": 134.16712256000005,
+          "cpu_seconds": 226.3424449999999,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 50.713,
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 129.202
+          },
+          "exit_code": 0
+        },
+        {
+          "mode": "cds",
+          "pair": 1,
+          "phase": "measurement",
+          "elapsed_seconds": 109.10101061300008,
+          "cpu_seconds": 225.18512400000003,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 54.481,
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 104.143
+          },
+          "exit_code": 0,
+          "archives": 2,
+          "archive_bytes": 256028672,
+          "classpath_bytes": 615143403
+        },
+        {
+          "mode": "cds",
+          "pair": 2,
+          "phase": "measurement",
+          "elapsed_seconds": 109.75906833399995,
+          "cpu_seconds": 225.6141859999999,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 55.315,
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 104.69
+          },
+          "exit_code": 0,
+          "archives": 2,
+          "archive_bytes": 256028672,
+          "classpath_bytes": 615143403
+        },
+        {
+          "mode": "startup",
+          "pair": 2,
+          "phase": "measurement",
+          "elapsed_seconds": 135.3861625919999,
+          "cpu_seconds": 228.76967600000003,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 50.284,
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 130.412
+          },
+          "exit_code": 0
+        },
+        {
+          "mode": "default",
+          "pair": 2,
+          "phase": "measurement",
+          "elapsed_seconds": 186.55096086100002,
+          "cpu_seconds": 553.821106,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 179.492,
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 85.039
+          },
+          "exit_code": 0
+        },
+        {
+          "mode": "default",
+          "pair": 3,
+          "phase": "measurement",
+          "elapsed_seconds": 182.86028124400013,
+          "cpu_seconds": 554.5075800000002,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 175.724,
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 84.771
+          },
+          "exit_code": 0
+        },
+        {
+          "mode": "startup",
+          "pair": 3,
+          "phase": "measurement",
+          "elapsed_seconds": 134.36420290599995,
+          "cpu_seconds": 231.6337190000001,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 52.318,
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 129.211
+          },
+          "exit_code": 0
+        },
+        {
+          "mode": "cds",
+          "pair": 3,
+          "phase": "measurement",
+          "elapsed_seconds": 110.720504033,
+          "cpu_seconds": 228.06244499999994,
+          "outcomes": {
+            "tests": 5,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 56.68,
+            "tech.streamfusion.CanonicalRegularJoinJobTest": 105.699
+          },
+          "exit_code": 0,
+          "archives": 2,
+          "archive_bytes": 256028672,
+          "classpath_bytes": 615143403
+        }
+      ]
+    },
+    "conclusion": "success",
+    "passing_invocations": 100
+  },
+  "updated_upstream": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42415315130",
+    "sha": "b802a9bb748bd2cae03dbfe889d385e37ea54994",
+    "conclusion": "success",
+    "complete": true,
+    "elapsed_seconds": 6614.0,
+    "runner_seconds": 14442.0,
+    "groups": {
+      "other": {
+        "jobs": 3,
+        "runner_seconds": 228.0,
+        "max_job_seconds": 213.0
+      },
+      "upstream preparation": {
+        "jobs": 2,
+        "runner_seconds": 892.0,
+        "max_job_seconds": 528.0
+      },
+      "upstream tests": {
+        "jobs": 14,
+        "runner_seconds": 13322.0,
+        "max_job_seconds": 1640.0
+      }
+    },
+    "steps": {
+      "Run unchanged upstream suite with StreamFusion": {
+        "executions": 14,
+        "seconds": 11581.0
+      },
+      "Download and verify the shared build": {
+        "executions": 14,
+        "seconds": 886.0
+      },
+      "Build Flink and StreamFusion once": {
+        "executions": 2,
+        "seconds": 667.0
+      },
+      "Restore the shared build": {
+        "executions": 14,
+        "seconds": 270.0
+      },
+      "Require declared runtime audit routes": {
+        "executions": 2,
+        "seconds": 243.0
+      },
+      "Run unchanged legacy Delta SQL tests against released Flink 1.18": {
+        "executions": 1,
+        "seconds": 196.0
+      },
+      "Run actions/upload-artifact@v4": {
+        "executions": 29,
+        "seconds": 192.0
+      },
+      "Run actions/checkout@v6": {
+        "executions": 19,
+        "seconds": 128.0
+      },
+      "Run Swatinem/rust-cache@v2": {
+        "executions": 2,
+        "seconds": 62.0
+      },
+      "Restore the isolated suite Maven repository and wrapper": {
+        "executions": 2,
+        "seconds": 40.0
+      },
+      "Verify prepared Maven starts without downloading": {
+        "executions": 14,
+        "seconds": 36.0
+      },
+      "Set up job": {
+        "executions": 19,
+        "seconds": 21.0
+      },
+      "Run actions/setup-java@v4": {
+        "executions": 17,
+        "seconds": 18.0
+      },
+      "Run ./.github/actions/setup-rust": {
+        "executions": 2,
+        "seconds": 17.0
+      },
+      "Restore the compiled pinned Flink checkout": {
+        "executions": 2,
+        "seconds": 13.0
+      },
+      "Post Run actions/checkout@v6": {
+        "executions": 19,
+        "seconds": 5.0
+      },
+      "Run actions/download-artifact@v5": {
+        "executions": 2,
+        "seconds": 2.0
+      },
+      "Post Run actions/setup-java@v4": {
+        "executions": 17,
+        "seconds": 1.0
+      },
+      "Run python3 dev/flink-suite/suite_matrix.py >> \"$GITHUB_OUTPUT\"": {
+        "executions": 2,
+        "seconds": 1.0
+      },
+      "Require every upstream suite to succeed": {
+        "executions": 1,
+        "seconds": 1.0
+      },
+      "Run python3 bin/ci-plan.py >> \"$GITHUB_OUTPUT\"": {
+        "executions": 1,
+        "seconds": 0
+      },
+      "Complete job": {
+        "executions": 19,
+        "seconds": 0
+      },
+      "Free disk space": {
+        "executions": 16,
+        "seconds": 0
+      },
+      "Post Run Swatinem/rust-cache@v2": {
+        "executions": 2,
+        "seconds": 0
+      },
+      "Require every runtime shard and parameterized invocation on both lines": {
+        "executions": 1,
+        "seconds": 0
+      }
+    }
+  },
+  "canonical_qualification": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42415314977",
+    "sha": "b802a9bb748bd2cae03dbfe889d385e37ea54994",
+    "conclusion": "success",
+    "jobs": 32,
+    "runner_seconds": 97898.0,
+    "max_job_seconds": 4227.0,
+    "limits": [
+      "The complete canonical matrix and both exact-source-head aggregate workflows passed.",
+      "Same test inventory; separate hosted runs are affected by runner, cache and queue variability."
+    ]
+  },
+  "updated_ci": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42415314977",
+    "sha": "b802a9bb748bd2cae03dbfe889d385e37ea54994",
+    "conclusion": "success",
+    "complete": true,
+    "elapsed_seconds": 11686.0,
+    "runner_seconds": 161059.0,
+    "groups": {
+      "other": {
+        "jobs": 18,
+        "runner_seconds": 10793.0,
+        "max_job_seconds": 1864.0
+      },
+      "java": {
+        "jobs": 12,
+        "runner_seconds": 52368.0,
+        "max_job_seconds": 6213.0
+      },
+      "canonical": {
+        "jobs": 32,
+        "runner_seconds": 97898.0,
+        "max_job_seconds": 4227.0
+      }
+    },
+    "steps": {
+      "Run every selected canonical job": {
+        "executions": 32,
+        "seconds": 90418.0
+      },
+      "Run Java test suite": {
+        "executions": 12,
+        "seconds": 47055.0
+      },
+      "Run optional lake module suite": {
+        "executions": 11,
+        "seconds": 3971.0
+      },
+      "Compile and partition complete canonical jobs": {
+        "executions": 32,
+        "seconds": 3875.0
+      },
+      "Resolve Java dependencies before tests": {
+        "executions": 44,
+        "seconds": 3570.0
+      },
+      "Compile the complete reactor and partition runtime test classes": {
+        "executions": 12,
+        "seconds": 2500.0
+      },
+      "Run unchanged Paimon compaction fixtures with stock and native work evidence": {
+        "executions": 1,
+        "seconds": 1366.0
+      },
+      "Build optimized core image": {
+        "executions": 2,
+        "seconds": 1328.0
+      },
+      "Run Arrow ownership, SQL parity and upstream Doris connector tests": {
+        "executions": 1,
+        "seconds": 1180.0
+      },
+      "Resolve lake module dependencies before tests": {
+        "executions": 11,
+        "seconds": 979.0
+      },
+      "Run actions/download-artifact@v5": {
+        "executions": 56,
+        "seconds": 764.0
+      },
+      "Run Fluss SQL and complete Nexmark parity smoke": {
+        "executions": 1,
+        "seconds": 591.0
+      },
+      "Check deployed Java 11 bytecode including embedded payloads": {
+        "executions": 4,
+        "seconds": 521.0
+      },
+      "Test upstream execution evidence checks": {
+        "executions": 2,
+        "seconds": 518.0
+      },
+      "Verify JVM boundary defaults and optional cache on the freshly built native library": {
+        "executions": 2,
+        "seconds": 440.0
+      },
+      "Run actions/checkout@v6": {
+        "executions": 61,
+        "seconds": 404.0
+      },
+      "Run actions/setup-java@v4": {
+        "executions": 58,
+        "seconds": 231.0
+      },
+      "Run native test suite": {
+        "executions": 1,
+        "seconds": 187.0
+      },
+      "Resolve image dependencies before builds and tests": {
+        "executions": 2,
+        "seconds": 163.0
+      },
+      "Run Flink Session-cluster image smoke test": {
+        "executions": 2,
+        "seconds": 101.0
+      },
+      "Resolve Doris dependencies before tests": {
+        "executions": 1,
+        "seconds": 99.0
+      },
+      "Set up job": {
+        "executions": 62,
+        "seconds": 87.0
+      },
+      "Verify Fluss RocksDB backends and output parity": {
+        "executions": 1,
+        "seconds": 82.0
+      },
+      "Run Swatinem/rust-cache@v2": {
+        "executions": 4,
+        "seconds": 79.0
+      },
+      "Check every standalone native package": {
+        "executions": 1,
+        "seconds": 72.0
+      },
+      "Retain canonical job selection and outcomes": {
+        "executions": 32,
+        "seconds": 70.0
+      },
+      "Run ./.github/actions/setup-rust": {
+        "executions": 4,
+        "seconds": 31.0
+      },
+      "Verify Java host APIs and deployment module ownership": {
+        "executions": 2,
+        "seconds": 30.0
+      },
+      "Execute the packaged loader and mixed-line identity tests": {
+        "executions": 1,
+        "seconds": 28.0
+      },
+      "Build all debug native libraries once": {
+        "executions": 1,
+        "seconds": 28.0
+      },
+      "Post Run actions/checkout@v6": {
+        "executions": 61,
+        "seconds": 19.0
+      },
+      "Run actions/upload-artifact@v4": {
+        "executions": 2,
+        "seconds": 19.0
+      },
+      "Upload runtime test partition": {
+        "executions": 12,
+        "seconds": 15.0
+      },
+      "Post Run actions/setup-java@v4": {
+        "executions": 58,
+        "seconds": 10.0
+      },
+      "Test Flink 1.18 native and fallback contract selection": {
+        "executions": 1,
+        "seconds": 10.0
+      },
+      "Complete job": {
+        "executions": 62,
+        "seconds": 7.0
+      },
+      "Package qualified Flink 1.18 payloads": {
+        "executions": 1,
+        "seconds": 7.0
+      },
+      "Upload portable SQL audit outcomes": {
+        "executions": 4,
+        "seconds": 4.0
+      },
+      "Free disk space": {
+        "executions": 60,
+        "seconds": 3.0
+      },
+      "Test fork result reporting": {
+        "executions": 1,
+        "seconds": 3.0
+      },
+      "Check native formatting": {
+        "executions": 1,
+        "seconds": 3.0
+      },
+      "Post Run Swatinem/rust-cache@v2": {
+        "executions": 4,
+        "seconds": 2.0
+      },
+      "Retain Doris plans, upstream assertions and server logs": {
+        "executions": 1,
+        "seconds": 2.0
+      },
+      "Retain Paimon compaction results and invocation evidence": {
+        "executions": 1,
+        "seconds": 2.0
+      },
+      "Check native package boundaries": {
+        "executions": 1,
+        "seconds": 1.0
+      },
+      "Upload Fluss SQL execution plans and test results": {
+        "executions": 1,
+        "seconds": 1.0
+      },
+      "Verify native JNI exports": {
+        "executions": 1,
+        "seconds": 1.0
+      },
+      "Retain native compilation timings": {
+        "executions": 1,
+        "seconds": 1.0
+      },
+      "Run python3 bin/ci-plan.py >> \"$GITHUB_OUTPUT\"": {
+        "executions": 1,
+        "seconds": 0
+      },
+      "Remove canonical worker class metadata": {
+        "executions": 32,
+        "seconds": 0
+      },
+      "Require every test job to succeed": {
+        "executions": 1,
+        "seconds": 0
+      }
+    }
+  },
+  "hosted_documentation_fast_path": {
+    "sha": "a03ce3e08c0aa61ba047a1257c3efa0abf241ff3",
+    "verified_source_baseline": "b802a9bb748bd2cae03dbfe889d385e37ea54994",
+    "workflows": [
+      {
+        "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42430504179",
+        "sha": "a03ce3e08c0aa61ba047a1257c3efa0abf241ff3",
+        "conclusion": "success",
+        "complete": true,
+        "elapsed_seconds": 16.0,
+        "runner_seconds": 11.0
+      },
+      {
+        "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42430504172",
+        "sha": "a03ce3e08c0aa61ba047a1257c3efa0abf241ff3",
+        "conclusion": "success",
+        "complete": true,
+        "elapsed_seconds": 15.0,
+        "runner_seconds": 11.0
+      }
+    ],
+    "all_build_and_test_dependencies": "skipped after both plan jobs verified successful exact-baseline push runs for both required workflows",
+    "documentation_build": {
+      "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42430504138",
+      "conclusion": "success",
+      "execution_seconds": 26
+    },
+    "limits": [
+      "Documentation-only coverage reuse; source or configuration changes still run full matrices.",
+      "This verifies coverage reuse and aggregate handling, not execution of tests on the documentation-only head."
+    ]
+  }
+}

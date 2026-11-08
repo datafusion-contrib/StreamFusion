@@ -1,0 +1,81 @@
+name: CI startup profile
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['**']
+    paths:
+      - '.github/workflows/ci-profile.yml'
+      - 'bin/profile-canonical-ci.py'
+
+permissions:
+  contents: read
+
+env:
+  RUST_BACKTRACE: '1'
+
+concurrency:
+  group: ci-startup-profile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 bin/ci-free-disk.py
+      - uses: ./.github/actions/setup-rust
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          shared-key: debug-jvm
+          save-if: false
+      - run: cargo build --manifest-path native/Cargo.toml -p streamfusion --lib --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-profile-native-${{ github.sha }}
+          path: native/target/debug/libstreamfusion.so
+          compression-level: 1
+          retention-days: 1
+          if-no-files-found: error
+
+  paired:
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        jdk: ['11', '17']
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+          cache: maven
+      - uses: actions/download-artifact@v5
+        with:
+          name: ci-profile-native-${{ github.sha }}
+          path: native/target/debug
+      - name: Compile the unchanged profile cases once
+        run: |
+          python3 bin/ci-maven-dependencies.py --projects streamfusion-runtime
+          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
+          mvn -B -ntp -pl streamfusion-runtime -am test-compile -Dnative.build.skip=true
+      - name: Alternate default and startup JVM settings on the same runner
+        run: python3 bin/profile-canonical-ci.py --output "$RUNNER_TEMP/ci-startup-profile" --repetitions 3 --cds
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-startup-profile-jdk${{ matrix.jdk }}
+          path: |
+            ${{ runner.temp }}/ci-startup-profile/
+            streamfusion-runtime/target/surefire-reports/*ci-profile*
+          retention-days: 7

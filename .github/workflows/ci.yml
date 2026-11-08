@@ -11,13 +11,19 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   RUST_BACKTRACE: "1"
 
 jobs:
-  native-build:
+  plan:
     if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+    uses: ./.github/workflows/ci-plan.yml
+
+  native-build:
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
     name: Shared debug native libraries
     env:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
@@ -63,7 +69,8 @@ jobs:
           retention-days: 7
 
   native-tests:
-    if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
     env:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
@@ -155,6 +162,8 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
           python3 -m unittest discover -s bin -p 'test_ci_runtime_test_shards.py'
           python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
+          python3 -m unittest discover -s bin -p 'test_ci_plan.py'
+          python3 -m unittest discover -s bin -p 'test_profile_ci.py'
           python3 -m unittest discover -s bin -p 'test_package_release.py'
           python3 -m unittest discover -s bin -p 'test_build_release.py'
 
@@ -190,6 +199,7 @@ jobs:
           trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
           mvn -B -ntp ${{ matrix.profile }} test -Dnative.build.skip=true \
             "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/runtime-test-includes.txt" \
+            -DskipTests=${{ matrix.shard != 1 }} -Dsf.runtime.tests.skip=false \
             -Dsf.testForks=2 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx4g"
 
       - name: Verify JVM boundary defaults and optional cache on the freshly built native library
@@ -205,6 +215,7 @@ jobs:
           surefire:test@default-test
 
       - name: Check deployed Java 11 bytecode including embedded payloads
+        if: matrix.shard == 1
         run: |
           mvn -B -ntp ${{ matrix.profile }} package -DskipTests -Dnative.build.skip=true
           python3 -m unittest discover -s bin -p 'test_check_java_bytecode.py'
@@ -253,6 +264,8 @@ jobs:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     env:
       SF_KAFKA_INTEGRATION: 'true'
+      # Each handoff starts a fresh worker; optimizing compilation cannot amortize here.
+      JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1'
     steps:
       - uses: actions/checkout@v6
       - name: Free disk space
@@ -278,6 +291,8 @@ jobs:
             --suite canonical --count 16 --index ${{ matrix.shard }} \
             --output "$RUNNER_TEMP/canonical-job-includes.txt"
       - name: Run every selected canonical job
+        env:
+          SF_CANONICAL_CDS_DIR: ${{ runner.temp }}/canonical-cds
         run: >-
           mvn -B -ntp -Pcanonical-kafka -pl streamfusion-runtime -am test
           -Dnative.build.skip=true
@@ -291,9 +306,22 @@ jobs:
           path: |
             ${{ runner.temp }}/canonical-job-includes.*
             streamfusion-runtime/target/surefire-reports/*
+            ${{ runner.temp }}/canonical-cds/*.log
             **/hs_err_pid*.log
           if-no-files-found: error
           retention-days: 7
+
+      - name: Remove canonical worker class metadata
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          directory = Path(os.environ['RUNNER_TEMP']) / 'canonical-cds'
+          if directory.exists():
+              shutil.rmtree(directory)
+          PY
 
   lake-module-tests:
     needs: native-build
@@ -438,7 +466,8 @@ jobs:
           retention-days: 7
 
   image-integration:
-    if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
     name: Flink image integration (optimized native build)${{ matrix.suffix }}
     runs-on: ubuntu-22.04
     timeout-minutes: 90
@@ -554,11 +583,20 @@ jobs:
   all-tests:
     name: All CI tests
     if: ${{ (always() && !cancelled()) && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
-    needs: [native-build, native-tests, java-tests, canonical-job-tests, lake-module-tests, image-integration, doris-tests]
+    needs: [plan, native-build, native-tests, java-tests, canonical-job-tests, lake-module-tests, image-integration, doris-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every test job to succeed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-        run: jq -e 'length > 0 and all(.[]; .result == "success")' <<< "$NEEDS_JSON"
+          DOCS_ONLY: ${{ needs.plan.outputs.tests == 'false' }}
+        run: |
+          jq -e --arg docs "$DOCS_ONLY" '
+            .plan.result == "success" and
+            if $docs == "true" then
+              all(to_entries[]; .key == "plan" or .value.result == "skipped")
+            else
+              all(.[]; .result == "success")
+            end
+          ' <<< "$NEEDS_JSON"

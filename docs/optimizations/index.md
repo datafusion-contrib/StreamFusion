@@ -15,7 +15,8 @@ comparisons from component measurements, profiles and rejected experiments.
 Those historical records support a decision; this ledger describes the current
 technique and its measured limits.
 
-CI build reuse and runner scheduling are documented separately in the
+CI JVM startup settings, repeated-check elimination and profiling are documented in the
+[CI guide](../ci.md#profiling-ci-latency-and-cost). CI build reuse and runner scheduling are documented in the
 [upstream-suite guide](../upstream-flink-suite.md#shared-builds-and-runtime-shards): compiled Flink
 caching, shared build artifacts, grouped connector suites and combined coverage verification.
 Those measurements describe CI job counts and elapsed time, not SQL execution throughput.

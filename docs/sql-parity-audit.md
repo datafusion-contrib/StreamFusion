@@ -45,6 +45,14 @@ still runs when the host fails. SQL expressions consume source rows rather than 
   compare failure phase, root exception class and diagnostic text, and require native Calc
   substitution for the native-enabled failure attempts.
 
+SQL/JSON failure comparisons require the same root exception class, Jackson's original
+diagnostic and request payload, and every reported line, column, byte and character offset. Jackson's transient
+source reference can disappear when Flink serializes a task failure, changing only the
+appended source label from `REDACTED` to `UNKNOWN`. That transport label is excluded from
+comparison; other exception messages still compare exactly. A regression compares a real
+malformed-document exception before and after Flink serialization and rejects changes to
+the diagnostic, class or any location coordinate.
+
 A scalar UDF in native Calc still uses the existing JVM expression bridge. Its native plan
 status does not mean the Java function itself runs in Rust. Arbitrary table/aggregate
 functions and the nested ROW-returning scalar currently retain explicit, asserted fallback

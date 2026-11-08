@@ -29,6 +29,48 @@ def plain(element):
 
 
 class ModuleGroupsTest(unittest.TestCase):
+    def test_only_first_shard_runs_deployment_modules_and_every_shard_runs_runtime(self):
+        runtime = ET.parse(ROOT / 'streamfusion-runtime/pom.xml')
+        plugin = next(p for p in runtime.findall('m:build/m:plugins/m:plugin', NS)
+                      if p.findtext('m:artifactId', namespaces=NS) == 'maven-surefire-plugin')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'pom.xml').write_text('''<project xmlns="http://maven.apache.org/POM/4.0.0">
+<modelVersion>4.0.0</modelVersion><groupId>test</groupId><artifactId>reactor</artifactId>
+<version>1</version><packaging>pom</packaging><modules><module>runtime</module><module>connector</module></modules>
+<properties><maven.compiler.release>11</maven.compiler.release>
+<sf.orc.test.groups>streamfusion-orc</sf.orc.test.groups></properties>
+<dependencies><dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId>
+<version>5.10.2</version><scope>test</scope></dependency></dependencies>
+<build><plugins><plugin><groupId>org.apache.maven.plugins</groupId>
+<artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>
+<plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+<version>3.2.5</version></plugin></plugins></build></project>''')
+            for module in ('runtime', 'connector'):
+                target = root / module
+                target.mkdir()
+                config = '<build><plugins>' + plain(plugin) + '</plugins></build>' if module == 'runtime' else ''
+                (target / 'pom.xml').write_text('''<project xmlns="http://maven.apache.org/POM/4.0.0">
+<modelVersion>4.0.0</modelVersion><parent><groupId>test</groupId><artifactId>reactor</artifactId>
+<version>1</version></parent><artifactId>''' + module + '</artifactId>' + config + '</project>')
+                source = target / 'src/test/java'
+                source.mkdir(parents=True)
+                (source / 'SelectedTest.java').write_text('''class SelectedTest {
+@org.junit.jupiter.api.Test void selected() throws Exception {
+java.nio.file.Files.writeString(java.nio.file.Path.of("target/ran"), "ran");
+}}''')
+            for shard in (1, 2, 3):
+                with self.subTest(shard=shard):
+                    for module in ('runtime', 'connector'):
+                        (root / module / 'target/ran').unlink(missing_ok=True)
+                    result = subprocess.run(
+                        ['mvn', '-B', '-ntp', 'test',
+                         '-DskipTests=' + str(shard != 1).lower(), '-Dsf.runtime.tests.skip=false'],
+                        cwd=root, capture_output=True, text=True, timeout=120)
+                    self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                    self.assertTrue((root / 'runtime/target/ran').exists())
+                    self.assertEqual(shard == 1, (root / 'connector/target/ran').exists())
+
     def test_every_module_tag_has_an_isolated_native_package_check(self):
         workflow = WORKFLOW.read_text()
         declared = module_tags()

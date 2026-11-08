@@ -91,6 +91,8 @@ class CanonicalJobRunner {
                   && Files.isDirectory(Path.of(entry).resolve("tech/streamfusion"));
       if (nativeRun || !streamfusion) classpath.add(entry);
     }
+    var cache = CanonicalWorkerCache.configured();
+    if (cache != null) classpath = cache.classpath(classpath);
     List<String> command =
         new ArrayList<>(
             List.of(
@@ -119,38 +121,45 @@ class CanonicalJobRunner {
                 backend));
     if (nativeRun) command.add(2, "-Djava.library.path=" + System.getProperty("java.library.path"));
     Path log = root.resolve(stage + ".log");
-    Process process =
-        new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
-    try {
-      boolean completed = process.waitFor(Duration.ofMinutes(4).toMillis(), TimeUnit.MILLISECONDS);
-      if (!completed) {
-        Path dump = root.resolve(stage + "-threads.txt");
-        Process diagnostic =
-            new ProcessBuilder(
-                    Path.of(System.getProperty("java.home"), "bin", "jcmd").toString(),
-                    Long.toString(process.pid()),
-                    "Thread.print",
-                    "-l")
-                .redirectErrorStream(true)
-                .redirectOutput(dump.toFile())
-                .start();
-        if (!diagnostic.waitFor(10, TimeUnit.SECONDS)) diagnostic.destroyForcibly();
-      }
-      assertTrue(completed, () -> "worker did not finish; log: " + log);
-      assertEquals(
-          expectedExitCode,
-          process.exitValue(),
-          () -> {
-            try {
-              return Files.readString(log);
-            } catch (Exception failure) {
-              return failure.toString();
-            }
-          });
-    } finally {
-      if (process.isAlive()) {
-        process.destroyForcibly();
-        process.waitFor(10, TimeUnit.SECONDS);
+    try (var archive = cache == null ? null : cache.archive(command)) {
+      Process process =
+          new ProcessBuilder(command)
+              .redirectErrorStream(true)
+              .redirectOutput(log.toFile())
+              .start();
+      try {
+        boolean completed =
+            process.waitFor(Duration.ofMinutes(4).toMillis(), TimeUnit.MILLISECONDS);
+        if (!completed) {
+          Path dump = root.resolve(stage + "-threads.txt");
+          Process diagnostic =
+              new ProcessBuilder(
+                      Path.of(System.getProperty("java.home"), "bin", "jcmd").toString(),
+                      Long.toString(process.pid()),
+                      "Thread.print",
+                      "-l")
+                  .redirectErrorStream(true)
+                  .redirectOutput(dump.toFile())
+                  .start();
+          if (!diagnostic.waitFor(10, TimeUnit.SECONDS)) diagnostic.destroyForcibly();
+        }
+        assertTrue(completed, () -> "worker did not finish; log: " + log);
+        assertEquals(
+            expectedExitCode,
+            process.exitValue(),
+            () -> {
+              try {
+                return Files.readString(log);
+              } catch (Exception failure) {
+                return failure.toString();
+              }
+            });
+        if (archive != null && expectedExitCode == 0) archive.trained();
+      } finally {
+        if (process.isAlive()) {
+          process.destroyForcibly();
+          process.waitFor(10, TimeUnit.SECONDS);
+        }
       }
     }
   }
@@ -262,34 +271,43 @@ class CanonicalJobRunner {
       collect(CanonicalFixtureFactory.class, classes);
       collect(CanonicalJobWorker.class, classes);
       collect(workerClass, classes);
-      for (Class<?> type : classes) {
+      for (Class<?> type :
+          classes.stream()
+              .sorted(java.util.Comparator.comparing(Class::getName))
+              .collect(java.util.stream.Collectors.toList())) {
         String resource = type.getName().replace('.', '/') + ".class";
-        output.putNextEntry(new JarEntry(resource));
+        output.putNextEntry(entry(resource));
         try (var input = type.getClassLoader().getResourceAsStream(resource)) {
           input.transferTo(output);
         }
         output.closeEntry();
       }
-      output.putNextEntry(
-          new JarEntry("META-INF/services/org.apache.flink.table.factories.Factory"));
+      output.putNextEntry(entry("META-INF/services/org.apache.flink.table.factories.Factory"));
       output.write(
           (CanonicalFixtureFactory.class.getName() + "\n")
               .getBytes(java.nio.charset.StandardCharsets.UTF_8));
       output.closeEntry();
       output.putNextEntry(
-          new JarEntry(
-              "META-INF/services/org.apache.flink.metrics.reporter.MetricReporterFactory"));
+          entry("META-INF/services/org.apache.flink.metrics.reporter.MetricReporterFactory"));
       output.write(
           (classes.stream()
                   .filter(
                       org.apache.flink.metrics.reporter.MetricReporterFactory.class
                           ::isAssignableFrom)
                   .map(Class::getName)
+                  .sorted()
                   .collect(java.util.stream.Collectors.joining("\n", "", "\n")))
               .getBytes(java.nio.charset.StandardCharsets.UTF_8));
       output.closeEntry();
     }
-    return jar;
+    var cache = CanonicalWorkerCache.configured();
+    return cache == null ? jar : cache.fixture(jar);
+  }
+
+  private static JarEntry entry(String name) {
+    var entry = new JarEntry(name);
+    entry.setTime(0);
+    return entry;
   }
 
   private static void collect(Class<?> type, Set<Class<?>> classes) {

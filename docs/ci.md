@@ -2,8 +2,8 @@
 
 Contributor builds and tests run in **personal forks**, using each fork owner's GitHub Actions
 quota instead of the shared `datafusion-contrib` quota. Opening or updating a PR does not launch
-the test matrix in the canonical repository. Canonical `main` still runs the complete post-merge
-checks, the upstream Flink weekly run remains available, and publishing stays upstream.
+the test matrix in the canonical repository. Source-changing canonical `main` pushes still run
+the complete post-merge checks, the upstream Flink weekly run remains available, and publishing stays upstream.
 
 ## Contributing from a personal fork
 
@@ -58,6 +58,11 @@ hours. Fork workflow completions do not trigger `workflow_run` in the canonical 
 so a single PR-event refresh followed only by cron can leave successful tests displayed as
 pending. The schedule requests minutes 7, 22, 37 and 52 to avoid the busiest quarter-hour
 boundaries; active-run tracking does not depend on that schedule.
+
+The reporter uses a partial clone and sparse checkout of its script and test file. These
+two files total about 42 KB, compared with 323 MB of tracked blobs in the November 7 tree.
+It still executes only trusted default-branch code. This avoids downloading benchmark archives
+and SQL inventory reports for every watcher; it also reduces disk work on the slim runner.
 
 Each watcher uses a short `ubuntu-slim` job and dispatches a follow-up on the trusted default
 branch before its six-minute polling window ends. Continuations retain the original six-hour
@@ -120,6 +125,30 @@ but skip canceled workflows (`always() && !cancelled()`). An unconditional `alwa
 gate can wait for another runner after the obsolete test jobs have been canceled,
 keeping the workflow's concurrency slot occupied and the replacement run pending.
 Failures and unexpected skipped dependencies still fail the aggregate's result checks.
+
+## Documentation-only pushes
+
+Both required workflows first compare committed paths with a candidate baseline. Only
+`readme.md`, Markdown under `docs/`, and `docs/benchmarks/ci-profile-YYYYMMDD.json` timing
+evidence qualify. Source, tests, workflows, dependency/build configuration, instruction files,
+other data files and unknown paths require the full matrix. Rename detection is disabled so
+moving a source file into `docs/` still counts its deletion from source.
+
+For an existing branch, the candidate is the exact pre-push commit on that branch. For a new
+branch, it is current canonical `main`. Both **CI** and **Upstream Flink suite** must have a
+completed successful **push** run for that exact baseline SHA and branch. A newer failed,
+canceled or running push prevents reuse; manual inventory runs cannot establish coverage.
+Missing history, unavailable API access, missing workflows or incomplete/failed evidence all
+select the full matrix. Manual dispatches and weekly schedules always run the full selection.
+
+When those proofs pass, the documentation push has unchanged tested source. Its native and
+integration jobs are deliberately skipped, and both aggregate checks succeed on the new head
+only when the plan succeeds and every test dependency is skipped. Strict docs builds still
+run. The normal path still requires every test dependency to succeed. This avoids hours of
+retesting unchanged source without letting a docs follow-up hide failures on its base commit.
+The plan uses a read-only token and sparse checkout of its script; its job summary records the
+decision and baseline SHA. Real Git rename/deletion cases and the actual aggregate shell
+scripts are covered by regressions, including unexpected skips, failures and unproven plans.
 
 ## Native execution checks instead of exhaustive benchmark smoke
 
@@ -261,8 +290,11 @@ The `sf.runtime.testIncludesFile` property activates a runtime-only Maven profil
 shard's includes file. Both existing Surefire executions retain their ordinary/ORC tag filters and classpaths.
 The three main-suite selections therefore cover the same runtime tests once per Flink/JDK pair;
 the additional JVM-boundary/cache phase still runs once on JDK 17 for each Flink line, in
-shard 1. Deployment-module tests and bytecode/package checks repeat in each shard, preserving
-the complete reactor's assembly order and module-owned test selections. Local `mvn test`
+shard 1. Deployment-module tests and bytecode/package checks run in shard 1 of every Flink/JDK
+pair. Shards 2 and 3 still build the complete reactor, but use `skipTests=true` with
+`sf.runtime.tests.skip=false`: the runtime's assigned classes run and downstream module tests
+are deferred to shard 1. An actual multi-module Maven regression checks all three selections.
+This preserves the reactor's assembly order and module-owned test selections. Local `mvn test`
 does not activate this profile.
 
 The three classes producing the required portable, recovery and rescale SQL audit JSON files
@@ -528,10 +560,35 @@ Both selections are computed from the compiled test inventory: their union is th
 selection and their intersection is empty. Balancing changes only class placement; test
 methods, inherited parameterized cases, nested classes and ORC tag handling are unchanged.
 Every canonical shard is required by `All CI tests`.
+Canonical jobs set `JAVA_TOOL_OPTIONS=-XX:TieredStopAtLevel=1`, inherited by Maven, Surefire
+and the isolated stock/native workers. These short-lived workers repeatedly pay for HotSpot
+optimizing compilation and exit before amortizing it. First-tier compilation reduces that
+startup CPU cost while preserving fresh processes, both backends, both directions, every
+parameterized invocation, native execution evidence, checkpoints and rescaling assertions.
+Ordinary runtime, upstream and release/benchmark jobs retain their usual JVM compilation.
+This is a CI scheduling optimization, not a SQL throughput result. See the
+[CI profile](benchmarks/ci-profile-20261107.json) for measurements and their limits.
+
+Canonical workers also use class-data sharing through `SF_CANONICAL_CDS_DIR`, set only for
+their test step. The first successful worker on each classpath records loaded classes, then
+HotSpot builds a metadata archive. Later stages use that archive in fresh JVMs with
+`-Xshare:on`. A process lock serializes initial archive creation across the two Surefire forks.
+Every scenario still creates its own clusters, native state, user-function instances,
+checkpoints and results; the archive stores class metadata rather than a running application.
+
+[AppCDS requires JAR classpaths](https://docs.oracle.com/en/java/javase/11/tools/java.html),
+so the harness snapshots compiled class directories into deterministic JARs while preserving
+classpath order and resource paths. Compiled directories remain immutable for each Surefire
+fork. Snapshot names derive from their contents; an existing snapshot is checked for corruption
+and retained without changing its timestamp. Changed compiled bytes produce a new snapshot.
+Archive keys include the JDK, VM arguments, classpath, worker class and engine role. Caches live
+under the current runner's temporary directory and are removed after outcomes and failed
+archive diagnostics are uploaded. Default local Maven runs do not enable this cache.
 Each runner uses two fresh 2 GiB Surefire JVMs, with process reuse disabled. This preserves all
 118 canonical classes on each JDK while reducing canonical runner jobs from 64 to 32. The stock
 and native worker processes retain their separate 1 GiB heaps; native memory and containers
-also need headroom. Full hosted CI remains the qualification for this scheduling change.
+also need headroom. The complete 32-shard hosted canonical matrix passed on both JDKs;
+the full CI and upstream aggregates remain required for source changes.
 
 The first combined run exhausted the three-hour JDK 11 limit after seven classes passed in
 one canonical shard. Its alphabetical round-robin selection combined several of the longest
@@ -550,3 +607,124 @@ The separate schedule is necessary for the existing complete-job tests: retained
 the previous three-way hash partition. Those observations are scheduling evidence, not a
 throughput benchmark. The ordinary 150-minute job limit cannot accommodate that selection.
 Canonical shards have a 180-minute limit; no test is removed to make a shard pass.
+
+## Profiling CI latency and cost
+
+Use `python3 bin/profile-ci.py --repo OWNER/REPO --run RUN_ID` with an authenticated `gh`
+CLI. Add `--json` for reusable evidence. The profiler reads the latest run attempt, paginates
+all jobs, totals actual completed execution intervals and identifies failed steps. It separates
+workflow elapsed time from summed runner time; job start delays include prerequisites,
+workflow concurrency and runner queueing. Queued jobs do not receive fictitious execution time.
+Canceled jobs without a started step also receive no execution interval. These observations
+are not billed minutes and do not isolate pure runner queue time.
+
+The green canonical main run [42357977614](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42357977614)
+took 321.6 minutes elapsed and 72.33 runner-hours. Canonical handoff jobs consumed 54.23
+runner-hours, ordinary Java jobs 15.06, and the remaining jobs 3.04. The required upstream
+workflow took 123.3 minutes elapsed but only 4.23 runner-hours: start delays dominate its
+elapsed time while the larger CI matrix competes for runners. Increasing shard counts alone
+would not eliminate that shared capacity cost.
+
+The [updated complete canonical matrix](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42415314977)
+passed all 32 shards with the same test selection. Summed runner time fell from 54.23 to
+27.19 hours (49.9%), and the longest canonical job fell from 141.4 to 70.5 minutes.
+These full-job times include archive preparation, compilation and artifact handling.
+The [updated upstream workflow](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42415315130)
+passed in 110.2 minutes elapsed and 4.01 runner-hours. Its unchanged JVM settings and
+different start delays mean that observed difference does not establish an upstream optimization.
+Comparisons between hosted runs also include runner and cache variability; within-run paired
+startup probes below help isolate the JVM settings.
+
+Both complete source-head workflows passed. The full CI comparison, including every required
+runtime, connector, image, Rust and savepoint job, was:
+
+| Measurement | Baseline | Updated | Reduction |
+| --- | ---: | ---: | ---: |
+| Workflow elapsed | 321.6 min | 194.8 min | 39.4% |
+| Summed runner execution | 72.33 h | 44.74 h | 38.1% |
+| Canonical runner execution | 54.23 h | 27.19 h | 49.9% |
+| Longest canonical job | 141.4 min | 70.5 min | 50.2% |
+
+Ordinary Java jobs now consume 14.55 runner-hours and the remaining jobs 3.00 hours.
+The longest ordinary Java job took 103.6 minutes. These tests retain their usual JVM settings
+and are the largest remaining execution cost. Elapsed time also includes shared runner capacity and
+dependency delays. These results measure CI turnaround and execution cost, not SQL throughput.
+
+The subsequent documentation-only evidence update exercised coverage reuse against that fully
+passing source baseline. [CI](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42430504179)
+finished in 16 seconds and [upstream](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42430504172)
+in 15 seconds, each using 11 seconds of runner execution. Both plans verified the exact baseline's
+two successful push workflows, every build/test dependency skipped, and both aggregates passed.
+The strict documentation build also passed. Source/configuration changes still require full tests.
+
+The **CI startup profile** workflow runs on manual dispatch or changes to its workflow/profiler.
+It builds the exact commit's debug core library once, then compares default and first-tier
+JVM compilation, plus first-tier compilation with class metadata archives, on each of JDK 11
+and 17. Archive preparation is recorded once, followed by three repetitions alternating settings
+on the same runner. All settings run the identical five cases: stock/native join continuations on both
+backends, native checkpoint recovery on both backends, and a managed-UDF decimal-key handoff.
+The profiler rejects missing, changed, failed or skipped invocations and retains elapsed/CPU
+times and class outcomes. These are deliberately small timing probes; the complete CI and
+upstream aggregate checks remain the merge requirements.
+
+The initial hosted comparison of first-tier compilation alone passed all 60 invocations.
+Median elapsed time fell from 117.93 to 87.55 seconds on JDK 11 (25.8%) and from 148.37 to
+111.39 seconds on JDK 17 (24.9%); CPU time fell 58.4% and 56.1%, respectively. These compare
+settings within each runner, not JDK performance across different runners.
+
+The subsequent [hosted archive comparison](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42415314960)
+passed all 100 invocations, including preparation. Median five-case elapsed times were:
+
+| JDK | Default | First-tier | First-tier + prepared archive | Reduction vs default |
+| --- | ---: | ---: | ---: | ---: |
+| 11 | 182.86 s | 134.36 s | 109.76 s | 40.0% |
+| 17 | 141.17 s | 104.96 s | 77.33 s | 45.2% |
+
+Prepared-archive ranges were 109.10–110.72 seconds on JDK 11 and 76.96–78.40 seconds on
+JDK 17 across three repetitions. CPU medians fell from 553.82 to 225.61 seconds (59.3%)
+and from 415.20 to 145.84 seconds (64.9%), respectively. The separate preparation phase,
+including five passing cases and archive construction, took 189.88 seconds on JDK 11 and
+105.39 seconds on JDK 17. These are comparisons within each runner; the different default
+times between runs and JDKs also show why probe results cannot establish whole-workflow savings.
+
+An isolated JDK 17 group-aggregation worker probe then reduced startup from about 2.9 to
+1.6 seconds for stock Flink and from 3.2 to 1.6 seconds for native execution with prepared
+metadata. That component probe excludes archive construction; the paired harness includes
+archive preparation as a separate measured phase and reuses it for subsequent timings, matching
+the longer canonical job. The short cold-cache probe, including construction for five cases,
+showed no elapsed-time benefit over first-tier compilation; those measurements remain in the
+evidence file. Complete CI establishes the amortized benefit across its full test selection.
+
+Locally, first compile the default runtime with `mvn -pl streamfusion-runtime -am test-compile`
+and a matching native build. Then run
+`python3 bin/profile-canonical-ci.py --output /path/to/new-evidence-directory --repetitions 3 --cds`.
+The `--cds` option requires a JVM supporting class-data sharing. The profiler creates and removes
+a small archive before starting, supporting JDK installations without a prebuilt default archive.
+Omitting it retains the default/first-tier comparison on unsupported VMs, such as
+the local ARM JDK 11 build used during this investigation.
+The script preserves concise JSON and failed logs, removes its successful logs/reports and
+temporary fixtures, and leaves normal JVM options unchanged outside each measured subprocess.
+
+Recent failure diagnoses:
+
+- [CI 42308241944](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42308241944):
+  bounded processing-time RANGE finished before its next-millisecond timer emitted output.
+  Commit `18df0c55e` keeps the finite fixture open until all expected rows are evaluated.
+- [CI 42293838298](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42293838298):
+  SQL/JSON parse-error parity compared Jackson's transient source label after Flink transport.
+  The same exception, diagnostic and coordinates differed only in `UNKNOWN` versus `REDACTED`.
+  The comparison now checks stable diagnostic fields and all coordinates, with a serialization
+  regression and negative controls for genuine mismatches.
+- [Reporter 42357436842](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42357436842):
+  the runner returned `fsync ... Input/output error` during all three checkout attempts.
+  Sparse checkout reduces its repository disk work; it cannot guarantee against runner I/O faults.
+- Reporters [42346046364](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42346046364)
+  and [42309074911](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42309074911)
+  exhausted their six-hour watch deadlines while PR #607's fork CI was still pending.
+  They left required checks pending rather than accepting unfinished tests.
+- [Docs 42308241816](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42308241816):
+  the strict documentation build passed, but GitHub Pages remained in `syncing_files` until
+  deployment timed out. The subsequent main deployment passed.
+- [Paimon compatibility 41951091666](https://github.com/jordepic/StreamFusion-contrib/actions/runs/41951091666):
+  generated legacy sources referenced coordinator APIs absent from released Paimon 1.0.
+  Subsequent compatibility runs, including the latest completed branch run, passed.
