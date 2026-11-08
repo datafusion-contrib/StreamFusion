@@ -781,6 +781,22 @@ futures in the string-collection class. Recorded waits exclude short unrecorded 
 overlap asynchronous work and are not CPU time. They do not establish removable delay,
 safe fixture reuse, or a measured benefit from changing polling. No test fixture was changed.
 
+Repeated lifecycle invocations now set `sf.protobuf.checkStaleness=true` after the job's
+initial complete compilation. The protobuf generator otherwise rewrites unchanged test
+sources, causing another compilation of the runtime's entire test inventory. A real Java 11
+Maven fixture using the released protobuf/compiler plugins reproduced that rewrite and
+dependent recompilation on an unchanged second pass. With staleness checking, the generated
+source and dependent class timestamps stayed unchanged and javac compiled no sources.
+A subsequent normal compile regenerated and recompiled an edited proto successfully.
+Skipping the protobuf mojo entirely was rejected: it drops the generated source root and
+the same fixture failed to compile its dependent source.
+
+The initial compilation and ordinary Maven defaults keep staleness checking disabled, so
+changes to proto inputs or generator versions still regenerate code. The optimization is
+limited to subsequent invocations within the same immutable CI checkout, including package
+verification. The observed 21-second repeated compilation remains a baseline observation;
+the full updated workflow must establish the actual saving.
+
 The next runtime investigation selects `runtime-hotspots` in the manually dispatched
 **CI startup profile** workflow. It selects the five slow aggregate/state and recursive-conversion classes from
 the completed Flink 2.2 runtime reports, retaining all 2,759 cases without skips. Both JDKs

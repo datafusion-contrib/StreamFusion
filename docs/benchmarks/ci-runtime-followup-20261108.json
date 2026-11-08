@@ -720,5 +720,50 @@
       "limits": "Java execution samples and native-method stack samples are separate. Native samples include blocking I/O and are not CPU attribution. Inclusive counts overlap. Neither sample count is exact CPU time. Native samples do not resolve Rust internals. Compilation durations are activity intervals, not compiler CPU seconds. Allocation weights are sampled estimates. Instrumented elapsed times are not speedup evidence."
     },
     "limits": "All 2759 invocations passed without skips. Hosted postprocessing failed on the Java 11 compilation event schema; recordings were reprocessed locally with the corrected reader and 2 GiB reader heap. No test rerun. Fixture/elapsed/CPU summary was not retained before that exporter failure, so those values are not claimed."
+  },
+  "protobuf_recompilation": {
+    "scope": "Actual Maven/protobuf/compiler fixture, Java11, protobuf plugin0.6.1, compiler3.13.0, protoc/protobuf4.32.1; behavior/invalidation check, not a hosted CI timing claim.",
+    "passes": [
+      {
+        "pass": "restore-normal",
+        "staleness_check": false,
+        "proto_changed": false,
+        "generated_source_rewritten": true,
+        "dependent_class_recompiled": true,
+        "javac_source_counts": [
+          2
+        ]
+      },
+      {
+        "pass": "unchanged-default",
+        "staleness_check": false,
+        "proto_changed": false,
+        "generated_source_rewritten": true,
+        "dependent_class_recompiled": true,
+        "javac_source_counts": [
+          2
+        ]
+      },
+      {
+        "pass": "unchanged-staleness",
+        "staleness_check": true,
+        "proto_changed": false,
+        "generated_source_rewritten": false,
+        "dependent_class_recompiled": false,
+        "javac_source_counts": []
+      },
+      {
+        "pass": "changed-proto-normal",
+        "staleness_check": false,
+        "proto_changed": true,
+        "generated_source_rewritten": true,
+        "dependent_class_recompiled": true,
+        "javac_source_counts": [
+          2
+        ]
+      }
+    ],
+    "rejected": "protoc.skip=true drops the generated test-source root and caused a real dependent-source compilation failure; it is not used.",
+    "limits": "The staleness flag is enabled only after a full compile in the same immutable CI checkout/job. Normal initial compilation remains responsible for proto and generator-version changes."
   }
 }

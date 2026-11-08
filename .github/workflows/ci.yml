@@ -220,7 +220,7 @@ jobs:
           vmstat -w 30 &
           memory_sampler=$!
           trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
-          mvn -B -ntp ${{ matrix.profile }} test -Dnative.build.skip=true \
+          mvn -B -ntp ${{ matrix.profile }} test -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
             "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/runtime-test-includes.txt" \
             -DskipTests=${{ matrix.shard != 1 }} -Dsf.runtime.tests.skip=false \
             -Dsf.testForks=${{ matrix.forks }} -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx${{ matrix.heap }}"
@@ -240,7 +240,7 @@ jobs:
       - name: Check deployed Java 11 bytecode including embedded payloads
         if: matrix.shard == 1
         run: |
-          mvn -B -ntp ${{ matrix.profile }} package -DskipTests -Dnative.build.skip=true
+          mvn -B -ntp ${{ matrix.profile }} package -DskipTests -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true
           python3 -m unittest discover -s bin -p 'test_check_java_bytecode.py'
           python3 bin/check-java-bytecode.py
 
@@ -319,6 +319,7 @@ jobs:
         run: >-
           mvn -B -ntp -Pcanonical-kafka -pl streamfusion-runtime -am test
           -Dnative.build.skip=true
+          -Dsf.protobuf.checkStaleness=true
           "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/canonical-job-includes.txt"
           -Dsf.testForks=2 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx2g"
       - name: Retain canonical job selection and outcomes
