@@ -13,8 +13,8 @@ spec.loader.exec_module(profile)
 
 
 class RuntimeProfileTest(unittest.TestCase):
-    def reports(self, root, line):
-        for name, (tests, skips) in profile.CLASSES.items():
+    def reports(self, root, line, selection=profile.CLASSES):
+        for name, (tests, skips) in selection.items():
             name = "tech.streamfusion." + name
             suite = ET.Element("testsuite", name=name + "(trial)", tests=str(tests),
                                failures="0", errors="0", skipped=str(skips[line]), time="1")
@@ -23,6 +23,16 @@ class RuntimeProfileTest(unittest.TestCase):
                 if index < skips[line]:
                     ET.SubElement(case, "skipped")
             ET.ElementTree(suite).write(root / f"TEST-{name}-trial.xml")
+
+    def test_hotspots_retain_all_cases_including_qualified_planner_classes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.reports(root, "2.2", profile.HOTSPOTS)
+            cases, totals, classes = profile.outcomes(root, "trial", "2.2", profile.HOTSPOTS)
+            self.assertEqual(2759, sum(cases.values()))
+            self.assertEqual(2759, totals["tests"])
+            self.assertEqual(0, totals["skipped"])
+            self.assertEqual(5, len(classes))
 
     def test_both_lines_retain_every_invocation_and_existing_skip(self):
         for line, skips in (("2.2", 2), ("1.18", 58)):

@@ -27,13 +27,13 @@ def collect(stream, counters):
             counters["allocation_sample_weight_bytes"][event[1]] += int(event[2])
 
 
-def summarize(recordings, java_home):
+def summarize(recordings, java_home, expected_recordings=4):
     counters = {key: Counter() for key in ("events", "java_leaf_frames", "java_inclusive_frames", "java_sampled_threads",
                                           "native_leaf_frames", "native_inclusive_frames", "native_sampled_threads",
                                           "compilation_events", "compilation_activity_seconds",
                                           "allocation_sample_weight_bytes")}
-    if len(recordings) != 4:
-        raise ValueError(f"Expected four fresh recorded test JVMs, found {len(recordings)}")
+    if len(recordings) != expected_recordings:
+        raise ValueError(f"Expected {expected_recordings} fresh recorded test JVMs, found {len(recordings)}")
     for recording in recordings:
         command = [str(java_home / "bin/java"), "-Xmx512m", "--source", "11",
                    str(Path(__file__).with_name("CiJfrEvents.java")), str(recording)]

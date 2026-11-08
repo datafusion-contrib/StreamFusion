@@ -19,6 +19,7 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
 
   TestStreamEnvironment environment(Configuration jobConfig, int parallelism, long budget) {
     if (cluster == null) {
+      long started = CiFixtureTimings.start();
       Configuration config = reporter.addToConfiguration(new Configuration(jobConfig));
       config.set(
           TaskManagerOptions.TASK_OFF_HEAP_MEMORY,
@@ -34,6 +35,8 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
         cluster.before();
       } catch (Exception failure) {
         throw new IllegalStateException("cannot start recovery metrics cluster", failure);
+      } finally {
+        CiFixtureTimings.record("recovery-metrics.cluster-start", started);
       }
     }
     return new TestStreamEnvironment(
@@ -154,10 +157,12 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
 
   @Override
   public void close() {
+    long started = CiFixtureTimings.start();
     try {
       if (cluster != null) cluster.after();
     } finally {
       reporter.close();
+      CiFixtureTimings.record("recovery-metrics.cluster-close", started);
     }
   }
 }

@@ -6,11 +6,15 @@ on:
       suite:
         description: 'Paired JVM comparison to run'
         type: choice
-        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only]
+        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots]
         default: runtime
+      native_run:
+        description: 'Existing native-producing run for runtime-hotspots'
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 env:
   RUST_BACKTRACE: '1'
@@ -21,7 +25,7 @@ concurrency:
 
 jobs:
   native:
-    if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+    if: ${{ inputs.suite != 'runtime-hotspots' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -92,7 +96,7 @@ jobs:
 
   runtime:
     needs: native
-    if: inputs.suite != 'canonical' && inputs.suite != 'native-only'
+    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -143,5 +147,70 @@ jobs:
           name: runtime-startup-profile-flink${{ matrix.line }}-jdk${{ matrix.jdk }}${{ matrix.jfr && '-jfr' || '' }}
           path: |
             ${{ runner.temp }}/runtime-startup-profile/
+            streamfusion-runtime/target/surefire-reports/*runtime-profile*
+          retention-days: 7
+
+  hotspots:
+    if: inputs.suite == 'runtime-hotspots' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        jdk: ['11', '17']
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+          cache: maven
+      - name: Verify native artifact source and completed producer
+        id: native
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN: ${{ inputs.native_run }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', path]))
+          run_id = os.environ['NATIVE_RUN']
+          if not re.fullmatch(r'[0-9]+', run_id):
+              raise SystemExit('Expected a numeric native workflow run ID')
+          repo = os.environ['GITHUB_REPOSITORY']
+          run = api(f'repos/{repo}/actions/runs/{run_id}')
+          sha = run['head_sha']
+          jobs = api(f'repos/{repo}/actions/runs/{run_id}/jobs?per_page=100')['jobs']
+          if not any(j['name'] == 'Shared debug native libraries' and j['conclusion'] == 'success' for j in jobs):
+              raise SystemExit('Native producer has not succeeded')
+          subprocess.run(['git', 'diff', '--exit-code', sha, 'HEAD', '--',
+                          'native', 'rust-toolchain.toml', '.cargo', '.github/actions/setup-rust'], check=True)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'artifact=debug-native-{sha}\n')
+          print(f'Reusing native libraries from successful producer at {sha}')
+          PY
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ steps.native.outputs.artifact }}
+          run-id: ${{ inputs.native_run }}
+          github-token: ${{ github.token }}
+          path: native/target/debug
+      - name: Compile the unchanged complete runtime inventory
+        run: |
+          python3 bin/ci-maven-dependencies.py --projects streamfusion-runtime
+          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
+          mvn -B -ntp -pl streamfusion-runtime -am test-compile -Dnative.build.skip=true
+      - name: Attribute measured slow classes under current CI worker settings
+        run: python3 bin/profile-runtime-ci.py --line 2.2 --repetitions 1 --hotspots --output "$RUNNER_TEMP/runtime-hotspots"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-hotspots-jdk${{ matrix.jdk }}
+          path: |
+            ${{ runner.temp }}/runtime-hotspots/
             streamfusion-runtime/target/surefire-reports/*runtime-profile*
           retention-days: 7

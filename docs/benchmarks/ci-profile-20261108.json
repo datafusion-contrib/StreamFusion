@@ -1237,7 +1237,8 @@
     },
     "discovered_invocations": 7320,
     "passing_invocations": 6600,
-    "existing_skips": 720
+    "existing_skips": 720,
+    "native_build_scope": "Core-only build used for these historical paired diagnostics; settings were held constant within each comparison. Final full CI and future diagnostics use the complete native workspace."
   },
   "runtime_concurrency_profile": {
     "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42492916674",
@@ -2473,7 +2474,8 @@
     },
     "discovered_invocations": 7320,
     "passing_invocations": 6600,
-    "existing_skips": 720
+    "existing_skips": 720,
+    "native_build_scope": "Core-only build used for these historical paired diagnostics; settings were held constant within each comparison. Final full CI and future diagnostics use the complete native workspace."
   },
   "runtime_jfr_profile": {
     "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42495045635",
@@ -3194,7 +3196,8 @@
           "limits": "Java execution samples and native-method stack samples are separate. Native samples include blocking I/O and are not CPU attribution. Inclusive counts overlap. Neither sample count is exact CPU time. Native samples do not resolve Rust internals. Compilation durations are activity intervals, not compiler CPU seconds. Allocation weights are sampled estimates. Instrumented elapsed times are not speedup evidence."
         }
       }
-    ]
+    ],
+    "native_build_scope": "Core-only build used for these historical paired diagnostics; settings were held constant within each comparison. Final full CI and future diagnostics use the complete native workspace."
   },
   "selected_runtime_settings": {
     "flink1.18-jdk11": {
@@ -3236,6 +3239,224 @@
     "correction": "Diagnostic producer builds the same complete workspace as native CI before sharing its cache; only the incomplete task-ref entry is refreshed.",
     "limits": [
       "This completed build observation remains valid when its parent full workflow is superseded. It is not a whole-workflow speedup or full test qualification."
-    ]
+    ],
+    "cleared_task_entry": {
+      "id": 10195183095,
+      "ref": "refs/heads/perf/ci-runtime-20261108",
+      "bytes": 959170860
+    },
+    "warm_verification": {
+      "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42506483948",
+      "sha": "3c727bb1071d04583e6926f4fde8dfdf5ad6d117",
+      "conclusion": "success",
+      "cargo_build_seconds": 29.5,
+      "rebuilt_units": 42,
+      "total_units_in_graph": 639,
+      "rebuilt_rocksdb_units": [],
+      "scope": "Same complete workspace command and exact shared dependency key; cache restore time excluded from Cargo duration. Dependency reuse measurement, not a repeated whole-workflow benchmark."
+    }
+  },
+  "complete_runtime_matrix": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556204",
+    "sha": "3c727bb1071d04583e6926f4fde8dfdf5ad6d117",
+    "jobs": 12,
+    "conclusion": "All twelve runtime jobs succeeded; parent CI still running",
+    "baseline_runner_seconds": 52368.0,
+    "updated_runner_seconds": 32197.0,
+    "groups": {
+      "flink1.18-jdk11": {
+        "baseline_runner_seconds": 10429.0,
+        "updated_runner_seconds": 5321.0,
+        "baseline_max_job_seconds": 3786.0,
+        "updated_max_job_seconds": 1908.0,
+        "runner_time_reduction_percent": 48.9788090900374,
+        "coverage": {
+          "same_class_outcome_multiset": true,
+          "baseline_reports": 816,
+          "updated_reports": 816,
+          "tests": 18207,
+          "skipped": 1420
+        },
+        "available_cpus": [
+          4
+        ],
+        "max_swap_used_kib": 0
+      },
+      "flink1.18-jdk17": {
+        "baseline_runner_seconds": 11544.0,
+        "updated_runner_seconds": 6611.0,
+        "baseline_max_job_seconds": 4572.0,
+        "updated_max_job_seconds": 2942.0,
+        "runner_time_reduction_percent": 42.732155232155236,
+        "coverage": {
+          "same_class_outcome_multiset": true,
+          "baseline_reports": 865,
+          "updated_reports": 865,
+          "tests": 18796,
+          "skipped": 1622
+        },
+        "available_cpus": [
+          4
+        ],
+        "max_swap_used_kib": 0
+      },
+      "flink2.2-jdk11": {
+        "baseline_runner_seconds": 13865.0,
+        "updated_runner_seconds": 11662.0,
+        "baseline_max_job_seconds": 5818.0,
+        "updated_max_job_seconds": 4691.0,
+        "runner_time_reduction_percent": 15.888928957807424,
+        "coverage": {
+          "same_class_outcome_multiset": true,
+          "baseline_reports": 978,
+          "updated_reports": 978,
+          "tests": 32542,
+          "skipped": 55
+        },
+        "available_cpus": [
+          4
+        ],
+        "max_swap_used_kib": 0
+      },
+      "flink2.2-jdk17": {
+        "baseline_runner_seconds": 16530.0,
+        "updated_runner_seconds": 8603.0,
+        "baseline_max_job_seconds": 6213.0,
+        "updated_max_job_seconds": 3456.0,
+        "runner_time_reduction_percent": 47.955232909860854,
+        "coverage": {
+          "same_class_outcome_multiset": true,
+          "baseline_reports": 1005,
+          "updated_reports": 1005,
+          "tests": 32895,
+          "skipped": 115
+        },
+        "available_cpus": [
+          4
+        ],
+        "max_swap_used_kib": 0
+      }
+    },
+    "limits": "Hosted before/after comparison includes runner and cache variation. Class-level report counts/outcomes match; controlled diagnostic comparisons separately checked individual case identities. This is runtime-matrix evidence, not full CI qualification."
+  },
+  "additional_profiling_observations": {
+    "repeated_compilation": {
+      "run": 42499556204,
+      "job": 128792093626,
+      "module": "streamfusion-runtime",
+      "test_sources": 1029,
+      "compilation_seconds": [
+        10.01,
+        9.52,
+        11.07
+      ],
+      "limits": "One completed job, approximate intervals between compiler log entries; no optimization implemented."
+    },
+    "main_thread_waits": {
+      "run": 42492916674,
+      "source_sha": "4799d50d0a63908310d35570a87d6328984465c0",
+      "mode": "JDK 17/Flink 2.2 instrumented default JVM, four recorded test classes",
+      "classes": [
+        {
+          "class": "FlinkStringCollectionSqlHarnessTest",
+          "wait_seconds": {
+            "cluster_close": 3.088465154999999,
+            "cluster_start": 0.091271343,
+            "collect_results": 85.83702111199999,
+            "other": 81.14389287799996
+          },
+          "main_execution_samples": {
+            "cluster_close": 2,
+            "cluster_start": 104,
+            "collect_results": 70,
+            "other": 2418
+          },
+          "top_wait_stacks": {
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > tech.streamfusion.NativeFailureParity.execute": 80.724671065,
+            "java.lang.Thread.sleep > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sleepBeforeRetry > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.next > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.nextResultFromFetcher > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.hasNext > org.apache.flink.table.planner.connectors.CollectDynamicSink$CloseableRowIteratorWrapper.hasNext > tech.streamfusion.NativeFailureParity.execute > tech.streamfusion.NativeFailureParity.execute": 64.98450672399998,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sendRequest": 20.730314273999998,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.runtime.testutils.MiniClusterResource.after": 3.074671271999999,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.environment.StreamExecutionEnvironment.executeAsync": 0.24133143700000004,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.graph.StreamGraph$UserDefinedObjectsHolder.serializeOperatorFactories": 0.17789037600000002,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.isJobTerminated": 0.09886400899999999,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire > java.util.concurrent.locks.AbstractQueuedSynchronizer.tryAcquireSharedNanos > scala.concurrent.impl.Promise$DefaultPromise.tryAwait > scala.concurrent.impl.Promise$DefaultPromise.ready > scala.concurrent.impl.Promise$DefaultPromise.result > scala.concurrent.Await$.$anonfun$result$1": 0.059554369999999995
+          }
+        },
+        {
+          "class": "FlinkDecimalNegateAbsSqlHarnessTest",
+          "wait_seconds": {
+            "cluster_close": 10.706081101999994,
+            "cluster_start": 0.109869695,
+            "collect_results": 59.34665126700001,
+            "other": 0.193813069
+          },
+          "main_execution_samples": {
+            "cluster_close": 3,
+            "cluster_start": 233,
+            "collect_results": 30,
+            "other": 734
+          },
+          "top_wait_stacks": {
+            "java.lang.Thread.sleep > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sleepBeforeRetry > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.next > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.nextResultFromFetcher > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.hasNext > org.apache.flink.table.planner.connectors.CollectDynamicSink$CloseableRowIteratorWrapper.hasNext > tech.streamfusion.FlinkDecimalBooleanTryCastSqlHarnessTest.verify > tech.streamfusion.FlinkDecimalNegateAbsSqlHarnessTest.negationConsumesVerifiedAbsoluteValuesAndAlternatingTrees": 54.80502989,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.runtime.testutils.MiniClusterResource.after": 10.706081101999994,
+            "java.lang.Thread.sleep > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sleepBeforeRetry > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.next > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.nextResultFromFetcher > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.hasNext > org.apache.flink.table.planner.connectors.CollectDynamicSink$CloseableRowIteratorWrapper.hasNext > tech.streamfusion.FlinkDecimalBooleanTryCastSqlHarnessTest.verify > tech.streamfusion.FlinkDecimalBooleanTryCastSqlHarnessTest.verify": 2.105696604,
+            "java.lang.Thread.sleep > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sleepBeforeRetry > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.next > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.nextResultFromFetcher > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.hasNext > org.apache.flink.table.planner.connectors.CollectDynamicSink$CloseableRowIteratorWrapper.hasNext > tech.streamfusion.NativeFailureParity.execute > tech.streamfusion.NativeFailureParity.execute": 1.303164275,
+            "java.lang.Thread.sleep > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sleepBeforeRetry > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.next > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.nextResultFromFetcher > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.hasNext > org.apache.flink.table.planner.connectors.CollectDynamicSink$CloseableRowIteratorWrapper.hasNext > tech.streamfusion.BuiltinFunctionParity.collect > tech.streamfusion.BuiltinFunctionParity.assertParity": 1.0011905840000002,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.environment.StreamExecutionEnvironment.executeAsync": 0.142180807,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sendRequest": 0.114988717,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire > java.util.concurrent.locks.AbstractQueuedSynchronizer.tryAcquireSharedNanos > scala.concurrent.impl.Promise$DefaultPromise.tryAwait > scala.concurrent.impl.Promise$DefaultPromise.ready > scala.concurrent.impl.Promise$DefaultPromise.result > scala.concurrent.Await$.$anonfun$result$1": 0.087410393
+          }
+        },
+        {
+          "class": "StatefulSqlRescaleTest",
+          "wait_seconds": {
+            "cluster_close": 3.7113006700000013,
+            "cluster_start": 0.043360547,
+            "other": 39.09166393099988
+          },
+          "main_execution_samples": {
+            "cluster_close": 1,
+            "cluster_start": 140,
+            "other": 797
+          },
+          "top_wait_stacks": {
+            "java.lang.Thread.sleep > tech.streamfusion.PortableSqlRecovery.awaitCompletedInput > tech.streamfusion.StatefulSqlRescaleTest.runStage > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.jvmOverFramesAndViewsAcrossBothDirections > jdk.internal.reflect.NativeMethodAccessorImpl.invoke0 > jdk.internal.reflect.NativeMethodAccessorImpl.invoke > jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 12.101910759999992,
+            "java.lang.Thread.sleep > tech.streamfusion.PortableSqlRecovery.awaitCompletedInput > tech.streamfusion.StatefulSqlRescaleTest.runStage > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario": 10.071911060999994,
+            "java.lang.Thread.sleep > tech.streamfusion.PortableSqlRecovery.awaitCompletedInput > tech.streamfusion.StatefulSqlRescaleTest.runStage > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.twoPhaseJvmStateAcrossBothDirections > jdk.internal.reflect.NativeMethodAccessorImpl.invoke0 > jdk.internal.reflect.NativeMethodAccessorImpl.invoke": 6.321795758999996,
+            "java.lang.Thread.sleep > tech.streamfusion.PortableSqlRecovery.awaitCompletedInput > tech.streamfusion.StatefulSqlRescaleTest.runStage > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.typedAndDistinctJvmStateAcrossBothDirections": 4.370720872999996,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.runtime.testutils.MiniClusterResource.after": 3.693681629000001,
+            "java.lang.Thread.sleep > tech.streamfusion.PortableSqlRecovery.awaitCompletedInput > tech.streamfusion.StatefulSqlRescaleTest.runStage > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.miniBatchJvmStateAcrossBothDirections > jdk.internal.reflect.NativeMethodAccessorImpl.invoke0": 3.0930461950000017,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.environment.StreamExecutionEnvironment.executeAsync": 0.773423574,
+            "java.lang.Thread.sleep > tech.streamfusion.StatefulSqlRescaleTest.runStage > tech.streamfusion.StatefulSqlRescaleTest.groupedScenario > tech.streamfusion.StatefulSqlRescaleTest.jvmOverFramesAndViewsAcrossBothDirections > jdk.internal.reflect.NativeMethodAccessorImpl.invoke0 > jdk.internal.reflect.NativeMethodAccessorImpl.invoke > jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke > java.lang.reflect.Method.invoke": 0.7077573580000001
+          }
+        },
+        {
+          "class": "FlinkJvmOverSqlHarnessTest",
+          "wait_seconds": {
+            "cluster_close": 5.399612505000003,
+            "cluster_start": 0.08740157600000001,
+            "collect_results": 62.90209371300008,
+            "other": 0.4867435479999999
+          },
+          "main_execution_samples": {
+            "cluster_close": 2,
+            "cluster_start": 164,
+            "collect_results": 2,
+            "other": 824
+          },
+          "top_wait_stacks": {
+            "java.lang.Thread.sleep > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sleepBeforeRetry > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.next > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.nextResultFromFetcher > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.hasNext > org.apache.flink.table.planner.connectors.CollectDynamicSink$CloseableRowIteratorWrapper.hasNext > tech.streamfusion.NativeFailureParity.execute > tech.streamfusion.NativeFailureParity.execute": 62.775666339000075,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.runtime.testutils.MiniClusterResource.after": 5.399612505000003,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.environment.StreamExecutionEnvironment.executeAsync": 0.323382407,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.graph.StreamGraph$UserDefinedObjectsHolder.serializeOperatorFactories": 0.120012776,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sendRequest": 0.076270767,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire > java.util.concurrent.locks.AbstractQueuedSynchronizer.tryAcquireSharedNanos > scala.concurrent.impl.Promise$DefaultPromise.tryAwait > scala.concurrent.impl.Promise$DefaultPromise.ready > scala.concurrent.impl.Promise$DefaultPromise.result > scala.concurrent.Await$.$anonfun$result$1": 0.061433175000000007,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.isJobTerminated": 0.050156607000000006,
+            "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire > java.util.concurrent.locks.AbstractQueuedSynchronizer.tryAcquireSharedNanos > java.util.concurrent.Semaphore.tryAcquire > org.apache.maven.surefire.booter.ForkedBooter.acquireOnePermit > org.apache.maven.surefire.booter.ForkedBooter.acknowledgedExit > org.apache.maven.surefire.booter.ForkedBooter.execute": 0.023259627
+          }
+        }
+      ],
+      "limits": "Recorded main-thread ThreadPark, JavaMonitorWait and ThreadSleep intervals only. These exclude unrecorded short waits, are not CPU time, do not measure all asynchronous startup, and precede the selected runtime settings. No fixture change or speedup is claimed."
+    }
   }
 }

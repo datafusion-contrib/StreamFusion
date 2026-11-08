@@ -693,6 +693,10 @@ build step. The cache action then reported the entry up to date instead of enric
 [The action's save logic](https://github.com/Swatinem/rust-cache/blob/d1527c8f67ef9af357290475d4af4b0fab8f12e0/src/save.ts)
 returns early on an exact hit. Keeping the producer scope consistent avoids that incomplete
 entry. `native-only` runs just this build/cache diagnostic without starting Java comparisons.
+The [warm-cache verification](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42506483948)
+on the corrected source restored the same key and completed Cargo in 29.50 seconds,
+rebuilding 42 of 639 units with no RocksDB units rebuilt. This measures dependency reuse;
+the Cargo duration excludes cache download and is not a repeated workflow comparison.
 
 The runtime comparison covers Flink 1.18/2.2 and JDK 11/17. It runs the unchanged OVER,
 decimal negate/absolute-value, string collection and stateful SQL rescaling classes with the
@@ -740,6 +744,50 @@ passed both instrumented modes. Its default run recorded 439.12 seconds of summe
 activity intervals across four JVMs; the first-tier run recorded no C2 events. This is activity
 attribution, not compiler CPU seconds or an instrumented speedup claim. Detailed counts,
 sample summaries and all timing trials are retained in the November 8 evidence file.
+
+All twelve runtime jobs in the [complete-matrix source run](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556204)
+passed. Summed runtime runner execution fell from 14.55 to 8.94 hours (38.5%); the longest
+runtime job fell from 103.6 to 78.2 minutes. The required runtime matrix remains twelve jobs:
+fork counts change Java processes within each runner. Grouped across all three shards per
+Flink/JDK combination, the class report multiset retains identical test, failure, error and
+skip counts, including the additional JVM-boundary verification on JDK 17.
+
+| Flink / JDK | Previous runner minutes | Updated runner minutes | Reduction |
+| --- | ---: | ---: | ---: |
+| 1.18 / 11 | 173.82 | 88.68 | 49.0% |
+| 1.18 / 17 | 192.40 | 110.18 | 42.7% |
+| 2.2 / 11 | 231.08 | 194.37 | 15.9% |
+| 2.2 / 17 | 275.50 | 143.38 | 48.0% |
+
+All twelve runners reported four CPUs, with zero swap usage in the recorded `vmstat`
+samples. These before/after hosted measurements include runner and cache variability;
+the alternating paired probes above separately test the selected settings. The parent
+workflow's savepoint jobs are still running, so these runtime results do not establish
+complete CI qualification or whole-workflow elapsed savings.
+
+Two further observations identify follow-up measurements without claiming an optimization.
+One completed runtime job compiled its 1,029 test sources three times, taking approximately
+10.01, 9.52 and 11.07 seconds; eliminating the later passes could address about 21 seconds
+in that observed job. Reanalysis of the earlier default-JVM JFR recordings found 64.98
+seconds of main-thread retry sleeps inside result collection and 80.72 seconds waiting on
+futures in the string-collection class. Recorded waits exclude short unrecorded waits,
+overlap asynchronous work and are not CPU time. They do not establish removable delay,
+safe fixture reuse, or a measured benefit from changing polling. No test fixture was changed.
+
+The next runtime investigation selects `runtime-hotspots` in the manually dispatched
+**CI startup profile** workflow. It selects the five slow aggregate/state and recursive-conversion classes from
+the completed Flink 2.2 runtime reports, retaining all 2,759 cases without skips. Both JDKs
+use their current first-tier compiler and worker settings. This is one instrumented
+attribution run, not a paired speedup measurement. Optional aggregate timers cover stock
+and native fixture planning and private metrics-cluster startup/close; JFR records execution
+samples, native stacks, compiler activity and sampled allocations. Ordinary tests leave
+these timers disabled. Successful profiles remove recordings and temporary fixture data.
+
+Supply a native-producing workflow run as `native_run`. The diagnostic verifies a successful
+producer in the same repository and unchanged native sources/toolchain before downloading
+its existing artifact, avoiding a duplicate native build. It has no push trigger and adds
+no required jobs. Runtime evidence for the preceding PR is retained separately while that
+PR's source head and required CI remain unchanged.
 
 The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
 4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.

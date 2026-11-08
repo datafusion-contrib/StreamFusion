@@ -69,6 +69,7 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
       RowType keyType)
       throws Exception {
     this.keyType = keyType;
+    long planningStarted = tech.streamfusion.CiFixtureTimings.start();
     var inputFields = new ArrayList<LogicalType>(keyType.getChildren());
     inputFields.add(new BigIntType());
     inputType = RowType.of(inputFields.toArray(new LogicalType[0]));
@@ -120,6 +121,7 @@ final class ManagedUdfGroupStockFixture implements AutoCloseable {
                     + keyColumns(keyType)
                     + ",fixture_history(v),COUNT(*) FROM fixture.db.input_table GROUP BY "
                     + keyColumns(keyType)));
+    tech.streamfusion.CiFixtureTimings.record("managed-udf.plan", planningStarted);
     var node =
         graph.getStreamNodes().stream()
             .filter(
