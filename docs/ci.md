@@ -247,8 +247,7 @@ the paired runtime diagnostic:
 | Flink / JDK | Fresh Surefire forks | Heap per fork |
 | --- | ---: | ---: |
 | 1.18 / 11 or 17 | 4 | 2 GiB |
-| 2.2 / 17 | 4 | 2 GiB |
-| 2.2 / 11 | 2 | 4 GiB |
+| 2.2 / 11 or 17 | 4 | 2 GiB |
 
 Every combination caps the configured Java heaps at 8 GiB in total. Native allocations,
 metaspace and VM overhead still need headroom; full CI validates the complete test selection.
@@ -267,8 +266,8 @@ without reflecting into Flink internals or evicting results during a scenario. C
 their shared launcher-session cluster and all within-class lifecycle, failure and recovery checks.
 The tradeoff is additional JVM and native-library startup per class;
 complete CI elapsed time, rather than local function throughput, measures that overhead.
-The 4 GiB per-fork cap also leaves room for the temporary copies made while checkpointing and serializing
-large binary collection results. The two configured heaps total at most 8 GiB; Arrow/native
+The aggregate heap cap also leaves room for the temporary copies made while checkpointing and serializing
+large binary collection results. The configured heaps total at most 8 GiB; Arrow/native
 allocations, Maven, containers and the operating system still need separate headroom.
 A local JDK 11/Flink 1.18 diagnostic ran the same 447 cases without skips or failures in
 354.31 seconds with one fork and 239.08 seconds with two. Both runs use fresh processes per
@@ -735,9 +734,9 @@ uninstrumented timing jobs. Medians across three alternating pairs:
 | 2.2 / 11 | 291.44 s | 293.22 s | -0.6% | +8.2% |
 | 2.2 / 17 | 251.09 s | 213.19 s | 15.1% | +8.3% |
 
-Flink 2.2/JDK 11 therefore retains two 4 GiB forks. Its string collection class alone took
+The initial smaller probe selected two 4 GiB forks for Flink 2.2/JDK 11. Its string collection class alone took
 278.29 seconds with two forks and 287.18 with four; the other classes also slowed under four.
-The other combinations use four 2 GiB forks. These observations measure the selected test mix,
+The other combinations selected four 2 GiB forks. These observations measure the selected test mix,
 not the complete matrix. The timing workflow's separate initial JFR export failed after tests
 passed; [the corrected JFR-only run](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42495045635)
 passed both instrumented modes. Its default run recorded 439.12 seconds of summed C2 compiler
@@ -820,6 +819,17 @@ earlier probe: its JDK 11 elapsed time was dominated by the string-collection cl
 The completed full Flink 2.2/JDK 11 jobs recorded 46.5–52.9% mean idle CPU in 30-second
 `vmstat` samples. That observation motivates this comparison but does not prove that
 additional processes improve its elapsed time or CPU cost.
+
+The [broader worker comparison](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42513596995)
+completed all four trials with identical individual case outcomes: 11,036 invocations passed,
+with no failures or skips. Two alternating pairs on the same JDK 11 runner measured median
+elapsed time of 1,396.32 seconds with two fresh 4 GiB forks and 1,070.20 seconds with four
+fresh 2 GiB forks, a 23.4% reduction. Child CPU time increased from 2,210.25 to 2,920.23
+seconds (32.1%). Each individual class ran slower with four workers; additional overlap
+shortened overall completion. The required runtime matrix now selects four 2 GiB workers
+for Flink 2.2/JDK 11 as well, retaining the same twelve jobs and total Java heap budget.
+The complete required matrix must qualify this setting. These gains are not multiplied
+with the separate fixture-cache measurements.
 
 JDK 11 compilation recordings identify the compiler by `compileLevel`; newer JDKs expose
 the compiler name directly. The reader supports both schemas. Verified test outcomes,

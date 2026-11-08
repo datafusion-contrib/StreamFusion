@@ -765,5 +765,254 @@
     ],
     "rejected": "protoc.skip=true drops the generated test-source root and caused a real dependent-source compilation failure; it is not used.",
     "limits": "The staleness flag is enabled only after a full compile in the same immutable CI checkout/job. Normal initial compilation remains responsible for proto and generator-version changes."
+  },
+  "runtime_slow_mix_workers": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42513596995",
+    "sha": "d595281d79335801f4c3ea132d6250ab10ddc863",
+    "conclusion": "success",
+    "config": "Two alternating pairs, first-tier compiler fixed, two fresh 4 GiB vs four fresh 2 GiB forks. No JFR, fixture timers or fixture-plan caching. Same four-CPU runner and total 8 GiB Java heap budget.",
+    "summary": {
+      "startup": {
+        "elapsed_seconds": {
+          "median": 1396.321914227,
+          "min": 1394.2829773199999,
+          "max": 1398.3608511339999
+        },
+        "cpu_seconds": {
+          "median": 2210.2546220000004,
+          "min": 2207.568837,
+          "max": 2212.9404070000005
+        }
+      },
+      "parallel": {
+        "elapsed_seconds": {
+          "median": 1070.2023683135003,
+          "min": 1068.3330763660001,
+          "max": 1072.0716602610003
+        },
+        "cpu_seconds": {
+          "median": 2920.2271850000006,
+          "min": 2907.5823130000003,
+          "max": 2932.8720570000005
+        }
+      }
+    },
+    "elapsed_reduction_percent": 23.35561324295613,
+    "cpu_increase_percent": 32.12175447720884,
+    "trials": [
+      {
+        "mode": "startup",
+        "pair": 1,
+        "line": "2.2",
+        "forks": 2,
+        "heap": "4g",
+        "instrumented": false,
+        "elapsed_seconds": 1394.2829773199999,
+        "cpu_seconds": 2207.568837,
+        "outcomes": {
+          "tests": 2759,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 385.871
+          },
+          "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+            "tests": 120,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 654.895
+          },
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 427.357
+          },
+          "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+            "tests": 532,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 473.424
+          },
+          "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+            "tests": 290,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 485.452
+          }
+        }
+      },
+      {
+        "mode": "parallel",
+        "pair": 1,
+        "line": "2.2",
+        "forks": 4,
+        "heap": "2g",
+        "instrumented": false,
+        "elapsed_seconds": 1072.0716602610003,
+        "cpu_seconds": 2932.8720570000005,
+        "outcomes": {
+          "tests": 2759,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+            "tests": 120,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 902.805
+          },
+          "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+            "tests": 532,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 694.648
+          },
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 489.382
+          },
+          "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+            "tests": 290,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 759.449
+          },
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 574.551
+          }
+        }
+      },
+      {
+        "mode": "parallel",
+        "pair": 2,
+        "line": "2.2",
+        "forks": 4,
+        "heap": "2g",
+        "instrumented": false,
+        "elapsed_seconds": 1068.3330763660001,
+        "cpu_seconds": 2907.5823130000003,
+        "outcomes": {
+          "tests": 2759,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+            "tests": 290,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 751.677
+          },
+          "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+            "tests": 532,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 682.649
+          },
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 488.456
+          },
+          "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+            "tests": 120,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 898.563
+          },
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 571.648
+          }
+        }
+      },
+      {
+        "mode": "startup",
+        "pair": 2,
+        "line": "2.2",
+        "forks": 2,
+        "heap": "4g",
+        "instrumented": false,
+        "elapsed_seconds": 1398.3608511339999,
+        "cpu_seconds": 2212.9404070000005,
+        "outcomes": {
+          "tests": 2759,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 389.962
+          },
+          "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+            "tests": 290,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 493.526
+          },
+          "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+            "tests": 532,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 471.951
+          },
+          "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+            "tests": 120,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 652.523
+          },
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 424.931
+          }
+        }
+      }
+    ],
+    "limits": "Every individual class slowed under four forks, while additional overlap shortened aggregate completion. Earlier four-class probe was dominated by string-collection time and did not measure this broader worker throughput. Full required matrix must qualify the chosen setting; gains are not multiplied with separate cache probes."
   }
 }
