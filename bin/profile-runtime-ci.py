@@ -68,7 +68,7 @@ def outcomes(reports, suffix, line, selection=CLASSES):
     return cases, dict(totals), classes
 
 
-def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False):
+def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False, slow_mix=False):
     if "TieredStopAtLevel" in os.environ.get("JAVA_TOOL_OPTIONS", ""):
         raise ValueError("Remove inherited TieredStopAtLevel before the default trial")
     output.mkdir(parents=True, exist_ok=False)
@@ -77,7 +77,7 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
     reports = ROOT / "streamfusion-runtime/target/surefire-reports"
     trials = []
     expected = None
-    selection = HOTSPOTS if hotspots else CLASSES
+    selection = HOTSPOTS if hotspots or slow_mix else CLASSES
     modes = ("current",) if hotspots else (("startup", "parallel") if parallel else ("default", "startup"))
     try:
         java_home = Path(os.environ["JAVA_HOME"]) if jfr else None
@@ -156,14 +156,15 @@ def main():
     modes.add_argument("--parallel", action="store_true", help="Compare two 4 GiB vs four 2 GiB fresh C1 forks")
     modes.add_argument("--jfr", action="store_true", help="Capture one instrumented default/C1 pair; not timing evidence")
     modes.add_argument("--hotspots", action="store_true", help="Attribute five measured slow classes under current CI settings")
+    parser.add_argument("--slow-mix", action="store_true", help="Use the five measured slow classes for paired comparisons")
     args = parser.parse_args()
-    if args.hotspots and args.line != "2.2":
+    if (args.hotspots or args.slow_mix) and args.line != "2.2":
         parser.error("The measured hotspot inventory requires Flink 2.2")
     if args.repetitions < 2 and not (args.jfr or args.hotspots):
         parser.error("Use at least two pairs to alternate execution order")
     if (args.jfr or args.hotspots) and args.repetitions != 1:
         parser.error("Use --repetitions 1 for the separate JFR attribution pass")
-    profile(args.output.resolve(), args.repetitions, args.line, args.parallel, args.jfr or args.hotspots, args.hotspots)
+    profile(args.output.resolve(), args.repetitions, args.line, args.parallel, args.jfr or args.hotspots, args.hotspots, args.slow_mix)
 
 
 if __name__ == "__main__":

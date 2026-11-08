@@ -11,6 +11,11 @@ on:
       native_run:
         description: 'Existing native-producing run for runtime-hotspots'
         type: string
+      hotspot_mode:
+        description: 'Attribute slow classes or compare their worker counts'
+        type: choice
+        options: [attribution, parallel]
+        default: attribution
 
 permissions:
   contents: read
@@ -20,7 +25,7 @@ env:
   RUST_BACKTRACE: '1'
 
 concurrency:
-  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}
+  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}-${{ inputs.hotspot_mode }}
   cancel-in-progress: true
 
 jobs:
@@ -153,11 +158,11 @@ jobs:
   hotspots:
     if: inputs.suite == 'runtime-hotspots' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        jdk: ['11', '17']
+        jdk: ${{ fromJSON(inputs.hotspot_mode == 'parallel' && '["11"]' || '["11", "17"]') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -205,11 +210,20 @@ jobs:
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
           mvn -B -ntp -pl streamfusion-runtime -am test-compile -Dnative.build.skip=true
       - name: Attribute measured slow classes under current CI worker settings
-        run: python3 bin/profile-runtime-ci.py --line 2.2 --repetitions 1 --hotspots --output "$RUNNER_TEMP/runtime-hotspots"
+        env:
+          HOTSPOT_MODE: ${{ inputs.hotspot_mode }}
+        run: |
+          args=(--line 2.2 --repetitions 1 --hotspots)
+          if [[ "$HOTSPOT_MODE" == 'parallel' ]]; then
+            args=(--line 2.2 --repetitions 2 --slow-mix --parallel)
+          fi
+          nproc
+          free -m
+          python3 bin/profile-runtime-ci.py "${args[@]}" --output "$RUNNER_TEMP/runtime-hotspots"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: runtime-hotspots-jdk${{ matrix.jdk }}
+          name: runtime-hotspots-${{ inputs.hotspot_mode }}-jdk${{ matrix.jdk }}
           path: |
             ${{ runner.temp }}/runtime-hotspots/
             streamfusion-runtime/target/surefire-reports/*runtime-profile*

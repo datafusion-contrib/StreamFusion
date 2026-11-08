@@ -789,6 +789,15 @@ its existing artifact, avoiding a duplicate native build. It has no push trigger
 no required jobs. Runtime evidence for the preceding PR is retained separately while that
 PR's source head and required CI remain unchanged.
 
+Set `hotspot_mode=parallel` to run two alternating pairs on JDK 11 using these five
+classes, with first-tier compilation fixed and two 4 GiB versus four 2 GiB workers.
+These comparisons have no JFR or fixture-timing instrumentation and must retain identical
+individual outcomes across all four trials. The broader mix addresses a limitation of the
+earlier probe: its JDK 11 elapsed time was dominated by the string-collection class.
+The completed full Flink 2.2/JDK 11 jobs recorded 46.5–52.9% mean idle CPU in 30-second
+`vmstat` samples. That observation motivates this comparison but does not prove that
+additional processes improve its elapsed time or CPU cost.
+
 The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
 4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.
 It retains the exact cases, outcomes and total 8 GiB heap cap; additional VM overhead is still
