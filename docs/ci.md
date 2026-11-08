@@ -241,10 +241,21 @@ fixture for every declared module tag and one untagged fixture, requiring each t
 
 ## Java test memory budget
 
-Each ordinary Java matrix job runs at most two Surefire forks at a time with a 4 GiB heap each,
-including the second JVM-boundary/cache verification phase. CI disables fork reuse, so each
-test class gets a fresh JVM. Local Maven defaults keep fork reuse enabled; the CI invocation
-sets `-Dsf.testForks=2 -Dsf.testReuseForks=false` explicitly. The default 8 GiB per-fork heap
+The ordinary Java test step uses first-tier compilation and the worker settings measured by
+the paired runtime diagnostic:
+
+| Flink / JDK | Fresh Surefire forks | Heap per fork |
+| --- | ---: | ---: |
+| 1.18 / 11 or 17 | 4 | 2 GiB |
+| 2.2 / 17 | 4 | 2 GiB |
+| 2.2 / 11 | 2 | 4 GiB |
+
+Every combination caps the configured Java heaps at 8 GiB in total. Native allocations,
+metaspace and VM overhead still need headroom; full CI validates the complete test selection.
+The test step prints available processors and memory and samples `vmstat` throughout execution.
+The separate JVM-boundary/cache verification phase retains two 4 GiB forks and usual compilation.
+CI disables fork reuse, so each test class gets a fresh JVM. Local Maven defaults retain fork
+reuse and usual compiler settings. The default 8 GiB per-fork heap
 combined with CPU-based fork counts leaves insufficient predictable headroom for Arrow buffers, native
 operators, embedded clusters and the Maven process on hosted runners.
 
@@ -578,7 +589,8 @@ and the isolated stock/native workers. These short-lived workers repeatedly pay 
 optimizing compilation and exit before amortizing it. First-tier compilation reduces that
 startup CPU cost while preserving fresh processes, both backends, both directions, every
 parameterized invocation, native execution evidence, checkpoints and rescaling assertions.
-Ordinary runtime, upstream and release/benchmark jobs retain their usual JVM compilation.
+The ordinary runtime test step also uses first-tier compilation after its separate paired
+qualification. Upstream, JVM-boundary and release/benchmark jobs retain usual compilation.
 This is a CI scheduling optimization, not a SQL throughput result. See the
 [CI profile](benchmarks/ci-profile-20261107.json) for measurements and their limits.
 
@@ -658,9 +670,9 @@ runtime, connector, image, Rust and savepoint job, was:
 | Canonical runner execution | 54.23 h | 27.19 h | 49.9% |
 | Longest canonical job | 141.4 min | 70.5 min | 50.2% |
 
-Ordinary Java jobs now consume 14.55 runner-hours and the remaining jobs 3.00 hours.
-The longest ordinary Java job took 103.6 minutes. These tests retain their usual JVM settings
-and are the largest remaining execution cost. Elapsed time also includes shared runner capacity and
+That source run's ordinary Java jobs consumed 14.55 runner-hours and the remaining jobs 3.00 hours.
+The longest ordinary Java job took 103.6 minutes under the previous runtime JVM settings.
+Elapsed time also includes shared runner capacity and
 dependency delays. These results measure CI turnaround and execution cost, not SQL throughput.
 
 The subsequent documentation-only evidence update exercised coverage reuse against that fully
@@ -676,7 +688,7 @@ Both build the exact commit's debug core library once.
 
 The runtime comparison covers Flink 1.18/2.2 and JDK 11/17. It runs the unchanged OVER,
 decimal negate/absolute-value, string collection and stateful SQL rescaling classes with the
-same two fresh 4 GiB Surefire forks as runtime CI. Three pairs alternate default and first-tier
+two fresh 4 GiB Surefire forks used by the runtime baseline. Three pairs alternate default and first-tier
 compilation on each runner. Every trial must retain all 305 discovered cases, including exactly
 two existing skips on Flink 2.2 or 58 on Flink 1.18. The profiler compares individual case names
 and outcomes as a multiset, rejects missing classes, new skips, failures or inconsistent reports,
@@ -699,6 +711,27 @@ with identical individual outcomes between settings. Uninstrumented medians acro
 The decimal negate/absolute-value class showed little elapsed change, while other classes
 benefited more. These measurements establish improvements for the selected test mix and do
 not establish a full-workflow improvement; the complete CI run remains necessary.
+
+The subsequent [concurrency comparison](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42492916674)
+held first-tier compilation fixed and retained the same exact invocations/outcomes in all four
+uninstrumented timing jobs. Medians across three alternating pairs:
+
+| Flink / JDK | Two 4 GiB forks | Four 2 GiB forks | Elapsed reduction | CPU change |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18 / 11 | 162.83 s | 108.67 s | 33.3% | +19.1% |
+| 1.18 / 17 | 207.10 s | 138.82 s | 33.0% | +9.9% |
+| 2.2 / 11 | 291.44 s | 293.22 s | -0.6% | +8.2% |
+| 2.2 / 17 | 251.09 s | 213.19 s | 15.1% | +8.3% |
+
+Flink 2.2/JDK 11 therefore retains two 4 GiB forks. Its string collection class alone took
+278.29 seconds with two forks and 287.18 with four; the other classes also slowed under four.
+The other combinations use four 2 GiB forks. These observations measure the selected test mix,
+not the complete matrix. The timing workflow's separate initial JFR export failed after tests
+passed; [the corrected JFR-only run](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42495045635)
+passed both instrumented modes. Its default run recorded 439.12 seconds of summed C2 compiler
+activity intervals across four JVMs; the first-tier run recorded no C2 events. This is activity
+attribution, not compiler CPU seconds or an instrumented speedup claim. Detailed counts,
+sample summaries and all timing trials are retained in the November 8 evidence file.
 
 The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
 4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.
