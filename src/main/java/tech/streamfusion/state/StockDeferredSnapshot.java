@@ -12,17 +12,62 @@ import org.apache.flink.util.function.SupplierWithException;
 
 /** Runs existing stock-state adapters against an independently owned native read view. */
 public final class StockDeferredSnapshot implements FullSnapshotResources<RowData> {
+  /** Handle ownership stays under the snapshot monitor, including failed asynchronous creation. */
+  public static final class NativeReader implements AutoCloseable {
+    private long handle;
+    private final SupplierWithException<Long, Exception> factory;
+    private final java.util.function.LongConsumer dispose;
+    private boolean closed;
+
+    private NativeReader(
+        long handle,
+        SupplierWithException<Long, Exception> factory,
+        java.util.function.LongConsumer dispose) {
+      this.handle = handle;
+      this.factory = factory;
+      this.dispose = dispose;
+    }
+
+    public static NativeReader captured(long handle, java.util.function.LongConsumer dispose) {
+      if (handle == 0) throw new IllegalArgumentException("captured native handle is missing");
+      return new NativeReader(handle, null, dispose);
+    }
+
+    public static NativeReader deferred(
+        SupplierWithException<Long, Exception> factory, java.util.function.LongConsumer dispose) {
+      return new NativeReader(0, factory, dispose);
+    }
+
+    private long handle() throws Exception {
+      if (closed) throw new IllegalStateException("native canonical reader is closed");
+      if (handle == 0) {
+        handle = factory.get();
+        if (handle == 0)
+          throw new IllegalStateException("native canonical reader returned no handle");
+      }
+      return handle;
+    }
+
+    @Override
+    public void close() {
+      if (closed) return;
+      closed = true;
+      long owned = handle;
+      handle = 0;
+      if (owned != 0) dispose.accept(owned);
+    }
+  }
+
   private final TypeSerializer<RowData> keys;
   private final KeyGroupRange groups;
   private final StockStateContract contract;
-  private final long handle;
+  private final NativeReader reader;
   private final long snapshot;
   private final java.util.concurrent.atomic.AtomicBoolean released =
       new java.util.concurrent.atomic.AtomicBoolean();
   private final boolean persistent;
   private final SupplierWithException<CanonicalProjection, Exception> factory;
   private final AutoCloseable owner;
-  private final Runnable prepare;
   private CanonicalProjection projection;
   private FullSnapshotResources<RowData> converted;
   private boolean closed;
@@ -50,21 +95,19 @@ public final class StockDeferredSnapshot implements FullSnapshotResources<RowDat
       TypeSerializer<RowData> keys,
       KeyGroupRange groups,
       StockStateContract contract,
-      long handle,
+      NativeReader reader,
       long snapshot,
       boolean persistent,
       SupplierWithException<CanonicalProjection, Exception> factory,
-      AutoCloseable owner,
-      Runnable prepare) {
+      AutoCloseable owner) {
     this.keys = keys.duplicate();
     this.groups = groups;
     this.contract = contract;
-    this.handle = handle;
+    this.reader = reader;
     this.snapshot = snapshot;
     this.persistent = persistent;
     this.factory = factory;
     this.owner = owner;
-    this.prepare = prepare;
   }
 
   private synchronized FullSnapshotResources<RowData> resources() {
@@ -77,8 +120,7 @@ public final class StockDeferredSnapshot implements FullSnapshotResources<RowDat
             snapshot,
             () -> {
               try {
-                prepare.run();
-                contract.exportState(backend, handle, persistent);
+                contract.exportState(backend, reader.handle(), persistent);
               } catch (Exception failure) {
                 throw new org.apache.flink.util.FlinkRuntimeException(failure);
               }
@@ -126,7 +168,9 @@ public final class StockDeferredSnapshot implements FullSnapshotResources<RowDat
       closed = true;
       Throwable failure = null;
       for (AutoCloseable resource :
-          new AutoCloseable[] {converted == null ? null : converted::release, projection, owner}) {
+          new AutoCloseable[] {
+            converted == null ? null : converted::release, projection, reader, owner
+          }) {
         try {
           if (resource != null) resource.close();
         } catch (Throwable cleanup) {

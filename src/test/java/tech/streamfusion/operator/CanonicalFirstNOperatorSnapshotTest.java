@@ -195,6 +195,7 @@ class CanonicalFirstNOperatorSnapshotTest {
     try (var source = nativeHarness(rocks)) {
       ((NativeOperator) source.getOperator()).setStockStateContract(new DeferredContract());
       source.open();
+      NativeOperator.readerConstructions.set(0);
       push(source, List.of(GenericRowData.of(1L, 10L), GenericRowData.of(2L, 20L)));
       var first = capture(source, 10);
       org.apache.flink.streaming.api.operators.OperatorSnapshotFutures second = null;
@@ -203,8 +204,13 @@ class CanonicalFirstNOperatorSnapshotTest {
         second = capture(source, 11);
         push(source, List.of(GenericRowData.of(1L, 50L), GenericRowData.of(2L, 60L)));
         assertEquals(0, DeferredContract.exports.get(), "capture must not run the adapter");
+        assertEquals(
+            0,
+            NativeOperator.readerConstructions.get(),
+            "capture must not construct a RocksDB decoder");
         var later = tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(second);
         var earlier = tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(first);
+        assertEquals(rocks ? 2 : 0, NativeOperator.readerConstructions.get());
         assertEquals(2, DeferredContract.exports.get());
         try (var before = harness(true, false, true, 0);
             var after = harness(true, false, true, 0)) {
@@ -357,6 +363,15 @@ class CanonicalFirstNOperatorSnapshotTest {
 
   private static final class NativeOperator extends NativeColumnarFirstNOperator {
     private boolean nativeCheckpoint;
+    private static final java.util.concurrent.atomic.AtomicInteger readerConstructions =
+        new java.util.concurrent.atomic.AtomicInteger();
+
+    @Override
+    protected long createRocksDBHandle(
+        tech.streamfusion.state.RocksDBNativeStateSupport support, byte[][] restored) {
+      readerConstructions.incrementAndGet();
+      return super.createRocksDBHandle(support, restored);
+    }
 
     NativeOperator() {
       super(new int[] {0}, new int[] {Native.STOCK_KEY_PROJECTION, -1}, 3, true, 0, 128);

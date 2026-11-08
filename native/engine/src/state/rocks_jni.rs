@@ -1049,7 +1049,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBKeepFirstDedup
                 .with_state_ttl(state_ttl_millis)
                 .with_store(store);
             dedup.import_partitions(&restored)?;
-            dedup.adopt_store_ttl(now_millis)?;
+            if !crate::state::rocks_store::in_frozen_scope() {
+                dedup.adopt_store_ttl(now_millis)?;
+            }
             dedup.with_read_through_budget(memory_budget_bytes)
         });
         boxed_or_throw(&mut env, dedup)

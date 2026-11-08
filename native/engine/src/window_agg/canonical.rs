@@ -346,25 +346,27 @@ impl TumblingAggregator {
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             self.write_through_store()?;
-            let groups = self.store.as_ref().unwrap().scan_all()?;
             let parser = self.key_converter.as_ref().map(RowConverter::parser);
-            for chunk in groups.chunks(CHUNK_ROWS) {
-                let rows = chunk
-                    .iter()
-                    .map(|group| StateRow {
-                        start: group.start,
-                        end: group.end,
-                        key: parser
-                            .as_ref()
-                            .expect("persisted window key converter")
-                            .parse(&group.key)
-                            .owned(),
-                        state: group.state.clone(),
-                    })
-                    .collect::<Vec<_>>();
-                accept(self.canonical_rows(&rows)?)?;
-            }
-            return Ok(());
+            return self
+                .store
+                .as_ref()
+                .unwrap()
+                .visit_groups(CHUNK_ROWS, |chunk| {
+                    let rows = chunk
+                        .into_iter()
+                        .map(|group| StateRow {
+                            start: group.start,
+                            end: group.end,
+                            key: parser
+                                .as_ref()
+                                .expect("persisted window key converter")
+                                .parse(&group.key)
+                                .owned(),
+                            state: group.state,
+                        })
+                        .collect::<Vec<_>>();
+                    accept(self.canonical_rows(&rows)?)
+                });
         }
         let mut rows = Vec::with_capacity(CHUNK_ROWS);
         let key_types = self.key_types.clone();

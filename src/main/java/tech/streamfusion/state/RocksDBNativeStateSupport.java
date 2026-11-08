@@ -25,19 +25,25 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
   private final boolean aligned;
   private final long stateTtlMillis;
   private final NativeRocksSharedResources.Lease sharedResources;
-  private boolean canonicalReadView;
 
   private RocksDBNativeStateSupport(
       RocksDBNativeKeyedStateBackend<?> backend, long stateTtlMillis) {
+    this(backend, stateTtlMillis, false);
+  }
+
+  private RocksDBNativeStateSupport(
+      RocksDBNativeKeyedStateBackend<?> backend, long stateTtlMillis, boolean canonicalReader) {
     this.backend = backend;
     this.stateTtlMillis = stateTtlMillis;
-    List<RocksDBRestoredSource> sources = backend.restoredSources();
-    this.sourceDirectories = new String[sources.size()];
-    this.sourceSnapshotTokens = new String[sources.size()];
+    List<RocksDBRestoredSource> sources = canonicalReader ? List.of() : backend.restoredSources();
+    this.sourceDirectories =
+        canonicalReader ? new String[] {backend.tableDirectory()} : new String[sources.size()];
+    this.sourceSnapshotTokens = canonicalReader ? new String[] {"0"} : new String[sources.size()];
     this.aligned =
-        sources.size() == 1
-            && sources.get(0).keyGroupStart() == backend.getKeyGroupRange().getStartKeyGroup()
-            && sources.get(0).keyGroupEnd() == backend.getKeyGroupRange().getEndKeyGroup();
+        canonicalReader
+            || sources.size() == 1
+                && sources.get(0).keyGroupStart() == backend.getKeyGroupRange().getStartKeyGroup()
+                && sources.get(0).keyGroupEnd() == backend.getKeyGroupRange().getEndKeyGroup();
     for (int i = 0; i < sources.size(); i++) {
       sourceDirectories[i] = sources.get(i).directory();
       sourceSnapshotTokens[i] = sources.get(i).snapshotToken();
@@ -83,13 +89,9 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
     return null;
   }
 
-  public long createCanonicalHandle(long snapshot, java.util.function.LongSupplier factory) {
-    try {
-      canonicalReadView = true;
-      return Native.withCanonicalDatabases(snapshot, factory);
-    } finally {
-      canonicalReadView = false;
-    }
+  /** Immutable constructor arguments and an independent shared-cache lease for a pinned reader. */
+  public RocksDBNativeStateSupport canonicalReader() {
+    return new RocksDBNativeStateSupport(backend, stateTtlMillis, true);
   }
 
   public AutoCloseable retainCanonicalReader() throws java.io.IOException {
@@ -117,11 +119,11 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
   }
 
   public String[] sourceDirectories() {
-    return canonicalReadView ? new String[] {tableDirectory()} : sourceDirectories;
+    return sourceDirectories;
   }
 
   public String[] sourceSnapshotTokens() {
-    return canonicalReadView ? new String[] {"0"} : sourceSnapshotTokens;
+    return sourceSnapshotTokens;
   }
 
   /**
@@ -129,7 +131,7 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
    * wholesale file-adoption fast path; anything else clips by key-group range at recovery.
    */
   public boolean aligned() {
-    return canonicalReadView || aligned;
+    return aligned;
   }
 
   /**

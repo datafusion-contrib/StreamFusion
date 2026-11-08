@@ -74,8 +74,12 @@ stock-state adapters on Flink's asynchronous writer thread. Each savepoint owns 
 native reader and a temporary stock-schema RocksDB backend, including disk-backed timer queues.
 This reuses the qualified map/list/timer conversion logic instead of duplicating every layout in a
 second streaming codec. It adds temporary disk I/O compared with the direct value-state cursors.
-The captured decoder cannot modify live state; TTL compaction retains entries until the last pinned
-reader releases its view, and each reader uses its own captured clock.
+The barrier pins the databases and immutable reader configuration. Native reader construction,
+metadata hydration and stock conversion all run on the asynchronous writer thread; no restore
+constructor or TTL adoption scan runs at capture. Reader configuration and its shared-cache lease
+are independent of the live operator. The captured decoder cannot modify live state; TTL compaction
+retains entries until the last pinned reader releases its view. Each reader uses the clock frozen
+with that view, even if input advances the live clock before the reader opens.
 
 Memory-backed operators capture independent native state graphs before returning from the barrier.
 They copy mutable maps and counters and share immutable Arrow buffers and row payloads. Windows
@@ -98,6 +102,10 @@ uses a captured state iterator, preserving serializers and the caller's key cont
 collecting every key.
 
 The direct cursors bound decoded working memory by the current frame/entry and owned key groups.
+Fixed-window and session exports share the pinned batch visitor, with both row and byte limits
+before decoding. Fixed-window export no longer collects every persisted group. An individual
+oversized value remains the lower bound on working memory. Receiver failure and cancellation
+release the visitor; overlapping live writes and compaction do not change its captured version.
 The general adapters retain their existing per-key and inventory working sets; very large individual
 values and these working sets require separate qualification. Shared capture and timer controls pass
 on both releases, with representative operator matrices and isolated First-N, grouped arithmetic,

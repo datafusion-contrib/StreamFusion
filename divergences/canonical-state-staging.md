@@ -14,8 +14,10 @@ memory-pool disposal while asynchronous readers remain. This follows Flink's sna
 
 The other RocksDB contracts also pin native database views, but reuse their existing stock-state
 adapters on the asynchronous writer thread. Their savepoint owns an independent temporary stock
-RocksDB view for map/list/timer construction. The captured native decoder rejects writes, shares
-the original database's lifetime, and isolates its clock from the running operator. Native TTL
+RocksDB view for map/list/timer construction. The barrier captures database pins and immutable
+reader arguments; opening native decoders, hydrating metadata and converting stock state happen on
+the asynchronous writer thread. The reader owns a separate shared-cache lease. The captured native
+decoder rejects writes, shares the original database's lifetime, and uses the clock frozen at capture. Native TTL
 compaction retains pinned entries until all readers release them.
 
 Memory capture copies mutable native state while sharing immutable buffers and payloads. Window

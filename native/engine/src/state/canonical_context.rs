@@ -92,12 +92,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_withCanonicalDatabases<'loc
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let frozen = unsafe { &*(handle as *const std::sync::Arc<CanonicalContext>) };
-        frozen.with(
-            || match env.call_method(&factory, "getAsLong", "()J", &[]) {
+        frozen.with(|| {
+            if let Err(error) = check_cancelled() {
+                let _ = env.throw_new("tech/streamfusion/NativeException", error.to_string());
+                return 0;
+            }
+            match env.call_method(&factory, "getAsLong", "()J", &[]) {
                 Ok(value) => value.j().expect("canonical constructor result"),
                 Err(_) => 0,
-            },
-        )
+            }
+        })
     })
 }
 

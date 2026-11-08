@@ -446,6 +446,41 @@ impl RocksWindowAggStore {
         self.into_groups(groups)
     }
 
+    pub(crate) fn visit_groups(
+        &self,
+        chunk_rows: usize,
+        mut accept: impl FnMut(Vec<StoredWindowGroup>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| {
+                key.len() >= 4
+                    && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0
+                    && (!self.shared_slices
+                        || key.len() <= KEY_PREFIX_LEN
+                        || key[KEY_PREFIX_LEN] == 0)
+            },
+            |entries| {
+                let mut rows = Vec::with_capacity(entries.len());
+                let key_offset = KEY_PREFIX_LEN + usize::from(self.shared_slices);
+                for (key, value) in entries {
+                    if key.len() < key_offset || value.len() < 8 {
+                        return Err(DataFusionError::Execution(
+                            "invalid persisted window group".into(),
+                        ));
+                    }
+                    rows.push((
+                        window_end_from(&key[4..KEY_PREFIX_LEN]),
+                        i64::from_le_bytes(value[..8].try_into().unwrap()),
+                        key[key_offset..].into(),
+                        value[8..].into(),
+                    ));
+                }
+                accept(self.into_groups(rows)?)
+            },
+        )
+    }
+
     fn into_groups(
         &self,
         rows: Vec<(i64, i64, Box<[u8]>, Box<[u8]>)>,
@@ -605,6 +640,39 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    #[test]
+    fn canonical_groups_are_streamed_in_bounded_chunks_and_retry_after_receiver_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = test_config("bounded-canonical");
+        config.table_dir = directory.path().to_string_lossy().into_owned();
+        let mut store =
+            RocksWindowAggStore::create(config.clone(), &[DataType::Int64], 0..=127).unwrap();
+        let groups = (0..2051)
+            .map(|i| ((i % 128) as i32, 100, 0, i, i))
+            .collect::<Vec<_>>();
+        put_groups(&mut store, &groups);
+        assert!(store
+            .visit_groups(31, |_| Err(DataFusionError::Execution(
+                "receiver stopped".into()
+            )))
+            .is_err());
+        let mut count = 0;
+        let mut total = 0;
+        store
+            .visit_groups(31, |rows| {
+                assert!(rows.len() <= 31);
+                count += rows.len();
+                total += sums(&rows).iter().sum::<i64>();
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(count, groups.len());
+        assert_eq!(total, (0..2051).sum::<i64>());
+        drop(store);
+        let reopened = RocksWindowAggStore::create(config, &[DataType::Int64], 0..=127).unwrap();
+        assert_eq!(reopened.scan_all().unwrap().len(), groups.len());
     }
 
     #[test]

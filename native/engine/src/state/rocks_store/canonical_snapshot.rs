@@ -19,6 +19,20 @@ impl RocksReadSnapshot {
         &mut self,
         accept: impl Fn(&[u8]) -> bool,
     ) -> Result<Vec<(Box<[u8]>, Box<[u8]>)>, DataFusionError> {
+        self.next_batch_limited(1024, 4 * 1024 * 1024, accept)
+    }
+
+    pub(crate) fn next_batch_limited(
+        &mut self,
+        max_rows: usize,
+        max_bytes: usize,
+        accept: impl Fn(&[u8]) -> bool,
+    ) -> Result<Vec<(Box<[u8]>, Box<[u8]>)>, DataFusionError> {
+        if max_rows == 0 || max_bytes == 0 {
+            return Err(DataFusionError::Execution(
+                "canonical scan requires positive bounds".into(),
+            ));
+        }
         if self.finished {
             return Ok(Vec::new());
         }
@@ -29,6 +43,7 @@ impl RocksReadSnapshot {
         let mut rows = Vec::new();
         let mut bytes = 0;
         for entry in self.view.iterator(mode) {
+            database::check_cancelled()?;
             let (key, value) = entry.map_err(re)?;
             if after
                 .as_ref()
@@ -42,7 +57,7 @@ impl RocksReadSnapshot {
             bytes += key.len() + value.len();
             self.after = Some(key.to_vec());
             rows.push((key, value));
-            if rows.len() == 1024 || bytes >= 4 * 1024 * 1024 {
+            if rows.len() == max_rows || bytes >= max_bytes {
                 break;
             }
         }

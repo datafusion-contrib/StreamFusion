@@ -368,37 +368,27 @@ impl RocksSessionAggStore {
         chunk_rows: usize,
         mut accept: impl FnMut(Vec<StoredSession>) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        if chunk_rows == 0 {
-            return Err(DataFusionError::Execution(
-                "empty session scan chunk".into(),
-            ));
-        }
-        let mut rows = Vec::with_capacity(chunk_rows);
-        for row in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = row.map_err(re)?;
-            if key.as_ref() == WATERMARK_KEY || key.as_ref() == TIMER_DEADLINE_KEY {
-                continue;
-            }
-            if key.len() < MIN_KEY_LEN || value.len() < 8 {
-                return Err(DataFusionError::Execution(
-                    "invalid persisted session".into(),
-                ));
-            }
-            rows.push((
-                key[KEY_GROUP_LEN..key.len() - SESSION_START_LEN].into(),
-                session_start_from(&key[key.len() - SESSION_START_LEN..]),
-                i64::from_le_bytes(value[..8].try_into().unwrap()),
-                value[8..].into(),
-            ));
-            if rows.len() == chunk_rows {
-                accept(self.into_sessions(std::mem::take(&mut rows))?)?;
-                rows = Vec::with_capacity(chunk_rows);
-            }
-        }
-        if !rows.is_empty() {
-            accept(self.into_sessions(rows)?)?;
-        }
-        Ok(())
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| key.len() >= 4 && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0,
+            |entries| {
+                let mut rows = Vec::with_capacity(entries.len());
+                for (key, value) in entries {
+                    if key.len() < MIN_KEY_LEN || value.len() < 8 {
+                        return Err(DataFusionError::Execution(
+                            "invalid persisted session".into(),
+                        ));
+                    }
+                    rows.push((
+                        key[KEY_GROUP_LEN..key.len() - SESSION_START_LEN].into(),
+                        session_start_from(&key[key.len() - SESSION_START_LEN..]),
+                        i64::from_le_bytes(value[..8].try_into().unwrap()),
+                        value[8..].into(),
+                    ));
+                }
+                accept(self.into_sessions(rows)?)
+            },
+        )
     }
 
     fn into_sessions(

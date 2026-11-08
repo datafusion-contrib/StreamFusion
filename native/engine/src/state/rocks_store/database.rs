@@ -72,12 +72,14 @@ pub(super) struct ReadView {
     // The stable Arc allocation outlives its snapshot. Fields drop in declaration order.
     snapshot: SnapshotWithThreadMode<'static, DB>,
     database: Arc<Database>,
+    clock: i64,
     _pin: SnapshotPin,
 }
 
 impl ReadView {
     fn new(database: Arc<Database>) -> Arc<Self> {
         let pin = SnapshotPin::new(&database.clock);
+        let clock = database.clock.load(Ordering::Acquire);
         let snapshot = unsafe {
             std::mem::transmute::<SnapshotWithThreadMode<'_, DB>, SnapshotWithThreadMode<'static, DB>>(
                 database.db.snapshot(),
@@ -86,6 +88,7 @@ impl ReadView {
         Arc::new(Self {
             snapshot,
             database,
+            clock,
             _pin: pin,
         })
     }
@@ -141,6 +144,22 @@ impl StateDb {
         self.view
             .clone()
             .unwrap_or_else(|| ReadView::new(Arc::clone(&self.database)))
+    }
+
+    pub(crate) fn visit_snapshot_batches(
+        &self,
+        chunk_rows: usize,
+        accept: impl Fn(&[u8]) -> bool,
+        mut consume: impl FnMut(Vec<(Box<[u8]>, Box<[u8]>)>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        let mut reader = super::canonical_snapshot::RocksReadSnapshot::new(self);
+        loop {
+            let rows = reader.next_batch_limited(chunk_rows, 4 * 1024 * 1024, &accept)?;
+            if rows.is_empty() {
+                return Ok(());
+            }
+            consume(rows)?;
+        }
     }
 
     fn options(&self) -> ReadOptions {
@@ -308,9 +327,10 @@ pub(super) fn frozen_open(path: &Path) -> Result<Option<OpenedDb>, DataFusionErr
     let view = crate::state::canonical_context::view(&path)?.expect("active canonical scope");
     let view = view.downcast::<ReadView>().expect("RocksDB capture type");
     let database = Arc::clone(&view.database);
+    let clock = Arc::new(StateClock::new(view.clock));
     Ok(Some(OpenedDb {
         cache: database.cache.clone(),
-        clock: Arc::new(StateClock::new(database.clock.load(Ordering::Acquire))),
+        clock,
         write_batch_size: database.write_batch_size,
         db: StateDb {
             database,
@@ -322,6 +342,104 @@ pub(super) fn frozen_open(path: &Path) -> Result<Option<OpenedDb>, DataFusionErr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_database() -> (tempfile::TempDir, StateDb, Arc<StateClock>) {
+        let directory = tempfile::tempdir().unwrap();
+        let mut options = Options::default();
+        options.create_if_missing(true);
+        let db = Arc::new(
+            DB::open_cf_with_opts(&options, directory.path(), [("default", options.clone())])
+                .unwrap(),
+        );
+        let clock = Arc::new(StateClock::new(100));
+        let live = StateDb::live(db, None, Arc::clone(&clock), 1024, directory.path());
+        (directory, live, clock)
+    }
+
+    #[test]
+    fn bounded_snapshot_visitors_keep_their_version_through_live_writes_and_compaction() {
+        let (_directory, live, clock) = test_database();
+        for value in 0..2051 {
+            live.put(format!("key-{value:04}"), b"before").unwrap();
+        }
+        let mut count = 0;
+        live.visit_snapshot_batches(
+            17,
+            |_| true,
+            |rows| {
+                assert!(rows.len() <= 17);
+                if count == 0 {
+                    live.put(b"key-2000", b"after").unwrap();
+                    live.database.db.delete(b"key-2001").unwrap();
+                    live.database.db.flush().unwrap();
+                    live.database.db.compact_range(None::<&[u8]>, None::<&[u8]>);
+                }
+                for (_, value) in rows {
+                    assert_eq!(value.as_ref(), b"before");
+                    count += 1;
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(count, 2051);
+        assert!(!clock.pinned());
+        assert_eq!(live.get(b"key-2000").unwrap().unwrap(), b"after");
+        assert!(live.get(b"key-2001").unwrap().is_none());
+    }
+
+    #[test]
+    fn snapshot_visitors_bound_bytes_and_release_on_failure_and_cancellation() {
+        let (_directory, live, clock) = test_database();
+        let value = vec![7; 2 * 1024 * 1024];
+        for key in [b"one".as_slice(), b"two".as_slice(), b"three".as_slice()] {
+            live.put(key, &value).unwrap();
+        }
+        let mut pages = Vec::new();
+        live.visit_snapshot_batches(
+            1024,
+            |_| true,
+            |rows| {
+                assert!(
+                    rows.len() <= 2,
+                    "the byte bound must split before the row bound"
+                );
+                pages.push(rows.len());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(pages.iter().sum::<usize>(), 3);
+        assert_eq!(pages.len(), 2);
+        assert!(live
+            .visit_snapshot_batches(0, |_| true, |_| Ok(()))
+            .is_err());
+        assert!(live
+            .visit_snapshot_batches(
+                1,
+                |_| true,
+                |_| Err(DataFusionError::Execution("receiver stopped".into()))
+            )
+            .is_err());
+        assert!(!clock.pinned());
+        let scope = FrozenDatabases::new(HashMap::new());
+        let result = scope.with(|| {
+            live.visit_snapshot_batches(
+                1,
+                |_| true,
+                |_| {
+                    scope.cancel();
+                    Ok(())
+                },
+            )
+        });
+        assert!(result.is_err());
+        assert!(!clock.pinned());
+        assert!(
+            check_cancelled().is_ok(),
+            "cancel scope must not escape its reader"
+        );
+    }
 
     #[test]
     fn all_store_readers_observe_the_same_pinned_version() {
@@ -337,11 +455,17 @@ mod tests {
         live.put(b"key", b"before").unwrap();
         let frozen = FrozenDatabases::capture(directory.path()).unwrap();
         live.put(b"key", b"after").unwrap();
+        clock.store(200, Ordering::Release);
         let captured = frozen.with(|| frozen_open(directory.path()).unwrap().unwrap());
+        assert_eq!(
+            captured.clock.load(Ordering::Acquire),
+            100,
+            "a lazily opened reader uses the clock from capture"
+        );
         captured.clock.store(1, Ordering::Release);
         assert_eq!(
             clock.load(Ordering::Acquire),
-            100,
+            200,
             "a decoder must not rewind the live TTL clock"
         );
         let captured = captured.db;
