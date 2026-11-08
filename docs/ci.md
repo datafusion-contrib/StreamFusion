@@ -317,6 +317,14 @@ The [retained scheduling model](benchmarks/ci-latency-20261106.json) uses the or
 Its largest estimated partition falls from 92.19 to 81.26 minutes with the same classes.
 This is a scheduling estimate, not a measured CI speedup: the source run also contains failed
 and interrupted jobs, and real elapsed time includes setup, queueing and test variability.
+The current weights use the subsequent complete passing matrix at `b802a9bb7`. Runtime
+costs have Flink-line overrides so, for example, cases skipped on Flink 1.18 do not receive
+their Flink 2.2 execution cost. The same inventories remain complete and disjoint; only class
+placement changes. The [updated scheduling model](benchmarks/ci-profile-20261108.json) lowers
+the largest estimated runtime shard from 9,905.76 to 9,039.83 class-seconds on Flink 2.2 and
+from 6,054.61 to 5,904.29 on Flink 1.18. These sums exclude parallel overlap and runner/setup
+delays and establish no elapsed-time claim. Unknown classes retain a conservative older
+measurement when available, otherwise the one-second default.
 Each job also uploads its selected classes and
 complete-inventory digest as a runtime-partition artifact; failure diagnostics have unique
 shard names and are also requested on cancellation, including job timeouts, when the runner
@@ -560,6 +568,11 @@ Both selections are computed from the compiled test inventory: their union is th
 selection and their intersection is empty. Balancing changes only class placement; test
 methods, inherited parameterized cases, nested classes and ORC tag handling are unchanged.
 Every canonical shard is required by `All CI tests`.
+Canonical scheduling now uses that complete matrix's class times with startup compilation
+and metadata sharing enabled, replacing estimates from the earlier JVM settings. For the
+same 118 classes, including two abstract bases, the largest modeled shard falls from 7,417.10
+to 6,110.50 class-seconds while average work stays 5,995.60. This rebalances existing work;
+the complete hosted matrix establishes its actual effect on job and workflow time.
 Canonical jobs set `JAVA_TOOL_OPTIONS=-XX:TieredStopAtLevel=1`, inherited by Maven, Surefire
 and the isolated stock/native workers. These short-lived workers repeatedly pay for HotSpot
 optimizing compilation and exit before amortizing it. First-tier compilation reduces that

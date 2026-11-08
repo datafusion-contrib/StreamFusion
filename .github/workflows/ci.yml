@@ -191,6 +191,7 @@ jobs:
           python3 bin/ci_runtime_test_shards.py \
             --classes streamfusion-runtime/target/test-classes \
             --suite runtime --count 3 --index ${{ matrix.shard }} \
+            --line '${{ matrix.line }}' \
             --output "$RUNNER_TEMP/runtime-test-includes.txt"
 
       - name: Run Java test suite

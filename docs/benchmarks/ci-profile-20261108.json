@@ -1,0 +1,79 @@
+{
+  "date": "2026-11-08",
+  "baseline": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42415314977",
+    "sha": "b802a9bb748bd2cae03dbfe889d385e37ea54994",
+    "conclusion": "success",
+    "complete": true,
+    "elapsed_seconds": 11686.0,
+    "runner_seconds": 161059.0,
+    "groups": {
+      "other": {
+        "jobs": 18,
+        "runner_seconds": 10793.0,
+        "max_job_seconds": 1864.0
+      },
+      "java": {
+        "jobs": 12,
+        "runner_seconds": 52368.0,
+        "max_job_seconds": 6213.0
+      },
+      "canonical": {
+        "jobs": 32,
+        "runner_seconds": 97898.0,
+        "max_job_seconds": 4227.0
+      }
+    }
+  },
+  "runtime_scheduling_model": {
+    "1.18": {
+      "inventory": 803,
+      "measured": 800,
+      "old_loads": [
+        5993.26,
+        6054.61,
+        5663.46
+      ],
+      "fresh_loads": [
+        5903.56,
+        5904.29,
+        5903.48
+      ],
+      "audit_pinned_loads": [
+        5904.16,
+        5903.94,
+        5903.24
+      ]
+    },
+    "2.2": {
+      "inventory": 965,
+      "measured": 962,
+      "old_loads": [
+        9223.0,
+        9905.76,
+        7989.21
+      ],
+      "fresh_loads": [
+        9039.07,
+        9039.07,
+        9039.83
+      ],
+      "audit_pinned_loads": [
+        9039.55,
+        9038.65,
+        9039.78
+      ]
+    }
+  },
+  "canonical_scheduling_model": {
+    "inventory": 118,
+    "measured_classes": 116,
+    "old_max_class_seconds": 7417.095,
+    "updated_max_class_seconds": 6110.502,
+    "mean_class_seconds": 5995.6003125
+  },
+  "limits": [
+    "Scheduling estimates sum class report seconds; two forks overlap and startup/setup/queue delays are excluded. They are not workflow elapsed times or passing-test evidence.",
+    "Runtime measurements precede any additional compiler-setting change; complete hosted workflows qualify the final source changes."
+  ]
+}

@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
 import ci_runtime_test_shards as shards
@@ -24,6 +25,28 @@ def plain(element):
 
 
 class RuntimeTestShardsTest(unittest.TestCase):
+    def test_line_costs_change_placement_while_retaining_the_complete_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            names = ["LongTest", "MediumTest", "ShortTest", "NewTest"]
+            for name in names:
+                (root / (name + ".class")).touch()
+            data = root / "durations.json"
+            data.write_text(json.dumps({"seconds": {"LongTest": 90, "MediumTest": 60, "ShortTest": 30},
+                                        "seconds_by_line": {"1.18": {"LongTest": 1}}}))
+            with patch.object(shards, "DURATIONS", data):
+                default = shards.partition(root, 2, "runtime")
+                legacy = shards.partition(root, 2, "runtime", line="1.18")
+                self.assertNotEqual(default, legacy)
+                self.assertEqual(Counter(names), Counter(n for part in legacy for n in part))
+                self.assertEqual(default, shards.partition(root, 2, "runtime", line="2.2"))
+                output = root / "includes.txt"
+                shards.write_selection(root, 2, 1, output, "runtime", "1.18")
+                self.assertEqual("1.18", json.loads(output.with_suffix(".json").read_text())["flink_line"])
+                data.write_text(json.dumps({"seconds": {}, "seconds_by_line": {"1.18": {"LongTest": -1}}}))
+                with self.assertRaises(ValueError):
+                    shards.partition(root, 2, "runtime", line="1.18")
+
     def test_canonical_jobs_and_runtime_are_a_complete_disjoint_bounded_partition(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
