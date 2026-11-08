@@ -685,6 +685,17 @@ and records elapsed/CPU and per-class times. Run it locally after compiling the 
 This diagnostic establishes whether compiler settings help the ordinary runtime mix; the complete
 required workflows remain the qualification for any CI setting change.
 
+The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
+4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.
+It retains the exact cases, outcomes and total 8 GiB heap cap; additional VM overhead is still
+part of the measured workload and full CI qualification. It also runs a separate JDK 17/Flink 2.2
+JFR attribution pair, selectable alone as `runtime-jfr`. That pair records Java execution/native
+method samples, every compiler activity event and sampled allocations. Summaries retain sample
+counts and top stack frames, compiler activity durations and allocation weights; successful raw
+recordings are removed. Inclusive stack counts overlap, native samples do not resolve Rust
+internals, compiler activity intervals are not compiler CPU seconds, and allocation weights are
+sampled estimates. Instrumented elapsed times are excluded from speedup comparisons.
+
 The canonical diagnostic compares default and first-tier
 JVM compilation, plus first-tier compilation with class metadata archives, on each of JDK 11
 and 17. Archive preparation is recorded once, followed by three repetitions alternating settings

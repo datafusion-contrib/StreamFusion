@@ -6,7 +6,7 @@ on:
       suite:
         description: 'Paired JVM comparison to run'
         type: choice
-        options: [runtime, canonical]
+        options: [runtime, runtime-parallel, runtime-jfr, canonical]
         default: runtime
 
 permissions:
@@ -16,7 +16,7 @@ env:
   RUST_BACKTRACE: '1'
 
 concurrency:
-  group: ci-startup-profile-${{ github.ref }}
+  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}
   cancel-in-progress: true
 
 jobs:
@@ -35,7 +35,7 @@ jobs:
         with:
           workspaces: native
           shared-key: debug-jvm
-          save-if: false
+          save-if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
       - run: cargo build --manifest-path native/Cargo.toml -p streamfusion --lib --locked
       - uses: actions/upload-artifact@v4
         with:
@@ -84,14 +84,13 @@ jobs:
 
   runtime:
     needs: native
-    if: inputs.suite == 'runtime'
+    if: inputs.suite != 'canonical'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        jdk: ['11', '17']
-        line: ['1.18', '2.2']
+        include: ${{ fromJSON(inputs.suite == 'runtime-jfr' && '[{"jdk":"17","line":"2.2","jfr":true}]' || inputs.suite == 'runtime-parallel' && '[{"jdk":"11","line":"1.18"},{"jdk":"17","line":"1.18"},{"jdk":"11","line":"2.2"},{"jdk":"17","line":"2.2"},{"jdk":"17","line":"2.2","jfr":true}]' || '[{"jdk":"11","line":"1.18"},{"jdk":"17","line":"1.18"},{"jdk":"11","line":"2.2"},{"jdk":"17","line":"2.2"}]') }}
     steps:
       - uses: actions/checkout@v6
       - run: python3 bin/ci-free-disk.py
@@ -118,13 +117,22 @@ jobs:
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
           mvn -B -ntp "${profile[@]}" -pl streamfusion-runtime -am test-compile -Dnative.build.skip=true
       - name: Compare runtime JVM compilation with identical assertions
-        run: >-
-          python3 bin/profile-runtime-ci.py --output "$RUNNER_TEMP/runtime-startup-profile"
-          --line '${{ matrix.line }}' --repetitions 3
+        env:
+          PROFILE_SUITE: ${{ inputs.suite }}
+          RECORD_JFR: ${{ matrix.jfr }}
+          FLINK_LINE: ${{ matrix.line }}
+        run: |
+          args=(--line "$FLINK_LINE" --repetitions 3)
+          if [[ "$RECORD_JFR" == 'true' ]]; then
+            args=(--line "$FLINK_LINE" --repetitions 1 --jfr)
+          elif [[ "$PROFILE_SUITE" == 'runtime-parallel' ]]; then
+            args+=(--parallel)
+          fi
+          python3 bin/profile-runtime-ci.py --output "$RUNNER_TEMP/runtime-startup-profile" "${args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: runtime-startup-profile-flink${{ matrix.line }}-jdk${{ matrix.jdk }}
+          name: runtime-startup-profile-flink${{ matrix.line }}-jdk${{ matrix.jdk }}${{ matrix.jfr && '-jfr' || '' }}
           path: |
             ${{ runner.temp }}/runtime-startup-profile/
             streamfusion-runtime/target/surefire-reports/*runtime-profile*

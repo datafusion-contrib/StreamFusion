@@ -12,6 +12,8 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 
+import ci_jfr
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CLASSES = {
@@ -58,7 +60,7 @@ def outcomes(reports, suffix, line):
     return cases, dict(totals), classes
 
 
-def profile(output, repetitions, line):
+def profile(output, repetitions, line, parallel=False, jfr=False):
     if "TieredStopAtLevel" in os.environ.get("JAVA_TOOL_OPTIONS", ""):
         raise ValueError("Remove inherited TieredStopAtLevel before the default trial")
     output.mkdir(parents=True, exist_ok=False)
@@ -67,20 +69,31 @@ def profile(output, repetitions, line):
     reports = ROOT / "streamfusion-runtime/target/surefire-reports"
     trials = []
     expected = None
+    modes = ("startup", "parallel") if parallel else ("default", "startup")
     try:
+        java_home = Path(os.environ["JAVA_HOME"]) if jfr else None
+        if jfr:
+            ci_jfr.configuration(java_home, temporary / "runtime.jfc")
         for pair in range(repetitions):
-            for mode in (("default", "startup") if pair % 2 == 0 else ("startup", "default")):
+            for mode in (modes if pair % 2 == 0 else tuple(reversed(modes))):
                 suffix = f"runtime-profile-{line}-{pair}-{mode}"
                 options = os.environ.get("JAVA_TOOL_OPTIONS", "")
                 options += f' -Djava.io.tmpdir="{temporary}"'
-                if mode == "startup":
+                if mode != "default":
                     options += " -XX:TieredStopAtLevel=1"
                 environment = {**os.environ, "JAVA_TOOL_OPTIONS": options, "TMPDIR": str(temporary)}
                 command = ["mvn", "-B", "-ntp", "-pl", "streamfusion-runtime"]
                 if line == "1.18":
                     command.append("-Pflink-1.18")
-                command.extend([f"-Dtest={','.join(CLASSES)}", "-Dsf.testForks=2",
-                                "-Dsf.testReuseForks=false", "-Dsf.extraJvmArgs=-Xmx4g",
+                forks, heap = (4, "2g") if mode == "parallel" else (2, "4g")
+                extra = f"-Xmx{heap}"
+                if jfr:
+                    recording_dir = output / "jfr" / mode
+                    recording_dir.mkdir(parents=True)
+                    extra += (f" -XX:StartFlightRecording=filename={recording_dir},"
+                              f"settings={temporary / 'runtime.jfc'},dumponexit=true")
+                command.extend([f"-Dtest={','.join(CLASSES)}", f"-Dsf.testForks={forks}",
+                                "-Dsf.testReuseForks=false", f"-Dsf.extraJvmArgs={extra}",
                                 f"-Dsurefire.reportNameSuffix={suffix}", "surefire:test@default-test"])
                 log = output / (suffix + ".log")
                 before = resource.getrusage(resource.RUSAGE_CHILDREN)
@@ -97,9 +110,12 @@ def profile(output, repetitions, line):
                     raise ValueError(f"Changed test invocations or outcomes: {log}")
                 expected = cases
                 trial = {"mode": mode, "pair": pair + 1, "line": line,
+                         "forks": forks, "heap": heap, "instrumented": jfr,
                          "elapsed_seconds": elapsed,
                          "cpu_seconds": after.ru_utime + after.ru_stime - before.ru_utime - before.ru_stime,
                          "outcomes": counts, "classes": classes}
+                if jfr:
+                    trial["jfr"] = ci_jfr.summarize(list(recording_dir.glob("*.jfr")), java_home)
                 trials.append(trial)
                 (output / "summary.json").write_text(json.dumps(trials, indent=2) + "\n")
                 print(f"{mode} {pair + 1}: {elapsed:.2f}s elapsed, {trial['cpu_seconds']:.2f}s CPU, "
@@ -116,10 +132,15 @@ def main():
     parser.add_argument("--output", type=Path, required=True, help="New directory for concise trial evidence")
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--line", choices=("2.2", "1.18"), required=True)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--parallel", action="store_true", help="Compare two 4 GiB vs four 2 GiB fresh C1 forks")
+    modes.add_argument("--jfr", action="store_true", help="Capture one instrumented default/C1 pair; not timing evidence")
     args = parser.parse_args()
-    if args.repetitions < 2:
+    if args.repetitions < 2 and not args.jfr:
         parser.error("Use at least two pairs to alternate execution order")
-    profile(args.output.resolve(), args.repetitions, args.line)
+    if args.jfr and args.repetitions != 1:
+        parser.error("Use --repetitions 1 for the separate JFR attribution pass")
+    profile(args.output.resolve(), args.repetitions, args.line, args.parallel, args.jfr)
 
 
 if __name__ == "__main__":

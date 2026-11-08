@@ -165,6 +165,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_plan.py'
           python3 -m unittest discover -s bin -p 'test_profile_ci.py'
           python3 -m unittest discover -s bin -p 'test_profile_runtime_ci.py'
+          python3 -m unittest discover -s bin -p 'test_ci_jfr.py'
           python3 -m unittest discover -s bin -p 'test_package_release.py'
           python3 -m unittest discover -s bin -p 'test_build_release.py'
 
