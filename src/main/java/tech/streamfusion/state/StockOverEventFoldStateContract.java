@@ -357,7 +357,9 @@ public final class StockOverEventFoldStateContract implements StockStateContract
       }
     var serializer = new RowDataSerializer(keyType);
     for (boolean clock : new boolean[] {false, true})
-      try (var timers = (clock ? processing : events).iterator()) {
+      try (var timers =
+          StockTimerSnapshot.<RowData, VoidNamespace>iterator(
+              backend, clock ? PROCESSING : EVENTS)) {
         while (timers.hasNext()) {
           var timer = timers.next();
           if (timer.getNamespace() != VoidNamespace.INSTANCE)

@@ -218,7 +218,7 @@ public final class StockTemporalSortStateContract implements StockStateContract 
         saved.put(timestamp, peers);
       }
     var armed = new TreeSet<Long>();
-    try (var iterator = events(backend).iterator()) {
+    try (var iterator = StockTimerSnapshot.<RowData, VoidNamespace>iterator(backend, EVENTS)) {
       while (iterator.hasNext()) {
         var timer = iterator.next();
         checkKey(timer.getKey());

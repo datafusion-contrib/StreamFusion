@@ -357,7 +357,7 @@ public final class StockWindowRankStateContract implements StockStateContract {
     bindTimers(backend);
     var keyRows = new RowDataSerializer(keyType);
     Set<WindowKey> scheduled = new HashSet<>();
-    try (var iterator = events.iterator()) {
+    try (var iterator = StockTimerSnapshot.<RowData, Long>iterator(backend, EVENTS)) {
       while (iterator.hasNext()) {
         var timer = iterator.next();
         if (timer.getTimestamp() != deadline(timer.getNamespace())

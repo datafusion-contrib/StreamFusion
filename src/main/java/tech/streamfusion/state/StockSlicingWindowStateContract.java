@@ -405,7 +405,8 @@ public final class StockSlicingWindowStateContract implements StockStateContract
     bindTimers(backend);
     var keyRows = new RowDataSerializer(keyType);
     Set<WindowKey> scheduled = new HashSet<>();
-    try (var timers = activeTimers().iterator()) {
+    try (var timers =
+        StockTimerSnapshot.<RowData, Long>iterator(backend, processingTime ? PROCESSING : EVENTS)) {
       while (timers.hasNext()) {
         var timer = timers.next();
         if (timer.getTimestamp() != deadline(timer.getNamespace())

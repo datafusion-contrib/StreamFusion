@@ -528,8 +528,9 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     for (String name : stateDescriptors().keySet())
       for (var key : stateKeys(backend, name)) partitions.computeIfAbsent(key, Partition::new);
     var keyRows = new RowDataSerializer(keyType);
-    var activeTimers = processingRows ? processing : events;
-    try (var iterator = activeTimers.iterator()) {
+    try (var iterator =
+        StockTimerSnapshot.<RowData, VoidNamespace>iterator(
+            backend, processingRows ? PROCESSING : EVENTS)) {
       while (iterator.hasNext()) {
         var timer = iterator.next();
         if (timer.getNamespace() != VoidNamespace.INSTANCE)

@@ -89,6 +89,9 @@ Both capture paths preserve original TTL write ages and independently own overla
 Cancellation signals the native reader before waiting for conversion to leave its critical section;
 completion, failure and cancellation release the captured handle, database views and backend lease.
 The backend cannot dispose its working directory or native memory authority while readers remain.
+Focused controls cancel a deferred capture before writing and inject failure after stock-state
+construction, then verify a later savepoint and continued live input against stock Flink on both
+native stores. These controls complement overlapping-capture and operator-close checks.
 Canonical-capable jobs reserve Flink state-backend managed memory for the temporary stock view even
 when live native state uses memory. Imports also use that released RocksDB backend. Clearing a view
 uses a captured state iterator, preserving serializers and the caller's key context without
@@ -96,9 +99,13 @@ collecting every key.
 
 The direct cursors bound decoded working memory by the current frame/entry and owned key groups.
 The general adapters retain their existing per-key and inventory working sets; very large individual
-values and these working sets require separate qualification. The new memory capture mechanisms
-are undergoing the broader operator and complete-job qualification; the family inventory above
-describes stock-layout scope, not a claim that every asynchronous path has passed both releases.
+values and these working sets require separate qualification. Shared capture and timer controls pass
+on both releases, with representative operator matrices and isolated First-N, grouped arithmetic,
+regular-join, normalization and eager-deduplication jobs on 1.18. The current 1.18 cohort passes 861
+checks and skips 138 documented window exclusions. Released 2.2 restore controls additionally pass
+six stock and six native invocations across First-N, append/update/retract ranks and eager dedup,
+with positive native canonical-import and subsequent-input evidence. Representative checks do not
+replace the exhaustive CI matrix or expand the partial stock-layout inventory above.
 Conversion cost, barrier duration and temporary I/O have not been benchmarked.
 
 Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending
@@ -106,9 +113,9 @@ input and snapshots managed operator metadata; the keyed backend's `savepoint()`
 state. The native checkpoint callback remains separate. Flink 2.2 retains its compatible operator
 snapshot entry point and uses the same state contracts and writer. Flink 1.18 materializes its
 storage provider explicitly so its older executor cannot bypass operator-ID projection with an
-already-created storage instance. Timer inspection reads canonical snapshot bytes through Flink's
-released serializers, avoiding stale live queue iteration hints when a deadline is removed and
-reinserted.
+already-created storage instance. All timer-bearing adapters inspect canonical snapshot bytes through Flink's released serializers,
+avoiding stale live queue iteration hints when a deadline is removed and reinserted. Shared controls
+check removal, reinsertion, namespace changes and preserved key context on heap and RocksDB state.
 
 ## Private native envelope
 

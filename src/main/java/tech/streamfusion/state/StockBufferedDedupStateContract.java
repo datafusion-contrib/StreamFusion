@@ -233,7 +233,8 @@ public final class StockBufferedDedupStateContract implements StockStateContract
     if (!timers(backend, PROCESSING_TIMERS).isEmpty())
       throw new IllegalStateException("Buffered dedup has unexpected processing-time timers");
     var scheduled = new HashMap<RowData, Long>();
-    try (var iterator = timers(backend, EVENT_TIMERS).iterator()) {
+    try (var iterator =
+        StockTimerSnapshot.<RowData, VoidNamespace>iterator(backend, EVENT_TIMERS)) {
       while (iterator.hasNext()) {
         var timer = iterator.next();
         validateKey(timer.getKey());

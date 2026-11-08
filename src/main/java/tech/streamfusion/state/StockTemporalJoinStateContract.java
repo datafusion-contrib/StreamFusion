@@ -199,11 +199,10 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
   }
 
   private Map<BinaryRowData, NavigableSet<Long>> callbacks(
-      KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, VoidNamespace>> queue,
-      StockKeyProjection projection)
+      CheckpointableKeyedStateBackend<RowData> backend, String queue, StockKeyProjection projection)
       throws Exception {
     var result = new LinkedHashMap<BinaryRowData, NavigableSet<Long>>();
-    try (var iterator = queue.iterator()) {
+    try (var iterator = StockTimerSnapshot.<RowData, VoidNamespace>iterator(backend, queue)) {
       while (iterator.hasNext()) {
         var timer = iterator.next();
         var key = key(timer.getKey(), projection);
@@ -242,8 +241,8 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
     StockStateInventory.validate(backend, expected, timerSchema(), keys);
     queues(backend);
     var projection = new StockKeyProjection(keyType);
-    var eventCallbacks = callbacks(events, projection);
-    var processingCallbacks = callbacks(processing, projection);
+    var eventCallbacks = callbacks(backend, EVENTS, projection);
+    var processingCallbacks = callbacks(backend, PROCESSING, projection);
     var retained = new LinkedHashSet<BinaryRowData>();
     retained.addAll(eventCallbacks.keySet());
     retained.addAll(processingCallbacks.keySet());

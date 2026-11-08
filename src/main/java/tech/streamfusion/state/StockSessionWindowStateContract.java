@@ -304,7 +304,9 @@ public final class StockSessionWindowStateContract implements StockStateContract
     StockStateInventory.validate(backend, schemas, timerSchema(), keys);
     var keyRows = new RowDataSerializer(keyType);
     Set<WindowKey> scheduled = new HashSet<>();
-    try (var iterator = timers(backend, processingTime ? PROCESSING : EVENTS).iterator()) {
+    try (var iterator =
+        StockTimerSnapshot.<RowData, TimeWindow>iterator(
+            backend, processingTime ? PROCESSING : EVENTS)) {
       while (iterator.hasNext()) {
         var timer = iterator.next();
         validateBounds(timer.getNamespace());

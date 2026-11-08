@@ -223,6 +223,73 @@ class CanonicalFirstNOperatorSnapshotTest {
     }
   }
 
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void failedDeferredConversionReleasesItsReaderAndLeavesLiveStateRetryable(boolean rocks)
+      throws Exception {
+    try (var source = nativeHarness(rocks)) {
+      var operator = (NativeOperator) source.getOperator();
+      operator.setStockStateContract(new DeferredContract(true));
+      source.open();
+      push(source, List.of(GenericRowData.of(1L, 10L)));
+      var failed = capture(source, 20);
+      try {
+        push(source, List.of(GenericRowData.of(1L, 20L)));
+        var failure =
+            assertThrows(
+                Exception.class,
+                () -> tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(failed));
+        assertTrue(
+            org.apache.flink.util.ExceptionUtils.stringifyException(failure)
+                .contains("intentional deferred conversion failure"));
+      } finally {
+        failed.cancel();
+      }
+      operator.setStockStateContract(new DeferredContract());
+      var retry = capture(source, 21);
+      try {
+        var saved = tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(retry);
+        try (var stock = harness(true, false, true, 0)) {
+          stock.initializeState(saved);
+          stock.open();
+          var suffix = List.<RowData>of(GenericRowData.of(1L, 30L));
+          var expected = List.of("1|30|3");
+          assertEquals(expected, stockPush(stock, suffix));
+          assertEquals(expected, push(source, suffix));
+        }
+      } finally {
+        retry.cancel();
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void cancellingDeferredCaptureBeforeWritingDoesNotRunTheAdapter(boolean rocks) throws Exception {
+    DeferredContract.exports.set(0);
+    try (var source = nativeHarness(rocks)) {
+      ((NativeOperator) source.getOperator()).setStockStateContract(new DeferredContract());
+      source.open();
+      push(source, List.of(GenericRowData.of(1L, 10L)));
+      var cancelled = capture(source, 30);
+      cancelled.cancel();
+      assertEquals(0, DeferredContract.exports.get());
+      push(source, List.of(GenericRowData.of(1L, 20L)));
+      var retry = capture(source, 31);
+      try {
+        var saved = tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(retry);
+        assertEquals(1, DeferredContract.exports.get());
+        try (var stock = harness(true, false, true, 0)) {
+          stock.initializeState(saved);
+          stock.open();
+          assertEquals(List.of("1|30|3"), stockPush(stock, List.of(GenericRowData.of(1L, 30L))));
+        }
+      } finally {
+        retry.cancel();
+      }
+    }
+  }
+
   private static org.apache.flink.streaming.api.operators.OperatorSnapshotFutures capture(
       KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> source, long id)
       throws Exception {
@@ -246,6 +313,15 @@ class CanonicalFirstNOperatorSnapshotTest {
     private static final java.util.concurrent.atomic.AtomicInteger exports =
         new java.util.concurrent.atomic.AtomicInteger();
     private final tech.streamfusion.state.StockStateContract delegate = contract(false, 0);
+    private final boolean failAfterExport;
+
+    DeferredContract() {
+      this(false);
+    }
+
+    DeferredContract(boolean failAfterExport) {
+      this.failAfterExport = failAfterExport;
+    }
 
     @Override
     public org.apache.flink.api.common.typeutils.TypeSerializer<RowData> keySerializer() {
@@ -266,6 +342,7 @@ class CanonicalFirstNOperatorSnapshotTest {
         throws Exception {
       exports.incrementAndGet();
       delegate.exportState(backend, handle, persistent);
+      if (failAfterExport) throw new java.io.IOException("intentional deferred conversion failure");
     }
 
     @Override

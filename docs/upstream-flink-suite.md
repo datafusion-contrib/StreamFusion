@@ -1887,6 +1887,21 @@ nested-table Calc and OVER assertions still run with their original native-execu
 this boundary does not add DataStream-bridge canonical interchange coverage.
 
 
+## Shared asynchronous capture restore controls
+
+The asynchronous capture implementation is checked with the released First-N, append-rank,
+update-rank, retract-rank and eager-deduplication programs on Flink 2.2.1. The existing wrappers
+select released programs and retain their inherited restore assertions. Stock and native runs each
+pass six invocations. The native audit additionally requires positive canonical import and
+subsequent input in the expected owner: all six routes are native, with no expected fallback.
+These controls qualify those selected programs, not every variant of the five operator families
+or a cross-version upgrade. Broader operator checks retain their separate coverage boundaries.
+
+```sh
+CANONICAL_UPSTREAM_TESTS='tech.streamfusion.canonical.FirstNRestoreTest#testRestore,tech.streamfusion.canonical.AppendRankRestoreTest#testRestore,tech.streamfusion.canonical.UpdateRankRestoreTest#testRestore,tech.streamfusion.canonical.RetractRankRestoreTest#testRestore,tech.streamfusion.canonical.EagerDedupRestoreTest#testRestore' \
+  bin/canonical-savepoints.sh sql -Dnative.build.skip=true
+```
+
 ## Released Flink 1.18 canonical protocol controls
 
 The canonical fixture module also accepts `-Pflink-1.18,canonical-stock`. Flink 1.18 predates

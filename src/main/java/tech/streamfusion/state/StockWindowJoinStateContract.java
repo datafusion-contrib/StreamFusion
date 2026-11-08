@@ -193,7 +193,7 @@ public final class StockWindowJoinStateContract implements StockStateContract {
     var serializer = new RowDataSerializer(keyType);
     var projection = new StockKeyProjection(keyType);
     var scheduled = new HashSet<WindowKey>();
-    try (var iterator = events.iterator()) {
+    try (var iterator = StockTimerSnapshot.<RowData, Long>iterator(backend, EVENTS)) {
       while (iterator.hasNext()) {
         var timer = iterator.next();
         if (timer.getTimestamp() != deadline(timer.getNamespace())

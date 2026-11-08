@@ -92,6 +92,60 @@ class CanonicalSnapshotRoutingTest {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void immutableTimerInspectionSeesRemovalReinsertionAndNewNamespaces(boolean disk)
+      throws Exception {
+    var storage = disk ? new Backend() : new HashMapStateBackend();
+    try (var source = harness(storage, new AtomicInteger(), new AtomicInteger())) {
+      source.open();
+      var raw = source.getOperator().<RowData>getKeyedStateBackend();
+      CheckpointableKeyedStateBackend<RowData> backend =
+          raw instanceof CanonicalKeyedStateBackend
+              ? ((CanonicalKeyedStateBackend<RowData>) raw).projection().backend()
+              : (CheckpointableKeyedStateBackend<RowData>) raw;
+      String name = "_timer_state/event_inspection";
+      org.apache.flink.runtime.state.KeyGroupedInternalPriorityQueue<
+              org.apache.flink.streaming.api.operators.TimerHeapInternalTimer<RowData, Long>>
+          timers =
+              backend.create(
+                  name,
+                  new org.apache.flink.streaming.api.operators.TimerSerializer<>(
+                      new RowDataSerializer(KEY), LongSerializer.INSTANCE));
+      var first =
+          new org.apache.flink.streaming.api.operators.TimerHeapInternalTimer<RowData, Long>(
+              100, key(), 7L);
+      var removed =
+          new org.apache.flink.streaming.api.operators.TimerHeapInternalTimer<RowData, Long>(
+              200, key(), 8L);
+      timers.add(first);
+      timers.add(removed);
+      backend.setCurrentKey(key());
+      assertEquals(List.of("100:7", "200:8"), inspectTimers(backend, name));
+      assertEquals(first, timers.poll());
+      timers.add(first);
+      timers.remove(removed);
+      timers.add(
+          new org.apache.flink.streaming.api.operators.TimerHeapInternalTimer<>(300, key(), 9L));
+      assertEquals(List.of("100:7", "300:9"), inspectTimers(backend, name));
+      assertEquals(key(), backend.getCurrentKey());
+    }
+  }
+
+  private static List<String> inspectTimers(
+      CheckpointableKeyedStateBackend<RowData> backend, String name) throws Exception {
+    var values = new java.util.ArrayList<String>();
+    try (var entries = StockTimerSnapshot.<RowData, Long>iterator(backend, name)) {
+      while (entries.hasNext()) {
+        var timer = entries.next();
+        assertEquals(key(), timer.getKey());
+        values.add(timer.getTimestamp() + ":" + timer.getNamespace());
+      }
+    }
+    java.util.Collections.sort(values);
+    return values;
+  }
+
   @Test
   void canonicalExportIsExplicitAndPendingCapturesStayImmutable() throws Exception {
     var captures = new AtomicInteger();
