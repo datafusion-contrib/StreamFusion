@@ -3218,5 +3218,24 @@
       "heap_per_fork_gib": 2
     }
   },
-  "full_source_qualification": "pending"
+  "full_source_qualification": "pending",
+  "native_cache_observation": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42496781899",
+    "job": 128780752883,
+    "scope": "Complete workspace build after a core-only diagnostic wrote the shared dependency cache",
+    "restored_key": "v0-rust-debug-jvm-Linux-x64-4379f36a-a6f17d09",
+    "cache_entry_created_at": "2026-11-08T15:13:34.124612Z",
+    "cache_bytes": 959170860,
+    "writer_run": 42492916674,
+    "writer_job": 128768959154,
+    "cargo_build_seconds": 425,
+    "rebuilt_units": 405,
+    "total_units_in_graph": 639,
+    "rocksdb_build_seconds": 315.19,
+    "post_job_cache_result": "Cache up-to-date; no replacement saved",
+    "correction": "Diagnostic producer builds the same complete workspace as native CI before sharing its cache; only the incomplete task-ref entry is refreshed.",
+    "limits": [
+      "This completed build observation remains valid when its parent full workflow is superseded. It is not a whole-workflow speedup or full test qualification."
+    ]
+  }
 }

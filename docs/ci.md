@@ -685,6 +685,14 @@ The strict documentation build also passed. Source/configuration changes still r
 The **CI startup profile** workflow is an explicitly dispatched diagnostic, keeping profiling
 cost outside ordinary pushes and merges. Select `runtime` (the default) or `canonical`.
 Both build the exact commit's debug core library once.
+The native producer builds the same complete workspace as ordinary native CI before sharing
+its dependency cache, even when the selected Java probe only loads core. A core-only writer
+previously seeded a 959 MB entry under the full workspace's key. The full build restored that
+exact key but still compiled 405 units in 7m05s; Cargo attributed 315.19 seconds to RocksDB's
+build step. The cache action then reported the entry up to date instead of enriching it.
+[The action's save logic](https://github.com/Swatinem/rust-cache/blob/d1527c8f67ef9af357290475d4af4b0fab8f12e0/src/save.ts)
+returns early on an exact hit. Keeping the producer scope consistent avoids that incomplete
+entry. `native-only` runs just this build/cache diagnostic without starting Java comparisons.
 
 The runtime comparison covers Flink 1.18/2.2 and JDK 11/17. It runs the unchanged OVER,
 decimal negate/absolute-value, string collection and stateful SQL rescaling classes with the

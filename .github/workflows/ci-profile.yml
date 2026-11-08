@@ -6,7 +6,7 @@ on:
       suite:
         description: 'Paired JVM comparison to run'
         type: choice
-        options: [runtime, runtime-parallel, runtime-jfr, canonical]
+        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only]
         default: runtime
 
 permissions:
@@ -36,14 +36,22 @@ jobs:
           workspaces: native
           shared-key: debug-jvm
           save-if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
-      - run: cargo build --manifest-path native/Cargo.toml -p streamfusion --lib --locked
+      - run: cargo build --manifest-path native/Cargo.toml --workspace --lib --locked --timings
       - uses: actions/upload-artifact@v4
+        if: inputs.suite != 'native-only'
         with:
           name: ci-profile-native-${{ github.sha }}
           path: native/target/debug/libstreamfusion.so
           compression-level: 1
           retention-days: 1
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-profile-native-timings-${{ github.sha }}
+          path: native/target/cargo-timings
+          retention-days: 1
+          if-no-files-found: ignore
 
   paired:
     needs: native
@@ -84,7 +92,7 @@ jobs:
 
   runtime:
     needs: native
-    if: inputs.suite != 'canonical'
+    if: inputs.suite != 'canonical' && inputs.suite != 'native-only'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
