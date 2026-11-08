@@ -1764,5 +1764,37 @@
         "seconds": 0
       }
     }
+  },
+  "hosted_documentation_fast_path": {
+    "sha": "a03ce3e08c0aa61ba047a1257c3efa0abf241ff3",
+    "verified_source_baseline": "b802a9bb748bd2cae03dbfe889d385e37ea54994",
+    "workflows": [
+      {
+        "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42430504179",
+        "sha": "a03ce3e08c0aa61ba047a1257c3efa0abf241ff3",
+        "conclusion": "success",
+        "complete": true,
+        "elapsed_seconds": 16.0,
+        "runner_seconds": 11.0
+      },
+      {
+        "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42430504172",
+        "sha": "a03ce3e08c0aa61ba047a1257c3efa0abf241ff3",
+        "conclusion": "success",
+        "complete": true,
+        "elapsed_seconds": 15.0,
+        "runner_seconds": 11.0
+      }
+    ],
+    "all_build_and_test_dependencies": "skipped after both plan jobs verified successful exact-baseline push runs for both required workflows",
+    "documentation_build": {
+      "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42430504138",
+      "conclusion": "success",
+      "execution_seconds": 26
+    },
+    "limits": [
+      "Documentation-only coverage reuse; source or configuration changes still run full matrices.",
+      "This verifies coverage reuse and aggregate handling, not execution of tests on the documentation-only head."
+    ]
   }
 }

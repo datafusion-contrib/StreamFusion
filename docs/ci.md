@@ -650,6 +650,13 @@ The longest ordinary Java job took 103.6 minutes. These tests retain their usual
 and are the largest remaining execution cost. Elapsed time also includes shared runner capacity and
 dependency delays. These results measure CI turnaround and execution cost, not SQL throughput.
 
+The subsequent documentation-only evidence update exercised coverage reuse against that fully
+passing source baseline. [CI](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42430504179)
+finished in 16 seconds and [upstream](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42430504172)
+in 15 seconds, each using 11 seconds of runner execution. Both plans verified the exact baseline's
+two successful push workflows, every build/test dependency skipped, and both aggregates passed.
+The strict documentation build also passed. Source/configuration changes still require full tests.
+
 The **CI startup profile** workflow runs on manual dispatch or changes to its workflow/profiler.
 It builds the exact commit's debug core library once, then compares default and first-tier
 JVM compilation, plus first-tier compilation with class metadata archives, on each of JDK 11
