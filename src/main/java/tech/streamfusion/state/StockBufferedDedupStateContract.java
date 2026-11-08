@@ -126,29 +126,12 @@ public final class StockBufferedDedupStateContract implements StockStateContract
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    clearState(backend, WAITING, waiting(backend));
-    clearState(backend, EMITTED, emitted(backend));
-    var events = timers(backend, EVENT_TIMERS);
-    while (events.poll() != null) {}
-    var processing = timers(backend, PROCESSING_TIMERS);
-    while (processing.poll() != null) {}
-  }
-
-  private static void clearState(
-      CheckpointableKeyedStateBackend<RowData> backend, String name, StockValueState<?> state)
+  public void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
       throws Exception {
-    List<RowData> keys;
-    try (var stream = backend.getKeys(name, VoidNamespace.INSTANCE)) {
-      keys =
-          stream
-              .map(backend.getKeySerializer()::copy)
-              .collect(java.util.stream.Collectors.toList());
-    }
-    for (var key : keys) {
-      backend.setCurrentKey(key);
-      state.clear();
-    }
+    timers(backend, EVENT_TIMERS);
+    timers(backend, PROCESSING_TIMERS);
+    while (eventTimers.poll() != null) {}
+    while (processingTimers.poll() != null) {}
   }
 
   @Override

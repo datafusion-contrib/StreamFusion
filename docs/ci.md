@@ -591,6 +591,14 @@ yet available as a released CI fixture.
 
 ## Complete canonical job matrix
 
+Flink 1.18 runs focused shared complete-job controls in its first runtime shard on both JDKs.
+They cover First-N, grouped arithmetic, regular joins, normalization and eager mini-batch dedup,
+using the existing smoke selections, both native stores and isolated native/stock/native handoffs.
+The shared planner, operator, MVCC, cancellation and lifecycle classes remain in the ordinary
+runtime shards. These controls qualify the older runtime lifecycle without rerunning the full
+2.2 connector and operator job matrix on 1.18. The wider 1.18 failure/rescale matrix remains open.
+
+
 Flink 2.2 canonical handoff jobs run in 16 additional required shards on each of JDK 11 and 17.
 Canonical jobs use the same duration-based balancing as runtime shards, with complete-job
 timings retained in `dev/ci/runtime-durations.json`. All 116 runnable canonical classes have

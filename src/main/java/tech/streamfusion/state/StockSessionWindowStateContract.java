@@ -230,29 +230,10 @@ public final class StockSessionWindowStateContract implements StockStateContract
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    for (var view : distinctViews) view.clear(backend, keyType, new TimeWindow.Serializer());
-    var keyRows = new RowDataSerializer(keyType);
-    var windows = new ArrayList<WindowKey>();
-    try (var entries = backend.<TimeWindow>getKeysAndNamespaces(STATE)) {
-      entries.forEach(
-          entry -> windows.add(new WindowKey(keyRows.toBinaryRow(entry.f0).copy(), entry.f1)));
-    }
-    for (var entry : windows) {
-      backend.setCurrentKey(entry.key);
-      backend.getPartitionedState(entry.window, new TimeWindow.Serializer(), descriptor()).clear();
-    }
-    List<RowData> mapped = new ArrayList<>();
-    try (var entries = backend.getKeys(MAPPING, VoidNamespace.INSTANCE)) {
-      entries.forEach(key -> mapped.add(keyRows.toBinaryRow(key).copy()));
-    }
-    for (var key : mapped) {
-      backend.setCurrentKey(key);
-      backend
-          .getPartitionedState(
-              VoidNamespace.INSTANCE, VoidNamespaceSerializer.INSTANCE, mappingDescriptor())
-          .clear();
-    }
+  public void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {
+    timers(backend, EVENTS);
+    timers(backend, PROCESSING);
     for (String name : List.of(EVENTS, PROCESSING)) {
       var queue = timers(backend, name);
       while (queue.poll() != null) {}

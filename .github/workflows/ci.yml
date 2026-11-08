@@ -209,6 +209,21 @@ jobs:
             -DskipTests=${{ matrix.shard != 1 }} -Dsf.runtime.tests.skip=false \
             -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx2g"
 
+      - name: Verify shared canonical handoffs on Flink 1.18
+        if: matrix.line == '1.18' && matrix.shard == 1
+        env:
+          JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1'
+        run: >-
+          mvn -B -ntp -Pflink-1.18 -pl streamfusion-runtime -am test
+          -Dnative.build.skip=true -Dsf.runtime.tests.skip=false
+          '-Dtest=CanonicalFirstNJobTest#countersContinueAcrossIsolatedEngineProcesses,CanonicalGroupArithmeticJobTest,CanonicalRegularJoinJobTest#regularStateContinuesAcrossCleanEngineProcesses,CanonicalNormalizerJobTest#normalizerAndJoinContinueAcrossIsolatedEngineProcesses,CanonicalEagerDedupJobTest#retainedDeduplicationStateContinuesAcrossIsolatedEngineProcesses'
+          -Dstreamfusion.test.firstNJobSmoke=true
+          -Dstreamfusion.test.groupArithmeticJobSmoke=true
+          -Dstreamfusion.test.regularJoinJobSmoke=true
+          -Dstreamfusion.test.normalizerJobSmoke=true
+          -Dstreamfusion.test.eagerDedupJobSmoke=true
+          -Dsf.testForks=2 -Dsf.testReuseForks=false '-Dsf.extraJvmArgs=-Xmx2g'
+
       - name: Verify JVM boundary defaults and optional cache on the freshly built native library
         if: matrix.jdk == '17' && matrix.shard == 1
         run: >-

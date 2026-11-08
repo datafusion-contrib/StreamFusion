@@ -28,7 +28,7 @@ import tech.streamfusion.state.CanonicalStateBackend;
 import tech.streamfusion.state.StockSinkMaterializerStateContract;
 
 /** Replaces only the sink's materializer; stock connector translation still owns the sink. */
-final class NativeCanonicalSinkExecNode extends StreamExecSink {
+final class NativeCanonicalSinkExecNode extends StreamExecSink implements CanonicalSinkIdentities {
   private final OneInputTransformation<?, ?> original;
   private final int maximum;
   private final long ttl;
@@ -171,17 +171,17 @@ final class NativeCanonicalSinkExecNode extends StreamExecSink {
     return exit;
   }
 
-  int originalMaterializerId() {
+  public int originalMaterializerId() {
     return original.getId();
   }
 
-  int materializerId() {
+  public int materializerId() {
     if (materializer == null)
       throw new IllegalStateException("Sink materializer was not translated");
     return materializer.getId();
   }
 
-  List<Integer> helperIds() {
+  public List<Integer> helperIds() {
     return List.copyOf(helpers);
   }
 }

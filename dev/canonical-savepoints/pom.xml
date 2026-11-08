@@ -15,8 +15,9 @@
         <maven.deploy.skip>true</maven.deploy.skip>
         <canonical.engine>native</canonical.engine>
         <canonical.suite>sql</canonical.suite>
+        <canonical.connector.tests.artifact>flink-test-utils-connector</canonical.connector.tests.artifact>
         <canonical.upstream.tests>org.apache.flink.table.planner.plan.nodes.exec.stream.*RestoreTest#testRestore</canonical.upstream.tests>
-        <canonical.agent.args>-javaagent:"${project.basedir}/../flink-suite/agent/target/streamfusion-flink-suite-agent-1.0-SNAPSHOT.jar" -Dstreamfusion.flink-suite.canonical=true -Dstreamfusion.flink-suite.flink-line=2.2 -Dstreamfusion.flink-suite.native-reports="${project.build.directory}/native-execution/${canonical.suite}"</canonical.agent.args>
+        <canonical.agent.args>-javaagent:"${project.basedir}/../flink-suite/agent/target/streamfusion-flink-suite-agent-1.0-SNAPSHOT.jar" -Dstreamfusion.flink-suite.canonical=true -Dstreamfusion.flink-suite.flink-line=${flink.line} -Dstreamfusion.flink-suite.native-reports="${project.build.directory}/native-execution/${canonical.suite}"</canonical.agent.args>
         <canonical.classpath.exclude>unused:unused</canonical.classpath.exclude>
     </properties>
     <dependencies>
@@ -70,7 +71,7 @@
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
-            <artifactId>flink-test-utils-connector</artifactId>
+            <artifactId>${canonical.connector.tests.artifact}</artifactId>
             <version>${flink.version}</version>
             <scope>test</scope>
         </dependency>
@@ -135,7 +136,7 @@
                     <execution>
                         <id>canonical-savepoint-release-line</id>
                         <goals><goal>enforce</goal></goals>
-                        <configuration><rules><requireProperty><property>flink.line</property><regex>2\.2</regex></requireProperty></rules></configuration>
+                        <configuration><rules><requireProperty><property>flink.line</property><regex>(1\.18|2\.2)</regex></requireProperty></rules></configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -198,6 +199,20 @@
         </plugins>
     </build>
     <profiles>
+        <profile>
+            <id>flink-1.18</id>
+            <properties>
+                <!-- 1.18 predates the released SQL RestoreTest framework. -->
+                <canonical.upstream.tests>org.apache.flink.test.state.HeapSavepointStateBackendSwitchTest,org.apache.flink.test.state.RocksSavepointStateBackendSwitchTest</canonical.upstream.tests>
+                <canonical.suite>runtime</canonical.suite>
+                <canonical.connector.tests.artifact>flink-connector-test-utils</canonical.connector.tests.artifact>
+            </properties>
+            <build><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration><testExcludes><testExclude>**/*RestoreTest.java</testExclude></testExcludes></configuration>
+            </plugin></plugins></build>
+        </profile>
         <profile>
             <id>canonical-stock</id>
             <properties>

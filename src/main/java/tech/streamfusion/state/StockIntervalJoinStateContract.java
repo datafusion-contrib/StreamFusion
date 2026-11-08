@@ -258,7 +258,9 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
     queues(backend);
     var projection = new StockKeyProjection(keyType);
     var scheduled = new HashSet<Pending>();
-    try (var iterator = callbacks().iterator()) {
+    try (var iterator =
+        StockTimerSnapshot.<RowData, VoidNamespace>iterator(
+            backend, processingTime ? PROCESSING : EVENTS)) {
       while (iterator.hasNext()) {
         var event = iterator.next();
         if (!scheduled.add(
@@ -278,7 +280,13 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
           backend.setCurrentKey(key);
           Long time = deadline.value();
           if (time == null || !scheduled.contains(new Pending(key, time)))
-            throw new IllegalStateException("Stock interval deadline has no cleanup callback");
+            throw new IllegalStateException(
+                "Stock interval deadline has no cleanup callback: deadline="
+                    + time
+                    + ", callbacks="
+                    + scheduled.size()
+                    + ", keyHash="
+                    + key.hashCode());
           observed.add(new Pending(key, time));
         }
       }
@@ -314,21 +322,8 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var serializer = new RowDataSerializer(keyType);
-    for (int side = 0; side < 2; side++) {
-      for (String name : List.of(cacheName(side), timerName(side))) {
-        var retained = new ArrayList<RowData>();
-        try (var stream = backend.getKeys(name, VoidNamespace.INSTANCE)) {
-          stream.forEach(key -> retained.add(serializer.copy(key)));
-        }
-        for (var key : retained) {
-          backend.setCurrentKey(key);
-          if (name.equals(cacheName(side))) cache(backend, side).clear();
-          else timer(backend, side).clear();
-        }
-      }
-    }
+  public void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {
     queues(backend);
     while (events.poll() != null) {}
     while (processing.poll() != null) {}

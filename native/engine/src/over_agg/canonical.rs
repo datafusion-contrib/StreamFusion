@@ -41,23 +41,14 @@ impl OverWindowAggregator {
         stamps: Vec<i64>,
     ) -> Result<RecordBatch, DataFusionError> {
         let inner = self.canonical_fold()?;
-        let types = inner.state_types();
-        let key_types = &inner.key_types;
-        let mut fields = key_fields(key_types);
-        let mut columns = decode_byte_keys(inner.key_converter.as_ref(), keys, key_types);
-        for (index, data_type) in types.iter().enumerate() {
-            fields.push(Field::new(format!("state{index}"), data_type.clone(), true));
-            columns.push(scalars_to_array(
-                states.iter().map(|row| row[index].clone()).collect(),
-                data_type,
-            ));
-        }
-        fields.push(Field::new(STAMP, DataType::Int64, false));
-        columns.push(Arc::new(Int64Array::from(stamps)));
-        Ok(RecordBatch::try_new(
-            Arc::new(Schema::new(fields)),
-            columns,
-        )?)
+        fold_batch(
+            &inner.key_types,
+            &inner.state_types(),
+            inner.key_converter.as_ref(),
+            keys,
+            states,
+            stamps,
+        )
     }
 
     fn visit_canonical_folds(
@@ -273,12 +264,117 @@ impl OverWindowAggregator {
     }
 }
 
+fn fold_batch(
+    key_types: &[DataType],
+    types: &[DataType],
+    converter: Option<&RowConverter>,
+    keys: &[&[u8]],
+    states: &[Vec<ScalarValue>],
+    stamps: Vec<i64>,
+) -> Result<RecordBatch, DataFusionError> {
+    let mut fields = key_fields(key_types);
+    let mut columns = decode_byte_keys(converter, keys, key_types);
+    for (index, data_type) in types.iter().enumerate() {
+        fields.push(Field::new(format!("state{index}"), data_type.clone(), true));
+        columns.push(scalars_to_array(
+            states.iter().map(|row| row[index].clone()).collect(),
+            data_type,
+        ));
+    }
+    fields.push(Field::new(STAMP, DataType::Int64, false));
+    columns.push(Arc::new(Int64Array::from(stamps)));
+    Ok(RecordBatch::try_new(
+        Arc::new(Schema::new(fields)),
+        columns,
+    )?)
+}
+
 fn report(env: &mut JNIEnv, error: DataFusionError) {
     if matches!(error, DataFusionError::ResourcesExhausted(_)) {
         throw_memory_limit(env, &error.to_string());
     } else {
         let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
     }
+}
+
+#[cfg(feature = "rocksdb-state")]
+struct OverFoldCursor {
+    snapshot: crate::state::rocks_store::over_agg_store::RocksOverFoldSnapshot,
+    keys: Vec<DataType>,
+    types: Vec<DataType>,
+    converter: RowConverter,
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl crate::state::canonical_snapshot::CanonicalCursor for OverFoldCursor {
+    fn next(&mut self, env: &mut JNIEnv, receiver: &JObject) -> Result<bool, DataFusionError> {
+        let rows = self.snapshot.next_batch()?;
+        if rows.is_empty() {
+            return Ok(false);
+        }
+        let keys: Vec<_> = rows.iter().map(|row| row.key.as_ref()).collect();
+        let states: Vec<_> = rows.iter().map(|row| row.state.clone()).collect();
+        let stamps = rows.iter().map(|row| row.stamp).collect();
+        crate::bridge::emit_record_batch(
+            env,
+            receiver,
+            fold_batch(
+                &self.keys,
+                &self.types,
+                Some(&self.converter),
+                &keys,
+                &states,
+                stamps,
+            )?,
+        )?;
+        Ok(true)
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_captureOverFoldCanonicalSnapshot<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let owner = unsafe { &*(handle as *const OverWindowAggregator) };
+        let result = (|| {
+            owner.ensure_canonical_distinct_ready()?;
+            let inner = owner.canonical_fold()?;
+            if !inner.keys.is_empty() {
+                return Err(invalid("persistent operator has undrained resident folds"));
+            }
+            let store = owner
+                .store
+                .as_ref()
+                .ok_or_else(|| invalid("MVCC capture requires RocksDB state"))?;
+            let keys = inner.key_types.clone();
+            let types = inner.state_types();
+            let converter = RowConverter::new(
+                keys.iter()
+                    .map(|data_type| SortField::new(data_type.clone()))
+                    .collect(),
+            )?;
+            let cursor = OverFoldCursor {
+                snapshot: store.canonical_fold_snapshot(&types)?,
+                keys,
+                types,
+                converter,
+            };
+            Ok::<_, DataFusionError>(Box::into_raw(Box::new(
+                crate::state::canonical_snapshot::CanonicalCursorHandle(Box::new(cursor)),
+            )) as jlong)
+        })();
+        match result {
+            Ok(handle) => handle,
+            Err(error) => {
+                report(&mut env, error);
+                0
+            }
+        }
+    })
 }
 
 #[no_mangle]

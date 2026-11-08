@@ -199,6 +199,7 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
                 NormalizedRow {
                     payload,
                     staged: false,
+                    staged_update_after: false,
                     last_write_ms: times.value(row),
                 },
             );
@@ -212,6 +213,77 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         }
         self.memory.account()
     }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_configureChangelogNormalizerComparison<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    persistent: jni::sys::jboolean,
+    compare_row_kind: jni::sys::jboolean,
+) {
+    crate::bridge::jni_guard(env, move |_env| {
+        if persistent == 0 {
+            unsafe { &mut *(handle as *mut ChangelogNormalizer) }.compare_row_kind =
+                compare_row_kind != 0;
+        } else {
+            #[cfg(feature = "rocksdb-state")]
+            {
+                unsafe { &mut *(handle as *mut ChangelogNormalizer<RocksNormalizerStore>) }
+                    .compare_row_kind = compare_row_kind != 0;
+            }
+        }
+    });
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_captureChangelogNormalizerCanonicalSnapshot<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    row_schema: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let owner = unsafe { &mut *(handle as *mut ChangelogNormalizer<RocksNormalizerStore>) };
+        let result = (|| {
+            owner.canonical_schema(Arc::new(Schema::try_from(unsafe {
+                &*(row_schema as *const FFI_ArrowSchema)
+            })?))?;
+            let schema = Arc::clone(owner.schema.as_ref().unwrap());
+            let converter = RowConverter::new(
+                schema
+                    .fields()
+                    .iter()
+                    .map(|field| SortField::new(field.data_type().clone()))
+                    .collect(),
+            )?;
+            let snapshot = owner.rows.canonical_snapshot()?;
+            Ok::<_, DataFusionError>(crate::state::canonical_snapshot::cursor(
+                snapshot,
+                move |env, receiver, entries| {
+                    let rows: Vec<_> = entries.iter().map(|(key, value)| (key, value)).collect();
+                    crate::bridge::emit_record_batch(
+                        env,
+                        receiver,
+                        canonical_batch(&schema, &converter, &rows)?,
+                    )
+                },
+            ))
+        })();
+        match result {
+            Ok(handle) => handle,
+            Err(error) => {
+                throw_canonical_error(&mut env, error);
+                0
+            }
+        }
+    })
 }
 
 #[no_mangle]

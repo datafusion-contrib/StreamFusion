@@ -74,6 +74,55 @@ pub(crate) struct StoredOverFold {
     pub(crate) state: Vec<ScalarValue>,
 }
 
+pub(crate) struct RocksOverFoldSnapshot {
+    snapshot: super::RocksReadSnapshot,
+    converter: RowConverter,
+}
+
+impl RocksOverAggStore {
+    pub(crate) fn canonical_fold_snapshot(
+        &self,
+        types: &[DataType],
+    ) -> Result<RocksOverFoldSnapshot, DataFusionError> {
+        Ok(RocksOverFoldSnapshot {
+            snapshot: super::RocksReadSnapshot::new(&self.db),
+            converter: RowConverter::new(
+                types
+                    .iter()
+                    .map(|data_type| SortField::new(data_type.clone()))
+                    .collect(),
+            )?,
+        })
+    }
+}
+
+impl RocksOverFoldSnapshot {
+    pub(crate) fn next_batch(&mut self) -> Result<Vec<StoredOverFold>, DataFusionError> {
+        let rows = self
+            .snapshot
+            .next_batch(|key| key.len() > KEY_PREFIX_LEN && key[4] == FOLDS_TABLE)?;
+        let mut encoded = Vec::with_capacity(rows.len());
+        for (_, value) in &rows {
+            if value.len() <= STAMP_LEN {
+                return Err(DataFusionError::Execution(
+                    "truncated OVER fold value".into(),
+                ));
+            }
+            encoded.push(&value[STAMP_LEN..]);
+        }
+        let states = RocksOverAggStore::decode_rows(&self.converter, &encoded)?;
+        Ok(rows
+            .into_iter()
+            .zip(states)
+            .map(|((key, value), state)| StoredOverFold {
+                key: key[KEY_PREFIX_LEN..].into(),
+                stamp: i64::from_le_bytes(value[..STAMP_LEN].try_into().unwrap()),
+                state,
+            })
+            .collect())
+    }
+}
+
 /// One persisted bounded-frame row read back from the store: its position in the key's sorted
 /// buffer (rowtime, then arrival sequence for ties), per-aggregate input scalars and optional
 /// trailing raw arithmetic state.

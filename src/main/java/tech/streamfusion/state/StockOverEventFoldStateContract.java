@@ -262,17 +262,8 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    folds.clear(backend);
-    for (var key : keys(backend, INPUT)) {
-      backend.setCurrentKey(key);
-      inputs(backend).clear();
-    }
-    if (cleanupEnabled)
-      for (var key : keys(backend, CLEANUP)) {
-        backend.setCurrentKey(key);
-        cleanup(backend).clear();
-      }
+  public void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {
     bind(backend);
     while (events.poll() != null) {}
     while (processing.poll() != null) {}

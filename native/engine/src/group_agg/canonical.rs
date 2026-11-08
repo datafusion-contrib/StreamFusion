@@ -292,6 +292,47 @@ pub(super) fn throw_error(env: &mut JNIEnv, error: DataFusionError) {
     }
 }
 
+#[cfg(feature = "rocksdb-state")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_captureGroupArithmeticCanonicalSnapshot<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let owner = unsafe { &mut *(handle as *mut GroupAggregator<RocksGroupStore>) };
+        let result = (|| {
+            owner.arithmetic_contract()?;
+            let kinds = owner.kinds.clone();
+            let ttl = owner.ttl_ms > 0;
+            let append_only = owner.stock_append_only == Some(true);
+            let mut memory = owner.memory.temporary_reservation();
+            let snapshot = owner.store.canonical_snapshot()?;
+            Ok::<_, DataFusionError>(crate::state::canonical_snapshot::cursor(
+                snapshot,
+                move |env, receiver, entries| {
+                    visit(
+                        &kinds,
+                        ttl,
+                        append_only,
+                        entries.iter().map(|(key, value)| (key, value)),
+                        |batch| emit(env, receiver, batch, &mut memory),
+                    )
+                },
+            ))
+        })();
+        match result {
+            Ok(handle) => handle,
+            Err(error) => {
+                throw_error(&mut env, error);
+                0
+            }
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_configureGroupArithmeticCanonical<'local>(
     env: JNIEnv<'local>,

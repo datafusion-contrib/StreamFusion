@@ -235,20 +235,8 @@ public final class StockWindowJoinStateContract implements StockStateContract {
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var serializer = new RowDataSerializer(keyType);
-    for (int side = 0; side < 2; side++) {
-      var retained = new ArrayList<WindowKey>();
-      try (var stream = backend.<Long>getKeysAndNamespaces(name(side))) {
-        stream.forEach(
-            entry ->
-                retained.add(new WindowKey(serializer.toBinaryRow(entry.f0).copy(), entry.f1)));
-      }
-      for (var entry : retained) {
-        backend.setCurrentKey(entry.key);
-        backend.getPartitionedState(entry.end, LongSerializer.INSTANCE, descriptor(side)).clear();
-      }
-    }
+  public void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {
     timers(backend);
     while (events.poll() != null) {}
     while (processing.poll() != null) {}

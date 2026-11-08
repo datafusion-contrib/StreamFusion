@@ -266,17 +266,6 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
     return new ArrayList<>(all.values());
   }
 
-  @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var state = state(backend);
-    var maps = maps(backend);
-    for (var key : sourceKeys(backend)) {
-      backend.setCurrentKey(key);
-      state.clear();
-      for (var map : maps) if (map != null) map.clear();
-    }
-  }
-
   private BinaryRowData decode(byte[] encoded) {
     var key = new BinaryRowData(keyType.getFieldCount());
     key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);

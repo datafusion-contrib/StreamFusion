@@ -89,6 +89,12 @@ list child name during Arrow row decoding must not invalidate the output schema.
 
 ## Canonical state adapter
 
+Eager value-state exports can use a pinned native RocksDB snapshot with asynchronous stock
+serialization; memory exports use bounded spill capture. Planner binding and focused state
+interchange controls also run on Flink 1.18.1. Buffered, window and other timer-bearing layouts
+retain separate projection and qualification requirements. This does not qualify every 1.18
+emission variant or cross-version upgrades.
+
 Direct Flink 2.2.1 eager-state conversion is partial. Processing-time keep-first transfers a
 Boolean presence marker; processing-time keep-last and eager event-time keep modes transfer
 the retained full row, stock serializers, actual key and original TTL age. The proctime

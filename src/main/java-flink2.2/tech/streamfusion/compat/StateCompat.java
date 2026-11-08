@@ -8,6 +8,10 @@ import org.apache.flink.runtime.state.*;
 public final class StateCompat {
   private StateCompat() {}
 
+  public static boolean normalizerComparesRowKind() {
+    return false;
+  }
+
   public static <K> void setCurrentKeyAndGroup(
       CheckpointableKeyedStateBackend<K> backend, K key, int group) {
     backend.setCurrentKeyAndKeyGroup(key, group);

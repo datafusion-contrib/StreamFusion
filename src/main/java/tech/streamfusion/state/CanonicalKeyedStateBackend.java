@@ -19,6 +19,9 @@ public final class CanonicalKeyedStateBackend<K>
     implements CheckpointableKeyedStateBackend<K>, CheckpointListener {
   private final CheckpointableKeyedStateBackend<K> delegate;
   private final CanonicalProjection projection;
+  private org.apache.flink.util.function.SupplierWithException<SavepointResources<?>, Exception>
+      canonicalSnapshot;
+  private org.apache.flink.util.function.ThrowingRunnable<Exception> nativeSnapshot;
 
   CanonicalKeyedStateBackend(
       CheckpointableKeyedStateBackend<K> delegate, CanonicalProjection projection) {
@@ -32,6 +35,14 @@ public final class CanonicalKeyedStateBackend<K>
 
   public CanonicalProjection projection() {
     return projection;
+  }
+
+  public void configureSnapshots(
+      org.apache.flink.util.function.SupplierWithException<SavepointResources<?>, Exception>
+          canonicalSnapshot,
+      org.apache.flink.util.function.ThrowingRunnable<Exception> nativeSnapshot) {
+    this.canonicalSnapshot = java.util.Objects.requireNonNull(canonicalSnapshot);
+    this.nativeSnapshot = java.util.Objects.requireNonNull(nativeSnapshot);
   }
 
   @Override
@@ -93,14 +104,18 @@ public final class CanonicalKeyedStateBackend<K>
   }
 
   @Override
+  @SuppressWarnings({"unchecked", "rawtypes"})
   public SavepointResources<K> savepoint() throws Exception {
-    return delegate.savepoint();
+    return canonicalSnapshot == null
+        ? delegate.savepoint()
+        : (SavepointResources) canonicalSnapshot.get();
   }
 
   @Override
   public RunnableFuture<SnapshotResult<KeyedStateHandle>> snapshot(
       long id, long timestamp, CheckpointStreamFactory factory, CheckpointOptions options)
       throws Exception {
+    if (nativeSnapshot != null) nativeSnapshot.run();
     return delegate.snapshot(id, timestamp, factory, options);
   }
 

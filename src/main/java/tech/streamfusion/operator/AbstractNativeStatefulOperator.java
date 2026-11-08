@@ -210,6 +210,12 @@ public abstract class AbstractNativeStatefulOperator<OUT>
         backend instanceof CanonicalKeyedStateBackend
             ? ((CanonicalKeyedStateBackend<?>) backend).projection()
             : null;
+    if (usesBackendCanonicalSnapshot() && stockStateContract != null) {
+      if (!(backend instanceof CanonicalKeyedStateBackend))
+        throw new IllegalStateException("stock canonical snapshot backend was not installed");
+      ((CanonicalKeyedStateBackend<?>) backend)
+          .configureSnapshots(this::prepareStockCanonicalSnapshot, this::snapshotNativeState);
+    }
     super.initializeState(context);
     if (stockStateContract != null) {
       stockStateContract.initializeOperatorState(
@@ -235,7 +241,8 @@ public abstract class AbstractNativeStatefulOperator<OUT>
       snapshots = RawKeyedState.restore(context);
       restoredProcessingTimeTimerDeadline = Long.MIN_VALUE;
     }
-    if (getKeyedStateBackend() instanceof CheckpointableKeyedStateBackend) {
+    if (!isStatelessAtBarrier()
+        && getKeyedStateBackend() instanceof CheckpointableKeyedStateBackend) {
       CanonicalNativeState.Restore canonical;
       if (getKeyedStateBackend() instanceof RocksDBNativeKeyedStateBackend) {
         RocksDBNativeKeyedStateBackend.CanonicalRestore restored =
@@ -339,8 +346,45 @@ public abstract class AbstractNativeStatefulOperator<OUT>
     getMetricGroup().gauge("nativeStateStorage", () -> storage);
   }
 
+  private org.apache.flink.runtime.state.SavepointResources<?> prepareStockCanonicalSnapshot()
+      throws Exception {
+    var direct =
+        stockStateContract.snapshot(
+            new tech.streamfusion.state.StockSnapshotContext(
+                stockStateContract.keySerializer(),
+                maxParallelism,
+                ((CheckpointableKeyedStateBackend<?>) getKeyedStateBackend()).getKeyGroupRange(),
+                java.nio.file.Path.of(
+                    getContainingTask()
+                        .getEnvironment()
+                        .getIOManager()
+                        .getSpillingDirectoriesPaths()[0]),
+                rocksdbSupport == null ? () -> null : rocksdbSupport::retainCanonicalReader),
+            handle,
+            directRocksDBState());
+    if (direct != null) return direct;
+    var backend = canonicalProjection.backend();
+    stockStateContract.exportState(backend, handle, directRocksDBState());
+    var resources = backend.savepoint();
+    try {
+      stockStateContract.clear(backend);
+      return resources;
+    } catch (Exception | Error failure) {
+      try {
+        resources.getSnapshotResources().release();
+      } catch (Exception | Error cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+      throw failure;
+    }
+  }
+
   /** Binds runtime modes before restored logical state is transferred into the native handle. */
   protected void configureStateHandle() {}
+
+  protected boolean isStatelessAtBarrier() {
+    return false;
+  }
 
   protected long canonicalWatermark() {
     return Long.MIN_VALUE;
@@ -378,28 +422,14 @@ public abstract class AbstractNativeStatefulOperator<OUT>
     }
     beforeSnapshotState();
     stockStateContract.snapshotOperatorState(canonicalWatermark());
-    var backend = canonicalProjection.backend();
-    stockStateContract.exportState(backend, handle, directRocksDBState());
-    var result =
-        StockCanonicalSnapshot.capture(
-            backend,
-            getOperatorStateBackend(),
-            checkpointId,
-            timestamp,
-            streamFactory,
-            options,
-            getContainingTask().getCancelables());
-    try {
-      stockStateContract.clear(backend);
-      return result;
-    } catch (Exception | Error failure) {
-      try {
-        result.cancel();
-      } catch (Exception | Error cleanup) {
-        failure.addSuppressed(cleanup);
-      }
-      throw failure;
-    }
+    return StockCanonicalSnapshot.capture(
+        this::prepareStockCanonicalSnapshot,
+        getOperatorStateBackend(),
+        checkpointId,
+        timestamp,
+        streamFactory,
+        options,
+        getContainingTask().getCancelables());
   }
 
   @Override
@@ -407,6 +437,12 @@ public abstract class AbstractNativeStatefulOperator<OUT>
     super.snapshotState(context);
     beforeSnapshotState();
     if (stockStateContract != null) stockStateContract.snapshotOperatorState(canonicalWatermark());
+    if (usesBackendCanonicalSnapshot() && stockStateContract != null) return;
+    snapshotNativeState();
+  }
+
+  private void snapshotNativeState() throws Exception {
+    if (isStatelessAtBarrier()) return;
     // Native RocksDB state checkpoints through the keyed backend. Standalone memory state uses the
     // same managed canonical representation that RocksDB materializes for a canonical savepoint.
     if (rocksdbState) {

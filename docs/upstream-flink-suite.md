@@ -1885,3 +1885,24 @@ released execution-node metadata declares the graph nonserializable. Canonical s
 binding must not force these programs through JSON serialization. Unchanged upstream aggregate,
 nested-table Calc and OVER assertions still run with their original native-execution contracts;
 this boundary does not add DataStream-bridge canonical interchange coverage.
+
+
+## Released Flink 1.18 canonical protocol controls
+
+The canonical fixture module also accepts `-Pflink-1.18,canonical-stock`. Flink 1.18 predates
+the newer released SQL `RestoreTest` framework, so the module excludes those wrapper sources and
+selects the unchanged released `HeapSavepointStateBackendSwitchTest` and
+`RocksSavepointStateBackendSwitchTest` controls. They come from the canonical Maven release test
+artifact; no sibling Flink build or copied implementation is needed.
+
+Run the stock protocol reference with:
+
+```sh
+mvn -Pflink-1.18,canonical-savepoints,canonical-stock -pl dev/canonical-savepoints -am test \
+  -Dsf.runtime.tests.skip=true
+```
+
+These are upstream backend-format controls. Native execution and actual stock/native continuation
+are established separately by StreamFusion's shared operator and isolated complete-job tests.
+The `bin/canonical-savepoints.sh` SQL/native evidence workflow retains its separately qualified
+2.2 restore programs; this profile does not claim that absent framework exists on 1.18.

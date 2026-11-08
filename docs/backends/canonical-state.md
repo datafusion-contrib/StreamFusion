@@ -35,8 +35,15 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | All five stock layouts; qualified BIGINT compiled-plan jobs | Ordinary SQL, accelerated connector binding, wider types and writer rescaling |
 | [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs | Wider schemas/residuals and additional exchange/rescale combinations |
 
-Stock-compatible canonical qualification is on released Flink 2.2.1. Shared Flink 1.18 tests establish
-processing/native-checkpoint regressions only. Custom stock source/committer fixtures retain their
+The established complete-job qualification is on released Flink 2.2.1. Flink 1.18.1 now shares the
+planner, metadata projection, state contracts and canonical backend. Complete-job controls cover
+First-N, grouped arithmetic, regular joins, normalization and eager deduplication on both native
+stores. Component controls additionally cover typed/grouped state, ranks, fixed TUMBLE windows,
+interval joins, temporal state and processing-time OVER. Legacy HOP/CUMULATE canonical binding
+retains stock operators because released shared-pane timer continuation differs; session TVFs
+are unavailable, buffered dedup uses the older eager owner, and event-time unbounded OVER V1
+remains unqualified. These same-line controls do not qualify the whole
+1.18 operator inventory or cross-line upgrades. Custom stock source/committer fixtures retain their
 state and external effects in the qualified jobs. Native connector protocols have separate
 qualification: the [Kafka handoff matrices](../connectors/kafka.md#canonical-sink-handoffs-partial)
 include real-broker exactly-once sink and both-native pipelines, writer rescaling, transaction
@@ -44,6 +51,49 @@ ownership and selected process/commit-failure cases. Combining partition discove
 and broker/coordinator/publication failures remains open; those historical cohorts are not
 implicitly requalified by newer operator libraries. Benchmarking stays deferred under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+## Streaming stock-state capture
+
+Canonical conversion runs only when Flink requests a canonical savepoint. Ordinary checkpoints and
+native-format savepoints retain their existing native recovery path. Both supported Flink lines
+use the released `SavepointSnapshotStrategy` and `FullSnapshotAsyncWriter`; StreamFusion supplies
+the stock serializer metadata and snapshot entries.
+
+First-N counters, arithmetic grouped accumulators, typed grouped accumulators without shared
+DISTINCT views, eager deduplication, changelog normalization and processing-time unbounded OVER
+can stream from a pinned native
+RocksDB MVCC snapshot. At the barrier, the store commits its pending bundle and captures the read
+view plus immutable decoder configuration. Flink's asynchronous writer pulls bounded native frames,
+converts each entry with the stock serializers and writes canonical bytes in key-group order.
+Continued input updates the live database independently; concurrent savepoints own separate views.
+These exports construct neither a stock-schema database nor a complete intermediate state file.
+The backend retains its working directory and memory-pool ownership until readers finish or cancel.
+
+The same value-state layouts on memory capture into bounded
+spill storage at the barrier. Each entry is serialized immediately into one file with a fixed
+key-group index; the immutable file then feeds the same asynchronous Flink writer. This avoids
+copying the complete native map into Java heap. Unlike the MVCC path, conversion still runs in the
+synchronous barrier phase. Cancellation, failed capture and completed writing release the file.
+
+Both paths retain the original TTL write ages and bound decoded working memory by the current
+frame/entry and owned key-group count. Very large individual values remain a separate limit.
+Conversion cost, barrier duration and spill I/O have not been benchmarked.
+
+Other state contracts and stock imports use Flink's released RocksDB backend as the temporary
+stock-schema view, including disk-backed timer queues. Canonical-capable jobs reserve Flink
+state-backend managed memory for that view even when their live native state is in memory. They no longer require a complete heap
+projection. Clearing that view uses a captured state iterator, preserving key/namespace serializers
+and the caller's key context without collecting every key. Large individual values and the remaining
+operator-specific import working sets still require separate qualification.
+
+Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending
+input and snapshots managed operator metadata; the keyed backend's `savepoint()` hook captures stock
+state. The native checkpoint callback remains separate. Flink 2.2 retains its compatible operator
+snapshot entry point and uses the same state contracts and writer. Flink 1.18 materializes its
+storage provider explicitly so its older executor cannot bypass operator-ID projection with an
+already-created storage instance. Timer inspection reads canonical snapshot bytes through Flink's
+released serializers, avoiding stale live queue iteration hints when a deadline is removed and
+reinserted.
 
 ## Private native envelope
 
@@ -248,13 +298,13 @@ binding. Java/JNI recovery controls merge additional partials after restore and 
 closed end stays closed on both native memory and typed RocksDB.
 
 Local windows already emit every pending partial before a checkpoint barrier. A dedicated
-stock-compatible local mode on Flink 2.2 now returns empty snapshot futures after that drain,
+stock-compatible local mode on both Flink lines returns empty state after that drain,
 so the stateless stage saves neither native keyed metadata nor serializer references. Missing
 the drain fails the snapshot without consuming the pending partials; it never emits them after
 the barrier. Scalar and counted-DISTINCT controls check all four managed/raw state collections,
 exact frequencies and continued input without replay. Stateful operators and the ordinary local
-mode retain the existing snapshot path by default. The version bridge keeps Flink 1.18's final
-snapshot lifecycle unchanged; this foundation does not establish 1.18 stock interoperability.
+mode retain the existing snapshot path by default. Flink 1.18 uses its final snapshot lifecycle
+with a stateless barrier hook; its qualified local TUMBLE controls cover scalar and DISTINCT partials.
 
 When an adapter reconstructs a key from logical fields, ordinary row serialization is not the
 same operation as Flink's generated key projection. The projection reserves NULL variable slots

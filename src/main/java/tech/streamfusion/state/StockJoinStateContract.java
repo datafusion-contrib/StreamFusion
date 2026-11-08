@@ -95,12 +95,6 @@ public final class StockJoinStateContract implements StockStateContract {
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    left.clear(backend);
-    right.clear(backend);
-  }
-
-  @Override
   public void exportState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {

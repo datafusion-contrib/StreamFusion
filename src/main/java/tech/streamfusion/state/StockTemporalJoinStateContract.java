@@ -288,20 +288,8 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var serializer = new RowDataSerializer(keyType);
-    for (String name : stateDescriptors().keySet()) {
-      var retained = new ArrayList<RowData>();
-      try (var stream = backend.getKeys(name, VoidNamespace.INSTANCE)) {
-        stream.forEach(key -> retained.add(serializer.copy(key)));
-      }
-      for (var key : retained) {
-        backend.setCurrentKey(key);
-        if (name.equals("left") || name.equals("right"))
-          cache(backend, name.equals("left") ? 0 : 1).clear();
-        else value(backend, name).clear();
-      }
-    }
+  public void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {
     queues(backend);
     while (events.poll() != null) {}
     while (processing.poll() != null) {}

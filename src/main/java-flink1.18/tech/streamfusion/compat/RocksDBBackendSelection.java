@@ -22,7 +22,8 @@ final class RocksDBBackendSelection {
 
   static String install(StreamExecutionEnvironment environment, ReadableConfig tableConfig) {
     if (environment == null) return null;
-    StateBackend original = environment.getStateBackend();
+    StateBackend original =
+        tech.streamfusion.state.CanonicalStateBackend.unwrap(environment.getStateBackend());
     if (original != null
         && !original
             .getClass()

@@ -1774,3 +1774,13 @@ proof and are not added cumulatively.
 Legacy event-time V1, unbounded DECIMAL, DISTINCT/views, wider keys/payloads, bounded event-ROWS
 processing cleanup and the wider rescale/version/failure/connector matrix remain unfinished in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.
+
+## Canonical capture on both Flink lines
+
+Processing-time unbounded scalar folds on native RocksDB now pin the existing database at the
+savepoint barrier. Flink's asynchronous canonical writer reads bounded frames and serializes them
+with the released stock accumulator/key serializers. Memory folds use a bounded spill file;
+conversion there remains synchronous. Ordinary checkpoints keep their native format. Shared
+Flink 1.18 component controls cover the processing-time fold contract; event-time unbounded V1
+remains a stock canonical fallback. The wider complete-job matrices above qualify Flink 2.2 only.
+Benchmarking is deferred.

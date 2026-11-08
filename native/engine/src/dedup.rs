@@ -1002,6 +1002,7 @@ pub(crate) type RocksDedupStore = crate::state::RocksStore<DedupStateCodec>;
 /// keyed-state snapshot carries, so the two persistence paths cannot drift). Every payload shape
 /// round-trips as opaque bytes, so every keep-last state shape is persistable.
 #[cfg(feature = "rocksdb-state")]
+#[derive(Clone)]
 pub(crate) struct DedupStateCodec;
 
 #[cfg(feature = "rocksdb-state")]

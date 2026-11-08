@@ -257,6 +257,54 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
     }
 }
 
+#[cfg(feature = "rocksdb-state")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_captureEagerDeduplicatorCanonicalSnapshot<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    row_schema: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let owner = unsafe { &mut *(handle as *mut KeepLastDeduplicator<RocksDedupStore>) };
+        let result = (|| {
+            owner.canonical_schema(Arc::new(Schema::try_from(unsafe {
+                &*(row_schema as *const FFI_ArrowSchema)
+            })?))?;
+            let schema = Arc::clone(owner.schema.as_ref().unwrap());
+            let converter = RowConverter::new(
+                schema
+                    .fields()
+                    .iter()
+                    .map(|field| SortField::new(field.data_type().clone()))
+                    .collect(),
+            )?;
+            let markers = owner.canonical_markers();
+            let snapshot = owner.rows.canonical_snapshot()?;
+            Ok::<_, DataFusionError>(crate::state::canonical_snapshot::cursor(
+                snapshot,
+                move |env, receiver, entries| {
+                    let rows: Vec<_> = entries.iter().map(|(key, value)| (key, value)).collect();
+                    crate::bridge::emit_record_batch(
+                        env,
+                        receiver,
+                        canonical_batch(&schema, &converter, markers, &rows)?,
+                    )
+                },
+            ))
+        })();
+        match result {
+            Ok(handle) => handle,
+            Err(error) => {
+                throw_canonical_error(&mut env, error);
+                0
+            }
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_exportEagerDeduplicatorCanonical<'local>(
     env: JNIEnv<'local>,

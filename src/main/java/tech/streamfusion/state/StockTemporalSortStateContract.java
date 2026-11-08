@@ -132,12 +132,12 @@ public final class StockTemporalSortStateContract implements StockStateContract 
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
+  public void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {
     own(backend);
-    rows(backend).clear();
-    last(backend).clear();
-    var timers = events(backend);
-    while (timers.poll() != null) {}
+    events(backend);
+    var queue = events(backend);
+    while (queue.poll() != null) {}
   }
 
   @Override

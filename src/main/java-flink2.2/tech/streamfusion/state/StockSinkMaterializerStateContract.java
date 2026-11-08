@@ -240,15 +240,6 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
     return new ArrayList<>(unique.values());
   }
 
-  @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var s = new States(backend);
-    for (RowData key : allKeys(backend)) {
-      backend.setCurrentKey(key);
-      s.clearCurrent();
-    }
-  }
-
   private void current(CheckpointableKeyedStateBackend<RowData> backend, byte[] bytes) {
     var key = new BinaryRowData(keyType.getFieldCount());
     key.pointTo(MemorySegmentFactory.wrap(bytes), 0, bytes.length);

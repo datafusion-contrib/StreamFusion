@@ -156,19 +156,6 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
     return new ArrayList<>(owners);
   }
 
-  @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var data = data(backend);
-    var counts = counts(backend);
-    var bound = variable ? bound(backend) : null;
-    for (var key : owners(backend)) {
-      backend.setCurrentKey(key);
-      data.clear();
-      counts.clear();
-      if (bound != null) bound.clear();
-    }
-  }
-
   private static void validateKey(RowData key, RowType type) {
     if (key == null || key.getArity() != type.getFieldCount() || key.getRowKind() != RowKind.INSERT)
       throw new IllegalStateException("Invalid retracting state key");

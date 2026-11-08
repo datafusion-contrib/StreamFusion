@@ -6,8 +6,6 @@ import java.util.Map;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
-import org.apache.arrow.vector.TinyIntVector;
-import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.state.StateDescriptor;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
@@ -97,29 +95,34 @@ public final class StockDedupStateContract implements StockStateContract {
   }
 
   @SuppressWarnings("unchecked")
+  private TypeSerializer<Object> valueSerializer() {
+    return (TypeSerializer<Object>)
+        (TypeSerializer<?>)
+            (presenceOnly ? BooleanSerializer.INSTANCE : new RowDataSerializer(rowType));
+  }
+
   private StockValueState<Object> state(CheckpointableKeyedStateBackend<RowData> backend)
       throws Exception {
-    TypeSerializer<Object> serializer =
-        (TypeSerializer<Object>)
-            (TypeSerializer<?>)
-                (presenceOnly ? BooleanSerializer.INSTANCE : new RowDataSerializer(rowType));
-    return new StockValueState<>(backend, STATE, serializer, stateRetention > 0);
+    return new StockValueState<>(backend, STATE, valueSerializer(), stateRetention > 0);
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var state = state(backend);
-    List<RowData> keys;
-    try (var stream = backend.getKeys(STATE, VoidNamespace.INSTANCE)) {
-      keys =
-          stream
-              .map(backend.getKeySerializer()::copy)
-              .collect(java.util.stream.Collectors.toList());
-    }
-    for (var key : keys) {
-      backend.setCurrentKey(key);
-      state.clear();
-    }
+  public org.apache.flink.runtime.state.SavepointResources<RowData> snapshot(
+      StockSnapshotContext context, long handle, boolean persistent) throws Exception {
+    if (persistent)
+      return context.nativeValue(
+          STATE,
+          valueSerializer(),
+          stateRetention > 0,
+          () -> withNativeSchema(
+              schema -> Native.captureEagerDeduplicatorCanonicalSnapshot(handle, schema)),
+          bridgeType,
+          decoder());
+    return context.value(
+        STATE,
+        valueSerializer(),
+        stateRetention > 0,
+        receiver -> visit(handle, persistent, receiver));
   }
 
   @Override
@@ -128,40 +131,67 @@ public final class StockDedupStateContract implements StockStateContract {
       throws Exception {
     clear(backend);
     var state = state(backend);
-    var serializer = new RowDataSerializer(rowType);
-    int arity = rowType.getFieldCount();
+    visit(
+        handle,
+        persistent,
+        (key, value, written) -> {
+          backend.setCurrentKey(key);
+          state.update(value, written);
+        });
+  }
+
+  private void visit(long handle, boolean persistent, StockValueSnapshot.Entry<Object> receiver)
+      throws Exception {
+    var decoder = decoder();
     scan(
         handle,
         persistent,
         (arrayAddress, schemaAddress) -> {
-          try (ArrowArray array = ArrowArray.wrap(arrayAddress);
-              ArrowSchema schema = ArrowSchema.wrap(schemaAddress);
-              VectorSchemaRoot root =
+          try (var array = ArrowArray.wrap(arrayAddress);
+              var schema = ArrowSchema.wrap(schemaAddress);
+              var root =
                   Data.importVectorSchemaRoot(
                       NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
-            var keys = (VarBinaryVector) root.getVector(arity);
-            var kinds = (TinyIntVector) root.getVector(arity + 3);
-            var timestamps = (org.apache.arrow.vector.BigIntVector) root.getVector(arity + 2);
-            var rows = presenceOnly ? null : ArrowConversion.createArrowReader(root, rowType);
-            for (int row = 0; row < root.getRowCount(); row++) {
-              byte[] bytes = keys.get(row);
-              BinaryRowData key = new BinaryRowData(keyType.getFieldCount());
-              key.pointTo(MemorySegmentFactory.wrap(bytes), 0, bytes.length);
-              backend.setCurrentKey(key);
-              if (presenceOnly) state.update(Boolean.TRUE, timestamps.get(row));
-              else {
-                RowData value = serializer.copy(rows.read(row));
-                value.setRowKind(RowKind.fromByteValue(kinds.get(row)));
-                state.update(value, timestamps.get(row));
-              }
-            }
+            var reader = ArrowConversion.createArrowReader(root, bridgeType);
+            for (int index = 0; index < root.getRowCount(); index++)
+              decoder.decode(reader.read(index), receiver);
           } catch (Exception failure) {
             throw new IllegalStateException("Cannot export stock dedup state", failure);
           }
         });
   }
 
+  private StockNativeValueSnapshot.Decoder<Object> decoder() {
+    int arity = rowType.getFieldCount();
+    var serializer = new RowDataSerializer(rowType);
+    var fields = new RowData.FieldGetter[arity];
+    for (int field = 0; field < arity; field++)
+      fields[field] = RowData.createFieldGetter(rowType.getTypeAt(field).copy(true), field);
+    return (row, receiver) -> {
+      byte[] encoded = row.getBinary(arity);
+      var key = new BinaryRowData(keyType.getFieldCount());
+      key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
+      if (presenceOnly) receiver.write(key, Boolean.TRUE, row.getLong(arity + 2));
+      else {
+        var payload = new GenericRowData(arity);
+        for (int field = 0; field < arity; field++)
+          payload.setField(field, fields[field].getFieldOrNull(row));
+        RowData value = serializer.copy(payload);
+        value.setRowKind(RowKind.fromByteValue(row.getByte(arity + 3)));
+        receiver.write(key, value, row.getLong(arity + 2));
+      }
+    };
+  }
+
   private void scan(long handle, boolean persistent, Native.BatchReceiver receiver) {
+    withNativeSchema(
+        schema -> {
+          Native.exportEagerDeduplicatorCanonical(handle, persistent, schema, receiver);
+          return null;
+        });
+  }
+
+  private <T> T withNativeSchema(java.util.function.LongFunction<T> action) {
     try (ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       try {
         Data.exportSchema(
@@ -169,8 +199,7 @@ public final class StockDedupStateContract implements StockStateContract {
             ArrowConversion.toArrowSchema(rowType),
             NativeAllocator.DICTIONARIES,
             schema);
-        Native.exportEagerDeduplicatorCanonical(
-            handle, persistent, schema.memoryAddress(), receiver);
+        return action.apply(schema.memoryAddress());
       } finally {
         if (schema.snapshot().release != 0) schema.release();
       }
@@ -220,7 +249,7 @@ public final class StockDedupStateContract implements StockStateContract {
     var rows = new ArrayList<RowData>(CHUNK_ROWS);
     var getters = new RowData.FieldGetter[arity];
     for (int field = 0; field < arity; field++)
-      getters[field] = RowData.createFieldGetter(rowType.getTypeAt(field), field);
+      getters[field] = RowData.createFieldGetter(rowType.getTypeAt(field).copy(true), field);
     try (var keys = backend.getKeys(STATE, VoidNamespace.INSTANCE)) {
       var iterator = keys.iterator();
       while (iterator.hasNext()) {

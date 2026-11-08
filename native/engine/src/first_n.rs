@@ -250,6 +250,7 @@ impl FirstN {
 }
 
 #[cfg(feature = "rocksdb-state")]
+#[derive(Clone)]
 pub(crate) struct FirstNCodec;
 
 #[cfg(feature = "rocksdb-state")]

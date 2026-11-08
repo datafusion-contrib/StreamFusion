@@ -101,32 +101,6 @@ public final class StockGroupDistinctView implements Serializable {
         new ValueStateDescriptor<>(name + "_null_state", counters));
   }
 
-  void clear(CheckpointableKeyedStateBackend<RowData> backend, RowType keyType) throws Exception {
-    var rows = new RowDataSerializer(keyType);
-    var map = state(backend);
-    List<RowData> keys = new ArrayList<>();
-    try (var stream = backend.getKeys(name, VoidNamespace.INSTANCE)) {
-      stream.forEach(key -> keys.add(rows.copy(key)));
-    }
-    for (var key : keys) {
-      backend.setCurrentKey(key);
-      map.clear();
-    }
-    keys.clear();
-    var marker =
-        backend.getPartitionedState(
-            VoidNamespace.INSTANCE,
-            VoidNamespaceSerializer.INSTANCE,
-            new ValueStateDescriptor<>(name + "_null_state", counters));
-    try (var stream = backend.getKeys(name + "_null_state", VoidNamespace.INSTANCE)) {
-      stream.forEach(key -> keys.add(rows.copy(key)));
-    }
-    for (var key : keys) {
-      backend.setCurrentKey(key);
-      marker.clear();
-    }
-  }
-
   void exportState(
       CheckpointableKeyedStateBackend<RowData> backend,
       RowType keyType,

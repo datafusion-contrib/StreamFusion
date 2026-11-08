@@ -4,6 +4,8 @@ pub(crate) mod ttl;
 pub(crate) use ttl::*;
 
 #[cfg(feature = "rocksdb-state")]
+pub(crate) mod canonical_snapshot;
+#[cfg(feature = "rocksdb-state")]
 pub(crate) mod rocks_config;
 #[cfg(all(feature = "rocksdb-io-uring", target_os = "linux"))]
 mod rocks_io_uring;

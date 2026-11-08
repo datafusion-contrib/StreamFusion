@@ -1850,3 +1850,13 @@ Other aggregate arguments and grouping keys retain their verified type requireme
 The capability check uses the window runtime's own COUNT kinds, including signed
 retract-count and live-count state. Those codes differ from ordinary group aggregate
 kinds; their validity-only input contract is shared without conflating the two encodings.
+
+## Flink 1.18 canonical binding
+
+The shared canonical planner and state contracts now cover qualified fixed TUMBLE state and the
+stateless local barrier on released Flink 1.18.1, using both native stores. HOP/CUMULATE canonical
+binding retains the stock owner: the released shared-pane timer/buffer continuation differs from
+Flink 2.2 and needs a separate adapter before interchange can be qualified. Session TVFs are not
+available in released 1.18. Processing-time component controls avoid the legacy stock operator's
+overflow/stalled-buffer behavior under extreme future watermarks. The broader complete-job and
+shared-window matrices above remain Flink 2.2 qualification.

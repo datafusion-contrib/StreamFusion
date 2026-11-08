@@ -63,17 +63,17 @@ public final class StockFirstNStateContract implements StockStateContract {
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var state = state(backend);
-    try (var stream = backend.getKeys(STATE, VoidNamespace.INSTANCE)) {
-      for (var key :
-          stream
-              .map(backend.getKeySerializer()::copy)
-              .collect(java.util.stream.Collectors.toList())) {
-        backend.setCurrentKey(key);
-        state.clear();
-      }
-    }
+  public org.apache.flink.runtime.state.SavepointResources<RowData> snapshot(
+      StockSnapshotContext context, long handle, boolean persistent) throws Exception {
+    if (persistent)
+      return context.nativeValue(
+          STATE,
+          IntSerializer.INSTANCE,
+          ttl,
+          () -> Native.captureFirstNCanonicalSnapshot(handle),
+          BRIDGE,
+          this::decode);
+    return context.value(STATE, IntSerializer.INSTANCE, ttl, receiver -> visit(handle, receiver));
   }
 
   @Override
@@ -82,6 +82,15 @@ public final class StockFirstNStateContract implements StockStateContract {
       throws Exception {
     clear(backend);
     var state = state(backend);
+    visit(
+        handle,
+        (key, value, written) -> {
+          backend.setCurrentKey(key);
+          state.update(value, written);
+        });
+  }
+
+  private void visit(long handle, StockValueSnapshot.Entry<Integer> receiver) throws Exception {
     Native.exportFirstNCanonical(
         handle,
         (arrayAddress, schemaAddress) -> {
@@ -92,17 +101,19 @@ public final class StockFirstNStateContract implements StockStateContract {
                       NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
             var reader = ArrowConversion.createArrowReader(root, BRIDGE);
             for (int index = 0; index < root.getRowCount(); index++) {
-              RowData row = reader.read(index);
-              byte[] encoded = row.getBinary(0);
-              var key = new BinaryRowData(keyType.getFieldCount());
-              key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
-              backend.setCurrentKey(key);
-              state.update(row.getInt(1), row.getLong(2));
+              decode(reader.read(index), receiver);
             }
           } catch (Exception failure) {
             throw new IllegalStateException("Cannot project stock first-N counters", failure);
           }
         });
+  }
+
+  private void decode(RowData row, StockValueSnapshot.Entry<Integer> receiver) throws Exception {
+    byte[] encoded = row.getBinary(0);
+    var key = new BinaryRowData(keyType.getFieldCount());
+    key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
+    receiver.write(key, row.getInt(1), row.getLong(2));
   }
 
   @Override

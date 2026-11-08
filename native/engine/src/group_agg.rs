@@ -1136,6 +1136,7 @@ pub(crate) type RocksGroupStore = crate::state::RocksStore<GroupStateCodec>;
 /// cardinality, the SUM(DISTINCT) fold (with the cardinality in the count slot), or the current
 /// extreme — so a bundle hydrates only the elements it touches, never the whole multiset.
 #[cfg(feature = "rocksdb-state")]
+#[derive(Clone)]
 pub(crate) struct GroupStateCodec {
     kinds: Vec<i64>,
     value_types: Vec<DataType>,

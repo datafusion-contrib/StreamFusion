@@ -3122,6 +3122,12 @@ their existing verified representation contract.
 
 ## Stock arithmetic accumulator projection (partial)
 
+Canonical planner/state machinery is shared with Flink 1.18.1. Arithmetic and typed scalar
+accumulators without shared DISTINCT views can stream from a pinned native RocksDB snapshot into
+Flink's asynchronous canonical writer. Memory captures use bounded serialized spill storage.
+Focused same-line operator restore controls pass; the wider complete-job matrix remains separate.
+DISTINCT views, managed UDFs and other layouts still use the disk-backed stock projection.
+
 A direct Flink 2.2.1 adapter now projects the qualified generated scalar `accState` value.
 It copies COUNT, SUM0, nullable SUM, append-only BIGINT MIN/MAX and raw AVG sums/counts, the independent input-record counter
 and the original TTL write age. A separate structured adapter preserves retracting BIGINT MIN/MAX

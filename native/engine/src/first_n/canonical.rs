@@ -130,6 +130,33 @@ fn throw_error(env: &mut JNIEnv, error: DataFusionError) {
     }
 }
 
+#[cfg(feature = "rocksdb-state")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_captureFirstNCanonicalSnapshot<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let ranker = unsafe { &mut *(handle as *mut FirstNHandle) };
+        let result = match ranker {
+            FirstNHandle::Rocks(ranker) => ranker.rows.canonical_snapshot(),
+            FirstNHandle::Memory(_) => Err(invalid("MVCC capture requires RocksDB state")),
+        };
+        match result {
+            Ok(snapshot) => {
+                crate::state::canonical_snapshot::cursor(snapshot, |env, receiver, rows| {
+                    emit_counts(env, receiver, rows.iter().map(|(key, count)| (key, count)))
+                })
+            }
+            Err(error) => {
+                throw_error(&mut env, error);
+                0
+            }
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_exportFirstNCanonical<'local>(
     env: JNIEnv<'local>,

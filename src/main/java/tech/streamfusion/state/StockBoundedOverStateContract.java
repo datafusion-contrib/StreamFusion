@@ -293,20 +293,6 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     return row.getLong(timeColumn);
   }
 
-  @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    for (String name : stateDescriptors().keySet())
-      for (var key : stateKeys(backend, name)) {
-        backend.setCurrentKey(key);
-        if (name.equals(ACC)) accumulators(backend).clear();
-        else if (name.equals(INPUT)) inputs(backend).clear();
-        else scalar(backend, name).clear();
-      }
-    bind(backend);
-    while (events.poll() != null) {}
-    while (processing.poll() != null) {}
-  }
-
   @FunctionalInterface
   private interface Exporter {
     void run(long handle, Native.BatchReceiver receiver);
@@ -369,6 +355,14 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     peers = peers == null ? new ArrayList<>() : new ArrayList<>(peers);
     peers.add(new RowDataSerializer(inputType).copy(row));
     state.put(timestamp, peers);
+  }
+
+  @Override
+  public void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {
+    bind(backend);
+    while (events.poll() != null) {}
+    while (processing.poll() != null) {}
   }
 
   @Override

@@ -126,19 +126,6 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var data = top1 ? null : data(backend);
-    var winner = top1 ? winner(backend) : null;
-    try (var stream = backend.getKeys(top1 ? "Top1-Rank-State" : DATA, VoidNamespace.INSTANCE)) {
-      for (var key : stream.map(keys::copy).collect(java.util.stream.Collectors.toList())) {
-        backend.setCurrentKey(key);
-        if (top1) winner.clear();
-        else data.clear();
-      }
-    }
-  }
-
-  @Override
   public void exportState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
