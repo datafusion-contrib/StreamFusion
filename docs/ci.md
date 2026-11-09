@@ -621,7 +621,15 @@ failure and mini-batch ordering controls also pass on 1.18. A clean 2.2 build re
 canonical job classes and passes the same controls plus its transient-factory restoration test
 (16 checks). These selections do not qualify the
 remaining inherited job providers or the newly shared Kafka source cases; hosted CI runs their
-full providers.
+full providers. The Kafka parity cohort additionally passes 24 selected real-broker scenarios
+on 1.18 across all twelve sink/pipeline classes and source checkpoint recovery, plus 22 admission
+controls. Four full continuation combinations subsequently cover SQL/compiled submissions and
+both initial engine orders with the corrected metadata cache. Six shared cache controls pass,
+including actual archive reuse across stage directories. Twelve real continuation workers reuse
+two metadata archives; their application state and runtime directories remain independent.
+A clean 2.2 build compiles the same 118-class inventory and passes the equivalent 24 selected
+broker scenarios, 22 admission checks and six cache controls without skips. Across the two release
+classpaths, these runs retain six worker metadata archives instead of generating one per stage.
 
 Canonical scheduling now uses that complete matrix's class times with startup compilation
 and metadata sharing enabled, replacing estimates from the earlier JVM settings. For the

@@ -50,6 +50,12 @@ timestamps; its captured RocksDB reader leaves metadata on disk. These same-line
 job fixture classes, including all twelve Kafka sink/pipeline families. Their release adapters
 inspect the host connector's own writer/committer recovery format and retain exact transaction,
 identity and external-effect assertions; compilation parity is separate from job qualification.
+Selected 1.18 qualification now includes 24 real-broker Kafka scenarios spanning all twelve
+sink/pipeline families and source checkpoint recovery, plus four full continuation combinations
+covering ordinary SQL/compiled plans and both initial engine orders. The local family selector
+is narrower than each fixture's exhaustive hosted provider; no host-supported provider is removed.
+The equivalent clean 2.2 cohort passes the same 24 broker scenarios; its 22 admission and six shared
+cache controls bring that selection to 52 checks, with no failures or skips.
 Custom stock source/committer fixtures retain their
 state and external effects in the qualified jobs. Native connector protocols have separate
 qualification: the [Kafka handoff matrices](../connectors/kafka.md#canonical-sink-handoffs-partial)
