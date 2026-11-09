@@ -29,6 +29,23 @@ git push -u fork HEAD
 gh pr create --repo datafusion-contrib/StreamFusion --base main --head YOUR_LOGIN:YOUR_BRANCH
 ```
 
+After syncing the fork's default branch with already-merged upstream code, the native
+dependency cache can be primed there once:
+
+```sh
+gh workflow run ci-profile.yml --repo YOUR_LOGIN/YOUR_FORK --ref main -f suite=native-only
+```
+
+GitHub lets feature branches restore the default branch's cache, while sibling branches
+cannot restore each other's caches ([cache access rules](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)).
+The native-only producer builds the complete workspace with the normal debug dependency
+configuration. A verified sibling-branch run restored that default-branch cache in about
+33 seconds, then built in 24.06 seconds with 42 positive-duration compilation units and
+no RocksDB rebuild. Cold builds of the same native tree recorded 639 such units and
+598.57–632 seconds. The consumer created no duplicate branch cache. This is native setup
+evidence, not whole-CI latency or a same-run CPU comparison; normal tests and source
+validation still run. Cargo rebuilds changed project crates and dependencies as needed.
+
 Pushes to any branch in a fork run CI and the upstream Flink suite. Paimon and release diagnostics
 retain their path filters; docs changes build the strict MkDocs site in the fork. Branch pushes
 in the canonical repository skip those jobs unless the branch is `main`; development branches
@@ -960,9 +977,9 @@ draining after the brief timeout, complete stock/native row parity and positive 
 `hotspot_mode=runtime-regressions` qualifies this case and the three encoding cases before
 the complete required matrix. The focused JDK 17/Flink 2.2 run passed all four cases,
 including complete stock/native rows and positive native work for the buffer fallback.
-Full source qualification remains necessary; final matrix evidence belongs in the
-documentation-only `ci-profile-20261108.json` record so recording results does not repeat
-already proven source tests.
+Complete source qualification subsequently passed; its final matrix evidence is in the
+documentation-only `ci-profile-20261108.json` record. The other benchmark JSON files retain
+their historical experiment and pre-qualification candidate snapshots.
 
 The initial Fluss diagnostic could not load its new timing helper through a stale standalone
 test dependency; it did not execute the 29 SQL cases. `hotspot_mode=fluss-details` attributes
@@ -985,7 +1002,7 @@ including the Maven reactor, fell from 324.26 to 267.13 seconds (17.6%). Child C
 from 48.33 to 48.86 seconds (+1.09%), excluding the external broker containers. Docker
 image preparation took 18 seconds separately; each trial retained fresh containers, JVMs,
 environments and catalogs. These measurements select parallel catalog closure by default
-for the qualification candidate; the complete required matrix must still pass.
+for the qualification candidate, which subsequently passed the complete required matrix.
 
 `hotspot_mode=recovery-diagnostics` repeats the complete 54-case binary collection class
 on Flink 1.18/JDK 17 with alternating 2/4 GiB heaps, retaining its 28 existing skips.
@@ -1017,9 +1034,42 @@ CPU from 107.95 to 104.17 seconds (3.50%). Elapsed ranges overlap; this establis
 large transport-size reduction, not a material execution speedup. Point-in-time heap
 messages are not peak memory measurements. The qualification candidate enables compact
 transport by default, retaining `sf.recoveryResults.compress=false` for the original
-transport comparison. Full required CI must qualify that candidate before merge.
+transport comparison. That candidate subsequently passed full required CI.
 Any failed trial remains a failed diagnostic; its verified counts and condensed failure
 evidence are retained. Raw recordings and bulky successful reports are removed after analysis.
+
+### Complete follow-up qualification
+
+Source `eb87b1c588c83dd65b6c3ba708f36e6e53a87e5c` passed all
+[62 CI jobs](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664),
+[19 upstream checks](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683),
+strict docs and the path-selected compatibility workflow. All 12 runtime jobs and 32
+savepoint jobs remain. The [final source evidence](benchmarks/ci-profile-20261108.json)
+compares every existing runtime class outcome counter and skip count with the preceding
+complete passing source, accounting only for 24 added runnable regression cases.
+The runtime matrix executed 102,464 cases with the same 3,212 existing skips; the savepoint
+matrix retained 118 selected/116 runnable classes and 3,620 cases without skips per JDK.
+The previously failing binary recovery case passed in its complete runtime job; its original
+missing-accumulator cause remains unconfirmed.
+
+| Completed execution | Previous runner hours | Combined runner hours | Reduction |
+| --- | ---: | ---: | ---: |
+| Runtime, 12 jobs | 8.94 | 8.05 | 10.0% |
+| Savepoints, 32 jobs | 26.48 | 21.53 | 18.7% |
+| Other CI, 18 jobs | 3.14 | 3.50 | -11.4% |
+| Complete CI, 62 jobs | 38.57 | 33.08 | 14.2% |
+
+The longest runtime job fell from 78.2 to 58.3 minutes; the longest savepoint job fell from
+73.0 to 62.4 minutes. The Flink 1.18/JDK 11 cohort used 5.8% more runner time, while the
+other cohorts improved; all individual cohort observations are retained. These are
+cross-run observations including cold setup and runner/cache variability, not products of
+the selected paired gains.
+
+Whole-workflow elapsed time increased from 161.6 to 230.8 minutes. Median delay between
+the completed native dependency and Java/savepoint job starts increased from 36.4 to
+90.7 minutes, including runner waiting and orchestration. No end-to-end wall-clock speedup
+is established by this run. The default-branch cache experiment above separately removes
+the measured cold native dependency rebuild from subsequent matching branch builds.
 
 The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
 4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.

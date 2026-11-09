@@ -3510,5 +3510,1864 @@
       ],
       "limits": "Recorded main-thread ThreadPark, JavaMonitorWait and ThreadSleep intervals only. These exclude unrecorded short waits, are not CPU time, do not measure all asynchronous startup, and precede the selected runtime settings. No fixture change or speedup is claimed."
     }
+  },
+  "runtime_followup_qualification": {
+    "tested_source_sha": "eb87b1c588c83dd65b6c3ba708f36e6e53a87e5c",
+    "recorded_at_utc": "2026-11-09T04:16:02.060783+00:00",
+    "ci": {
+      "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664",
+      "sha": "eb87b1c588c83dd65b6c3ba708f36e6e53a87e5c",
+      "status": "completed",
+      "conclusion": "success",
+      "complete": true,
+      "elapsed_seconds": 13846.0,
+      "runner_seconds": 119091.0,
+      "groups": {
+        "other": {
+          "jobs": 18,
+          "runner_seconds": 12604.0,
+          "max_job_seconds": 2113.0
+        },
+        "java": {
+          "jobs": 12,
+          "runner_seconds": 28976.0,
+          "max_job_seconds": 3497.0
+        },
+        "canonical": {
+          "jobs": 32,
+          "runner_seconds": 77511.0,
+          "max_job_seconds": 3741.0
+        }
+      },
+      "steps": {
+        "Run every selected canonical job": {
+          "executions": 32,
+          "seconds": 70110.0
+        },
+        "Run Java test suite": {
+          "executions": 12,
+          "seconds": 23846.0
+        },
+        "Run optional lake module suite": {
+          "executions": 11,
+          "seconds": 4472.0
+        },
+        "Compile and partition complete canonical jobs": {
+          "executions": 32,
+          "seconds": 3718.0
+        },
+        "Resolve Java dependencies before tests": {
+          "executions": 44,
+          "seconds": 3715.0
+        },
+        "Compile the complete reactor and partition runtime test classes": {
+          "executions": 12,
+          "seconds": 2448.0
+        },
+        "Build optimized core image": {
+          "executions": 2,
+          "seconds": 1714.0
+        },
+        "Run unchanged Paimon compaction fixtures with stock and native work evidence": {
+          "executions": 1,
+          "seconds": 1373.0
+        },
+        "Run Arrow ownership, SQL parity and upstream Doris connector tests": {
+          "executions": 1,
+          "seconds": 1090.0
+        },
+        "Resolve lake module dependencies before tests": {
+          "executions": 11,
+          "seconds": 1047.0
+        },
+        "Run actions/download-artifact@v5": {
+          "executions": 56,
+          "seconds": 651.0
+        },
+        "Build all debug native libraries once": {
+          "executions": 1,
+          "seconds": 633.0
+        },
+        "Run Fluss SQL and complete Nexmark parity smoke": {
+          "executions": 1,
+          "seconds": 580.0
+        },
+        "Run native test suite": {
+          "executions": 1,
+          "seconds": 530.0
+        },
+        "Test upstream execution evidence checks": {
+          "executions": 2,
+          "seconds": 503.0
+        },
+        "Check deployed Java 11 bytecode including embedded payloads": {
+          "executions": 4,
+          "seconds": 443.0
+        },
+        "Verify JVM boundary defaults and optional cache on the freshly built native library": {
+          "executions": 2,
+          "seconds": 416.0
+        },
+        "Run actions/checkout@v6": {
+          "executions": 61,
+          "seconds": 387.0
+        },
+        "Run actions/setup-java@v4": {
+          "executions": 58,
+          "seconds": 222.0
+        },
+        "Resolve image dependencies before builds and tests": {
+          "executions": 2,
+          "seconds": 181.0
+        },
+        "Run Flink Session-cluster image smoke test": {
+          "executions": 2,
+          "seconds": 126.0
+        },
+        "Verify Fluss RocksDB backends and output parity": {
+          "executions": 1,
+          "seconds": 118.0
+        },
+        "Resolve Doris dependencies before tests": {
+          "executions": 1,
+          "seconds": 102.0
+        },
+        "Set up job": {
+          "executions": 62,
+          "seconds": 94.0
+        },
+        "Retain canonical job selection and outcomes": {
+          "executions": 32,
+          "seconds": 70.0
+        },
+        "Check every standalone native package": {
+          "executions": 1,
+          "seconds": 46.0
+        },
+        "Verify Java host APIs and deployment module ownership": {
+          "executions": 2,
+          "seconds": 39.0
+        },
+        "Run ./.github/actions/setup-rust": {
+          "executions": 4,
+          "seconds": 35.0
+        },
+        "Execute the packaged loader and mixed-line identity tests": {
+          "executions": 1,
+          "seconds": 27.0
+        },
+        "Run actions/upload-artifact@v4": {
+          "executions": 2,
+          "seconds": 25.0
+        },
+        "Post Run actions/checkout@v6": {
+          "executions": 61,
+          "seconds": 21.0
+        },
+        "Run Swatinem/rust-cache@v2": {
+          "executions": 4,
+          "seconds": 19.0
+        },
+        "Post Run Swatinem/rust-cache@v2": {
+          "executions": 4,
+          "seconds": 19.0
+        },
+        "Upload runtime test partition": {
+          "executions": 12,
+          "seconds": 14.0
+        },
+        "Post Run actions/setup-java@v4": {
+          "executions": 58,
+          "seconds": 11.0
+        },
+        "Test Flink 1.18 native and fallback contract selection": {
+          "executions": 1,
+          "seconds": 11.0
+        },
+        "Remove canonical worker class metadata": {
+          "executions": 32,
+          "seconds": 10.0
+        },
+        "Package qualified Flink 1.18 payloads": {
+          "executions": 1,
+          "seconds": 8.0
+        },
+        "Upload Fluss SQL execution plans and test results": {
+          "executions": 1,
+          "seconds": 6.0
+        },
+        "Upload portable SQL audit outcomes": {
+          "executions": 4,
+          "seconds": 4.0
+        },
+        "Verify native JNI exports": {
+          "executions": 1,
+          "seconds": 3.0
+        },
+        "Check native package boundaries": {
+          "executions": 1,
+          "seconds": 2.0
+        },
+        "Check native formatting": {
+          "executions": 1,
+          "seconds": 2.0
+        },
+        "Retain Doris plans, upstream assertions and server logs": {
+          "executions": 1,
+          "seconds": 2.0
+        },
+        "Retain Paimon compaction results and invocation evidence": {
+          "executions": 1,
+          "seconds": 2.0
+        },
+        "Free disk space": {
+          "executions": 60,
+          "seconds": 1.0
+        },
+        "Retain native compilation timings": {
+          "executions": 1,
+          "seconds": 1.0
+        },
+        "Run python3 bin/ci-plan.py >> \"$GITHUB_OUTPUT\"": {
+          "executions": 1,
+          "seconds": 0
+        },
+        "Complete job": {
+          "executions": 62,
+          "seconds": 0
+        },
+        "Test fork result reporting": {
+          "executions": 1,
+          "seconds": 0
+        },
+        "Require every test job to succeed": {
+          "executions": 1,
+          "seconds": 0
+        }
+      },
+      "jobs": [
+        {
+          "name": "plan / Check source changes and baseline coverage",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128908479506",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 6.0,
+          "start_delay_seconds": 375.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink image integration (optimized native build)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128910234206",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 2113.0,
+          "start_delay_seconds": 382.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink image integration (optimized native build) (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128910234263",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 758.0,
+          "start_delay_seconds": 383.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Rust tests",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128910234310",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 598.0,
+          "start_delay_seconds": 382.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Shared debug native libraries",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128910234403",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 696.0,
+          "start_delay_seconds": 383.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Doris connector and upstream SQL tests",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449313",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 1225.0,
+          "start_delay_seconds": 2062.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Delta tests (debug native build)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449367",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 283.0,
+          "start_delay_seconds": 1375.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Runtime, connectors and formats (Flink 1.18) (JDK 17, shard 2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449403",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "java",
+          "execution_seconds": 1917.0,
+          "start_delay_seconds": 1374.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Runtime, connectors and formats (Flink 1.18) (JDK 11, shard 2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449411",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "java",
+          "execution_seconds": 2159.0,
+          "start_delay_seconds": 1398.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Runtime, connectors and formats (JDK 11, shard 1)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449413",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "java",
+          "execution_seconds": 3287.0,
+          "start_delay_seconds": 1378.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Runtime, connectors and formats (JDK 11, shard 2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449425",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "java",
+          "execution_seconds": 3108.0,
+          "start_delay_seconds": 1398.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Runtime, connectors and formats (Flink 1.18) (JDK 17, shard 1)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449427",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "java",
+          "execution_seconds": 2780.0,
+          "start_delay_seconds": 1377.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Runtime, connectors and formats (JDK 17, shard 3)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449455",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "java",
+          "execution_seconds": 1898.0,
+          "start_delay_seconds": 3927.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Runtime, connectors and formats (JDK 17, shard 1)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449459",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "java",
+          "execution_seconds": 3497.0,
+          "start_delay_seconds": 1386.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Runtime, connectors and formats (JDK 11, shard 3)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449475",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "java",
+          "execution_seconds": 2998.0,
+          "start_delay_seconds": 3843.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Paimon Parquet tests (debug native build)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449478",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 1879.0,
+          "start_delay_seconds": 2769.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Paimon Parquet (Flink 1.18) tests (debug native build) (JDK 11)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449481",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 482.0,
+          "start_delay_seconds": 1382.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Paimon ORC (Flink 1.18) tests (debug native build) (JDK 11)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449493",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 593.0,
+          "start_delay_seconds": 3403.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Runtime, connectors and formats (JDK 17, shard 2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449495",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "java",
+          "execution_seconds": 2296.0,
+          "start_delay_seconds": 8188.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Runtime, connectors and formats (Flink 1.18) (JDK 11, shard 1)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449497",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "java",
+          "execution_seconds": 1748.0,
+          "start_delay_seconds": 4159.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Delta tests (debug native build) (JDK 11)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449501",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 325.0,
+          "start_delay_seconds": 3723.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Paimon ORC tests (debug native build) (JDK 11)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449525",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 787.0,
+          "start_delay_seconds": 3658.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Paimon Parquet tests (debug native build) (JDK 11)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449534",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 552.0,
+          "start_delay_seconds": 1379.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Runtime, connectors and formats (Flink 1.18) (JDK 11, shard 3)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449536",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "java",
+          "execution_seconds": 1723.0,
+          "start_delay_seconds": 6603.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Runtime, connectors and formats (Flink 1.18) (JDK 17, shard 3)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449549",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "java",
+          "execution_seconds": 1565.0,
+          "start_delay_seconds": 6438.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Paimon ORC tests (debug native build)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449561",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 594.0,
+          "start_delay_seconds": 6834.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Iceberg tests (debug native build)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449602",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 667.0,
+          "start_delay_seconds": 8452.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Paimon ORC (Flink 1.18) tests (debug native build)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449622",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 511.0,
+          "start_delay_seconds": 6732.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Paimon Parquet (Flink 1.18) tests (debug native build)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449631",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 533.0,
+          "start_delay_seconds": 8584.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 14)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449801",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2954.0,
+          "start_delay_seconds": 2725.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 1)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449828",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 1812.0,
+          "start_delay_seconds": 2646.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 15)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449868",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 1643.0,
+          "start_delay_seconds": 2128.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 3)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449881",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 3296.0,
+          "start_delay_seconds": 5003.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 10)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449888",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2022.0,
+          "start_delay_seconds": 4507.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 3)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449895",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 1993.0,
+          "start_delay_seconds": 2646.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 5)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449896",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 1574.0,
+          "start_delay_seconds": 8327.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 10)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449904",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2171.0,
+          "start_delay_seconds": 2212.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 11)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449906",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2837.0,
+          "start_delay_seconds": 8195.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 6)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449912",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2183.0,
+          "start_delay_seconds": 4649.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 12)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449921",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 3381.0,
+          "start_delay_seconds": 4612.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 14)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449925",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2413.0,
+          "start_delay_seconds": 4385.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 6)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449930",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 1978.0,
+          "start_delay_seconds": 7485.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 7)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449944",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 1906.0,
+          "start_delay_seconds": 4695.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 12)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449953",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2448.0,
+          "start_delay_seconds": 6842.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 8)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449961",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 1816.0,
+          "start_delay_seconds": 8278.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 8)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449973",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2535.0,
+          "start_delay_seconds": 7025.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 15)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449974",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 3427.0,
+          "start_delay_seconds": 4849.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 5)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913449978",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 3242.0,
+          "start_delay_seconds": 7430.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 4)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450003",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 3339.0,
+          "start_delay_seconds": 7994.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 9)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450010",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 3532.0,
+          "start_delay_seconds": 8170.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 13)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450018",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2069.0,
+          "start_delay_seconds": 9121.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 7)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450022",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2245.0,
+          "start_delay_seconds": 8192.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 16)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450025",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 1840.0,
+          "start_delay_seconds": 7866.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 16)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450033",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 3741.0,
+          "start_delay_seconds": 7882.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 1)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450035",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 3141.0,
+          "start_delay_seconds": 10439.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450055",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 1604.0,
+          "start_delay_seconds": 10096.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 11)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450064",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2008.0,
+          "start_delay_seconds": 7255.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 11) (shard 2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450069",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2174.0,
+          "start_delay_seconds": 7473.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 4)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450077",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 1998.0,
+          "start_delay_seconds": 10674.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 13)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450183",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 1667.0,
+          "start_delay_seconds": 9119.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Canonical savepoint jobs (JDK 17) (shard 9)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128913450389",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "canonical",
+          "execution_seconds": 2522.0,
+          "start_delay_seconds": 10787.0,
+          "failed_steps": []
+        },
+        {
+          "name": "All CI tests",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664/job/128971055425",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 2.0,
+          "start_delay_seconds": 13844.0,
+          "failed_steps": []
+        }
+      ],
+      "limits": "Start delay includes prerequisites, concurrency limits and runner queues. Runner seconds exclude jobs without a completed execution interval; they are not billed minutes. Step times overlap between parallel jobs."
+    },
+    "reference_ci": {
+      "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556204",
+      "sha": "3c727bb1071d04583e6926f4fde8dfdf5ad6d117",
+      "elapsed_seconds": 9698.0,
+      "runner_seconds": 138839.0,
+      "groups": {
+        "other": {
+          "jobs": 18,
+          "runner_seconds": 11317.0,
+          "max_job_seconds": 1954.0
+        },
+        "java": {
+          "jobs": 12,
+          "runner_seconds": 32197.0,
+          "max_job_seconds": 4691.0
+        },
+        "canonical": {
+          "jobs": 32,
+          "runner_seconds": 95325.0,
+          "max_job_seconds": 4379.0
+        }
+      }
+    },
+    "upstream": {
+      "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683",
+      "sha": "eb87b1c588c83dd65b6c3ba708f36e6e53a87e5c",
+      "status": "completed",
+      "conclusion": "success",
+      "complete": true,
+      "elapsed_seconds": 3961.0,
+      "runner_seconds": 15734.0,
+      "groups": {
+        "other": {
+          "jobs": 3,
+          "runner_seconds": 226.0,
+          "max_job_seconds": 211.0
+        },
+        "upstream preparation": {
+          "jobs": 2,
+          "runner_seconds": 2057.0,
+          "max_job_seconds": 1387.0
+        },
+        "upstream tests": {
+          "jobs": 14,
+          "runner_seconds": 13451.0,
+          "max_job_seconds": 1531.0
+        }
+      },
+      "steps": {
+        "Run unchanged upstream suite with StreamFusion": {
+          "executions": 14,
+          "seconds": 11164.0
+        },
+        "Build Flink and StreamFusion once": {
+          "executions": 2,
+          "seconds": 1846.0
+        },
+        "Download and verify the shared build": {
+          "executions": 14,
+          "seconds": 1473.0
+        },
+        "Restore the shared build": {
+          "executions": 14,
+          "seconds": 255.0
+        },
+        "Require declared runtime audit routes": {
+          "executions": 2,
+          "seconds": 216.0
+        },
+        "Run unchanged legacy Delta SQL tests against released Flink 1.18": {
+          "executions": 1,
+          "seconds": 199.0
+        },
+        "Run actions/upload-artifact@v4": {
+          "executions": 29,
+          "seconds": 183.0
+        },
+        "Run actions/checkout@v6": {
+          "executions": 19,
+          "seconds": 129.0
+        },
+        "Run Swatinem/rust-cache@v2": {
+          "executions": 2,
+          "seconds": 38.0
+        },
+        "Save the isolated suite Maven repository and wrapper": {
+          "executions": 2,
+          "seconds": 38.0
+        },
+        "Verify prepared Maven starts without downloading": {
+          "executions": 14,
+          "seconds": 37.0
+        },
+        "Post Run Swatinem/rust-cache@v2": {
+          "executions": 2,
+          "seconds": 25.0
+        },
+        "Set up job": {
+          "executions": 19,
+          "seconds": 22.0
+        },
+        "Run ./.github/actions/setup-rust": {
+          "executions": 2,
+          "seconds": 20.0
+        },
+        "Post Run actions/checkout@v6": {
+          "executions": 19,
+          "seconds": 8.0
+        },
+        "Run actions/setup-java@v4": {
+          "executions": 17,
+          "seconds": 7.0
+        },
+        "Restore the compiled pinned Flink checkout": {
+          "executions": 2,
+          "seconds": 7.0
+        },
+        "Post Run actions/setup-java@v4": {
+          "executions": 17,
+          "seconds": 5.0
+        },
+        "Save the compiled pinned Flink checkout": {
+          "executions": 1,
+          "seconds": 5.0
+        },
+        "Free disk space": {
+          "executions": 16,
+          "seconds": 2.0
+        },
+        "Restore the isolated suite Maven repository and wrapper": {
+          "executions": 2,
+          "seconds": 1.0
+        },
+        "Run actions/download-artifact@v5": {
+          "executions": 2,
+          "seconds": 1.0
+        },
+        "Run python3 bin/ci-plan.py >> \"$GITHUB_OUTPUT\"": {
+          "executions": 1,
+          "seconds": 0
+        },
+        "Complete job": {
+          "executions": 19,
+          "seconds": 0
+        },
+        "Run python3 dev/flink-suite/suite_matrix.py >> \"$GITHUB_OUTPUT\"": {
+          "executions": 2,
+          "seconds": 0
+        },
+        "Require every upstream suite to succeed": {
+          "executions": 1,
+          "seconds": 0
+        },
+        "Require every runtime shard and parameterized invocation on both lines": {
+          "executions": 1,
+          "seconds": 0
+        }
+      },
+      "jobs": [
+        {
+          "name": "plan / Check source changes and baseline coverage",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128908479403",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 4.0,
+          "start_delay_seconds": 374.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Delta 3.3 / Flink 1.18 host audit",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128910219528",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 211.0,
+          "start_delay_seconds": 379.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / Prepare upstream build",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128910219657",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream preparation",
+          "execution_seconds": 1387.0,
+          "start_delay_seconds": 380.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / Prepare upstream build",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128910219767",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream preparation",
+          "execution_seconds": 670.0,
+          "start_delay_seconds": 380.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / runtime-1 suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128913315556",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 834.0,
+          "start_delay_seconds": 1101.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / runtime-4 suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128913315598",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 685.0,
+          "start_delay_seconds": 1375.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / paimon suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128913315631",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 1385.0,
+          "start_delay_seconds": 1383.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / runtime-3 suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128913315670",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 741.0,
+          "start_delay_seconds": 1386.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / state suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128913315675",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 630.0,
+          "start_delay_seconds": 1376.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / connectors suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128913315677",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 1152.0,
+          "start_delay_seconds": 1380.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / runtime-2 suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128913315772",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 663.0,
+          "start_delay_seconds": 1660.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / runtime-2 suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128916688448",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 1068.0,
+          "start_delay_seconds": 2325.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / runtime-3 suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128916688453",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 1531.0,
+          "start_delay_seconds": 2190.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / runtime-1 suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128916688458",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 1346.0,
+          "start_delay_seconds": 2533.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / state suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128916688513",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 573.0,
+          "start_delay_seconds": 2628.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / runtime-4 suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128916688522",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 1388.0,
+          "start_delay_seconds": 2538.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / connectors suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128916688535",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 816.0,
+          "start_delay_seconds": 2686.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / paimon suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128916688734",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 639.0,
+          "start_delay_seconds": 3202.0,
+          "failed_steps": []
+        },
+        {
+          "name": "All upstream integration tests",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683/job/128926589865",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 11.0,
+          "start_delay_seconds": 3950.0,
+          "failed_steps": []
+        }
+      ],
+      "limits": "Start delay includes prerequisites, concurrency limits and runner queues. Runner seconds exclude jobs without a completed execution interval; they are not billed minutes. Step times overlap between parallel jobs."
+    },
+    "reference_upstream": {
+      "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224",
+      "sha": "3c727bb1071d04583e6926f4fde8dfdf5ad6d117",
+      "status": "completed",
+      "conclusion": "success",
+      "complete": true,
+      "elapsed_seconds": 2265.0,
+      "runner_seconds": 13995.0,
+      "groups": {
+        "other": {
+          "jobs": 3,
+          "runner_seconds": 233.0,
+          "max_job_seconds": 210.0
+        },
+        "upstream preparation": {
+          "jobs": 2,
+          "runner_seconds": 958.0,
+          "max_job_seconds": 480.0
+        },
+        "upstream tests": {
+          "jobs": 14,
+          "runner_seconds": 12804.0,
+          "max_job_seconds": 1516.0
+        }
+      },
+      "steps": {
+        "Run unchanged upstream suite with StreamFusion": {
+          "executions": 14,
+          "seconds": 11407.0
+        },
+        "Build Flink and StreamFusion once": {
+          "executions": 2,
+          "seconds": 742.0
+        },
+        "Download and verify the shared build": {
+          "executions": 14,
+          "seconds": 635.0
+        },
+        "Restore the shared build": {
+          "executions": 14,
+          "seconds": 254.0
+        },
+        "Run unchanged legacy Delta SQL tests against released Flink 1.18": {
+          "executions": 1,
+          "seconds": 193.0
+        },
+        "Require declared runtime audit routes": {
+          "executions": 2,
+          "seconds": 192.0
+        },
+        "Run actions/upload-artifact@v4": {
+          "executions": 29,
+          "seconds": 186.0
+        },
+        "Run actions/checkout@v6": {
+          "executions": 19,
+          "seconds": 111.0
+        },
+        "Run Swatinem/rust-cache@v2": {
+          "executions": 2,
+          "seconds": 63.0
+        },
+        "Restore the isolated suite Maven repository and wrapper": {
+          "executions": 2,
+          "seconds": 40.0
+        },
+        "Verify prepared Maven starts without downloading": {
+          "executions": 14,
+          "seconds": 33.0
+        },
+        "Set up job": {
+          "executions": 19,
+          "seconds": 26.0
+        },
+        "Run ./.github/actions/setup-rust": {
+          "executions": 2,
+          "seconds": 17.0
+        },
+        "Run actions/setup-java@v4": {
+          "executions": 17,
+          "seconds": 15.0
+        },
+        "Restore the compiled pinned Flink checkout": {
+          "executions": 2,
+          "seconds": 12.0
+        },
+        "Post Run actions/checkout@v6": {
+          "executions": 19,
+          "seconds": 3.0
+        },
+        "Post Run actions/setup-java@v4": {
+          "executions": 17,
+          "seconds": 3.0
+        },
+        "Run actions/download-artifact@v5": {
+          "executions": 2,
+          "seconds": 2.0
+        },
+        "Complete job": {
+          "executions": 19,
+          "seconds": 1.0
+        },
+        "Run python3 bin/ci-plan.py >> \"$GITHUB_OUTPUT\"": {
+          "executions": 1,
+          "seconds": 0
+        },
+        "Run python3 dev/flink-suite/suite_matrix.py >> \"$GITHUB_OUTPUT\"": {
+          "executions": 2,
+          "seconds": 0
+        },
+        "Free disk space": {
+          "executions": 16,
+          "seconds": 0
+        },
+        "Post Run Swatinem/rust-cache@v2": {
+          "executions": 2,
+          "seconds": 0
+        },
+        "Require every upstream suite to succeed": {
+          "executions": 1,
+          "seconds": 0
+        },
+        "Require every runtime shard and parameterized invocation on both lines": {
+          "executions": 1,
+          "seconds": 0
+        }
+      },
+      "jobs": [
+        {
+          "name": "plan / Check source changes and baseline coverage",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128789266610",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 9.0,
+          "start_delay_seconds": 39.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Delta 3.3 / Flink 1.18 host audit",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128789314295",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 210.0,
+          "start_delay_seconds": 50.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / Prepare upstream build",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128789314492",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream preparation",
+          "execution_seconds": 478.0,
+          "start_delay_seconds": 50.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / Prepare upstream build",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128789314508",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream preparation",
+          "execution_seconds": 480.0,
+          "start_delay_seconds": 49.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / connectors suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791369142",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 673.0,
+          "start_delay_seconds": 530.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / runtime-3 suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791369159",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 1408.0,
+          "start_delay_seconds": 530.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / runtime-4 suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791369162",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 1402.0,
+          "start_delay_seconds": 530.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / runtime-1 suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791369188",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 1102.0,
+          "start_delay_seconds": 530.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / runtime-2 suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791369238",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 1516.0,
+          "start_delay_seconds": 531.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / paimon suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791369241",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 556.0,
+          "start_delay_seconds": 530.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 1.18 / state suite (Flink 1.18)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791369249",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 539.0,
+          "start_delay_seconds": 530.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / runtime-2 suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791375136",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 543.0,
+          "start_delay_seconds": 531.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / runtime-3 suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791375146",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 604.0,
+          "start_delay_seconds": 531.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / runtime-1 suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791375161",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 664.0,
+          "start_delay_seconds": 531.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / state suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791375173",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 600.0,
+          "start_delay_seconds": 531.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / paimon suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791375179",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 1369.0,
+          "start_delay_seconds": 532.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / runtime-4 suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791375221",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 638.0,
+          "start_delay_seconds": 531.0,
+          "failed_steps": []
+        },
+        {
+          "name": "Flink 2.2 / connectors suite (Flink 2.2)",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128791375234",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "upstream tests",
+          "execution_seconds": 1190.0,
+          "start_delay_seconds": 531.0,
+          "failed_steps": []
+        },
+        {
+          "name": "All upstream integration tests",
+          "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556224/job/128797832003",
+          "status": "completed",
+          "conclusion": "success",
+          "group": "other",
+          "execution_seconds": 14.0,
+          "start_delay_seconds": 2251.0,
+          "failed_steps": []
+        }
+      ],
+      "limits": "Start delay includes prerequisites, concurrency limits and runner queues. Runner seconds exclude jobs without a completed execution interval; they are not billed minutes. Step times overlap between parallel jobs."
+    },
+    "runtime_coverage": {
+      "flink1.18-jdk11": {
+        "matches_baseline_and_new_regressions": true,
+        "baseline_reports": 816,
+        "expected_added_test_cases": 4,
+        "updated_reports": 818,
+        "tests": 18211,
+        "skipped": 1420,
+        "baseline_runner_seconds": 5321.0,
+        "combined_runner_seconds": 5630.0,
+        "runner_reduction_percent": -5.8071791016726175,
+        "baseline_max_job_seconds": 1908.0,
+        "combined_max_job_seconds": 2159.0,
+        "expected_class_outcome_sha256": "f2f0335d040528c55ddf54a1961ff8fd63eadc308c816b119c3a3582b1984bd8",
+        "observed_class_outcome_sha256": "f2f0335d040528c55ddf54a1961ff8fd63eadc308c816b119c3a3582b1984bd8"
+      },
+      "flink1.18-jdk17": {
+        "matches_baseline_and_new_regressions": true,
+        "baseline_reports": 865,
+        "expected_added_test_cases": 4,
+        "updated_reports": 867,
+        "tests": 18800,
+        "skipped": 1622,
+        "baseline_runner_seconds": 6611.0,
+        "combined_runner_seconds": 6262.0,
+        "runner_reduction_percent": 5.279080320677658,
+        "baseline_max_job_seconds": 2942.0,
+        "combined_max_job_seconds": 2780.0,
+        "expected_class_outcome_sha256": "bcf2747b198f81eaf61ad2b54aaea19614765d50029928259350b7248e6a8abd",
+        "observed_class_outcome_sha256": "bcf2747b198f81eaf61ad2b54aaea19614765d50029928259350b7248e6a8abd"
+      },
+      "flink2.2-jdk11": {
+        "matches_baseline_and_new_regressions": true,
+        "baseline_reports": 978,
+        "expected_added_test_cases": 8,
+        "updated_reports": 982,
+        "tests": 32550,
+        "skipped": 55,
+        "baseline_runner_seconds": 11662.0,
+        "combined_runner_seconds": 9393.0,
+        "runner_reduction_percent": 19.456353970159494,
+        "baseline_max_job_seconds": 4691.0,
+        "combined_max_job_seconds": 3287.0,
+        "expected_class_outcome_sha256": "c08cbb1b61e7d8c6cf4694720a6fefbc81f1e74e89f785fdd93fd785538c8994",
+        "observed_class_outcome_sha256": "c08cbb1b61e7d8c6cf4694720a6fefbc81f1e74e89f785fdd93fd785538c8994"
+      },
+      "flink2.2-jdk17": {
+        "matches_baseline_and_new_regressions": true,
+        "baseline_reports": 1005,
+        "expected_added_test_cases": 8,
+        "updated_reports": 1009,
+        "tests": 32903,
+        "skipped": 115,
+        "baseline_runner_seconds": 8603.0,
+        "combined_runner_seconds": 7691.0,
+        "runner_reduction_percent": 10.600953155875857,
+        "baseline_max_job_seconds": 3456.0,
+        "combined_max_job_seconds": 3497.0,
+        "expected_class_outcome_sha256": "d0294a029911d03e2da757f4242f569d6d5f760a4fb5af25f85bfcf752c7e1d6",
+        "observed_class_outcome_sha256": "d0294a029911d03e2da757f4242f569d6d5f760a4fb5af25f85bfcf752c7e1d6"
+      }
+    },
+    "canonical_coverage": {
+      "11": {
+        "same_class_outcome_multiset": true,
+        "same_partition_inventory": true,
+        "class_reports": 116,
+        "inventory_classes": 118,
+        "tests": 3620,
+        "skipped": 0
+      },
+      "17": {
+        "same_class_outcome_multiset": true,
+        "same_partition_inventory": true,
+        "class_reports": 116,
+        "inventory_classes": 118,
+        "tests": 3620,
+        "skipped": 0
+      }
+    },
+    "runtime_tests_total": 102464,
+    "runtime_existing_skips_total": 3212,
+    "added_runnable_tests_total": 24,
+    "canonical_tests_total": 7240,
+    "check_contexts_on_tested_source": [
+      {
+        "link": "https://github.com/datafusion-contrib/StreamFusion/runs/128908550035",
+        "name": "All upstream integration tests",
+        "state": "SUCCESS"
+      },
+      {
+        "link": "https://github.com/datafusion-contrib/StreamFusion/runs/128908545300",
+        "name": "Java tests (debug native build)",
+        "state": "SUCCESS"
+      },
+      {
+        "link": "https://github.com/datafusion-contrib/StreamFusion/runs/128908543100",
+        "name": "Rust tests",
+        "state": "SUCCESS"
+      },
+      {
+        "link": "https://github.com/datafusion-contrib/StreamFusion/runs/128908540149",
+        "name": "All CI tests",
+        "state": "SUCCESS"
+      },
+      {
+        "link": "https://github.com/datafusion-contrib/StreamFusion/actions/runs/42538653920/job/128908490643",
+        "name": "mirror",
+        "state": "SUCCESS"
+      }
+    ],
+    "docs": {
+      "conclusion": "success",
+      "headSha": "eb87b1c588c83dd65b6c3ba708f36e6e53a87e5c",
+      "status": "completed",
+      "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650704"
+    },
+    "paimon_compatibility": {
+      "conclusion": "success",
+      "headSha": "eb87b1c588c83dd65b6c3ba708f36e6e53a87e5c",
+      "status": "completed",
+      "url": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650632"
+    },
+    "log_interleaving_corrections": [
+      {
+        "job": 128913449425,
+        "observed": "tech.streamfusion.operator.CanonicalOverDistinctBridgeTesticke",
+        "verified_class": "tech.streamfusion.operator.CanonicalOverDistinctBridgeTest",
+        "evidence": "Picked up JAVA_TOOL_OPTIONS was interleaved as P + icke + d up around the Surefire summary. Correct class is independently present in its Running line and the selected compiled inventory. Counts/time are unchanged.",
+        "raw_summary": "2026-11-09T00:55:48.6542190Z P[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.655 s -- in tech.streamfusion.operator.CanonicalOverDistinctBridgeTesticke",
+        "following_line": "2026-11-09T00:55:48.6571861Z d up JAVA_TOOL_OPTIONS: -XX:TieredStopAtLevel=1",
+        "manifest_artifacts": [
+          "java-runtime-partition-2.2-jdk11-shard2"
+        ]
+      }
+    ],
+    "waiting_observation": {
+      "reference": {
+        "native_gate_seconds_after_workflow_creation": 692.0,
+        "java_and_canonical_jobs": 44,
+        "median_wait_after_native_gate_seconds": 2181.0,
+        "max_wait_after_native_gate_seconds": 5506.0,
+        "limits": "Measured start delay after the shared native dependency completed; includes orchestration and runner waiting. This is not time spent executing tests."
+      },
+      "combined": {
+        "native_gate_seconds_after_workflow_creation": 1079.0,
+        "java_and_canonical_jobs": 44,
+        "median_wait_after_native_gate_seconds": 5441.5,
+        "max_wait_after_native_gate_seconds": 9708.0,
+        "limits": "Measured start delay after the shared native dependency completed; includes orchestration and runner waiting. This is not time spent executing tests."
+      }
+    },
+    "default_branch_native_cache": {
+      "previous_fork_main": "e9d8e347977cae834d20a3599e7d1be86f610c3f",
+      "canonical_main": "bd23a71a5fe4ab3bff999025f237c7b379dbb63b",
+      "updated_fork_main": "99ca3ac95884ab3bdd014580475814f92f2ff252",
+      "tree_matches_qualified_canonical_main": true,
+      "pr_head_unchanged": "eb87b1c588c83dd65b6c3ba708f36e6e53a87e5c",
+      "purpose": "Seed the default-branch dependency cache so sibling feature branches can reuse it; suppress duplicate automatic source CI for this exact already-qualified tree.",
+      "prime_run": 42540595611,
+      "prime_conclusion": "success",
+      "consumer_run": 42541762506,
+      "consumer_conclusion": "success",
+      "prime_timings_artifact": 13641806034,
+      "prime_units": 639,
+      "prime_rocksdb_seconds": [
+        0.45,
+        410.09,
+        0.74
+      ],
+      "prime_max_unit_end_seconds": 598.57,
+      "main_cache": [
+        {
+          "created_at": "2026-11-09T00:43:03.406750Z",
+          "id": 10209267705,
+          "key": "v0-rust-debug-jvm-Linux-x64-4379f36a-a6f17d09",
+          "last_accessed_at": "2026-11-09T00:43:03.406750Z",
+          "size_in_bytes": 1264394257,
+          "version": "f042e81e967119671f464f066cfcebc7a0fe9e27b39b4148f250c8b797d89a0e"
+        }
+      ],
+      "consumer_timings_artifact": 13641868424,
+      "consumer_units": 639,
+      "consumer_max_unit_end_seconds": 24.07,
+      "consumer_log_observations": [
+        "2026-11-09T00:53:54.5239299Z ... Restoring cache ...",
+        "2026-11-09T00:53:54.6637869Z Cache hit for: v0-rust-debug-jvm-Linux-x64-4379f36a-a6f17d09",
+        "2026-11-09T00:54:27.5343591Z Cache restored successfully",
+        "2026-11-09T00:54:27.6980239Z Restored from cache key \"v0-rust-debug-jvm-Linux-x64-4379f36a-a6f17d09\" full match: true.",
+        "2026-11-09T00:54:51.8844602Z     Finished `dev` profile [unoptimized + debuginfo] target(s) in 24.06s"
+      ],
+      "prime_unit_inventory": 639,
+      "prime_positive_duration_units": 639,
+      "prime_rocksdb_positive_duration_units": [
+        {
+          "mode": "todo",
+          "seconds": 0.45
+        },
+        {
+          "mode": "run-custom-build",
+          "seconds": 410.09
+        },
+        {
+          "mode": "todo",
+          "seconds": 0.74
+        }
+      ],
+      "consumer_unit_inventory": 639,
+      "consumer_positive_duration_units": 42,
+      "consumer_rocksdb_positive_duration_units": [],
+      "consumer_executed_unit_names": [
+        "streamfusion",
+        "streamfusion-avro",
+        "streamfusion-benchmark-support",
+        "streamfusion-bridge",
+        "streamfusion-csv",
+        "streamfusion-fluss",
+        "streamfusion-format-support",
+        "streamfusion-iceberg",
+        "streamfusion-integration-tests",
+        "streamfusion-json",
+        "streamfusion-kafka",
+        "streamfusion-native-build",
+        "streamfusion-orc",
+        "streamfusion-paimon",
+        "streamfusion-parquet",
+        "streamfusion-protobuf",
+        "streamfusion-raw"
+      ],
+      "consumer_cargo_cli_seconds": 24.06,
+      "consumer_cache_restore_seconds_rounded": 33,
+      "main_cache_after_consumer": [
+        {
+          "id": 10209267705,
+          "key": "v0-rust-debug-jvm-Linux-x64-4379f36a-a6f17d09",
+          "last_accessed_at": "2026-11-09T00:53:54.650551Z",
+          "size_in_bytes": 1264394257,
+          "version": "f042e81e967119671f464f066cfcebc7a0fe9e27b39b4148f250c8b797d89a0e"
+        }
+      ],
+      "consumer_own_debug_cache_entries": [],
+      "native_tree": "bf029ad6e022516ad5a8f2b8bcf4d8d8434d244c",
+      "limits": "Native-only cross-branch cache experiment, not same-run paired CPU benchmarking or full CI latency. The compiled native tree matches canonical main and the active PR. Cargo timing inventories include cached placeholders; positive-duration units are reported separately. Cold compiler duration was 632 seconds in the active CI run and 598.57 seconds in the prime run; cache restore cost is included separately.",
+      "raw_timing_artifacts_removed_after_condensation": true
+    },
+    "cold_native_observation": {
+      "run": 42538650664,
+      "source_sha": "eb87b1c588c83dd65b6c3ba708f36e6e53a87e5c",
+      "job": 128910234403,
+      "artifact": 13641335827,
+      "compilation_units": 639,
+      "slowest_units": [
+        {
+          "name": "librocksdb-sys",
+          "duration": 439.67,
+          "mode": "run-custom-build",
+          "start": 161.92,
+          "target": " build-script (run)"
+        },
+        {
+          "name": "datafusion",
+          "duration": 104.57,
+          "mode": "todo",
+          "start": 257.05,
+          "target": ""
+        },
+        {
+          "name": "datafusion-catalog",
+          "duration": 83.82,
+          "mode": "todo",
+          "start": 142.92,
+          "target": ""
+        },
+        {
+          "name": "paimon",
+          "duration": 69.51,
+          "mode": "todo",
+          "start": 216.66,
+          "target": ""
+        },
+        {
+          "name": "streamfusion",
+          "duration": 30.3,
+          "mode": "todo",
+          "start": 602.46,
+          "target": ""
+        },
+        {
+          "name": "datafusion-catalog-listing",
+          "duration": 29.66,
+          "mode": "todo",
+          "start": 227.39,
+          "target": ""
+        },
+        {
+          "name": "iceberg",
+          "duration": 27.68,
+          "mode": "todo",
+          "start": 212.19,
+          "target": ""
+        },
+        {
+          "name": "sqlparser",
+          "duration": 24.04,
+          "mode": "todo",
+          "start": 55.38,
+          "target": ""
+        },
+        {
+          "name": "datafusion-physical-plan",
+          "duration": 22.86,
+          "mode": "todo",
+          "start": 99.61,
+          "target": ""
+        },
+        {
+          "name": "datafusion-functions-aggregate",
+          "duration": 20.31,
+          "mode": "todo",
+          "start": 142.93,
+          "target": ""
+        }
+      ],
+      "cargo_cli_duration_rounded": "10m32s",
+      "cargo_cli_elapsed_seconds_rounded": 632
+    },
+    "limits": "Complete source CI passed with the same12runtime and32canonical jobs. Existing class outcome counters/skips and canonical inventories match the previous complete baseline; only24new runnable cases were added. Cross-run execution metrics include cold setup and runner/cache variability. Overall CI elapsed increased from9698to13846seconds as waiting increased; no end-to-end wall-clock speedup is claimed. The Flink1.18/JDK11 runtime cohort used5.8%more runner time; all cohort results are retained. Selected paired gains are not multiplied. Earlier follow-up/deeper JSON files are historical experiment/candidate snapshots; this record is final source qualification."
   }
 }
