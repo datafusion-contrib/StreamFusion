@@ -761,8 +761,26 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTumblingCanonicalWat
 
 impl crate::state::canonical_memory::CanonicalMemoryState for TumblingAggregator {
     fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
-        target.memory.set(self.memory.state_bytes);
-        target.memory.account()?;
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() || target.store.is_some() {
+            return Err(invalid("memory capture requires resident stores"));
+        }
+        self.require_flushed_partial_buffer()?;
+        self.require_complete_canonical_import()?;
+        let growth = self
+            .windows
+            .values()
+            .flat_map(|window| window.keys.values())
+            .flatten()
+            .map(|value| crate::aggregates::accumulator_capture_growth(value.as_ref()))
+            .sum::<usize>();
+        let captured_bytes = self.computed_state_bytes().saturating_add(growth);
+        crate::state::canonical_memory::reserve_capture(
+            &mut self.memory,
+            &mut target.memory,
+            captured_bytes,
+            growth,
+        )?;
         target.key_types = self.key_types.clone();
         target.key_converter = self
             .key_converter
@@ -772,6 +790,12 @@ impl crate::state::canonical_memory::CanonicalMemoryState for TumblingAggregator
         target.timer_watermark_uninitialized = self.timer_watermark_uninitialized;
         target.next_timer_deadline = self.next_timer_deadline;
         target.canonical_distinct = self.canonical_distinct.clone();
+        let factories = self
+            .aggregates
+            .iter()
+            .cloned()
+            .map(Arc::new)
+            .collect::<Vec<_>>();
         let codec = target.key_converter.as_ref();
         let copy_key = |key: &OwnedRow| {
             codec
@@ -785,7 +809,6 @@ impl crate::state::canonical_memory::CanonicalMemoryState for TumblingAggregator
             .iter()
             .map(|((end, key, slot), count)| ((*end, copy_key(key), *slot), *count))
             .collect();
-        self.require_flushed_partial_buffer()?;
         target.shared_slices = self.shared_slices;
         target.exact_panes = self.exact_panes;
         target.live_count = self.live_count;
@@ -806,7 +829,7 @@ impl crate::state::canonical_memory::CanonicalMemoryState for TumblingAggregator
             for (key, values) in &mut window.keys {
                 let values = values
                     .iter_mut()
-                    .zip(&self.aggregates)
+                    .zip(&factories)
                     .map(|(value, aggregate)| {
                         crate::aggregates::capture_accumulator(value, aggregate)
                     })

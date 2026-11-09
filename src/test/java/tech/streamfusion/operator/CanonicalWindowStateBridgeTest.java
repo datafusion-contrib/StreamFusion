@@ -40,6 +40,33 @@ class CanonicalWindowStateBridgeTest {
     }
   }
 
+  @Test
+  void captureMeasuresUntrackedStateBeforeReservingItsTarget() {
+    long source =
+        Native.createTumblingAggregator(1000, 1000, new int[] {0, 0}, new int[] {0, 3}, -1);
+    long denied =
+        Native.createTumblingAggregator(1000, 1000, new int[] {0, 0}, new int[] {0, 3}, 1);
+    long retry =
+        Native.createTumblingAggregator(1000, 1000, new int[] {0, 0}, new int[] {0, 3}, 1 << 24);
+    try {
+      importRows(source, "valid");
+      long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+      assertThrows(
+          tech.streamfusion.NativeMemoryLimitException.class,
+          () -> Native.copyWindowAggregatorCanonicalMemoryState(source, denied));
+      assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+      assertEquals(0, exportedRows(denied, false));
+      assertEquals(1, exportedRows(source, false));
+      Native.copyWindowAggregatorCanonicalMemoryState(source, retry);
+      assertEquals(1, exportedRows(retry, false));
+      assertEquals(1, exportedRows(source, false));
+    } finally {
+      Native.closeTumblingAggregator(retry);
+      Native.closeTumblingAggregator(denied);
+      Native.closeTumblingAggregator(source);
+    }
+  }
+
   @ParameterizedTest
   @CsvSource({
     "bounds,false,false",

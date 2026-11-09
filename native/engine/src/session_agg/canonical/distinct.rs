@@ -44,21 +44,7 @@ impl SessionAggregator {
 
     pub(super) fn account_canonical_state(&mut self) -> Result<(), DataFusionError> {
         if self.memory.tracking() {
-            let state = self
-                .sessions
-                .iter()
-                .map(|(key, sessions)| {
-                    owned_row_bytes(key) + sessions.values().map(session_bytes).sum::<usize>()
-                })
-                .sum::<usize>();
-            let metadata = self
-                .canonical_distinct_counts
-                .keys()
-                .map(|(_, key, _)| {
-                    owned_row_bytes(key) + std::mem::size_of::<((i64, OwnedRow, usize), i64)>()
-                })
-                .sum::<usize>();
-            self.memory.set(state + metadata);
+            self.memory.set(self.computed_state_bytes());
             self.memory.account()?;
         }
         Ok(())

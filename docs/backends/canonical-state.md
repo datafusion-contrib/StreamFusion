@@ -156,9 +156,22 @@ Memory-backed operators capture independent native state graphs before returning
 They copy mutable maps and counters and share immutable Arrow buffers and row payloads. Windows
 and sessions additionally share accumulator versions, detaching before either owner mutates them.
 Stock conversion and serialization run asynchronously through the same independent stock backend.
+Window/session capture measures resident state even when the source has no accounting pool. It
+reserves the captured owner and new sharing wrappers before changing either graph; refusal leaves
+both owners unchanged and is reported as a native memory-limit exception. Repeated captures do
+not charge wrappers twice. Aggregate factories are shared across groups, and a frozen owner's
+size estimate remains stable while a peer detaches or serializes its accumulator.
 Memory capture still visits resident state and can retain a second copy of mutable state; it does
 not provide the constant-time barrier behavior of a RocksDB snapshot. Unbound private native
 recovery paths retain their existing capture mechanisms.
+
+The window/session capture accounting cohort passes 1,541 native tests with two existing ignores,
+memory-only compilation and the JNI build. Selected 2.2 checks pass 510 cases without skips;
+a clean 1.18 selection of the affected contracts passes 110, with four expected SESSION TVF skips.
+The async DISTINCT controls use both native stores and complete overlapping futures on a writer
+thread after further live input and native-owner closure, then restore each into stock Flink.
+Reservation controls cover unaccounted sources, refusal before graph mutation and repeated capture.
+These component selections do not establish full operator or release-line coverage.
 
 Both capture paths preserve original TTL write ages and independently own overlapping savepoints.
 Cancellation signals the native reader before waiting for conversion to leave its critical section;
@@ -186,8 +199,8 @@ work before visiting them. Fixed/session DISTINCT membership visits likewise bor
 entries and reserve their prefix, retained values and repeated-owner frame estimate before
 parsing. Failure, cancellation and completion release these reservations. Operator shutdown waits on the
 RocksDB reader guard before closing either the native handle or the operator's memory owner, so
-a deferred writer can still allocate after shutdown begins. Memory-backed capture
-and the remaining conversion estimates still require the broader accounting audit; these
+a deferred writer can still allocate after shutdown begins. Other memory-backed capture layouts,
+ordinary checkpoint accounting and the remaining conversion estimates still require the broader audit; these
 controls do not establish a strict bound on every allocator or remove the largest native/stock
 encoded KV as a working-memory floor.
 

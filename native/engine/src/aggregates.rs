@@ -1083,9 +1083,13 @@ pub(crate) fn raw_accumulator(
     shared_snapshot::raw(accumulator)
 }
 
+pub(crate) fn accumulator_capture_growth(accumulator: &dyn Accumulator) -> usize {
+    shared_snapshot::capture_growth(accumulator)
+}
+
 pub(crate) fn capture_accumulator(
     accumulator: &mut Box<dyn Accumulator>,
-    aggregate: &WindowAggregate,
+    aggregate: &Arc<WindowAggregate>,
 ) -> Box<dyn Accumulator> {
     shared_snapshot::capture(accumulator, aggregate)
 }

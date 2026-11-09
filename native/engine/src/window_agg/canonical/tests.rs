@@ -866,3 +866,75 @@ fn legacy_timer_watermark_replays_only_before_the_first_post_restore_watermark()
         }
     }
 }
+
+#[test]
+fn memory_capture_reserves_actual_state_and_wrappers_then_keeps_live_accounting() {
+    use crate::state::canonical_memory::CanonicalMemoryState;
+    for cumulative in [false, true] {
+        for tracked in [false, true] {
+            let factory = || {
+                TumblingAggregator::new(3000, 1000, cumulative, vec![0], vec![7])
+                    .with_key_timestamp_precisions(vec![-1])
+            };
+            let input = |value| {
+                RecordBatch::try_from_iter(vec![
+                    ("key0", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+                    (
+                        "value0",
+                        Arc::new(Int64Array::from(vec![value])) as ArrayRef,
+                    ),
+                    ("ts", Arc::new(Int64Array::from(vec![100])) as ArrayRef),
+                ])
+                .unwrap()
+            };
+            let mut source = factory();
+            if tracked {
+                source = source.with_memory_budget(1 << 20).unwrap();
+            }
+            source.update(&input(1)).unwrap();
+            let original = source.computed_state_bytes();
+            let mut denied = factory().with_memory_budget(1).unwrap();
+            assert!(matches!(
+                source.copy_state(&mut denied),
+                Err(DataFusionError::ResourcesExhausted(_))
+            ));
+            assert_eq!(
+                original,
+                source.computed_state_bytes(),
+                "denial must not wrap live state"
+            );
+            if tracked {
+                assert_eq!(original, source.memory.state_bytes);
+            }
+            let mut frozen = factory().with_memory_budget(1 << 20).unwrap();
+            source.copy_state(&mut frozen).unwrap();
+            assert!(
+                frozen.memory.state_bytes > original,
+                "shared wrappers need reservation"
+            );
+            assert_eq!(frozen.computed_state_bytes(), frozen.memory.state_bytes);
+            if tracked {
+                assert_eq!(source.computed_state_bytes(), source.memory.state_bytes);
+            }
+            let reserved = frozen.memory.state_bytes;
+            let mut second = factory().with_memory_budget(1 << 20).unwrap();
+            source.copy_state(&mut second).unwrap();
+            assert_eq!(
+                reserved, second.memory.state_bytes,
+                "recapture must not add wrappers twice"
+            );
+            source.update(&input(2)).unwrap();
+            if tracked {
+                assert_eq!(source.computed_state_bytes(), source.memory.state_bytes);
+            }
+            assert_eq!(source.flush(i64::MAX).unwrap().num_rows(), 3);
+            let first = frozen.flush(i64::MAX).unwrap();
+            let second = second.flush(i64::MAX).unwrap();
+            assert_eq!(first, second);
+            assert!(column_i64(&first, "result0")
+                .values()
+                .iter()
+                .all(|count| *count == 1));
+        }
+    }
+}

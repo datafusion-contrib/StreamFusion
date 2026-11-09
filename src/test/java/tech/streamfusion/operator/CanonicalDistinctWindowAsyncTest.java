@@ -31,23 +31,30 @@ class CanonicalDistinctWindowAsyncTest {
 
   static Stream<Arguments> cases() {
     return Stream.of("TUMBLE", "HOP", "CUMULATE", "SESSION")
-        .flatMap(shape -> Stream.of(false, true).map(keyless -> Arguments.of(shape, keyless)));
+        .flatMap(
+            shape ->
+                Stream.of(false, true)
+                    .flatMap(
+                        keyless ->
+                            Stream.of(false, true)
+                                .map(rocks -> Arguments.of(shape, keyless, rocks))));
   }
 
-  @ParameterizedTest(name = "{0},keyless={1}")
+  @ParameterizedTest(name = "{0},keyless={1},rocks={2}")
   @MethodSource("cases")
-  void pinnedDistinctViewsConvertAfterLiveWritesAndNativeOwnerClose(String shape, boolean keyless)
-      throws Exception {
+  void independentDistinctViewsConvertAfterLiveWritesAndNativeOwnerClose(
+      String shape, boolean keyless, boolean rocks) throws Exception {
     var plan = new CanonicalSharedWindowInteropTest.StockPlan(shape, "UTC", keyless, false, true);
     var captured = new OperatorSnapshotFutures[2];
     var expected = new OperatorSubtaskState[2];
     try (var stock = plan.stock(true);
-        var source = nativeHarness(plan, true)) {
+        var source = nativeHarness(plan, rocks)) {
       try {
         stock.open();
         source.open();
         var owner = (AbstractNativeStatefulOperator<?>) source.getOperator();
-        assertTrue(owner.directRocksDBState(), "DISTINCT must use the native RocksDB store");
+        assertEquals(
+            rocks, owner.directRocksDBState(), "capture must use the requested native store");
         for (int stage = 0; stage < 3; stage++) {
           for (int index = 0; index < 3; index++) {
             var row =

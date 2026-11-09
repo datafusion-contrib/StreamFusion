@@ -217,14 +217,27 @@ impl SessionAggregator {
     /// Bounds this aggregator's state by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored sessions immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
-        let state: usize = self
-            .sessions
-            .iter()
-            .map(|(key, map)| owned_row_bytes(key) + map.values().map(session_bytes).sum::<usize>())
-            .sum();
+        let state = self.computed_state_bytes();
         self.memory
             .attach("session-aggregate", budget_bytes, state)?;
         Ok(self)
+    }
+
+    pub(crate) fn computed_state_bytes(&self) -> usize {
+        self.sessions
+            .iter()
+            .map(|(key, sessions)| {
+                owned_row_bytes(key) + sessions.values().map(session_bytes).sum::<usize>()
+            })
+            .sum::<usize>()
+            .saturating_add(
+                self.canonical_distinct_counts
+                    .keys()
+                    .map(|(_, key, _)| {
+                        owned_row_bytes(key) + std::mem::size_of::<((i64, OwnedRow, usize), i64)>()
+                    })
+                    .sum::<usize>(),
+            )
     }
 
     pub(crate) fn update(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {

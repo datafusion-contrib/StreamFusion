@@ -3,8 +3,9 @@ use std::sync::Mutex;
 
 struct SharedAccumulator {
     value: Arc<Mutex<Box<dyn Accumulator>>>,
-    aggregate: WindowAggregate,
+    aggregate: Arc<WindowAggregate>,
     counted: bool,
+    frozen_size: Option<usize>,
 }
 
 impl std::fmt::Debug for SharedAccumulator {
@@ -28,6 +29,7 @@ impl SharedAccumulator {
             restore_accumulator_state(&mut copied, &arrays)?;
             self.value = Arc::new(Mutex::new(copied));
         }
+        self.frozen_size = None;
         Ok(Arc::get_mut(&mut self.value)
             .expect("exclusive accumulator")
             .get_mut()
@@ -43,10 +45,12 @@ impl Accumulator for SharedAccumulator {
         self.exclusive()?.evaluate()
     }
     fn size(&self) -> usize {
-        self.value
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .size()
+        self.frozen_size.unwrap_or_else(|| {
+            self.value
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .size()
+        }) + wrapper_bytes()
     }
     fn state(&mut self) -> Result<Vec<ScalarValue>, DataFusionError> {
         self.exclusive()?.state()
@@ -65,31 +69,51 @@ impl Accumulator for SharedAccumulator {
     }
 }
 
+fn wrapper_bytes() -> usize {
+    std::mem::size_of::<SharedAccumulator>()
+        + std::mem::size_of::<Mutex<Box<dyn Accumulator>>>()
+        + 2 * std::mem::size_of::<usize>()
+}
+
+pub(super) fn capture_growth(accumulator: &dyn Accumulator) -> usize {
+    if (accumulator as &dyn std::any::Any).is::<SharedAccumulator>() {
+        0
+    } else {
+        wrapper_bytes()
+    }
+}
+
 pub(super) fn capture(
     accumulator: &mut Box<dyn Accumulator>,
-    aggregate: &WindowAggregate,
+    aggregate: &Arc<WindowAggregate>,
 ) -> Box<dyn Accumulator> {
     if let Some(shared) =
-        (accumulator.as_ref() as &dyn std::any::Any).downcast_ref::<SharedAccumulator>()
+        (accumulator.as_mut() as &mut dyn std::any::Any).downcast_mut::<SharedAccumulator>()
     {
+        let size = shared.size() - wrapper_bytes();
+        shared.frozen_size = Some(size);
         return Box::new(SharedAccumulator {
             value: Arc::clone(&shared.value),
-            aggregate: shared.aggregate.clone(),
+            aggregate: Arc::clone(&shared.aggregate),
             counted: shared.counted,
+            frozen_size: Some(size),
         });
     }
+    let size = accumulator.size();
     let counted = (accumulator.as_ref() as &dyn std::any::Any).is::<CountedDistinctAccumulator>();
     let value = std::mem::replace(accumulator, Box::<WindowCountAccumulator>::default());
     let value = Arc::new(Mutex::new(value));
     *accumulator = Box::new(SharedAccumulator {
         value: Arc::clone(&value),
-        aggregate: aggregate.clone(),
+        aggregate: Arc::clone(aggregate),
         counted,
+        frozen_size: Some(size),
     });
     Box::new(SharedAccumulator {
         value,
-        aggregate: aggregate.clone(),
+        aggregate: Arc::clone(aggregate),
         counted,
+        frozen_size: Some(size),
     })
 }
 
@@ -118,6 +142,7 @@ mod tests {
             WindowAggregate::CountedDistinct(DataType::Int64),
             WindowAggregate::new(7, &DataType::Int64),
         ] {
+            let aggregate = Arc::new(aggregate);
             let mut live = aggregate.create_accumulator();
             live.update_batch(&[Arc::new(Int64Array::from(vec![Some(3), Some(3), None]))])
                 .unwrap();
@@ -140,8 +165,35 @@ mod tests {
     }
 
     #[test]
+    fn wrapper_sizes_are_charged_once_and_frozen_peers_keep_their_estimates() {
+        let aggregate = Arc::new(WindowAggregate::new(7, &DataType::Utf8));
+        let mut live = aggregate.create_accumulator();
+        let values = Arc::new(StringArray::from_iter_values(
+            (0..513).map(|value| format!("value-{value}")),
+        )) as ArrayRef;
+        live.update_batch(&[values]).unwrap();
+        let before = live.size();
+        let growth = capture_growth(live.as_ref());
+        assert!(growth > 0);
+        let mut first = capture(&mut live, &aggregate);
+        assert_eq!(live.size(), before + growth);
+        assert_eq!(first.size(), before + growth);
+        assert_eq!(capture_growth(live.as_ref()), 0);
+        let mut second = capture(&mut live, &aggregate);
+        let retained = second.size();
+        snapshot_accumulator_state(&mut first, || aggregate.create_accumulator());
+        assert_eq!(second.size(), retained);
+        live.update_batch(&[Arc::new(StringArray::from(vec!["new"]))])
+            .unwrap();
+        assert_eq!(live.evaluate().unwrap(), ScalarValue::Int64(Some(514)));
+        assert_eq!(second.size(), retained);
+        assert_eq!(second.evaluate().unwrap(), ScalarValue::Int64(Some(513)));
+        assert_eq!(first.evaluate().unwrap(), ScalarValue::Int64(Some(513)));
+    }
+
+    #[test]
     fn overlapping_accumulator_views_survive_live_mutation_and_release() {
-        let aggregate = WindowAggregate::WrappingIntSum;
+        let aggregate = Arc::new(WindowAggregate::WrappingIntSum);
         let mut live = aggregate.create_accumulator();
         live.update_batch(&[Arc::new(Int32Array::from(vec![3]))])
             .unwrap();

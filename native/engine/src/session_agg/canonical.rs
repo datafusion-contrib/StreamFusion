@@ -405,8 +405,25 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreSessionCanonicalWate
 
 impl crate::state::canonical_memory::CanonicalMemoryState for SessionAggregator {
     fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
-        target.memory.set(self.memory.state_bytes);
-        target.memory.account()?;
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() || target.store.is_some() {
+            return Err(invalid("memory capture requires resident stores"));
+        }
+        self.require_complete_canonical_import()?;
+        let growth = self
+            .sessions
+            .values()
+            .flat_map(|sessions| sessions.values())
+            .flat_map(|session| &session.accumulators)
+            .map(|value| crate::aggregates::accumulator_capture_growth(value.as_ref()))
+            .sum::<usize>();
+        let captured_bytes = self.computed_state_bytes().saturating_add(growth);
+        crate::state::canonical_memory::reserve_capture(
+            &mut self.memory,
+            &mut target.memory,
+            captured_bytes,
+            growth,
+        )?;
         target.key_types = self.key_types.clone();
         target.key_converter = self
             .key_converter
@@ -415,6 +432,12 @@ impl crate::state::canonical_memory::CanonicalMemoryState for SessionAggregator 
         target.current_watermark = self.current_watermark;
         target.next_timer_deadline = self.next_timer_deadline;
         target.canonical_distinct = self.canonical_distinct.clone();
+        let factories = self
+            .aggregates
+            .iter()
+            .cloned()
+            .map(Arc::new)
+            .collect::<Vec<_>>();
         let codec = target.key_converter.as_ref();
         let copy_key = |key: &OwnedRow| {
             codec
@@ -434,7 +457,7 @@ impl crate::state::canonical_memory::CanonicalMemoryState for SessionAggregator 
                 let accumulators = session
                     .accumulators
                     .iter_mut()
-                    .zip(&self.aggregates)
+                    .zip(&factories)
                     .map(|(value, aggregate)| {
                         crate::aggregates::capture_accumulator(value, aggregate)
                     })
