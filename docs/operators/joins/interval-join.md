@@ -126,8 +126,13 @@ native processing-time operator. Scheduled and observed cleanup relationships no
 scoped disk spool rather than job-sized Java sets, on both release lines and in export preflight.
 Both sides can share one physical callback; reverse scans still reject callbacks without an owned
 deadline. The configured spool write-buffer reservation and scratch files release on every exit.
-Individual cache lists and their repeated get/put during export remain separate bounded-memory
-work. The original stock row/key/timer serializer snapshots load with
+Export stages tuple entries in the shared disk spool and lets the released list serializer stream
+each timestamp bucket into the projection once, preserving peer order and match flags. Restore
+reads released map/list bytes directly from snapshot resources and decodes individual tuples in
+both validation and apply passes, without materializing a complete Java bucket list. Row and timer
+transfers share a 1,024-row and four-MiB payload estimate, allowing one oversized value. The largest
+encoded stock KV remains a working-memory floor. The same transport applies to event-time and
+processing-time contracts on both release lines. The original stock row/key/timer serializer snapshots load with
 StreamFusion and planner classes blocked.
 
 An isolated component passes 240 positive controls and 45 rejection/guard controls. These cover

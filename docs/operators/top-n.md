@@ -741,7 +741,14 @@ MAP state, with Long window-end namespaces, full sort-key lists, released event 
 row/key/namespace/timer inventory before applying row batches and clears source entries only after
 success. Calendar and tie policies are installed before import; canonical and ordinary native
 checkpoints retain the input watermark, so immediate returns and older incoming watermarks cannot
-reopen closed windows. Native checkpoints retain their existing raw format.
+reopen closed windows. Export stages each sort-list entry once in the shared disk spool, keyed by
+owner, window-end namespace and typed sort key; the released serializer streams each bucket once.
+Restore reads raw canonical map/list bytes and decodes one row at a time, with complete serializer,
+namespace, sort-key and payload validation before native installation. Timer and observed-window
+membership use the disk spool instead of job-sized Java sets, including window deduplication.
+A shared sender caps row count and estimates four MiB per transfer, allowing an oversized row.
+An encoded stock KV remains the working-memory floor. These mechanisms are shared by both Flink
+lines and do not expand planner admission. Native checkpoints retain their existing raw format.
 
 The 425-check rank/dedup cohort includes 252 rank cases, 152 dedup cases and 21 shared bridge/operator
 regressions. It covers both native stores, keyed/global state, three shapes, four zones including

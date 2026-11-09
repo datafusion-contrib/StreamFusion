@@ -33,7 +33,6 @@ import org.apache.flink.types.RowKind;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /**
  * Released interval caches, original payloads, outer-match flags and independent cleanup clocks.
@@ -42,7 +41,6 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
   private static final long serialVersionUID = 1L;
   private static final String EVENTS = "_timer_state/event_user-timers";
   private static final String PROCESSING = "_timer_state/processing_user-timers";
-  private static final int CHUNK = 1024;
   private static final RowType TIMER_TRANSFER =
       RowType.of(new VarBinaryType(VarBinaryType.MAX_LENGTH), new BigIntType());
   private final boolean processingTime;
@@ -156,15 +154,15 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
+  private TypeSerializer<Tuple2<RowData, Boolean>> tuples(int side) {
+    return new TupleSerializer<Tuple2<RowData, Boolean>>(
+        (Class) Tuple2.class,
+        new TypeSerializer<?>[] {new RowDataSerializer(inputs[side]), BooleanSerializer.INSTANCE});
+  }
+
   private MapStateDescriptor<Long, List<Tuple2<RowData, Boolean>>> descriptor(int side) {
-    var tuple =
-        new TupleSerializer<Tuple2<RowData, Boolean>>(
-            (Class) Tuple2.class,
-            new TypeSerializer<?>[] {
-              new RowDataSerializer(inputs[side]), BooleanSerializer.INSTANCE
-            });
     return new MapStateDescriptor<>(
-        cacheName(side), LongSerializer.INSTANCE, new ListSerializer<>(tuple));
+        cacheName(side), LongSerializer.INSTANCE, new ListSerializer<>(tuples(side)));
   }
 
   private MapState<Long, List<Tuple2<RowData, Boolean>>> cache(
@@ -274,7 +272,7 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
       }
       for (int side = 0; side < 2; side++) {
         // Register both exact value serializers before making any native changes.
-        var values = cache(backend, side);
+        cache(backend, side);
         var deadline = timer(backend, side);
         try (var stream = backend.getKeys(timerName(side), VoidNamespace.INSTANCE)) {
           var iterator = stream.iterator();
@@ -293,31 +291,38 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
             inventory.add(2, key, time);
           }
         }
-        try (var stream = backend.getKeys(cacheName(side), VoidNamespace.INSTANCE)) {
-          var iterator = stream.iterator();
-          while (iterator.hasNext()) {
-            var key = binaryKey(iterator.next(), projection);
-            backend.setCurrentKey(key);
-            if (deadline.value() == null)
-              throw new IllegalStateException("Stock interval cache has no cleanup deadline");
-            boolean found = false;
-            for (var entry : values.entries()) {
-              if (entry.getKey() == null || entry.getValue() == null || entry.getValue().isEmpty())
+        final int input = side;
+        StockMapListSnapshot.visit(
+            backend,
+            cacheName(side),
+            keys,
+            VoidNamespaceSerializer.INSTANCE,
+            LongSerializer.INSTANCE,
+            tuples(side),
+            (owner, namespace, time, encoded) -> {
+              var key = binaryKey(owner, projection);
+              backend.setCurrentKey(key);
+              if (deadline.value() == null)
+                throw new IllegalStateException("Stock interval cache has no cleanup deadline");
+              if (StockMapListSnapshot.size(encoded) <= 0)
                 throw new IllegalStateException("Empty stock interval timestamp bucket");
-              for (var pair : entry.getValue()) {
+              for (var pair : StockMapListSnapshot.decode(encoded, tuples(input))) {
                 if (pair == null
                     || pair.f0 == null
                     || pair.f1 == null
                     || pair.f0.getRowKind() != RowKind.INSERT
-                    || !processingTime && millis(pair.f0, side) != entry.getKey()
-                    || !key.equals(projectedKey(pair.f0, side, projection)))
+                    || !processingTime && millis(pair.f0, input) != time
+                    || !key.equals(projectedKey(pair.f0, input, projection)))
                   throw new IllegalStateException(
                       "Stock interval row disagrees with its cache key or timestamp");
-                found = true;
               }
-            }
-            if (!found) throw new IllegalStateException("Empty stock interval cache");
-          }
+              inventory.add(3 + input, key, 0);
+            });
+        try (var stream = backend.getKeys(cacheName(side), VoidNamespace.INSTANCE)) {
+          var iterator = stream.iterator();
+          while (iterator.hasNext())
+            if (!inventory.contains(3 + side, binaryKey(iterator.next(), projection), 0))
+              throw new IllegalStateException("Empty stock interval cache");
         }
       }
       try (var owners = inventory.owners()) {
@@ -352,40 +357,49 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
       final int input = side;
       var serializer = new RowDataSerializer(inputs[side]);
       var values = cache(backend, side);
-      Native.exportIntervalJoinCanonicalRows(
-          handle,
-          side == 0,
-          (a, s) -> {
-            try (var array = ArrowArray.wrap(a);
-                var schema = ArrowSchema.wrap(s);
-                var root =
-                    Data.importVectorSchemaRoot(
-                        NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
-              var reader = ArrowConversion.createArrowReader(root, transfers[input]);
-              for (int index = 0; index < root.getRowCount(); index++) {
-                var row = reader.read(index);
-                var payload = new GenericRowData(inputs[input].getFieldCount());
-                for (int field = 0; field < payload.getArity(); field++)
-                  payload.setField(
-                      field,
-                      RowData.createFieldGetter(inputs[input].getTypeAt(field).copy(true), field)
-                          .getFieldOrNull(row));
-                if (row.isNullAt(matchIndex(input)))
-                  throw new IllegalStateException("NULL native match flag");
-                long time =
-                    processingTime ? row.getLong(payload.getArity()) : millis(payload, input);
-                backend.setCurrentKey(projectedKey(payload, input, projection));
-                var retained = values.get(time);
-                if (retained == null) retained = new ArrayList<>();
-                retained.add(
-                    Tuple2.of(
-                        serializer.toBinaryRow(payload).copy(), row.getBoolean(matchIndex(input))));
-                values.put(time, retained);
+      try (var staged =
+          new StockMapListSpool<Long, Tuple2<RowData, Boolean>>(
+              keys, LongSerializer.INSTANCE, tuples(side))) {
+        Native.exportIntervalJoinCanonicalRows(
+            handle,
+            side == 0,
+            (a, s) -> {
+              try (var array = ArrowArray.wrap(a);
+                  var schema = ArrowSchema.wrap(s);
+                  var root =
+                      Data.importVectorSchemaRoot(
+                          NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
+                var reader = ArrowConversion.createArrowReader(root, transfers[input]);
+                for (int index = 0; index < root.getRowCount(); index++) {
+                  var row = reader.read(index);
+                  var payload = new GenericRowData(inputs[input].getFieldCount());
+                  for (int field = 0; field < payload.getArity(); field++)
+                    payload.setField(
+                        field,
+                        RowData.createFieldGetter(inputs[input].getTypeAt(field).copy(true), field)
+                            .getFieldOrNull(row));
+                  if (row.isNullAt(matchIndex(input)))
+                    throw new IllegalStateException("NULL native match flag");
+                  long time =
+                      processingTime ? row.getLong(payload.getArity()) : millis(payload, input);
+                  staged.append(
+                      projectedKey(payload, input, projection),
+                      time,
+                      Tuple2.of(
+                          serializer.toBinaryRow(payload).copy(),
+                          row.getBoolean(matchIndex(input))));
+                }
+              } catch (Exception failure) {
+                throw new IllegalStateException("Cannot export stock interval cache", failure);
               }
-            } catch (Exception failure) {
-              throw new IllegalStateException("Cannot export stock interval cache", failure);
-            }
-          });
+            });
+        staged.visit(
+            backend,
+            (owner, time, retained) -> {
+              backend.setCurrentKey(owner);
+              values.put(time, retained);
+            });
+      }
       var deadline = timer(backend, side);
       Native.exportIntervalJoinCanonicalTimers(
           handle,
@@ -424,33 +438,36 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
       throws Exception {
     preflight(backend);
     for (int side = 0; side < 2; side++) {
-      var rows = new ArrayList<RowData>(CHUNK);
-      var values = cache(backend, side);
-      try (var stream = backend.getKeys(cacheName(side), VoidNamespace.INSTANCE)) {
-        var iterator = stream.iterator();
-        while (iterator.hasNext()) {
-          backend.setCurrentKey(iterator.next());
-          for (var entry : values.entries()) {
-            for (var pair : entry.getValue()) {
-              var row = new GenericRowData(transfers[side].getFieldCount());
-              for (int field = 0; field < inputs[side].getFieldCount(); field++)
+      final int input = side;
+      var batch =
+          new StockRowBatch(
+              transfers[side],
+              (a, s) -> Native.importIntervalJoinCanonicalRows(handle, input == 0, a, s));
+      StockMapListSnapshot.visit(
+          backend,
+          cacheName(side),
+          keys,
+          VoidNamespaceSerializer.INSTANCE,
+          LongSerializer.INSTANCE,
+          tuples(side),
+          (owner, namespace, time, encoded) -> {
+            for (var pair : StockMapListSnapshot.decode(encoded, tuples(input))) {
+              var row = new GenericRowData(transfers[input].getFieldCount());
+              for (int field = 0; field < inputs[input].getFieldCount(); field++)
                 row.setField(
                     field,
-                    RowData.createFieldGetter(inputs[side].getTypeAt(field).copy(true), field)
+                    RowData.createFieldGetter(inputs[input].getTypeAt(field).copy(true), field)
                         .getFieldOrNull(pair.f0));
-              if (processingTime) row.setField(inputs[side].getFieldCount(), entry.getKey());
-              row.setField(matchIndex(side), pair.f1);
-              rows.add(row);
-              if (rows.size() == CHUNK) {
-                send(handle, side, rows, false);
-                rows.clear();
-              }
+              if (processingTime) row.setField(inputs[input].getFieldCount(), time);
+              row.setField(matchIndex(input), pair.f1);
+              batch.append(row);
             }
-          }
-        }
-      }
-      if (!rows.isEmpty()) send(handle, side, rows, false);
-      rows.clear();
+          });
+      batch.flush();
+      var timers =
+          new StockRowBatch(
+              TIMER_TRANSFER,
+              (a, s) -> Native.importIntervalJoinCanonicalTimers(handle, input == 0, a, s));
       var deadline = timer(backend, side);
       var serializer = new RowDataSerializer(keyType);
       try (var stream = backend.getKeys(timerName(side), VoidNamespace.INSTANCE)) {
@@ -461,32 +478,11 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
           byte[] bytes =
               BinarySegmentUtils.copyToBytes(
                   key.getSegments(), key.getOffset(), key.getSizeInBytes());
-          rows.add(GenericRowData.of(bytes, deadline.value()));
-          if (rows.size() == CHUNK) {
-            send(handle, side, rows, true);
-            rows.clear();
-          }
+          timers.append(GenericRowData.of(bytes, deadline.value()));
         }
       }
-      if (!rows.isEmpty()) send(handle, side, rows, true);
+      timers.flush();
     }
     clear(backend);
-  }
-
-  private void send(long handle, int side, List<RowData> rows, boolean timers) {
-    try (var root =
-            RowDataArrowConverter.write(
-                rows, timers ? TIMER_TRANSFER : transfers[side], NativeAllocator.SHARED);
-        var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
-        var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      Data.exportVectorSchemaRoot(
-          NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array, schema);
-      if (timers)
-        Native.importIntervalJoinCanonicalTimers(
-            handle, side == 0, array.memoryAddress(), schema.memoryAddress());
-      else
-        Native.importIntervalJoinCanonicalRows(
-            handle, side == 0, array.memoryAddress(), schema.memoryAddress());
-    }
   }
 }

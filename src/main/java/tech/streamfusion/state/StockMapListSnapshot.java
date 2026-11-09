@@ -12,14 +12,13 @@ import org.apache.flink.api.common.typeutils.base.MapSerializer;
 import org.apache.flink.core.memory.DataInputDeserializer;
 import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.runtime.state.CompositeKeySerializationUtils;
-import org.apache.flink.runtime.state.VoidNamespace;
 import org.apache.flink.runtime.state.VoidNamespaceSerializer;
 import org.apache.flink.runtime.state.metainfo.StateMetaInfoSnapshot;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.util.CloseableIterator;
 import tech.streamfusion.compat.FlinkStateBackendCompat;
 
-/** Stages released canonical map/list bytes and decodes one row at a time during restore. */
+/** Visits released map/list bytes, with optional disk staging and entry-by-entry restore. */
 final class StockMapListSnapshot {
   private final StockStateSpool spool;
   private final TypeSerializer<RowData> rows;
@@ -36,6 +35,43 @@ final class StockMapListSnapshot {
   void capture(
       CheckpointableKeyedStateBackend<RowData> backend, String name, TypeSerializer<RowData> keys)
       throws Exception {
+    visit(
+        backend,
+        name,
+        keys,
+        VoidNamespaceSerializer.INSTANCE,
+        LongSerializer.INSTANCE,
+        rows,
+        (owner, namespace, timestamp, encoded) -> {
+          if (spool.contains(values, owner, timestamp))
+            throw new IllegalArgumentException("Duplicate canonical map entry: " + name);
+          byte[] counter = spool.get(counts, owner, 0);
+          long position = counter == null ? 0 : ByteBuffer.wrap(counter).getLong();
+          spool.addOwner(owner);
+          spool.put(values, owner, timestamp, encoded);
+          spool.put(order, owner, position, ByteBuffer.allocate(8).putLong(timestamp).array());
+          spool.put(
+              counts,
+              owner,
+              0,
+              ByteBuffer.allocate(8).putLong(Math.incrementExact(position)).array());
+        });
+  }
+
+  @FunctionalInterface
+  interface BucketReceiver<N, K> {
+    void accept(RowData owner, N namespace, K mapKey, byte[] encoded) throws Exception;
+  }
+
+  static <N, K, V> void visit(
+      CheckpointableKeyedStateBackend<RowData> backend,
+      String name,
+      TypeSerializer<RowData> keys,
+      TypeSerializer<N> namespace,
+      TypeSerializer<K> mapKeys,
+      TypeSerializer<V> rows,
+      BucketReceiver<N, K> receiver)
+      throws Exception {
     int prefix = FlinkStateBackendCompat.keyGroupPrefixBytes(backend);
     var resources = backend.savepoint().getSnapshotResources();
     try (AutoCloseable release = resources::release) {
@@ -43,8 +79,7 @@ final class StockMapListSnapshot {
         throw new IllegalArgumentException("Canonical map owner serializer changed");
       var metadata = resources.getMetaInfoSnapshots();
       int selected = -1;
-      var namespace = VoidNamespaceSerializer.INSTANCE;
-      var expected = new MapSerializer<>(LongSerializer.INSTANCE, new ListSerializer<>(rows));
+      var expected = new MapSerializer<>(mapKeys, new ListSerializer<>(rows));
       for (int i = 0; i < metadata.size(); i++) {
         var state = metadata.get(i);
         if (!state.getName().equals(name)) continue;
@@ -72,25 +107,13 @@ final class StockMapListSnapshot {
             var input = new DataInputDeserializer(entries.key());
             int group = CompositeKeySerializationUtils.readKeyGroup(prefix, input);
             var owner = CompositeKeySerializationUtils.readKey(keys, input, ambiguous);
-            var ns = CompositeKeySerializationUtils.readNamespace(namespace, input, ambiguous);
-            long timestamp = LongSerializer.INSTANCE.deserialize(input);
+            N ns = CompositeKeySerializationUtils.readNamespace(namespace, input, ambiguous);
+            K mapKey = mapKeys.deserialize(input);
             if (group != entries.keyGroup()
                 || !backend.getKeyGroupRange().contains(group)
-                || ns != VoidNamespace.INSTANCE
                 || input.available() != 0)
               throw new IllegalArgumentException("Canonical map key/namespace changed: " + name);
-            if (spool.contains(values, owner, timestamp))
-              throw new IllegalArgumentException("Duplicate canonical map entry: " + name);
-            byte[] counter = spool.get(counts, owner, 0);
-            long position = counter == null ? 0 : ByteBuffer.wrap(counter).getLong();
-            spool.addOwner(owner);
-            spool.put(values, owner, timestamp, entries.value());
-            spool.put(order, owner, position, ByteBuffer.allocate(8).putLong(timestamp).array());
-            spool.put(
-                counts,
-                owner,
-                0,
-                ByteBuffer.allocate(8).putLong(Math.incrementExact(position)).array());
+            receiver.accept(owner, ns, mapKey, entries.value());
           }
           entries.next();
         }
@@ -124,6 +147,10 @@ final class StockMapListSnapshot {
     return encoded;
   }
 
+  static int size(byte[] encoded) throws IOException {
+    return header(new DataInputDeserializer(encoded));
+  }
+
   private static int header(DataInputDeserializer input) throws IOException {
     if (input.readBoolean()) {
       if (input.available() != 0) throw new IOException("Trailing null canonical map value bytes");
@@ -134,7 +161,7 @@ final class StockMapListSnapshot {
     return size;
   }
 
-  static Iterable<RowData> decode(byte[] encoded, TypeSerializer<RowData> rows) {
+  static <V> Iterable<V> decode(byte[] encoded, TypeSerializer<V> rows) {
     return () -> {
       var input = new DataInputDeserializer(encoded);
       final int size;
@@ -154,7 +181,7 @@ final class StockMapListSnapshot {
         }
 
         @Override
-        public RowData next() {
+        public V next() {
           if (!hasNext()) throw new NoSuchElementException();
           try {
             var row = rows.deserialize(input);

@@ -19,14 +19,15 @@ import org.apache.flink.util.CloseableIterator;
 import tech.streamfusion.compat.FlinkStateBackendCompat;
 
 /** Stages map-list rows once and lets the released stock serializer iterate each bucket once. */
-final class StockMapListSpool<K> implements AutoCloseable {
+final class StockMapListSpool<K, V> implements AutoCloseable {
   private static final int ROWS = 1, COUNTS = 2;
-  private final TypeSerializer<RowData> owners, rows;
+  private final TypeSerializer<RowData> owners;
+  private final TypeSerializer<V> rows;
   private final TypeSerializer<K> mapKeys;
   private final StockStateSpool spool;
 
   StockMapListSpool(
-      TypeSerializer<RowData> owners, TypeSerializer<K> mapKeys, TypeSerializer<RowData> rows)
+      TypeSerializer<RowData> owners, TypeSerializer<K> mapKeys, TypeSerializer<V> rows)
       throws Exception {
     this(owners, mapKeys, rows, Path.of(System.getProperty("java.io.tmpdir")));
   }
@@ -34,7 +35,7 @@ final class StockMapListSpool<K> implements AutoCloseable {
   StockMapListSpool(
       TypeSerializer<RowData> owners,
       TypeSerializer<K> mapKeys,
-      TypeSerializer<RowData> rows,
+      TypeSerializer<V> rows,
       Path directory)
       throws Exception {
     this.owners = owners.duplicate();
@@ -56,7 +57,7 @@ final class StockMapListSpool<K> implements AutoCloseable {
   }
 
   /** Returns true only for the first row of this owner/map-key bucket. */
-  boolean append(RowData owner, K mapKey, RowData row) throws Exception {
+  boolean append(RowData owner, K mapKey, V row) throws Exception {
     var bucket = GenericRowData.of(encode(owners, owner), encode(mapKeys, mapKey));
     byte[] count = spool.get(COUNTS, bucket, 0);
     int position = count == null ? 0 : ByteBuffer.wrap(count).getInt();
@@ -69,16 +70,16 @@ final class StockMapListSpool<K> implements AutoCloseable {
   }
 
   @FunctionalInterface
-  interface BucketReceiver<K> {
-    void accept(RowData owner, K mapKey, List<RowData> rows) throws Exception;
+  interface BucketReceiver<K, V> {
+    void accept(RowData owner, K mapKey, List<V> rows) throws Exception;
   }
 
-  void visit(CheckpointableKeyedStateBackend<RowData> backend, BucketReceiver<K> receiver)
+  void visit(CheckpointableKeyedStateBackend<RowData> backend, BucketReceiver<K, V> receiver)
       throws Exception {
     visit(FlinkStateBackendCompat.serializesKeyedValues(backend), receiver);
   }
 
-  void visit(boolean serialized, BucketReceiver<K> receiver) throws Exception {
+  void visit(boolean serialized, BucketReceiver<K, V> receiver) throws Exception {
     try (var buckets = spool.owners()) {
       while (buckets.hasNext()) {
         var bucket = buckets.next();
@@ -92,10 +93,10 @@ final class StockMapListSpool<K> implements AutoCloseable {
     }
   }
 
-  private final class BucketList extends AbstractList<RowData> implements AutoCloseable {
+  private final class BucketList extends AbstractList<V> implements AutoCloseable {
     private final RowData bucket;
     private final int size;
-    private final List<CloseableIterator<RowData>> readers = new ArrayList<>();
+    private final List<CloseableIterator<V>> readers = new ArrayList<>();
     private boolean closed;
 
     BucketList(RowData bucket, int size) {
@@ -109,7 +110,7 @@ final class StockMapListSpool<K> implements AutoCloseable {
     }
 
     @Override
-    public RowData get(int index) {
+    public V get(int index) {
       if (closed) throw new IllegalStateException("Canonical bucket is closed");
       if (index < 0 || index >= size) throw new IndexOutOfBoundsException(index);
       try {
@@ -122,7 +123,7 @@ final class StockMapListSpool<K> implements AutoCloseable {
     }
 
     @Override
-    public Iterator<RowData> iterator() {
+    public Iterator<V> iterator() {
       if (closed) throw new IllegalStateException("Canonical bucket is closed");
       try {
         var reader = spool.values(ROWS, bucket, rows);
@@ -139,7 +140,7 @@ final class StockMapListSpool<K> implements AutoCloseable {
           }
 
           @Override
-          public RowData next() {
+          public V next() {
             if (!hasNext()) throw new java.util.NoSuchElementException();
             position++;
             return reader.next();

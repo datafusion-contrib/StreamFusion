@@ -81,7 +81,11 @@ are checked against released stock output. UTC, a fixed non-hour offset, and the
 DST transition have separate controls. Restored serializer metadata loads with StreamFusion and
 planner classes blocked. Malformed keys, namespaces, row flags, deadlines, missing/orphan timers,
 processing-time timers, and unowned descriptors fail before importing rows; ownership checks cover
-failed imports as well as successful switches.
+failed imports as well as successful switches. Restore validates timer/namespace membership in
+the shared scoped disk spool instead of job-sized Java sets. One observed namespace can belong
+to either or both sides; duplicate/missing callbacks and timer-only windows still fail before
+native rows are installed. Imports share a 1,024-row and four-MiB payload estimate, allowing an
+oversized row. Source lists and the native checkpoint format retain their released layouts.
 
 Canonical plan binding can supply the original stock graph's resolved maximum parallelism to
 both native columnar exchanges and the join state owner. This takes precedence over the new

@@ -2,15 +2,12 @@ package tech.streamfusion.state;
 
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
-import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.state.OperatorStateStore;
 import org.apache.flink.api.common.state.StateDescriptor;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
@@ -22,7 +19,6 @@ import org.apache.flink.streaming.api.operators.TimerHeapInternalTimer;
 import org.apache.flink.streaming.api.operators.TimerSerializer;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
-import org.apache.flink.table.data.binary.BinaryRowData;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.runtime.util.TimeWindowUtil;
 import org.apache.flink.table.types.logical.BigIntType;
@@ -30,7 +26,6 @@ import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Released TVF slicing accumulators, clock-specific window timers and UNION watermark state. */
 public final class StockSlicingWindowStateContract implements StockStateContract {
@@ -38,7 +33,6 @@ public final class StockSlicingWindowStateContract implements StockStateContract
   private static final String STATE = "window-aggs";
   private static final String EVENTS = "_timer_state/event_window-timers";
   private static final String PROCESSING = "_timer_state/processing_window-timers";
-  private static final int CHUNK_ROWS = 1024;
   private final TypeSerializer<RowData> keys;
   private final RowType keyType;
   private final RowType accumulators;
@@ -409,85 +403,105 @@ public final class StockSlicingWindowStateContract implements StockStateContract
         keys);
     bindTimers(backend);
     var keyRows = new RowDataSerializer(keyType);
-    Set<WindowKey> scheduled = new HashSet<>();
-    try (var timers =
-        StockTimerSnapshot.<RowData, Long>iterator(backend, processingTime ? PROCESSING : EVENTS)) {
-      while (timers.hasNext()) {
-        var timer = timers.next();
-        if (timer.getTimestamp() != deadline(timer.getNamespace())
-            || !live(timer.getNamespace())
-            || !scheduled.add(
-                new WindowKey(keyRows.toBinaryRow(timer.getKey()).copy(), timer.getNamespace())))
-          throw new IllegalStateException("Unexpected stock window timer");
-      }
-    }
-    Set<BinaryRowData> scheduledKeys =
-        scheduled.stream().map(timer -> timer.key).collect(Collectors.toSet());
-    try (var entries = backend.<Long>getKeysAndNamespaces(STATE)) {
-      var iterator = entries.iterator();
-      while (iterator.hasNext()) {
-        var entry = iterator.next();
-        var key = keyRows.toBinaryRow(entry.f0).copy();
-        boolean future = live(entry.f1);
-        if (shared && future && !scheduledKeys.contains(key))
-          throw new IllegalStateException("Stock shared window key has no pending timer");
-        if (!shared && !scheduled.remove(new WindowKey(key, entry.f1)) && future)
-          throw new IllegalStateException("Stock window accumulator has no matching timer");
-      }
-    }
-    if (!shared && !scheduled.isEmpty())
-      throw new IllegalStateException("Stock window timer has no accumulator");
-    var keyGetters = getters(keyType);
-    var accGetters =
-        getters(
-            RowType.of(
-                accumulators
-                    .getChildren()
-                    .subList(0, scalarFields)
-                    .toArray(new org.apache.flink.table.types.logical.LogicalType[0])));
     var descriptor = descriptor();
-    var batch = new ArrayList<RowData>(CHUNK_ROWS);
-    try (var entries = backend.<Long>getKeysAndNamespaces(STATE)) {
-      var iterator = entries.iterator();
-      while (iterator.hasNext()) {
-        var entry = iterator.next();
-        var key = keyRows.toBinaryRow(entry.f0).copy();
-        long end = entry.f1;
-        backend.setCurrentKey(key);
-        var value = backend.getPartitionedState(end, LongSerializer.INSTANCE, descriptor).value();
-        if (value == null) throw new IllegalStateException("Stock window has no accumulator");
-        // Released global combination can retain expired unshared bytes without a timer.
-        // A past shared slice can still contribute when another record schedules a later window.
-        if (!shared && !live(end)) continue;
-        var row = new GenericRowData(bridgeType.getFieldCount());
-        row.setField(0, nativeBound(windowStart(end)));
-        row.setField(1, nativeBound(end));
-        for (int i = 0; i < keyGetters.length; i++)
-          row.setField(2 + i, keyGetters[i].getFieldOrNull(key));
-        for (int i = 0; i < accGetters.length; i++)
-          row.setField(2 + keyGetters.length + i, accGetters[i].getFieldOrNull(value));
-        batch.add(row);
-        if (batch.size() == CHUNK_ROWS) {
-          importBatch(batch, handle);
-          batch.clear();
+    try (var inventory = new StockStateSpool(keyRows)) {
+      long scheduled = 0, observed = 0;
+      try (var timers =
+          StockTimerSnapshot.<RowData, Long>iterator(
+              backend, processingTime ? PROCESSING : EVENTS)) {
+        while (timers.hasNext()) {
+          var timer = timers.next();
+          var key = keyRows.toBinaryRow(timer.getKey()).copy();
+          if (timer.getTimestamp() != deadline(timer.getNamespace())
+              || !live(timer.getNamespace())
+              || !inventory.add(1, key, timer.getNamespace()))
+            throw new IllegalStateException("Unexpected stock window timer");
+          inventory.addOwner(key);
+          scheduled++;
         }
       }
-    }
-    if (!batch.isEmpty()) importBatch(batch, handle);
-    if (shared) {
-      batch.clear();
-      for (WindowKey timer : scheduled) {
-        var row = new GenericRowData(timerBridgeType.getFieldCount());
-        row.setField(0, nativeBound(timer.end));
-        for (int i = 0; i < keyGetters.length; i++)
-          row.setField(1 + i, keyGetters[i].getFieldOrNull(timer.key));
-        batch.add(row);
-        if (batch.size() == CHUNK_ROWS) {
-          importTimers(batch, handle);
-          batch.clear();
+      try (var entries = backend.<Long>getKeysAndNamespaces(STATE)) {
+        var iterator = entries.iterator();
+        while (iterator.hasNext()) {
+          var entry = iterator.next();
+          var key = keyRows.toBinaryRow(entry.f0).copy();
+          boolean future = live(entry.f1);
+          if (shared && future && !inventory.hasAny(1, key))
+            throw new IllegalStateException("Stock shared window key has no pending timer");
+          if (!shared && future) {
+            if (!inventory.contains(1, key, entry.f1) || !inventory.add(2, key, entry.f1))
+              throw new IllegalStateException("Stock window accumulator has no matching timer");
+            observed++;
+          }
         }
       }
-      if (!batch.isEmpty()) importTimers(batch, handle);
+      if (!shared && observed != scheduled)
+        throw new IllegalStateException("Stock window timer has no accumulator");
+      var keyGetters = getters(keyType);
+      var accGetters =
+          getters(
+              RowType.of(
+                  accumulators
+                      .getChildren()
+                      .subList(0, scalarFields)
+                      .toArray(new org.apache.flink.table.types.logical.LogicalType[0])));
+      var batch =
+          new StockRowBatch(
+              bridgeType,
+              (a, schema) -> {
+                if (shared)
+                  Native.importSlicingWindowCanonical(
+                      handle, keyType.getFieldCount(), false, a, schema);
+                else
+                  Native.importTumblingAggregatorCanonical(
+                      handle, keyType.getFieldCount(), a, schema);
+              });
+      try (var entries = backend.<Long>getKeysAndNamespaces(STATE)) {
+        var iterator = entries.iterator();
+        while (iterator.hasNext()) {
+          var entry = iterator.next();
+          var key = keyRows.toBinaryRow(entry.f0).copy();
+          long end = entry.f1;
+          backend.setCurrentKey(key);
+          var value = backend.getPartitionedState(end, LongSerializer.INSTANCE, descriptor).value();
+          if (value == null) throw new IllegalStateException("Stock window has no accumulator");
+          // Released global combination can retain expired unshared bytes without a timer.
+          // A past shared slice can still contribute when another record schedules a later window.
+          if (!shared && !live(end)) continue;
+          var row = new GenericRowData(bridgeType.getFieldCount());
+          row.setField(0, nativeBound(windowStart(end)));
+          row.setField(1, nativeBound(end));
+          for (int i = 0; i < keyGetters.length; i++)
+            row.setField(2 + i, keyGetters[i].getFieldOrNull(key));
+          for (int i = 0; i < accGetters.length; i++)
+            row.setField(2 + keyGetters.length + i, accGetters[i].getFieldOrNull(value));
+          batch.append(row);
+        }
+      }
+      batch.flush();
+      if (shared) {
+        var timers =
+            new StockRowBatch(
+                timerBridgeType,
+                (a, schema) ->
+                    Native.importSlicingWindowCanonical(
+                        handle, keyType.getFieldCount(), true, a, schema));
+        try (var owners = inventory.owners()) {
+          while (owners.hasNext()) {
+            var key = owners.next();
+            try (var ends = inventory.times(1, key)) {
+              while (ends.hasNext()) {
+                var row = new GenericRowData(timerBridgeType.getFieldCount());
+                row.setField(0, nativeBound(ends.next()));
+                for (int i = 0; i < keyGetters.length; i++)
+                  row.setField(1 + i, keyGetters[i].getFieldOrNull(key));
+                timers.append(row);
+              }
+            }
+          }
+        }
+        timers.flush();
+      }
     }
     if (!processingTime) Native.restoreTumblingCanonicalWatermark(handle, restoredWatermark());
     for (var view : distinctViews)
@@ -495,33 +509,6 @@ public final class StockSlicingWindowStateContract implements StockStateContract
           backend, keyType, handle, descriptor, this::nativeBound, end -> shared || live(end));
     if (!distinctViews.isEmpty()) Native.finishWindowCanonicalDistinct(handle);
     clear(backend);
-  }
-
-  private void importBatch(List<RowData> rows, long handle) {
-    try (VectorSchemaRoot root =
-            RowDataArrowConverter.write(rows, bridgeType, NativeAllocator.SHARED);
-        var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
-        var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      Data.exportVectorSchemaRoot(
-          NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array, schema);
-      if (shared)
-        Native.importSlicingWindowCanonical(
-            handle, keyType.getFieldCount(), false, array.memoryAddress(), schema.memoryAddress());
-      else
-        Native.importTumblingAggregatorCanonical(
-            handle, keyType.getFieldCount(), array.memoryAddress(), schema.memoryAddress());
-    }
-  }
-
-  private void importTimers(List<RowData> rows, long handle) {
-    try (var root = RowDataArrowConverter.write(rows, timerBridgeType, NativeAllocator.SHARED);
-        var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
-        var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      Data.exportVectorSchemaRoot(
-          NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array, schema);
-      Native.importSlicingWindowCanonical(
-          handle, keyType.getFieldCount(), true, array.memoryAddress(), schema.memoryAddress());
-    }
   }
 
   private long local(long bound) {
@@ -543,27 +530,5 @@ public final class StockSlicingWindowStateContract implements StockStateContract
     for (int i = 0; i < getters.length; i++)
       getters[i] = RowData.createFieldGetter(type.getTypeAt(i), i);
     return getters;
-  }
-
-  private static final class WindowKey {
-    final BinaryRowData key;
-    final long end;
-
-    WindowKey(BinaryRowData key, long end) {
-      this.key = key;
-      this.end = end;
-    }
-
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof WindowKey
-          && end == ((WindowKey) other).end
-          && key.equals(((WindowKey) other).key);
-    }
-
-    @Override
-    public int hashCode() {
-      return 31 * key.hashCode() + Long.hashCode(end);
-    }
   }
 }

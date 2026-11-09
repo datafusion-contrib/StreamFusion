@@ -145,7 +145,8 @@ public final class StockTemporalSortStateContract implements StockStateContract 
       throws Exception {
     clear(backend);
     try (var lists =
-        new StockMapListSpool<Long>(keys, LongSerializer.INSTANCE, new RowDataSerializer(input))) {
+        new StockMapListSpool<Long, RowData>(
+            keys, LongSerializer.INSTANCE, new RowDataSerializer(input))) {
       var state = rows(backend);
       var timers = events(backend);
       Native.exportTemporalSortCanonicalRows(

@@ -41,7 +41,7 @@ class StockMapListSpoolTest {
     }
   }
 
-  private StockMapListSpool<Long> spool() throws Exception {
+  private StockMapListSpool<Long, RowData> spool() throws Exception {
     return new StockMapListSpool<>(owners, LongSerializer.INSTANCE, rows, directory);
   }
 
@@ -144,6 +144,53 @@ class StockMapListSpoolTest {
             });
     assertEquals("receiver failed", failure.getMessage());
     assertEquals(initial, TaskOffHeapMemory.reservedBytes());
+    assertNoScratch();
+  }
+
+  @Test
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  void nestedNamespaceOwnersAndTuplePayloadsUseReleasedListBytes() throws Exception {
+    var tuple =
+        new org.apache.flink.api.java.typeutils.runtime.TupleSerializer<
+            org.apache.flink.api.java.tuple.Tuple2<RowData, Boolean>>(
+            (Class) org.apache.flink.api.java.tuple.Tuple2.class,
+            new org.apache.flink.api.common.typeutils.TypeSerializer<?>[] {
+              rows, org.apache.flink.api.common.typeutils.base.BooleanSerializer.INSTANCE
+            });
+    var namespaces =
+        new RowDataSerializer(RowType.of(RowType.of(new BigIntType()), new BigIntType()));
+    var expected = new ArrayList<org.apache.flink.api.java.tuple.Tuple2<RowData, Boolean>>();
+    for (int i = 0; i < 2051; i++)
+      expected.add(
+          org.apache.flink.api.java.tuple.Tuple2.of(
+              rows.toBinaryRow(GenericRowData.of((long) i, StringData.fromString("row-" + i)))
+                  .copy(),
+              i % 2 == 0));
+    try (var spool =
+        new StockMapListSpool<RowData, org.apache.flink.api.java.tuple.Tuple2<RowData, Boolean>>(
+            namespaces, owners, tuple, directory)) {
+      for (long end : new long[] {Long.MIN_VALUE, Long.MAX_VALUE})
+        for (var value : expected)
+          spool.append(
+              GenericRowData.of(GenericRowData.of(1L), end),
+              GenericRowData.of((Object) null),
+              value);
+      int[] buckets = {0};
+      spool.visit(
+          true,
+          (owner, order, values) -> {
+            assertEquals(1L, owner.getRow(0, 1).getLong(0));
+            assertTrue(owner.getLong(1) == Long.MIN_VALUE || owner.getLong(1) == Long.MAX_VALUE);
+            assertTrue(order.isNullAt(0));
+            var expectedBytes = new DataOutputSerializer(64);
+            var actualBytes = new DataOutputSerializer(64);
+            new ListSerializer<>(tuple).serialize(expected, expectedBytes);
+            new ListSerializer<>(tuple).serialize(values, actualBytes);
+            assertArrayEquals(expectedBytes.getCopyOfBuffer(), actualBytes.getCopyOfBuffer());
+            buckets[0]++;
+          });
+      assertEquals(2, buckets[0]);
+    }
     assertNoScratch();
   }
 

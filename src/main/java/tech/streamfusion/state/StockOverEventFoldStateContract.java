@@ -275,7 +275,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
     clear(backend);
     folds.exportState(backend, handle, persistent);
     try (var lists =
-        new StockMapListSpool<Long>(
+        new StockMapListSpool<Long, RowData>(
             keySerializer(), LongSerializer.INSTANCE, new RowDataSerializer(inputType))) {
       visit(
           Native::exportOverPendingCanonical,

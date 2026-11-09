@@ -24,7 +24,6 @@ import org.apache.flink.types.RowKind;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Released event-time window join lists and per-key/window firing timers. */
 public final class StockWindowJoinStateContract implements StockStateContract {
@@ -60,7 +59,6 @@ public final class StockWindowJoinStateContract implements StockStateContract {
 
   private static final String EVENTS = "_timer_state/event_window-timers";
   private static final String PROCESSING = "_timer_state/processing_window-timers";
-  private static final int CHUNK = 1024;
   private final TypeSerializer<RowData> keys;
   private final RowType keyType;
   private final RowType[] inputs;
@@ -192,46 +190,47 @@ public final class StockWindowJoinStateContract implements StockStateContract {
     timers(backend);
     var serializer = new RowDataSerializer(keyType);
     var projection = new StockKeyProjection(keyType);
-    var scheduled = new HashSet<WindowKey>();
-    try (var iterator = StockTimerSnapshot.<RowData, Long>iterator(backend, EVENTS)) {
-      while (iterator.hasNext()) {
-        var timer = iterator.next();
-        if (timer.getTimestamp() != deadline(timer.getNamespace())
-            || !scheduled.add(
-                new WindowKey(serializer.toBinaryRow(timer.getKey()).copy(), timer.getNamespace())))
-          throw new IllegalStateException("Unexpected stock window-join timer");
-      }
-    }
-    var observed = new HashSet<WindowKey>();
-    for (int side = 0; side < 2; side++) {
-      try (var stream = backend.<Long>getKeysAndNamespaces(name(side))) {
-        var iterator = stream.iterator();
+    try (var inventory = new StockStateSpool(serializer)) {
+      long scheduled = 0, observed = 0;
+      try (var iterator = StockTimerSnapshot.<RowData, Long>iterator(backend, EVENTS)) {
         while (iterator.hasNext()) {
-          var entry = iterator.next();
-          var key = serializer.toBinaryRow(entry.f0).copy();
-          var window = new WindowKey(key, entry.f1);
-          if (!scheduled.contains(window))
-            throw new IllegalStateException("Stock window-join state has no firing timer");
-          backend.setCurrentKey(key);
-          var rows =
-              backend
-                  .getPartitionedState(entry.f1, LongSerializer.INSTANCE, descriptor(side))
-                  .get();
-          boolean found = false;
-          if (rows != null)
-            for (RowData row : rows) {
-              validate(row, side, entry.f1);
-              if (!key.equals(projectedKey(row, side, projection)))
-                throw new IllegalStateException("Stock window-join row disagrees with its key");
-              found = true;
-            }
-          if (!found) throw new IllegalStateException("Stock window-join namespace has no rows");
-          observed.add(window);
+          var timer = iterator.next();
+          var key = serializer.toBinaryRow(timer.getKey()).copy();
+          if (timer.getTimestamp() != deadline(timer.getNamespace())
+              || !inventory.add(1, key, timer.getNamespace()))
+            throw new IllegalStateException("Unexpected stock window-join timer");
+          scheduled++;
         }
       }
+      for (int side = 0; side < 2; side++) {
+        try (var stream = backend.<Long>getKeysAndNamespaces(name(side))) {
+          var iterator = stream.iterator();
+          while (iterator.hasNext()) {
+            var entry = iterator.next();
+            var key = serializer.toBinaryRow(entry.f0).copy();
+            if (!inventory.contains(1, key, entry.f1))
+              throw new IllegalStateException("Stock window-join state has no firing timer");
+            backend.setCurrentKey(key);
+            var rows =
+                backend
+                    .getPartitionedState(entry.f1, LongSerializer.INSTANCE, descriptor(side))
+                    .get();
+            boolean found = false;
+            if (rows != null)
+              for (RowData row : rows) {
+                validate(row, side, entry.f1);
+                if (!key.equals(projectedKey(row, side, projection)))
+                  throw new IllegalStateException("Stock window-join row disagrees with its key");
+                found = true;
+              }
+            if (!found) throw new IllegalStateException("Stock window-join namespace has no rows");
+            if (inventory.add(2, key, entry.f1)) observed++;
+          }
+        }
+      }
+      if (observed != scheduled)
+        throw new IllegalStateException("Stock window-join firing timer has no state");
     }
-    if (!observed.equals(scheduled))
-      throw new IllegalStateException("Stock window-join firing timer has no state");
   }
 
   @Override
@@ -285,8 +284,11 @@ public final class StockWindowJoinStateContract implements StockStateContract {
       throws Exception {
     preflight(backend);
     for (int side = 0; side < 2; side++) {
-      var batch = new ArrayList<RowData>(CHUNK);
-      var serializer = new RowDataSerializer(inputs[side]);
+      final int input = side;
+      var batch =
+          new StockRowBatch(
+              inputs[side],
+              (a, s) -> Native.importWindowJoinCanonicalRows(handle, input == 0, a, s));
       try (var stream = backend.<Long>getKeysAndNamespaces(name(side))) {
         var iterator = stream.iterator();
         while (iterator.hasNext()) {
@@ -295,50 +297,11 @@ public final class StockWindowJoinStateContract implements StockStateContract {
           for (RowData row :
               backend
                   .getPartitionedState(entry.f1, LongSerializer.INSTANCE, descriptor(side))
-                  .get()) {
-            batch.add(serializer.copy(row));
-            if (batch.size() == CHUNK) {
-              send(handle, side, batch);
-              batch.clear();
-            }
-          }
+                  .get()) batch.append(row);
         }
       }
-      if (!batch.isEmpty()) send(handle, side, batch);
+      batch.flush();
     }
     clear(backend);
-  }
-
-  private void send(long handle, int side, List<RowData> rows) {
-    try (var root = RowDataArrowConverter.write(rows, inputs[side], NativeAllocator.SHARED);
-        var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
-        var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      Data.exportVectorSchemaRoot(
-          NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array, schema);
-      Native.importWindowJoinCanonicalRows(
-          handle, side == 0, array.memoryAddress(), schema.memoryAddress());
-    }
-  }
-
-  private static final class WindowKey {
-    final BinaryRowData key;
-    final long end;
-
-    WindowKey(BinaryRowData key, long end) {
-      this.key = key;
-      this.end = end;
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(key, end);
-    }
-
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof WindowKey
-          && end == ((WindowKey) other).end
-          && key.equals(((WindowKey) other).key);
-    }
   }
 }

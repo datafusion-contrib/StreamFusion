@@ -1,12 +1,9 @@
 package tech.streamfusion.state;
 
 import java.time.ZoneId;
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -23,22 +20,20 @@ import org.apache.flink.streaming.api.operators.TimerHeapInternalTimer;
 import org.apache.flink.streaming.api.operators.TimerSerializer;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
-import org.apache.flink.table.data.binary.BinaryRowData;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.runtime.util.TimeWindowUtil;
+import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Released window rank/dedup retained rows, event timers and UNION watermark. */
 public final class StockWindowRankStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
   private static final String EVENTS = "_timer_state/event_window-timers";
   private static final String PROCESSING = "_timer_state/processing_window-timers";
-  private static final int CHUNK_ROWS = 1024;
 
   @FunctionalInterface
   public interface WindowStart extends java.io.Serializable {
@@ -220,33 +215,11 @@ public final class StockWindowRankStateContract implements StockStateContract {
     return new ValueStateDescriptor<>(stateName(), new RowDataSerializer(rowType));
   }
 
-  @FunctionalInterface
-  private interface RetainedRow {
-    void accept(RowData sortKey, RowData row) throws Exception;
-  }
-
-  private void readRows(
-      CheckpointableKeyedStateBackend<RowData> backend, long end, RetainedRow receiver)
+  private RowData retainedValue(CheckpointableKeyedStateBackend<RowData> backend, long end)
       throws Exception {
-    if (deduplicate) {
-      var row =
-          backend.getPartitionedState(end, LongSerializer.INSTANCE, valueDescriptor()).value();
-      if (row == null)
-        throw new IllegalStateException("Stock window-deduplication state has no row");
-      receiver.accept(null, row);
-      return;
-    }
-    boolean found = false;
-    for (var group :
-        backend.getPartitionedState(end, LongSerializer.INSTANCE, descriptor()).entries()) {
-      if (group.getValue() == null || group.getValue().isEmpty())
-        throw new IllegalStateException("Empty stock window-rank list");
-      for (var row : group.getValue()) {
-        receiver.accept(group.getKey(), row);
-        found = true;
-      }
-    }
-    if (!found) throw new IllegalStateException("Stock window-rank timer has no rows");
+    var row = backend.getPartitionedState(end, LongSerializer.INSTANCE, valueDescriptor()).value();
+    if (row == null) throw new IllegalStateException("Stock window-deduplication state has no row");
+    return row;
   }
 
   private void bindTimers(CheckpointableKeyedStateBackend<RowData> backend) {
@@ -303,42 +276,55 @@ public final class StockWindowRankStateContract implements StockStateContract {
     var keyProjection = new StockKeyProjection(keyType);
     var sortProjection = deduplicate ? null : new StockKeyProjection(sortType);
     var rows = new RowDataSerializer(rowType);
-    Native.exportWindowRankerCanonical(
-        handle,
-        (arrayAddress, schemaAddress) -> {
-          try (var array = ArrowArray.wrap(arrayAddress);
-              var schema = ArrowSchema.wrap(schemaAddress);
-              var root =
-                  Data.importVectorSchemaRoot(
-                      NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
-            var reader = ArrowConversion.createArrowReader(root, rowType);
-            for (int i = 0; i < root.getRowCount(); i++) {
-              var row = reader.read(i);
-              long end = millis(row, endColumn);
-              validate(row, end);
-              var key = keyProjection.project(project(row, keyColumns));
-              backend.setCurrentKey(key);
-              if (deduplicate) {
-                var state =
-                    backend.getPartitionedState(end, LongSerializer.INSTANCE, valueDescriptor());
-                if (state.value() != null)
-                  throw new IllegalStateException(
-                      "Multiple retained rows for stock window deduplication");
-                state.update(rows.copy(row));
-              } else {
-                var sort = sortProjection.project(project(row, sortColumns));
-                var state = backend.getPartitionedState(end, LongSerializer.INSTANCE, descriptor());
-                var previous = state.get(sort);
-                var list = previous == null ? new ArrayList<RowData>() : new ArrayList<>(previous);
-                list.add(rows.copy(row));
-                state.put(sort, list);
+    try (var staged =
+        deduplicate
+            ? null
+            : new StockMapListSpool<RowData, RowData>(
+                new RowDataSerializer(RowType.of(keyType, new BigIntType(false))),
+                sortKeys,
+                rows)) {
+      Native.exportWindowRankerCanonical(
+          handle,
+          (arrayAddress, schemaAddress) -> {
+            try (var array = ArrowArray.wrap(arrayAddress);
+                var schema = ArrowSchema.wrap(schemaAddress);
+                var root =
+                    Data.importVectorSchemaRoot(
+                        NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
+              var reader = ArrowConversion.createArrowReader(root, rowType);
+              for (int i = 0; i < root.getRowCount(); i++) {
+                var row = reader.read(i);
+                long end = millis(row, endColumn);
+                validate(row, end);
+                var key = keyProjection.project(project(row, keyColumns));
+                backend.setCurrentKey(key);
+                if (deduplicate) {
+                  var state =
+                      backend.getPartitionedState(end, LongSerializer.INSTANCE, valueDescriptor());
+                  if (state.value() != null)
+                    throw new IllegalStateException(
+                        "Multiple retained rows for stock window deduplication");
+                  state.update(rows.copy(row));
+                } else {
+                  var sort = sortProjection.project(project(row, sortColumns));
+                  staged.append(GenericRowData.of(key, end), sort, row);
+                }
+                events.add(new TimerHeapInternalTimer<>(deadline(end), key, end));
               }
-              events.add(new TimerHeapInternalTimer<>(deadline(end), key, end));
+            } catch (Exception failure) {
+              throw new IllegalStateException("Cannot export stock window rank", failure);
             }
-          } catch (Exception failure) {
-            throw new IllegalStateException("Cannot export stock window rank", failure);
-          }
-        });
+          });
+      if (staged != null)
+        staged.visit(
+            backend,
+            (owner, sort, retained) -> {
+              backend.setCurrentKey(owner.getRow(0, keyType.getFieldCount()));
+              backend
+                  .getPartitionedState(owner.getLong(1), LongSerializer.INSTANCE, descriptor())
+                  .put(sort, retained);
+            });
+    }
   }
 
   @Override
@@ -356,96 +342,103 @@ public final class StockWindowRankStateContract implements StockStateContract {
         keys);
     bindTimers(backend);
     var keyRows = new RowDataSerializer(keyType);
-    Set<WindowKey> scheduled = new HashSet<>();
-    try (var iterator = StockTimerSnapshot.<RowData, Long>iterator(backend, EVENTS)) {
-      while (iterator.hasNext()) {
-        var timer = iterator.next();
-        if (timer.getTimestamp() != deadline(timer.getNamespace())
-            || timer.getTimestamp() <= restoredWatermark()
-            || !scheduled.add(
-                new WindowKey(keyRows.toBinaryRow(timer.getKey()).copy(), timer.getNamespace())))
-          throw new IllegalStateException("Unexpected stock window-rank timer");
-      }
-    }
     var keyProjection = new StockKeyProjection(keyType);
     var sortProjection = deduplicate ? null : new StockKeyProjection(sortType);
     var sortRows = deduplicate ? null : new RowDataSerializer(sortType);
-    try (var entries = backend.<Long>getKeysAndNamespaces(stateName())) {
-      var iterator = entries.iterator();
-      while (iterator.hasNext()) {
-        var entry = iterator.next();
-        var key = keyRows.toBinaryRow(entry.f0).copy();
-        if (!scheduled.remove(new WindowKey(key, entry.f1)))
-          throw new IllegalStateException("Stock window-rank state has no matching timer");
-        backend.setCurrentKey(key);
-        readRows(
-            backend,
-            entry.f1,
-            (sortKey, row) -> {
-              validate(row, entry.f1);
-              if (!key.equals(keyProjection.project(project(row, keyColumns)))
-                  || (!deduplicate
-                      && !sortRows
-                          .toBinaryRow(sortKey)
-                          .equals(sortProjection.project(project(row, sortColumns)))))
-                throw new IllegalStateException("Stock window-rank row disagrees with its key");
-            });
+    try (var inventory = new StockStateSpool(keyRows)) {
+      long scheduled = 0, observed = 0;
+      try (var iterator = StockTimerSnapshot.<RowData, Long>iterator(backend, EVENTS)) {
+        while (iterator.hasNext()) {
+          var timer = iterator.next();
+          var key = keyRows.toBinaryRow(timer.getKey()).copy();
+          inventory.addOwner(key);
+          if (timer.getTimestamp() != deadline(timer.getNamespace())
+              || timer.getTimestamp() <= restoredWatermark()
+              || !inventory.add(1, key, timer.getNamespace()))
+            throw new IllegalStateException("Unexpected stock window-rank timer");
+          scheduled++;
+        }
       }
-    }
-    if (!scheduled.isEmpty())
-      throw new IllegalStateException("Stock window-rank timer has no state");
-    var batch = new ArrayList<RowData>(CHUNK_ROWS);
-    var serializer = new RowDataSerializer(rowType);
-    try (var entries = backend.<Long>getKeysAndNamespaces(stateName())) {
-      var iterator = entries.iterator();
-      while (iterator.hasNext()) {
-        var entry = iterator.next();
-        backend.setCurrentKey(entry.f0);
-        readRows(
+      try (var entries = backend.<Long>getKeysAndNamespaces(stateName())) {
+        var iterator = entries.iterator();
+        while (iterator.hasNext()) {
+          var entry = iterator.next();
+          var key = keyRows.toBinaryRow(entry.f0).copy();
+          if (!inventory.contains(1, key, entry.f1) || !inventory.add(2, key, entry.f1))
+            throw new IllegalStateException("Stock window-rank state has no matching timer");
+          observed++;
+          if (deduplicate) {
+            backend.setCurrentKey(key);
+            var row = retainedValue(backend, entry.f1);
+            validate(row, entry.f1);
+            if (!key.equals(keyProjection.project(project(row, keyColumns))))
+              throw new IllegalStateException("Stock window-rank row disagrees with its key");
+          }
+        }
+      }
+      if (observed != scheduled)
+        throw new IllegalStateException("Stock window-rank timer has no state");
+      if (!deduplicate) {
+        StockMapListSnapshot.visit(
             backend,
-            entry.f1,
-            (sortKey, row) -> {
-              batch.add(serializer.copy(row));
-              if (batch.size() == CHUNK_ROWS) {
-                importBatch(batch, handle);
-                batch.clear();
+            stateName(),
+            keys,
+            LongSerializer.INSTANCE,
+            sortKeys,
+            new RowDataSerializer(rowType),
+            (owner, end, sort, encoded) -> {
+              var key = keyRows.toBinaryRow(owner).copy();
+              if (!inventory.contains(2, key, end))
+                throw new IllegalStateException("Stock window-rank state has no matching timer");
+              if (StockMapListSnapshot.size(encoded) <= 0)
+                throw new IllegalStateException("Empty stock window-rank list");
+              for (var row : StockMapListSnapshot.decode(encoded, new RowDataSerializer(rowType))) {
+                validate(row, end);
+                if (!key.equals(keyProjection.project(project(row, keyColumns)))
+                    || !sortRows
+                        .toBinaryRow(sort)
+                        .equals(sortProjection.project(project(row, sortColumns))))
+                  throw new IllegalStateException("Stock window-rank row disagrees with its key");
               }
+              inventory.add(3, key, end);
             });
+        try (var owners = inventory.owners()) {
+          while (owners.hasNext()) {
+            var key = owners.next();
+            try (var windows = inventory.times(2, key)) {
+              while (windows.hasNext())
+                if (!inventory.contains(3, key, windows.next()))
+                  throw new IllegalStateException("Stock window-rank timer has no rows");
+            }
+          }
+        }
       }
     }
-    if (!batch.isEmpty()) importBatch(batch, handle);
+    var batch =
+        new StockRowBatch(rowType, (a, s) -> Native.importWindowRankerCanonical(handle, a, s));
+    if (deduplicate) {
+      try (var entries = backend.<Long>getKeysAndNamespaces(stateName())) {
+        var iterator = entries.iterator();
+        while (iterator.hasNext()) {
+          var entry = iterator.next();
+          backend.setCurrentKey(entry.f0);
+          batch.append(retainedValue(backend, entry.f1));
+        }
+      }
+    } else {
+      StockMapListSnapshot.visit(
+          backend,
+          stateName(),
+          keys,
+          LongSerializer.INSTANCE,
+          sortKeys,
+          new RowDataSerializer(rowType),
+          (owner, end, sort, encoded) -> {
+            for (var row : StockMapListSnapshot.decode(encoded, new RowDataSerializer(rowType)))
+              batch.append(row);
+          });
+    }
+    batch.flush();
     clear(backend);
-  }
-
-  private void importBatch(List<RowData> rows, long handle) {
-    try (var root = RowDataArrowConverter.write(rows, rowType, NativeAllocator.SHARED);
-        var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
-        var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      Data.exportVectorSchemaRoot(
-          NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array, schema);
-      Native.importWindowRankerCanonical(handle, array.memoryAddress(), schema.memoryAddress());
-    }
-  }
-
-  private static final class WindowKey {
-    final BinaryRowData key;
-    final long end;
-
-    WindowKey(BinaryRowData key, long end) {
-      this.key = key;
-      this.end = end;
-    }
-
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof WindowKey
-          && end == ((WindowKey) other).end
-          && key.equals(((WindowKey) other).key);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(key, end);
-    }
   }
 }

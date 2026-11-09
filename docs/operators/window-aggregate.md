@@ -1875,3 +1875,11 @@ The 54 SESSION TVF cases are skipped because that SQL feature is unavailable in 
 Processing-time controls avoid the older stock operator's overflow/stalled-buffer behavior under
 extreme future watermarks. These controls do not qualify every aggregate layout or cross-line
 upgrades; the broader complete-job matrices above remain separate qualification.
+
+## Canonical transfer working memory
+
+Slicing-window restore validates timer/namespace and shared-key ownership in the shared scoped
+disk spool. Past shared slices retain their released semantics; expired unshared accumulators
+remain excluded from native installation. Accumulator and shared-timer transfers share a
+1,024-row and four-MiB payload estimate, allowing an oversized value. No whole-job timer or
+owner set is retained in Java heap. Native checkpoint formats and operator admission are unchanged.

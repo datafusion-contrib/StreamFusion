@@ -344,7 +344,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       throws Exception {
     clear(backend);
     try (var lists =
-        new StockMapListSpool<Long>(
+        new StockMapListSpool<Long, RowData>(
             keys, LongSerializer.INSTANCE, new RowDataSerializer(inputType))) {
       var inputReaderType = inputType;
       visit(

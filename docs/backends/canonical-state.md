@@ -214,6 +214,22 @@ released stock ListSerializer stream each timestamp bucket into the RocksDB proj
 without per-row bucket reads or repeated list reconstruction. Heap component backends receive
 ordinary owned lists. No scratch descriptors or helper serializers enter the savepoint. Working
 memory still includes the largest encoded stock KV required by Flink's snapshot iterator.
+Interval joins and window rank now share this staging for tuple payloads and typed sort keys,
+including namespaced window owners. Their export writes each list bucket once; raw canonical
+map/list snapshot visits validate the released serializers and decode individual tuples/rows in
+preflight and apply passes. Window join and window rank/dedup restore keep timer/namespace
+membership in the scoped disk spool instead of job-sized Java sets. Slicing-window restore
+uses that same index for per-window ownership and shared-key pending timers, preserving past
+shared slices and independent timer entries. Their accumulator/row transfers, shared-window
+timers and interval cleanup-clock transfers, share the 1,024-row/four-MiB estimate with one oversized value
+allowed. The largest raw canonical/native KV remains a working-memory floor; no new operator
+variants are admitted by these transport changes. Selected 2.2 cohorts pass 475 list/join/rank
+checks and 119 slicing-window/batched-input checks; these selections overlap. One clean 1.18
+cohort passes 500 checks with 10 expected skips for absent released SESSION TVFs. New controls
+cover 2,051-entry namespaced tuple buckets, typed/null sort keys, independent match flags,
+receiver failure, exact released list bytes and 1,024-row/four-MiB transfer boundaries including
+an oversized value. These component selections do not establish complete-job or full-variant
+qualification, and native checkpoint formats are unchanged.
 For bounded OVER, unbounded event-time OVER and temporal sort, restore stages those opaque map
 values on disk and decodes one row at a time with the released row serializer. The shared reader
 checks the captured map/list and namespace serializers and parses composite keys through Flink's

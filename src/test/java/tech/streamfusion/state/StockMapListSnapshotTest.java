@@ -120,6 +120,105 @@ class StockMapListSnapshotTest {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  void rawNamespacedTupleBucketsKeepTypedMapKeysAndFlagsWithoutMaterializingLists(boolean rocks)
+      throws Exception {
+    var keyType = RowType.of(new VarCharType(VarCharType.MAX_LENGTH));
+    var keys = new RowDataSerializer(keyType);
+    var mapKeys = new RowDataSerializer(RowType.of(new BigIntType()));
+    var tuples =
+        new org.apache.flink.api.java.typeutils.runtime.TupleSerializer<
+            org.apache.flink.api.java.tuple.Tuple2<RowData, Boolean>>(
+            (Class) org.apache.flink.api.java.tuple.Tuple2.class,
+            new org.apache.flink.api.common.typeutils.TypeSerializer<?>[] {
+              rows, org.apache.flink.api.common.typeutils.base.BooleanSerializer.INSTANCE
+            });
+    try (var harness =
+        new KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData>(
+            new StateView(), row -> row, InternalTypeInfo.of(keyType))) {
+      var config = new Configuration();
+      config.set(StateBackendOptions.STATE_BACKEND, rocks ? "rocksdb" : "hashmap");
+      harness.setStateBackend(
+          StateBackendLoader.loadStateBackendFromConfig(config, getClass().getClassLoader(), null));
+      harness.setup(keys);
+      harness.open();
+      var backend =
+          (CheckpointableKeyedStateBackend<RowData>)
+              harness.getOperator().<RowData>getKeyedStateBackend();
+      var owner = keys.toBinaryRow(GenericRowData.of(StringData.fromString("owner"))).copy();
+      backend.setCurrentKey(owner);
+      for (long namespace : new long[] {Long.MIN_VALUE, Long.MAX_VALUE}) {
+        var state =
+            backend.getPartitionedState(
+                namespace,
+                LongSerializer.INSTANCE,
+                new MapStateDescriptor<>("tuples", mapKeys, new ListSerializer<>(tuples)));
+        for (Long order : new Long[] {null, 7L}) {
+          var values = new ArrayList<org.apache.flink.api.java.tuple.Tuple2<RowData, Boolean>>();
+          for (int i = 0; i < 2051; i++)
+            values.add(
+                org.apache.flink.api.java.tuple.Tuple2.of(
+                    GenericRowData.of(
+                        (long) i, i % 2 == 0 ? null : StringData.fromString("row-" + i)),
+                    i % 2 == 0));
+          state.put(mapKeys.toBinaryRow(GenericRowData.of(order)).copy(), values);
+        }
+      }
+      assertThrows(
+          IOException.class,
+          () ->
+              StockMapListSnapshot.visit(
+                  backend,
+                  "tuples",
+                  keys,
+                  LongSerializer.INSTANCE,
+                  mapKeys,
+                  tuples,
+                  (key, namespace, order, encoded) -> {
+                    throw new IOException("receiver failed");
+                  }));
+      int[] buckets = {0}, decoded = {0};
+      StockMapListSnapshot.visit(
+          backend,
+          "tuples",
+          keys,
+          LongSerializer.INSTANCE,
+          mapKeys,
+          tuples,
+          (key, namespace, order, encoded) -> {
+            assertEquals(owner, keys.toBinaryRow(key));
+            assertTrue(namespace == Long.MIN_VALUE || namespace == Long.MAX_VALUE);
+            assertTrue(order.isNullAt(0) || order.getLong(0) == 7);
+            assertEquals(2051, StockMapListSnapshot.size(encoded));
+            int index = 0;
+            for (var pair : StockMapListSnapshot.decode(encoded, tuples)) {
+              assertEquals(index, pair.f0.getLong(0));
+              assertEquals(index % 2 == 0, pair.f1);
+              assertEquals(index % 2 == 0, pair.f0.isNullAt(1));
+              index++;
+              decoded[0]++;
+            }
+            assertEquals(2051, index);
+            buckets[0]++;
+          });
+      assertEquals(4, buckets[0]);
+      assertEquals(8204, decoded[0]);
+      assertThrows(
+          IllegalArgumentException.class,
+          () ->
+              StockMapListSnapshot.visit(
+                  backend,
+                  "tuples",
+                  keys,
+                  VoidNamespaceSerializer.INSTANCE,
+                  mapKeys,
+                  tuples,
+                  (key, namespace, order, encoded) -> fail("wrong namespace was accepted")));
+    }
+  }
+
   private static final class StateView extends AbstractStreamOperator<RowData>
       implements OneInputStreamOperator<RowData, RowData> {
     @Override
