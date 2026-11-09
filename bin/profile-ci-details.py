@@ -60,6 +60,7 @@ def profile(output, line, suite):
                        "-Dsf.testForks=4", "-Dsf.testReuseForks=false", f"-Dsf.extraJvmArgs={extra}",
                        f"-Dsf.fixtureTimingsDirectory={fixtures}", "-Dsf.fixturePlanCache=true",
                        "-Dsf.recoveryResults.profile=true", "-Dorg.slf4j.simpleLogger.defaultLogLevel=error",
+                       "-Dorg.slf4j.simpleLogger.log.org.apache.flink.runtime.accumulators.AccumulatorRegistry=warn",
                        f"-Dsurefire.reportNameSuffix={suffix}", "surefire:test@default-test"]
             log = output / (suffix + ".log")
             start = time.monotonic()
@@ -87,6 +88,12 @@ def profile(output, line, suite):
                     counts.update({k: int(report.get(k, 0)) for k in ["tests", "errors", "failures", "skipped"]})
                 trial["outcomes"] = dict(counts)
             raw = log.read_text()
+            lines = raw.splitlines()
+            diagnostic = set()
+            for number, line in enumerate(lines):
+                if any(word in line for word in ["Failed to serialize accumulators", "OutOfMemoryError", "exceeds the maximum"]):
+                    diagnostic.update(range(max(0, number - 1), min(len(lines), number + 28)))
+            trial["diagnostic_messages"] = [lines[n][:1500] for n in sorted(diagnostic)][-240:]
             trial["recovery_messages"] = [line[:1500] for line in raw.splitlines()
                                            if "[recovery-result]" in line or "[recovery-capture]" in line]
             trial["fixture_timings"] = [

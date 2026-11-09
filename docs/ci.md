@@ -927,7 +927,10 @@ threads; GC activity is not exact stop-the-world pause time and heap summaries a
 on Flink 1.18/JDK 17 with alternating 2/4 GiB heaps, retaining its 28 existing skips.
 It logs recovery result-accumulator presence, encoded sizes and heap usage alongside JFR
 and GC logs. The optional `ci-diagnostics` Maven profile supplies an error-level SLF4J
-provider so task-side serialization errors are visible. Ordinary test logging is unchanged.
+provider with explicit accumulator-registry warnings so task-side serialization errors are
+visible. Released Flink 1.18 bytecode catches accumulator serialization failures, logs a
+warning and returns no snapshot; the diagnostic retains those warnings even if a later
+snapshot succeeds. Ordinary test logging is unchanged.
 Any failed trial remains a failed diagnostic; its verified counts and condensed failure
 evidence are retained. Raw recordings and bulky successful reports are removed after analysis.
 
