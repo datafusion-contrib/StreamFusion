@@ -154,3 +154,98 @@ fn failed_metadata_flush_retains_updates_for_checkpoint_retry() {
         Some((6500, true))
     );
 }
+
+#[test]
+fn denied_metadata_serialization_preserves_the_journal_and_releases_work_for_retry() {
+    use datafusion::execution::memory_pool::{GreedyMemoryPool, MemoryConsumer, MemoryPool};
+    for (frame, processing, polling) in [(2, false, false), (0, false, true), (1, true, false)] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut op = operator(directory.path(), frame, processing, polling);
+        if processing {
+            op.push_proctime(input(vec![7], 10), 100).unwrap();
+        } else {
+            op.push(input(vec![7], 10), 100).unwrap();
+        }
+        let key = op.cleanup_state.keys().next().unwrap().clone();
+        op.cleanup_state.insert(key.clone(), 2045);
+        if !processing {
+            let timers = RangeTimers {
+                last: (frame == 2).then_some(-10),
+                armed: (-5..2046).collect(),
+            };
+            if let Some(previous) = op.range_timers.remove(&key) {
+                op.retention_bytes -= byte_key_bytes(&key.0) + previous.bytes();
+            }
+            op.retention_bytes += byte_key_bytes(&key.0) + timers.bytes();
+            op.range_timers.insert(key.clone(), timers);
+        }
+        op.mark_store_metadata(&key.0);
+        let retained = op.retained_state_bytes() + op.metadata_updates.bytes;
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(retained + (1 << 20)));
+        op.memory
+            .attach_pool("metadata precharge", &pool, retained)
+            .unwrap();
+        let mut blocker = MemoryConsumer::new("metadata blocker").register(&pool);
+        blocker.try_resize((1 << 20) - 1).unwrap();
+        let before = op.store.as_ref().unwrap().metadata_io_counts();
+        assert!(op.flush_metadata_updates().is_err());
+        assert_eq!(before, op.store.as_ref().unwrap().metadata_io_counts());
+        assert_eq!(pool.reserved(), retained + (1 << 20) - 1);
+        assert_eq!(op.metadata_updates.keys.len(), 1);
+        drop(blocker);
+        assert_eq!(pool.reserved(), retained);
+        op.flush_metadata_updates().unwrap();
+        assert!(op.metadata_updates.keys.is_empty());
+        assert_eq!(pool.reserved(), op.retained_state_bytes());
+        let store = op.store.as_ref().unwrap();
+        assert_eq!(
+            store
+                .cleanup_stamp(op.store_fold_key_group(&key.0), &key.0)
+                .unwrap(),
+            Some((2045, true))
+        );
+        if !processing {
+            let timers = store.scan_range_timers().unwrap();
+            assert_eq!(timers.len(), 1);
+            assert_eq!(
+                RangeTimers::decode(&timers[0].1).unwrap().armed,
+                (-5..2046).collect::<Vec<_>>()
+            );
+        }
+        drop(op);
+        assert_eq!(pool.reserved(), 0);
+    }
+}
+
+#[test]
+fn metadata_reconciliation_streams_many_owners_with_a_bounded_work_allowance() {
+    use datafusion::execution::memory_pool::{GreedyMemoryPool, MemoryPool};
+    let directory = tempfile::tempdir().unwrap();
+    let mut op = operator(directory.path(), 2, false, false);
+    op.push(input((0..2051).collect(), 10), 100).unwrap();
+    let owners = op.cleanup_state.keys().cloned().collect::<Vec<_>>();
+    for key in &owners {
+        op.cleanup_state.insert(key.clone(), 2045);
+        op.mark_store_metadata(&key.0);
+    }
+    let retained = op.retained_state_bytes() + op.metadata_updates.bytes;
+    let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(retained + (256 << 10)));
+    op.memory
+        .attach_pool("bounded metadata", &pool, retained)
+        .unwrap();
+    let before = op.store.as_ref().unwrap().metadata_io_counts();
+    op.flush_metadata_updates().unwrap();
+    assert!(op.store.as_ref().unwrap().metadata_io_counts().1 > before.1 + 1);
+    assert_eq!(
+        op.store
+            .as_ref()
+            .unwrap()
+            .scan_cleanup_stamps()
+            .unwrap()
+            .len(),
+        2051
+    );
+    assert_eq!(pool.reserved(), op.retained_state_bytes());
+    drop(op);
+    assert_eq!(pool.reserved(), 0);
+}

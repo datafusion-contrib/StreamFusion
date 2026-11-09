@@ -32,7 +32,8 @@ impl RocksOverAggStore {
     }
 
     pub(crate) fn range_timer_key(&self, group: i32, key: &[u8]) -> Vec<u8> {
-        let mut out = group.to_be_bytes().to_vec();
+        let mut out = Vec::with_capacity(self.range_timer_prefix_len() + key.len());
+        out.extend_from_slice(&group.to_be_bytes());
         out.push(RANGE_TIMERS_TABLE);
         // Unbounded DISTINCT shares table numbers; Arrow keys never start with this marker.
         if self.frames_converter.is_none() {

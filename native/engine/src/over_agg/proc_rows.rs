@@ -16,7 +16,8 @@ mod tests;
 impl ProcRowsState {
     #[cfg(feature = "rocksdb-state")]
     pub(super) fn encode(&self) -> Vec<u8> {
-        let mut bytes = vec![1];
+        let mut bytes = Vec::with_capacity(17);
+        bytes.push(1);
         bytes.extend_from_slice(&self.count.to_le_bytes());
         bytes.extend_from_slice(&self.smallest.to_le_bytes());
         bytes

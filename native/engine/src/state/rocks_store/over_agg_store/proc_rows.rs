@@ -53,7 +53,8 @@ impl RocksOverAggStore {
     }
 
     pub(crate) fn proc_rows_key(&self, group: i32, key: &[u8]) -> Vec<u8> {
-        let mut bytes = group.to_be_bytes().to_vec();
+        let mut bytes = Vec::with_capacity(KEY_PREFIX_LEN + key.len());
+        bytes.extend_from_slice(&group.to_be_bytes());
         bytes.push(PROC_ROWS_TABLE);
         bytes.extend_from_slice(key);
         bytes

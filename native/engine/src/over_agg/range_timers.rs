@@ -56,8 +56,14 @@ impl RangeTimers {
     }
 
     #[cfg(feature = "rocksdb-state")]
+    pub(super) fn encoded_bytes(&self) -> usize {
+        10 + self.armed.len() * std::mem::size_of::<i64>()
+    }
+
+    #[cfg(feature = "rocksdb-state")]
     pub(crate) fn encode(&self) -> Vec<u8> {
-        let mut bytes = vec![1, self.last.is_some() as u8];
+        let mut bytes = Vec::with_capacity(self.encoded_bytes());
+        bytes.extend_from_slice(&[1, self.last.is_some() as u8]);
         bytes.extend_from_slice(&self.last.unwrap_or_default().to_le_bytes());
         for timer in &self.armed {
             bytes.extend_from_slice(&timer.to_le_bytes());

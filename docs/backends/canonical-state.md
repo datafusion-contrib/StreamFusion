@@ -2023,3 +2023,11 @@ The fixture publishes its staged-input offset atomically after writing the compl
 file. Observers therefore cannot mistake a newly created empty file for the source boundary.
 Kafka handoff workers still require the exact expected offset and include the observed value
 in a mismatch diagnostic; transaction and committed-output assertions remain unchanged.
+
+## OVER metadata serialization memory
+
+Native OVER metadata serialization reserves encoded keys/values, entry-vector growth and the
+write-batch copy before allocation. Keys and timer/counter ledgers allocate their encoded
+capacity once; batching occurs before adding an owner. A denied reservation keeps the dirty
+journal intact and writes nothing for that batch, so a fresh allowance can retry. The encoded
+formats and ordinary native recovery behavior remain unchanged.
