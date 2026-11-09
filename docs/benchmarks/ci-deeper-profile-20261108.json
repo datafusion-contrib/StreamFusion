@@ -1378,5 +1378,173 @@
       }
     },
     "limits": "Elapsed ranges overlap and median reduction is only 1.18%; this does not establish a material timing improvement. Encoded result size is reduced from 165,299,820 bytes to about 1.6 MB without dropping rows. Reported heap usages are sampled at capture/decode, not peaks. The original missing-accumulator failure did not reproduce and its cause remains unconfirmed."
+  },
+  "recursive_completion": {
+    "run": 42533157858,
+    "source_sha": "f2dfbd1ff3601ce71264321a5f428fbbb7a0ced4",
+    "method": "Two alternating pairs on the same JDK17/Flink2.2 runner, C1 fixed, four 2GiB forks configured, no JFR, no phase timers, ordinary NOP logging. The two selected complete classes create two fresh test JVMs per trial. Case identity and outcome multisets are identical across all four trials.",
+    "trials": [
+      {
+        "suite": "recursive",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "elapsed_seconds": 465.87185743599997,
+        "cpu_seconds": 615.093575,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 1817,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 407.212
+          },
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 461.081
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      },
+      {
+        "suite": "recursive",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": true,
+        "elapsed_seconds": 345.06866181300006,
+        "cpu_seconds": 639.0164139999998,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 1817,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 295.234
+          },
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 340.446
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      },
+      {
+        "suite": "recursive",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": true,
+        "elapsed_seconds": 339.583053437,
+        "cpu_seconds": 617.4289990000001,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 1817,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 334.528
+          },
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 286.065
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      },
+      {
+        "suite": "recursive",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "elapsed_seconds": 457.00348691599993,
+        "cpu_seconds": 595.8753479999998,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 1817,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 452.336
+          },
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 397.658
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      }
+    ],
+    "medians": {
+      "elapsed_seconds": {
+        "reference_median": 461.437672176,
+        "completion_wait_median": 342.325857625,
+        "reduction_percent": 25.8131968266277
+      },
+      "cpu_seconds": {
+        "reference_median": 605.4844615,
+        "completion_wait_median": 628.2227065,
+        "reduction_percent": -3.755380434316894
+      }
+    },
+    "limits": "7,268 invocations passed without skips. This establishes improvement for the measured recursive workload, not full runtime CI under four simultaneously busy forks. CPU increases 3.76%; complete required CI must qualify the combined change and both Flink/JDK lines."
   }
 }

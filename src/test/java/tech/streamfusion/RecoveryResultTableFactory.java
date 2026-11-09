@@ -33,9 +33,10 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
   private static final ConfigOption<Boolean> DROP_UPDATE_BEFORE =
       ConfigOptions.key("drop-update-before").booleanType().defaultValue(false);
   private static final String RESULTS = "streamfusion-recovery-results";
+  private static final boolean COMPRESS_RESULTS =
+      Boolean.parseBoolean(System.getProperty("sf.recoveryResults.compress", "true"));
 
   static List<List<Object>> results(JobExecutionResult job, DataType type) throws Exception {
-    boolean compressed = Boolean.getBoolean("sf.recoveryResults.compress");
     List<byte[]> encoded = job.getAccumulatorResult(RESULTS);
     if (Boolean.getBoolean("sf.recoveryResults.profile")) {
       System.out.println(
@@ -56,7 +57,9 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
     List<List<Object>> result = new ArrayList<>();
     for (byte[] bytes : encoded) {
       Row row =
-          (Row) converter.toExternal(RecoveryResultEncoding.decode(serializer, bytes, compressed));
+          (Row)
+              converter.toExternal(
+                  RecoveryResultEncoding.decode(serializer, bytes, COMPRESS_RESULTS));
       List<Object> fields = new ArrayList<>();
       fields.add(row.getKind().shortString());
       for (int i = 0; i < row.getArity(); i++) {
@@ -187,9 +190,8 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
     @Override
     public void finish() throws Exception {
       var results = new ListAccumulator<byte[]>();
-      boolean compressed = Boolean.getBoolean("sf.recoveryResults.compress");
       for (RowData value : rows) {
-        results.add(RecoveryResultEncoding.encode(serializer, value, compressed));
+        results.add(RecoveryResultEncoding.encode(serializer, value, COMPRESS_RESULTS));
       }
       getRuntimeContext().addAccumulator(RESULTS, results);
       if (Boolean.getBoolean("sf.recoveryResults.profile")) {

@@ -123,7 +123,7 @@ class FlinkRecursiveTableFunctionSqlHarnessTest {
     for (boolean left : List.of(false, true)) {
       try (var metrics = new RecoveryExecutionMetrics()) {
         var runs =
-            NativeFailureParity.run(
+            NativeFailureParity.runSmallBounded(
                 () -> environment(shape, bridge, position, 48, metrics), query(left));
         if ((shape.equals("array") || shape.equals("map/array"))
             && List.of("time-primitive-long", "ltz-int", "ltz-primitive-long").contains(bridge)) {

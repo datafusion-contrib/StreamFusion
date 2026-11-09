@@ -279,6 +279,14 @@ final class NativeFailureParity {
     return run(environment, environment, sql);
   }
 
+  static Comparison runSmallBounded(Supplier<TableEnvironment> environment, String sql) {
+    boolean awaitSmallResults =
+        Boolean.parseBoolean(System.getProperty("sf.parity.awaitSmallResults", "true"));
+    return new Comparison(
+        execute(environment, sql, false, false, awaitSmallResults),
+        execute(environment, sql, true, false, awaitSmallResults));
+  }
+
   static Comparison run(
       Supplier<TableEnvironment> hostEnvironment,
       Supplier<TableEnvironment> nativeEnvironment,
@@ -303,6 +311,15 @@ final class NativeFailureParity {
 
   private static Outcome execute(
       Supplier<TableEnvironment> environment, String sql, boolean nativeRun, boolean recovery) {
+    return execute(environment, sql, nativeRun, recovery, false);
+  }
+
+  private static Outcome execute(
+      Supplier<TableEnvironment> environment,
+      String sql,
+      boolean nativeRun,
+      boolean recovery,
+      boolean awaitSmallResults) {
     List<List<Object>> rows = new ArrayList<>();
     PhysicalPlanScan scan = null;
     Phase phase = Phase.SETUP;
@@ -346,7 +363,7 @@ final class NativeFailureParity {
         result = CiFixtureTimings.measure(timing + "submit", query::execute);
         phase = Phase.COLLECTION;
         long collectedStarted = CiFixtureTimings.start();
-        if (Boolean.getBoolean("sf.parity.awaitSmallResults")) {
+        if (awaitSmallResults) {
           try {
             result
                 .getJobClient()

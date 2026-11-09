@@ -27,6 +27,10 @@ SUITES = {
     }),
     "fluss": ("streamfusion-fluss", {"FlussSqlTest": (29, {"1.18": 0, "2.2": 0})}),
     "recovery": ("streamfusion-runtime", {"FlinkBinaryCollectionSqlHarnessTest": (54, {"1.18": 28, "2.2": 0})}),
+    "regressions": ("streamfusion-runtime", {
+        "SmallBoundedCollectionTest": (1, {"1.18": 0, "2.2": 0}),
+        "RecoveryResultEncodingTest": (3, {"1.18": 0, "2.2": 0}),
+    }),
 }
 
 
@@ -36,7 +40,8 @@ def profile(output, line, suite, compare_completion=False, compare_transport=Fal
     temporary.mkdir()
     java_home = Path(os.environ["JAVA_HOME"])
     paired = compare_completion or compare_transport or compare_close
-    if not paired:
+    attribution = not paired and suite != "regressions"
+    if attribution:
         ci_jfr.configuration(java_home, temporary / "details.jfc")
     module, selection = SUITES[suite]
     reports = ROOT / module / "target/surefire-reports"
@@ -48,8 +53,8 @@ def profile(output, line, suite, compare_completion=False, compare_transport=Fal
     expected_cases = None
     try:
         for index, (heap, candidate) in enumerate(configurations):
-            completion = compare_completion and candidate
-            compressed = compare_transport and candidate
+            completion = not compare_completion or candidate
+            compressed = not compare_transport or candidate
             parallel_close = compare_close and candidate
             suffix = f"details-{line}-{suite}-{index}"
             recorded = output / "jfr" / str(index)
@@ -59,7 +64,7 @@ def profile(output, line, suite, compare_completion=False, compare_transport=Fal
                            "JAVA_TOOL_OPTIONS": f'-XX:TieredStopAtLevel=1 -Djava.io.tmpdir="{temporary}"'}
             profiles = (["ci-diagnostics"] if suite == "recovery" and not paired else []) + (["flink-1.18"] if line == "1.18" else [])
             extra = f"-Xmx{heap}"
-            if not paired:
+            if attribution:
                 extra += (f" -XX:StartFlightRecording=filename={recorded},"
                      f"settings={temporary / 'details.jfc'},dumponexit=true "
                      f"-XX:ErrorFile={output / 'hs_err_pid%p.log'} "
@@ -78,7 +83,7 @@ def profile(output, line, suite, compare_completion=False, compare_transport=Fal
                                 "-Dsf.protobuf.checkStaleness=true", "-Dnative.build.skip=true", "test"])
             else:
                 command.append("surefire:test@default-test")
-            if not paired:
+            if attribution:
                 command.append(f"-Dsf.fixtureTimingsDirectory={fixtures}")
             log = output / (suffix + ".log")
             start = time.monotonic()
@@ -88,7 +93,7 @@ def profile(output, line, suite, compare_completion=False, compare_transport=Fal
             elapsed = time.monotonic() - start
             after = resource.getrusage(resource.RUSAGE_CHILDREN)
             trial = {"suite": suite, "line": line, "heap": heap, "forks": 4,
-                     "instrumented": not paired, "await_small_results": completion,
+                     "instrumented": attribution, "await_small_results": completion,
                      "compressed_recovery_results": compressed,
                      "parallel_catalog_close": parallel_close,
                      "elapsed_seconds": elapsed,
@@ -123,7 +128,7 @@ def profile(output, line, suite, compare_completion=False, compare_transport=Fal
                 for m in re.finditer(r"\[ci-fixture-timing\] (\S+) calls=(\d+) nanoseconds=(\d+)", path.read_text())]
             trials.append(trial)
             (output / "summary.json").write_text(json.dumps(trials, indent=2) + "\n")
-            if not paired:
+            if attribution:
                 trial["jfr"] = ci_jfr.summarize(list(recorded.glob("*.jfr")), java_home, len(selection))
             (output / "summary.json").write_text(json.dumps(trials, indent=2) + "\n")
             if result.returncode:

@@ -14,7 +14,7 @@ on:
       hotspot_mode:
         description: 'Attribute slow classes or compare their worker counts'
         type: choice
-        options: [attribution, parallel, plan-cache, canonical-parallel, deeper-runtime, fluss-details, recursive-completion, recovery-diagnostics, recovery-transport, fluss-close]
+        options: [attribution, parallel, plan-cache, canonical-parallel, deeper-runtime, fluss-details, recursive-completion, recovery-diagnostics, recovery-transport, fluss-close, runtime-regressions]
         default: attribution
 
 permissions:
@@ -162,7 +162,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        jdk: ${{ fromJSON(inputs.hotspot_mode == 'parallel' && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'fluss-details' || inputs.hotspot_mode == 'fluss-close' || inputs.hotspot_mode == 'recursive-completion' || inputs.hotspot_mode == 'recovery-diagnostics' || inputs.hotspot_mode == 'recovery-transport') && '["17"]' || '["11", "17"]') }}
+        jdk: ${{ fromJSON(inputs.hotspot_mode == 'parallel' && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'fluss-details' || inputs.hotspot_mode == 'fluss-close' || inputs.hotspot_mode == 'recursive-completion' || inputs.hotspot_mode == 'runtime-regressions' || inputs.hotspot_mode == 'recovery-diagnostics' || inputs.hotspot_mode == 'recovery-transport') && '["17"]' || '["11", "17"]') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -270,6 +270,8 @@ jobs:
               comparison=(--compare-close)
             fi
             python3 bin/profile-ci-details.py --line 2.2 --suite fluss "${comparison[@]}" --output "$RUNNER_TEMP/runtime-hotspots/fluss"
+          elif [[ "$HOTSPOT_MODE" == 'runtime-regressions' ]]; then
+            python3 bin/profile-ci-details.py --line 2.2 --suite regressions --output "$RUNNER_TEMP/runtime-hotspots/regressions"
           elif [[ "$HOTSPOT_MODE" == 'recursive-completion' ]]; then
             python3 bin/profile-ci-details.py --line 2.2 --suite recursive --compare-completion --output "$RUNNER_TEMP/runtime-hotspots/recursive-completion"
           elif [[ "$HOTSPOT_MODE" == 'recovery-diagnostics' ]]; then

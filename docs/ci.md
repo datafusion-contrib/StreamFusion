@@ -947,7 +947,18 @@ The released 2.2.1 collector hard-codes a 100 ms retry rather than exposing a po
 normal live collection, avoiding a deadlock when a result exceeds the collector buffer.
 Both modes retain every row, original assertion and native execution check, four fresh
 2 GiB forks and first-tier compilation. The comparison disables JFR and phase timers.
-The experimental `sf.parity.awaitSmallResults` property defaults to false.
+The [complete comparison](benchmarks/ci-deeper-profile-20261108.json) passed all 7,268
+invocations without skips and with identical individual outcomes. Median elapsed fell
+from 461.44 to 342.33 seconds (25.8%); child CPU increased from 605.48 to 628.22 seconds
+(3.76%). Four forks were configured, but the two selected classes create two fresh JVMs
+per trial; this is not a measurement of the complete runtime group under four busy forks.
+The two recursive classes now opt into this brief completion wait through a dedicated
+small-bounded-result helper. Other parity calls retain their existing collection behavior.
+`sf.parity.awaitSmallResults=false` retains the control behavior for comparisons.
+An added regression sends 8 MiB through the ordinary 4 MiB collect buffer, requiring live
+draining after the brief timeout, complete stock/native row parity and positive native work.
+`hotspot_mode=runtime-regressions` qualifies this case and the three encoding cases before
+the complete required matrix. Full source qualification remains necessary.
 
 The initial Fluss diagnostic could not load its new timing helper through a stale standalone
 test dependency; it did not execute the 29 SQL cases. `hotspot_mode=fluss-details` attributes
@@ -980,8 +991,7 @@ The [completed four-trial diagnostic](benchmarks/ci-deeper-profile-20261108.json
 of 2,098,188,448 and 2,102,691,184 bytes, with full compactions. This confirms memory pressure;
 the original missing-accumulator failure's cause remains unconfirmed.
 `hotspot_mode=recovery-transport` compares two alternating pairs at the unchanged 2 GiB
-heap with optional result-accumulator compression (`sf.recoveryResults.compress`, default
-false during investigation). Checkpoint contents, captured rows and parity assertions are
+heap with optional result-accumulator compression (`sf.recoveryResults.compress`). Checkpoint contents, captured rows and parity assertions are
 unchanged. Only serialized accumulator rows use fast JDK deflate; decoding streams each
 row through the released Flink serializer. The comparison uses ordinary test logging,
 no JFR and no phase timers, while retaining encoded sizes and individual outcomes.
@@ -994,8 +1004,9 @@ skips). The wide 831-row result fell from 165,299,820 bytes to approximately 1.6
 retaining every row. Median elapsed changed from 84.75 to 83.75 seconds (1.18%) and child
 CPU from 107.95 to 104.17 seconds (3.50%). Elapsed ranges overlap; this establishes a
 large transport-size reduction, not a material execution speedup. Point-in-time heap
-messages are not peak memory measurements, and complete required CI must still qualify
-the change before enabling it by default.
+messages are not peak memory measurements. The qualification candidate enables compact
+transport by default, retaining `sf.recoveryResults.compress=false` for the original
+transport comparison. Full required CI must qualify that candidate before merge.
 Any failed trial remains a failed diagnostic; its verified counts and condensed failure
 evidence are retained. Raw recordings and bulky successful reports are removed after analysis.
 
