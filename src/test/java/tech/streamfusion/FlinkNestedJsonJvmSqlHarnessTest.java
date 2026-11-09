@@ -49,10 +49,21 @@ class FlinkNestedJsonJvmSqlHarnessTest {
             + " JSON_QUERY(s, p)",
         "JSON_QUERY(s, p), ARRAY[id, CAST(NULL AS INT), id + 1]"
       })
-  void nestedInputsAndOutputsMatchTheGeneratedHostCalc(String projection) throws Exception {
+  void nestedInputsAndOutputsPreserveTheirExpectedEvaluationRoute(String projection) throws Exception {
     String sql = compatibleQuery("SELECT id, " + projection + " FROM inputs", false);
     String plan = NativePlanner.explain(environment(false), sql);
-    assertTrue(plan.contains("NativeCalc") && plan.contains("jsonEvaluation=[JVM]"), plan);
+    boolean nativeQuery =
+        !tech.streamfusion.compat.FlinkTestCapabilities.DYNAMIC_JSON_QUERY
+            && (projection.equals("a, r, JSON_QUERY(s, p)")
+                || projection.equals("aa, ar, JSON_QUERY(s, p)"));
+    assertTrue(plan.contains("NativeCalc"), plan);
+    boolean nativeString = projection.startsWith("JSON_STRING(");
+    if (nativeQuery || nativeString) {
+      assertTrue(plan.contains("nativeFunctions=[" + (nativeString ? "JSON_STRING" : "JSON_QUERY") + "]"), plan);
+      assertTrue(plan.contains("jvmFunctions=[]"), plan);
+    } else {
+      assertTrue(plan.contains("jsonEvaluation=[JVM]"), plan);
+    }
     NativeParity.assertParity(() -> environment(false), sql);
   }
 

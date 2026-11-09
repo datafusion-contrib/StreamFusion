@@ -23,9 +23,11 @@ class IntegralExpressionPipelineBenchmark {
     int warmups = Integer.getInteger("integral.expression.warmups", 2);
     int runs = Integer.getInteger("integral.expression.runs", 5);
     boolean previous = Boolean.getBoolean("sf.integral.previous");
+    boolean previousNative = Boolean.getBoolean("sf.integral.previousNative");
     boolean fallback = previous && Boolean.getBoolean("sf.integral.fallbackControl");
     boolean booleanInput = Boolean.getBoolean("sf.integral.booleanInput");
     boolean bigintInput = Boolean.getBoolean("sf.integral.bigintInput");
+    boolean stringInput = Boolean.getBoolean("sf.integral.stringInput");
     int decimalPrecision = Integer.getInteger("sf.integral.decimalPrecision", 0);
     int decimalScale = Integer.getInteger("sf.integral.decimalScale", 0);
     int timestampPrecision = Integer.getInteger("sf.integral.timestampPrecision", -1);
@@ -34,13 +36,21 @@ class IntegralExpressionPipelineBenchmark {
     boolean notNull = Boolean.getBoolean("sf.integral.primaryNotNull");
     boolean decimalTruth = "decimal-truth".equals(System.getenv("SF_INTEGRAL_CORPUS"));
     String secondary = System.getProperty("sf.integral.secondaryType", "");
-    assertTrue(secondary.isEmpty() || secondary.equals("INT") || secondary.equals("BIGINT"));
-    var primary = timestampPrecision >= 0 ? DataTypes.TIMESTAMP_LTZ(timestampPrecision)
+    String container = System.getProperty("sf.integral.containerType", "");
+    assertTrue(secondary.isEmpty() || secondary.equals("INT") || secondary.equals("BIGINT")
+        || secondary.equals("VARCHAR(4096)"));
+    var primary = !container.isEmpty()
+        ? org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(
+            org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                container, Thread.currentThread().getContextClassLoader()))
+        : stringInput ? DataTypes.VARCHAR(4096)
+        : timestampPrecision >= 0 ? DataTypes.TIMESTAMP_LTZ(timestampPrecision)
         : decimalPrecision > 0 ? DataTypes.DECIMAL(decimalPrecision, decimalScale)
         : booleanInput ? DataTypes.BOOLEAN()
         : bigintInput || epochMillisInput || epochSecondsInput ? DataTypes.BIGINT() : DataTypes.INT();
     var inputType = notNull ? primary.notNull() : primary;
-    var second = secondary.equals("BIGINT") ? DataTypes.BIGINT() : DataTypes.INT();
+    var second = secondary.equals("VARCHAR(4096)") ? DataTypes.VARCHAR(4096)
+        : secondary.equals("BIGINT") ? DataTypes.BIGINT() : DataTypes.INT();
     var sourceType = secondary.isEmpty() ? DataTypes.ROW(DataTypes.FIELD("v", inputType))
         : DataTypes.ROW(DataTypes.FIELD("v", inputType),
             DataTypes.FIELD("n", notNull ? second.notNull() : second));
@@ -61,44 +71,62 @@ class IntegralExpressionPipelineBenchmark {
                   && "decimal-epoch".equals(System.getenv("SF_INTEGRAL_CORPUS"))
               ? tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions
                   .decimalEpochCoefficients(decimalPrecision, decimalScale) : null;
-          var source = env.fromSequence(0, count - 1).map(i -> {
-            Object value;
-            if (epochSecondsInput) {
-              value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.epochSeconds(i);
-            } else if (epochMillisInput) {
-              value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.epochMillis(i);
-            } else if (timestampPrecision >= 0) {
-              value = java.time.Instant.ofEpochMilli(
-                  tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.temporalMillis(i))
-                  .plusNanos(timestampPrecision > 3 ? i % 1024 * 7919 % 1000000 : 0);
-            } else if (decimalPrecision > 0) {
-              BigInteger unscaled;
-              if (decimalEpochs != null) {
-                unscaled = decimalEpochs.get((int) (i % decimalEpochs.size()));
-              } else unscaled = decimalTruth && i % 17 == 2 ? BigInteger.ZERO
-                  : i % 17 == 0 ? maximum : i % 17 == 1 ? maximum.negate()
-                  : BigInteger.valueOf((i % 2 == 0 ? -1L : 1L)
-                      * (decimalPrecision == 4 ? i * 7919L % 10000 : 9007199254740993L + i * 7919L));
-              value = new BigDecimal(unscaled, decimalScale);
-            } else if (booleanInput) value = i % 2 == 0;
-            else if (bigintInput) value = i % 17 == 0 ? Long.MIN_VALUE
-                : (i % 2 == 0 ? -1L : 1L) * (9007199254740993L + i * 7919L);
-            else value = i % 17 == 0 ? Integer.MIN_VALUE : (int) ((i % 2 == 0 ? -1 : 1) * i * 7919);
-            Object first = !notNull && i % 7 == 0 ? null : value;
-            if (secondary.isEmpty()) return Row.of(first);
-            long index = i + 3;
-            Object other;
-            if (secondary.equals("INT")) other = index % 17 == 0 ? Integer.MIN_VALUE
-                : (int) ((index % 2 == 0 ? -1L : 1L) * index * 7919L);
-            else other = index % 17 == 0 ? Long.MIN_VALUE
-                : (index % 2 == 0 ? -1L : 1L) * (9007199254740993L + index * 7919L);
-            return Row.of(first, !notNull && i % 11 == 0 ? null : other);
-          }).returns(ExternalTypeInfo.<Row>of(sourceType));
-          table.createTemporaryView("inputs", source,
-              Schema.newBuilder().fromRowDataType(sourceType).build());
-          var resultType = table.sqlQuery("SELECT " + expression + " FROM inputs")
-              .getResolvedSchema().getColumnDataTypes().get(0).getLogicalType();
-          table.executeSql("CREATE TABLE output_rows(v " + resultType.asSerializableString()
+          if (container.isEmpty()) {
+            var source = env.fromSequence(0, count - 1).map(i -> {
+              Object value;
+              if (stringInput) {
+                value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions
+                    .jsonInputText((int) (i % 1024));
+              } else if (epochSecondsInput) {
+                value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.epochSeconds(i);
+              } else if (epochMillisInput) {
+                value = tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.epochMillis(i);
+              } else if (timestampPrecision >= 0) {
+                value = java.time.Instant.ofEpochMilli(
+                    tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.temporalMillis(i))
+                    .plusNanos(timestampPrecision > 3 ? i % 1024 * 7919 % 1000000 : 0);
+              } else if (decimalPrecision > 0) {
+                BigInteger unscaled;
+                if (decimalEpochs != null) {
+                  unscaled = decimalEpochs.get((int) (i % decimalEpochs.size()));
+                } else unscaled = decimalTruth && i % 17 == 2 ? BigInteger.ZERO
+                    : i % 17 == 0 ? maximum : i % 17 == 1 ? maximum.negate()
+                    : BigInteger.valueOf((i % 2 == 0 ? -1L : 1L)
+                        * (decimalPrecision == 4 ? i * 7919L % 10000 : 9007199254740993L + i * 7919L));
+                value = new BigDecimal(unscaled, decimalScale);
+              } else if (booleanInput) value = i % 2 == 0;
+              else if (bigintInput) value = i % 17 == 0 ? Long.MIN_VALUE
+                  : (i % 2 == 0 ? -1L : 1L) * (9007199254740993L + i * 7919L);
+              else value = i % 17 == 0 ? Integer.MIN_VALUE : (int) ((i % 2 == 0 ? -1 : 1) * i * 7919);
+              Object first = !notNull && i % 7 == 0 ? null : value;
+              if (secondary.isEmpty()) return Row.of(first);
+              long index = i + 3;
+              Object other;
+              if (secondary.equals("VARCHAR(4096)")) other =
+                  tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions.jsonInputText((int) (index % 1024));
+              else if (secondary.equals("INT")) other = index % 17 == 0 ? Integer.MIN_VALUE
+                  : (int) ((index % 2 == 0 ? -1L : 1L) * index * 7919L);
+              else other = index % 17 == 0 ? Long.MIN_VALUE
+                  : (index % 2 == 0 ? -1L : 1L) * (9007199254740993L + index * 7919L);
+              return Row.of(first, !notNull && i % 11 == 0 ? null : other);
+            }).returns(ExternalTypeInfo.<Row>of(sourceType));
+            table.createTemporaryView("inputs", source,
+                Schema.newBuilder().fromRowDataType(sourceType).build());
+          } else {
+            var internal = env.fromSequence(0, count - 1).map(i ->
+                (org.apache.flink.table.data.RowData) org.apache.flink.table.data.GenericRowData.of(!notNull && i % 7 == 0 ? null
+                    : tech.streamfusion.planner.IntegralExpressionBenchmarkFunctions
+                        .jsonContainerInput(container, (int) (i % 1024))))
+                .returns(org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(
+                    (org.apache.flink.table.types.logical.RowType) sourceType.getLogicalType()));
+            table.createTemporaryView("inputs", internal);
+          }
+          var resultTypes = table.sqlQuery("SELECT " + expression + " FROM inputs")
+              .getResolvedSchema().getColumnDataTypes();
+          var declarations = new java.util.ArrayList<String>();
+          for (int column = 0; column < resultTypes.size(); column++)
+            declarations.add("v" + column + " " + resultTypes.get(column).getLogicalType().asSerializableString());
+          table.executeSql("CREATE TABLE output_rows(" + String.join(",", declarations)
               + ") WITH ('connector'='blackhole')");
           String sql = "INSERT INTO output_rows SELECT " + expression + " FROM inputs";
           var scan = nativeRun ? NativePlanner.install(table) : null;
@@ -108,7 +136,7 @@ class IntegralExpressionPipelineBenchmark {
             assertTrue(plan.contains("RowDataToArrow"), plan);
             assertTrue(plan.contains("ArrowToRowData"), plan);
             assertFalse(scan.functionExecutions().isEmpty());
-            assertEquals(!previous,
+            assertEquals(!previous || previousNative,
                 scan.functionExecutions().stream().allMatch(route -> route.contains("jvm=[]")),
                 scan.functionExecutions().toString());
             assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());

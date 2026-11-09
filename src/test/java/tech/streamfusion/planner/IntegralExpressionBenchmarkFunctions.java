@@ -30,10 +30,12 @@ public final class IntegralExpressionBenchmarkFunctions {
   private static RowData[] rows;
   private static String type;
   private static LogicalTypeRoot outputRoot;
+  private static LogicalTypeRoot[] outputRoots;
   private static boolean booleanOutput;
   private static boolean longOutput;
   private static boolean stringOutput;
   private static volatile long consumed;
+  private static final String JSON_SCALAR_LONG_TEXT = "0123456789".repeat(64);
   private static final long[] TIMESTAMP_EPOCHS = {Long.MIN_VALUE, Long.MAX_VALUE,
       -62135596800000L, -12219292800000L, -2208988800000L, -86400001, -1, 0, 1,
       951827696123L, 1706659200000L, 1710037800000L, 253402300799999L};
@@ -62,7 +64,7 @@ public final class IntegralExpressionBenchmarkFunctions {
     String declaration = ("plain-timestamp".equals(System.getenv("SF_INTEGRAL_CORPUS"))
         ? type.replace("TIMESTAMP_LTZ(", "TIMESTAMP(") : type) + (nullable ? "" : " NOT NULL");
     String secondary = System.getProperty("sf.integral.secondaryType", "");
-    if (!secondary.isEmpty() && !List.of("INT", "BIGINT").contains(secondary))
+    if (!secondary.isEmpty() && !List.of("INT", "BIGINT", "VARCHAR(4096)").contains(secondary))
       throw new IllegalArgumentException("Unsupported secondary input " + secondary);
     String secondaryDeclaration = secondary + (nullable ? "" : " NOT NULL");
     table.executeSql("CREATE TABLE inputs(v " + declaration
@@ -76,13 +78,17 @@ public final class IntegralExpressionBenchmarkFunctions {
     LogicalType[] inputTypes = secondary.isEmpty() ? new LogicalType[] {inputType}
         : new LogicalType[] {inputType, LogicalTypeParser.parse(secondaryDeclaration, getLoader())};
     LogicalType outputType = FlinkTypeFactory.toLogicalType(project.getProjects().get(0).getType());
+    LogicalType[] outputTypes = project.getProjects().stream()
+        .map(node -> FlinkTypeFactory.toLogicalType(node.getType())).toArray(LogicalType[]::new);
+    outputRoots = java.util.Arrays.stream(outputTypes).map(LogicalType::getTypeRoot)
+        .toArray(LogicalTypeRoot[]::new);
     outputRoot = outputType.getTypeRoot();
     booleanOutput = outputType.getTypeRoot() == LogicalTypeRoot.BOOLEAN;
     longOutput = outputType.getTypeRoot() == LogicalTypeRoot.BIGINT;
     stringOutput = outputType.getTypeRoot() == LogicalTypeRoot.VARCHAR
         || outputType.getTypeRoot() == LogicalTypeRoot.CHAR;
     stock = FlinkExpressionGenerator.generate(project.getProjects(), null,
-        inputTypes, RowType.of(outputType), table.getConfig(), getLoader());
+        inputTypes, RowType.of(outputTypes), table.getConfig(), getLoader());
     var context = new FunctionContext(null) {
       @Override public ClassLoader getUserCodeClassLoader() { return getLoader(); }
     };
@@ -92,7 +98,16 @@ public final class IntegralExpressionBenchmarkFunctions {
     if (fallbackControl && !previous)
       throw new IllegalStateException("A fallback control requires the preceding encoder");
     String fallbackReason = null;
-    var encoded = fallbackControl ? null
+    boolean wholeCalc = Boolean.getBoolean("sf.integral.wholeCalc");
+    if (outputTypes.length > 1 && !wholeCalc)
+      throw new IllegalArgumentException("Multiple benchmark results require whole-Calc encoding");
+    if (wholeCalc && fallbackControl)
+      throw new IllegalArgumentException("A whole-Calc control must use its production encoder");
+    var encoded = fallbackControl ? null : wholeCalc
+        ? RexExpression.encodeCalc(org.apache.calcite.rel.logical.LogicalCalc.create(
+            project.getInput(), org.apache.calcite.rex.RexProgram.create(
+                project.getInput().getRowType(), project.getProjects(), null, project.getRowType(),
+                project.getCluster().getRexBuilder())))
         : RexExpression.encode(project.getProjects().get(0), project);
     if (fallbackControl) {
       var constructor = RexExpression.class.getDeclaredConstructor();
@@ -132,23 +147,27 @@ public final class IntegralExpressionBenchmarkFunctions {
       return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(
           Map.of("fallback", true, "reason", fallbackReason));
     }
-    if (previous == encoded.jvmFunctionCalls().isEmpty())
+    boolean previousNative = Boolean.getBoolean("sf.integral.previousNative");
+    if ((previous && !previousNative) == encoded.jvmFunctionCalls().isEmpty())
       throw new IllegalStateException("Unexpected encoder route: " + encoded.jvmFunctionCalls());
     if (!previous && encoded.nativeFunctionCalls().isEmpty())
       throw new IllegalStateException("Expected the intended native function before constant folding");
     String requiredFunction = System.getenv("SF_INTEGRAL_REQUIRED_FUNCTION");
-    if (requiredFunction != null && !(previous ? encoded.jvmFunctionCalls()
+    if (requiredFunction != null && !(previous && !previousNative ? encoded.jvmFunctionCalls()
         : encoded.nativeFunctionCalls()).contains(requiredFunction))
       throw new IllegalStateException("Missing intended function " + requiredFunction
           + ": native=" + encoded.nativeFunctionCalls() + ", jvm=" + encoded.jvmFunctionCalls());
     binding = encoded.udfBinding();
     long[] constants = binding.bind(encoded.longs(), context);
-    return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of(
+    var program = new java.util.LinkedHashMap<String,Object>(Map.of(
         "kinds", encoded.kinds(), "payload", encoded.payload(),
         "child_counts", encoded.childCounts(), "longs", constants,
         "doubles", encoded.doubles(), "strings", encoded.strings(),
         "boolean_output", booleanOutput, "string_output", stringOutput,
         "long_output", longOutput, "integer_output", outputType.getTypeRoot().name()));
+    program.put("projection_roots", wholeCalc ? encoded.projectionRoots() : new int[] {0});
+    program.put("output_count", outputTypes.length);
+    return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(program);
   }
 
   /** A rejected native signature runs in Java on RowData in the actual preceding implementation. */
@@ -188,6 +207,12 @@ public final class IntegralExpressionBenchmarkFunctions {
   private static Object value(String type, int row) {
     long v = row * 7919L;
     switch (type) {
+      case "ARRAY<INT>":
+      case "ARRAY<VARCHAR(128)>":
+      case "ROW<z INT,a VARCHAR(128)>":
+        return jsonContainerInput(type, row);
+      case "VARCHAR(4096)": return org.apache.flink.table.data.StringData.fromString(
+          jsonInputText(row));
       case "BOOLEAN": return row % 2 == 0;
       case "TINYINT": return row % 17 == 0 ? Byte.MIN_VALUE : (byte) v;
       case "SMALLINT": return row % 17 == 0 ? Short.MIN_VALUE : (short) v;
@@ -220,6 +245,29 @@ public final class IntegralExpressionBenchmarkFunctions {
     }
   }
 
+  public static Object jsonContainerInput(String type, int row) {
+    if (type.startsWith("ROW<"))
+      return GenericRowData.of(row % 11 == 0 ? null : jsonContainerInteger(row),
+          row % 13 == 0 ? null : org.apache.flink.table.data.StringData.fromString(jsonContainerText(row)));
+    int width = Integer.parseInt(System.getenv().getOrDefault("SF_INTEGRAL_CONTAINER_WIDTH", "4"));
+    Object[] values = new Object[row % 13 == 0 ? 0 : width];
+    for (int index = 0; index < values.length; index++) {
+      int position = row + index;
+      values[index] = position % 11 == 0 ? null : type.equals("ARRAY<INT>")
+          ? jsonContainerInteger(position)
+          : org.apache.flink.table.data.StringData.fromString(jsonContainerText(position));
+    }
+    return new org.apache.flink.table.data.GenericArrayData(values);
+  }
+
+  private static int jsonContainerInteger(int index) {
+    return index % 17 == 0 ? Integer.MIN_VALUE : index * 7919;
+  }
+
+  public static String jsonContainerText(int index) {
+    return "text-" + index % 1024 + "/\\\"\u0000\ud83d\ude00";
+  }
+
   public static List<BigInteger> decimalEpochCoefficients(int precision, int scale) {
     BigInteger limit = BigInteger.TEN.pow(precision);
     BigInteger factor = BigInteger.TEN.pow(scale);
@@ -239,6 +287,45 @@ public final class IntegralExpressionBenchmarkFunctions {
       }
     }
     return values;
+  }
+
+  public static String jsonScalarText(int row) {
+    switch (row % 8) {
+      case 0: return "";
+      case 1: return "plain";
+      case 2: return "a/b\\c\"d";
+      case 3: return "\0\t\r\n\b\f\u001f";
+      case 4: return "\\uD800";
+      case 5: return "\u4e2d\u6587\ud83d\ude00";
+      case 6: return "{\"a\":1}";
+      default: return JSON_SCALAR_LONG_TEXT;
+    }
+  }
+
+  public static String jsonInputText(int row) {
+    String corpus = System.getenv("SF_INTEGRAL_CORPUS");
+    if (corpus == null || !corpus.startsWith("json-query")) return jsonScalarText(row);
+    if (corpus.equals("json-query-wide")) {
+      StringBuilder document = new StringBuilder("{\"a\":{");
+      for (int i = 31; i >= 0; i--) {
+        if (i != 31) document.append(',');
+        document.append('"').append('f').append(i).append("\":[")
+            .append(row + i).append(",\"text\",null]");
+      }
+      return document.append("},\"drop\":true}").toString();
+    }
+    if (corpus.equals("json-query-deep"))
+      return "{\"a\":" + "{\"n\":".repeat(24) + row + "}".repeat(24) + "}";
+    switch (row % 8) {
+      case 0: return "{\"a\":{\"z\":7,\"a\":2.5000,\"name\":\"plain\"},\"drop\":0}";
+      case 1: return "{\"a\":[1,2.5000,-0,1e10,1e-8],\"b\":true}";
+      case 2: return "{\"a\":{\"dup\":1,\"d\\u0075p\":2,\"x\":\"a/b\\\\c\\\"d\"}}";
+      case 3: return "{\"a\":{\"\u4e2d\u6587\":\"\ud83d\ude00\",\"p\":\"\\uD800\"}}";
+      case 4: return "{\"a\":null}";
+      case 5: return "{\"missing\":[]}";
+      case 6: return "{\"a\":\"text\"}";
+      default: return "{\"a\":{\"long\":\"" + JSON_SCALAR_LONG_TEXT + "\"}}";
+    }
   }
 
   public static long temporalMillis(long row) {
@@ -267,6 +354,7 @@ public final class IntegralExpressionBenchmarkFunctions {
   }
 
   public static long[] measure(int loops) throws Exception {
+    if (outputRoots.length > 1) return measureMany(loops);
     long sum = 0;
     long start = System.nanoTime();
     for (int loop = 0; loop < loops; loop++) {
@@ -297,11 +385,37 @@ public final class IntegralExpressionBenchmarkFunctions {
     return new long[] {System.nanoTime() - start, sum};
   }
 
+  private static long[] measureMany(int loops) throws Exception {
+    long sum = 0;
+    long start = System.nanoTime();
+    for (int loop = 0; loop < loops; loop++) {
+      for (RowData input : rows) {
+        RowData result = (RowData) stock.evalRow(input);
+        for (int column = 0; column < outputRoots.length; column++) {
+          if (result.isNullAt(column)) { sum--; continue; }
+          switch (outputRoots[column]) {
+            case BOOLEAN: sum += result.getBoolean(column) ? 1 : 0; break;
+            case CHAR:
+            case VARCHAR:
+              var value = (BinaryStringData) result.getString(column);
+              int length = value.getSizeInBytes();
+              sum += length + (length == 0 ? 0 : value.byteAt(0) + value.byteAt(length - 1));
+              break;
+            default: throw new IllegalArgumentException(outputRoots[column].toString());
+          }
+        }
+      }
+    }
+    consumed = sum;
+    return new long[] {System.nanoTime() - start, sum};
+  }
+
   public static void close() throws Exception {
     if (binding != null) binding.unbind();
     if (stock != null) stock.close();
     binding = null;
     stock = null;
     rows = null;
+    outputRoots = null;
   }
 }

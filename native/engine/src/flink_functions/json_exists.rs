@@ -49,12 +49,13 @@ impl ScalarUDFImpl for JsonExists {
             Some("ERROR") => Err(()),
             _ => return exec_err!("Unsupported JSON_EXISTS ON ERROR policy"),
         };
-        let scalar = matches!(input, ColumnarValue::Scalar(_));
+        let scalar = matches!(input, ColumnarValue::Scalar(_)) && !super::json_path::scheduled();
         let input = input.to_array(if scalar { 1 } else { args.number_rows })?;
         let input = as_string_array(&input)?;
         let mut output = BooleanBuilder::with_capacity(input.len());
         with_reader(|reader| {
-            for document in input.iter() {
+            for (row, document) in input.iter().enumerate() {
+                reader.begin_row(row);
                 let Some(document) = document else {
                     output.append_null();
                     continue;

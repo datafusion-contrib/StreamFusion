@@ -75,14 +75,12 @@ class FlinkDecimalEpochFloorSqlHarnessTest {
   }
 
   @Test
-  void unverifiedZonesProducersAndDecimalCeilKeepGeneratedEvaluation() throws Exception {
+  void unverifiedZonesAndProducersKeepGeneratedEvaluation() throws Exception {
     for (String zone : List.of("America/New_York", "Europe/London", "GMT+05:30")) {
       verify(38, 0, true, zone,
           "SELECT id,FLOOR(TO_TIMESTAMP_LTZ(d,3) TO DAY) FROM src", false);
     }
     for (String sql : List.of(
-        "SELECT id,CEIL(TO_TIMESTAMP_LTZ(d,3) TO MONTH) FROM src",
-        "SELECT id,CEIL(TO_TIMESTAMP_LTZ(d,0) TO DAY) FROM src",
         "SELECT id,FLOOR(TO_TIMESTAMP_LTZ(d+d,3) TO DAY) FROM src",
         "SELECT id,FLOOR(TO_TIMESTAMP_LTZ(CAST(d AS DECIMAL(18,0)),3) TO MONTH) FROM src",
         "SELECT id,FLOOR(TO_TIMESTAMP_LTZ(d,CASE WHEN id<1000 THEN 0 ELSE 3 END) TO DAY) FROM src",

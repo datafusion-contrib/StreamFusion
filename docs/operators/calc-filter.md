@@ -2779,9 +2779,10 @@ remain unchanged; new grammar does not require another Rust parser extension. EX
 marks the generated route with `jsonEvaluation=[JVM]`. A native Calc marker identifies the
 columnar operator, not the language evaluating its JSON expressions.
 
-The generated route covers JSON_QUERY, dynamic JSON_VALUE/JSON_QUERY paths, recursive
+The generated route covers JSON_QUERY outside its definite-path projection gate below,
+dynamic JSON_VALUE/JSON_QUERY paths, recursive
 descent, filters, slices, multi-selectors, path functions, and invalid paths handled by
-Flink's policies. It also admits additional JSON_STRING/JSON_OBJECT scalar types and nested
+Flink's policies. It also admits additional JSON_STRING/JSON_OBJECT/JSON_ARRAY scalar types and nested
 constructors, dynamic defaults, nullable-boolean consumers, and short-circuited error or
 typed-conversion expressions that the native encoder declines. JSON_VALUE with `ERROR ON EMPTY`
 or `ERROR ON ERROR` always uses this generated route, including direct projections, so its
@@ -2796,7 +2797,10 @@ date/time, interval, supported timestamp types, and recursively nested ARRAY/ROW
 values with those leaves. The broader MAP/MULTISET boundary requires non-null keys/elements,
 matching the Arrow map key representation, with the existing character MAP exception below. Nullable map values, outer containers and nested array/row values
 remain supported. Nested arguments use Flink internal views over the imported Arrow batch; generated
-results are copied into owned Arrow output vectors before that batch closes. The callback still
+results are copied into owned Arrow output vectors before that batch closes. SQL/JSON programs
+preserve cached Java UTF-16 strings through that boundary without widening the existing container
+type gates. In particular, an isolated surrogate member name must remain distinct from `?` until
+after JSON member selection, duplicate-key resolution and serialization. The callback still
 crosses JNI once per batch, including multi-column results and filtering.
 The existing character-key/character-value MAP boundary remains admitted. Other MAP
 keys and MULTISET elements must be declared non-null; nullable forms retain fallback,
@@ -2828,9 +2832,54 @@ describe those retained fast paths and call out when the generated Calc extends 
 
 ### JSON_QUERY
 
-JSON_QUERY uses the generated Calc with literal or dynamic paths, conditional/unconditional
-array wrappers and EMPTY/ERROR policies. Its output has the same intermediate STRING
-identity restriction as JSON_VALUE.
+Final VARCHAR projections over a direct character field or literal use Rust for verified literal
+definite paths: root, member names (including quoted/escaped names), and signed array indexes.
+The default WITHOUT ARRAY WRAPPER, CONDITIONAL ARRAY WRAPPER and UNCONDITIONAL ARRAY WRAPPER are
+native, with NULL, EMPTY ARRAY or EMPTY OBJECT independently specified ON EMPTY and ON ERROR.
+Strict/lax mode, SQL NULLs, JSON null, missing selections, wrong-type selections, duplicate members
+and validation of unselected values retain the released Flink behavior. Empty filtered batches
+do not evaluate the projection.
+
+The reader validates the document with the shared Jackson runtime profile, then serializes the
+selected tree into Arrow. It does not return a raw JSON substring: 2.2 sorts member names by their
+original Java UTF-16 units; 1.18 retains insertion order, including the original position of a
+replaced key. The last duplicate name wins on both lines. Strings use Jackson-compatible escapes,
+and numeric spelling follows the selected Flink line (1.18 Double or 2.2 BigDecimal semantics).
+The input string carrier preserves cached UTF-16 through selection and member ordering; replacement of
+isolated surrogates happens at the final UTF-8 output boundary. There is no JVM JSON evaluator on
+this route. The existing per-batch JNI synchronization of Jackson recycler metadata remains.
+Wide compatible integer/boolean/null documents write directly from the existing recycled SIMD
+tape. Floating-point nodes, Unicode escape spelling, oversized tapes/documents and Jackson
+edge cases retain the exact reader and a flat arena for the selected tree. Both paths apply
+the same ordering, duplicate-key, wrapper and error-policy rules.
+
+Multiple unconditional reader projections over direct character fields/literals preserve
+row-major Jackson buffer history while evaluating Arrow columns. Calc prepares each reader's
+per-row capacity in projection order, then each kernel uses that capacity for its row. Ordinary
+short documents avoid per-row capacity-table allocation. The readers share one batch JNI
+metadata acquisition/release and publish the final capacity; no document/result is evaluated
+by the JVM. SQL NULLs and filtered-out rows do not grow the buffer, and empty filtered batches
+skip the entire schedule.
+
+On Flink 2.2, multiple readers with JSON calls in the condition, computed document inputs or
+non-final/conditional consumers retain generated row-major evaluation. A native parser combined
+with a JVM evaluator also retains that route because a callback can change shared recycler
+state. These restrictions protect successful values near Jackson's numeric token limits,
+independently of competing exception order. They apply to JSON_VALUE, JSON_EXISTS and IS JSON
+as well as JSON_QUERY. The scoped correctness repair is tracked in
+[#608](https://github.com/datafusion-contrib/StreamFusion/issues/608); remaining native coverage
+is part of [#506](https://github.com/datafusion-contrib/StreamFusion/issues/506).
+Flink 1.18 lacks the later token-limit interaction and retains its previous admission for
+computed/conditional readers; compatible direct reader projections can share the batch metadata.
+Mixed expressions whose kernels cannot consume the represented string carrier stay generated;
+their types are checked during encoding, before physical-plan substitution.
+
+Dynamic/NULL paths, wildcards, index/member unions, slices, recursive descent, filters, path
+functions, ERROR policies, computed document inputs, ARRAY return types, unverified container
+boundaries in other projections, and non-final string
+consumers retain the generated route. The intermediate STRING identity restriction remains the
+same as JSON_VALUE, including non-final operator boundaries. Non-Calc expression encoders do not
+admit this new JSON_QUERY kernel.
 
 ### JSON_QUOTE
 
@@ -2855,10 +2904,27 @@ DECIMAL retains its declared scale and trailing zeros, using Jackson's BigDecima
 `1.2300` remains `1.2300`, while sufficiently small values use scientific notation
 (`0.000000100` becomes `1.00E-7`). Precision and scale through 38 are native, including NULLs.
 
-Additional scalar inputs and direct nested JSON_OBJECT, JSON_ARRAY and JSON(value) calls
-use the generated Calc, preserving Flink's raw-JSON handling. Collection input columns still
-fall back at the scalar bridge boundary. JSON_STRING applied to an ordinary string column
-containing JSON text quotes it normally. No compatibility opt-in is needed.
+Final Calc projections over direct ARRAY/ROW input columns also serialize in Rust. Containers
+may nest through 32 levels with nullable elements/fields and character, BOOLEAN, TINYINT,
+SMALLINT, INTEGER or BIGINT leaves. Flink 2.2 additionally admits DECIMAL leaves; 1.18's
+different decimal normalization retains generated evaluation. Outer containers may be nullable
+or NOT NULL. Empty arrays and nested NULLs retain their distinct JSON spelling. ROW members
+sort by Java UTF-16 field-name order on both released lines; nested changelog metadata is not
+serialized. The schema and escaped keys are prepared once per batch, and values write directly
+to the Arrow output without a JSON tree or JVM evaluator.
+
+Computed/intermediate container operands, nonnullable nested elements/fields, depth above 32,
+MAP/MULTISET, additional leaf types, and ROW names containing unpaired surrogates, ASCII controls,
+quotes or backslashes retain generated evaluation. Existing owned-string and relational-boundary
+identity gates still apply. Disabling collection expressions retains the preceding generated route.
+Plans that combine string-container serialization with cache-observing comparisons or other
+representation-sensitive outputs retain generated evaluation. Flink's serializer materializes
+the original strings; for example, `JSON_STRING(a), ARRAY_MAX(a)` can change which string wins
+when the same ARRAY contains cold UTF-8 strings. This is successful-value behavior, not exception
+ordering, and is checked in both projection orders.
+Additional scalar inputs and direct nested JSON_OBJECT, JSON_ARRAY and JSON(value) calls also
+use the generated Calc, preserving Flink's raw-JSON handling. JSON_STRING applied to an ordinary
+string column containing JSON text quotes it normally. No compatibility opt-in is needed.
 
 NULL values must have a supported scalar type, for example `CAST(NULL AS STRING)`.
 An operand whose type remains SQL NULL falls back: Flink's JSON node generator cannot
@@ -2880,6 +2946,31 @@ Each batch reuses escaped keys and scalar parameters while writing directly to A
 Dynamic/NULL keys, additional scalar value types, and direct nested JSON_OBJECT, JSON_ARRAY
 or JSON(value) expressions use the generated Calc, including the host's failures. An ordinary string containing JSON text is quoted.
 No compatibility opt-in is needed.
+
+### JSON_ARRAY
+
+Flat arrays of character, BOOLEAN, TINYINT, SMALLINT, INTEGER and BIGINT scalar arguments
+execute in Rust. DECIMAL precision/scale through 38 is also native on Flink 2.2, sharing
+the exact scale-preserving/scientific rendering of JSON_STRING. Released 1.18's different
+decimal rendering retains the generated evaluator. Argument order and repeated values
+are preserved. The default ABSENT ON NULL omits SQL NULL elements; explicit NULL ON NULL
+writes JSON nulls. Empty or entirely omitted arrays return `[]`, never SQL NULL. NULL
+arguments must retain a supported scalar type.
+
+The kernel prepares typed column views and scalar arguments once per batch, then writes
+each result directly into the Arrow string builder with the existing Jackson-compatible
+scalar serializer. It handles sliced validity, constant/column mixtures and empty inputs
+without building per-row JSON trees or calling the JVM. Ordinary scalar consumers and
+CASE-selected strings remain ordinary string values. Direct nested JSON_OBJECT, JSON_ARRAY
+and JSON(value) arguments retain the generated route because Flink inserts these as raw
+JSON. Other scalar/container types also retain their existing routes. Remaining JSON
+kernel coverage is tracked by [#506](https://github.com/datafusion-contrib/StreamFusion/issues/506).
+
+The [scalar-array qualification](../benchmarks/scalar-functions.md#flat-scalar-json_array-2026-11-06)
+records both released lines/JDKs, actual consumed Rust execution, previous-path controls
+and release measurements. All 36 prepared bulk cells beat stock by 1.90-5.86x; the seven
+million-row jobs retain both perimeter transposes and take 0.603-0.723 of stock elapsed
+time. These results apply to the measured flat scalar shapes, not all SQL/JSON expressions.
 
 ### IS JSON
 
@@ -2957,7 +3048,7 @@ JSON_VALUE nor JSON_EXISTS exposes them. SQL parity covers empty/single/multiple
 scalar/null inputs, nested signed indexes, duplicate ancestors, escaped names, typed defaults,
 all error policies, predicates and independent definite/wildcard projections. Retained operator
 metrics verify 5,003 rows entering and leaving native Calc. Recursive descent, filters, slices,
-member-name unions, path functions and JSON_QUERY use the generated Calc described above.
+member-name unions, path functions and branching JSON_QUERY use the generated Calc described above.
 
 The wildcard benchmark reads `$.a[*]` from 32-element arrays with 264 bytes of padding.
 Release/mimalloc on an Apple M1 Max, one million rowwise inputs, two warmups and five alternating
@@ -3189,7 +3280,7 @@ Admission first probes the shaded Jackson runtime once per class loader: Flink 2
 Jackson 2.18.2 and its default thread-local recycler pool; Flink 1.18 requires Jackson 2.14.2
 on JDK 11 or 17 and thread-local buffer recycling. Both require successful buffer acquisition, cross-factory
 reuse and release. Missing methods/classes, a different version or pool,
-or probe failure decline the native parser for JSON_VALUE, JSON_EXISTS and IS JSON; Calc
+or probe failure decline the native parser for JSON_VALUE, JSON_QUERY, JSON_EXISTS and IS JSON; Calc
 can use Flink generation when the host runtime and batch boundary types support it.
 JobManagers and TaskManagers must use the same verified shaded Jackson runtime.
 The 2.2 profile admits JDK 11, 17, 21, 24 and 25, selecting the corresponding Unicode version for
@@ -3614,15 +3705,18 @@ bounded milliseconds that exclude its differing overflow cases. General LTZ inpu
 their dedicated kernel. Other computed timestamp producers and
 nonzero/regional zones retain their existing routes. See [computed UTC FLOOR](temporal-functions.md#native-utc-floor-over-integer-epochs).
 
-In fixed zero-offset sessions, ordinary Calc FLOOR additionally composes genuine verified
+In fixed zero-offset sessions, ordinary Calc FLOOR/CEIL/CEILING additionally compose genuine verified
 DECIMAL epochs: direct fields/literals, total ABS/negation chains and same-scale widening
 at literal precision 0/3 or the 2.2 default. Decimal truncation, signed-long/seconds wrapping
 and final millisecond bounds remain distinct from integer bounds. YEAR/MONTH/DAY/HOUR
 qualify on both releases, with MINUTE/SECOND/MILLISECOND on 2.2. The 1.18 default-signature
-rejection and sub-hour initialization failures remain unchanged. CEIL/CEILING over DECIMAL
-epochs, runtime DECIMAL precision, binary arithmetic/narrowing/rescaling, unverified
+rejection and sub-hour initialization failures remain unchanged. CEIL preserves the
+calendar rules and reuses bounded-epoch fixed-unit rounding because verified DECIMAL
+epochs have zero fractional nanos and final milliseconds far from long overflow.
+Runtime DECIMAL precision, binary arithmetic/narrowing/rescaling, unverified
 producers, other zones/units and UNNEST keep their existing routes. See
-[DECIMAL UTC FLOOR](temporal-functions.md#native-utc-floor-over-decimal-epochs).
+[DECIMAL UTC FLOOR](temporal-functions.md#native-utc-floor-over-decimal-epochs) and
+[DECIMAL UTC CEIL](temporal-functions.md#native-utc-ceil-over-decimal-epochs).
 
 ### LTRIM
 
