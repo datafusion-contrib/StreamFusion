@@ -10,6 +10,7 @@ use rocksdb::{Cache, Direction, IteratorMode, Options, DB};
 use std::sync::Arc;
 
 mod canonical_frames;
+mod canonical_metadata;
 #[cfg(test)]
 mod distinct_tests;
 #[cfg(test)]
@@ -884,22 +885,10 @@ impl RocksOverAggStore {
         &self,
     ) -> Result<Vec<(Box<[u8]>, i64, bool)>, DataFusionError> {
         let mut out = Vec::new();
-        for row in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = row.map_err(re)?;
-            if key.len() < KEY_PREFIX_LEN || key[4] != STAMPS_TABLE {
-                continue;
-            }
-            if value.len() != 8 && !(value.len() == 9 && value[8] == 0) {
-                return Err(DataFusionError::Execution(
-                    "invalid OVER cleanup stamp".into(),
-                ));
-            }
-            out.push((
-                key[KEY_PREFIX_LEN..].into(),
-                i64::from_le_bytes(value[..8].try_into().unwrap()),
-                value.len() == 8,
-            ));
-        }
+        self.visit_cleanup_stamps(1024, |rows| {
+            out.extend(rows);
+            Ok(())
+        })?;
         Ok(out)
     }
 
@@ -1248,36 +1237,21 @@ impl RocksOverAggStore {
         chunk_rows: usize,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        if chunk_rows == 0 {
-            return Err(DataFusionError::Execution(
-                "zero OVER pending chunk size".into(),
-            ));
-        }
-        let mut rows: Vec<Box<[u8]>> = Vec::with_capacity(chunk_rows);
-        for row in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = row.map_err(re)?;
-            if key.len() != PENDING_KEY_LEN || key[4] != PENDING_TABLE {
-                continue;
-            }
-            if value.len() < 8 {
-                return Err(DataFusionError::Execution(
-                    "truncated OVER pending row".into(),
-                ));
-            }
-            rows.push(value[8..].into());
-            if rows.len() == chunk_rows {
-                accept(
-                    self.decode_payload(&self.payload_schema, rows.iter().map(|row| row.as_ref()))?,
-                )?;
-                rows.clear();
-            }
-        }
-        if !rows.is_empty() {
-            accept(
-                self.decode_payload(&self.payload_schema, rows.iter().map(|row| row.as_ref()))?,
-            )?;
-        }
-        Ok(())
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| key.len() == PENDING_KEY_LEN && key[4] == PENDING_TABLE,
+            |rows| {
+                if rows.iter().any(|(_, value)| value.len() < 8) {
+                    return Err(DataFusionError::Execution(
+                        "truncated OVER pending row".into(),
+                    ));
+                }
+                accept(self.decode_payload(
+                    &self.payload_schema,
+                    rows.iter().map(|(_, value)| &value[8..]),
+                )?)
+            },
+        )
     }
 
     /// Every committed fold — restore-time retention hydration and canonical savepoints.
@@ -1296,39 +1270,26 @@ impl RocksOverAggStore {
         chunk_rows: usize,
         mut accept: impl FnMut(Vec<StoredOverFold>) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        if chunk_rows == 0 {
-            return Err(DataFusionError::Execution(
-                "zero OVER fold chunk size".into(),
-            ));
-        }
-        let mut folds: Vec<(Box<[u8]>, i64, Box<[u8]>)> = Vec::with_capacity(chunk_rows);
-        for row in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = row.map_err(re)?;
-            if key.as_ref() == WATERMARK_KEY
-                || key.as_ref() == SEQ_KEY
-                || key.len() <= KEY_GROUP_LEN + 1
-                || key[4] != FOLDS_TABLE
-            {
-                continue;
-            }
-            if value.len() <= STAMP_LEN {
-                return Err(DataFusionError::Execution(
-                    "truncated OVER fold value".into(),
-                ));
-            }
-            folds.push((
-                key[KEY_GROUP_LEN + 1..].into(),
-                i64::from_le_bytes(value[..STAMP_LEN].try_into().expect("fold stamp")),
-                value[STAMP_LEN..].into(),
-            ));
-            if folds.len() == chunk_rows {
-                self.decode_fold_chunk(&mut folds, &mut accept)?;
-            }
-        }
-        if !folds.is_empty() {
-            self.decode_fold_chunk(&mut folds, &mut accept)?;
-        }
-        Ok(())
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| key.len() > KEY_PREFIX_LEN && key[4] == FOLDS_TABLE,
+            |rows| {
+                let mut folds = Vec::with_capacity(rows.len());
+                for (key, value) in rows {
+                    if value.len() <= STAMP_LEN {
+                        return Err(DataFusionError::Execution(
+                            "truncated OVER fold value".into(),
+                        ));
+                    }
+                    folds.push((
+                        key[KEY_PREFIX_LEN..].into(),
+                        i64::from_le_bytes(value[..STAMP_LEN].try_into().unwrap()),
+                        value[STAMP_LEN..].into(),
+                    ));
+                }
+                self.decode_fold_chunk(&mut folds, &mut accept)
+            },
+        )
     }
 
     fn decode_fold_chunk(

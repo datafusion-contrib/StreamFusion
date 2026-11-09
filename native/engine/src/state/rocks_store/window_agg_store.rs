@@ -257,24 +257,39 @@ impl RocksWindowAggStore {
 
     pub(crate) fn slice_timers(&self) -> Result<Vec<(i32, i64, Box<[u8]>)>, DataFusionError> {
         let mut timers = Vec::new();
-        for row in self.db.iterator(IteratorMode::Start) {
-            let (key, _) = row.map_err(re)?;
-            if key.len() <= KEY_PREFIX_LEN
-                || key.as_ref() == WATERMARK_KEY
-                || key.as_ref() == TIMER_DEADLINE_KEY
-                || key.as_ref() == SHARED_SLICES_KEY
-            {
-                continue;
-            }
-            if key[KEY_PREFIX_LEN] == 1 {
-                timers.push((
-                    i32::from_be_bytes(key[..4].try_into().unwrap()),
-                    window_end_from(&key[4..KEY_PREFIX_LEN]),
-                    key[KEY_PREFIX_LEN + 1..].into(),
-                ));
-            }
-        }
+        self.visit_slice_timers(1024, |rows| {
+            timers.extend(rows);
+            Ok(())
+        })?;
         Ok(timers)
+    }
+
+    pub(crate) fn visit_slice_timers(
+        &self,
+        chunk_rows: usize,
+        mut accept: impl FnMut(Vec<(i32, i64, Box<[u8]>)>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| {
+                key.len() > KEY_PREFIX_LEN
+                    && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0
+                    && key[KEY_PREFIX_LEN] == 1
+            },
+            |rows| {
+                accept(
+                    rows.into_iter()
+                        .map(|(key, _)| {
+                            (
+                                i32::from_be_bytes(key[..4].try_into().unwrap()),
+                                window_end_from(&key[4..KEY_PREFIX_LEN]),
+                                key[KEY_PREFIX_LEN + 1..].into(),
+                            )
+                        })
+                        .collect(),
+                )
+            },
+        )
     }
 
     /// Batched point reads for a bundle's touched groups: one multi-get, one columnar decode.
@@ -446,6 +461,19 @@ impl RocksWindowAggStore {
         self.into_groups(groups)
     }
 
+    pub(crate) fn has_groups(&self) -> Result<bool, DataFusionError> {
+        let mut snapshot = super::RocksReadSnapshot::new(&self.db);
+        Ok(!snapshot
+            .next_batch_limited(1, 4 * 1024 * 1024, |key| self.is_group_key(key))?
+            .is_empty())
+    }
+
+    fn is_group_key(&self, key: &[u8]) -> bool {
+        key.len() >= 4
+            && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0
+            && (!self.shared_slices || key.len() <= KEY_PREFIX_LEN || key[KEY_PREFIX_LEN] == 0)
+    }
+
     pub(crate) fn visit_groups(
         &self,
         chunk_rows: usize,
@@ -453,13 +481,7 @@ impl RocksWindowAggStore {
     ) -> Result<(), DataFusionError> {
         self.db.visit_snapshot_batches(
             chunk_rows,
-            |key| {
-                key.len() >= 4
-                    && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0
-                    && (!self.shared_slices
-                        || key.len() <= KEY_PREFIX_LEN
-                        || key[KEY_PREFIX_LEN] == 0)
-            },
+            |key| self.is_group_key(key),
             |entries| {
                 let mut rows = Vec::with_capacity(entries.len());
                 let key_offset = KEY_PREFIX_LEN + usize::from(self.shared_slices);

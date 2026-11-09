@@ -25,51 +25,65 @@ impl OverWindowAggregator {
         if self.range_offset().is_none() {
             return Err(invalid("not a rowtime RANGE frame"));
         }
-        let types = self.cleanup_key_types();
-        let converter = key_row_converter_from_types(&types);
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = self.frozen_store() {
+            return store.visit_range_timers(CHUNK_ROWS, |key, bytes| {
+                accept(self.canonical_range_batch(key, &RangeTimers::decode(bytes)?)?)
+            });
+        }
         for (key, timers) in &self.range_timers {
-            let deadline = self.cleanup_state.get(key).copied();
-            let times = match &self.inner {
-                OverInner::Bounded(inner) => inner
-                    .keys
-                    .get(key)
-                    .map(|rows| rows.iter().map(|row| row.rt).collect::<Vec<_>>())
-                    .unwrap_or_default(),
-                _ => unreachable!(),
-            };
-            #[cfg(feature = "rocksdb-state")]
-            let times = if let Some(store) = &self.store {
-                let prefix = store.frame_prefix(self.store_fold_key_group(&key.0), &key.0);
-                store
-                    .load_frames(&[prefix])?
-                    .pop()
-                    .unwrap()
-                    .iter()
-                    .map(|row| row.rt)
-                    .collect()
-            } else {
-                times
-            };
-            let order = self
-                .frame_map_order(&key.0, &times)?
-                .ok_or_else(|| invalid("missing RANGE membership order"))?;
-            let mut fields = key_fields(&types);
-            let mut columns = decode_byte_keys(Some(&converter), &[key.0.as_ref()], &types);
-            fields.push(Field::new(DEADLINE, DataType::Int64, true));
-            columns.push(Arc::new(Int64Array::from(vec![deadline])));
-            fields.push(Field::new(LAST, DataType::Int64, true));
-            columns.push(Arc::new(Int64Array::from(vec![timers.last])));
-            for (name, values) in [(TIMERS, timers.armed.as_slice()), (ORDER, order.as_slice())] {
-                let column = list(values);
-                fields.push(Field::new(name, column.data_type().clone(), false));
-                columns.push(column);
-            }
-            accept(RecordBatch::try_new(
-                Arc::new(Schema::new(fields)),
-                columns,
-            )?)?;
+            accept(self.canonical_range_batch(&key.0, timers)?)?;
         }
         Ok(())
+    }
+
+    fn canonical_range_batch(
+        &self,
+        key: &[u8],
+        timers: &RangeTimers,
+    ) -> Result<RecordBatch, DataFusionError> {
+        let types = self.cleanup_key_types();
+        let converter = key_row_converter_from_types(&types);
+        let deadline = self.canonical_cleanup_stamp(key)?;
+        let times = match &self.inner {
+            OverInner::Bounded(inner) => inner
+                .keys
+                .get(key)
+                .map(|rows| rows.iter().map(|row| row.rt).collect::<Vec<_>>())
+                .unwrap_or_default(),
+            _ => unreachable!(),
+        };
+        #[cfg(feature = "rocksdb-state")]
+        let times = if let Some(store) = &self.store {
+            let prefix = store.frame_prefix(self.store_fold_key_group(key), key);
+            store
+                .load_frames(&[prefix])?
+                .pop()
+                .unwrap()
+                .iter()
+                .map(|row| row.rt)
+                .collect()
+        } else {
+            times
+        };
+        let order = self
+            .frame_map_order(key, &times)?
+            .ok_or_else(|| invalid("missing RANGE membership order"))?;
+        let mut fields = key_fields(&types);
+        let mut columns = decode_byte_keys(Some(&converter), &[key], &types);
+        fields.push(Field::new(DEADLINE, DataType::Int64, true));
+        columns.push(Arc::new(Int64Array::from(vec![deadline])));
+        fields.push(Field::new(LAST, DataType::Int64, true));
+        columns.push(Arc::new(Int64Array::from(vec![timers.last])));
+        for (name, values) in [(TIMERS, timers.armed.as_slice()), (ORDER, order.as_slice())] {
+            let column = list(values);
+            fields.push(Field::new(name, column.data_type().clone(), false));
+            columns.push(column);
+        }
+        Ok(RecordBatch::try_new(
+            Arc::new(Schema::new(fields)),
+            columns,
+        )?)
     }
 
     pub(in crate::over_agg) fn import_canonical_range(

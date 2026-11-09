@@ -77,8 +77,6 @@ public final class Native {
 
   public static native void cancelCanonicalDatabases(long snapshot);
 
-  public static native void prepareOverCanonicalReadView(long handle);
-
   public static native void exportFirstNCanonical(long handle, BatchReceiver receiver);
 
   public static native void importFirstNCanonical(

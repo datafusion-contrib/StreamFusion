@@ -77,24 +77,23 @@ impl TumblingAggregator {
         }
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
-            let timers = store.slice_timers()?;
             let parser = self.key_converter.as_ref().map(RowConverter::parser);
-            for chunk in timers.chunks(CHUNK_ROWS) {
-                let rows = chunk
-                    .iter()
+            return store.visit_slice_timers(CHUNK_ROWS, |timers| {
+                let rows = timers
+                    .into_iter()
                     .map(|(_, end, key)| TimerRow {
-                        end: *end,
+                        end,
                         key: parser
                             .as_ref()
                             .expect("persisted timer key converter")
-                            .parse(key)
+                            .parse(&key)
                             .owned(),
                     })
                     .collect::<Vec<_>>();
-                accept(self.canonical_timers(&rows)?)?;
-            }
-            return Ok(());
+                accept(self.canonical_timers(&rows)?)
+            });
         }
+
         let mut rows = Vec::with_capacity(CHUNK_ROWS);
         for (&end, keys) in &self.slice_timers {
             for key in keys.keys() {
@@ -281,7 +280,7 @@ impl TumblingAggregator {
         #[cfg(feature = "rocksdb-state")]
         if !self.shared_slices {
             if let Some(store) = &self.store {
-                if !store.scan_all()?.is_empty() {
+                if store.has_groups()? {
                     return Err(invalid(
                         "cannot reinterpret persisted final windows as panes",
                     ));

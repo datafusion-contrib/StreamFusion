@@ -126,8 +126,6 @@ public abstract class AbstractNativeStatefulOperator<OUT>
 
   protected void configureCapturedHandle(long captured, boolean persistent) {}
 
-  protected void prepareCapturedReader(long captured) {}
-
   protected void closeCapturedHandle(long captured, boolean persistent) {
     throw new UnsupportedOperationException("native state disposer is not bound");
   }
@@ -412,7 +410,6 @@ public abstract class AbstractNativeStatefulOperator<OUT>
                   try {
                     configureCapturedHandle(value, true);
                     contract.configureNativeState(value, true);
-                    prepareCapturedReader(value);
                     return value;
                   } catch (Exception | Error failure) {
                     try {

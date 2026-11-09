@@ -93,11 +93,6 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   }
 
   @Override
-  protected void prepareCapturedReader(long captured) {
-    Native.prepareOverCanonicalReadView(captured);
-  }
-
-  @Override
   protected void configureCapturedHandle(long captured, boolean persistent) {
     if (eventCleanupTimers) Native.bindOverEventCleanupTimers(captured);
   }

@@ -1313,3 +1313,48 @@ fn unarmed_cleanup_value_survives_actual_native_database_checkpoint() {
         }
     }
 }
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn frozen_cleanup_readers_stream_without_hydrating_keys_and_retry_receiver_failure() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("state");
+    let mut source = operator(false, false, 1000, true, &path);
+    source.proctime = false;
+    source.bind_event_cleanup_timers().unwrap();
+    let keys = (0..2051).map(Some).collect::<Vec<_>>();
+    source
+        .push(
+            timed(&keys, &vec![Some(1.0); keys.len()], &vec![10; keys.len()]),
+            100,
+        )
+        .unwrap();
+    source.checkpoint_store("").unwrap();
+    let expected = rows_of(&cleanup(&source));
+    let expected_pending = rows_of(&pending(&source));
+    let snapshot = crate::state::rocks_store::FrozenDatabases::capture(&path).unwrap();
+    source
+        .push(timed(&[Some(0)], &[Some(99.0)], &[11]), 900)
+        .unwrap();
+    source.checkpoint_store("").unwrap();
+    snapshot.with(|| {
+        let mut reader = operator(false, false, 1000, true, &path);
+        reader.proctime = false;
+        reader.bind_event_cleanup_timers().unwrap();
+        assert!(reader.cleanup_state.is_empty());
+        assert!(reader.event_cleanup_unarmed.is_empty());
+        assert!(reader
+            .visit_canonical_cleanup(|_| Err(invalid("receiver failed")))
+            .is_err());
+        let batches = cleanup(&reader);
+        assert_eq!(batches.len(), 3);
+        assert!(batches.iter().all(|batch| batch.num_rows() <= CHUNK_ROWS));
+        assert_eq!(rows_of(&batches), expected);
+        assert_eq!(rows_of(&pending(&reader)), expected_pending);
+        assert!(reader.cleanup_state.is_empty());
+        assert!(reader.event_cleanup_unarmed.is_empty());
+        assert_eq!(reader.retention_bytes, 0);
+        snapshot.cancel();
+        assert!(reader.visit_canonical_cleanup(|_| Ok(())).is_err());
+    });
+}

@@ -14,6 +14,12 @@ impl OverWindowAggregator {
         if !self.processing_rows() {
             return Err(invalid("not a processing-time ROWS frame"));
         }
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = self.frozen_store() {
+            return store.visit_processing_rows(CHUNK_ROWS, |key, bytes| {
+                accept(self.canonical_processing_row(key, &ProcRowsState::decode(bytes)?)?)
+            });
+        }
         let frame_keys = inner
             .keys
             .keys()
@@ -34,25 +40,33 @@ impl OverWindowAggregator {
                 "processing ROWS frame lacks exact counter/minimum metadata",
             ));
         }
-        let types = self.cleanup_key_types();
-        let converter = key_row_converter_from_types(&types);
         for (key, state) in &self.proc_rows {
-            let mut fields = key_fields(&types);
-            let mut columns = decode_byte_keys(Some(&converter), &[key.0.as_ref()], &types);
-            for (name, value, nullable) in [
-                (COUNT, Some(state.count), false),
-                (SMALLEST, Some(state.smallest), false),
-                (CLEANUP, self.cleanup_state.get(key).copied(), true),
-            ] {
-                fields.push(Field::new(name, DataType::Int64, nullable));
-                columns.push(Arc::new(Int64Array::from(vec![value])));
-            }
-            accept(RecordBatch::try_new(
-                Arc::new(Schema::new(fields)),
-                columns,
-            )?)?;
+            accept(self.canonical_processing_row(&key.0, state)?)?;
         }
         Ok(())
+    }
+
+    fn canonical_processing_row(
+        &self,
+        key: &[u8],
+        state: &ProcRowsState,
+    ) -> Result<RecordBatch, DataFusionError> {
+        let types = self.cleanup_key_types();
+        let converter = key_row_converter_from_types(&types);
+        let mut fields = key_fields(&types);
+        let mut columns = decode_byte_keys(Some(&converter), &[key], &types);
+        for (name, value, nullable) in [
+            (COUNT, Some(state.count), false),
+            (SMALLEST, Some(state.smallest), false),
+            (CLEANUP, self.canonical_cleanup_stamp(key)?, true),
+        ] {
+            fields.push(Field::new(name, DataType::Int64, nullable));
+            columns.push(Arc::new(Int64Array::from(vec![value])));
+        }
+        Ok(RecordBatch::try_new(
+            Arc::new(Schema::new(fields)),
+            columns,
+        )?)
     }
 
     pub(in crate::over_agg) fn import_canonical_processing_rows(

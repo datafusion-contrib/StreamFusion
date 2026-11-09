@@ -209,9 +209,10 @@ impl OverWindowAggregator {
             values[rows - 1] = value;
             columns.push(scalars_to_array(values, ty));
         }
-        let protocol = self.range_timers.get(key);
+        let protocol = self.canonical_range_timers(key)?;
+        let protocol = protocol.as_ref();
         for value in [
-            self.cleanup_state.get(key).copied(),
+            self.canonical_cleanup_stamp(key)?,
             protocol.and_then(|timers| timers.last),
         ] {
             let mut values = vec![None; rows];

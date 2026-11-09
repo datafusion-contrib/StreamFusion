@@ -212,6 +212,29 @@ impl OverWindowAggregator {
                 "RANGE cleanup belongs to the event-time frame protocol",
             ));
         }
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = self.frozen_store() {
+            let types = self.event_key_types()?;
+            let converter = key_row_converter_from_types(&types);
+            let mut fields = key_fields(&types);
+            fields.push(Field::new(STAMP, DataType::Int64, false));
+            fields.push(Field::new(EVENT_CLEANUP_ARMED, DataType::Boolean, false));
+            let schema = Arc::new(Schema::new(fields));
+            return store.visit_cleanup_stamps(CHUNK_ROWS, |rows| {
+                let keys = rows
+                    .iter()
+                    .map(|(key, _, _)| key.as_ref())
+                    .collect::<Vec<_>>();
+                let mut columns = decode_byte_keys(Some(&converter), &keys, &types);
+                columns.push(Arc::new(Int64Array::from_iter_values(
+                    rows.iter().map(|(_, stamp, _)| *stamp),
+                )));
+                columns.push(Arc::new(BooleanArray::from_iter(
+                    rows.iter().map(|(_, _, armed)| Some(*armed)),
+                )));
+                accept(RecordBatch::try_new(schema.clone(), columns)?)
+            });
+        }
         if self.cleanup_state.is_empty() {
             return Ok(());
         }

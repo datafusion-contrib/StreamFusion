@@ -102,12 +102,18 @@ uses a captured state iterator, preserving serializers and the caller's key cont
 collecting every key.
 
 The direct cursors bound decoded working memory by the current frame/entry and owned key groups.
-Fixed-window and session exports share the pinned batch visitor, with both row and byte limits
-before decoding. Fixed-window export no longer collects every persisted group. An individual
+Fixed-window groups and timer ledgers, session state, and OVER fold/pending/cleanup tables share
+the pinned batch visitor, with both row and byte limits before decoding. Fixed-window export no
+longer collects every persisted group or timer. OVER readers fetch cleanup stamps, processing-ROWS
+counters and RANGE timers directly from their captured tables; they do not hydrate metadata maps
+for all keys. Processing-ROWS metadata/frame ownership is checked by streaming partitions and point
+reads rather than collecting all partition keys. An individual
 oversized value remains the lower bound on working memory. Receiver failure and cancellation
 release the visitor; overlapping live writes and compaction do not change its captured version.
-The general adapters retain their existing per-key and inventory working sets; very large individual
-values and these working sets require separate qualification. Shared capture and timer controls pass
+Retained OVER frames and their timestamp-order protocol still use a partition at a time. The general
+adapters also retain per-key and import-inventory working sets; these remain open bounded-memory
+work, including very large individual partitions and values. Asynchronous capture is not a claim
+that every conversion path has a fixed working set. Shared capture and timer controls pass
 on both releases, with representative operator matrices and isolated First-N, grouped arithmetic,
 regular-join, normalization and eager-deduplication jobs on 1.18. The earlier 1.18 cohort passed 861
 checks with 138 window exclusions; shared windows are now separately qualified by 295 runtime
@@ -115,6 +121,10 @@ checks and 408 planner checks, with 54 SESSION TVF capability skips. Released 2.
 six stock and six native invocations across First-N, append/update/retract ranks and eager dedup,
 with positive native canonical-import and subsequent-input evidence. Representative checks do not
 replace the exhaustive CI matrix or expand the partial stock-layout inventory above.
+The metadata streaming cohort passes 614 integration checks on 2.2 and 430 on 1.18, plus 1,449
+native tests and a memory-only native build. Cold-reader controls retain empty metadata maps while
+checking original frame/counter/timer values after live writes; cleanup controls cross batch
+boundaries, fail/retry receivers and cancel reads.
 Conversion cost, barrier duration and temporary I/O have not been benchmarked.
 
 Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending

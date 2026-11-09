@@ -1276,6 +1276,14 @@ canonical memory/RocksDB transitions and aligned RocksDB recovery preserve these
 
 ## Stock canonical state transfer groundwork
 
+Canonical RocksDB capture pins the database at the barrier and creates the reader on Flink's
+asynchronous writer thread on both supported releases. Readers fetch cleanup stamps, processing-
+ROWS counters and RANGE timer metadata from the captured tables without populating maps for every
+key. Fold, pending and cleanup scans share row/byte bounds; processing-ROWS ownership checks use
+streamed partition keys and point reads. Retained frame conversion still works per partition and
+import validation retains its inventories, so fully bounded conversion remains unfinished. These
+changes preserve the existing stock-layout coverage below.
+
 The raw unbounded-fold transfer interface visits resident or typed-RocksDB accumulators directly
 in batches of at most 1,024 keys, with original retention stamps. It preserves raw floating sums,
 independent AVG counts and nullable extrema; import never reconstructs them by replaying input.

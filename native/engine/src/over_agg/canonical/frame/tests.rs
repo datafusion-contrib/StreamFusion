@@ -489,3 +489,55 @@ fn importing_later_partitions_first_does_not_advance_the_processing_time_counter
         }
     }
 }
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn frozen_frame_readers_keep_metadata_on_disk_through_live_updates() {
+    for shape in 0..3 {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("state");
+        let mut source = operator(shape, false, 1000, true, &path);
+        source.bind_canonical_frame_inputs().unwrap();
+        for key in 0..17 {
+            execute(&mut source, Some(key), 1000, Some(key as f64), 100);
+        }
+        source.checkpoint_store("").unwrap();
+        let expected = frames(&source);
+        let protocol = |value: &OverWindowAggregator| {
+            let mut out = Vec::new();
+            if shape == 0 {
+                value
+                    .visit_canonical_processing_rows(|batch| {
+                        out.push(batch);
+                        Ok(())
+                    })
+                    .unwrap();
+            } else if shape == 2 {
+                value
+                    .visit_canonical_range(|batch| {
+                        out.push(batch);
+                        Ok(())
+                    })
+                    .unwrap();
+            }
+            super::super::tests::rows_of(&out)
+        };
+        let expected_protocol = protocol(&source);
+        let snapshot = crate::state::rocks_store::FrozenDatabases::capture(&path).unwrap();
+        execute(&mut source, Some(0), 1001, Some(99.0), 200);
+        source.checkpoint_store("").unwrap();
+        snapshot.with(|| {
+            let mut reader = operator(shape, false, 1000, true, &path);
+            reader.bind_canonical_frame_inputs().unwrap();
+            assert!(reader.cleanup_state.is_empty());
+            assert!(reader.proc_rows.is_empty());
+            assert!(reader.range_timers.is_empty());
+            assert_eq!(frames(&reader), expected);
+            assert_eq!(protocol(&reader), expected_protocol);
+            assert_eq!(reader.retention_bytes, 0);
+            assert!(reader.cleanup_state.is_empty());
+            assert!(reader.proc_rows.is_empty());
+            assert!(reader.range_timers.is_empty());
+        });
+    }
+}

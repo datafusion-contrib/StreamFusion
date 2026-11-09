@@ -146,6 +146,10 @@ impl StateDb {
             .unwrap_or_else(|| ReadView::new(Arc::clone(&self.database)))
     }
 
+    pub(crate) fn is_frozen(&self) -> bool {
+        self.view.is_some()
+    }
+
     pub(crate) fn visit_snapshot_batches(
         &self,
         chunk_rows: usize,

@@ -26,8 +26,10 @@ state graph; stock conversion and serialization execute asynchronously. This cos
 retained memory and does not promise constant-time capture. Unbound private recovery and captured
 JVM operator state keep their existing backend-specific snapshot behavior.
 
-Reusing the stock adapters keeps one definition of each released state layout. It retains temporary
-disk I/O and operator-specific per-key/inventory working sets. Eliminating that staging would require
+Reusing the stock adapters keeps one definition of each released state layout. Window timer
+ledgers and OVER metadata now stream from pinned tables; OVER readers no longer hydrate whole
+cleanup/counter/timer maps. Shared raw scans bound rows and bytes before decoding. Temporary disk
+I/O, retained OVER partitions and operator-specific per-key/import-inventory working sets remain. Eliminating that staging would require
 additional streaming codecs for map/list/timer layouts; it is separate from moving conversion off
 the task thread. The expanded capture mechanisms still require the broader qualification matrix.
 

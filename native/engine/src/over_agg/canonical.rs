@@ -440,65 +440,32 @@ pub extern "system" fn Java_tech_streamfusion_Native_validateOverFoldCanonical<'
 mod tests;
 
 #[cfg(feature = "rocksdb-state")]
-#[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_prepareOverCanonicalReadView<'local>(
-    env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    handle: jlong,
-) {
-    crate::bridge::jni_guard(env, move |mut env| {
-        let operator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
-        if let Err(error) = operator.prepare_canonical_read_view() {
-            let _ = env.throw_new("tech/streamfusion/NativeException", error.to_string());
-        }
-    });
+impl OverWindowAggregator {
+    fn frozen_store(&self) -> Option<&crate::state::RocksOverAggStore> {
+        self.store.as_ref().filter(|store| store.is_frozen())
+    }
 }
 
-#[cfg(feature = "rocksdb-state")]
 impl OverWindowAggregator {
-    fn prepare_canonical_read_view(&mut self) -> Result<(), DataFusionError> {
-        let store = self.store.as_ref().expect("canonical RocksDB reader");
-        if self.processing_rows() {
-            for (key, bytes) in store.scan_proc_rows()? {
-                self.proc_rows
-                    .insert(ByteKey(key), ProcRowsState::decode(&bytes)?);
-            }
+    fn canonical_cleanup_stamp(&self, key: &[u8]) -> Result<Option<i64>, DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = self.frozen_store() {
+            return Ok(store
+                .cleanup_stamp(self.store_fold_key_group(key), key)?
+                .map(|(stamp, _)| stamp));
         }
-        if self.range_offset().is_some() {
-            for (key, stamp) in store.scan_stamps()? {
-                self.cleanup_state.insert(ByteKey(key), stamp);
-            }
-            for (key, bytes) in store.scan_range_timers()? {
-                self.range_timers
-                    .insert(ByteKey(key), RangeTimers::decode(&bytes)?);
-            }
-        } else {
-            for (key, stamp, armed) in store.scan_cleanup_stamps()? {
-                let key = ByteKey(key);
-                if !armed {
-                    self.event_cleanup_unarmed.insert(key.clone());
-                }
-                self.cleanup_state.insert(key, stamp);
-            }
+        Ok(self.cleanup_state.get(key).copied())
+    }
+
+    fn canonical_range_timers(&self, key: &[u8]) -> Result<Option<RangeTimers>, DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = self.frozen_store() {
+            return store
+                .range_timer_state(self.store_fold_key_group(key), key)?
+                .map(|value| RangeTimers::decode(&value))
+                .transpose();
         }
-        self.retention_bytes = self.proc_rows_bytes()
-            + self
-                .cleanup_state
-                .keys()
-                .map(|key| byte_key_bytes(&key.0))
-                .sum::<usize>()
-            + self
-                .range_timers
-                .iter()
-                .map(|(key, timers)| byte_key_bytes(&key.0) + timers.bytes())
-                .sum::<usize>()
-            + self
-                .event_cleanup_unarmed
-                .iter()
-                .map(|key| byte_key_bytes(&key.0))
-                .sum::<usize>();
-        self.memory.set(self.retention_bytes);
-        self.memory.account()
+        Ok(self.range_timers.get(key).cloned())
     }
 }
 
