@@ -925,6 +925,7 @@ threads; GC activity is not exact stop-the-world pause time and heap summaries a
 
 `hotspot_mode=recovery-diagnostics` repeats the complete 54-case binary collection class
 on Flink 1.18/JDK 17 with alternating 2/4 GiB heaps, retaining its 28 existing skips.
+All four trials retain that Flink line when selecting profiles and validating outcomes.
 It logs recovery result-accumulator presence, encoded sizes and heap usage alongside JFR
 and GC logs. The optional `ci-diagnostics` Maven profile supplies an error-level SLF4J
 provider with explicit accumulator-registry warnings so task-side serialization errors are

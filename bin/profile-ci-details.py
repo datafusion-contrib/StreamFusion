@@ -90,8 +90,8 @@ def profile(output, line, suite):
             raw = log.read_text()
             lines = raw.splitlines()
             diagnostic = set()
-            for number, line in enumerate(lines):
-                if any(word in line for word in ["Failed to serialize accumulators", "OutOfMemoryError", "exceeds the maximum"]):
+            for number, log_line in enumerate(lines):
+                if any(word in log_line for word in ["Failed to serialize accumulators", "OutOfMemoryError", "exceeds the maximum"]):
                     diagnostic.update(range(max(0, number - 1), min(len(lines), number + 28)))
             trial["diagnostic_messages"] = [lines[n][:1500] for n in sorted(diagnostic)][-240:]
             trial["recovery_messages"] = [line[:1500] for line in raw.splitlines()
