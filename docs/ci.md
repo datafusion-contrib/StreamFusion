@@ -1135,6 +1135,14 @@ temporary fixtures, and leaves normal JVM options unchanged outside each measure
 
 Recent failure diagnoses:
 
+- [CI 42616136585](https://github.com/liuyongvs/StreamFusion/actions/runs/42616136585):
+  the JSON UNION fallback Top-N fixture sorted only by a nullable value and compared raw
+  changelog histories from independent executions. UNION input interleaving changes transient
+  updates, and tied sort values leave the selected row identities unspecified. The fixture now
+  adds the unique row ID to the sort key and checks the materialized final changelog against
+  all 17 expected IDs, NULL values and multiplicities, with and without chaining. Complete
+  fallback and absence of native execution remain required; other cases retain their existing
+  changelog comparisons, including explicit coverage of every row kind across native UNION.
 - [Upstream suite 42598514603](https://github.com/liuyongvs/StreamFusion/actions/runs/42598514603):
   Paimon's append-only external-path refresh test returned all five expected rows but found no
   file in the original directory. It submits INSERT asynchronously and immediately changes the
