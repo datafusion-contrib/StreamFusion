@@ -142,13 +142,17 @@ public final class Native {
   public static native void importOverCanonicalFrameChunk(
       long handle, long arrayAddress, long schemaAddress, boolean finalChunk, boolean validateOnly);
 
+  /** RANGE retained rows; the owner stays guarded until its separate metadata completes. */
+  public static native void importOverCanonicalFramePayloadChunk(
+      long handle, long arrayAddress, long schemaAddress, boolean finalChunk, boolean validateOnly);
+
   /** Event-time RANGE key protocol, including pending-only keys and empty callbacks. */
   public static native void exportOverCanonicalRange(long handle, BatchReceiver receiver);
 
   /** Flat cleanup values, cutoffs and physical callbacks, bounded independently of owner size. */
   public static native void exportOverCanonicalCallbacks(long handle, BatchReceiver receiver);
 
-  /** Unbounded event-time metadata chunks; unfinished/failed imports cannot run or snapshot. */
+  /** Flat event-time OVER metadata; unfinished/failed imports cannot run or snapshot. */
   public static native void importOverCanonicalCallbacks(
       long handle, long arrayAddress, long schemaAddress, boolean finalChunk, boolean validateOnly);
 

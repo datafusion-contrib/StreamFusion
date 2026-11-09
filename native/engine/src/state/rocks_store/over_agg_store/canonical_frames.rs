@@ -27,6 +27,17 @@ impl RocksOverAggStore {
         }
     }
 
+    pub(crate) fn has_frame_time(&self, prefix: &[u8], time: i64) -> Result<bool, DataFusionError> {
+        let seek = Self::frame_db_key(prefix, time, 0);
+        let mut rows = self.db.raw_iterator();
+        rows.seek(&seek);
+        let found = rows.key().is_some_and(|key| {
+            key.len() == seek.len() && key[..prefix.len() + 8] == seek[..prefix.len() + 8]
+        });
+        rows.status().map_err(re)?;
+        Ok(found)
+    }
+
     pub(crate) fn visit_frame_times(
         &self,
         prefix: &[u8],

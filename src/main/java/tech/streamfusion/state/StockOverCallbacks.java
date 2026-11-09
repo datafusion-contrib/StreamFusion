@@ -19,7 +19,12 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Shared bounded flat OVER metadata bridge, independent of the number of timers per owner. */
 final class StockOverCallbacks {
-  static final byte CLEANUP = 0, LAST_TRIGGER = 1, EVENT = 2, PROCESSING = 3;
+  static final byte CLEANUP = 0,
+      LAST_TRIGGER = 1,
+      EVENT = 2,
+      PROCESSING = 3,
+      OWNER = 4,
+      MAP_ORDER = 5;
 
   private StockOverCallbacks() {}
 

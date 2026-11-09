@@ -86,7 +86,12 @@ inside a hot owner as well as between database batches. Resident metadata uses t
 The disk-backed stock projection installs each scalar or queue entry directly; heap component
 RANGE projections retain their separate map-order path. Native checkpoint bytes retain their format, and the projection continues to use released stock
 serializers. The largest encoded native or stock KV remains a lower bound
-on working memory; RANGE callback/map-order arrays in restore still require incremental transport.
+on working memory. RANGE restore now uses separate bounded frame-payload and flat metadata
+streams. The frame owner stays guarded until cleanup, last trigger, physical timers and map
+membership complete. Heap targets rebuild their normal execution map incrementally; RocksDB
+targets check sorted membership against frame keys without loading frame values or a full
+per-owner timestamp array. Pending-only and timer-only owners use the same bridge. Legacy
+list-based native APIs retain their existing behavior.
 Unbounded event-time OVER restore now uses the same flat records for V1 polling and V2 cleanup
 metadata. Both validation and apply retain only the active owner's cursor, preserving order
 when a chunk separates a cleanup value from its physical callback. Validation installs no
@@ -95,14 +100,15 @@ checkpointing reject unfinished or failed imports. Decoded buffers and timer-vec
 reserved before mutation. Completed owners flush their native metadata once; a hot owner is not
 serialized again for every transfer chunk. The cursor is transient and native checkpoint bytes
 retain their existing format.
-The restore cohort passes 1,493 native checks with two existing ignores and the memory-only build
-passes. Selected OVER controls pass 385 checks on 1.18 and 353 on a clean 2.2 build, with 36 expected
-V1-only skips on 2.2. Each release includes four complete-job handoff/checkpoint scenarios.
-Native controls also check 2,051-owner chunk boundaries, validation without execution-state
-mutation, guarded failures, charged memory denial and one ledger write per completed owner.
-Earlier export controls check exact canonical bytes, continued output and receiver failure/retry
-for hot RANGE and V1 polling owners. These selected controls do not expand operator admission or
-replace exhaustive CI.
+The RANGE/memory cohort passes 1,499 native checks with two existing ignores and the memory-only
+build passes. Selected OVER controls pass 572 checks on 1.18 and 540 on a clean 2.2 build, with
+36 expected V1-only skips on 2.2. Each release includes six complete-job continued handoffs across
+three bounded shapes and both native stores. Four new native RANGE controls cover split row and
+metadata completion, 2,051-entry transfers, peer rows spanning chunks, missing membership, denied
+memory, cancellation and failed writes. Two metadata controls check denial before database writes
+and a 2,051-owner flush under a bounded work allowance. Existing raw-COUNT corruption checks also
+verify C Data releases before Java errors are raised. These selected controls do not expand
+operator admission or replace exhaustive CI.
 
 The barrier pins the databases and immutable reader configuration. Native reader construction,
 metadata hydration and stock conversion all run on the asynchronous writer thread; no restore
@@ -190,9 +196,9 @@ Frame and pending transfers iterate the disk index directly. V1 polling OVER str
 from that index through the shared flat bridge, without a per-owner Java timer array. The native
 import appends to its normal execution ledger. Temporal-join restore still collects its required
 primitive array directly from disk, avoiding intermediate boxed lists; this array remains a
-per-owner working set. RANGE restore still materializes callback
-and map-order arrays at the native protocol boundary; making that import protocol incremental,
-other adapters' inventories and memory capture/accounting remain open work. OVER and temporal-sort
+per-owner working set. RANGE now streams its callbacks and map membership independently of
+frame rows, keeping the restored owner guarded until both finish. Other adapters' inventories
+and memory capture/accounting remain open work. OVER and temporal-sort
 exports now stage each map-list row once in the shared disk spool. A scoped lazy list lets the
 released stock ListSerializer stream each timestamp bucket into the RocksDB projection once,
 without per-row bucket reads or repeated list reconstruction. Heap component backends receive

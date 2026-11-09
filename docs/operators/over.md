@@ -1865,9 +1865,9 @@ frame timestamps through a key-only prefix scan on RocksDB.
 The native suite passes 1,482 tests with two existing ignores, and the memory-only build passes.
 Chunk controls retain 2,051 rows across all three shapes and both native stores, preserve raw
 floating accumulators, reject broken continuations and missing prior RANGE timestamps, and cover
-memory denial, exact-budget transfer and write failure. RANGE callback/map-order arrays at the
-native protocol boundary and large individual encoded stock values still require further
-bounded-memory work. The shared Flink 1.18 cohort passes 537 checks. The corrected 2.2 cohort
+memory denial, exact-budget transfer and write failure. RANGE restore now transfers metadata
+through the same flat bridge used by unbounded event-time OVER. Large individual encoded stock
+values remain an intrinsic working set. The shared Flink 1.18 cohort passes 537 checks. The corrected 2.2 cohort
 passes 311 runtime/accounting checks, alongside 229 frame-bridge controls. Twelve 2,051-row
 handoffs per release cover all three bounded shapes and both stock/native stores. These selected
 cohorts overlap and do not replace exhaustive CI. Scratch indexes close and delete on failure;
@@ -1886,8 +1886,9 @@ and decodes individual rows with the released serializer. This covers bounded pr
 bounded event-time ROWS/RANGE and unbounded event-time pending inputs on both release lines;
 it preserves original per-owner map order and peer order without allocating a complete Java list.
 Pending rows transfer with both row and byte limits. Both bounded ROWS shapes use disk scans and
-scalar inventory summaries even for a hot partition; RANGE restore still materializes callback/map-order
-arrays at its native protocol boundary. V1 polling restore streams physical callbacks directly
+scalar inventory summaries even for a hot partition. RANGE restore streams its callbacks and
+map membership separately from frame payloads, without per-owner transfer arrays. V1 polling
+restore streams physical callbacks directly
 from the disk index through bounded flat batches into its normal native timer ledger. Broader
 operator/layout admission remains separate work.
 A four-store-combination control creates 2,051 distinct processing clocks in stock Flink, verifies
@@ -1912,8 +1913,14 @@ checks cleanup/arming/event order across chunks,
 reserves decode and timer-vector growth before mutation, and blocks processing, export and
 checkpointing until completion. Failed partial targets must close before retrying on a fresh
 target. Native ledger writes occur only at owner boundaries and final completion, avoiding
-repeated serialization of a growing hot-owner ledger. RANGE restore callback/map-order arrays
-remain open work. Native checkpoint formats and operator admission do not change.
+repeated serialization of a growing hot-owner ledger. RANGE restores use bounded payload chunks
+and the same flat metadata transport, keeping each frame owner guarded until its cleanup,
+cutoff, callbacks and timestamp membership complete. Heap targets reconstruct their normal
+execution map incrementally. RocksDB targets require sorted membership and check retained
+timestamps using keys only; peer rows spanning chunks count once. Pending-only and timer-only
+owners share this path. Native checkpoint formats, legacy list-based APIs and operator admission
+do not change. Native metadata writes also reserve encoded keys/values and batch-copy work before
+allocating them, retaining the dirty journal on denial or write failure.
 
 Native controls cover 2,051 callbacks for one owner, keyless records, two-MiB keys, signed timer
 extrema, malformed headers/order, independent pinned versions, empty and mid-owner cancellation,
@@ -1921,10 +1928,13 @@ denied raw/decoded memory, failure/retry and cold reader caches. Java controls r
 RANGE owner and V1 physical callbacks through both source/target stores, compare exact canonical
 bytes, continue output and check C Data release after a receiver exception.
 
-The restore cohort passes 1,493 native tests with two existing ignores, plus the memory-only
-build. Six native restore controls cover hot-owner and 2,051-owner chunk boundaries, separate
-preflight/apply passes, duplicate/order/deadline rejection, denied memory, cancelled and failed
-partial targets, charge release and one ledger write per completed owner. Selected OVER controls
-pass 385 checks on 1.18 and 353 on a clean 2.2 build with 36 expected V1-only skips. Each release
-includes four complete-job handoff/checkpoint scenarios. These overlap earlier cohorts;
-exhaustive CI and broader operator/layout qualification remain separate.
+The RANGE/memory cohort passes 1,499 native tests with two existing ignores, plus the memory-only
+build. Four new RANGE controls cover split frame/metadata completion, 2,051-entry chunks, peer
+rows sharing one timestamp across chunks, omitted membership, denied memory, cancellation,
+failed writes and fresh-target retry. Two metadata controls cover denial before database writes
+and 2,051 owners with a bounded work allowance. Existing Java raw-COUNT corruption checks verify
+that C Data releases before reporting a Java error; cleanup must not clear that error. Selected
+OVER controls pass 572 checks on 1.18 and 540 on a clean 2.2 build, with 36 expected V1-only skips.
+Each release includes six complete-job continued handoffs across three bounded shapes and both
+native stores. These overlap earlier cohorts; exhaustive CI and broader operator/layout
+qualification remain separate.

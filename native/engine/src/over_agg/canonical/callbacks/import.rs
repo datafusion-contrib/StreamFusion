@@ -1,10 +1,14 @@
 use super::*;
 
+mod range;
+use range::RangePhase;
+
 #[derive(Clone, Copy, Default)]
 struct Phase {
     stage: u8,
     deadline: Option<i64>,
     last_event: Option<i64>,
+    range: Option<RangePhase>,
 }
 
 impl Phase {
@@ -14,7 +18,15 @@ impl Phase {
         time: i64,
         polling: bool,
         cleaning: bool,
+        range: bool,
+        ordered: bool,
     ) -> Result<(), DataFusionError> {
+        if range {
+            return self
+                .range
+                .get_or_insert_default()
+                .advance(kind, time, ordered);
+        }
         match kind {
             CLEANUP if cleaning && self.stage == 0 => {
                 self.stage = 1;
@@ -62,16 +74,13 @@ impl OverWindowAggregator {
         let journal = self.metadata_updates.bytes;
         #[cfg(not(feature = "rocksdb-state"))]
         let journal = 0;
-        self.retention_bytes + journal
+        self.retained_state_bytes() + journal
     }
 
     // A hot owner's ledger stays incomplete across chunks; account without serializing it again.
     fn account_callback_state(&mut self) -> Result<(), DataFusionError> {
         if self.memory.tracking() {
-            let bytes = self.retained_state_bytes()
-                + self
-                    .callback_metadata_bytes()
-                    .saturating_sub(self.retention_bytes);
+            let bytes = self.callback_metadata_bytes();
             self.memory.set(bytes);
             self.memory.account()?;
         }
@@ -84,10 +93,14 @@ impl OverWindowAggregator {
         validating: bool,
     ) -> Result<PreparedCallbacks, DataFusionError> {
         self.canonical_event()?;
-        if self.range_offset().is_some() {
-            return Err(invalid(
-                "RANGE callback restore requires its frame protocol",
-            ));
+        let range = self.range_offset().is_some();
+        if range
+            && self
+                .canonical_frame_import
+                .as_ref()
+                .is_some_and(|frame| frame.failed || !frame.awaiting_protocol)
+        {
+            return Err(invalid("RANGE frame payload is incomplete or failed"));
         }
         if self
             .canonical_callbacks_import
@@ -104,6 +117,9 @@ impl OverWindowAggregator {
             return Err(invalid("callback restore pass changed before completion"));
         }
         check_cancelled()?;
+        if range && batch.num_rows() == 0 && self.canonical_callbacks_import.is_none() {
+            return Err(invalid("missing RANGE callback owner"));
+        }
         let arity = self.key_columns.len();
         if batch.num_columns() != arity + 2
             || batch.schema().field(arity).name() != "__over_callback_kind"
@@ -149,9 +165,13 @@ impl OverWindowAggregator {
             .canonical_callbacks_import
             .as_ref()
             .map_or_else(Phase::default, |state| state.phase);
+        let mut map_times = ahash::HashSet::default();
         for row in 0..batch.num_rows() {
             let key = keys.row(row);
             if active != Some(key.data()) {
+                if range && active.is_some() {
+                    return Err(invalid("mixed RANGE callback owner"));
+                }
                 phase = Phase::default();
                 active = Some(key.data());
             }
@@ -160,7 +180,15 @@ impl OverWindowAggregator {
                 times.value(row),
                 self.event_polling,
                 self.deadline_cleaning(),
+                range,
+                self.persistent_callbacks(),
             )?;
+            if range && kinds.value(row) == OWNER && self.range_timers.contains_key(key.data()) {
+                return Err(invalid("duplicate RANGE callback owner"));
+            }
+            if range && kinds.value(row) == MAP_ORDER && !map_times.insert(times.value(row)) {
+                return Err(invalid("duplicate RANGE map timestamp"));
+            }
             if kinds.value(row) == EVENT
                 && self
                     .range_timers
@@ -198,6 +226,8 @@ impl OverWindowAggregator {
         let base = prepared.work.as_ref().map_or(0, MemoryReservation::size);
         let mut initial_metadata = self.callback_metadata_bytes();
         let cleaning = self.deadline_cleaning();
+        let range = self.range_offset().is_some();
+        let ordered = self.persistent_callbacks();
         self.inner.seed_key_codec(&prepared.types);
         self.key_converter = prepared.converter.take();
         for row in 0..prepared.times.len() {
@@ -235,7 +265,7 @@ impl OverWindowAggregator {
                     0
                 }
             } else {
-                0
+                self.range_record_growth(encoded.data(), kind)
             };
             if let Some(work) = &mut prepared.work {
                 work.try_resize(
@@ -269,13 +299,13 @@ impl OverWindowAggregator {
                 .as_mut()
                 .unwrap()
                 .phase
-                .advance(kind, time, self.event_polling, cleaning)?;
+                .advance(kind, time, self.event_polling, cleaning, range, ordered)?;
             match kind {
                 CLEANUP => {
                     if self.cleanup_state.insert(key.clone(), time).is_none() {
                         self.retention_bytes += key_bytes;
                     }
-                    if self.event_cleanup_unarmed.insert(key.clone()) {
+                    if !range && self.event_cleanup_unarmed.insert(key.clone()) {
                         self.retention_bytes += key_bytes;
                     }
                 }
@@ -293,6 +323,7 @@ impl OverWindowAggregator {
                     timers.armed.push(time);
                     self.retention_bytes += timers.bytes() - previous;
                 }
+                OWNER | LAST_TRIGGER | MAP_ORDER => self.apply_range_record(&key, kind, time)?,
                 _ => unreachable!("validated callback kind"),
             }
             self.mark_store_metadata(&key.0);
@@ -305,6 +336,18 @@ impl OverWindowAggregator {
         mut prepared: PreparedCallbacks,
         final_chunk: bool,
     ) -> Result<(), DataFusionError> {
+        if final_chunk && self.range_offset().is_some() {
+            let key = if prepared.times.is_empty() {
+                self.canonical_callbacks_import
+                    .as_ref()
+                    .map(|state| state.key.0.as_ref())
+            } else {
+                Some(prepared.keys.row(prepared.times.len() - 1).data())
+            };
+            if let Some(key) = key {
+                self.check_range_callback_end(key, &prepared.phase, true)?;
+            }
+        }
         let next = if !final_chunk && !prepared.times.is_empty() {
             let key = prepared.keys.row(prepared.times.len() - 1);
             if let Some(work) = &mut prepared.work {
@@ -336,7 +379,7 @@ impl OverWindowAggregator {
         self.account_callback_state()
     }
 
-    pub(super) fn transfer_canonical_callbacks(
+    pub(in crate::over_agg) fn transfer_canonical_callbacks(
         &mut self,
         batch: &RecordBatch,
         final_chunk: bool,
@@ -351,7 +394,15 @@ impl OverWindowAggregator {
                 self.apply_callbacks(prepared)?;
                 self.account_callback_state()?;
                 if final_chunk {
+                    if self.range_offset().is_some() {
+                        if let Some(state) = &self.canonical_callbacks_import {
+                            self.check_range_callback_end(&state.key.0, &state.phase, false)?;
+                        }
+                    }
                     self.account()?;
+                    if self.range_offset().is_some() {
+                        self.finish_range_callback_frame();
+                    }
                     if let Some(state) = self.canonical_callbacks_import.take() {
                         self.retention_bytes -= state.bytes();
                     }
@@ -360,6 +411,11 @@ impl OverWindowAggregator {
                 Ok(())
             });
         if result.is_err() {
+            if self.range_offset().is_some() && !validating {
+                if let Some(frame) = &mut self.canonical_frame_import {
+                    frame.failed = true;
+                }
+            }
             if let Some(state) = &mut self.canonical_callbacks_import {
                 state.failed = true;
                 let _ = self.account_callback_state();

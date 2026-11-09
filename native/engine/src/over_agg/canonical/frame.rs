@@ -85,14 +85,16 @@ fn read_tail_list(batch: &RecordBatch, column: usize) -> Result<Option<Vec<i64>>
 }
 
 pub(in crate::over_agg) struct FrameImport {
-    key: ByteKey,
+    pub(super) key: ByteKey,
     position: i64,
-    last_time: i64,
-    failed: bool,
+    pub(super) last_time: i64,
+    pub(super) failed: bool,
+    pub(super) awaiting_protocol: bool,
+    pub(super) distinct_times: usize,
 }
 
 impl FrameImport {
-    fn bytes(&self) -> usize {
+    pub(super) fn bytes(&self) -> usize {
         std::mem::size_of::<Self>() + byte_key_bytes(&self.key.0)
     }
 }
@@ -111,6 +113,7 @@ struct FrameChunk {
     position: i64,
     next_seq: i64,
     work: Option<MemoryReservation>,
+    external_protocol: bool,
 }
 
 impl OverWindowAggregator {
@@ -390,8 +393,32 @@ impl OverWindowAggregator {
         final_chunk: bool,
         validate_only: bool,
     ) -> Result<(), DataFusionError> {
+        self.transfer_frame_chunk(batch, final_chunk, validate_only, false)
+    }
+
+    pub(in crate::over_agg) fn import_canonical_frame_payload_chunk(
+        &mut self,
+        batch: &RecordBatch,
+        final_chunk: bool,
+        validate_only: bool,
+    ) -> Result<(), DataFusionError> {
+        if self.range_offset().is_none() || self.canonical_callbacks_import.is_some() {
+            return Err(invalid(
+                "separate frame protocol requires an idle RANGE importer",
+            ));
+        }
+        self.transfer_frame_chunk(batch, final_chunk, validate_only, true)
+    }
+
+    fn transfer_frame_chunk(
+        &mut self,
+        batch: &RecordBatch,
+        final_chunk: bool,
+        validate_only: bool,
+        external_protocol: bool,
+    ) -> Result<(), DataFusionError> {
         let result = self
-            .decode_frame_chunk(batch, final_chunk)
+            .decode_frame_chunk(batch, final_chunk, external_protocol)
             .and_then(|chunk| {
                 if validate_only {
                     Ok(())
@@ -414,6 +441,7 @@ impl OverWindowAggregator {
         &self,
         batch: &RecordBatch,
         final_chunk: bool,
+        external_protocol: bool,
     ) -> Result<FrameChunk, DataFusionError> {
         let inner = self.canonical_frame()?;
         let folds = inner.fold_types.clone();
@@ -571,10 +599,12 @@ impl OverWindowAggregator {
         let timers = read_tail_list(batch, cleanup_column + 2)?;
         let order = read_tail_list(batch, cleanup_column + 3)?;
         let range = self.range_offset().is_some();
-        if cleanup.is_some() != (final_chunk && (range || self.deadline_cleaning())) {
+        if cleanup.is_some()
+            != (final_chunk && !external_protocol && (range || self.deadline_cleaning()))
+        {
             return Err(invalid("frame cleanup deadline is missing or unexpected"));
         }
-        if range && final_chunk {
+        if range && final_chunk && !external_protocol {
             if last_trigger.is_none_or(|fired| fired < times.value(last))
                 || timers.is_none()
                 || order.is_none()
@@ -658,6 +688,7 @@ impl OverWindowAggregator {
             position: positions.value(0),
             next_seq,
             work,
+            external_protocol,
         })
     }
 
@@ -669,6 +700,7 @@ impl OverWindowAggregator {
         let inner = self.canonical_frame()?;
         if let Some(import) = &self.canonical_frame_import {
             if import.failed
+                || import.awaiting_protocol
                 || import.key != chunk.key
                 || import.position != chunk.position
                 || if self.proctime {
@@ -737,6 +769,8 @@ impl OverWindowAggregator {
                 position: 0,
                 last_time: chunk.rows[0].rt,
                 failed: false,
+                awaiting_protocol: false,
+                distinct_times: 0,
             };
             self.retention_bytes += import.bytes();
             self.canonical_frame_import = Some(import);
@@ -746,6 +780,15 @@ impl OverWindowAggregator {
         self.key_converter = chunk.converter;
         self.input_schema = Some(chunk.original.schema());
         let last_time = chunk.rows.last().unwrap().rt;
+        let distinct_times = 1 + chunk
+            .rows
+            .windows(2)
+            .filter(|rows| rows[0].rt != rows[1].rt)
+            .count()
+            - usize::from(
+                chunk.position != 0
+                    && self.canonical_frame_import.as_ref().unwrap().last_time == chunk.rows[0].rt,
+            );
         #[cfg(feature = "rocksdb-state")]
         if persistent {
             self.write_canonical_frame(&chunk.key.0, &chunk.rows, &chunk.folds)?;
@@ -801,7 +844,7 @@ impl OverWindowAggregator {
             self.retention_bytes += byte_key_bytes(&chunk.key.0) + protocol.bytes();
             self.range_timers.insert(chunk.key.clone(), protocol);
         }
-        if final_chunk {
+        if final_chunk && !chunk.external_protocol {
             self.mark_store_metadata(&chunk.key.0);
         }
         if self.proctime {
@@ -814,10 +857,12 @@ impl OverWindowAggregator {
         let import = self.canonical_frame_import.as_mut().unwrap();
         import.position = end;
         import.last_time = last_time;
+        import.distinct_times += distinct_times;
+        import.awaiting_protocol = final_chunk && chunk.external_protocol;
         drop(chunk.rows);
         drop(chunk.work);
         self.account()?;
-        if final_chunk {
+        if final_chunk && !chunk.external_protocol {
             let import = self.canonical_frame_import.take().unwrap();
             self.retention_bytes -= import.bytes();
             drop(import);
@@ -941,6 +986,32 @@ pub extern "system" fn Java_tech_streamfusion_Native_importOverCanonicalFrameChu
     crate::bridge::jni_guard(env, move |mut env| {
         let operator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
         let result = operator.import_canonical_frame_chunk(
+            &import_record_batch(array, schema),
+            final_chunk != 0,
+            validate_only != 0,
+        );
+        if let Err(error) = result {
+            report(&mut env, error);
+        }
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_importOverCanonicalFramePayloadChunk<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    array: jlong,
+    schema: jlong,
+    final_chunk: jni::sys::jboolean,
+    validate_only: jni::sys::jboolean,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let operator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
+        // Release imported C Data before raising an exception: buffer cleanup may invoke JNI.
+        let result = operator.import_canonical_frame_payload_chunk(
             &import_record_batch(array, schema),
             final_chunk != 0,
             validate_only != 0,

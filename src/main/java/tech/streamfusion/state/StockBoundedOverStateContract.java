@@ -25,7 +25,6 @@ import org.apache.flink.runtime.state.VoidNamespace;
 import org.apache.flink.runtime.state.VoidNamespaceSerializer;
 import org.apache.flink.streaming.api.operators.TimerHeapInternalTimer;
 import org.apache.flink.streaming.api.operators.TimerSerializer;
-import org.apache.flink.table.data.GenericArrayData;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.binary.BinaryRowData;
@@ -536,7 +535,8 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       CheckpointableKeyedStateBackend<RowData> backend,
       StockStateSpool partitions,
       StockMapListSnapshot lists,
-      long handle)
+      long handle,
+      boolean persistent)
       throws Exception {
     var inventory = new HashMap<String, StockStateInventory.State>();
     stateDescriptors()
@@ -565,7 +565,9 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     try (var owners = partitions.owners()) {
       while (owners.hasNext()) {
         var partition = readPartition(backend, partitions, lists, owners.next());
-        transferFrames(partitions, lists, handle, partition, true);
+        transferFrames(lists, handle, partition, true);
+        if (!processingRows && !eventRows)
+          transferProtocol(partitions, lists, handle, partition, persistent, true);
         transferPending(lists, handle, partition, true);
       }
     }
@@ -688,11 +690,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   }
 
   private void transferFrames(
-      StockStateSpool partitions,
-      StockMapListSnapshot lists,
-      long handle,
-      Partition partition,
-      boolean validating)
+      StockMapListSnapshot lists, long handle, Partition partition, boolean validating)
       throws Exception {
     long total = partition.retainedRows;
     if (total == 0) return;
@@ -725,19 +723,9 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
               row.setField(
                   base + 4 + p, get(partition.accumulator, accumulatorType, accumulatorFields[p]));
             int p = base + 4 + accumulatorFields.length;
-            row.setField(p, partition.cleanup);
-            if (!eventRows) row.setField(p + 1, partition.last);
-            if (!processingRows && !eventRows) {
-              row.setField(
-                  p + 2,
-                  new GenericArrayData(
-                      StockStateSpool.collectTimes(
-                          partitions.times(1, partition.key), partition.timerCount)));
-              row.setField(
-                  p + 3,
-                  new GenericArrayData(
-                      StockStateSpool.collectTimes(
-                          lists.timestamps(partition.key), partition.bucketCount)));
+            if (processingRows || eventRows) {
+              row.setField(p, partition.cleanup);
+              if (!eventRows) row.setField(p + 1, partition.last);
             }
           }
           frames.add(row);
@@ -750,7 +738,11 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
 
   private void sendFrameChunk(long handle, List<RowData> frames, boolean last, boolean validating) {
     send(
-        (h, a, s) -> Native.importOverCanonicalFrameChunk(h, a, s, last, validating),
+        (h, a, s) -> {
+          if (!processingRows && !eventRows)
+            Native.importOverCanonicalFramePayloadChunk(h, a, s, last, validating);
+          else Native.importOverCanonicalFrameChunk(h, a, s, last, validating);
+        },
         handle,
         frameType,
         frames,
@@ -758,7 +750,12 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   }
 
   private void transferProtocol(
-      StockStateSpool partitions, StockMapListSnapshot lists, long handle, Partition partition)
+      StockStateSpool partitions,
+      StockMapListSnapshot lists,
+      long handle,
+      Partition partition,
+      boolean persistent,
+      boolean validating)
       throws Exception {
     int k = keyType.getFieldCount();
     if (processingRows) {
@@ -773,22 +770,23 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
           protocolType,
           List.of(metadata),
           false);
-    } else if (!eventRows && partition.accumulator == null) {
-      var row = new GenericRowData(protocolType.getFieldCount());
-      for (int p = 0; p < k; p++) row.setField(p, get(partition.key, keyType, p));
-      row.setField(k, partition.cleanup);
-      row.setField(k + 1, partition.last);
-      row.setField(
-          k + 2,
-          new GenericArrayData(
-              StockStateSpool.collectTimes(
-                  partitions.times(1, partition.key), partition.timerCount)));
-      row.setField(
-          k + 3,
-          new GenericArrayData(
-              StockStateSpool.collectTimes(
-                  lists.timestamps(partition.key), partition.bucketCount)));
-      send(Native::importOverCanonicalRange, handle, protocolType, List.of(row), false);
+    } else if (!eventRows) {
+      var writer = new StockOverCallbacks.Writer(handle, keyType, validating);
+      writer.append(partition.key, StockOverCallbacks.OWNER, partition.bucketCount);
+      if (partition.cleanup != null)
+        writer.append(partition.key, StockOverCallbacks.CLEANUP, partition.cleanup);
+      if (partition.last != null)
+        writer.append(partition.key, StockOverCallbacks.LAST_TRIGGER, partition.last);
+      try (var times = partitions.times(1, partition.key)) {
+        while (times.hasNext())
+          writer.append(partition.key, StockOverCallbacks.EVENT, times.next());
+      }
+      try (var times =
+          persistent ? lists.sortedTimestamps(partition.key) : lists.timestamps(partition.key)) {
+        while (times.hasNext())
+          writer.append(partition.key, StockOverCallbacks.MAP_ORDER, times.next());
+      }
+      writer.finish();
     }
   }
 
@@ -837,12 +835,12 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       throws Exception {
     try (var partitions = new StockStateSpool(new RowDataSerializer(keyType))) {
       var lists = new StockMapListSnapshot(partitions, new RowDataSerializer(inputType), 2);
-      preflight(backend, partitions, lists, handle);
+      preflight(backend, partitions, lists, handle, persistent);
       try (var owners = partitions.owners()) {
         while (owners.hasNext()) {
           var partition = readPartition(backend, partitions, lists, owners.next());
-          transferFrames(partitions, lists, handle, partition, false);
-          transferProtocol(partitions, lists, handle, partition);
+          transferFrames(lists, handle, partition, false);
+          transferProtocol(partitions, lists, handle, partition, persistent, false);
           transferPending(lists, handle, partition, false);
         }
       }

@@ -5,6 +5,8 @@ const CLEANUP: i8 = 0;
 const LAST_TRIGGER: i8 = 1;
 const EVENT: i8 = 2;
 const PROCESSING: i8 = 3;
+const OWNER: i8 = 4;
+const MAP_ORDER: i8 = 5;
 const CHUNK_BYTES: usize = 4 * 1024 * 1024;
 
 struct CallbackWriter<F> {
