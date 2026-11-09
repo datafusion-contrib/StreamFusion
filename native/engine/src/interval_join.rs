@@ -1362,6 +1362,14 @@ impl IntervalJoiner {
         Ok(())
     }
 
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        if let Some(reader) = self.store.as_ref().unwrap().legacy_snapshot_reader()? {
+            reader.migrate(|partitions, timer| self.import_partitions(partitions, timer))?;
+        }
+        Ok(())
+    }
+
     /// The complete buffered state in the memory snapshot's per-key-group four-section encoding
     /// (both sides' rows plus the matched-id sets derived from the stored flags), for
     /// backend-independent canonical savepoints.

@@ -283,7 +283,8 @@ for other conversion stages remain part of the accounting audit.
 
 ### Retained nested rows
 
-Buffered event-time deduplication, event-time sort and window rank/deduplication share a retained-row
+Buffered event-time deduplication, event-time sort, window rank/deduplication, OVER retained input
+and interval/temporal join payloads share a retained-row
 codec for scalar, ROW, ARRAY and MAP payloads. It reuses Arrow's row encoding, treating map payloads
 as their equivalent list/struct buffers without copying the columns or changing entry order.
 Decode restores the declared child fields and metadata. Scalar row bytes remain unchanged.

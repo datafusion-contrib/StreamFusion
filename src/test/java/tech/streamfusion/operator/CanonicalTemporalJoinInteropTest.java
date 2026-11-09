@@ -396,13 +396,18 @@ class CanonicalTemporalJoinInteropTest {
 
   static KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
       nativeHarness(boolean rocks, long retention, boolean outer) throws Exception {
-    var operator = new CanonicalTemporal(retention, outer);
+    return nativeHarness(rocks, retention, outer, INPUT);
+  }
+
+  static KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+      nativeHarness(boolean rocks, long retention, boolean outer, RowType input) throws Exception {
+    var operator = new CanonicalTemporal(retention, outer, input);
     var contract =
         new StockTemporalJoinStateContract(
             new RowDataSerializer(KEY),
             KEY,
-            INPUT,
-            INPUT,
+            input,
+            input,
             new int[] {0},
             new int[] {0},
             2,
@@ -480,15 +485,15 @@ class CanonicalTemporalJoinInteropTest {
   private static final class CanonicalTemporal extends NativeTemporalJoinOperator {
     private boolean canonical;
 
-    CanonicalTemporal(long retention, boolean outer) {
+    CanonicalTemporal(long retention, boolean outer, RowType input) {
       super(
           new int[] {0},
           new int[] {0},
           2,
           2,
           outer ? 1 : 0,
-          INPUT,
-          INPUT,
+          input,
+          input,
           EncodedPredicate.NONE,
           new int[] {-1},
           retention,

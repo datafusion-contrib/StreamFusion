@@ -293,6 +293,15 @@ class CanonicalIntervalJoinInteropTest {
     }
 
     Plan(int kind, boolean timestamp, String keyEncoding, boolean processingTime) {
+      this(kind, timestamp, keyEncoding, processingTime, null);
+    }
+
+    Plan(
+        int kind,
+        boolean timestamp,
+        String keyEncoding,
+        boolean processingTime,
+        LogicalType payload) {
       this.processingTime = processingTime;
       this.kind = kind;
       this.timestamp = timestamp;
@@ -326,16 +335,19 @@ class CanonicalIntervalJoinInteropTest {
         default:
           key = new BigIntType();
       }
-      input =
-          RowType.of(
-              key,
-              new BigIntType(),
-              timestamp
-                  ? processingTime
-                      ? new org.apache.flink.table.types.logical.LocalZonedTimestampType(
-                          false, org.apache.flink.table.types.logical.TimestampKind.PROCTIME, 3)
-                      : new TimestampType(3)
-                  : new BigIntType());
+      var columns =
+          new ArrayList<LogicalType>(
+              List.of(
+                  key,
+                  new BigIntType(),
+                  timestamp
+                      ? processingTime
+                          ? new org.apache.flink.table.types.logical.LocalZonedTimestampType(
+                              false, org.apache.flink.table.types.logical.TimestampKind.PROCTIME, 3)
+                          : new TimestampType(3)
+                      : new BigIntType()));
+      if (payload != null) columns.add(payload);
+      input = RowType.of(columns.toArray(new LogicalType[0]));
       var fields = new ArrayList<RowType.RowField>();
       for (int side = 0; side < 2; side++)
         for (int column = 0; column < input.getFieldCount(); column++)

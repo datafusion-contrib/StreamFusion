@@ -48,6 +48,12 @@ case is defined against released RocksDB rather than heap state.
 
 ## Admission
 
+Retained ROW/ARRAY/MAP payloads use the shared native RocksDB row codec. Qualified canonical
+contracts pin their native read view and convert bounded frames asynchronously, without a whole
+heap projection. Legacy blob-backed checkpoints migrate one key-group partition at a time,
+preserving outer match flags and the processing deadline through aligned or clipped restore.
+Partition-key and residual-expression admission remain independent of the payload codec.
+
 Equi-keys use the [verified scalar whitelist](../window-aggregate.md#scalar-grouping-and-partition-keys):
 all integer widths, FLOAT/DOUBLE, character, BOOLEAN, DATE, TIME, TIMESTAMP/LTZ, DECIMAL, binary and intervals,
 including multiple scalar key columns. Collection/ROW/object key columns

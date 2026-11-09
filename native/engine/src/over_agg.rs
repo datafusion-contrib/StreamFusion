@@ -3429,6 +3429,14 @@ impl OverWindowAggregator {
         Ok(())
     }
 
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        if let Some(reader) = self.store.as_ref().unwrap().legacy_snapshot_reader()? {
+            reader.migrate(|partitions, _timer| self.import_partitions(partitions))?;
+        }
+        Ok(())
+    }
+
     /// One restored unbounded-fold batch (`[key0.., state0.., distinct lists.., stamp?]`) into
     /// the folds and distinct tables.
     #[cfg(feature = "rocksdb-state")]
@@ -3437,6 +3445,9 @@ impl OverWindowAggregator {
         batch: &RecordBatch,
         state_count: usize,
     ) -> Result<(), DataFusionError> {
+        if batch.num_rows() == 0 {
+            return Ok(());
+        }
         let stamps = retention_stamps(batch);
         let arity = batch.num_columns()
             - state_count

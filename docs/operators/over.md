@@ -1792,6 +1792,14 @@ processing cleanup and the wider rescale/version/failure/connector matrix remain
 
 ## Canonical capture on both Flink lines
 
+Canonical-capable OVER operators retain ROW/ARRAY/MAP payload fields in direct native RocksDB
+through the shared retained-row codec. Canonical savepoints pin those rows and convert them on
+the asynchronous writer, including pending input and original bounded-frame inputs. This does
+not widen aggregate-state, partition-key or ordering contracts. Existing snapshot-backed native
+checkpoints migrate one key-group partition at a time; empty accumulator batches do not replace
+the configured key schema when only pending input was saved. Scalar checkpoint row bytes remain
+compatible.
+
 Processing-time unbounded scalar folds on native RocksDB now pin the existing database at the
 savepoint barrier. Flink's asynchronous canonical writer reads bounded frames and serializes them
 with the released stock accumulator/key serializers. Memory folds capture independent native

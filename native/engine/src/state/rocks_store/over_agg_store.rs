@@ -1,3 +1,4 @@
+use super::retained_rows::RetainedRows;
 use super::{
     checkpoint_files, copy_checkpoint_db, multi_get_pinned, open_shared_db, prefix_successor, re,
     FlinkWriteBatch, OpenedDb, PAIR_FIRST_TABLE, PAIR_SECOND_TABLE,
@@ -81,6 +82,12 @@ pub(crate) struct RocksOverFoldSnapshot {
 }
 
 impl RocksOverAggStore {
+    pub(crate) fn legacy_snapshot_reader(
+        &self,
+    ) -> Result<Option<super::legacy_snapshot::LegacySnapshotReader>, DataFusionError> {
+        super::legacy_snapshot::LegacySnapshotReader::open(&self.db)
+    }
+
     pub(crate) fn canonical_fold_snapshot(
         &self,
         types: &[DataType],
@@ -159,7 +166,7 @@ pub(crate) struct RocksOverAggStore {
     /// One element codec per DISTINCT aggregate slot, in gate order.
     distinct_converters: Vec<RowConverter>,
     distinct_element_types: Vec<DataType>,
-    payload_converter: RowConverter,
+    payload_converter: RetainedRows,
     payload_schema: SchemaRef,
     watermark: i64,
     next_seq: u64,
@@ -201,7 +208,7 @@ impl RocksOverAggStore {
         if !rocks_row_supported(state_types)
             || !rocks_row_supported(frame_value_types)
             || !rocks_row_supported(distinct_element_types)
-            || !rocks_row_supported(&payload_types)
+            || !RetainedRows::supported(&payload_types)
         {
             return Err(DataFusionError::Plan(
                 "over state shape not supported by RocksDB".into(),
@@ -353,7 +360,7 @@ impl RocksOverAggStore {
                 .map(|element| converter(std::slice::from_ref(element)))
                 .collect::<Result<_, _>>()?,
             distinct_element_types: distinct_element_types.to_vec(),
-            payload_converter: converter(&payload_types)?,
+            payload_converter: RetainedRows::new(&payload_types)?,
             payload_schema,
             watermark: i64::MIN,
             next_seq: 0,
@@ -1176,8 +1183,7 @@ impl RocksOverAggStore {
         }
         let rows = self
             .payload_converter
-            .convert_columns(&batch.columns()[..self.payload_schema.fields().len()])
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+            .encode(&batch.columns()[..self.payload_schema.fields().len()])?;
         let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, key_timestamp_precisions);
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (index, row) in rows.iter().enumerate() {
@@ -1380,13 +1386,13 @@ impl RocksOverAggStore {
         rows: impl Iterator<Item = &'a [u8]>,
     ) -> Result<RecordBatch, DataFusionError> {
         let tagged = self.payload_insert_companion(schema)?;
-        let parser = self.payload_converter.parser();
-        let parsed: Vec<_> = rows.map(|bytes| parser.parse(bytes)).collect();
-        let count = parsed.len();
-        let mut columns = self
-            .payload_converter
-            .convert_rows(parsed)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let rows: Vec<_> = rows.collect();
+        let count = rows.len();
+        let types: Vec<_> = schema.fields()[..self.payload_schema.fields().len()]
+            .iter()
+            .map(|field| field.data_type().clone())
+            .collect();
+        let mut columns = self.payload_converter.decode_as(rows, &types)?;
         if tagged {
             columns.push(Arc::new(Int8Array::from(vec![0; count])));
         }

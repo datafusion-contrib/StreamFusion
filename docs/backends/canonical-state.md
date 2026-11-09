@@ -105,6 +105,20 @@ selection also includes six buffered-winner captures across nested keys and TTL 
 parameter/pair selections do not establish exhaustive or cross-release upgrade qualification.
 Retained grouped DISTINCT with per-entry TTL
 is outside current canonical admission and remains later coverage expansion.
+OVER retained input and interval/temporal join payloads now use that same retained-row codec.
+Already-canonical ROW/ARRAY/MAP payloads therefore remain in native RocksDB instead of selecting
+the snapshot-backed memory path. Aggregate-state, ordering and partition-key admission remain
+separate. Old blob-backed checkpoints migrate one key-group partition at a time, including clipped
+restore; the interval processing deadline survives that migration. An OVER checkpoint containing
+only pending input can have no accumulator-key schema, so empty fold batches install no keys.
+Shared writer-thread controls pass on both releases for five OVER shapes (bounded RANGE,
+event/processing ROWS and unbounded event ROWS/RANGE), FULL interval joins and INNER/LEFT temporal
+joins across ARRAY, ROW and MAP payloads. They assert direct native RocksDB, overlap two captures,
+continue live input, close the native owner and finish the captures in reverse order before
+nonempty stock continuation. NULL payloads and nested NULL values are included. Payload decode
+retains the requested nested child names even when the configured and runtime Arrow schemas use
+different names. These selected contracts do not qualify wider keys, aggregate layouts or the
+complete recovery/failure matrix.
 OVER and temporal-join metadata export share a flat key/kind/long-value bridge. OVER uses it for
 RANGE cutoffs, cleanup values, processing callbacks and V1 physical event callbacks. Temporal joins
 use it for independent signed probe cursors, registered values, cleanup clocks and callbacks. Frozen RocksDB readers borrow and validate

@@ -166,6 +166,11 @@ class CanonicalTemporalMetadataFixtureTest {
 
   static KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData> harness(
       boolean disk, long retention, boolean leftOuter) throws Exception {
+    return harness(disk, retention, leftOuter, INPUT);
+  }
+
+  static KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData> harness(
+      boolean disk, long retention, boolean leftOuter, RowType input) throws Exception {
     String code =
         "public class CanonicalTemporalCondition extends"
             + " org.apache.flink.api.common.functions.AbstractRichFunction implements"
@@ -173,7 +178,7 @@ class CanonicalTemporalMetadataFixtureTest {
             + " CanonicalTemporalCondition(Object[] refs){} public boolean"
             + " apply(org.apache.flink.table.data.RowData l,org.apache.flink.table.data.RowData"
             + " r){return true;}}";
-    var info = InternalTypeInfo.of(INPUT);
+    var info = InternalTypeInfo.of(input);
     var selector =
         KeySelectorUtil.getRowDataSelector(
             CanonicalTemporalMetadataFixtureTest.class.getClassLoader(), new int[] {0}, info);
@@ -194,7 +199,11 @@ class CanonicalTemporalMetadataFixtureTest {
         disk
             ? tech.streamfusion.compat.CanonicalTestCompat.rocksBackend()
             : new HashMapStateBackend());
-    harness.setup(new RowDataSerializer(OUTPUT));
+    var fields = new ArrayList<RowType.RowField>();
+    for (int side = 0; side < 2; side++)
+      for (int i = 0; i < input.getFieldCount(); i++)
+        fields.add(new RowType.RowField("f" + side + "_" + i, input.getTypeAt(i).copy(true)));
+    harness.setup(new RowDataSerializer(new RowType(fields)));
     return harness;
   }
 

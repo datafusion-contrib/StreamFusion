@@ -16,7 +16,6 @@ import org.apache.flink.runtime.state.CheckpointStorageLocationReference;
 import org.apache.flink.runtime.state.memory.MemCheckpointStreamFactory;
 import org.apache.flink.streaming.api.operators.OperatorSnapshotFutures;
 import org.apache.flink.streaming.api.watermark.Watermark;
-import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -108,7 +107,7 @@ class CanonicalDistinctWindowAsyncTest {
   }
 
   static OperatorSnapshotFutures capture(
-      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> source, long id)
+      org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness<?> source, long id)
       throws Exception {
     source.prepareSnapshotPreBarrier(id);
     return source

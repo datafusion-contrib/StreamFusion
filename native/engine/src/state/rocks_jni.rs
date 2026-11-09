@@ -1727,8 +1727,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbIntervalJoinerSuppor
                 .map(|field| field.data_type().clone())
                 .collect()
         };
-        (rocks_row_supported(&row_types(import_schema(left_schema_address)))
-            && rocks_row_supported(&row_types(import_schema(right_schema_address))))
+        (RetainedRows::supported(&row_types(import_schema(left_schema_address)))
+            && RetainedRows::supported(&row_types(import_schema(right_schema_address))))
             as jboolean
     })
 }
@@ -1857,6 +1857,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBIntervalJoiner
             .with_read_through_budget(memory_budget_bytes)
         });
         let joiner = joiner.and_then(|mut joiner| {
+            joiner.migrate_legacy_snapshot_store()?;
             let restored = read_restored_partitions(&mut env, &restored_partitions);
             joiner.import_partitions(&restored, restored_timer_deadline)?;
             Ok(joiner)
@@ -2063,8 +2064,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbTemporalJoinerSuppor
         };
         let left = read_columns(&env, &left_keys);
         let right = read_columns(&env, &right_keys);
-        (rocks_row_supported(&row_types(&left_schema))
-            && rocks_row_supported(&row_types(&right_schema))
+        (RetainedRows::supported(&row_types(&left_schema))
+            && RetainedRows::supported(&row_types(&right_schema))
+            && rocks_row_supported(&key_types(&left_schema, &left))
             && key_types(&left_schema, &left) == key_types(&right_schema, &right))
             as jboolean
     })
@@ -2192,6 +2194,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalJoiner
             .with_state_retention(state_ttl_millis)
             .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
             .with_store(store);
+            joiner.migrate_legacy_snapshot_store()?;
             let restored = read_restored_partitions(&mut env, &restored_partitions);
             joiner.import_partitions(&restored)?;
             if !crate::state::rocks_store::in_frozen_scope() {
@@ -3143,7 +3146,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbOverAggregatorSuppor
                             &kinds,
                             frame_kind as i64,
                         ))
-                        && rocks_row_supported(&payload_types)
+                        && RetainedRows::supported(&payload_types)
                 }
                 None => false,
             };
@@ -3282,6 +3285,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBOverAggregator
             .with_state_retention(state_ttl_millis)
             .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
             .with_store(store, key_types);
+            aggregator.migrate_legacy_snapshot_store()?;
             let restored = read_restored_partitions(&mut env, &restored_partitions);
             aggregator.import_partitions(&restored)?;
             if !crate::state::rocks_store::in_frozen_scope() {

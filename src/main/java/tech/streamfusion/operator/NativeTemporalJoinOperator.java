@@ -322,7 +322,7 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
 
   @Override
   public void finish() throws Exception {
-    advance(Long.MAX_VALUE); // end of input: resolve probes with a queued event callback
+    if (handle != 0) advance(Long.MAX_VALUE); // resolve probes with a queued event callback
     super.finish();
   }
 

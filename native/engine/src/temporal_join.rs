@@ -1386,6 +1386,14 @@ impl TemporalJoiner {
         self.memory.account()
     }
 
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        if let Some(reader) = self.store.as_ref().unwrap().legacy_snapshot_reader()? {
+            reader.migrate(|partitions, _timer| self.import_partitions(partitions))?;
+        }
+        Ok(())
+    }
+
     /// Backend-independent native recovery encoding: probe rows with signed indices, build
     /// versions, optional cleanup deadlines, and independent cursor/callback metadata. Stock
     /// canonical export must visit live state directly rather than convert these snapshots.

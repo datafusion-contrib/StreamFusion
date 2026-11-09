@@ -17,6 +17,14 @@ is applied natively, same as the other join shapes.
 
 ## Admission
 
+Retained ROW/ARRAY/MAP probe and build payloads use the shared native RocksDB row codec. Qualified
+canonical contracts pin both sides and convert bounded frames asynchronously, retaining version
+order and independent cursor/timer metadata. Legacy blob-backed checkpoints migrate one key-group
+partition at a time through aligned or clipped restore. Partition-key and residual-expression
+admission remain independent of the payload codec.
+End-of-input cleanup skips probe resolution after the native handle has already closed, so
+releasing an asynchronous capture's source cannot enter JNI with an absent owner.
+
 Equi-keys use the [verified scalar whitelist](../window-aggregate.md#scalar-grouping-and-partition-keys),
 including narrow integers, FLOAT/DOUBLE, TIME, binary and both interval families.
 Collection/ROW/object key columns retain fallback. Keys must drop NULLs (LEFT is the only

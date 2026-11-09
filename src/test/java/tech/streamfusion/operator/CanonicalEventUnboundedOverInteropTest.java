@@ -743,6 +743,19 @@ class CanonicalEventUnboundedOverInteropTest {
         boolean proctime,
         boolean requiredValue)
         throws Exception {
+      this(type, rows, global, ttl, literals, proctime, requiredValue, null);
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        boolean literals,
+        boolean proctime,
+        boolean requiredValue,
+        String payload)
+        throws Exception {
       this.rows = rows;
       this.ttl = ttl;
       var config = new Configuration();
@@ -753,12 +766,14 @@ class CanonicalEventUnboundedOverInteropTest {
           "CREATE TABLE scalar_input(k BIGINT,v "
               + type
               + (requiredValue ? " NOT NULL" : "")
+              + (payload == null ? "" : ",payload " + payload)
               + ",rt TIMESTAMP_LTZ(3),"
               + (proctime ? "pt AS PROCTIME()," : "")
               + "WATERMARK FOR rt AS rt) WITH ('connector'='datagen')");
       table.executeSql(
           "CREATE TABLE scalar_output(k BIGINT,v "
               + type
+              + (payload == null ? "" : ",payload " + payload)
               + ",s "
               + type
               + ",c BIGINT,a "
@@ -769,6 +784,7 @@ class CanonicalEventUnboundedOverInteropTest {
           table
               .compilePlanSql(
                   "INSERT INTO scalar_output SELECT k,v,"
+                      + (payload == null ? "" : "payload,")
                       + (literals
                           ? "COUNT(*) OVER w,SUM(CAST(7 AS BIGINT)) OVER w,AVG(v) OVER w"
                           : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")

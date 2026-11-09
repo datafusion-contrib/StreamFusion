@@ -557,6 +557,19 @@ class CanonicalBoundedRangeInteropTest {
         long ttl,
         boolean starAndLiteral)
         throws Exception {
+      this(type, keyless, processingRows, eventRows, offset, ttl, starAndLiteral, null);
+    }
+
+    Plan(
+        String type,
+        boolean keyless,
+        boolean processingRows,
+        boolean eventRows,
+        int offset,
+        long ttl,
+        boolean starAndLiteral,
+        String payload)
+        throws Exception {
       this.eventRows = eventRows;
       this.processingRows = processingRows;
       this.offset = offset;
@@ -571,12 +584,15 @@ class CanonicalBoundedRangeInteropTest {
           "CREATE TABLE range_input(k BIGINT,v "
               + type
               + ",rt TIMESTAMP(3)"
+              + (payload == null ? "" : ",payload " + payload)
               + (processingRows ? ",pt AS PROCTIME()" : ",WATERMARK FOR rt AS rt")
               + ") WITH ('connector'='datagen')");
       table.executeSql(
           "CREATE TABLE range_output(k BIGINT,v "
               + type
-              + ",rt TIMESTAMP(3),s "
+              + ",rt TIMESTAMP(3)"
+              + (payload == null ? "" : ",payload " + payload)
+              + ",s "
               + type
               + ",c BIGINT,a "
               + type
@@ -585,6 +601,7 @@ class CanonicalBoundedRangeInteropTest {
           table
               .compilePlanSql(
                   "INSERT INTO range_output SELECT k,v,rt,"
+                      + (payload == null ? "" : "payload,")
                       + (starAndLiteral
                           ? "COUNT(*) OVER w,SUM(CAST(7 AS BIGINT)) OVER w,AVG(v) OVER w"
                           : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
@@ -865,6 +882,7 @@ class CanonicalBoundedRangeInteropTest {
       var row = new GenericRowData(input.getFieldCount());
       row.setField(0, key);
       for (int i = 1; i < input.getFieldCount(); i++) {
+        if (input.getFieldNames().get(i).equals("payload")) continue;
         var logical = input.getTypeAt(i);
         if (logical instanceof TimestampType || logical instanceof LocalZonedTimestampType) {
           row.setField(i, TimestampData.fromEpochMillis(time));

@@ -386,10 +386,7 @@ impl RocksTemporalJoinStore {
             .map(|values| values.values().to_vec())
             .unwrap_or_else(|| self.touch_metadata(keys, times, true));
         let arity = self.row_arities[0];
-        let rows = self
-            .converters
-            .0
-            .convert_columns(&batch.columns()[..arity])?;
+        let rows = self.converters.0.encode(&batch.columns()[..arity])?;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (index, row) in rows.iter().enumerate() {
             let mut value = Vec::with_capacity(LEFT_VALUE_PREFIX_LEN + row.data().len());
@@ -424,10 +421,7 @@ impl RocksTemporalJoinStore {
             self.touch_metadata(keys, times, false);
         }
         let arity = self.row_arities[1];
-        let rows = self
-            .converters
-            .1
-            .convert_columns(&batch.columns()[..arity])?;
+        let rows = self.converters.1.encode(&batch.columns()[..arity])?;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (index, row) in rows.iter().enumerate() {
             let mut value = Vec::with_capacity(RIGHT_VALUE_PREFIX_LEN + row.data().len());

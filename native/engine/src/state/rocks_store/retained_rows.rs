@@ -48,12 +48,20 @@ impl RetainedRows {
         &self,
         rows: impl IntoIterator<Item = &'a [u8]>,
     ) -> Result<Vec<ArrayRef>, DataFusionError> {
+        self.decode_as(rows, &self.logical)
+    }
+
+    pub(crate) fn decode_as<'a>(
+        &self,
+        rows: impl IntoIterator<Item = &'a [u8]>,
+        types: &[DataType],
+    ) -> Result<Vec<ArrayRef>, DataFusionError> {
         let parser = self.converter.parser();
         let columns = self
             .converter
             .convert_rows(rows.into_iter().map(|bytes| parser.parse(bytes)))
             .map_err(re)?;
-        align_columns(&columns, &self.logical)
+        align_columns(&columns, types)
     }
 }
 

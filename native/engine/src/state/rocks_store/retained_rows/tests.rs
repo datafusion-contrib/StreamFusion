@@ -318,3 +318,196 @@ fn window_rank_borrows_hot_buckets_with_a_budget_smaller_than_the_bucket() {
         assert_eq!(pool.reserved(), 0);
     }
 }
+
+#[test]
+fn retained_payload_decode_uses_the_requested_nested_field_names() {
+    let batch = input();
+    let codec = RetainedRows::new(&types(&batch)).unwrap();
+    let rows = codec.encode(batch.columns()).unwrap();
+    let mut requested = types(&batch);
+    let DataType::Struct(fields) = &requested[4] else {
+        unreachable!()
+    };
+    let DataType::Map(entries, sorted) = fields[0].data_type() else {
+        unreachable!()
+    };
+    let renamed = entries.as_ref().clone().with_name("items");
+    requested[4] = DataType::Struct(
+        vec![Arc::new(
+            fields[0]
+                .as_ref()
+                .clone()
+                .with_data_type(DataType::Map(Arc::new(renamed), *sorted)),
+        )]
+        .into(),
+    );
+    let decoded = codec
+        .decode_as(rows.iter().map(|row| row.data()), &requested)
+        .unwrap();
+    assert_eq!(decoded[4].data_type(), &requested[4]);
+    assert_eq!(
+        decoded[4].to_data().buffers(),
+        batch.column(4).to_data().buffers()
+    );
+    let recoded = codec.encode(&decoded).unwrap();
+    for (before, after) in rows.iter().zip(recoded.iter()) {
+        assert_eq!(before.data(), after.data());
+    }
+}
+
+#[test]
+fn nested_over_and_join_payloads_migrate_legacy_partitions_and_continue() {
+    use crate::{
+        interval_join::IntervalJoiner, over_agg::OverWindowAggregator,
+        temporal_join::TemporalJoiner,
+    };
+    let batch = input();
+    let group = flink_key_group(binary_row_hash(&batch, &[0], 0, &[i32::MIN, -1]), 128) as i32;
+    let over = || {
+        OverWindowAggregator::new(vec![0, 0], vec![0, 3], 1, vec![2, 2], vec![0], 0, 0, false)
+            .with_key_timestamp_precisions(vec![i32::MIN, -1])
+    };
+    let interval = || {
+        IntervalJoiner::new(
+            vec![0],
+            vec![0],
+            1,
+            1,
+            -100,
+            100,
+            None,
+            JoinKind::FullOuter,
+            batch.schema(),
+            batch.schema(),
+        )
+        .with_key_timestamp_precisions(vec![i32::MIN, -1])
+    };
+    let temporal = || {
+        TemporalJoiner::new(
+            vec![0],
+            vec![0],
+            1,
+            1,
+            JoinKind::LeftOuter,
+            batch.schema(),
+            batch.schema(),
+            None,
+        )
+        .with_key_timestamp_precisions(vec![i32::MIN, -1])
+    };
+    let sorted = |batch: RecordBatch| {
+        let codec = RetainedRows::new(&types(&batch)).unwrap();
+        let rows = codec.encode(batch.columns()).unwrap();
+        let mut result: Vec<_> = rows.iter().map(|row| row.data().to_vec()).collect();
+        result.sort();
+        result
+    };
+    for aligned in [false, true] {
+        for family in ["over", "interval", "temporal"] {
+            let temp = tempfile::tempdir().unwrap();
+            let mut memory_over = over();
+            let mut memory_interval = interval();
+            let mut memory_temporal = temporal();
+            let bytes = match family {
+                "over" => {
+                    memory_over.push(batch.clone(), 0).unwrap();
+                    memory_over.snapshot()
+                }
+                "interval" => {
+                    memory_interval.push_left(batch.clone(), None).unwrap();
+                    memory_interval.snapshot()
+                }
+                _ => {
+                    memory_temporal.push_right(&batch, 0).unwrap();
+                    memory_temporal.push_left(&batch, 0).unwrap();
+                    memory_temporal.snapshot()
+                }
+            };
+            let mut old =
+                RocksSnapshotStore::open_merged(config(temp.path(), "old"), &[], 0..=127, false)
+                    .unwrap();
+            let saved = temp.path().join("saved");
+            let mut partitions = vec![[group.to_be_bytes().to_vec(), bytes.clone()].concat()];
+            if !aligned {
+                partitions.push([((group + 1) % 128).to_be_bytes().to_vec(), bytes].concat());
+            }
+            let manifest = old
+                .checkpoint(&partitions, 4567, saved.to_str().unwrap())
+                .unwrap();
+            drop(old);
+            let sources = vec![(saved.to_string_lossy().into_owned(), manifest.snapshot_id)];
+            match family {
+                "over" => {
+                    let state_types =
+                        crate::over_agg::rocks_over_state_types(&[0, 0], &[0, 3], 0, false)
+                            .unwrap();
+                    let store = RocksOverAggStore::open_merged(
+                        config(temp.path(), "typed"),
+                        &state_types,
+                        &[],
+                        &[],
+                        batch.schema(),
+                        group..=group,
+                        &sources,
+                        aligned,
+                    )
+                    .unwrap();
+                    let mut target = over().with_store(store, vec![DataType::Int64]);
+                    target.migrate_legacy_snapshot_store().unwrap();
+                    memory_over.push(batch.clone(), 0).unwrap();
+                    target.push(batch.clone(), 0).unwrap();
+                    assert_eq!(
+                        sorted(memory_over.flush(500, 0).unwrap()),
+                        sorted(target.flush(500, 0).unwrap())
+                    );
+                }
+                "interval" => {
+                    let store = RocksIntervalBuffer::open_merged(
+                        config(temp.path(), "typed"),
+                        batch.schema(),
+                        batch.schema(),
+                        &sources,
+                        group..=group,
+                        aligned,
+                    )
+                    .unwrap();
+                    let mut target = interval().with_store(store);
+                    target.migrate_legacy_snapshot_store().unwrap();
+                    assert_eq!(target.store_mut().timer_deadline(), 4567);
+                    assert_eq!(
+                        sorted(memory_interval.push_right(batch.clone(), None).unwrap()),
+                        sorted(target.push_right(batch.clone(), None).unwrap())
+                    );
+                    assert_eq!(
+                        sorted(memory_interval.advance(1000).unwrap()),
+                        sorted(target.advance(1000).unwrap())
+                    );
+                }
+                _ => {
+                    let store = RocksTemporalJoinStore::open_merged(
+                        config(temp.path(), "typed"),
+                        batch.schema(),
+                        batch.schema(),
+                        &[0],
+                        &sources,
+                        group..=group,
+                        aligned,
+                    )
+                    .unwrap();
+                    let mut target = temporal().with_store(store);
+                    target.migrate_legacy_snapshot_store().unwrap();
+                    assert_eq!(
+                        sorted(memory_temporal.advance(1000, 0).unwrap()),
+                        sorted(target.advance(1000, 0).unwrap())
+                    );
+                    memory_temporal.push_left(&batch, 0).unwrap();
+                    target.push_left(&batch, 0).unwrap();
+                    assert_eq!(
+                        sorted(memory_temporal.advance(2000, 0).unwrap()),
+                        sorted(target.advance(2000, 0).unwrap())
+                    );
+                }
+            }
+        }
+    }
+}
