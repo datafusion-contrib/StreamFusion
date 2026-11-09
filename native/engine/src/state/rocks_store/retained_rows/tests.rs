@@ -275,3 +275,46 @@ fn pinned_nested_rows_remain_bounded_after_live_replacement_and_owner_close() {
         assert_eq!(wide, concat_batches(&batch.schema(), &frames).unwrap());
     });
 }
+
+#[test]
+fn window_rank_borrows_hot_buckets_with_a_budget_smaller_than_the_bucket() {
+    let temp = tempfile::tempdir().unwrap();
+    let batch = input();
+    let row = (0..batch.num_columns())
+        .map(|column| ScalarValue::try_from_array(batch.column(column), 0).unwrap())
+        .collect::<Vec<_>>();
+    let mut store =
+        RocksWindowRankStore::create(config(temp.path(), "rank-budget"), &types(&batch), 0..=127)
+            .unwrap();
+    let owner = store.db_key(7, 1000, 0, b"key");
+    store.put(vec![(owner, vec![row; 4100])]).unwrap();
+    for limit in [0, 128 * 1024] {
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(limit));
+        let mut memory = OperatorMemory::unaccounted();
+        memory.attach_pool("window rank capture", &pool, 0).unwrap();
+        let scope = crate::state::canonical_context::CanonicalContext::with_memory(
+            Default::default(),
+            memory,
+        );
+        let mut count = 0;
+        let result = scope.with(|| {
+            store.visit_rows(16, |rows| {
+                assert!(rows.len() <= 16);
+                assert!(pool.reserved() > 0);
+                count += rows.len();
+                Ok(())
+            })
+        });
+        if limit == 0 {
+            assert!(matches!(
+                result,
+                Err(DataFusionError::ResourcesExhausted(_))
+            ));
+            assert_eq!(count, 0);
+        } else {
+            result.unwrap();
+            assert_eq!(count, 4100);
+        }
+        assert_eq!(pool.reserved(), 0);
+    }
+}

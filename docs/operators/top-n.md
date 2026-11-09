@@ -743,6 +743,11 @@ full version/failure/delivery matrix remain open in
 
 ## Window rank canonical interchange (partial)
 
+Window-rank canonical export borrows the encoded persisted bucket, reserves bounded decoding
+frames before construction and checks cancellation within the bucket. It does not copy the whole
+bucket into a Rust byte buffer first. Refused conversion releases its work without changing the
+live state; the native/stock encoded bucket itself remains a database working-memory floor.
+
 Existing window rank/dedup canonical bindings now retain ROW/ARRAY/MAP payloads in direct native
 RocksDB. The shared retained-row codec preserves declared nested fields, NULL/empty containers
 and map entry order; sorting still uses the existing qualified sort keys. Canonical savepoints

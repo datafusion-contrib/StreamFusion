@@ -172,6 +172,33 @@ when live native state uses memory. Imports also use that released RocksDB backe
 uses a captured state iterator, preserving serializers and the caller's key context without
 collecting every key.
 
+Each deferred capture now carries the operator's conversion-memory authority into the writer
+thread. Default copied and borrowed RocksDB scans share that authority instead of silently
+running without a reservation. Copied scans inspect borrowed keys/values, reserve the frame,
+container capacity and continuation key before copying, and commit the continuation only after
+the frame succeeds. Allocation refusal leaves the cursor retryable. The byte limit splits
+before the next record would exceed four MiB; one oversized record is allowed. Direct value
+cursors additionally reserve their decoding estimate before copying or decoding.
+
+Window-rank export borrows each encoded bucket from its pinned iterator rather than first
+copying the complete bucket into a Rust buffer. It reserves bounded row slices and decoding
+work before visiting them. Fixed/session DISTINCT membership visits likewise borrow encoded
+entries and reserve their prefix, retained values and repeated-owner frame estimate before
+parsing. Failure, cancellation and completion release these reservations. Operator shutdown waits on the
+RocksDB reader guard before closing either the native handle or the operator's memory owner, so
+a deferred writer can still allocate after shutdown begins. Memory-backed capture
+and the remaining conversion estimates still require the broader accounting audit; these
+controls do not establish a strict bound on every allocator or remove the largest native/stock
+encoded KV as a working-memory floor.
+
+The reservation cohort passes 1,538 native tests with two existing ignores, memory-only
+compilation and the JNI build. Selected 1.18 checks pass 280 cases with two expected SESSION skips;
+a clean 2.2 build passes 362 checks with 0 skips. Controls include partial-frame refusal/retry,
+no decoding before denial, receiver/cancellation refunds, a 4,100-row bucket under a smaller
+conversion budget, unchanged Arrow/handle balances and continued stock results after refusal.
+Both direct and deferred writers finish while full operator shutdown waits. The affected-class
+1.18 retries replace earlier class results in that count. These are local component selections.
+
 The direct cursors bound decoded working memory by the current frame/entry and owned key groups.
 Fixed-window groups and timer ledgers, session state, OVER fold/pending/cleanup tables, temporal
 sort, buffered deduplication and temporal/interval/window joins share the pinned batch visitor,

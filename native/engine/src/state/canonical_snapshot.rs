@@ -79,13 +79,15 @@ pub extern "system" fn Java_tech_streamfusion_Native_pinCanonicalDatabases<'loca
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     directory: jni::objects::JString<'local>,
+    memory_budget: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let directory: String = env
             .get_string(&directory)
             .expect("canonical database directory")
             .into();
-        match FrozenDatabases::capture(std::path::Path::new(&directory)) {
+        match FrozenDatabases::capture_with_budget(std::path::Path::new(&directory), memory_budget)
+        {
             Ok(frozen) => Box::into_raw(Box::new(frozen)) as jlong,
             Err(error) => {
                 let _ = env.throw_new("tech/streamfusion/NativeException", error.to_string());

@@ -456,24 +456,55 @@ impl RocksWindowRankStore {
         if chunk_rows == 0 {
             return Err(invalid());
         }
-        for entry in self.db.iterator(IteratorMode::Start) {
+        let db = self.db.read_snapshot();
+        let mut reader = db.raw_iterator();
+        reader.seek_to_first();
+        let mut work = crate::state::canonical_context::temporary_reservation();
+        while reader.valid() {
             super::database::check_cancelled()?;
-            let (key, value) = entry.map_err(re)?;
-            if key.as_ref() == WATERMARK_KEY || key.as_ref() == TIMER_DEADLINE_KEY {
+            let key = reader.key().unwrap();
+            if key == WATERMARK_KEY || key == TIMER_DEADLINE_KEY {
+                reader.next();
                 continue;
             }
+            let value = reader.value().unwrap();
             if key.len() < KEY_PREFIX_LEN || value.len() < 4 {
                 return Err(invalid());
             }
-            let mut cursor = value.as_ref();
+            let mut cursor = value;
             let length = count(&mut cursor)?;
-            let mut rows = Vec::with_capacity(chunk_rows);
+            let mut rows = Vec::new();
             let mut bytes = 0usize;
             for _ in 0..length {
                 super::database::check_cancelled()?;
                 let length = count(&mut cursor)?;
                 if length == 0 || length > cursor.len() {
                     return Err(invalid());
+                }
+                if !rows.is_empty() && bytes.saturating_add(length) > 4 * 1024 * 1024 {
+                    accept(self.decode_rows(&rows)?)?;
+                    rows.clear();
+                    bytes = 0;
+                }
+                let capacity = if rows.len() == rows.capacity() {
+                    rows.capacity().saturating_mul(2).max(4).min(chunk_rows)
+                } else {
+                    rows.capacity()
+                };
+                if let Some(work) = &mut work {
+                    work.try_resize(
+                        bytes
+                            .saturating_add(length)
+                            .saturating_mul(4)
+                            .saturating_add(capacity.saturating_mul(std::mem::size_of::<&[u8]>()))
+                            .saturating_add((rows.len() + 1).saturating_mul(
+                                self.row_types.len() * 2 * std::mem::size_of::<ScalarValue>(),
+                            )),
+                    )?;
+                }
+                if capacity > rows.capacity() {
+                    rows.try_reserve_exact(capacity - rows.len())
+                        .map_err(|error| DataFusionError::ResourcesExhausted(error.to_string()))?;
                 }
                 rows.push(&cursor[..length]);
                 bytes = bytes.saturating_add(length);
@@ -490,8 +521,12 @@ impl RocksWindowRankStore {
             if !rows.is_empty() {
                 accept(self.decode_rows(&rows)?)?;
             }
+            if let Some(work) = &mut work {
+                work.resize(0);
+            }
+            reader.next();
         }
-        Ok(())
+        reader.status().map_err(re)
     }
 
     /// Persists the late-data watermark, then takes one native checkpoint — touched groups were
@@ -765,7 +800,7 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        assert_eq!(sizes, [2, 1]);
+        assert_eq!(sizes, [1, 1, 1]);
         let context = crate::state::canonical_context::CanonicalContext::new(Default::default());
         let mut calls = 0;
         let result = context.with(|| {

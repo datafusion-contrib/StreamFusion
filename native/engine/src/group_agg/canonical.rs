@@ -309,7 +309,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_captureGroupArithmeticCanon
             let ttl = owner.ttl_ms > 0;
             let append_only = owner.stock_append_only == Some(true);
             let mut memory = owner.memory.temporary_reservation();
-            let snapshot = owner.store.canonical_snapshot()?;
+            let snapshot = owner
+                .store
+                .canonical_snapshot(owner.memory.temporary_reservation())?;
             Ok::<_, DataFusionError>(crate::state::canonical_snapshot::cursor(
                 snapshot,
                 move |env, receiver, entries| {

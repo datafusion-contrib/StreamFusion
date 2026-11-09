@@ -34,7 +34,7 @@ impl<F: FnMut(RecordBatch) -> Result<(), DataFusionError>> KeyedLongWriter<F> {
             kinds: Vec::new(),
             times: Vec::new(),
             bytes: 0,
-            work,
+            work: work.or_else(crate::state::canonical_context::temporary_reservation),
             accept,
         }
     }

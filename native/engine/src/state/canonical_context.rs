@@ -12,17 +12,37 @@ pub(crate) type CapturedView = Arc<dyn Any + Send + Sync>;
 pub(crate) struct CanonicalContext {
     views: HashMap<PathBuf, CapturedView>,
     cancelled: AtomicBool,
+    memory: OperatorMemory,
 }
 
 thread_local! { static CURRENT: RefCell<Option<Arc<CanonicalContext>>> = const { RefCell::new(None) }; }
 
 impl CanonicalContext {
+    #[cfg(test)]
     pub(crate) fn new(views: HashMap<PathBuf, CapturedView>) -> Arc<Self> {
+        Self::with_memory(views, OperatorMemory::unaccounted())
+    }
+
+    pub(crate) fn with_memory(
+        views: HashMap<PathBuf, CapturedView>,
+        memory: OperatorMemory,
+    ) -> Arc<Self> {
         Arc::new(Self {
             views,
             cancelled: AtomicBool::new(false),
+            memory,
         })
     }
+
+    pub(crate) fn with_budget(
+        views: HashMap<PathBuf, CapturedView>,
+        budget: i64,
+    ) -> Result<Arc<Self>, DataFusionError> {
+        let mut memory = OperatorMemory::unaccounted();
+        memory.attach("canonical-conversion", budget, 0)?;
+        Ok(Self::with_memory(views, memory))
+    }
+
     pub(crate) fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
     }
@@ -58,6 +78,15 @@ pub(crate) fn view(path: &Path) -> Result<Option<CapturedView>, DataFusionError>
     })
 }
 
+pub(crate) fn temporary_reservation() -> Option<MemoryReservation> {
+    CURRENT.with(|scope| {
+        scope
+            .borrow()
+            .as_ref()
+            .and_then(|scope| scope.memory.temporary_reservation())
+    })
+}
+
 pub(crate) fn check_cancelled() -> Result<(), DataFusionError> {
     CURRENT.with(|scope| {
         if scope
@@ -78,9 +107,16 @@ pub(crate) fn check_cancelled() -> Result<(), DataFusionError> {
 pub extern "system" fn Java_tech_streamfusion_Native_createCanonicalMemoryContext<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
+    memory_budget: jlong,
 ) -> jlong {
-    crate::bridge::jni_guard(env, move |_env| {
-        Box::into_raw(Box::new(CanonicalContext::new(HashMap::new()))) as jlong
+    crate::bridge::jni_guard(env, move |mut env| {
+        match CanonicalContext::with_budget(HashMap::new(), memory_budget) {
+            Ok(context) => Box::into_raw(Box::new(context)) as jlong,
+            Err(error) => {
+                throw_memory_limit(&mut env, &error.to_string());
+                0
+            }
+        }
     })
 }
 #[no_mangle]

@@ -263,7 +263,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_captureChangelogNormalizerC
                     .map(|field| SortField::new(field.data_type().clone()))
                     .collect(),
             )?;
-            let snapshot = owner.rows.canonical_snapshot()?;
+            let snapshot = owner
+                .rows
+                .canonical_snapshot(owner.memory.temporary_reservation())?;
             Ok::<_, DataFusionError>(crate::state::canonical_snapshot::cursor(
                 snapshot,
                 move |env, receiver, entries| {

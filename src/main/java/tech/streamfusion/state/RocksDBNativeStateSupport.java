@@ -98,6 +98,10 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
     return backend.retainCanonicalReader();
   }
 
+  public void closeCanonicalReaders() {
+    backend.closeCanonicalReaders();
+  }
+
   public String tableDirectory() {
     return backend.tableDirectory();
   }

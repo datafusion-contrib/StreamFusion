@@ -234,7 +234,7 @@ fn wide_membership_visitors_bound_bytes_retry_and_cancel_within_one_partition() 
             Ok(())
         })
         .unwrap();
-    assert_eq!(sizes, [2, 1]);
+    assert_eq!(sizes, [1, 1, 1]);
     let context = crate::state::canonical_context::CanonicalContext::new(Default::default());
     let mut calls = 0;
     let result = context.with(|| {

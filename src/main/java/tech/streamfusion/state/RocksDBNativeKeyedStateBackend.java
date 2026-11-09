@@ -84,6 +84,10 @@ public final class RocksDBNativeKeyedStateBackend<K>
     return canonicalReaders.acquireResource();
   }
 
+  public void closeCanonicalReaders() {
+    canonicalReaders.close();
+  }
+
   RocksDBNativeKeyedStateBackend(
       SupplierWithException<CheckpointableKeyedStateBackend<K>, Exception> delegateSupplier,
       KeyGroupRange keyGroupRange,

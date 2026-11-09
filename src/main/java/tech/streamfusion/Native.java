@@ -34,9 +34,9 @@ public final class Native {
 
   public static native void closeCanonicalSnapshot(long snapshot);
 
-  public static native long pinCanonicalDatabases(String directory);
+  public static native long pinCanonicalDatabases(String directory, long memoryBudget);
 
-  public static native long createCanonicalMemoryContext();
+  public static native long createCanonicalMemoryContext(long memoryBudget);
 
   public static native void copyGroupAggregatorCanonicalMemoryState(long source, long target);
 

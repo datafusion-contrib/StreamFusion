@@ -62,6 +62,11 @@ retain entry order and duplicate entries through their physical list/struct repr
 Scalar checkpoint bytes stay unchanged. Old snapshot-backed checkpoints migrate one key-group
 blob at a time when opened; that legacy conversion retains a one-partition memory floor.
 
+Captured native scan frames use the operator's conversion budget and refuse unavailable memory
+before copying or exporting Arrow buffers. Export reports the native memory-limit exception for
+a resource refusal. The failed view can be released and retried without consuming live state;
+continued input keeps the same stock result.
+
 Import validates descriptor ownership, the empty key, row/time/INSERT consistency and exact timer
 membership before installing native state. Nullable and nested payloads retain their full original
 values, and equal-time peers retain their arrival order. User column names that resemble internal

@@ -1,9 +1,14 @@
 use super::*;
+
+const RAW_ENTRY_BYTES: usize = std::mem::size_of::<(Box<[u8]>, Box<[u8]>)>();
 /// An owned MVCC view with bounded forward reads in native key-group order.
 pub(crate) struct RocksReadSnapshot {
     view: Arc<database::ReadView>,
     after: Option<Vec<u8>>,
     finished: bool,
+    work: Option<MemoryReservation>,
+    decoded_per_row: usize,
+    decoded_multiplier: usize,
 }
 
 impl RocksReadSnapshot {
@@ -12,6 +17,28 @@ impl RocksReadSnapshot {
             view: db.pin(),
             after: None,
             finished: false,
+            work: crate::state::canonical_context::temporary_reservation(),
+            decoded_per_row: 0,
+            decoded_multiplier: 1,
+        }
+    }
+
+    pub(crate) fn with_memory(mut self, work: Option<MemoryReservation>) -> Self {
+        if work.is_some() {
+            self.work = work;
+        }
+        self
+    }
+
+    fn with_decoding_cost(mut self, per_row: usize, multiplier: usize) -> Self {
+        self.decoded_per_row = per_row;
+        self.decoded_multiplier = multiplier;
+        self
+    }
+
+    pub(crate) fn release_batch_memory(&mut self) {
+        if let Some(work) = &mut self.work {
+            work.resize(self.after.as_ref().map_or(0, Vec::capacity));
         }
     }
 
@@ -33,35 +60,76 @@ impl RocksReadSnapshot {
                 "canonical scan requires positive bounds".into(),
             ));
         }
+        self.release_batch_memory();
         if self.finished {
             return Ok(Vec::new());
         }
-        let after = self.after.clone();
-        let mode = after.as_ref().map_or(IteratorMode::Start, |key| {
-            IteratorMode::From(key, Direction::Forward)
-        });
-        let mut rows = Vec::new();
-        let mut bytes = 0;
-        for entry in self.view.iterator(mode) {
-            database::check_cancelled()?;
-            let (key, value) = entry.map_err(re)?;
-            if after
-                .as_ref()
-                .is_some_and(|previous| key.as_ref() <= previous.as_slice())
-            {
-                continue;
-            }
-            if !accept(&key) {
-                continue;
-            }
-            bytes += key.len() + value.len();
-            self.after = Some(key.to_vec());
-            rows.push((key, value));
-            if rows.len() == max_rows || bytes >= max_bytes {
-                break;
-            }
+        let result = self.read_batch(max_rows, max_bytes, accept);
+        if result.is_err() {
+            self.release_batch_memory();
         }
-        self.finished = rows.is_empty();
+        result
+    }
+
+    fn read_batch(
+        &mut self,
+        max_rows: usize,
+        max_bytes: usize,
+        accept: impl Fn(&[u8]) -> bool,
+    ) -> Result<Vec<(Box<[u8]>, Box<[u8]>)>, DataFusionError> {
+        let mut reader = self.view.raw_iterator();
+        if let Some(after) = &self.after {
+            reader.seek(after);
+            if reader.key().is_some_and(|key| key == after) {
+                reader.next();
+            }
+        } else {
+            reader.seek_to_first();
+        }
+        let mut rows = Vec::new();
+        let mut bytes = 0usize;
+        while reader.valid() {
+            database::check_cancelled()?;
+            let key = reader.key().unwrap();
+            if accept(key) {
+                let value = reader.value().unwrap();
+                let next = bytes.saturating_add(key.len()).saturating_add(value.len());
+                if !rows.is_empty() && next > max_bytes {
+                    break;
+                }
+                let capacity = if rows.len() == rows.capacity() {
+                    rows.capacity().saturating_mul(2).max(4).min(max_rows)
+                } else {
+                    rows.capacity()
+                };
+                if let Some(work) = &mut self.work {
+                    let cursor = self.after.as_ref().map_or(0, Vec::capacity);
+                    work.try_resize(
+                        next.saturating_mul(self.decoded_multiplier)
+                            .saturating_add((rows.len() + 1).saturating_mul(self.decoded_per_row))
+                            .saturating_add(capacity.saturating_mul(RAW_ENTRY_BYTES))
+                            .saturating_add(cursor)
+                            .saturating_add(key.len()),
+                    )?;
+                }
+                if capacity > rows.capacity() {
+                    rows.try_reserve_exact(capacity - rows.len())
+                        .map_err(|error| DataFusionError::ResourcesExhausted(error.to_string()))?;
+                }
+                rows.push((Box::<[u8]>::from(key), Box::<[u8]>::from(value)));
+                bytes = next;
+                if rows.len() == max_rows || bytes >= max_bytes {
+                    break;
+                }
+            }
+            reader.next();
+        }
+        reader.status().map_err(re)?;
+        if let Some((key, _)) = rows.last() {
+            self.after = Some(key.to_vec());
+        } else {
+            self.finished = true;
+        }
         Ok(rows)
     }
 }
@@ -75,6 +143,7 @@ pub(crate) struct RocksCanonicalSnapshot<C: RocksStateCodec> {
 impl<C: RocksStateCodec + Clone> RocksStore<C> {
     pub(crate) fn canonical_snapshot(
         &mut self,
+        work: Option<MemoryReservation>,
     ) -> Result<RocksCanonicalSnapshot<C>, DataFusionError> {
         self.checkpoint("")?;
         let opened = OpenedDb {
@@ -84,8 +153,16 @@ impl<C: RocksStateCodec + Clone> RocksStore<C> {
             write_batch_size: self.write_batch_size,
         };
         let decoder = Self::attach(&opened, self.config.clone(), self.codec.clone(), self.table)?;
+        let decoded_per_row = std::mem::size_of::<(ByteKey, C::Value)>().saturating_add(
+            self.codec
+                .value_fields()
+                .len()
+                .saturating_mul(2 * std::mem::size_of::<ScalarValue>()),
+        );
         Ok(RocksCanonicalSnapshot {
-            snapshot: RocksReadSnapshot::new(&self.db),
+            snapshot: RocksReadSnapshot::new(&self.db)
+                .with_memory(work)
+                .with_decoding_cost(decoded_per_row, 4),
             decoder,
         })
     }
@@ -204,5 +281,77 @@ mod tests {
             Some(b"replacement".as_slice())
         );
         assert!(reopened.get(0u32.to_be_bytes()).unwrap().is_none());
+    }
+}
+
+#[cfg(test)]
+mod reservation_tests {
+    use super::*;
+
+    #[derive(Clone)]
+    struct DecodeProbe(Arc<std::sync::atomic::AtomicUsize>);
+
+    impl RocksStateCodec for DecodeProbe {
+        type Value = i64;
+        fn supported(&self) -> bool {
+            true
+        }
+        fn value_fields(&self) -> Vec<(String, DataType)> {
+            vec![("value".into(), DataType::Int64)]
+        }
+        fn value_bytes(&self, _: &i64) -> usize {
+            8
+        }
+        fn raw(&self) -> bool {
+            true
+        }
+        fn raw_write(&self, value: &i64, out: &mut Vec<u8>) {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        fn from_raw(&self, bytes: &[u8]) -> i64 {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            i64::from_le_bytes(bytes.try_into().unwrap())
+        }
+    }
+
+    #[test]
+    fn direct_cursor_refuses_before_decode_and_retries_without_skipping_entries() {
+        use crate::state::KeyedStateStore;
+        let directory = tempfile::tempdir().unwrap();
+        let decoded = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut source = RocksStore::create(
+            RocksStoreConfig {
+                table_dir: directory.path().to_string_lossy().into_owned(),
+                max_parallelism: 128,
+                options_json: include_str!("../../../benches/fixtures/rocks-options.json").into(),
+                ttl_ms: 0,
+                shared_resources: 0,
+            },
+            DecodeProbe(Arc::clone(&decoded)),
+        )
+        .unwrap();
+        for value in 0..3i64 {
+            source.insert(ByteKey::from(value.to_le_bytes().as_slice()), value);
+        }
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(4096));
+        let mut blocker = MemoryConsumer::new("competing work").register(&pool);
+        blocker.try_resize(4000).unwrap();
+        let mut captured = source
+            .canonical_snapshot(Some(MemoryConsumer::new("direct cursor").register(&pool)))
+            .unwrap();
+        assert!(matches!(
+            captured.next_batch(),
+            Err(DataFusionError::ResourcesExhausted(_))
+        ));
+        assert_eq!(decoded.load(Ordering::Relaxed), 0);
+        assert_eq!(pool.reserved(), 4000);
+        drop(blocker);
+        let rows = captured.next_batch().unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(decoded.load(Ordering::Relaxed), 3);
+        assert!(pool.reserved() > 0);
+        drop(rows);
+        drop(captured);
+        assert_eq!(pool.reserved(), 0);
     }
 }

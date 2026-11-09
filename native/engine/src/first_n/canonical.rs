@@ -140,7 +140,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_captureFirstNCanonicalSnaps
     crate::bridge::jni_guard(env, move |mut env| {
         let ranker = unsafe { &mut *(handle as *mut FirstNHandle) };
         let result = match ranker {
-            FirstNHandle::Rocks(ranker) => ranker.rows.canonical_snapshot(),
+            FirstNHandle::Rocks(ranker) => ranker
+                .rows
+                .canonical_snapshot(ranker.memory.temporary_reservation()),
             FirstNHandle::Memory(_) => Err(invalid("MVCC capture requires RocksDB state")),
         };
         match result {

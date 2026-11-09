@@ -31,6 +31,11 @@ per-owner disk inventory for completion checks. Processing and snapshots reject 
 membership imports. Ordinary execution may reconstruct the touched window/session; canonical
 conversion streams the separate records directly.
 
+Fixed/session DISTINCT membership readers borrow encoded entries from a pinned iterator and
+reserve prefixes and bounded value/owner frames before parsing them. The capture's conversion
+budget follows work onto the asynchronous writer thread. Refused frames and failed receivers
+release that work; the persisted memberships and live operator remain available for retry.
+
 The native transfer foundation can explicitly bind COUNT(DISTINCT) slots, project each scalar
 cardinality and visit its retained values as flat, namespaced rows. Import validates every
 namespace/key/slot against the scalar state. Set-based imports validate the cardinality against

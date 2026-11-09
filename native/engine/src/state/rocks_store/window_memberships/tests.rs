@@ -539,3 +539,48 @@ fn empty_snapshot_backed_checkpoints_keep_processing_deadlines_after_upgrade() {
         assert_eq!(session.store_timer_deadline(), 4567);
     }
 }
+
+#[test]
+fn membership_frames_use_captured_budget_and_refund_failed_receivers() {
+    let temp = tempfile::tempdir().unwrap();
+    let db = fixture(&temp.path().join("state"));
+    let codec = codec();
+    let owner = owner(7, b"key");
+    codec
+        .encode_rows(&db, &[(owner.clone(), 2000)], &state(&codec, &[1, 2, 3], 5))
+        .unwrap();
+    for limit in [0, 1 << 20] {
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(limit));
+        let mut memory = OperatorMemory::unaccounted();
+        memory.attach_pool("membership capture", &pool, 0).unwrap();
+        let scope = crate::state::canonical_context::CanonicalContext::with_memory(
+            Default::default(),
+            memory,
+        );
+        let mut calls = 0;
+        let result = scope.with(|| {
+            codec.visit_memberships(&db, &owner, 0, |_| {
+                calls += 1;
+                assert!(pool.reserved() > 0);
+                Err(DataFusionError::Execution("member receiver refused".into()))
+            })
+        });
+        if limit == 0 {
+            assert!(matches!(
+                result,
+                Err(DataFusionError::ResourcesExhausted(_))
+            ));
+            assert_eq!(
+                calls, 0,
+                "deny before parsing or exporting membership values"
+            );
+        } else {
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("member receiver refused"));
+            assert_eq!(calls, 1);
+        }
+        assert_eq!(pool.reserved(), 0);
+    }
+}

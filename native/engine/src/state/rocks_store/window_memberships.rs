@@ -334,27 +334,64 @@ impl WindowStateCodec {
         mut accept: impl FnMut(&[(ScalarValue, i64)]) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         let table = self.membership(field)?;
+        let mut work = crate::state::canonical_context::temporary_reservation();
+        if let Some(work) = &mut work {
+            work.try_resize(owner.len().saturating_add(32))?;
+        }
         let prefix = table_prefix(owner, field)?;
         let db = db.read_snapshot();
-        let mut batch = Vec::with_capacity(CHUNK_ROWS);
+        let mut reader = db.raw_iterator();
+        reader.seek(&prefix);
+        let mut batch = Vec::new();
         let mut bytes = 0usize;
-        for entry in db.iterator(IteratorMode::From(&prefix, Direction::Forward)) {
+        while reader.valid() {
             database::check_cancelled()?;
-            let (key, value) = entry.map_err(re)?;
+            let key = reader.key().unwrap();
             if !key.starts_with(&prefix) {
                 break;
             }
             if key.len() == prefix.len() {
+                reader.next();
                 continue;
             }
             let count = i64::from_le_bytes(
-                value
-                    .as_ref()
+                reader
+                    .value()
+                    .unwrap()
                     .try_into()
                     .map_err(|_| invalid("invalid persisted frequency"))?,
             );
             if count == 0 || !table.counted && count != 1 {
                 return Err(invalid("invalid persisted membership"));
+            }
+            let estimate = owner
+                .len()
+                .saturating_add(key.len() - prefix.len())
+                .saturating_add(128);
+            if !batch.is_empty() && bytes.saturating_add(estimate) > CHUNK_BYTES {
+                accept(&batch)?;
+                batch.clear();
+                bytes = 0;
+            }
+            let capacity = if batch.len() == batch.capacity() {
+                batch.capacity().saturating_mul(2).max(4).min(CHUNK_ROWS)
+            } else {
+                batch.capacity()
+            };
+            if let Some(work) = &mut work {
+                work.try_resize(
+                    prefix
+                        .len()
+                        .saturating_add(
+                            capacity.saturating_mul(std::mem::size_of::<(ScalarValue, i64)>()),
+                        )
+                        .saturating_add(bytes.saturating_add(estimate).saturating_mul(4)),
+                )?;
+            }
+            if capacity > batch.capacity() {
+                batch
+                    .try_reserve_exact(capacity - batch.len())
+                    .map_err(|error| DataFusionError::ResourcesExhausted(error.to_string()))?;
             }
             let parser = table.converter.parser();
             let columns = table
@@ -371,7 +408,9 @@ impl WindowStateCodec {
                 batch.clear();
                 bytes = 0;
             }
+            reader.next();
         }
+        reader.status().map_err(re)?;
         if !batch.is_empty() {
             accept(&batch)?;
         }

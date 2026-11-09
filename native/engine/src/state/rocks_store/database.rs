@@ -99,10 +99,10 @@ impl ReadView {
         })
     }
 
-    pub(super) fn iterator(&self, mode: IteratorMode<'_>) -> DBIteratorWithThreadMode<'_, DB> {
+    pub(super) fn raw_iterator(&self) -> DBRawIteratorWithThreadMode<'_, DB> {
         #[cfg(test)]
         self.database.scans.fetch_add(1, Ordering::Relaxed);
-        self.snapshot.iterator(mode)
+        self.snapshot.raw_iterator()
     }
 }
 
@@ -200,28 +200,18 @@ impl StateDb {
     pub(crate) fn visit_snapshot_batches_charged(
         &self,
         chunk_rows: usize,
-        mut work: Option<MemoryReservation>,
+        work: Option<MemoryReservation>,
         accept: impl Fn(&[u8]) -> bool,
         mut consume: impl FnMut(Vec<(Box<[u8]>, Box<[u8]>)>) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        let mut reader = super::canonical_snapshot::RocksReadSnapshot::new(self);
+        let mut reader = super::canonical_snapshot::RocksReadSnapshot::new(self).with_memory(work);
         loop {
             let rows = reader.next_batch_limited(chunk_rows, 4 * 1024 * 1024, &accept)?;
             if rows.is_empty() {
                 return Ok(());
             }
-            if let Some(work) = &mut work {
-                let bytes = rows.capacity() * std::mem::size_of::<(Box<[u8]>, Box<[u8]>)>()
-                    + rows
-                        .iter()
-                        .map(|(key, value)| key.len() + value.len())
-                        .sum::<usize>();
-                work.try_resize(bytes)?;
-            }
             consume(rows)?;
-            if let Some(work) = &mut work {
-                work.resize(0);
-            }
+            reader.release_batch_memory();
         }
     }
 
@@ -231,6 +221,9 @@ impl StateDb {
         accept: impl Fn(&[u8]) -> bool,
         mut consume: impl FnMut(&[u8], &[u8]) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        if work.is_none() {
+            work = crate::state::canonical_context::temporary_reservation();
+        }
         let view = self.pin();
         let mut reader = view.snapshot.raw_iterator();
         reader.seek_to_first();
@@ -398,7 +391,15 @@ pub(crate) use crate::state::canonical_context::{check_cancelled, in_frozen_scop
 pub(crate) type FrozenDatabases = crate::state::canonical_context::CanonicalContext;
 
 impl FrozenDatabases {
+    #[cfg(test)]
     pub(crate) fn capture(directory: &Path) -> Result<Arc<Self>, DataFusionError> {
+        Self::capture_with_budget(directory, -1)
+    }
+
+    pub(crate) fn capture_with_budget(
+        directory: &Path,
+        budget: i64,
+    ) -> Result<Arc<Self>, DataFusionError> {
         let directory = directory.canonicalize().map_err(ioe)?;
         let registered = databases().lock().unwrap_or_else(|e| e.into_inner());
         let mut views = HashMap::new();
@@ -418,7 +419,7 @@ impl FrozenDatabases {
                 "native state has no open database to pin".into(),
             ));
         }
-        Ok(Self::new(views))
+        Self::with_budget(views, budget)
     }
 }
 
@@ -563,7 +564,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(pages.iter().sum::<usize>(), 3);
-        assert_eq!(pages.len(), 2);
+        assert_eq!(pages.len(), 3);
         assert!(live
             .visit_snapshot_batches(0, |_| true, |_| Ok(()))
             .is_err());
@@ -592,6 +593,95 @@ mod tests {
             check_cancelled().is_ok(),
             "cancel scope must not escape its reader"
         );
+    }
+
+    #[test]
+    fn denied_scan_batch_keeps_its_cursor_and_releases_partial_work_before_retry() {
+        let (_directory, live, clock) = test_database();
+        for key in [b"a", b"b", b"c"] {
+            live.put(key, vec![7; 100]).unwrap();
+        }
+        live.put(b"z", vec![8; 1 << 20]).unwrap();
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024));
+        let mut blocker = MemoryConsumer::new("other work").register(&pool);
+        blocker.try_resize(700).unwrap();
+        let mut reader = super::super::RocksReadSnapshot::new(&live)
+            .with_memory(Some(MemoryConsumer::new("copied scan").register(&pool)));
+        assert!(matches!(
+            reader.next_batch(|key| key != b"z"),
+            Err(DataFusionError::ResourcesExhausted(_))
+        ));
+        assert_eq!(pool.reserved(), 700);
+        drop(blocker);
+        let rows = reader.next_batch(|key| key != b"z").unwrap();
+        assert_eq!(
+            rows.len(),
+            3,
+            "the refused frame must not advance its cursor"
+        );
+        assert_eq!(rows[0].0.as_ref(), b"a");
+        assert_eq!(rows[2].0.as_ref(), b"c");
+        assert!(pool.reserved() >= rows.iter().map(|(k, v)| k.len() + v.len()).sum());
+        drop(rows);
+        assert!(
+            reader.next_batch(|_| true).is_err(),
+            "the oversized next record exceeds the pool"
+        );
+        drop(reader);
+        assert_eq!(pool.reserved(), 0);
+        assert!(!clock.pinned());
+    }
+
+    #[test]
+    fn default_visitors_share_captured_memory_and_release_after_failure_or_cancellation() {
+        let (_directory, live, clock) = test_database();
+        for key in [b"a", b"b", b"c"] {
+            live.put(key, vec![7; 100]).unwrap();
+        }
+        for borrowed in [false, true] {
+            let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(4096));
+            let mut memory = OperatorMemory::unaccounted();
+            memory.attach_pool("captured conversion", &pool, 0).unwrap();
+            let scope = FrozenDatabases::with_memory(HashMap::new(), memory);
+            let failed = scope.with(|| {
+                if borrowed {
+                    live.visit_snapshot_raw(
+                        None,
+                        |_| true,
+                        |_, _| {
+                            assert!(pool.reserved() > 0);
+                            Err(DataFusionError::Execution("refused receiver".into()))
+                        },
+                    )
+                } else {
+                    live.visit_snapshot_batches(
+                        1,
+                        |_| true,
+                        |_| {
+                            assert!(pool.reserved() > 0);
+                            Err(DataFusionError::Execution("refused receiver".into()))
+                        },
+                    )
+                }
+            });
+            assert!(failed.unwrap_err().to_string().contains("refused receiver"));
+            assert_eq!(pool.reserved(), 0);
+            let cancelled = scope.with(|| {
+                live.visit_snapshot_batches(
+                    1,
+                    |_| true,
+                    |_| {
+                        assert!(pool.reserved() > 0);
+                        scope.cancel();
+                        Ok(())
+                    },
+                )
+            });
+            assert!(cancelled.unwrap_err().to_string().contains("cancelled"));
+            assert_eq!(pool.reserved(), 0);
+            assert!(!clock.pinned());
+            assert!(crate::state::canonical_context::temporary_reservation().is_none());
+        }
     }
 
     #[test]

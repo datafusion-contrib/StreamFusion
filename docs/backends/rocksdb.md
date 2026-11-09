@@ -270,6 +270,17 @@ layouts remain unchanged. See [OVER checkpoint semantics](../operators/over.md#p
 for the limit on reconstructing arithmetic history discarded by old writers.
 
 
+### Canonical conversion reservations
+
+A captured read context carries the operator's memory authority onto Flink's asynchronous writer.
+Shared scan batches reserve copied keys/values, vector capacity and the continuation key before
+allocation. Refused frames retain their prior cursor position and can retry after memory becomes
+available. Frames split before crossing their byte limit, except for an individual oversized
+record. Direct scalar cursors include a decoding estimate. Window-rank buckets and DISTINCT
+membership keys are borrowed from pinned iterators; their decoded transfer frames reserve work
+before construction. The encoded RocksDB value still has an intrinsic memory floor, and estimates
+for other conversion stages remain part of the accounting audit.
+
 ### Retained nested rows
 
 Buffered event-time deduplication, event-time sort and window rank/deduplication share a retained-row

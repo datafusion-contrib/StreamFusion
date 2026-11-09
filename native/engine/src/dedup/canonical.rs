@@ -282,7 +282,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_captureEagerDeduplicatorCan
                     .collect(),
             )?;
             let markers = owner.canonical_markers();
-            let snapshot = owner.rows.canonical_snapshot()?;
+            let snapshot = owner
+                .rows
+                .canonical_snapshot(owner.memory.temporary_reservation())?;
             Ok::<_, DataFusionError>(crate::state::canonical_snapshot::cursor(
                 snapshot,
                 move |env, receiver, entries| {

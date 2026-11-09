@@ -397,7 +397,7 @@ public abstract class AbstractNativeStatefulOperator<OUT>
       tech.streamfusion.state.StockDeferredSnapshot.NativeReader reader;
       if (persistent) {
         checkpointRocksDBHandle("");
-        pinned = Native.pinCanonicalDatabases(rocksdbSupport.tableDirectory());
+        pinned = Native.pinCanonicalDatabases(rocksdbSupport.tableDirectory(), memoryBudgetBytes());
         readerSupport = rocksdbSupport.canonicalReader();
         final var support = readerSupport;
         reader =
@@ -422,7 +422,7 @@ public abstract class AbstractNativeStatefulOperator<OUT>
                 },
                 value -> closeCapturedHandle(value, true));
       } else {
-        pinned = Native.createCanonicalMemoryContext();
+        pinned = Native.createCanonicalMemoryContext(memoryBudgetBytes());
         captured = createHandle();
         if (captured == 0)
           throw new IllegalStateException("canonical native constructor returned no handle");
@@ -563,6 +563,7 @@ public abstract class AbstractNativeStatefulOperator<OUT>
   @Override
   public void close() throws Exception {
     if (canonicalBackend != null) canonicalBackend.closeCanonicalReaders();
+    if (rocksdbSupport != null) rocksdbSupport.closeCanonicalReaders();
     if (handle != 0) {
       closeHandle();
       handle = 0;
