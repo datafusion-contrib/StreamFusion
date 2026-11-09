@@ -512,7 +512,10 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   }
 
   private void preflight(
-      CheckpointableKeyedStateBackend<RowData> backend, StockStateSpool partitions, long handle)
+      CheckpointableKeyedStateBackend<RowData> backend,
+      StockStateSpool partitions,
+      StockMapListSnapshot lists,
+      long handle)
       throws Exception {
     var inventory = new HashMap<String, StockStateInventory.State>();
     stateDescriptors()
@@ -521,6 +524,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
                 inventory.put(
                     name, new StockStateInventory.State(kind, VoidNamespaceSerializer.INSTANCE)));
     StockStateInventory.validate(backend, inventory, timerSchema(), keys);
+    lists.capture(backend, INPUT, keys);
     bind(backend);
     partitions.collectOwners(backend, stateDescriptors().keySet());
     try (var iterator =
@@ -539,15 +543,18 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       throw new IllegalArgumentException("Unexpected bounded OVER timer domain");
     try (var owners = partitions.owners()) {
       while (owners.hasNext()) {
-        var partition = readPartition(backend, partitions, owners.next());
-        transferFrames(backend, handle, partition, true);
-        transferPending(backend, handle, partition, true);
+        var partition = readPartition(backend, partitions, lists, owners.next());
+        transferFrames(lists, handle, partition, true);
+        transferPending(lists, handle, partition, true);
       }
     }
   }
 
   private Partition readPartition(
-      CheckpointableKeyedStateBackend<RowData> backend, StockStateSpool partitions, RowData owner)
+      CheckpointableKeyedStateBackend<RowData> backend,
+      StockStateSpool partitions,
+      StockMapListSnapshot lists,
+      RowData owner)
       throws Exception {
     var partition = new Partition(new RowDataSerializer(keyType).toBinaryRow(owner).copy());
     try (var timers = partitions.times(1, owner)) {
@@ -562,26 +569,26 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     } else partition.last = scalar(backend, LAST).value();
     var acc = accumulators(backend).value();
     partition.accumulator = acc == null ? null : accSerializer.copy(acc);
-    var entries = inputs(backend).entries();
-    if (entries != null)
-      for (var entry : entries) {
-        var timestamp = entry.getKey();
-        var peers = entry.getValue();
-        if (timestamp == null || peers == null || peers.isEmpty())
+    try (var timestamps = lists.timestamps(owner)) {
+      while (timestamps.hasNext()) {
+        long timestamp = timestamps.next();
+        int count = lists.size(owner, timestamp);
+        if (count <= 0)
           throw new IllegalArgumentException(
               "Empty " + (processingRows ? "processing ROWS" : "RANGE") + " timestamp bucket");
-        for (var row : peers) {
+        for (var row : lists.rows(owner, timestamp)) {
           if (row.getRowKind() != RowKind.INSERT
               || !key(row).equals(partition.key)
               || (!processingRows && time(row) != timestamp))
             throw new IllegalArgumentException("bounded OVER input disagrees with key/time/kind");
         }
-        partition.buckets.put(timestamp, peers.size());
+        partition.buckets.put(timestamp, count);
         if (!processingRows
             && (partition.last == null || timestamp > partition.last)
             && !partition.timers.contains(timestamp))
           throw new IllegalArgumentException("Pending bounded OVER input has no event timer");
       }
+    }
     if (processingRows) {
       long retained = partition.buckets.values().stream().mapToLong(Integer::longValue).sum();
       if (partition.accumulator == null
@@ -674,10 +681,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   }
 
   private void transferFrames(
-      CheckpointableKeyedStateBackend<RowData> backend,
-      long handle,
-      Partition partition,
-      boolean validating)
+      StockMapListSnapshot lists, long handle, Partition partition, boolean validating)
       throws Exception {
     long total =
         partition.buckets.entrySet().stream()
@@ -694,7 +698,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     int base = nativeInputType.getFieldCount();
     for (var entry : new TreeMap<>(partition.buckets).entrySet()) {
       if (!processingRows && (partition.last == null || entry.getKey() > partition.last)) continue;
-      for (var original : inputs(backend).get(entry.getKey())) {
+      for (var original : lists.rows(partition.key, entry.getKey())) {
         var input = nativeRow(original);
         long size = serializer.toBinaryRow(input).getSizeInBytes() + 8L * frameType.getFieldCount();
         if (!frames.isEmpty() && (frames.size() >= CHUNK_ROWS || bytes + size > CHUNK_BYTES)) {
@@ -773,10 +777,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   }
 
   private void transferPending(
-      CheckpointableKeyedStateBackend<RowData> backend,
-      long handle,
-      Partition partition,
-      boolean validating)
+      StockMapListSnapshot lists, long handle, Partition partition, boolean validating)
       throws Exception {
     if (processingRows) return;
     var rows = new ArrayList<RowData>(CHUNK_ROWS);
@@ -784,7 +785,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     long bytes = 0;
     for (long timestamp : new TreeMap<>(partition.buckets).keySet()) {
       if (partition.last != null && timestamp <= partition.last) continue;
-      for (var input : inputs(backend).get(timestamp)) {
+      for (var input : lists.rows(partition.key, timestamp)) {
         var row = nativeRow(input);
         long size = serializer.toBinaryRow(row).getSizeInBytes();
         if (!rows.isEmpty() && (rows.size() >= CHUNK_ROWS || bytes + size > CHUNK_BYTES)) {
@@ -816,13 +817,14 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
     try (var partitions = new StockStateSpool(new RowDataSerializer(keyType))) {
-      preflight(backend, partitions, handle);
+      var lists = new StockMapListSnapshot(partitions, new RowDataSerializer(inputType), 2);
+      preflight(backend, partitions, lists, handle);
       try (var owners = partitions.owners()) {
         while (owners.hasNext()) {
-          var partition = readPartition(backend, partitions, owners.next());
-          transferFrames(backend, handle, partition, false);
+          var partition = readPartition(backend, partitions, lists, owners.next());
+          transferFrames(lists, handle, partition, false);
           transferProtocol(handle, partition);
-          transferPending(backend, handle, partition, false);
+          transferPending(lists, handle, partition, false);
         }
       }
     }

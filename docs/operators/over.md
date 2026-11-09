@@ -1880,6 +1880,11 @@ the RocksDB projection. This removes repeated full-bucket get/add/put and Java l
 from both bounded and unbounded event-time export. Arrival order within each bucket, processing
 clocks, raw accumulators and physical timers remain independent. Heap component backends receive
 owned lists before the spool closes. The largest encoded stock KV remains an intrinsic writer
-working set, and restore still deserializes individual stock lists; that import work remains open.
-Shared spool controls cover interleaved owners/timestamps, 8,195 rows, a two-MiB row, multiple
+working set. Restore now stages canonical encoded map values in the same scoped disk storage
+and decodes individual rows with the released serializer. This covers bounded processing ROWS,
+bounded event-time ROWS/RANGE and unbounded event-time pending inputs on both release lines;
+it preserves original per-owner map order and peer order without allocating a complete Java list.
+Pending rows transfer with both row and byte limits. Per-owner bounded-frame timestamp/count maps
+and callback/map-order arrays still remain working sets; broader operator/layout admission remains
+separate work. Shared spool controls cover interleaved owners/timestamps, 8,195 rows, a two-MiB row, multiple
 readers and failure cleanup without changing stock serializer metadata.

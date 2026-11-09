@@ -143,6 +143,48 @@ class CanonicalTemporalSortInteropTest {
     assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
   }
 
+  static Stream<Arguments> wideBuckets() {
+    return Stream.of(false, true)
+        .flatMap(source -> Stream.of(false, true).map(target -> Arguments.of(source, target)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("wideBuckets")
+  void oneLargeBucketRestoresAcrossRowAndByteChunkBoundaries(
+      boolean stockStore, boolean nativeStore) throws Exception {
+    var plan = new Plan("string", 128);
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    OperatorSubtaskState original;
+    List<String> expected;
+    try (var stock = plan.stock(stockStore)) {
+      stock.open();
+      for (int i = 0; i < 2051; i++) {
+        var row = (GenericRowData) plan.row(i, 100);
+        if (i < 3) row.setField(1, StringData.fromString("x".repeat(1536 * 1024)));
+        plan.pushStock(stock, row);
+      }
+      original = snapshot(stock);
+      stock.processWatermark(new Watermark(100));
+      expected = plan.stockOutput(stock);
+      assertEquals(2051, expected.size());
+    }
+    OperatorSubtaskState exported;
+    try (var target = plan.nativeHarness(nativeStore)) {
+      target.initializeState(original);
+      target.open();
+      exported = snapshot(target);
+      target.processWatermark(new Watermark(100));
+      assertEquals(expected, plan.nativeOutput(target));
+    }
+    try (var returned = plan.stock(stockStore)) {
+      returned.initializeState(exported);
+      returned.open();
+      returned.processWatermark(new Watermark(100));
+      assertEquals(expected, plan.stockOutput(returned));
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
   static Stream<Arguments> corruptions() {
     var out = new ArrayList<Arguments>();
     for (String mode :

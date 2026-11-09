@@ -343,7 +343,9 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   private static final int EVENT_TIMES = 1, PROCESSING_TIMES = 2, PENDING_TIMES = 3, FOLDS = 4;
 
   private void preflight(
-      CheckpointableKeyedStateBackend<RowData> backend, StockStateSpool partitions)
+      CheckpointableKeyedStateBackend<RowData> backend,
+      StockStateSpool partitions,
+      StockMapListSnapshot lists)
       throws Exception {
     var inventory = new HashMap<String, StockStateInventory.State>();
     stateDescriptors()
@@ -352,6 +354,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
                 inventory.put(
                     name, new StockStateInventory.State(kind, VoidNamespaceSerializer.INSTANCE)));
     StockStateInventory.validate(backend, inventory, timerSchema(), keySerializer());
+    lists.capture(backend, INPUT, keySerializer());
     bind(backend);
     for (String name : stateDescriptors().keySet())
       try (var source = backend.getKeys(name, VoidNamespace.INSTANCE)) {
@@ -382,17 +385,12 @@ public final class StockOverEventFoldStateContract implements StockStateContract
         backend.setCurrentKey(owner);
         Long deadline = cleanupEnabled ? cleanup(backend).value() : null;
         boolean pending = false;
-        var entries = inputs(backend).entries();
-        if (entries != null)
-          for (var entry : entries) {
-            Long timestamp = entry.getKey();
-            var peers = entry.getValue();
-            if (timestamp == null
-                || timestamp == Long.MIN_VALUE
-                || peers == null
-                || peers.isEmpty())
+        try (var timestamps = lists.timestamps(owner)) {
+          while (timestamps.hasNext()) {
+            long timestamp = timestamps.next();
+            if (timestamp == Long.MIN_VALUE || lists.size(owner, timestamp) <= 0)
               throw new IllegalArgumentException("Empty or invalid event OVER timestamp bucket");
-            for (var row : peers) {
+            for (var row : lists.rows(owner, timestamp)) {
               if (row == null
                   || row.getArity() != inputType.getFieldCount()
                   || row.getRowKind() != RowKind.INSERT
@@ -411,6 +409,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
               throw new IllegalArgumentException(
                   "Event OVER pending buckets and event timers differ");
           }
+        }
         if (pollingTimers) {
           if (pending && !partitions.hasAny(EVENT_TIMES, owner))
             throw new IllegalArgumentException(
@@ -438,21 +437,21 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   }
 
   private void transferPending(
-      CheckpointableKeyedStateBackend<RowData> backend,
-      long handle,
-      StockStateSpool partitions,
-      boolean validating)
+      StockMapListSnapshot lists, long handle, StockStateSpool partitions, boolean validating)
       throws Exception {
     var rows = new ArrayList<RowData>(CHUNK_ROWS);
+    var serializer = new RowDataSerializer(nativeInputType);
+    long bytes = 0;
     try (var owners = partitions.owners()) {
       while (owners.hasNext()) {
         var owner = owners.next();
-        backend.setCurrentKey(owner);
         try (var timestamps = partitions.times(PENDING_TIMES, owner)) {
           while (timestamps.hasNext())
-            for (var row : inputs(backend).get(timestamps.next())) {
-              rows.add(nativeRow(row));
-              if (rows.size() == CHUNK_ROWS) {
+            for (var row : lists.rows(owner, timestamps.next())) {
+              var input = nativeRow(row);
+              long size = serializer.toBinaryRow(input).getSizeInBytes();
+              if (!rows.isEmpty()
+                  && (rows.size() == CHUNK_ROWS || bytes + size > 4L * 1024 * 1024)) {
                 send(
                     validating
                         ? Native::validateOverPendingCanonical
@@ -461,7 +460,10 @@ public final class StockOverEventFoldStateContract implements StockStateContract
                     nativeInputType,
                     rows);
                 rows.clear();
+                bytes = 0;
               }
+              rows.add(input);
+              bytes += size;
             }
         }
       }
@@ -527,7 +529,8 @@ public final class StockOverEventFoldStateContract implements StockStateContract
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
     try (var partitions = new StockStateSpool(new RowDataSerializer(keyType))) {
-      preflight(backend, partitions);
+      var lists = new StockMapListSnapshot(partitions, new RowDataSerializer(inputType), 5);
+      preflight(backend, partitions, lists);
       folds.requireEmpty(handle);
       visit(
           Native::exportOverPendingCanonical,
@@ -545,7 +548,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
           });
       for (boolean validating : new boolean[] {true, false}) {
         folds.transferState(backend, handle, validating);
-        transferPending(backend, handle, partitions, validating);
+        transferPending(lists, handle, partitions, validating);
         transferCleanup(backend, handle, partitions, validating);
       }
     }

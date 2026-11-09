@@ -141,15 +141,33 @@ most 1,024 rows with a payload estimate of four MiB, before installing any nativ
 Original input clocks and positions span chunks; raw accumulators occur only at the end.
 The native importer writes RocksDB frames directly and guards unfinished/failed restores from
 processing or snapshotting. Decode reservations transfer into retained-state charges, including
-failed writes. Per-owner timestamp/count inventories, callback/map-order arrays, individual stock
-list values on import and other adapters' inventories remain open work. OVER and temporal-sort
+failed writes. Per-owner OVER timestamp/count inventories, callback/map-order arrays and other
+adapters' inventories remain open work. OVER and temporal-sort
 exports now stage each map-list row once in the shared disk spool. A scoped lazy list lets the
 released stock ListSerializer stream each timestamp bucket into the RocksDB projection once,
 without per-row bucket reads or repeated list reconstruction. Heap component backends receive
 ordinary owned lists. No scratch descriptors or helper serializers enter the savepoint. Working
-memory still includes the largest encoded stock KV required by Flink's snapshot iterator; list
-import has not yet eliminated deserialization of that value into Java rows. Asynchronous capture does
-not imply that every conversion path has a fixed working set. OVER cleanup, counter and both event-timer policies now share incremental
+memory still includes the largest encoded stock KV required by Flink's snapshot iterator.
+For bounded OVER, unbounded event-time OVER and temporal sort, restore stages those opaque map
+values on disk and decodes one row at a time with the released row serializer. The shared reader
+checks the captured map/list and namespace serializers and parses composite keys through Flink's
+public utility on both release lines. Per-owner source bucket order remains intact for heap RANGE
+semantics. All source rows and timer relationships validate before native installation; source
+entries clear only after successful conversion. Temporal sort also compares bucket/timer sets on
+disk rather than retaining all pending rows or timestamps in Java collections. Pending-row Arrow
+transfers use both 1,024-row and four-MiB payload-estimate limits, allowing one oversized row.
+This removes the additional complete Java list allocation; it does not remove Flink's encoded-KV
+bound or the heap backend's own resident state. Other adapters still have list imports.
+Direct decoder controls check lazy consumption, null/empty values, truncated rows, negative and
+oversized counts, trailing bytes, independent row ownership and two-MiB rows. Actual heap/RocksDB
+backend controls check captured serializer rejection, original bucket/peer order and independent
+staged reads after source mutation. A 2,051-row temporal-sort bucket with three 1.5-MiB rows crosses
+both transport limits and resumes through stock/native/stock handoffs on both native stores.
+The selected list-import cohort passes 571 checks on 1.18 and 543 on 2.2, with 32 expected V1-only
+skips on 2.2. Five decoder/backend controls pass separately on 2.2; a final clean 1.18 run passes those five
+plus all four wide-bucket handoffs. These overlapping controls
+retain local pairwise matrix selection; exhaustive CI and broader admission remain separate.
+Asynchronous capture does not imply that every conversion path has a fixed working set. OVER cleanup, counter and both event-timer policies now share incremental
 metadata persistence during normal processing. The journal deduplicates changed keys and writes
 bounded row/byte batches, retaining updates if a flush fails. Normal capture does not rebuild
 metadata inventories; native restore reconciles older metadata once before processing resumes.

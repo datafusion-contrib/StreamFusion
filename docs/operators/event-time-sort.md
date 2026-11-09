@@ -48,8 +48,11 @@ state does not require StreamFusion classes on the stock classpath. Export stage
 row once in the shared temporary disk spool, then the released ListSerializer streams one
 complete timestamp bucket into the RocksDB projection. It does not repeatedly read and rewrite
 a growing Java list. Heap component backends receive owned lists. Scratch storage closes and
-deletes on success or failure; no helper descriptors enter stock metadata. Individual stock list
-imports and the largest encoded KV remain conversion working sets.
+deletes on success or failure; no helper descriptors enter stock metadata. Restore stages opaque
+canonical map values and decodes rows individually with the released serializer, avoiding an
+additional complete Java list. Bucket order and timer membership are compared in disk storage;
+transfers use at most 1,024 rows and a four-MiB payload estimate, plus one oversized row. Flink's
+largest encoded KV and the heap source backend's resident state remain intrinsic working sets.
 
 Import validates descriptor ownership, the empty key, row/time/INSERT consistency and exact timer
 membership before installing native state. Nullable and nested payloads retain their full original
