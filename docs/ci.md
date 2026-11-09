@@ -591,24 +591,23 @@ yet available as a released CI fixture.
 
 ## Complete canonical job matrix
 
-Flink 1.18 runs focused shared complete-job controls in its first runtime shard on both JDKs.
-They cover First-N, grouped arithmetic, regular joins, normalization and eager mini-batch dedup,
-using the existing smoke selections, both native stores and isolated native/stock/native handoffs.
-The shared planner, operator, MVCC, cancellation and lifecycle classes remain in the ordinary
-runtime shards. These controls qualify the older runtime lifecycle without rerunning the full
-2.2 connector and operator job matrix on 1.18. The wider 1.18 failure/rescale matrix remains open.
+Both Flink lines run complete canonical handoff jobs in 16 required shards on each of JDK 11
+and 17. Every shard uses the same shared debug native artifact, startup compiler settings and
+scoped class-data cache. Flink 1.18 combines its release profile with `canonical-kafka`; dependency
+resolution, compilation and execution use the same profiles. Artifacts include the Flink line,
+JDK and shard, and selection manifests record the line. The former five-family smoke step in
+1.18's runtime shard is replaced by this exhaustive compiled-inventory selection.
 
+Each line selects from its own compiled test inventory and duration estimates, preserving every
+method and inherited parameterized invocation. The current source inventories have 118 canonical
+classes on 2.2 and 19 shared classes on 1.18, including abstract bases; these counts are not equal
+portability qualification. Porting and qualifying the remaining release-specific fixtures remains
+open work. Adding a shared fixture automatically includes it in both lines' required canonical
+matrix. The existing three runtime shards retain the other default Surefire classes on both
+lines: the two selections have a complete union and empty intersection within each compiled
+inventory. Nested classes and ORC tag handling are unchanged. Every line/JDK/shard is required
+by `All CI tests`; no local smoke flag is set in hosted canonical CI.
 
-Flink 2.2 canonical handoff jobs run in 16 additional required shards on each of JDK 11 and 17.
-Canonical jobs use the same duration-based balancing as runtime shards, with complete-job
-timings retained in `dev/ci/runtime-durations.json`. All 116 runnable canonical classes have
-recorded timings; the two abstract bases have zero cost. New classes use the same one-second
-default as ordinary runtime classes until measured.
-The existing three runtime shards retain all other default Surefire classes on both Flink lines.
-Both selections are computed from the compiled test inventory: their union is the original
-selection and their intersection is empty. Balancing changes only class placement; test
-methods, inherited parameterized cases, nested classes and ORC tag handling are unchanged.
-Every canonical shard is required by `All CI tests`.
 Canonical scheduling now uses that complete matrix's class times with startup compilation
 and metadata sharing enabled, replacing estimates from the earlier JVM settings. For the
 same 118 classes, including two abstract bases, the largest modeled shard falls from 7,417.10
@@ -663,8 +662,9 @@ and retained without changing its timestamp. Changed compiled bytes produce a ne
 Archive keys include the JDK, VM arguments, classpath, worker class and engine role. Caches live
 under the current runner's temporary directory and are removed after outcomes and failed
 archive diagnostics are uploaded. Default local Maven runs do not enable this cache.
-Each runner uses two fresh 2 GiB Surefire JVMs, with process reuse disabled. This preserves all
-118 canonical classes on each JDK while reducing canonical runner jobs from 64 to 32. The stock
+Each runner uses two fresh 2 GiB Surefire JVMs, with process reuse disabled. The earlier 2.2-only
+change preserved its 118 classes on each JDK while reducing that line's runner jobs from 64 to 32.
+The required two-line matrix now has 64 jobs, preserving each line's compiled inventory. The stock
 and native worker processes retain their separate 1 GiB heaps; native memory and containers
 also need headroom. The complete 32-shard hosted canonical matrix passed on both JDKs;
 the full CI and upstream aggregates remain required for source changes.

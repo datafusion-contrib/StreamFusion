@@ -209,21 +209,6 @@ jobs:
             -DskipTests=${{ matrix.shard != 1 }} -Dsf.runtime.tests.skip=false \
             -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx2g"
 
-      - name: Verify shared canonical handoffs on Flink 1.18
-        if: matrix.line == '1.18' && matrix.shard == 1
-        env:
-          JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m'
-        run: >-
-          mvn -B -ntp -Pflink-1.18 -pl streamfusion-runtime -am test
-          -Dnative.build.skip=true -Dsf.runtime.tests.skip=false
-          '-Dtest=CanonicalFirstNJobTest#countersContinueAcrossIsolatedEngineProcesses,CanonicalGroupArithmeticJobTest,CanonicalRegularJoinJobTest#regularStateContinuesAcrossCleanEngineProcesses,CanonicalNormalizerJobTest#normalizerAndJoinContinueAcrossIsolatedEngineProcesses,CanonicalEagerDedupJobTest#retainedDeduplicationStateContinuesAcrossIsolatedEngineProcesses'
-          -Dstreamfusion.test.firstNJobSmoke=true
-          -Dstreamfusion.test.groupArithmeticJobSmoke=true
-          -Dstreamfusion.test.regularJoinJobSmoke=true
-          -Dstreamfusion.test.normalizerJobSmoke=true
-          -Dstreamfusion.test.eagerDedupJobSmoke=true
-          -Dsf.testForks=2 -Dsf.testReuseForks=false '-Dsf.extraJvmArgs=-Xmx2g'
-
       - name: Verify JVM boundary defaults and optional cache on the freshly built native library
         if: matrix.jdk == '17' && matrix.shard == 1
         run: >-
@@ -276,14 +261,20 @@ jobs:
 
   canonical-job-tests:
     needs: native-build
-    name: Canonical savepoint jobs (JDK ${{ matrix.jdk }}) (shard ${{ matrix.shard }})
+    name: Canonical savepoint jobs (Flink ${{ matrix.line }}, JDK ${{ matrix.jdk }}) (shard ${{ matrix.shard }})
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
+        line: ['2.2', '1.18']
         jdk: ['17', '11']
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        include:
+          - line: '2.2'
+            profiles: 'canonical-kafka'
+          - line: '1.18'
+            profiles: 'flink-1.18,canonical-kafka'
     env:
       SF_KAFKA_INTEGRATION: 'true'
       # Each handoff starts a fresh worker; optimizing compilation cannot amortize here.
@@ -303,14 +294,14 @@ jobs:
           path: native/target/debug
       - name: Resolve Java dependencies before tests
         run: |
-          python3 bin/ci-maven-dependencies.py --profile canonical-kafka --projects streamfusion-runtime
+          python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profiles }}" --projects streamfusion-runtime
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 --artifact com.google.protobuf:protobuf-java:2.5.0
       - name: Compile and partition complete canonical jobs
         run: |
-          mvn -B -ntp -Pcanonical-kafka -pl streamfusion-runtime -am test -DskipTests -Dnative.build.skip=true
+          mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test -DskipTests -Dnative.build.skip=true
           python3 bin/ci_runtime_test_shards.py \
             --classes streamfusion-runtime/target/test-classes \
-            --suite canonical --count 16 --index ${{ matrix.shard }} \
+            --suite canonical --line ${{ matrix.line }} --count 16 --index ${{ matrix.shard }} \
             --output "$RUNNER_TEMP/canonical-job-includes.txt"
       - name: Run every selected canonical job
         env:
@@ -321,7 +312,7 @@ jobs:
           vmstat -w 30 &
           memory_sampler=$!
           trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
-          mvn -B -ntp -Pcanonical-kafka -pl streamfusion-runtime -am test \
+          mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test \
             -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
             "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/canonical-job-includes.txt" \
             -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx1g"
@@ -329,7 +320,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: canonical-job-results-jdk${{ matrix.jdk }}-shard${{ matrix.shard }}
+          name: canonical-job-results-flink${{ matrix.line }}-jdk${{ matrix.jdk }}-shard${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/canonical-job-includes.*
             streamfusion-runtime/target/surefire-reports/*
