@@ -14,7 +14,7 @@ on:
       hotspot_mode:
         description: 'Attribute slow classes or compare their worker counts'
         type: choice
-        options: [attribution, parallel, plan-cache, canonical-parallel, deeper-runtime, recovery-diagnostics]
+        options: [attribution, parallel, plan-cache, canonical-parallel, deeper-runtime, fluss-details, recursive-completion, recovery-diagnostics]
         default: attribution
 
 permissions:
@@ -162,7 +162,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        jdk: ${{ fromJSON(inputs.hotspot_mode == 'parallel' && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'recovery-diagnostics') && '["17"]' || '["11", "17"]') }}
+        jdk: ${{ fromJSON(inputs.hotspot_mode == 'parallel' && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'fluss-details' || inputs.hotspot_mode == 'recursive-completion' || inputs.hotspot_mode == 'recovery-diagnostics') && '["17"]' || '["11", "17"]') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -216,7 +216,7 @@ jobs:
           if [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
             profile=(-Pcanonical-kafka)
             profile_name='canonical-kafka'
-          elif [[ "$HOTSPOT_MODE" == 'deeper-runtime' ]]; then
+          elif [[ "$HOTSPOT_MODE" == 'deeper-runtime' || "$HOTSPOT_MODE" == 'fluss-details' ]]; then
             projects='streamfusion-fluss'
             goal='test'
             skip=(-DskipTests)
@@ -244,7 +244,7 @@ jobs:
           vmstat -w 15 > "$RUNNER_TEMP/runtime-hotspots-vmstat.txt" &
           memory_sampler=$!
           trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
-          if [[ "$HOTSPOT_MODE" == 'deeper-runtime' ]]; then
+          if [[ "$HOTSPOT_MODE" == 'deeper-runtime' || "$HOTSPOT_MODE" == 'fluss-details' ]]; then
             (
               while true; do
                 date -u
@@ -254,8 +254,12 @@ jobs:
             ) > "$RUNNER_TEMP/runtime-hotspots-containers.txt" &
             container_sampler=$!
             trap 'kill "$memory_sampler" "$container_sampler" 2>/dev/null || true' EXIT
-            python3 bin/profile-ci-details.py --line 2.2 --suite recursive --output "$RUNNER_TEMP/runtime-hotspots/recursive"
+            if [[ "$HOTSPOT_MODE" == 'deeper-runtime' ]]; then
+              python3 bin/profile-ci-details.py --line 2.2 --suite recursive --output "$RUNNER_TEMP/runtime-hotspots/recursive"
+            fi
             python3 bin/profile-ci-details.py --line 2.2 --suite fluss --output "$RUNNER_TEMP/runtime-hotspots/fluss"
+          elif [[ "$HOTSPOT_MODE" == 'recursive-completion' ]]; then
+            python3 bin/profile-ci-details.py --line 2.2 --suite recursive --compare-completion --output "$RUNNER_TEMP/runtime-hotspots/recursive-completion"
           elif [[ "$HOTSPOT_MODE" == 'recovery-diagnostics' ]]; then
             python3 bin/profile-ci-details.py --line 1.18 --suite recovery --output "$RUNNER_TEMP/runtime-hotspots/recovery"
           elif [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then

@@ -346,6 +346,18 @@ final class NativeFailureParity {
         result = CiFixtureTimings.measure(timing + "submit", query::execute);
         phase = Phase.COLLECTION;
         long collectedStarted = CiFixtureTimings.start();
+        if (Boolean.getBoolean("sf.parity.awaitSmallResults")) {
+          try {
+            result
+                .getJobClient()
+                .orElseThrow()
+                .getJobExecutionResult()
+                .handle((completed, error) -> null)
+                .get(100, TimeUnit.MILLISECONDS);
+          } catch (TimeoutException stillRunning) {
+            // Drain larger or slower jobs normally instead of waiting on a full collect buffer.
+          }
+        }
         try (var iterator = result.collect()) {
           while (iterator.hasNext()) {
             var row = iterator.next();

@@ -30,20 +30,23 @@ SUITES = {
 }
 
 
-def profile(output, line, suite):
+def profile(output, line, suite, compare_completion=False):
     output.mkdir(parents=True, exist_ok=False)
     temporary = output / "tmp"
     temporary.mkdir()
     java_home = Path(os.environ["JAVA_HOME"])
-    ci_jfr.configuration(java_home, temporary / "details.jfc")
+    if not compare_completion:
+        ci_jfr.configuration(java_home, temporary / "details.jfc")
     module, selection = SUITES[suite]
     reports = ROOT / module / "target/surefire-reports"
-    heaps = ["2g", "4g", "4g", "2g"] if suite == "recovery" else ["2g"]
+    configurations = ([("2g", False), ("2g", True), ("2g", True), ("2g", False)]
+                      if compare_completion else [(heap, False) for heap in (
+                          ["2g", "4g", "4g", "2g"] if suite == "recovery" else ["2g"])])
     trials = []
     failed = False
     expected_cases = None
     try:
-        for index, heap in enumerate(heaps):
+        for index, (heap, completion) in enumerate(configurations):
             suffix = f"details-{line}-{suite}-{index}"
             recorded = output / "jfr" / str(index)
             recorded.mkdir(parents=True)
@@ -51,17 +54,26 @@ def profile(output, line, suite):
             environment = {**os.environ, "TMPDIR": str(temporary),
                            "JAVA_TOOL_OPTIONS": f'-XX:TieredStopAtLevel=1 -Djava.io.tmpdir="{temporary}"'}
             profiles = (["ci-diagnostics"] if suite == "recovery" else []) + (["flink-1.18"] if line == "1.18" else [])
-            extra = (f"-Xmx{heap} -XX:StartFlightRecording=filename={recorded},"
+            extra = f"-Xmx{heap}"
+            if not compare_completion:
+                extra += (f" -XX:StartFlightRecording=filename={recorded},"
                      f"settings={temporary / 'details.jfc'},dumponexit=true "
                      f"-XX:ErrorFile={output / 'hs_err_pid%p.log'} "
                      f"-Xlog:gc*:file={output / ('gc-' + str(index) + '-%p.log')}")
             command = ["mvn", "-B", "-ntp"] + (["-P" + ",".join(profiles)] if profiles else []) + ["-pl", module,
                        f"-Dtest={','.join('tech.streamfusion.' + name for name in selection)}",
                        "-Dsf.testForks=4", "-Dsf.testReuseForks=false", f"-Dsf.extraJvmArgs={extra}",
-                       f"-Dsf.fixtureTimingsDirectory={fixtures}", "-Dsf.fixturePlanCache=true",
+                       "-Dsf.fixturePlanCache=true", f"-Dsf.parity.awaitSmallResults={str(completion).lower()}",
                        "-Dsf.recoveryResults.profile=true", "-Dorg.slf4j.simpleLogger.defaultLogLevel=error",
                        "-Dorg.slf4j.simpleLogger.log.org.apache.flink.runtime.accumulators.AccumulatorRegistry=warn",
-                       f"-Dsurefire.reportNameSuffix={suffix}", "surefire:test@default-test"]
+                       f"-Dsurefire.reportNameSuffix={suffix}"]
+            if suite == "fluss":
+                command.extend(["-am", "-Dsurefire.failIfNoSpecifiedTests=false",
+                                "-Dsf.protobuf.checkStaleness=true", "-Dnative.build.skip=true", "test"])
+            else:
+                command.append("surefire:test@default-test")
+            if not compare_completion:
+                command.append(f"-Dsf.fixtureTimingsDirectory={fixtures}")
             log = output / (suffix + ".log")
             start = time.monotonic()
             cpu = resource.getrusage(resource.RUSAGE_CHILDREN)
@@ -70,7 +82,8 @@ def profile(output, line, suite):
             elapsed = time.monotonic() - start
             after = resource.getrusage(resource.RUSAGE_CHILDREN)
             trial = {"suite": suite, "line": line, "heap": heap, "forks": 4,
-                     "instrumented": True, "elapsed_seconds": elapsed,
+                     "instrumented": not compare_completion, "await_small_results": completion,
+                     "elapsed_seconds": elapsed,
                      "cpu_seconds": after.ru_utime + after.ru_stime - cpu.ru_utime - cpu.ru_stime,
                      "exit_code": result.returncode}
             try:
@@ -102,7 +115,8 @@ def profile(output, line, suite):
                 for m in re.finditer(r"\[ci-fixture-timing\] (\S+) calls=(\d+) nanoseconds=(\d+)", path.read_text())]
             trials.append(trial)
             (output / "summary.json").write_text(json.dumps(trials, indent=2) + "\n")
-            trial["jfr"] = ci_jfr.summarize(list(recorded.glob("*.jfr")), java_home, len(selection))
+            if not compare_completion:
+                trial["jfr"] = ci_jfr.summarize(list(recorded.glob("*.jfr")), java_home, len(selection))
             (output / "summary.json").write_text(json.dumps(trials, indent=2) + "\n")
             if result.returncode:
                 selected = [(line if len(line) <= 1500 else line[:750] + " ... " + line[-750:]) for line in raw.splitlines() if any(
@@ -128,8 +142,11 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--suite", choices=SUITES, required=True)
     parser.add_argument("--line", choices=("1.18", "2.2"), required=True)
+    parser.add_argument("--compare-completion", action="store_true")
     args = parser.parse_args()
-    profile(args.output.resolve(), args.line, args.suite)
+    if args.compare_completion and args.suite != "recursive":
+        parser.error("Completion comparison retains the complete small recursive workload")
+    profile(args.output.resolve(), args.line, args.suite, args.compare_completion)
 
 
 if __name__ == "__main__":

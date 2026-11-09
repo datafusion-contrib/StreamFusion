@@ -923,6 +923,22 @@ for Fluss processes outside the test JVM. Instrumented durations are attribution
 speedup measurements. Wait intervals exclude unrecorded short waits and can overlap across
 threads; GC activity is not exact stop-the-world pause time and heap summaries are not RSS.
 
+The [completed recursive attribution](benchmarks/ci-deeper-profile-20261108.json) passed all
+1,817 cases without skips. Across its two JVMs, collection took 516.31 summed seconds;
+JFR recorded 510.72 seconds of main-thread sleep in released Flink's collect-result retry.
+Explain calls took 37.34 summed seconds and private-cluster start/close took 95.16 seconds.
+The released 2.2.1 collector hard-codes a 100 ms retry rather than exposing a polling option.
+`hotspot_mode=recursive-completion` therefore compares two alternating pairs with an optional
+100 ms event-driven wait for job completion before collecting. A timeout falls through to
+normal live collection, avoiding a deadlock when a result exceeds the collector buffer.
+Both modes retain every row, original assertion and native execution check, four fresh
+2 GiB forks and first-tier compilation. The comparison disables JFR and phase timers.
+The experimental `sf.parity.awaitSmallResults` property defaults to false.
+
+The initial Fluss diagnostic could not load its new timing helper through a stale standalone
+test dependency; it did not execute the 29 SQL cases. `hotspot_mode=fluss-details` attributes
+that suite independently using the current Maven reactor and its test artifacts.
+
 `hotspot_mode=recovery-diagnostics` repeats the complete 54-case binary collection class
 on Flink 1.18/JDK 17 with alternating 2/4 GiB heaps, retaining its 28 existing skips.
 All four trials retain that Flink line when selecting profiles and validating outcomes.
@@ -932,6 +948,11 @@ provider with explicit accumulator-registry warnings so task-side serialization 
 visible. Released Flink 1.18 bytecode catches accumulator serialization failures, logs a
 warning and returns no snapshot; the diagnostic retains those warnings even if a later
 snapshot succeeds. Ordinary test logging is unchanged.
+The [completed four-trial diagnostic](benchmarks/ci-deeper-profile-20261108.json) passed all
+216 invocations with the same 112 existing skips and no serialization warning. One complete
+831-row result encoded to 165,299,820 bytes. The 2 GiB trials recorded before-GC heap maxima
+of 2,098,188,448 and 2,102,691,184 bytes, with full compactions. This confirms memory pressure;
+the original missing-accumulator failure's cause remains unconfirmed.
 Any failed trial remains a failed diagnostic; its verified counts and condensed failure
 evidence are retained. Raw recordings and bulky successful reports are removed after analysis.
 
