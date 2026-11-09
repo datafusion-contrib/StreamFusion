@@ -9,6 +9,7 @@ pub(crate) struct BoundedTask {
     execution: BoundedExecution,
     staged: Option<RecordBatch>,
     input_ended: bool,
+    borrowed_scratch: Option<(usize, bool)>,
     pub(crate) input_memory: MemoryReservation,
     pub(crate) output_memory: MemoryReservation,
     pool: Arc<dyn MemoryPool>,
@@ -23,17 +24,24 @@ impl BoundedTask {
         output: Arc<dyn ExecutionPlan>,
         plan: Arc<dyn ExecutionPlan>,
         context: Arc<TaskContext>,
+        borrowed_scratch: Option<(usize, bool)>,
     ) -> Result<Self, DataFusionError> {
         let pool = context.runtime_env().memory_pool.clone();
         let output_rows = context.session_config().batch_size();
         let input_memory = MemoryConsumer::new("BoundedArrowInput").register(&pool);
         let output_memory = MemoryConsumer::new("BoundedArrowOutput").register(&pool);
+        if let Some((bytes_per_row, _)) = borrowed_scratch {
+            input_memory.try_resize(bytes_per_row.checked_mul(32).ok_or_else(|| {
+                DataFusionError::ResourcesExhausted("bounded expression workspace overflow".into())
+            })?)?;
+        }
         let execution = BoundedExecution::try_new(output, vec![input.clone()], context)?;
         Ok(Self {
             input,
             execution,
             staged: None,
             input_ended: false,
+            borrowed_scratch,
             input_memory,
             output_memory,
             pool,
@@ -68,24 +76,45 @@ impl BoundedTask {
             ));
         }
         if let Some(batch) = self.staged.take() {
-            if let Some(pool) = self.pool.downcast_ref::<FlinkTaskOffHeapPool>() {
-                let output_frame = batch.slice(0, batch.num_rows().min(self.output_rows));
-                let mut headroom = copy_budget(&output_frame)?.saturating_mul(2).max(64 * 1024);
-                if !self.input_ended {
-                    headroom = headroom.max(copy_budget(&batch)?);
+            let offered = if let Some((bytes_per_row, filtered)) = self.borrowed_scratch {
+                let mut budget = batch
+                    .num_rows()
+                    .checked_add(32)
+                    .and_then(|rows| rows.checked_mul(bytes_per_row))
+                    .ok_or_else(|| {
+                        DataFusionError::ResourcesExhausted(
+                            "bounded expression workspace overflow".into(),
+                        )
+                    })?;
+                if filtered {
+                    budget = budget.checked_add(copy_budget(&batch)?).ok_or_else(|| {
+                        DataFusionError::ResourcesExhausted(
+                            "bounded filter workspace overflow".into(),
+                        )
+                    })?;
                 }
-                pool.preserve_spill_headroom(headroom);
-            }
-            let copied = compact_copy(&batch, &self.input_memory);
-            // Java has already closed its input view. Release the borrowed C Data buffers before
-            // DataFusion retains the separate native copy under its own working reservation.
-            drop(batch);
-            match copied.and_then(|batch| self.input.push(batch)) {
-                Ok(()) => {}
-                Err(error) => {
-                    self.input_memory.free();
-                    return Err(error);
+                if self.input_memory.size() < budget {
+                    self.input_memory.try_resize(budget)?;
                 }
+                Ok(batch)
+            } else {
+                if let Some(pool) = self.pool.downcast_ref::<FlinkTaskOffHeapPool>() {
+                    let output_frame = batch.slice(0, batch.num_rows().min(self.output_rows));
+                    let mut headroom = copy_budget(&output_frame)?.saturating_mul(2).max(64 * 1024);
+                    if !self.input_ended {
+                        headroom = headroom.max(copy_budget(&batch)?);
+                    }
+                    pool.preserve_spill_headroom(headroom);
+                }
+                let copied = compact_copy(&batch, &self.input_memory);
+                // Retaining plans release the borrowed C Data buffers before keeping a separately
+                // charged native copy. Reductions can instead consume the imported batch directly.
+                drop(batch);
+                copied
+            };
+            if let Err(error) = offered.and_then(|batch| self.input.push(batch)) {
+                self.input_memory.free();
+                return Err(error);
             }
             if self.input_ended {
                 self.input.finish()?;
@@ -102,15 +131,20 @@ impl BoundedTask {
             Err(_) => return Ok(None),
         };
         self.ingesting = false;
-        // Reuse one copy workspace while reading input. At EOF the sorter owns its retained
-        // inputs and final output no longer needs the input workspace.
-        if self.input_ended || event.is_err() {
+        // Reuse one workspace while reading input. A reduction keeps it through final projection
+        // and output copying, then drops it after releasing the original result buffers.
+        if (self.input_ended || event.is_err())
+            && !(self.borrowed_scratch.is_some() && matches!(&event, Ok(ExecutionEvent::Output(_))))
+        {
             self.input_memory.free();
         }
         match event? {
             ExecutionEvent::Output(batch) => {
                 let copied = compact_copy(&batch, &self.output_memory);
                 drop(batch);
+                if self.input_ended {
+                    self.input_memory.free();
+                }
                 match copied {
                     Ok(batch) => Ok(Some(ExecutionEvent::Output(batch))),
                     Err(error) => {

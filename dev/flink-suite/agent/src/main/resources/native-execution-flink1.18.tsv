@@ -160,3 +160,11 @@ org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLess
 org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByRepeatedFields	*	!batch sort limit: standalone pipeline has no verified speedup
 org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimitBehindField	*	!batch sort: only signed integer keys are verified
 org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderBehindField	*	!batch sort: only signed integer keys are verified
+
+# Global integer batch aggregates compose with qualified pipelines; standalone jobs retain stock.
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggWithoutGroups	*	!batch aggregate: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggregationWithoutGroupby	*	!batch aggregate: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testCountStar	*	!batch aggregate: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggWithoutGroups	*	!batch aggregate: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggregationWithoutGroupby	*	!batch aggregate: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testCountStar	*	!batch aggregate: standalone pipeline has no verified speedup

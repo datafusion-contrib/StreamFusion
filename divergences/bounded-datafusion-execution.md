@@ -47,3 +47,40 @@ Spillable reservations leave space for input and output handoff within the exist
 process authority; there is no separate operator cap or unbounded pool. The
 [runtime design](../docs/batch-execution-runtime.md) documents this contract and
 the blocking Arrow shuffle/replay controls used for SQL admission.
+
+
+## Bounded global aggregation
+
+Reference-first sources for aggregate state were Arroyo's planner
+`extension/aggregate.rs`, worker `arrow/tumbling_aggregating_window.rs` and
+`arrow/mod.rs`, plus Comet's `execution/planner/aggregate.rs`. Arroyo splits partial
+schemas from finish plans and resets pending execution per window. Comet builds
+DataFusion partial/final/single stages and normalizes merge schemas. Bounded Flink
+instead supplies its own released physical local/global contracts and EOF.
+
+Each host stage runs DataFusion single aggregation and a projection into Flink's
+exact accumulator columns. Flink local AVG uses BIGINT sum/count, narrow SUM keeps
+its input width, and local empty input emits no row. These differ from DataFusion's
+private partial schema/default global output. A local auxiliary COUNT suppresses
+only truly empty input; it is independent of aggregate FILTERs. Widening SUM to
+BIGINT then using the existing wrapping cast preserves modular narrow arithmetic;
+AVG uses separate SUM/COUNT with guarded signed division. No custom accumulator or
+streaming retraction machinery is added. The host's partial-state Arrow schema
+remains the wire contract.
+
+The primitive global accumulators consume each imported batch without retaining
+its buffers. Their explicit borrowing policy avoids the sort driver's input copy;
+Comet-style Arrow C Data lifetime and the existing authority keep the original
+allocation charged until consumption. Retaining plans keep independent copies.
+This policy must be revisited before admitting variable-width or other accumulators
+that retain Arrow input references.
+
+DataFusion's ungrouped stream reserves accumulator growth after evaluating an input;
+its reservation does not budget evaluated expression arrays or per-call filter
+copies. The bounded driver therefore reserves primitive cast/literal/selection
+workspace before execution and each input, adding the input copy-size bound for
+filtered payloads. A reusable reservation survives through final projection/output
+copying and is released at EOF. This keeps borrowing compatible with the existing
+shared authority; it does not add a custom accumulator or another memory cap.
+The comparison also consulted Comet's `memory_pools/plan_pool.rs` reservation
+lifetime, alongside DataFusion 54's `aggregates/no_grouping.rs` allocation boundary.

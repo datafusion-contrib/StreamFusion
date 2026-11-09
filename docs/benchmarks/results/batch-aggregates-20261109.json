@@ -1,0 +1,599 @@
+{
+  "date": "2026-11-09",
+  "scope": "Global signed integer aggregate plans in otherwise qualifying batch SQL pipelines",
+  "previousBehavior": "Whole-query stock Flink fallback for these aggregate jobs",
+  "resources": {
+    "flink": "2.2.1",
+    "datafusion": "54.0.0",
+    "rustArrow": "58.4.1",
+    "arrowJava": "18.3.0",
+    "jvm": "Temurin17.0.17",
+    "javaHeapBytes": 8589934592,
+    "nativeAuthorityBytes": 134217728,
+    "managedMemoryBytes": 1073741824,
+    "slots": 8,
+    "taskManagers": 1,
+    "producerParallelism": 2,
+    "finalParallelism": 1,
+    "nativeFeatures": [
+      "mimalloc"
+    ],
+    "release": true,
+    "zeroCopyLocal": false
+  },
+  "timer": "Admitted final cohorts: System.nanoTime before executeSql through await AND JobExecutionResult completion. Diagnostic and early cohorts stop after await, before fetching JobExecutionResult; no final acceleration claim from them.",
+  "query": "INSERT INTO output SELECT SUM(v), COUNT(v), COUNT(*), MIN(v), MAX(v), AVG(v) FROM (SELECT CASE WHEN MOD(id,17)=0 THEN CAST(NULL AS <type>) ELSE CAST(MOD(id*48271,<cardinality>) AS <type>) END v FROM input [WHERE SHA2(CAST(id AS STRING),256) <> '']) values_input",
+  "checks": "Every trial asserts aggregate recordsIn=rows+2 for native and0 for stock; native plan includes aggregate, Arrow exchange and both transposes. Full source/planning/submission/JNI/transport/row sink costs retained.",
+  "environmentLimit": "Local shared host; another independent worktree intermittently runs tests. Alternating engine order and repeated trials reduce but do not eliminate contention. Ratios do not establish isolated sustained processing or remote-network throughput. Final reserved cohorts started with no other observed Maven/Surefire process; host CPU placement was not pinned.",
+  "admission": "Global aggregates alone do not qualify an island. Exact fallback: batch aggregate: standalone pipeline has no verified speedup. SHA2/full-sort qualification must occur below aggregate reduction. Accepted scalar UDF qualification survives the reduction.",
+  "profile": {
+    "method": "JFR execution/native samples on borrowed-input 8M diagnostic; timing not used for claims",
+    "samples": 687,
+    "selectedStackSamples": {
+      "RowDataToArrowOperator.processElement": 16,
+      "ArrowWriter.write": 12,
+      "Native.calcExpressionWithCachedSchemasAtWatermark": 6,
+      "LocalNoGroupingAggregateWithoutKeys$20.processElement": 15
+    },
+    "interpretation": "Source/dispatch dominates samples; rowwise Arrow input and Calc/JNI work remain visible. Removing the retained-sort copy is insufficient to prove standalone end-to-end improvement. No native subroutine attribution is inferred from Java stack samples."
+  },
+  "releaseLibrarySha256": "11c14ec568a71371b8b3a21115416056dda09e98acb6fff65b1f163f378319f3",
+  "cohorts": [
+    {
+      "label": "initial standalone BIGINT 1M",
+      "status": "rejected_candidate",
+      "rows": 1000000,
+      "cardinality": 2147483647,
+      "type": "BIGINT",
+      "sha2": false,
+      "parallelism": 2,
+      "capBytes": 134217728,
+      "warmups": 2,
+      "trials": 5,
+      "stockNanos": [
+        131876708,
+        145746792,
+        117140792,
+        111550875,
+        111103875
+      ],
+      "nativeNanos": [
+        144258500,
+        107413625,
+        100598042,
+        117160333,
+        64163542
+      ],
+      "stockRuntimeMs": [
+        91,
+        113,
+        85,
+        84,
+        82
+      ],
+      "nativeRuntimeMs": [
+        124,
+        88,
+        82,
+        102,
+        49
+      ],
+      "stockMedianMs": 117.140792,
+      "stockRangeMs": [
+        111.103875,
+        145.746792
+      ],
+      "nativeMedianMs": 107.413625,
+      "nativeRangeMs": [
+        64.163542,
+        144.2585
+      ],
+      "stockOverNative": 1.0905580367481313
+    },
+    {
+      "label": "initial standalone BIGINT 8M",
+      "status": "rejected_candidate",
+      "rows": 8000000,
+      "cardinality": 2147483647,
+      "type": "BIGINT",
+      "sha2": false,
+      "parallelism": 2,
+      "capBytes": 134217728,
+      "warmups": 4,
+      "trials": 9,
+      "stockNanos": [
+        516085792,
+        378568042,
+        331284375,
+        266248708,
+        339835333,
+        240780459,
+        378942084,
+        265433959,
+        330717791
+      ],
+      "nativeNanos": [
+        363801083,
+        422991667,
+        415724750,
+        418941333,
+        297332250,
+        412070500,
+        343680125,
+        376892125,
+        387638000
+      ],
+      "stockRuntimeMs": [
+        487,
+        353,
+        301,
+        241,
+        311,
+        217,
+        357,
+        244,
+        311
+      ],
+      "nativeRuntimeMs": [
+        346,
+        408,
+        399,
+        404,
+        285,
+        401,
+        331,
+        364,
+        377
+      ],
+      "stockMedianMs": 331.284375,
+      "stockRangeMs": [
+        240.780459,
+        516.085792
+      ],
+      "nativeMedianMs": 387.638,
+      "nativeRangeMs": [
+        297.33225,
+        422.991667
+      ],
+      "stockOverNative": 0.8546230632703709
+    },
+    {
+      "label": "borrowed input standalone BIGINT 8M",
+      "status": "rejected_candidate",
+      "rows": 8000000,
+      "cardinality": 2147483647,
+      "type": "BIGINT",
+      "sha2": false,
+      "parallelism": 2,
+      "capBytes": 134217728,
+      "warmups": 4,
+      "trials": 9,
+      "stockNanos": [
+        329785834,
+        480201208,
+        228066959,
+        384759041,
+        312100459,
+        433831334,
+        271815708,
+        359759625,
+        296160542
+      ],
+      "nativeNanos": [
+        369659375,
+        309347959,
+        372503709,
+        330718959,
+        424716333,
+        411517333,
+        486365500,
+        315172125,
+        324922000
+      ],
+      "stockRuntimeMs": [
+        302,
+        452,
+        200,
+        359,
+        288,
+        404,
+        248,
+        339,
+        272
+      ],
+      "nativeRuntimeMs": [
+        354,
+        294,
+        358,
+        317,
+        409,
+        398,
+        473,
+        301,
+        313
+      ],
+      "stockMedianMs": 329.785834,
+      "stockRangeMs": [
+        228.066959,
+        480.201208
+      ],
+      "nativeMedianMs": 369.659375,
+      "nativeRangeMs": [
+        309.347959,
+        486.3655
+      ],
+      "stockOverNative": 0.8921343710003298
+    },
+    {
+      "label": "borrowed input 4096-row batches BIGINT 8M",
+      "status": "diagnostic_not_enabled",
+      "rows": 8000000,
+      "cardinality": 2147483647,
+      "type": "BIGINT",
+      "sha2": false,
+      "batchRows": 4096,
+      "parallelism": 2,
+      "capBytes": 134217728,
+      "warmups": 4,
+      "trials": 9,
+      "stockNanos": [
+        371713167,
+        273521208,
+        245005667,
+        488391875,
+        378950667,
+        301278292,
+        253342667,
+        421820791,
+        337572250
+      ],
+      "nativeNanos": [
+        272820084,
+        330604250,
+        461865958,
+        296479292,
+        231014042,
+        375063333,
+        367375417,
+        222737417,
+        256018583
+      ],
+      "stockRuntimeMs": [
+        336,
+        246,
+        218,
+        462,
+        354,
+        277,
+        232,
+        401,
+        316
+      ],
+      "nativeRuntimeMs": [
+        257,
+        315,
+        448,
+        279,
+        219,
+        363,
+        356,
+        212,
+        244
+      ],
+      "stockMedianMs": 337.57225,
+      "stockRangeMs": [
+        245.005667,
+        488.391875
+      ],
+      "nativeMedianMs": 296.479292,
+      "nativeRangeMs": [
+        222.737417,
+        461.865958
+      ],
+      "stockOverNative": 1.1386031305012696
+    },
+    {
+      "label": "early SHA2 BIGINT 1M",
+      "status": "superseded_stop_before_job_result",
+      "rows": 1000000,
+      "cardinality": 2147483647,
+      "type": "BIGINT",
+      "sha2": true,
+      "batchRows": 1024,
+      "parallelism": 2,
+      "capBytes": 134217728,
+      "warmups": 3,
+      "trials": 7,
+      "stockNanos": [
+        272892959,
+        277604125,
+        270549250,
+        249387542,
+        247116125,
+        435808625,
+        256971125
+      ],
+      "nativeNanos": [
+        143848291,
+        143742709,
+        139377417,
+        145680167,
+        137405333,
+        133731375,
+        144271417
+      ],
+      "stockRuntimeMs": [
+        240,
+        246,
+        241,
+        219,
+        217,
+        107273,
+        213
+      ],
+      "nativeRuntimeMs": [
+        125,
+        124,
+        122,
+        127,
+        122,
+        119,
+        118
+      ],
+      "stockMedianMs": 270.54925,
+      "stockRangeMs": [
+        247.116125,
+        435.808625
+      ],
+      "nativeMedianMs": 143.742709,
+      "nativeRangeMs": [
+        133.731375,
+        145.680167
+      ],
+      "stockOverNative": 1.882177203158179
+    },
+    {
+      "label": "SHA2 BIGINT 1M",
+      "status": "superseded_before_expression_workspace_reservation",
+      "rows": 1000000,
+      "cardinality": 2147483647,
+      "type": "BIGINT",
+      "sha2": true,
+      "batchRows": 1024,
+      "parallelism": 2,
+      "capBytes": 134217728,
+      "warmups": 3,
+      "trials": 7,
+      "stockNanos": [
+        328123792,
+        253600666,
+        265053333,
+        277060333,
+        284822167,
+        252097833,
+        246803541
+      ],
+      "nativeNanos": [
+        152852750,
+        152333042,
+        152915000,
+        163661958,
+        145819000,
+        148817042,
+        146042417
+      ],
+      "stockRuntimeMs": [
+        293,
+        226,
+        234,
+        246,
+        256,
+        226,
+        220
+      ],
+      "nativeRuntimeMs": [
+        133,
+        134,
+        135,
+        148,
+        130,
+        134,
+        127
+      ],
+      "stockMedianMs": 265.053333,
+      "stockRangeMs": [
+        246.803541,
+        328.123792
+      ],
+      "nativeMedianMs": 152.333042,
+      "nativeRangeMs": [
+        145.819,
+        163.661958
+      ],
+      "stockOverNative": 1.7399595617607373
+    },
+    {
+      "label": "SHA2 INT 2M cardinality64",
+      "status": "superseded_before_expression_workspace_reservation",
+      "rows": 2000000,
+      "cardinality": 64,
+      "type": "INT",
+      "sha2": true,
+      "batchRows": 1024,
+      "parallelism": 2,
+      "capBytes": 134217728,
+      "warmups": 3,
+      "trials": 7,
+      "stockNanos": [
+        448003625,
+        485396541,
+        409865375,
+        442486084,
+        422234708,
+        454963959,
+        420725333
+      ],
+      "nativeNanos": [
+        206993541,
+        204485125,
+        199205875,
+        215706833,
+        234167208,
+        205656750,
+        204206958
+      ],
+      "stockRuntimeMs": [
+        417,
+        456,
+        383,
+        416,
+        394,
+        430,
+        392
+      ],
+      "nativeRuntimeMs": [
+        188,
+        187,
+        184,
+        201,
+        220,
+        192,
+        191
+      ],
+      "stockMedianMs": 442.486084,
+      "stockRangeMs": [
+        409.865375,
+        485.396541
+      ],
+      "nativeMedianMs": 205.65675,
+      "nativeRangeMs": [
+        199.205875,
+        234.167208
+      ],
+      "stockOverNative": 2.151575788297734
+    },
+    {
+      "label": "SHA2 BIGINT 1M with expression reservation",
+      "status": "admitted",
+      "expressionWorkspaceReserved": true,
+      "rows": 1000000,
+      "cardinality": 2147483647,
+      "type": "BIGINT",
+      "sha2": true,
+      "batchRows": 1024,
+      "parallelism": 2,
+      "capBytes": 134217728,
+      "warmups": 3,
+      "trials": 7,
+      "stockNanos": [
+        248433375,
+        252133459,
+        261516917,
+        242859666,
+        242781250,
+        253783750,
+        236202708
+      ],
+      "nativeNanos": [
+        147626125,
+        145035292,
+        144878083,
+        139644791,
+        142388417,
+        138168500,
+        135211209
+      ],
+      "stockRuntimeMs": [
+        214,
+        221,
+        230,
+        214,
+        215,
+        227,
+        212
+      ],
+      "nativeRuntimeMs": [
+        125,
+        126,
+        129,
+        124,
+        127,
+        123,
+        122
+      ],
+      "stockMedianMs": 248.433375,
+      "stockRangeMs": [
+        236.202708,
+        261.516917
+      ],
+      "nativeMedianMs": 142.388417,
+      "nativeRangeMs": [
+        135.211209,
+        147.626125
+      ],
+      "stockOverNative": 1.7447583183679891
+    },
+    {
+      "label": "SHA2 INT 2M cardinality64 with expression reservation",
+      "status": "admitted",
+      "expressionWorkspaceReserved": true,
+      "rows": 2000000,
+      "cardinality": 64,
+      "type": "INT",
+      "sha2": true,
+      "batchRows": 1024,
+      "parallelism": 2,
+      "capBytes": 134217728,
+      "warmups": 3,
+      "trials": 7,
+      "stockNanos": [
+        436058167,
+        474961334,
+        518327875,
+        449791834,
+        439515958,
+        420912250,
+        448723875
+      ],
+      "nativeNanos": [
+        223505834,
+        222791625,
+        214931500,
+        201766958,
+        210645833,
+        197089125,
+        203046083
+      ],
+      "stockRuntimeMs": [
+        404,
+        443,
+        488,
+        422,
+        412,
+        396,
+        425
+      ],
+      "nativeRuntimeMs": [
+        206,
+        205,
+        198,
+        186,
+        197,
+        183,
+        187
+      ],
+      "stockMedianMs": 448.723875,
+      "stockRangeMs": [
+        420.91225,
+        518.327875
+      ],
+      "nativeMedianMs": 210.645833,
+      "nativeRangeMs": [
+        197.089125,
+        223.505834
+      ],
+      "stockOverNative": 2.130229060833119
+    }
+  ],
+  "workspace": "Borrowed primitive reductions reserve32bytes*(underlying function count+1)*(rows+32), plus compact input-copy budget for FILTER payloads, before evaluation. Initial padding is reserved before execution creation; peak workspace is reused until EOF/output copying."
+}

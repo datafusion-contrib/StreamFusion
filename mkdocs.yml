@@ -130,6 +130,7 @@ nav:
       - Evidence and experiment index: benchmarks/evidence.md
       - Batch scalar comparisons: benchmarks/batch-scalars.md
       - Batch sort comparisons: benchmarks/batch-sort-groundwork.md
+      - Batch aggregate comparisons: benchmarks/batch-aggregates.md
       - Native Criterion suites: benchmarks/native-criterion.md
       - AppendFast Top-1: benchmarks/append-top1.md
       - Performance audit reproduction: benchmarks/performance-audit.md

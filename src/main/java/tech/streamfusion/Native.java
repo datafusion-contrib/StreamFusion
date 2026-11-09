@@ -12,6 +12,27 @@ import org.slf4j.LoggerFactory;
 /** Entry point to the native data plane. Holds the methods backed by the Rust library. */
 public final class Native {
 
+  public static native boolean supportsBoundedAggregate(
+      long inputSchemaAddress,
+      long outputSchemaAddress,
+      int[] kinds,
+      int[] columns,
+      int[] filters,
+      boolean merge,
+      boolean finalOutput);
+
+  public static native long createBoundedAggregate(
+      long inputSchemaAddress,
+      long outputSchemaAddress,
+      int[] kinds,
+      int[] columns,
+      int[] filters,
+      boolean merge,
+      boolean finalOutput,
+      String[] spillDirectories,
+      int batchRows,
+      String taskName);
+
   public static native long createBoundedSorter(
       long schemaAddress,
       int[] columns,
@@ -35,6 +56,7 @@ public final class Native {
       long offset,
       long end);
 
+  // The original sorter data ABI also drives bounded aggregates; factories select the plan.
   public static native void pushBoundedSorter(long handle, long arrayAddress);
 
   public static native void finishBoundedSorter(long handle);

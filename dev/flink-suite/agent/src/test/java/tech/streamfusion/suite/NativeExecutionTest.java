@@ -31,6 +31,31 @@ class NativeExecutionTest {
   }
 
   @Test
+  void inheritedBatchMethodsKeepTheirConcreteJUnitIdentity() {
+    String base = "org.apache.flink.table.planner.runtime.batch.sql.agg.AggregateITCaseBase";
+    assertTrue(java.util.Arrays.asList(NativeExecution.testClasses()).contains(base));
+    for (String fixture : java.util.List.of("HashAggITCase", "SortAggITCase")) {
+      String concrete = "org.apache.flink.table.planner.runtime.batch.sql.agg." + fixture;
+      for (String method :
+          java.util.List.of(
+              "testAggWithoutGroups", "testAggregationWithoutGroupby", "testCountStar")) {
+        assertTrue(java.util.Arrays.asList(NativeExecution.testMethods(base)).contains(method));
+        assertEquals(
+            concrete + "#" + method, NativeExecution.invocationTest(base, concrete, method));
+      }
+    }
+    assertEquals(
+        CALC,
+        NativeExecution.invocationTest(
+            CALC.split("#")[0], "UncontractedSubclass", "testLongProjectionList"));
+    org.junit.jupiter.api.Assertions.assertNull(
+        NativeExecution.invocationTest(base, "OtherFixture", "testCountStar"));
+    org.junit.jupiter.api.Assertions.assertNull(
+        NativeExecution.beginInvocation(base, "testCountStar", new Object()));
+    StreamFusionSuiteAgent.RequireNativeExecution.exit(null, null);
+  }
+
+  @Test
   void requiresWorkInsteadOfOpeningAnOperator() {
     NativeExecution.Scope scope = begin(CALC);
     NativeExecution.opened(new NativeCalcOperator());

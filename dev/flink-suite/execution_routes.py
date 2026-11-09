@@ -64,6 +64,7 @@ SINK_OPERATORS = {
 }
 NATIVE_OPERATORS = {
     'tech.streamfusion.operator.' + name for name in (
+        'NativeBatchSortOperator', 'NativeBatchAggregateOperator',
         'NativeCalcOperator', 'NativeLookupJoinOperator', 'NativeAsyncLookupJoinOperator',
         'NativeFilterOperator', 'NativeColumnarGroupAggregateOperator',
         'NativeColumnarLocalGroupAggregateOperator',
@@ -72,6 +73,11 @@ NATIVE_OPERATORS = {
         'NativeColumnarTableFunctionOperator',
         'NativeColumnarUpdatingJoinOperator', 'NativeColumnarTopNOperator',
         'NativeColumnarGlobalWindowAggregateOperator')
+}
+BATCH_NATIVE_OPERATORS = {
+    'tech.streamfusion.operator.' + name for name in (
+        'NativeCalcOperator', 'NativeFilterOperator', 'NativeBatchSortOperator',
+        'NativeBatchAggregateOperator')
 }
 BOUNDARY_OPERATORS = SOURCE_OPERATORS | SINK_OPERATORS | {
     'tech.streamfusion.operator.RowDataToArrowOperator',
@@ -220,7 +226,8 @@ def job_route(result, row=None):
     work = result.get('native_work', {})
     if work:
         expected = {name.rsplit('.', 1)[1] for name in native}
-        if confirmed_failure or graph['job_type'] != 'STREAMING' or set(work) != expected:
+        if (confirmed_failure or set(work) != expected
+                or graph['job_type'] == 'BATCH' and not native <= BATCH_NATIVE_OPERATORS):
             return 'unclassified'
         return 'mixed' if host else 'native'
     if native or not classes <= host_classes:

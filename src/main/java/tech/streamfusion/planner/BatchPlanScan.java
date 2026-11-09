@@ -13,6 +13,7 @@ import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalExchange;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalGroupAggregateBase;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSink;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSort;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSortLimit;
@@ -33,6 +34,8 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
       "batch Calc: standalone scalar pipeline has no verified speedup";
   static final String SORT_LIMIT_COST_FALLBACK =
       "batch sort limit: standalone pipeline has no verified speedup";
+  static final String AGGREGATE_COST_FALLBACK =
+      "batch aggregate: standalone pipeline has no verified speedup";
   private static final Logger LOG = LoggerFactory.getLogger(BatchPlanScan.class);
   private final List<String> reasons = new ArrayList<>();
   private final List<String> operators = new ArrayList<>();
@@ -61,17 +64,18 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
     for (RelNode root : roots) {
       Map<RelNode, RexExpression> expressions = new IdentityHashMap<>();
       Map<RelNode, int[][]> sorts = new IdentityHashMap<>();
+      Map<RelNode, BatchAggregateSpec> aggregates = new IdentityHashMap<>();
       boolean admitted;
       try {
-        admitted = admit(root, true, expressions, sorts, false);
+        admitted = admit(root, true, expressions, sorts, aggregates, false);
         if (admitted
-            && (!expressions.isEmpty() || !sorts.isEmpty())
-            && !amortizesRowBoundaries(root, expressions, false))
+            && (!expressions.isEmpty() || !sorts.isEmpty() || !aggregates.isEmpty())
+            && !amortizesRowBoundaries(root, expressions, false, false))
           admitted =
               decline(
                   sorts.keySet().stream().anyMatch(node -> node instanceof BatchPhysicalSortLimit)
                       ? SORT_LIMIT_COST_FALLBACK
-                      : SCALAR_COST_FALLBACK);
+                      : aggregates.isEmpty() ? SCALAR_COST_FALLBACK : AGGREGATE_COST_FALLBACK);
       } catch (NoClassDefFoundError
           | NoSuchMethodError
           | NoSuchFieldError
@@ -80,8 +84,8 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
         admitted = decline(NativeProbeFailure.reason(failure));
       }
       result.add(
-          admitted && (!expressions.isEmpty() || !sorts.isEmpty())
-              ? rewrite(root, expressions, sorts)
+          admitted && (!expressions.isEmpty() || !sorts.isEmpty() || !aggregates.isEmpty())
+              ? rewrite(root, expressions, sorts, aggregates)
               : root);
     }
     for (String reason : reasons) LOG.info("StreamFusion batch fallback: {}", reason);
@@ -89,17 +93,21 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
   }
 
   private static boolean amortizesRowBoundaries(
-      RelNode node, Map<RelNode, RexExpression> expressions, boolean qualified) {
+      RelNode node,
+      Map<RelNode, RexExpression> expressions,
+      boolean qualified,
+      boolean userFunction) {
+    // Work on the single aggregate result cannot amortize the input's row/Arrow boundary.
+    if (node instanceof BatchPhysicalGroupAggregateBase) qualified = false;
     RexExpression expression = expressions.get(node);
     qualified |= node instanceof BatchPhysicalSort;
     if (expression != null) {
-      qualified |=
-          expression.nativeFunctionCalls().contains("SHA2")
-              || hasUserFunction((BatchPhysicalCalc) node);
+      qualified |= expression.nativeFunctionCalls().contains("SHA2");
+      userFunction |= hasUserFunction((BatchPhysicalCalc) node);
     }
-    if (node.getInputs().isEmpty()) return qualified;
+    if (node.getInputs().isEmpty()) return qualified || userFunction;
     for (RelNode input : node.getInputs()) {
-      if (!amortizesRowBoundaries(input, expressions, qualified)) return false;
+      if (!amortizesRowBoundaries(input, expressions, qualified, userFunction)) return false;
     }
     return true;
   }
@@ -124,6 +132,7 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
       boolean root,
       Map<RelNode, RexExpression> expressions,
       Map<RelNode, int[][]> sorts,
+      Map<RelNode, BatchAggregateSpec> aggregates,
       boolean retained) {
     operators.add(node.getClass().getSimpleName());
     if (!scalarRow(node.getRowType())) return decline("batch: non-scalar Arrow boundary");
@@ -156,6 +165,17 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
         expressions.put(node, encoded);
       } else if (node instanceof BatchPhysicalUnion && ((BatchPhysicalUnion) node).all) {
         if (!NativeConfig.operatorEnabled("union")) return decline("batch UNION ALL: disabled");
+      } else if (node instanceof BatchPhysicalGroupAggregateBase) {
+        if (!NativeConfig.operatorEnabled("groupAggregate"))
+          return decline("batch aggregate: disabled");
+        var aggregate = (BatchPhysicalGroupAggregateBase) node;
+        String unsupported = BatchAggregateSpec.unsupportedReason(aggregate);
+        if (unsupported != null) return decline("batch aggregate: " + unsupported);
+        var specification = BatchAggregateSpec.create(aggregate);
+        if (!specification.nativeSupported(aggregate))
+          return decline("batch aggregate: native state/schema mapping is unsupported");
+        aggregates.put(node, specification);
+        retained = true;
       } else if (isSort(node)) {
         if (!NativeConfig.operatorEnabled("sort")) return decline("batch sort: disabled");
         if (!BatchSortTypeCheck.supported(node.getRowType()))
@@ -211,22 +231,26 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
       }
     }
     for (RelNode input : node.getInputs()) {
-      if (!admit(input, false, expressions, sorts, retained)) return false;
+      if (!admit(input, false, expressions, sorts, aggregates, retained)) return false;
     }
     return true;
   }
 
   private RelNode rewrite(
-      RelNode node, Map<RelNode, RexExpression> expressions, Map<RelNode, int[][]> sorts) {
+      RelNode node,
+      Map<RelNode, RexExpression> expressions,
+      Map<RelNode, int[][]> sorts,
+      Map<RelNode, BatchAggregateSpec> aggregates) {
     if (node.getInputs().isEmpty()) return node;
     List<RelNode> inputs = new ArrayList<>();
     boolean columnar =
         node instanceof BatchPhysicalCalc
             || node instanceof BatchPhysicalUnion
+            || node instanceof BatchPhysicalGroupAggregateBase
             || isSort(node)
             || node instanceof BatchPhysicalExchange;
     for (RelNode input : node.getInputs()) {
-      RelNode rewritten = rewrite(input, expressions, sorts);
+      RelNode rewritten = rewrite(input, expressions, sorts, aggregates);
       if (columnar && !(rewritten instanceof ColumnarOutput))
         rewritten = new BatchPhysicalRowDataToArrow(rewritten);
       else if (!columnar && rewritten instanceof ColumnarOutput)
@@ -241,6 +265,10 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
     if (node instanceof BatchPhysicalUnion) {
       substitutions++;
       return new BatchPhysicalNativeUnion((BatchPhysicalUnion) node, inputs);
+    }
+    if (node instanceof BatchPhysicalGroupAggregateBase) {
+      substitutions++;
+      return new BatchPhysicalNativeAggregate(node, inputs.get(0), aggregates.get(node));
     }
     if (isSort(node)) {
       substitutions++;

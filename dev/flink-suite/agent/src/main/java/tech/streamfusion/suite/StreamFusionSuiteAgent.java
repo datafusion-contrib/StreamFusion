@@ -316,8 +316,9 @@ public final class StreamFusionSuiteAgent {
                     ? builder
                     : builder.visit(
                         Advice.to(RequireNativeExecution.class)
-                            .on(namedOneOf(NativeExecution.testMethods(type.getName()))
-                                .and(not(isPrivate())))))
+                            .on(
+                                namedOneOf(NativeExecution.testMethods(type.getName()))
+                                    .and(not(isPrivate())))))
         .type(named("org.apache.flink.table.planner.plan.nodes.exec.testutils.RestoreTestBase"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -736,12 +737,13 @@ public final class StreamFusionSuiteAgent {
         @Advice.This Object fixture,
         @Advice.Origin("#t") String type,
         @Advice.Origin("#m") String method) {
-      return NativeExecution.begin(type + "#" + method, fixture);
+      return NativeExecution.beginInvocation(type, method, fixture);
     }
 
     @Advice.OnMethodExit(onThrowable = Throwable.class)
     public static void exit(
         @Advice.Enter NativeExecution.Scope scope, @Advice.Thrown Throwable failure) {
+      if (scope == null) return;
       try {
         NativeExecution.finish(scope);
       } catch (AssertionError proofFailure) {

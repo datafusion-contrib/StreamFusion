@@ -89,7 +89,7 @@ impl BoundedSorter {
         } else {
             Arc::new(GlobalLimitExec::new(plan.clone(), offset, None))
         };
-        BoundedTask::try_new(input, output, plan, context)
+        BoundedTask::try_new(input, output, plan, context, None)
     }
 }
 
@@ -471,7 +471,8 @@ mod tests {
                         .unwrap(),
                 ),
             );
-            let mut sorter = BoundedTask::try_new(input, plan.clone(), plan, context).unwrap();
+            let mut sorter =
+                BoundedTask::try_new(input, plan.clone(), plan, context, None).unwrap();
             sorter.finish().unwrap();
             assert!(sorter.next_event().await.unwrap().is_none());
             let mut produced = false;

@@ -37,6 +37,22 @@ controls exercise the admitted native path. Private helper overloads of test met
 names are excluded from execution-contract advice, so the outer JUnit invocation
 owns one scope. No helper SQL or assertion is changed.
 
+Released `HashAggITCase` and `SortAggITCase` now each contract the inherited
+`testAggWithoutGroups`, `testAggregationWithoutGroupby` and `testCountStar` methods.
+They require the exact standalone aggregate performance fallback; runtime routes
+remain `batch_host_only`. Candidate native observations are retained separately
+from current admission. The agent instruments the declaring aggregate base, then
+resolves each witness to the concrete JUnit fixture identity, so inherited methods
+cannot silently escape the contract or attach to the wrong class. Empty SUM/AVG
+fixtures are parity controls without fabricated positive-input credit.
+
+The bounded operator observer attaches to the shared bounded lifecycle and records
+the actual concrete operator after successful Arrow consumption. Runtime route
+classification now recognizes completed batch Calc, sort and aggregate work with
+matching operator graphs; streaming-only native operators still cannot establish
+a batch route. Local admitted SHA2/aggregate controls require positive aggregate
+work and consumer retry of completed Arrow partial states on both host lines.
+
 The earlier batch-host-only measurements later in this page describe their original
 revision; current batch admission is defined by the batch operator page and contracts.
 

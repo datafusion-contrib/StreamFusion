@@ -1,6 +1,7 @@
 package tech.streamfusion.loader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -150,6 +151,35 @@ class StreamFusionPlannerLoaderTest {
   @Test
   void limitsBlockingArrowInputFromThePackagedPayload() throws Exception {
     assertPackagedSort(1023, 1025);
+  }
+
+  @Test
+  void aggregatesBlockingPartialStatesFromThePackagedPayload() throws Exception {
+    TableEnvironment table = TableEnvironment.create(EnvironmentSettings.inBatchMode());
+    table.getConfig().set("parallelism.default", "2");
+    table.getConfig().set("pipeline.operator-chaining.enabled", "false");
+    table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
+    table.getConfig().set("taskmanager.memory.task.off-heap.size", "128m");
+    table.executeSql(
+        "CREATE TABLE batch_aggregate_input(id BIGINT) WITH ('connector'='datagen',"
+            + " 'number-of-rows'='2051', 'fields.id.kind'='sequence',"
+            + " 'fields.id.start'='0', 'fields.id.end'='2050')");
+    for (String predicate : List.of("", " AND id < 0")) {
+      String sql =
+          "SELECT SUM(id),COUNT(*),AVG(id) FROM batch_aggregate_input"
+              + " WHERE SHA2(CAST(id AS STRING),256) <> ''"
+              + predicate;
+      String plan = table.explainSql(sql);
+      assertTrue(plan.contains("NativeAggregate") && plan.contains("NativeExchange"), plan);
+      try (CloseableIterator<Row> rows = table.executeSql(sql).collect()) {
+        assertTrue(rows.hasNext());
+        Row result = rows.next();
+        assertEquals(
+            predicate.isEmpty() ? Row.of(2_102_275L, 2051L, 1025L) : Row.of(null, 0L, null),
+            result);
+        assertFalse(rows.hasNext());
+      }
+    }
   }
 
   private static void assertPackagedSort(long offset, long fetch) throws Exception {

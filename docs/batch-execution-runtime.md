@@ -1,6 +1,6 @@
 # Bounded execution runtime
 
-This runtime executes the [admitted batch SQL sorts](operators/batch.md). It also
+This runtime executes the [admitted batch SQL sorts and global integer aggregates](operators/batch.md). It also
 provides native controls for future bounded operators; those controls alone do not
 admit additional SQL operators. Whole-query admission remains mandatory.
 
@@ -18,7 +18,7 @@ same mailbox must deliver. Separate driver wakeups also cover DataFusion operato
 that consume inputs on worker tasks. Output is drained incrementally rather than
 collected into a result vector or concatenated into one batch.
 
-The shared bounded JNI bridge preserves that protocol. While waiting on asynchronous native
+The shared JNI bounded driver preserves that protocol. While waiting on asynchronous native
 I/O it yields periodically so Java can check task interruption. The deadline cannot
 preempt a synchronous CPU-bound poll or synchronous filesystem call. Cancellation
 closes inputs and drops the execution stream; DataFusion owns cancellation of any
@@ -34,12 +34,27 @@ it cannot fit. No per-task cap is silently raised. Unrestricted sort uses
 DataFusion's external sorter, the existing shared Tokio runtime, Flink task spill directories, and the TaskManager off-heap authority.
 It does not add a distributed scheduler or change Arrow IPC serialization.
 
-The bounded task driver and Java Arrow lifecycle are shared independently of the
-physical plan factory. The sort factory supplies the existing DataFusion sort and
-optional offset plans; its JNI data ABI, memory ownership and output acknowledgement
-remain unchanged. The shared lifecycle permits a declared result schema different
-from the input, and a factory may supply an input schema for initialization at EOF
-when no input batches arrive. These hooks do not themselves admit new SQL operators.
+## Global aggregate plans
+
+Each Flink aggregate stage builds one DataFusion `AggregateExec` in single mode,
+then projects into the host's output schema. This uses DataFusion's existing
+accumulators without exposing its private partial-state schema on the network.
+Local/final stages and the blocking exchange remain Flink's. Ordinary SUM stores
+one nullable value at the declared integer width; COUNT stores BIGINT; MIN/MAX
+store one value. AVG partials contain BIGINT sum and count. Final AVG divides only
+when count is nonzero, then narrows to the declared signed integer type. Widened
+integer SUM followed by a wrapping narrowing cast preserves Flink's modular
+arithmetic through local and merge stages. SUM0 and merged COUNT coalesce NULL to
+zero. Each call retains its own FILTER; merge consumes already filtered states.
+
+A local unfiltered COUNT also records whether any input existed, independently
+of aggregate filters. It suppresses the local row on truly empty input, preserving
+neutral partial rows for nonempty but all-NULL/all-filtered input. A final aggregate
+must initialize and run even when Java receives no input batch. Its serialized
+input/output schemas permit that initialization and the output schema can differ
+from the input. Sort uses the same lifecycle with an unchanged output schema.
+Existing sorter-named JNI data methods remain shared ABI entry points; separate
+aggregate factory/capability methods keep an older DSO a planning-time fallback.
 
 ## Memory lifetime
 
@@ -53,13 +68,26 @@ close does not reclaim a balance while a cancelled DataFusion worker still holds
 it. Existing streaming operators preserve their Java-owned registration contract.
 See the [reference comparison](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/bounded-datafusion-execution.md).
 
-The bridge stages one borrowed input, closes the Java view, and copies its logical
+Retaining plans stage one borrowed input, close the Java view, and copy its logical
 rows into independent native Arrow buffers under a reusable workspace reservation.
 It then releases the borrowed C Data buffers before DataFusion retains the copy.
 The workspace remains bounded to one maximum input batch and is freed at EOF;
 DataFusion charges its retained sort state separately. This avoids charging all
 retained input through both Java and DataFusion. A transient overlap during copying
 covers the actual source and destination allocations.
+
+The admitted global integer reductions consume the imported Arrow batch directly:
+DataFusion's SUM/COUNT/MIN/MAX accumulators retain only scalar values. The original
+Arrow allocation remains charged until its C Data reference drops. The next input
+demand is returned after consumption, without retained Java Arrow input or an
+ownership copy. An explicit reusable workspace reserves expression temporaries
+before evaluation: 32 bytes per row per underlying function plus fixed padding,
+with the input's compact-copy budget additionally covering filtered payloads.
+This includes widening casts, literal arrays, validity and selection buffers;
+DataFusion's global aggregate reservation alone accounts for accumulator growth
+after evaluation. The workspace is freed after EOF/output copying. This borrowing
+policy is explicit and is not used for sorts
+or future aggregates that retain input buffers.
 
 Output is copied into compact independent buffers under a native reservation.
 Copying logical rows matters: a small slice must not copy or pin an entire sorted
@@ -70,7 +98,7 @@ failure releases the remaining C Data callback and reservation.
 
 A schema probe rejects representations whose copy operation could retain borrowed
 buffers, including views and dictionaries. The planner checks both declared boundary
-schemas and actual native Calc output below a sort. Physical top-level nullability
+schemas and actual native Calc output below a retaining bounded operator. Physical top-level nullability
 is normalized without changing SQL logical types, since source hints need not
 exclude actual NULL slots.
 
@@ -85,13 +113,16 @@ A batch that cannot fit still fails with the existing memory-limit exception.
 The admitted exchange is Flink's blocking SINGLETON partition transformation over
 `ArrowBatch`, using ordinary Arrow IPC serialization. It introduces no process-local
 handles. Flink owns persistence, transfer and replay. Required singleton distribution
-is preserved through native Calc and transpose nodes, and consumers remain at
-parallelism/max-parallelism one so global order survives later edges.
+is preserved through native Calc and transpose nodes, and final consumers remain at
+parallelism/max-parallelism one. This preserves both global order and keyless final
+aggregation. Partial aggregate states use the same serializer as ordinary batches.
 
 The runtime gauges `batchSortSpillCount`, `batchSortSpilledBytes` and
 `batchSortReservedBytes` snapshot DataFusion metrics on the task thread. Metric
 reporters read the snapshot without racing JNI teardown. The reserved-byte gauge
-covers the sort's native pool, not all process Arrow allocations.
+covers the sort's native pool, not all process Arrow allocations. Aggregates expose
+the corresponding `batchAggregateSpillCount`, `batchAggregateSpilledBytes` and
+`batchAggregateReservedBytes` snapshots; admitted global scalar state does not spill.
 
 ## Validation and performance
 
@@ -106,7 +137,8 @@ under a 2 MiB task pool with positive pre-EOF spill files and DataFusion spill
 metrics, cleanup after success/cancellation, creation failure, memory denial, and
 task interruption. Copy controls verify compact variable-width slices and release
 of borrowed input. An output can outlive its producer with only its Arrow charge
-remaining. Aggregation is currently a native adapter test, not admitted batch SQL.
+remaining. Global aggregate controls add signed-width overflow, independent filters,
+AVG partial merging, COUNT(*) over zero-column inputs, and local/final empty defaults.
 
 SQL controls compare ordered results across multiple output batches, empty input,
 parallelism-two unchained producers and unsupported-key fallback. Sorted-limit
@@ -122,3 +154,9 @@ The [sort benchmarks](benchmarks/batch-sort-groundwork.md) report separate prepa
 operation and complete-job measurements. Complete jobs retain scans, both transposes,
 blocking shuffle, JNI and sink completion. The previous StreamFusion behavior for
 these queries was whole-query stock Flink fallback.
+
+Global SQL aggregate controls additionally replay completed partial states after a
+final consumer failure, with producers remaining on their first attempt. The
+packaged payload executes both populated and empty aggregate results. The
+[aggregate comparisons](benchmarks/batch-aggregates.md) record rejected standalone
+candidates and admitted compositions; only the latter qualify current SQL islands.

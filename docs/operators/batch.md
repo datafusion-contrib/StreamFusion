@@ -1,14 +1,16 @@
 # Batch SQL
 
 **Status: partial.** Flink 2.2.1 and 1.18.1 batch Table environments can use native
-Calc/filter pipelines, `UNION ALL` and signed-integer `ORDER BY`, with the admission
+Calc/filter pipelines, `UNION ALL`, signed-integer `ORDER BY` and global integer
+aggregates, with the admission
 restrictions below.
 Flink retains SQL optimization, catalogs, source/sink providers, distributed
 scheduling and batch recovery. This does not accelerate arbitrary DataStream code.
 
 ## Admission
 
-Every interior operator must be an admitted Calc/filter, `UNION ALL`, sort or blocking
+Every interior operator must be an admitted Calc/filter, `UNION ALL`, sort, global
+aggregate or blocking
 singleton exchange. All fields
 must use scalar types supported by the existing Arrow boundary, and every expression
 must pass the [Calc encoder and declared-result-type checks](calc-filter.md).
@@ -44,6 +46,28 @@ Sorted limits can compose with another qualifying operation, such as SHA2 or an
 accepted user function. Other key types and range sorting remain outside admission.
 For example, a STRING key reports `batch sort: only signed integer keys are verified`.
 
+Global aggregates without grouping keys support signed integer SUM, MIN, MAX and
+AVG, scalar COUNT/COUNT(*) and boolean FILTER inputs. The optimizer's integer
+SUM0 rewrite is supported too. ONE_PHASE and TWO_PHASE HashAgg/SortAgg plans use
+DataFusion aggregates, with projections preserving Flink's declared widths and
+accumulator columns. Narrow integer SUM wraps at its declared width; integer AVG
+uses BIGINT sum/count states and truncates its final division. Empty local input
+emits no partial row, while empty final input emits COUNT/SUM0 zero and NULL for
+the other functions. A nonempty input whose FILTER rejects every row still emits
+a local neutral state.
+
+An aggregate alone does not qualify an island: representative complete jobs did
+not establish a reliable standalone gain after profiling, removing an unnecessary
+input copy and testing larger batches. Such queries retain stock with
+`batch aggregate: standalone pipeline has no verified speedup`. Aggregates can
+compose with qualifying SHA2/full sorts evaluated below the reduction, or accepted
+scalar user functions. SHA2 or a one-row sort above an aggregate does not amortize
+its input boundary; scalar user functions retain their accepted performance exception
+on either side.
+The measured SHA2 compositions outperform the previous whole-query stock fallback;
+this is a pipeline gain, not an isolated aggregate-kernel claim. See the
+[aggregate comparisons](../benchmarks/batch-aggregates.md).
+
 Cheap standalone scalar pipelines retain stock Flink with the reason:
 
 ```text
@@ -57,7 +81,7 @@ their native implementations remain usable in admitted pipelines. See the
 [batch scalar measurements](../benchmarks/batch-scalars.md).
 
 The existing master and per-operator switches apply. Disabling `calc`, `filter`
-on a Calc with a predicate, `union`, or `sort` declines the affected query as a whole.
+on a Calc with a predicate, `union`, `sort`, or `groupAggregate` declines the affected query as a whole.
 `NativePlanner.explain(tableEnvironment, sql)` includes batch admission diagnostics.
 The deployed planner applies substitution after all batch sink roots are expanded;
 `NativePlanner.installBatch(tableEnvironment.getConfig())` supplies the per-root
@@ -76,7 +100,8 @@ entry transpose flushes its final short batch at `endInput`; it does not registe
 streaming latency timers. Producer buffers are released after IPC serialization,
 and the consumer owns its reconstructed buffers.
 
-Global sort uses Flink's blocking SINGLETON exchange at parallelism one. Both the
+Global sort and final global aggregation use Flink's blocking SINGLETON exchange
+at parallelism one. Both the
 sort and its downstream transposes preserve the singleton distribution contract;
 otherwise a later edge can lose global ordering. Flink persists ordinary Arrow IPC
 frames and replays them when a consumer retries. Hash/range/broadcast exchanges and
@@ -87,7 +112,10 @@ constraints. Native Parquet/ORC codecs do not imply a native filesystem batch sc
 
 ## Remaining gaps
 
-- GROUP BY/DISTINCT, hash/sort aggregation and intermediate accumulator schemas.
+- Grouped/DISTINCT aggregation, noninteger SUM/MIN/MAX/AVG, aggregate user
+  functions, zero-function/intermediate merge-only stages and unverified accumulator
+  layouts. Global signed integer states are
+  supported only inside otherwise qualifying pipelines.
 - ORDER BY with keys other than signed integers, standalone sorted limits without a
   qualifying operation, OFFSET without finite FETCH, unsorted LIMIT/OFFSET, range sorting,
   OVER/rank and other batch sort operators.
@@ -103,7 +131,7 @@ operator is not sufficient to admit its Flink SQL counterpart.
 
 The [bounded execution adapter](../batch-execution-runtime.md) supplies persistent
 DataFusion execution, EOF, spill, streamed output and cancellation for admitted
-sorts. Aggregation is currently an adapter control, not admitted batch SQL.
+sorts and admitted global integer aggregates.
 
 ## Validation
 
@@ -145,3 +173,20 @@ fixtures. The admitted SHA2 compositions have separate positive native SQL
 controls, including offsets crossing output batches and a packaged-loader test.
 [Sorted-limit witnesses](../benchmarks/results/batch-sorted-limit-validation-20261109.json)
 distinguish those candidate native observations from the final admission results.
+
+Global aggregate controls compare stock results across both host lines, HashAgg/
+SortAgg physical state contracts, local/final stages, NULLs, overflow and FILTER.
+A final COUNT consumer fails after the blocking partial-state shuffle completes;
+its retry returns the original result while the partial producers remain on
+attempt zero. The isolated packaged loader covers populated and empty aggregate
+results. Unchanged released HashAggITCase/SortAggITCase methods retain exact
+standalone fallback contracts; passing those fixtures does not count as current
+native aggregate coverage. Admitted local SQL and release jobs assert positive
+aggregate input separately.
+
+[Aggregate validation witnesses](../benchmarks/results/batch-aggregate-validation-20261109.json)
+retain the final exact upstream routes, admitted SQL work and earlier candidate
+observations separately. The consolidated local selection passes 51 Java/upstream
+cases per host line, plus 46 bounded native controls. Aggregate operator controls
+include scalar COUNT validity, FILTER payloads, schema/input cleanup, cancellation,
+output surviving producer close and expression-workspace denial under 2 MiB.

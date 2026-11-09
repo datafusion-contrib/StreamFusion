@@ -12,7 +12,7 @@ import tech.streamfusion.compat.RichSinkFunction;
 import tech.streamfusion.compat.SinkFunctionProvider;
 
 /**
- * Fails the sorted consumer after its blocking input has completed, publishing only a finished
+ * Fails the bounded consumer after its blocking input has completed, publishing only a finished
  * attempt.
  */
 public final class BatchReplaySinkFactory implements DynamicTableSinkFactory {

@@ -1279,6 +1279,42 @@
       "display_name": "testOrderBehindField()",
       "count": 1,
       "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggWithoutGroups",
+      "display_name": "testAggWithoutGroups()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggregationWithoutGroupby",
+      "display_name": "testAggregationWithoutGroupby()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testCountStar",
+      "display_name": "testCountStar()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggWithoutGroups",
+      "display_name": "testAggWithoutGroups()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggregationWithoutGroupby",
+      "display_name": "testAggregationWithoutGroupby()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testCountStar",
+      "display_name": "testCountStar()",
+      "count": 1,
+      "route": "batch_host_only"
     }
   ]
 }
