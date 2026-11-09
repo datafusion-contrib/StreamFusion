@@ -14,7 +14,7 @@ on:
       hotspot_mode:
         description: 'Attribute slow classes or compare their worker counts'
         type: choice
-        options: [attribution, parallel, plan-cache, canonical-parallel]
+        options: [attribution, parallel, plan-cache, canonical-parallel, deeper-runtime, recovery-diagnostics]
         default: attribution
 
 permissions:
@@ -162,7 +162,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        jdk: ${{ fromJSON(inputs.hotspot_mode == 'parallel' && '["11"]' || '["11", "17"]') }}
+        jdk: ${{ fromJSON(inputs.hotspot_mode == 'parallel' && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'recovery-diagnostics') && '["17"]' || '["11", "17"]') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -210,13 +210,25 @@ jobs:
         run: |
           profile=()
           profile_name=''
+          projects='streamfusion-runtime'
+          goal='test-compile'
+          skip=()
           if [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
             profile=(-Pcanonical-kafka)
             profile_name='canonical-kafka'
+          elif [[ "$HOTSPOT_MODE" == 'deeper-runtime' ]]; then
+            projects='streamfusion-fluss'
+            goal='test'
+            skip=(-DskipTests)
+          elif [[ "$HOTSPOT_MODE" == 'recovery-diagnostics' ]]; then
+            profile=(-Pflink-1.18,ci-diagnostics)
+            profile_name='flink-1.18,ci-diagnostics'
+            goal='test'
+            skip=(-DskipTests)
           fi
-          python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects streamfusion-runtime
+          python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects "$projects"
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
-          mvn -B -ntp "${profile[@]}" -pl streamfusion-runtime -am test-compile -Dnative.build.skip=true
+          mvn -B -ntp "${profile[@]}" -pl "$projects" -am "$goal" "${skip[@]}" -Dnative.build.skip=true
       - name: Attribute measured slow classes under current CI worker settings
         env:
           HOTSPOT_MODE: ${{ inputs.hotspot_mode }}
@@ -232,7 +244,21 @@ jobs:
           vmstat -w 15 > "$RUNNER_TEMP/runtime-hotspots-vmstat.txt" &
           memory_sampler=$!
           trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
-          if [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
+          if [[ "$HOTSPOT_MODE" == 'deeper-runtime' ]]; then
+            (
+              while true; do
+                date -u
+                docker stats --no-stream --format '{{json .}}'
+                sleep 15
+              done
+            ) > "$RUNNER_TEMP/runtime-hotspots-containers.txt" &
+            container_sampler=$!
+            trap 'kill "$memory_sampler" "$container_sampler" 2>/dev/null || true' EXIT
+            python3 bin/profile-ci-details.py --line 2.2 --suite recursive --output "$RUNNER_TEMP/runtime-hotspots/recursive"
+            python3 bin/profile-ci-details.py --line 2.2 --suite fluss --output "$RUNNER_TEMP/runtime-hotspots/fluss"
+          elif [[ "$HOTSPOT_MODE" == 'recovery-diagnostics' ]]; then
+            python3 bin/profile-ci-details.py --line 1.18 --suite recovery --output "$RUNNER_TEMP/runtime-hotspots/recovery"
+          elif [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
             python3 bin/profile-canonical-ci.py --parallel --repetitions 2 --output "$RUNNER_TEMP/runtime-hotspots"
           else
             python3 bin/profile-runtime-ci.py "${args[@]}" --output "$RUNNER_TEMP/runtime-hotspots"
@@ -244,5 +270,6 @@ jobs:
           path: |
             ${{ runner.temp }}/runtime-hotspots/
             ${{ runner.temp }}/runtime-hotspots-vmstat.txt
+            ${{ runner.temp }}/runtime-hotspots-containers.txt
             streamfusion-runtime/target/surefire-reports/*runtime-profile*
           retention-days: 7

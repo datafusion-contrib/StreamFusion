@@ -914,6 +914,23 @@ savepoint jobs. Full source CI must still qualify all recovery assertions, cold 
 complete class inventories and the combined configuration. This is test execution
 throughput within each runner, not fewer cases or additional required runners.
 
+Further attribution uses `hotspot_mode=deeper-runtime` on a separate source branch. It
+retains all 1,817 recursive conversion cases and all 29 Fluss SQL cases on JDK 17/Flink 2.2.
+Optional timers separate environment construction, SQL conversion, explain, submission,
+collection, and Fluss broker/catalog lifecycle. JFR retains sampled execution, recorded
+main-thread waits, GC activity and heap summaries; container samples account separately
+for Fluss processes outside the test JVM. Instrumented durations are attribution, not
+speedup measurements. Wait intervals exclude unrecorded short waits and can overlap across
+threads; GC activity is not exact stop-the-world pause time and heap summaries are not RSS.
+
+`hotspot_mode=recovery-diagnostics` repeats the complete 54-case binary collection class
+on Flink 1.18/JDK 17 with alternating 2/4 GiB heaps, retaining its 28 existing skips.
+It logs recovery result-accumulator presence, encoded sizes and heap usage alongside JFR
+and GC logs. The optional `ci-diagnostics` Maven profile supplies an error-level SLF4J
+provider so task-side serialization errors are visible. Ordinary test logging is unchanged.
+Any failed trial remains a failed diagnostic; its verified counts and condensed failure
+evidence are retained. Raw recordings and bulky successful reports are removed after analysis.
+
 The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
 4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.
 It retains the exact cases, outcomes and total 8 GiB heap cap; additional VM overhead is still

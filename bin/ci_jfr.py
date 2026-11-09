@@ -25,13 +25,27 @@ def collect(stream, counters):
             counters["compilation_activity_seconds"][compiler] += float(event[2])
         elif kind == "jdk.ObjectAllocationSample":
             counters["allocation_sample_weight_bytes"][event[1]] += int(event[2])
+        elif kind in ("jdk.ThreadPark", "jdk.ThreadSleep", "jdk.JavaMonitorWait"):
+            seconds = float(event[2])
+            counters["wait_seconds_by_kind"][kind] += seconds
+            counters["wait_seconds_by_thread"][event[1]] += seconds
+            if event[1] == "main":
+                counters["main_wait_seconds_by_stack"][" > ".join(event[3][:8])] += seconds
+        elif kind == "jdk.GarbageCollection":
+            counters["gc_events"][event[1]] += 1
+            counters["gc_activity_seconds"][event[1]] += float(event[2])
+        elif kind == "jdk.GCHeapSummary":
+            counters["gc_heap_used_max_bytes"][event[1]] = max(
+                counters["gc_heap_used_max_bytes"][event[1]], int(event[2]))
 
 
 def summarize(recordings, java_home, expected_recordings=4):
     counters = {key: Counter() for key in ("events", "java_leaf_frames", "java_inclusive_frames", "java_sampled_threads",
                                           "native_leaf_frames", "native_inclusive_frames", "native_sampled_threads",
                                           "compilation_events", "compilation_activity_seconds",
-                                          "allocation_sample_weight_bytes")}
+                                          "allocation_sample_weight_bytes", "wait_seconds_by_kind",
+                                          "wait_seconds_by_thread", "main_wait_seconds_by_stack",
+                                          "gc_events", "gc_activity_seconds", "gc_heap_used_max_bytes")}
     if len(recordings) != expected_recordings:
         raise ValueError(f"Expected {expected_recordings} fresh recorded test JVMs, found {len(recordings)}")
     for recording in recordings:
@@ -55,7 +69,10 @@ def summarize(recordings, java_home, expected_recordings=4):
                         "Inclusive counts overlap. Neither sample count is exact CPU time. "
                         "Native samples do not resolve Rust internals. "
                         "Compilation durations are activity intervals, not compiler CPU seconds. "
-                        "Allocation weights are sampled estimates. Instrumented elapsed times are not speedup evidence.")
+                        "Allocation weights are sampled estimates. Wait durations exclude unrecorded short waits, "
+                        "overlap across threads and are not CPU time. GC activity is not total stop-the-world pause time; "
+                        "heap summaries are maxima at recorded GC boundaries, not peak RSS. "
+                        "Instrumented elapsed times are not speedup evidence.")
     for recording in recordings:
         recording.unlink()
     return result
