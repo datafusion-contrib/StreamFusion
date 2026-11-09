@@ -686,10 +686,16 @@ class CanonicalWindowRankInteropTest {
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness,
         RowData row)
         throws Exception {
+      sendNative(harness, List.of(row));
+    }
+
+    void sendNative(
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness,
+        List<RowData> rows)
+        throws Exception {
       harness.processElement(
           new StreamRecord<>(
-              new ArrowBatch(
-                  RowDataArrowConverter.write(List.of(row), input, NativeAllocator.SHARED))));
+              new ArrowBatch(RowDataArrowConverter.write(rows, input, NativeAllocator.SHARED))));
     }
 
     List<String> output(KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness) {

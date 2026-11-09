@@ -130,7 +130,7 @@ class CanonicalProcessingTimeWindowInteropTest {
           for (boolean keyless : new boolean[] {false, true})
             for (boolean distinct : new boolean[] {false, true})
               cases.add(Arguments.of(shape, zone, rocks, keyless, distinct));
-    return cases.stream();
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
   @ParameterizedTest(name = "{0} {1} rocks={2} keyless={3} distinct={4}")

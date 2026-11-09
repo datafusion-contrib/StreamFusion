@@ -93,7 +93,7 @@ class CanonicalSharedWindowInteropTest {
         for (boolean rocks : new boolean[] {false, true})
           for (boolean keyless : new boolean[] {false, true})
             cases.add(Arguments.of(shape, zone, rocks, keyless));
-    return cases.stream();
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
   @ParameterizedTest
@@ -111,7 +111,7 @@ class CanonicalSharedWindowInteropTest {
           for (boolean distinct : new boolean[] {false, true})
             for (long offset : new long[] {-1250, 1250})
               cases.add(Arguments.of(shape, zone, rocks, distinct, offset));
-    return cases.stream();
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
   @ParameterizedTest

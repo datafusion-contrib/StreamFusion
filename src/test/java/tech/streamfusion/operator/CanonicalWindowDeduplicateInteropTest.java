@@ -35,7 +35,7 @@ class CanonicalWindowDeduplicateInteropTest {
           for (boolean keyless : new boolean[] {false, true})
             for (boolean keepLast : new boolean[] {false, true})
               cases.add(Arguments.of(shape, zone, rocks, keyless, keepLast));
-    return cases.stream();
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
   @ParameterizedTest
@@ -362,12 +362,18 @@ class CanonicalWindowDeduplicateInteropTest {
       try (var stockAgain = plan.stock(!rocks)) {
         stockAgain.initializeState(exported);
         stockAgain.open();
+        var pending = new ArrayList<RowData>();
         for (long key = 0; key < 2500; key++) {
           var row = row(plan, key, key + 2500, BASE + 3000, BASE + 100);
           plan.send(reference, row);
           plan.send(stockAgain, row);
-          plan.sendNative(nativeRun, row);
+          pending.add(row);
+          if (pending.size() == 1024) {
+            plan.sendNative(nativeRun, pending);
+            pending.clear();
+          }
         }
+        if (!pending.isEmpty()) plan.sendNative(nativeRun, pending);
         reference.processWatermark(Watermark.MAX_WATERMARK);
         stockAgain.processWatermark(Watermark.MAX_WATERMARK);
         nativeRun.processWatermark(Watermark.MAX_WATERMARK);

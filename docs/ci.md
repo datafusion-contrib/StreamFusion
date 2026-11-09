@@ -642,8 +642,8 @@ This is a CI scheduling optimization, not a SQL throughput result. See the
 For local canonical iteration, `-Dstreamfusion.test.canonicalSmoke=true` selects deterministic
 representatives from the largest positive operator matrices, including typed grouped-state
 lifecycles, numeric/string/temporal extrema, temporal-sort precision, interval typed-key and
-processing-clock matrices, and unbounded event-time
-OVER state/planner matrices. Every individual parameter value and
+processing-clock matrices, window-deduplication, shared-pane offsets/DISTINCT, processing-clock
+windows, and unbounded event-time OVER state/planner matrices. Every individual parameter value and
 every pair of values present in the original provider remains represented. The interval
 operator selections reduce 171 event-time invocations to 63 and 208 processing-time invocations
 to 69 locally; default/CI retain the original providers and every invocation. Existing release
@@ -651,7 +651,9 @@ assumptions still apply; a skipped case does not qualify a native path. Named co
 regression providers remain exhaustive. This is an iteration check, not full matrix qualification;
 omitting the flag retains every invocation in its original order. CI does not set this flag and
 continues to run the complete matrices. Batch operators and release lines in these short checks,
-then use the complete matrix for the final qualification.
+then use the complete matrix for the final qualification. The 2,500-key window-deduplication
+continuation sends three native Arrow batches while retaining every stock input and result
+assertion, avoiding 2,500 individual input conversions per invocation.
 
 The canonical unbounded event-time OVER state, planner and full-job fixtures are shared between
 released Flink 1.18 and 2.2. The release adapters choose the actual V1 polling or V2 timestamp
