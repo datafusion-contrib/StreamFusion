@@ -14,6 +14,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalRetractingExtremaBoundaryTest {
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     return Stream.of("extrema", "mixed-extrema")
         .flatMap(
             mode ->
@@ -180,6 +184,10 @@ class CanonicalRetractingExtremaBoundaryTest {
   }
 
   static Stream<Arguments> recoveryCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allRecoveryCases());
+  }
+
+  private static Stream<Arguments> allRecoveryCases() {
     return Stream.of("extrema", "mixed-extrema")
         .flatMap(
             mode ->
@@ -203,6 +211,10 @@ class CanonicalRetractingExtremaBoundaryTest {
   }
 
   static Stream<Arguments> emptyCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allEmptyCases());
+  }
+
+  private static Stream<Arguments> allEmptyCases() {
     return Stream.of("extrema", "mixed-extrema")
         .flatMap(
             mode ->

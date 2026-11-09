@@ -650,8 +650,9 @@ This is a CI scheduling optimization, not a SQL throughput result. See the
 [CI profile](benchmarks/ci-profile-20261107.json) for measurements and their limits.
 
 For local canonical iteration, `-Dstreamfusion.test.canonicalSmoke=true` selects deterministic
-representatives from the largest positive operator matrices, including typed grouped-state
-lifecycles, numeric/string/temporal extrema, temporal-sort precision, interval typed-key and
+representatives from the largest canonical matrices, including typed grouped-state
+lifecycles, numeric/string/temporal extrema, extrema orphan/cache and late-corruption checks,
+temporal-sort precision, interval typed-key and
 processing-clock matrices, window-deduplication, shared-pane offsets/DISTINCT, processing-clock
 windows, typed append/update/retract rank matrices, and unbounded event-time OVER state/planner
 matrices. Every individual parameter value and
@@ -659,7 +660,8 @@ every pair of values present in the original provider remains represented. The i
 operator selections reduce 171 event-time invocations to 63 and 208 processing-time invocations
 to 69 locally; default/CI retain the original providers and every invocation. Existing release
 assumptions still apply; a skipped case does not qualify a native path. Named corruption and
-regression providers remain exhaustive. This is an iteration check, not full matrix qualification;
+regression providers remain exhaustive except the extrema corruption combinations named above.
+This is an iteration check, not full matrix qualification;
 omitting the flag retains every invocation in its original order. CI does not set this flag and
 continues to run the complete matrices. Batch operators and release lines in these short checks,
 then use the complete matrix for the final qualification. The 2,500-key window-deduplication

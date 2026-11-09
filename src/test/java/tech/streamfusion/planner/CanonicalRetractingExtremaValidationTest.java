@@ -49,6 +49,10 @@ class CanonicalRetractingExtremaValidationTest {
   }
 
   static Stream<Arguments> invalidSources() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allInvalidSources());
+  }
+
+  private static Stream<Arguments> allInvalidSources() {
     return modes()
         .flatMap(
             args ->

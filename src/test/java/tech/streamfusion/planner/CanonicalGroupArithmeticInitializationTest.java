@@ -36,6 +36,10 @@ class CanonicalGroupArithmeticInitializationTest {
   private static final RowType INPUT = RowType.of(new BigIntType(), new BigIntType());
 
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     return Stream.of("arithmetic", "hidden", "count", "star")
         .flatMap(
             mode ->
@@ -203,6 +207,10 @@ class CanonicalGroupArithmeticInitializationTest {
   }
 
   static Stream<Arguments> overflowCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allOverflowCases());
+  }
+
+  private static Stream<Arguments> allOverflowCases() {
     return Stream.of(false, true)
         .flatMap(
             rocks ->

@@ -15,6 +15,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalTypedRetractingExtremaBoundaryTest {
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     return CanonicalTypedRetractingExtremaTest.types()
         .flatMap(
             type ->

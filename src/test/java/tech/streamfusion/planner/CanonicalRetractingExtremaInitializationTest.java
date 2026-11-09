@@ -13,6 +13,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalRetractingExtremaInitializationTest {
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     return Stream.of("extrema", "mixed-extrema")
         .flatMap(
             mode ->
