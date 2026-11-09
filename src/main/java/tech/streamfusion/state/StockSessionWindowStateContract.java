@@ -1,12 +1,11 @@
 package tech.streamfusion.state;
 
+import java.nio.ByteBuffer;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -23,7 +22,6 @@ import org.apache.flink.streaming.api.operators.TimerHeapInternalTimer;
 import org.apache.flink.streaming.api.operators.TimerSerializer;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
-import org.apache.flink.table.data.binary.BinaryRowData;
 import org.apache.flink.table.runtime.operators.window.TimeWindow;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.runtime.util.TimeWindowUtil;
@@ -41,7 +39,8 @@ public final class StockSessionWindowStateContract implements StockStateContract
   private static final String MAPPING = "session-window-mapping";
   private static final String EVENTS = "_timer_state/event_window-timers";
   private static final String PROCESSING = "_timer_state/processing_window-timers";
-  private static final int CHUNK_ROWS = 1024;
+  private static final int CHUNK_ROWS = 1024, CHUNK_BYTES = 4 * 1024 * 1024;
+  private static final int TIMERS = 1, MATCHED_TIMERS = 2, ALIASES = 3, WINDOWS = 4, OWNED = 5;
   private final TypeSerializer<RowData> keys;
   private final RowType keyType;
   private final RowType accumulators;
@@ -287,7 +286,7 @@ public final class StockSessionWindowStateContract implements StockStateContract
             throw new IllegalStateException("Cannot export stock SESSION state", failure);
           }
         });
-    var namespaces = namespaces(backend, Map.of());
+    var namespaces = namespaces(backend, null);
     for (var view : distinctViews) view.exportState(backend, keyType, handle, namespaces, true);
   }
 
@@ -303,105 +302,159 @@ public final class StockSessionWindowStateContract implements StockStateContract
                 schemas.put(name, new StockStateInventory.State(kind, namespaceSerializer(name))));
     StockStateInventory.validate(backend, schemas, timerSchema(), keys);
     var keyRows = new RowDataSerializer(keyType);
-    Set<WindowKey> scheduled = new HashSet<>();
-    try (var iterator =
-        StockTimerSnapshot.<RowData, TimeWindow>iterator(
-            backend, processingTime ? PROCESSING : EVENTS)) {
-      while (iterator.hasNext()) {
-        var timer = iterator.next();
-        validateBounds(timer.getNamespace());
-        if (timer.getTimestamp() != deadline(timer.getNamespace())
-            || (!processingTime && timer.getTimestamp() <= restoredWatermark())
-            || !scheduled.add(
-                new WindowKey(keyRows.toBinaryRow(timer.getKey()).copy(), timer.getNamespace())))
-          throw new IllegalStateException("Unexpected stock SESSION timer");
-      }
-    }
-    Map<WindowKey, TimeWindow> aliases = new HashMap<>();
-    try (var keyStream = backend.getKeys(MAPPING, VoidNamespace.INSTANCE)) {
-      var iterator = keyStream.iterator();
-      while (iterator.hasNext()) {
-        var key = keyRows.toBinaryRow(iterator.next()).copy();
-        backend.setCurrentKey(key);
-        var mapping =
-            backend.getPartitionedState(
-                VoidNamespace.INSTANCE, VoidNamespaceSerializer.INSTANCE, mappingDescriptor());
-        var ordered = new java.util.TreeMap<Long, Long>();
-        for (var entry : mapping.entries()) {
-          var actual = entry.getKey();
-          var state = entry.getValue();
-          validateBounds(actual);
-          validateBounds(state);
-          if (state.getStart() < actual.getStart()
-              || state.getEnd() > actual.getEnd()
-              || aliases.put(new WindowKey(key, state), actual) != null)
-            throw new IllegalStateException("Invalid stock SESSION merge alias");
-          if (!scheduled.remove(new WindowKey(key, actual)))
-            throw new IllegalStateException("Stock SESSION mapping has no matching timer");
-          if (ordered.put(actual.getStart(), actual.getEnd()) != null)
-            throw new IllegalStateException("Duplicate stock SESSION start");
-        }
-        Long previous = null;
-        for (var window : ordered.entrySet()) {
-          if (previous != null && previous >= window.getKey())
-            throw new IllegalStateException("Overlapping stock SESSION mappings");
-          previous = window.getValue();
+    try (var aliases = new StockStateSpool(keys)) {
+      try (var iterator =
+          StockTimerSnapshot.<RowData, TimeWindow>iterator(
+              backend, processingTime ? PROCESSING : EVENTS)) {
+        while (iterator.hasNext()) {
+          var timer = iterator.next();
+          var window = timer.getNamespace();
+          validateBounds(window);
+          var key = keyRows.toBinaryRow(timer.getKey());
+          if (timer.getTimestamp() != deadline(window)
+              || (!processingTime && timer.getTimestamp() <= restoredWatermark())
+              || aliases.contains(TIMERS, key, window.getStart()))
+            throw new IllegalStateException("Unexpected stock SESSION timer");
+          aliases.addOwner(key);
+          aliases.put(TIMERS, key, window.getStart(), longBytes(window.getEnd()));
         }
       }
-    }
-    if (!scheduled.isEmpty()) throw new IllegalStateException("Stock SESSION timer has no mapping");
-    var remaining = new HashSet<>(aliases.keySet());
-    try (var entries = backend.<TimeWindow>getKeysAndNamespaces(STATE)) {
-      var iterator = entries.iterator();
-      while (iterator.hasNext()) {
-        var entry = iterator.next();
-        if (!remaining.remove(new WindowKey(keyRows.toBinaryRow(entry.f0).copy(), entry.f1)))
-          throw new IllegalStateException("Stock SESSION accumulator has no merge alias");
+      try (var keyStream = backend.getKeys(MAPPING, VoidNamespace.INSTANCE)) {
+        var iterator = keyStream.iterator();
+        while (iterator.hasNext()) {
+          var key = keyRows.toBinaryRow(iterator.next()).copy();
+          aliases.addOwner(key);
+          backend.setCurrentKey(key);
+          var mapping =
+              backend.getPartitionedState(
+                  VoidNamespace.INSTANCE, VoidNamespaceSerializer.INSTANCE, mappingDescriptor());
+          for (var entry : mapping.entries()) {
+            var actual = entry.getKey();
+            var state = entry.getValue();
+            validateBounds(actual);
+            validateBounds(state);
+            // Disjoint actual windows give each state-window start one owner; retain its end too.
+            if (state.getStart() < actual.getStart()
+                || state.getEnd() > actual.getEnd()
+                || aliases.contains(ALIASES, key, state.getStart()))
+              throw new IllegalStateException("Invalid stock SESSION merge alias");
+            byte[] scheduled = aliases.get(TIMERS, key, actual.getStart());
+            if (scheduled == null
+                || ByteBuffer.wrap(scheduled).getLong() != actual.getEnd()
+                || !aliases.add(MATCHED_TIMERS, key, actual.getStart()))
+              throw new IllegalStateException("Stock SESSION mapping has no matching timer");
+            if (aliases.contains(WINDOWS, key, actual.getStart()))
+              throw new IllegalStateException("Duplicate stock SESSION start");
+            aliases.put(WINDOWS, key, actual.getStart(), longBytes(actual.getEnd()));
+            aliases.put(
+                ALIASES,
+                key,
+                state.getStart(),
+                ByteBuffer.allocate(24)
+                    .putLong(actual.getStart())
+                    .putLong(actual.getEnd())
+                    .putLong(state.getEnd())
+                    .array());
+          }
+          Long previous = null;
+          try (var starts = aliases.times(WINDOWS, key)) {
+            while (starts.hasNext()) {
+              long start = starts.next();
+              if (previous != null && previous >= start)
+                throw new IllegalStateException("Overlapping stock SESSION mappings");
+              previous = ByteBuffer.wrap(aliases.get(WINDOWS, key, start)).getLong();
+            }
+          }
+        }
       }
-    }
-    if (!remaining.isEmpty())
-      throw new IllegalStateException("Stock SESSION merge alias has no accumulator");
-    var namespaces = namespaces(backend, aliases);
-    for (var view : distinctViews) view.validateState(backend, descriptor(), namespaces);
-    var keyGetters = getters(keyType);
-    var accGetters =
-        getters(
-            RowType.of(
-                accumulators
-                    .getChildren()
-                    .subList(0, scalarFields)
-                    .toArray(new org.apache.flink.table.types.logical.LogicalType[0])));
-    var batch = new ArrayList<RowData>(CHUNK_ROWS);
-    for (var entry : aliases.entrySet()) {
-      backend.setCurrentKey(entry.getKey().key);
-      var value =
-          backend
-              .getPartitionedState(entry.getKey().window, new TimeWindow.Serializer(), descriptor())
-              .value();
-      if (value == null) throw new IllegalStateException("Stock SESSION has no accumulator");
-      var row = new GenericRowData(bridgeType.getFieldCount());
-      row.setField(0, nativeBound(entry.getValue().getStart()));
-      row.setField(1, nativeBound(entry.getValue().getEnd()));
-      for (int i = 0; i < keyGetters.length; i++)
-        row.setField(2 + i, keyGetters[i].getFieldOrNull(entry.getKey().key));
-      for (int i = 0; i < accGetters.length; i++)
-        row.setField(2 + keyGetters.length + i, accGetters[i].getFieldOrNull(value));
-      batch.add(row);
-      if (batch.size() == CHUNK_ROWS) {
-        importBatch(batch, handle);
-        batch.clear();
+      try (var owners = aliases.owners()) {
+        while (owners.hasNext()) {
+          var owner = owners.next();
+          try (var starts = aliases.times(TIMERS, owner)) {
+            while (starts.hasNext())
+              if (!aliases.contains(MATCHED_TIMERS, owner, starts.next()))
+                throw new IllegalStateException("Stock SESSION timer has no mapping");
+          }
+        }
       }
+      try (var entries = backend.<TimeWindow>getKeysAndNamespaces(STATE)) {
+        var iterator = entries.iterator();
+        while (iterator.hasNext()) {
+          var entry = iterator.next();
+          var owner = keyRows.toBinaryRow(entry.f0);
+          alias(aliases, owner, entry.f1);
+          if (!aliases.add(OWNED, owner, entry.f1.getStart()))
+            throw new IllegalStateException("Stock SESSION accumulator has no merge alias");
+        }
+      }
+      try (var owners = aliases.owners()) {
+        while (owners.hasNext()) {
+          var owner = owners.next();
+          try (var starts = aliases.times(ALIASES, owner)) {
+            while (starts.hasNext())
+              if (!aliases.contains(OWNED, owner, starts.next()))
+                throw new IllegalStateException("Stock SESSION merge alias has no accumulator");
+          }
+        }
+      }
+      var namespaces = namespaces(backend, aliases);
+      for (var view : distinctViews) view.validateState(backend, descriptor(), namespaces);
+      var keyGetters = getters(keyType);
+      var accGetters =
+          getters(
+              RowType.of(
+                  accumulators
+                      .getChildren()
+                      .subList(0, scalarFields)
+                      .toArray(new org.apache.flink.table.types.logical.LogicalType[0])));
+      var batch = new ArrayList<RowData>(CHUNK_ROWS);
+      var serializer = new RowDataSerializer(bridgeType);
+      long bytes = 0;
+      try (var owners = aliases.owners()) {
+        while (owners.hasNext()) {
+          var owner = owners.next();
+          backend.setCurrentKey(owner);
+          try (var starts = aliases.times(ALIASES, owner)) {
+            while (starts.hasNext()) {
+              long start = starts.next();
+              var encoded = ByteBuffer.wrap(aliases.get(ALIASES, owner, start));
+              var actual = new TimeWindow(encoded.getLong(), encoded.getLong());
+              var state = new TimeWindow(start, encoded.getLong());
+              var value =
+                  backend
+                      .getPartitionedState(state, new TimeWindow.Serializer(), descriptor())
+                      .value();
+              if (value == null)
+                throw new IllegalStateException("Stock SESSION has no accumulator");
+              var row = new GenericRowData(bridgeType.getFieldCount());
+              row.setField(0, nativeBound(actual.getStart()));
+              row.setField(1, nativeBound(actual.getEnd()));
+              for (int i = 0; i < keyGetters.length; i++)
+                row.setField(2 + i, keyGetters[i].getFieldOrNull(owner));
+              for (int i = 0; i < accGetters.length; i++)
+                row.setField(2 + keyGetters.length + i, accGetters[i].getFieldOrNull(value));
+              long size = serializer.toBinaryRow(row).getSizeInBytes();
+              if (!batch.isEmpty() && (batch.size() == CHUNK_ROWS || bytes + size > CHUNK_BYTES)) {
+                importBatch(batch, handle);
+                batch.clear();
+                bytes = 0;
+              }
+              batch.add(row);
+              bytes += size;
+            }
+          }
+        }
+      }
+      if (!batch.isEmpty()) importBatch(batch, handle);
+      for (var view : distinctViews)
+        view.importState(backend, keyType, handle, descriptor(), namespaces, true);
+      if (!distinctViews.isEmpty()) Native.finishSessionCanonicalDistinct(handle);
     }
-    if (!batch.isEmpty()) importBatch(batch, handle);
-    for (var view : distinctViews)
-      view.importState(backend, keyType, handle, descriptor(), namespaces, true);
-    if (!distinctViews.isEmpty()) Native.finishSessionCanonicalDistinct(handle);
     clear(backend);
   }
 
   private StockWindowDistinctView.Namespaces<TimeWindow> namespaces(
-      CheckpointableKeyedStateBackend<RowData> backend, Map<WindowKey, TimeWindow> aliases) {
-    var keyRows = new RowDataSerializer(keyType);
+      CheckpointableKeyedStateBackend<RowData> backend, StockStateSpool aliases) {
     return new StockWindowDistinctView.Namespaces<TimeWindow>() {
       public TypeSerializer<TimeWindow> serializer() {
         return new TimeWindow.Serializer();
@@ -416,11 +469,9 @@ public final class StockSessionWindowStateContract implements StockStateContract
         throw new IllegalStateException("SESSION DISTINCT value has no exported window");
       }
 
-      public long nativeEnd(TimeWindow namespace, RowData key) {
-        var actual = aliases.get(new WindowKey(keyRows.toBinaryRow(key), namespace));
-        if (actual == null)
-          throw new IllegalStateException("SESSION DISTINCT value has no merge alias");
-        return nativeBound(actual.getEnd());
+      public long nativeEnd(TimeWindow namespace, RowData key) throws Exception {
+        if (aliases == null) throw new IllegalStateException("SESSION alias inventory is missing");
+        return nativeBound(alias(aliases, key, namespace).getEnd());
       }
 
       public boolean live(TimeWindow namespace) {
@@ -469,25 +520,16 @@ public final class StockSessionWindowStateContract implements StockStateContract
     return result;
   }
 
-  private static final class WindowKey {
-    final BinaryRowData key;
-    final TimeWindow window;
+  private static byte[] longBytes(long value) {
+    return ByteBuffer.allocate(Long.BYTES).putLong(value).array();
+  }
 
-    WindowKey(BinaryRowData key, TimeWindow window) {
-      this.key = key;
-      this.window = window;
-    }
-
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof WindowKey
-          && key.equals(((WindowKey) other).key)
-          && window.equals(((WindowKey) other).window);
-    }
-
-    @Override
-    public int hashCode() {
-      return 31 * key.hashCode() + window.hashCode();
-    }
+  private static TimeWindow alias(StockStateSpool aliases, RowData key, TimeWindow namespace)
+      throws Exception {
+    byte[] bytes = aliases.get(ALIASES, key, namespace.getStart());
+    if (bytes == null || ByteBuffer.wrap(bytes).getLong(16) != namespace.getEnd())
+      throw new IllegalStateException("Stock SESSION accumulator has no merge alias");
+    var encoded = ByteBuffer.wrap(bytes);
+    return new TimeWindow(encoded.getLong(), encoded.getLong());
   }
 }

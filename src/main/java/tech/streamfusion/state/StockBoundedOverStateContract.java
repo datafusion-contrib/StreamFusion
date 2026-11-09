@@ -6,8 +6,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
-import java.util.TreeSet;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -501,8 +499,8 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
 
   private static final class Partition {
     final BinaryRowData key;
-    final LinkedHashMap<Long, Integer> buckets = new LinkedHashMap<>();
-    final TreeSet<Long> timers = new TreeSet<>();
+    long bucketCount, retainedRows, pendingBuckets, timerCount;
+    Long lastProcessed;
     RowData accumulator;
     Long cleanup, last, count, smallest;
 
@@ -544,7 +542,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     try (var owners = partitions.owners()) {
       while (owners.hasNext()) {
         var partition = readPartition(backend, partitions, lists, owners.next());
-        transferFrames(lists, handle, partition, true);
+        transferFrames(partitions, lists, handle, partition, true);
         transferPending(lists, handle, partition, true);
       }
     }
@@ -557,9 +555,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       RowData owner)
       throws Exception {
     var partition = new Partition(new RowDataSerializer(keyType).toBinaryRow(owner).copy());
-    try (var timers = partitions.times(1, owner)) {
-      while (timers.hasNext()) partition.timers.add(timers.next());
-    }
+    partition.timerCount = partitions.count(1, owner);
     var accSerializer = new RowDataSerializer(accumulatorType);
     backend.setCurrentKey(partition.key);
     partition.cleanup = cleanupEnabled ? scalar(backend, cleanupState).value() : null;
@@ -582,15 +578,22 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
               || (!processingRows && time(row) != timestamp))
             throw new IllegalArgumentException("bounded OVER input disagrees with key/time/kind");
         }
-        partition.buckets.put(timestamp, count);
+        partition.bucketCount++;
+        if (processingRows || partition.last != null && timestamp <= partition.last) {
+          partition.retainedRows = Math.addExact(partition.retainedRows, count);
+          if (partition.lastProcessed == null || timestamp > partition.lastProcessed)
+            partition.lastProcessed = timestamp;
+        } else partition.pendingBuckets++;
+        if (eventRows && timestamp <= 0)
+          throw new IllegalArgumentException("Event ROWS input must follow the initial cutoff");
         if (!processingRows
             && (partition.last == null || timestamp > partition.last)
-            && !partition.timers.contains(timestamp))
+            && !partitions.contains(1, owner, timestamp))
           throw new IllegalArgumentException("Pending bounded OVER input has no event timer");
       }
     }
     if (processingRows) {
-      long retained = partition.buckets.values().stream().mapToLong(Integer::longValue).sum();
+      long retained = partition.retainedRows;
       if (partition.accumulator == null
           || retained == 0
           || partition.count == null
@@ -598,14 +601,13 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
           || partition.count <= 0
           || partition.count > precedingRows
           || partition.count != Math.min(retained, precedingRows)
-          || (partition.smallest != Long.MAX_VALUE
-              && !partition.buckets.containsKey(partition.smallest)))
+          || (partition.smallest != Long.MAX_VALUE && !lists.contains(owner, partition.smallest)))
         throw new IllegalArgumentException(
             "Processing ROWS counter/minimum/frame ownership changed");
       if (cleanupEnabled != (partition.cleanup != null)
           || (cleanupEnabled
-              ? !partition.timers.equals(Set.of(partition.cleanup))
-              : !partition.timers.isEmpty()))
+              ? partition.timerCount != 1 || !partitions.contains(1, owner, partition.cleanup)
+              : partition.timerCount != 0))
         throw new IllegalArgumentException("Processing ROWS cleanup/timer ownership changed");
       if (hiddenCount >= 0
           && (partition.accumulator.isNullAt(hiddenCount)
@@ -615,24 +617,15 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       return partition;
     }
     if (eventRows) {
-      var processed = new TreeMap<Long, Integer>();
-      var pending = new TreeSet<Long>();
-      for (var entry : partition.buckets.entrySet()) {
-        if (entry.getKey() <= 0)
-          throw new IllegalArgumentException("Event ROWS input must follow the initial cutoff");
-        if (partition.last != null && entry.getKey() <= partition.last)
-          processed.put(entry.getKey(), entry.getValue());
-        else pending.add(entry.getKey());
-      }
-      long retained = processed.values().stream().mapToLong(Integer::longValue).sum();
-      if (processed.isEmpty()
+      long retained = partition.retainedRows;
+      if (retained == 0
           ? partition.accumulator != null || partition.count != null || partition.last != null
           : partition.accumulator == null
               || partition.count == null
               || partition.count != Math.min(retained, precedingRows)
-              || !processed.lastKey().equals(partition.last))
+              || !partition.lastProcessed.equals(partition.last))
         throw new IllegalArgumentException("Event ROWS counter/cutoff/frame ownership changed");
-      if (!partition.timers.equals(pending))
+      if (partition.timerCount != partition.pendingBuckets)
         throw new IllegalArgumentException("Event ROWS timer ownership changed");
       if (partition.accumulator != null
           && hiddenCount >= 0
@@ -642,23 +635,14 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
             "Event ROWS hidden input count disagrees with retained rows");
       return partition;
     }
-    if (partition.cleanup != null && !partition.timers.contains(partition.cleanup))
+    if (partition.cleanup != null && !partitions.contains(1, owner, partition.cleanup))
       throw new IllegalArgumentException("bounded OVER cleanup has no matching timer");
-    if (partition.cleanup == null
-        && (!partition.buckets.isEmpty() || partition.accumulator != null))
+    if (partition.cleanup == null && (partition.bucketCount != 0 || partition.accumulator != null))
       throw new IllegalArgumentException("bounded OVER input has no cleanup owner");
-    boolean processed =
-        partition.last != null
-            && partition.buckets.keySet().stream()
-                .anyMatch(timestamp -> timestamp <= partition.last);
-    if (processed != (partition.accumulator != null))
+    if ((partition.retainedRows != 0) != (partition.accumulator != null))
       throw new IllegalArgumentException("bounded OVER accumulator/frame ownership changed");
     if (partition.accumulator != null && hiddenCount >= 0) {
-      long count =
-          partition.buckets.entrySet().stream()
-              .filter(entry -> entry.getKey() <= partition.last)
-              .mapToLong(entry -> entry.getValue().longValue())
-              .sum();
+      long count = partition.retainedRows;
       if (partition.accumulator.isNullAt(hiddenCount)
           || partition.accumulator.getLong(hiddenCount) != count)
         throw new IllegalArgumentException(
@@ -681,57 +665,61 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   }
 
   private void transferFrames(
-      StockMapListSnapshot lists, long handle, Partition partition, boolean validating)
+      StockStateSpool partitions,
+      StockMapListSnapshot lists,
+      long handle,
+      Partition partition,
+      boolean validating)
       throws Exception {
-    long total =
-        partition.buckets.entrySet().stream()
-            .filter(
-                entry ->
-                    processingRows || partition.last != null && entry.getKey() <= partition.last)
-            .mapToLong(entry -> entry.getValue())
-            .sum();
+    long total = partition.retainedRows;
     if (total == 0) return;
     var frames = new ArrayList<RowData>(CHUNK_ROWS);
     var serializer = new RowDataSerializer(nativeInputType);
     long position = 0;
     long bytes = 0;
     int base = nativeInputType.getFieldCount();
-    for (var entry : new TreeMap<>(partition.buckets).entrySet()) {
-      if (!processingRows && (partition.last == null || entry.getKey() > partition.last)) continue;
-      for (var original : lists.rows(partition.key, entry.getKey())) {
-        var input = nativeRow(original);
-        long size = serializer.toBinaryRow(input).getSizeInBytes() + 8L * frameType.getFieldCount();
-        if (!frames.isEmpty() && (frames.size() >= CHUNK_ROWS || bytes + size > CHUNK_BYTES)) {
-          sendFrameChunk(handle, frames, false, validating);
-          frames.clear();
-          bytes = 0;
-        }
-        var row = new GenericRowData(frameType.getFieldCount());
-        for (int p = 0; p < base; p++) row.setField(p, get(input, nativeInputType, p));
-        row.setField(base, (byte) 0);
-        row.setField(base + 1, processingRows ? position : time(input));
-        row.setField(base + 2, entry.getKey());
-        row.setField(base + 3, position);
-        if (++position == total) {
-          for (int p = 0; p < accumulatorFields.length; p++)
-            row.setField(
-                base + 4 + p, get(partition.accumulator, accumulatorType, accumulatorFields[p]));
-          int p = base + 4 + accumulatorFields.length;
-          row.setField(p, partition.cleanup);
-          if (!eventRows) row.setField(p + 1, partition.last);
-          if (!processingRows && !eventRows) {
-            row.setField(
-                p + 2,
-                new GenericArrayData(
-                    partition.timers.stream().mapToLong(Long::longValue).toArray()));
-            row.setField(
-                p + 3,
-                new GenericArrayData(
-                    partition.buckets.keySet().stream().mapToLong(Long::longValue).toArray()));
+    try (var timestamps = lists.sortedTimestamps(partition.key)) {
+      while (timestamps.hasNext()) {
+        long timestamp = timestamps.next();
+        if (!processingRows && (partition.last == null || timestamp > partition.last)) continue;
+        for (var original : lists.rows(partition.key, timestamp)) {
+          var input = nativeRow(original);
+          long size =
+              serializer.toBinaryRow(input).getSizeInBytes() + 8L * frameType.getFieldCount();
+          if (!frames.isEmpty() && (frames.size() >= CHUNK_ROWS || bytes + size > CHUNK_BYTES)) {
+            sendFrameChunk(handle, frames, false, validating);
+            frames.clear();
+            bytes = 0;
           }
+          var row = new GenericRowData(frameType.getFieldCount());
+          for (int p = 0; p < base; p++) row.setField(p, get(input, nativeInputType, p));
+          row.setField(base, (byte) 0);
+          row.setField(base + 1, processingRows ? position : time(input));
+          row.setField(base + 2, timestamp);
+          row.setField(base + 3, position);
+          if (++position == total) {
+            for (int p = 0; p < accumulatorFields.length; p++)
+              row.setField(
+                  base + 4 + p, get(partition.accumulator, accumulatorType, accumulatorFields[p]));
+            int p = base + 4 + accumulatorFields.length;
+            row.setField(p, partition.cleanup);
+            if (!eventRows) row.setField(p + 1, partition.last);
+            if (!processingRows && !eventRows) {
+              row.setField(
+                  p + 2,
+                  new GenericArrayData(
+                      StockStateSpool.collectTimes(
+                          partitions.times(1, partition.key), partition.timerCount)));
+              row.setField(
+                  p + 3,
+                  new GenericArrayData(
+                      StockStateSpool.collectTimes(
+                          lists.timestamps(partition.key), partition.bucketCount)));
+            }
+          }
+          frames.add(row);
+          bytes += size;
         }
-        frames.add(row);
-        bytes += size;
       }
     }
     sendFrameChunk(handle, frames, true, validating);
@@ -746,7 +734,9 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
         false);
   }
 
-  private void transferProtocol(long handle, Partition partition) {
+  private void transferProtocol(
+      StockStateSpool partitions, StockMapListSnapshot lists, long handle, Partition partition)
+      throws Exception {
     int k = keyType.getFieldCount();
     if (processingRows) {
       var metadata = new GenericRowData(protocolType.getFieldCount());
@@ -767,11 +757,14 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       row.setField(k + 1, partition.last);
       row.setField(
           k + 2,
-          new GenericArrayData(partition.timers.stream().mapToLong(Long::longValue).toArray()));
+          new GenericArrayData(
+              StockStateSpool.collectTimes(
+                  partitions.times(1, partition.key), partition.timerCount)));
       row.setField(
           k + 3,
           new GenericArrayData(
-              partition.buckets.keySet().stream().mapToLong(Long::longValue).toArray()));
+              StockStateSpool.collectTimes(
+                  lists.timestamps(partition.key), partition.bucketCount)));
       send(Native::importOverCanonicalRange, handle, protocolType, List.of(row), false);
     }
   }
@@ -783,25 +776,28 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     var rows = new ArrayList<RowData>(CHUNK_ROWS);
     var serializer = new RowDataSerializer(nativeInputType);
     long bytes = 0;
-    for (long timestamp : new TreeMap<>(partition.buckets).keySet()) {
-      if (partition.last != null && timestamp <= partition.last) continue;
-      for (var input : lists.rows(partition.key, timestamp)) {
-        var row = nativeRow(input);
-        long size = serializer.toBinaryRow(row).getSizeInBytes();
-        if (!rows.isEmpty() && (rows.size() >= CHUNK_ROWS || bytes + size > CHUNK_BYTES)) {
-          send(
-              validating
-                  ? Native::validateOverPendingCanonical
-                  : Native::importOverPendingCanonical,
-              handle,
-              nativeInputType,
-              rows,
-              true);
-          rows.clear();
-          bytes = 0;
+    try (var timestamps = lists.sortedTimestamps(partition.key)) {
+      while (timestamps.hasNext()) {
+        long timestamp = timestamps.next();
+        if (partition.last != null && timestamp <= partition.last) continue;
+        for (var input : lists.rows(partition.key, timestamp)) {
+          var row = nativeRow(input);
+          long size = serializer.toBinaryRow(row).getSizeInBytes();
+          if (!rows.isEmpty() && (rows.size() >= CHUNK_ROWS || bytes + size > CHUNK_BYTES)) {
+            send(
+                validating
+                    ? Native::validateOverPendingCanonical
+                    : Native::importOverPendingCanonical,
+                handle,
+                nativeInputType,
+                rows,
+                true);
+            rows.clear();
+            bytes = 0;
+          }
+          rows.add(row);
+          bytes += size;
         }
-        rows.add(row);
-        bytes += size;
       }
     }
     send(
@@ -822,8 +818,8 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       try (var owners = partitions.owners()) {
         while (owners.hasNext()) {
           var partition = readPartition(backend, partitions, lists, owners.next());
-          transferFrames(lists, handle, partition, false);
-          transferProtocol(handle, partition);
+          transferFrames(partitions, lists, handle, partition, false);
+          transferProtocol(partitions, lists, handle, partition);
           transferPending(lists, handle, partition, false);
         }
       }

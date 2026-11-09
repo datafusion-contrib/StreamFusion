@@ -178,6 +178,51 @@ class CanonicalBoundedRangeInteropTest {
     }
   }
 
+  static Stream<Arguments> clockStores() {
+    return Stream.of(false, true)
+        .flatMap(
+            stock -> Stream.of(false, true).map(nativeStore -> Arguments.of(stock, nativeStore)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("clockStores")
+  void manyProcessingClockBucketsRestoreWithoutReconstructingAnInventory(
+      boolean stockStore, boolean nativeStore) throws Exception {
+    var plan = new Plan("BIGINT", false, true, false, 10000, 0);
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    try (var reference = plan.stock(stockStore);
+        var target = plan.nativeHarness(nativeStore)) {
+      reference.open();
+      for (int i = 0; i < 2051; i++) {
+        reference.setProcessingTime(1000 + i);
+        plan.pushStock(reference, plan.row(1L, i % 7, 1000 + i));
+      }
+      var original = snapshot(reference);
+      var expectedState = CanonicalUnboundedOverScalarTest.raw(reference);
+      plan.stockOutput(reference);
+      target.initializeState(original);
+      target.setProcessingTime(3050);
+      target.open();
+      try (var returned = plan.stock(stockStore)) {
+        returned.initializeState(snapshot(target));
+        returned.open();
+        assertEquals(expectedState, CanonicalUnboundedOverScalarTest.raw(returned));
+        reference.setProcessingTime(4001);
+        returned.setProcessingTime(4001);
+        target.setProcessingTime(4001);
+        var suffix = plan.row(1L, 99, 4001);
+        plan.pushStock(reference, suffix);
+        plan.pushStock(returned, suffix);
+        plan.push(target, suffix);
+        var expected = plan.stockOutput(reference);
+        assertFalse(expected.isEmpty());
+        assertEquals(expected, plan.stockOutput(returned));
+        assertEquals(expected, plan.nativeOutput(target));
+      }
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
   private static OperatorSubtaskState snapshot(
       org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness<?> harness)
       throws Exception {

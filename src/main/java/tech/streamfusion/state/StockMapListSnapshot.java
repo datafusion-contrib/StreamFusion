@@ -106,6 +106,10 @@ final class StockMapListSnapshot {
     return spool.times(values, owner);
   }
 
+  boolean contains(RowData owner, long timestamp) throws Exception {
+    return spool.contains(values, owner, timestamp);
+  }
+
   int size(RowData owner, long timestamp) throws Exception {
     return header(new DataInputDeserializer(encoded(owner, timestamp)));
   }

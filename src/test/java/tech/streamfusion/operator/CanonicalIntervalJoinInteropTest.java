@@ -217,7 +217,7 @@ class CanonicalIntervalJoinInteropTest {
         for (boolean stockDisk : new boolean[] {false, true})
           for (boolean nativeDisk : new boolean[] {false, true})
             cases.add(Arguments.of(key, kind, stockDisk, nativeDisk));
-    return cases.stream();
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
   @ParameterizedTest

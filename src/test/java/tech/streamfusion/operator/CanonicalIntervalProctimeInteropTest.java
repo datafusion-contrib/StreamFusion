@@ -28,7 +28,7 @@ class CanonicalIntervalProctimeInteropTest {
         for (boolean nativeDisk : new boolean[] {false, true})
           for (boolean nativeFirst : new boolean[] {false, true})
             cases.add(Arguments.of(kind, stockDisk, nativeDisk, nativeFirst));
-    return cases.stream();
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
   @ParameterizedTest
@@ -166,7 +166,7 @@ class CanonicalIntervalProctimeInteropTest {
       for (boolean stockDisk : new boolean[] {false, true})
         for (boolean nativeDisk : new boolean[] {false, true})
           cases.add(Arguments.of(kind, stockDisk, nativeDisk));
-    return cases.stream();
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
   static Stream<Arguments> nativeCases() {

@@ -149,6 +149,37 @@ final class StockStateSpool implements AutoCloseable {
     }
   }
 
+  long count(int section, RowData key) throws Exception {
+    long count = 0;
+    try (var values = times(section, key)) {
+      while (values.hasNext()) {
+        values.next();
+        count = Math.incrementExact(count);
+      }
+    }
+    return count;
+  }
+
+  long[] timesArray(int section, RowData key) throws Exception {
+    long count = count(section, key);
+    return collectTimes(times(section, key), count);
+  }
+
+  static long[] collectTimes(CloseableIterator<Long> source, long count) throws Exception {
+    try (source) {
+      var values = new long[Math.toIntExact(count)];
+      int index = 0;
+      while (source.hasNext()) {
+        if (index == values.length)
+          throw new IllegalStateException("Canonical timestamp inventory grew");
+        values[index++] = source.next();
+      }
+      if (index != values.length)
+        throw new IllegalStateException("Canonical timestamp inventory shrank");
+      return values;
+    }
+  }
+
   CloseableIterator<RowData> owners() {
     return scan(
         new byte[] {0},

@@ -51,7 +51,13 @@ Fixed-window and SESSION restore installs calendar, SQL offset and final-window 
 import. Input-watermark progress survives canonical and native recovery; stale watermarks cannot
 reopen closed event-time windows. Processing-time fixed windows reconstruct their pending timers
 from imported state, including timers that are already overdue. SESSION recovery retains the
-watermark admission rules used by the stock merging processor.
+watermark admission rules used by the stock merging processor. SESSION restore stages timer
+membership, historical aliases, sorted actual-window bounds and accumulator ownership in the
+shared disk spool. Lookup retains both state-window bounds, ordered scans reject overlapping
+mappings, and DISTINCT resolves aliases without a job-sized Java map. Scalar transfers obey
+1,024-row and four-MiB payload-estimate limits, plus one oversized row. The spool closes and
+releases its configured budget on success or failure; stock entries clear only after successful
+conversion and scratch close. This changes conversion working memory, not window admission.
 
 Local/global fixed-window plans drain local partials at snapshot barriers. Global processing keeps
 the released slice/final distinction and flushes partial buffers before forwarding a watermark.

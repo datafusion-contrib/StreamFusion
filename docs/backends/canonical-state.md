@@ -133,6 +133,22 @@ and retracting rank now stores owner unions and callback membership in one scope
 using the released RocksDB library on both Flink lines. Its write buffers and open-file count are
 bounded and its block cache is disabled. The configured two-MiB write-buffer budget is reserved
 from task off-heap memory before scratch creation and released after close, including failed open.
+Interval joins also use this index for scheduled-versus-owned cleanup callbacks. Both sides may
+share a physical callback, while orphan callbacks and missing side deadlines still fail before
+native installation. SESSION restores keep timers, historical merge aliases, sorted window bounds
+and accumulator ownership in the same scoped disk storage. Point reads retain complete state-window
+end identity, and ordered disk scans reject overlapping mappings without a per-owner TreeMap.
+DISTINCT namespaces resolve their actual merged window through the alias index. SESSION scalar
+batches now obey both row and byte limits. No scratch descriptors enter the savepoint.
+The selected metadata-inventory cohort passes 966 checks on 2.2 with 32 expected V1-only skips.
+A final clean 1.18 cohort passes 690 checks, including V1 polling semantics and the extended local
+interval selections. The 2.2 run retains the earlier full interval typed-key/proctime providers;
+these differently selected cohorts are not exhaustive release-line parity qualification.
+SESSION controls include 2,051 historical aliases over hot and independent keys, both stores,
+exact state-window-end mismatch, overlapping mappings and duplicate timer-start rejection.
+Both scalar and DISTINCT SESSION return to stock and continue output. Four processing-ROWS
+controls restore 2,051 distinct original clocks and compare exact canonical bytes before continuing.
+These component proofs do not expand the partial admission table above.
 Complete validation precedes applying native state;
 subsequent passes reread the unchanged source. Failed conversion closes cursors and deletes the
 index without registering scratch descriptors in source state. Bounded OVER validates one owner
@@ -141,8 +157,13 @@ most 1,024 rows with a payload estimate of four MiB, before installing any nativ
 Original input clocks and positions span chunks; raw accumulators occur only at the end.
 The native importer writes RocksDB frames directly and guards unfinished/failed restores from
 processing or snapshotting. Decode reservations transfer into retained-state charges, including
-failed writes. Per-owner OVER timestamp/count inventories, callback/map-order arrays and other
-adapters' inventories remain open work. OVER and temporal-sort
+failed writes. Bounded OVER now computes ownership, retained-row counts and cutoff maxima by
+scanning staged buckets and timers, without per-owner Java timestamp/count maps or timer sets.
+Frame and pending transfers iterate the disk index directly. V1 polling OVER and temporal-join
+callback bridges share direct primitive-array collection from disk, avoiding intermediate boxed
+lists. Their native protocol arrays still remain per-owner working sets. RANGE still materializes callback
+and map-order arrays only at the native protocol boundary; making that protocol incremental,
+other adapters' inventories and memory capture/accounting remain open work. OVER and temporal-sort
 exports now stage each map-list row once in the shared disk spool. A scoped lazy list lets the
 released stock ListSerializer stream each timestamp bucket into the RocksDB projection once,
 without per-row bucket reads or repeated list reconstruction. Heap component backends receive

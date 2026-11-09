@@ -217,8 +217,7 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
     }
   }
 
-  private void preflight(
-      CheckpointableKeyedStateBackend<RowData> backend, StockStateSpool retained)
+  private void preflight(CheckpointableKeyedStateBackend<RowData> backend, StockStateSpool retained)
       throws Exception {
     var expected = new HashMap<String, StockStateInventory.State>();
     stateDescriptors()
@@ -411,11 +410,8 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
           Long cursor = value(backend, "next-index").value(),
               timer = value(backend, "timer").value(),
               cleanup = cleaning ? value(backend, "cleanup-timestamp").value() : null;
-          var callbacks = new ArrayList<Long>();
-          try (var times = retained.times(EVENT_CALLBACKS, key)) {
-            while (times.hasNext()) callbacks.add(times.next());
-          }
-          if (cursor == null && timer == null && cleanup == null && callbacks.isEmpty()) continue;
+          var callbacks = retained.timesArray(EVENT_CALLBACKS, key);
+          if (cursor == null && timer == null && cleanup == null && callbacks.length == 0) continue;
           var row = new GenericRowData(count + 4);
           for (int field = 0; field < count; field++)
             row.setField(
@@ -425,9 +421,7 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
           row.setField(count, cursor);
           row.setField(count + 1, timer);
           row.setField(count + 2, cleanup);
-          row.setField(
-              count + 3,
-              new GenericArrayData(callbacks.stream().mapToLong(Long::longValue).toArray()));
+          row.setField(count + 3, new GenericArrayData(callbacks));
           rows.add(row);
           if (rows.size() == CHUNK) {
             send(handle, -1, rows);

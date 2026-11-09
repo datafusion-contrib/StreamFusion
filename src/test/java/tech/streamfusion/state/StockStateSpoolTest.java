@@ -58,6 +58,14 @@ class StockStateSpoolTest {
           while (source.hasNext()) {
             var owner = source.next();
             assertTrue(inventory.hasAny(1, owner));
+            if (owners == 1) {
+              assertEquals(5, inventory.count(1, owner));
+              assertArrayEquals(
+                  new long[] {Long.MIN_VALUE, -1, 0, 1, Long.MAX_VALUE},
+                  inventory.timesArray(1, owner));
+              assertEquals(0, inventory.count(3, owner));
+              assertArrayEquals(new long[0], inventory.timesArray(3, owner));
+            }
             assertFalse(inventory.hasAny(3, owner));
             try (var times = inventory.times(1, owner)) {
               for (long expected : new long[] {Long.MIN_VALUE, -1, 0, 1, Long.MAX_VALUE}) {
@@ -126,6 +134,37 @@ class StockStateSpoolTest {
   private void assertEmptyDirectory() throws Exception {
     try (var files = Files.list(temporaryDirectory)) {
       assertEquals(0, files.count());
+    }
+  }
+
+  @Test
+  void timestampArrayBoundariesCloseTheirSourceOnCountAndAllocationFailures() throws Exception {
+    for (long count : new long[] {0, 1, 2, Long.MAX_VALUE}) {
+      var closed = new java.util.concurrent.atomic.AtomicBoolean();
+      var source =
+          new org.apache.flink.util.CloseableIterator<Long>() {
+            private final java.util.Iterator<Long> values = List.of(10L).iterator();
+
+            public boolean hasNext() {
+              return values.hasNext();
+            }
+
+            public Long next() {
+              return values.next();
+            }
+
+            public void close() {
+              closed.set(true);
+            }
+          };
+      if (count == 1)
+        assertArrayEquals(new long[] {10}, StockStateSpool.collectTimes(source, count));
+      else if (count == Long.MAX_VALUE)
+        assertThrows(ArithmeticException.class, () -> StockStateSpool.collectTimes(source, count));
+      else
+        assertThrows(
+            IllegalStateException.class, () -> StockStateSpool.collectTimes(source, count));
+      assertTrue(closed.get());
     }
   }
 }

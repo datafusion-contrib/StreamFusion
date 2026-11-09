@@ -106,6 +106,10 @@ until the callback fires.
 
 ## Canonical interchange: partial
 
+Restore callback membership lives in the shared scoped disk spool. Its native metadata bridge now
+fills one primitive timer array directly from disk, without an intermediate boxed Java list.
+The per-owner native callback array remains a protocol working set; this does not expand admission.
+
 Canonical RocksDB readers capture immutable database views and leave their live metadata/deadline
 caches empty. Metadata export streams persisted cursors, physical callbacks and deadline-only keys
 in bounded batches, using point reads to join the two tables. Capture-time versions survive live

@@ -257,68 +257,81 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
     StockStateInventory.validate(backend, states, timerSchema(), keys);
     queues(backend);
     var projection = new StockKeyProjection(keyType);
-    var scheduled = new HashSet<Pending>();
-    try (var iterator =
-        StockTimerSnapshot.<RowData, VoidNamespace>iterator(
-            backend, processingTime ? PROCESSING : EVENTS)) {
-      while (iterator.hasNext()) {
-        var event = iterator.next();
-        if (!scheduled.add(
-            new Pending(binaryKey(event.getKey(), projection), event.getTimestamp())))
-          throw new IllegalStateException("Duplicate stock interval cleanup callback");
-      }
-    }
-    var observed = new HashSet<Pending>();
-    for (int side = 0; side < 2; side++) {
-      // Register both exact value serializers before making any native changes.
-      var values = cache(backend, side);
-      var deadline = timer(backend, side);
-      try (var stream = backend.getKeys(timerName(side), VoidNamespace.INSTANCE)) {
-        var iterator = stream.iterator();
+    try (var inventory = new StockStateSpool(new RowDataSerializer(keyType))) {
+      long scheduled = 0;
+      try (var iterator =
+          StockTimerSnapshot.<RowData, VoidNamespace>iterator(
+              backend, processingTime ? PROCESSING : EVENTS)) {
         while (iterator.hasNext()) {
-          var key = binaryKey(iterator.next(), projection);
-          backend.setCurrentKey(key);
-          Long time = deadline.value();
-          if (time == null || !scheduled.contains(new Pending(key, time)))
-            throw new IllegalStateException(
-                "Stock interval deadline has no cleanup callback: deadline="
-                    + time
-                    + ", callbacks="
-                    + scheduled.size()
-                    + ", keyHash="
-                    + key.hashCode());
-          observed.add(new Pending(key, time));
+          var event = iterator.next();
+          var key = binaryKey(event.getKey(), projection);
+          inventory.addOwner(key);
+          if (event.getNamespace() != VoidNamespace.INSTANCE
+              || !inventory.add(1, key, event.getTimestamp()))
+            throw new IllegalStateException("Duplicate or invalid stock interval cleanup callback");
+          scheduled++;
         }
       }
-      try (var stream = backend.getKeys(cacheName(side), VoidNamespace.INSTANCE)) {
-        var iterator = stream.iterator();
-        while (iterator.hasNext()) {
-          var key = binaryKey(iterator.next(), projection);
-          backend.setCurrentKey(key);
-          if (deadline.value() == null)
-            throw new IllegalStateException("Stock interval cache has no cleanup deadline");
-          boolean found = false;
-          for (var entry : values.entries()) {
-            if (entry.getKey() == null || entry.getValue() == null || entry.getValue().isEmpty())
-              throw new IllegalStateException("Empty stock interval timestamp bucket");
-            for (var pair : entry.getValue()) {
-              if (pair == null
-                  || pair.f0 == null
-                  || pair.f1 == null
-                  || pair.f0.getRowKind() != RowKind.INSERT
-                  || !processingTime && millis(pair.f0, side) != entry.getKey()
-                  || !key.equals(projectedKey(pair.f0, side, projection)))
-                throw new IllegalStateException(
-                    "Stock interval row disagrees with its cache key or timestamp");
-              found = true;
-            }
+      for (int side = 0; side < 2; side++) {
+        // Register both exact value serializers before making any native changes.
+        var values = cache(backend, side);
+        var deadline = timer(backend, side);
+        try (var stream = backend.getKeys(timerName(side), VoidNamespace.INSTANCE)) {
+          var iterator = stream.iterator();
+          while (iterator.hasNext()) {
+            var key = binaryKey(iterator.next(), projection);
+            backend.setCurrentKey(key);
+            Long time = deadline.value();
+            if (time == null || !inventory.contains(1, key, time))
+              throw new IllegalStateException(
+                  "Stock interval deadline has no cleanup callback: deadline="
+                      + time
+                      + ", callbacks="
+                      + scheduled
+                      + ", keyHash="
+                      + key.hashCode());
+            inventory.add(2, key, time);
           }
-          if (!found) throw new IllegalStateException("Empty stock interval cache");
+        }
+        try (var stream = backend.getKeys(cacheName(side), VoidNamespace.INSTANCE)) {
+          var iterator = stream.iterator();
+          while (iterator.hasNext()) {
+            var key = binaryKey(iterator.next(), projection);
+            backend.setCurrentKey(key);
+            if (deadline.value() == null)
+              throw new IllegalStateException("Stock interval cache has no cleanup deadline");
+            boolean found = false;
+            for (var entry : values.entries()) {
+              if (entry.getKey() == null || entry.getValue() == null || entry.getValue().isEmpty())
+                throw new IllegalStateException("Empty stock interval timestamp bucket");
+              for (var pair : entry.getValue()) {
+                if (pair == null
+                    || pair.f0 == null
+                    || pair.f1 == null
+                    || pair.f0.getRowKind() != RowKind.INSERT
+                    || !processingTime && millis(pair.f0, side) != entry.getKey()
+                    || !key.equals(projectedKey(pair.f0, side, projection)))
+                  throw new IllegalStateException(
+                      "Stock interval row disagrees with its cache key or timestamp");
+                found = true;
+              }
+            }
+            if (!found) throw new IllegalStateException("Empty stock interval cache");
+          }
+        }
+      }
+      try (var owners = inventory.owners()) {
+        while (owners.hasNext()) {
+          var owner = owners.next();
+          try (var times = inventory.times(1, owner)) {
+            while (times.hasNext())
+              if (!inventory.contains(2, owner, times.next()))
+                throw new IllegalStateException(
+                    "Stock interval callback has no owned cleanup deadline");
+          }
         }
       }
     }
-    if (!observed.equals(scheduled))
-      throw new IllegalStateException("Stock interval callback has no owned cleanup deadline");
   }
 
   @Override
@@ -474,28 +487,6 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
       else
         Native.importIntervalJoinCanonicalRows(
             handle, side == 0, array.memoryAddress(), schema.memoryAddress());
-    }
-  }
-
-  private static final class Pending {
-    final BinaryRowData key;
-    final long time;
-
-    Pending(BinaryRowData key, long time) {
-      this.key = key;
-      this.time = time;
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(key, time);
-    }
-
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof Pending
-          && time == ((Pending) other).time
-          && key.equals(((Pending) other).key);
     }
   }
 }

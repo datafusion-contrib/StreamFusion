@@ -48,6 +48,15 @@ import tech.streamfusion.state.FlinkRocksDBOptions;
 import tech.streamfusion.state.StockSessionWindowStateContract;
 
 class CanonicalSessionWindowInteropTest {
+  @org.junit.jupiter.api.BeforeAll
+  static void memoryAuthority() {
+    var config = new org.apache.flink.configuration.Configuration();
+    config.set(
+        org.apache.flink.configuration.TaskManagerOptions.TASK_OFF_HEAP_MEMORY,
+        org.apache.flink.configuration.MemorySize.parse("1g"));
+    TaskOffHeapMemory.initialize(config);
+  }
+
   private static final RowType INPUT =
       RowType.of(new VarCharType(), new IntType(), new TimestampType(3));
   private static final RowType ACC = RowType.of(new BigIntType(), new BigIntType());
@@ -73,6 +82,9 @@ class CanonicalSessionWindowInteropTest {
             "missingMapping",
             "missingAccumulator",
             "outsideAlias",
+            "wrongAliasEnd",
+            "overlapMapping",
+            "orphanTimerSameStart",
             "missingTimer",
             "wrongTimer",
             "processingTimer",
@@ -122,7 +134,38 @@ class CanonicalSessionWindowInteropTest {
             .clear();
       else if (mode.equals("outsideAlias"))
         mapping.put(actual, new TimeWindow(actual.getStart() - 1, actual.getEnd()));
-      else if (mode.equals("orphanAccumulator"))
+      else if (mode.equals("wrongAliasEnd")) {
+        var descriptor =
+            new org.apache.flink.api.common.state.ValueStateDescriptor<>(
+                "window-aggs", new RowDataSerializer(ACC));
+        var original = backend.getPartitionedState(alias, new TimeWindow.Serializer(), descriptor);
+        var value = new RowDataSerializer(ACC).copy(original.value());
+        original.clear();
+        backend
+            .getPartitionedState(
+                new TimeWindow(alias.getStart(), alias.getEnd() + 1),
+                new TimeWindow.Serializer(),
+                descriptor)
+            .update(value);
+      } else if (mode.equals("overlapMapping")) {
+        var overlap = new TimeWindow(actual.getStart() + 1, actual.getEnd() + 1);
+        mapping.put(overlap, overlap);
+        backend
+            .getPartitionedState(
+                overlap,
+                new TimeWindow.Serializer(),
+                new org.apache.flink.api.common.state.ValueStateDescriptor<>(
+                    "window-aggs", new RowDataSerializer(ACC)))
+            .update(GenericRowData.of(99L, 1L));
+        backend
+            .create(
+                "_timer_state/event_window-timers",
+                new org.apache.flink.streaming.api.operators.TimerSerializer<>(
+                    selector(false).getProducedType().toSerializer(), new TimeWindow.Serializer()))
+            .add(
+                new org.apache.flink.streaming.api.operators.TimerHeapInternalTimer<>(
+                    overlap.maxTimestamp(), backend.getCurrentKey(), overlap));
+      } else if (mode.equals("orphanAccumulator"))
         backend
             .getPartitionedState(
                 new TimeWindow(BASE + 9000, BASE + 10000),
@@ -151,7 +194,14 @@ class CanonicalSessionWindowInteropTest {
           timers.add(
               new org.apache.flink.streaming.api.operators.TimerHeapInternalTimer<>(
                   timer.getTimestamp() + 1, timer.getKey(), timer.getNamespace()));
-        else if (mode.equals("processingTimer")) {
+        else if (mode.equals("orphanTimerSameStart")) {
+          timers.add(timer);
+          var extra =
+              new TimeWindow(timer.getNamespace().getStart(), timer.getNamespace().getEnd() + 1);
+          timers.add(
+              new org.apache.flink.streaming.api.operators.TimerHeapInternalTimer<>(
+                  extra.maxTimestamp(), timer.getKey(), extra));
+        } else if (mode.equals("processingTimer")) {
           timers.add(timer);
           backend
               .create(
@@ -259,6 +309,66 @@ class CanonicalSessionWindowInteropTest {
       if (persistent) Native.closeRocksDBSessionAggregator(handle);
       else Native.closeSessionAggregator(handle);
     }
+  }
+
+  static Stream<Arguments> wideInventories() {
+    return Stream.of(false, true)
+        .flatMap(
+            persistent ->
+                Stream.of(false, true).map(stockRocks -> Arguments.of(persistent, stockRocks)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("wideInventories")
+  void manyOwnersAndHistoricalAliasesKeepTheirTimerAndAccumulatorBijections(
+      boolean persistent, boolean stockRocks) throws Exception {
+    var zone = ZoneId.of("UTC");
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    long reserved = TaskOffHeapMemory.reservedBytes();
+    long handle = create(persistent, false, zone);
+    try (var source = stock(zone, stockRocks, false);
+        var reference = stock(zone, stockRocks, false);
+        var view = harness(new Projection(), !stockRocks, false)) {
+      source.open();
+      for (int i = 0; i < 2051; i++) {
+        String key = i % 3 == 0 ? "hot" : "owner-" + i;
+        source.processElement(new StreamRecord<>(row(key, i, i * 3000L)));
+        source.processElement(new StreamRecord<>(row(key, 1, i * 3000L + 500)));
+      }
+      source.processWatermark(new Watermark(BASE - 1));
+      var saved =
+          source
+              .snapshotWithLocalState(1, 0, SavepointType.savepoint(SavepointFormatType.CANONICAL))
+              .getJobManagerOwnedState();
+      reference.initializeState(saved);
+      reference.open();
+      view.initializeState(saved);
+      view.open();
+      var contract = contract(false, zone);
+      contract.initializeOperatorState(((Projection) view.getOperator()).store, true);
+      contract.importState(backend(view), handle, persistent);
+      assertEquals(reserved, TaskOffHeapMemory.reservedBytes());
+      contract.snapshotOperatorState(BASE - 1);
+      contract.exportState(backend(view), handle, persistent);
+      var exported =
+          view.snapshotWithLocalState(2, 0, SavepointType.savepoint(SavepointFormatType.CANONICAL))
+              .getJobManagerOwnedState();
+      try (var returned = stock(zone, stockRocks, false)) {
+        returned.initializeState(exported);
+        returned.open();
+        reference.processWatermark(new Watermark(Long.MAX_VALUE));
+        returned.processWatermark(new Watermark(Long.MAX_VALUE));
+        var expected = output(reference, false);
+        assertEquals(2051, expected.size());
+        assertEquals(expected, output(returned, false));
+        assertEquals(expected, flush(handle, persistent, Long.MAX_VALUE, false, zone));
+      }
+    } finally {
+      if (persistent) Native.closeRocksDBSessionAggregator(handle);
+      else Native.closeSessionAggregator(handle);
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+    assertEquals(reserved, TaskOffHeapMemory.reservedBytes());
   }
 
   private static RowData row(String key, Integer value, long time) {

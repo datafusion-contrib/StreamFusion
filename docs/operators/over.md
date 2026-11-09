@@ -1847,11 +1847,12 @@ batches; this does not extend automatic stock DISTINCT admission. Benchmarking s
 Restore validation uses the shared temporary disk inventory for owner unions, physical callbacks
 and pending timestamp membership on both Flink lines. Event OVER checks timer relationships by
 point reads and scans, then rereads source buckets for separate native validation and apply passes.
-Bounded OVER retains bucket counts and protocol metadata rather than copying a partition's row
-payloads. Retained and pending inputs transfer in batches of at most 1,024 rows with a four-MiB
+Bounded OVER scans staged timestamps and timer membership, keeping only scalar bucket/row/timer
+counts and cutoff maxima per owner. It does not reconstruct per-owner Java maps or sets. Retained and pending inputs transfer in batches of at most 1,024 rows with a four-MiB
 payload estimate, allowing an oversized individual row and final protocol metadata. Preflight
 checks the complete source and decodes its native frame/pending batches before any apply pass.
-Each stock timestamp list is still read through the released serializer as one value.
+Each encoded stock timestamp value is staged intact, then decoded one row at a time with the
+released row serializer.
 
 The native frame importer accepts contiguous global positions across chunks, preserves original
 input clocks and installs the raw accumulator only on the final row. RocksDB writes each chunk
@@ -1864,8 +1865,8 @@ frame timestamps through a key-only prefix scan on RocksDB.
 The native suite passes 1,482 tests with two existing ignores, and the memory-only build passes.
 Chunk controls retain 2,051 rows across all three shapes and both native stores, preserve raw
 floating accumulators, reject broken continuations and missing prior RANGE timestamps, and cover
-memory denial, exact-budget transfer and write failure. Per-owner bucket/count inventories,
-callback/map-order arrays and large individual stock list values still require further
+memory denial, exact-budget transfer and write failure. RANGE callback/map-order arrays at the
+native protocol boundary and large individual encoded stock values still require further
 bounded-memory work. The shared Flink 1.18 cohort passes 537 checks. The corrected 2.2 cohort
 passes 311 runtime/accounting checks, alongside 229 frame-bridge controls. Twelve 2,051-row
 handoffs per release cover all three bounded shapes and both stock/native stores. These selected
@@ -1884,7 +1885,12 @@ working set. Restore now stages canonical encoded map values in the same scoped 
 and decodes individual rows with the released serializer. This covers bounded processing ROWS,
 bounded event-time ROWS/RANGE and unbounded event-time pending inputs on both release lines;
 it preserves original per-owner map order and peer order without allocating a complete Java list.
-Pending rows transfer with both row and byte limits. Per-owner bounded-frame timestamp/count maps
-and callback/map-order arrays still remain working sets; broader operator/layout admission remains
-separate work. Shared spool controls cover interleaved owners/timestamps, 8,195 rows, a two-MiB row, multiple
+Pending rows transfer with both row and byte limits. Both bounded ROWS shapes use disk scans and
+scalar inventory summaries even for a hot partition; RANGE still materializes callback/map-order
+arrays at its native protocol boundary. V1 polling callback metadata also fills its required
+primitive timer array directly from disk instead of building a boxed list first. The array itself
+remains a per-owner working set. Broader operator/layout admission remains separate work.
+A four-store-combination control creates 2,051 distinct processing clocks in stock Flink, verifies
+exact canonical bytes after a native round trip and continues output. Stock fixture construction
+avoids thousands of unrelated one-row native RocksDB frame updates in the correctness runner. Shared spool controls cover interleaved owners/timestamps, 8,195 rows, a two-MiB row, multiple
 readers and failure cleanup without changing stock serializer metadata.

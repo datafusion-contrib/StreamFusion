@@ -495,13 +495,10 @@ public final class StockOverEventFoldStateContract implements StockStateContract
         row.setField(keyType.getFieldCount(), deadline);
         row.setField(keyType.getFieldCount() + 1, partitions.hasAny(PROCESSING_TIMES, owner));
         if (pollingTimers) {
-          var timers = new ArrayList<Long>();
-          try (var timestamps = partitions.times(EVENT_TIMES, owner)) {
-            while (timestamps.hasNext()) timers.add(timestamps.next());
-          }
           row.setField(
               keyType.getFieldCount() + 2,
-              new org.apache.flink.table.data.GenericArrayData(timers.toArray(Long[]::new)));
+              new org.apache.flink.table.data.GenericArrayData(
+                  partitions.timesArray(EVENT_TIMES, owner)));
         }
         rows.add(row);
         if (rows.size() == CHUNK_ROWS) {

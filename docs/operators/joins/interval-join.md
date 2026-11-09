@@ -122,7 +122,12 @@ the stock writer, without a native snapshot or input replay.
 Import validates the complete descriptor/namespace inventory, both cache serializers, keys, row
 timestamps/kinds, stored deadlines and callback ownership before mutating native rows. Unknown
 state or pending processing-time callbacks fail closed. The event-time contract cannot bind to a
-native processing-time operator. The original stock row/key/timer serializer snapshots load with
+native processing-time operator. Scheduled and observed cleanup relationships now use the shared
+scoped disk spool rather than job-sized Java sets, on both release lines and in export preflight.
+Both sides can share one physical callback; reverse scans still reject callbacks without an owned
+deadline. The configured spool write-buffer reservation and scratch files release on every exit.
+Individual cache lists and their repeated get/put during export remain separate bounded-memory
+work. The original stock row/key/timer serializer snapshots load with
 StreamFusion and planner classes blocked.
 
 An isolated component passes 240 positive controls and 45 rejection/guard controls. These cover
