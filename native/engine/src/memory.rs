@@ -3,11 +3,12 @@ use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
 /// DataFusion memory pool backed by the TaskManager-wide JVM reservation authority.
-struct FlinkTaskOffHeapPool {
+pub(crate) struct FlinkTaskOffHeapPool {
     owner_id: i64,
     used: AtomicUsize,
     authority: jni::objects::GlobalRef,
     owns_registration: bool,
+    spill_headroom: AtomicUsize,
 }
 
 impl FlinkTaskOffHeapPool {
@@ -29,16 +30,41 @@ impl FlinkTaskOffHeapPool {
             used: AtomicUsize::new(0),
             authority,
             owns_registration: false,
+            spill_headroom: AtomicUsize::new(0),
         })
     }
 
-    fn reserve(&self, bytes: usize) -> Result<bool, DataFusionError> {
+    pub(crate) fn preserve_spill_headroom(&self, bytes: usize) {
+        self.spill_headroom.fetch_max(bytes, Relaxed);
+    }
+
+    fn reserve(&self, bytes: usize, can_spill: bool) -> Result<bool, DataFusionError> {
         let vm = crate::bridge::JVM.get().ok_or_else(|| {
             DataFusionError::Execution("JVM memory authority is unavailable".into())
         })?;
         let mut env = vm
             .attach_current_thread()
             .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+        let headroom = if can_spill {
+            self.spill_headroom.load(Relaxed)
+        } else {
+            0
+        };
+        if headroom != 0 {
+            return env
+                .call_static_method(
+                    <&jni::objects::JClass>::from(self.authority.as_obj()),
+                    "tryReserveWithHeadroom",
+                    "(JJJ)Z",
+                    &[
+                        jni::objects::JValue::Long(self.owner_id),
+                        jni::objects::JValue::Long(bytes as i64),
+                        jni::objects::JValue::Long(headroom as i64),
+                    ],
+                )
+                .and_then(|value| value.z())
+                .map_err(|e| DataFusionError::Execution(e.to_string()));
+        }
         env.call_static_method(
             <&jni::objects::JClass>::from(self.authority.as_obj()),
             "tryReserve",
@@ -168,13 +194,13 @@ impl MemoryPool for FlinkTaskOffHeapPool {
 
     fn try_grow(
         &self,
-        _reservation: &MemoryReservation,
+        reservation: &MemoryReservation,
         additional: usize,
     ) -> Result<(), DataFusionError> {
         if additional == 0 {
             return Ok(());
         }
-        if !self.reserve(additional)? {
+        if !self.reserve(additional, reservation.consumer().can_spill())? {
             return Err(DataFusionError::ResourcesExhausted(format!(
                 "TaskManager task off-heap pool denied {additional} bytes for owner {}",
                 self.owner_id

@@ -2,7 +2,8 @@
 
 This is the historical assessment before implementation. Current local coverage is
 documented in [Batch SQL](operators/batch.md), with measurements in
-[Batch scalar comparisons](benchmarks/batch-scalars.md).
+[Batch scalar comparisons](benchmarks/batch-scalars.md) and
+[batch sort comparisons](benchmarks/batch-sort-groundwork.md).
 
 Audited 2026-11-09 at StreamFusion `4e3a20ce3`. This is an implementation assessment,
 not a claim of new supported coverage. Scope: Flink SQL/Table batch execution on the

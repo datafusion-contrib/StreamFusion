@@ -25,8 +25,18 @@ and worker contexts retain that reference, so asynchronous cancellation cannot
 prematurely return their balance to the shared authority. The cached Java authority
 class follows Comet's retained JVM-reference pattern.
 
-Shared Arrow/DataFusion buffer accounting is still unresolved for planner admission;
-the internal sort prototype currently over-reserves borrowed input buffers. This
-does not authorize a different memory budget, an unbounded runtime, or default SQL
-sort admission. The remaining acceptance work is tracked with the active local
-batch implementation goal and described in the [runtime design](../docs/batch-execution-runtime.md).
+Unlike a synchronous Calc, the sorter retains inputs across calls. StreamFusion's
+Arrow Java authority cannot transfer a borrowed allocation's charge directly into
+DataFusion's working reservation. The bounded bridge therefore copies input into
+compact native buffers, releases its borrowed Java reference, and retains only one
+reusable copy workspace in addition to DataFusion's state. Output is also compacted
+under a reservation, then acknowledged after Java import. This costs two copies but
+avoids keeping every retained run charged to both owners or exporting tiny slices
+that pin an entire native run. View/dictionary representations are not admitted.
+Comet's importer supplies the model for releasing unconsumed C Data callbacks on
+failure, including a helper in Arrow's package to inspect its C struct lifetime.
+
+Spillable reservations leave space for input and output handoff within the existing
+process authority; there is no separate operator cap or unbounded pool. The
+[runtime design](../docs/batch-execution-runtime.md) documents this contract and
+the blocking Arrow shuffle/replay controls used for SQL admission.

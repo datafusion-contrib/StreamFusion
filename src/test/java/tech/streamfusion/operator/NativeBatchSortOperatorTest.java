@@ -85,6 +85,11 @@ class NativeBatchSortOperatorTest {
       pushDescending(harness, count);
       assertTrue(harness.getOutput().isEmpty());
       assertTrue(spillFiles(harness) > 0, "must spill before EOF");
+      var statsField = NativeBatchSortOperator.class.getDeclaredField("executionStats");
+      statsField.setAccessible(true);
+      long[] stats = (long[]) statsField.get(harness.getOperator());
+      assertTrue(
+          stats[0] > 0 && stats[1] > 0, "spill metrics must report actual native spill work");
       harness.endInput();
       assertEquals(count + 1, expected[0]);
       assertEquals(0, spillFiles(harness));
@@ -96,7 +101,41 @@ class NativeBatchSortOperatorTest {
     try (var harness = harness(new int[] {0}, new int[] {0}, 1024)) {
       push(harness, List.of(GenericRowData.of(2L, 3), GenericRowData.of(1L, 4)));
       assertTrue(TaskOffHeapMemory.reservedBytes() > 0);
+      assertEquals(
+          0,
+          NativeAllocator.SHARED.getAllocatedMemory(),
+          "retained sort input must release its borrowed Java buffers");
       assertTrue(harness.getOutput().isEmpty());
+    }
+  }
+
+  @Test
+  void copiedOutputOutlivesItsProducerAndIsChargedOnlyToArrow() throws Exception {
+    List<org.apache.arrow.vector.VectorSchemaRoot> outputs = new ArrayList<>();
+    try {
+      try (var harness = harness(new int[] {0}, new int[] {0}, 2)) {
+        push(
+            harness,
+            List.of(
+                GenericRowData.of(3L, 30), GenericRowData.of(1L, 10), GenericRowData.of(2L, 20)));
+        harness.endInput();
+        for (Object event : harness.getOutput()) {
+          if (event instanceof StreamRecord) {
+            outputs.add(((ArrowBatch) ((StreamRecord<?>) event).getValue()).root());
+          }
+        }
+        harness.getOutput().clear();
+      }
+      assertTrue(NativeAllocator.SHARED.getAllocatedMemory() > 0);
+      assertEquals(NativeAllocator.SHARED.getAllocatedMemory(), TaskOffHeapMemory.reservedBytes());
+      long expected = 1;
+      for (var root : outputs) {
+        var keys = (org.apache.arrow.vector.BigIntVector) root.getVector(0);
+        for (int row = 0; row < root.getRowCount(); row++) assertEquals(expected++, keys.get(row));
+      }
+      assertEquals(4, expected);
+    } finally {
+      outputs.forEach(org.apache.arrow.vector.VectorSchemaRoot::close);
     }
   }
 

@@ -4,12 +4,16 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.calcite.rel.RelDistribution;
+import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalCalc;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalExchange;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSink;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSort;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalUnion;
 import org.apache.flink.table.planner.plan.optimize.program.BatchOptimizeContext;
 import org.apache.flink.table.planner.plan.optimize.program.FlinkOptimizeProgram;
@@ -50,10 +54,13 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
     List<RelNode> result = new ArrayList<>();
     for (RelNode root : roots) {
       Map<RelNode, RexExpression> expressions = new IdentityHashMap<>();
+      Map<RelNode, int[][]> sorts = new IdentityHashMap<>();
       boolean admitted;
       try {
-        admitted = admit(root, true, expressions);
-        if (admitted && !expressions.isEmpty() && !amortizesRowBoundaries(root, expressions, false))
+        admitted = admit(root, true, expressions, sorts, false);
+        if (admitted
+            && (!expressions.isEmpty() || !sorts.isEmpty())
+            && !amortizesRowBoundaries(root, expressions, false))
           admitted = decline(SCALAR_COST_FALLBACK);
       } catch (NoClassDefFoundError
           | NoSuchMethodError
@@ -62,7 +69,10 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
           | UnsatisfiedLinkError failure) {
         admitted = decline(NativeProbeFailure.reason(failure));
       }
-      result.add(admitted && !expressions.isEmpty() ? rewrite(root, expressions) : root);
+      result.add(
+          admitted && (!expressions.isEmpty() || !sorts.isEmpty())
+              ? rewrite(root, expressions, sorts)
+              : root);
     }
     for (String reason : reasons) LOG.info("StreamFusion batch fallback: {}", reason);
     return result;
@@ -71,6 +81,7 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
   private static boolean amortizesRowBoundaries(
       RelNode node, Map<RelNode, RexExpression> expressions, boolean qualified) {
     RexExpression expression = expressions.get(node);
+    qualified |= node instanceof BatchPhysicalSort;
     if (expression != null) {
       qualified |=
           expression.nativeFunctionCalls().contains("SHA2")
@@ -98,7 +109,12 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
     return found[0];
   }
 
-  private boolean admit(RelNode node, boolean root, Map<RelNode, RexExpression> expressions) {
+  private boolean admit(
+      RelNode node,
+      boolean root,
+      Map<RelNode, RexExpression> expressions,
+      Map<RelNode, int[][]> sorts,
+      boolean retained) {
     operators.add(node.getClass().getSimpleName());
     if (!scalarRow(node.getRowType())) return decline("batch: non-scalar Arrow boundary");
     if (node.getInputs().isEmpty()) return true;
@@ -121,27 +137,78 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
             return decline("batch Calc: legacy binary result boundaries are unverified");
         }
         String mismatch =
-            CalcOutputTypeCheck.mismatch(encoded, calc.getInput().getRowType(), calc.getRowType());
+            retained
+                ? CalcOutputTypeCheck.retainedMismatch(
+                    encoded, calc.getInput().getRowType(), calc.getRowType())
+                : CalcOutputTypeCheck.mismatch(
+                    encoded, calc.getInput().getRowType(), calc.getRowType());
         if (mismatch != null) return decline("batch Calc: " + mismatch);
         expressions.put(node, encoded);
       } else if (node instanceof BatchPhysicalUnion && ((BatchPhysicalUnion) node).all) {
         if (!NativeConfig.operatorEnabled("union")) return decline("batch UNION ALL: disabled");
+      } else if (node instanceof BatchPhysicalSort) {
+        if (!NativeConfig.operatorEnabled("sort")) return decline("batch sort: disabled");
+        if (!BatchSortTypeCheck.supported(node.getRowType()))
+          return decline("batch sort: retained Arrow representation is unsupported");
+        retained = true;
+        var sort = (BatchPhysicalSort) node;
+        var collations = sort.getCollation().getFieldCollations();
+        int[] columns = new int[collations.size()];
+        int[] flags = new int[collations.size()];
+        for (int index = 0; index < collations.size(); index++) {
+          var field = collations.get(index);
+          switch (sort.getInput()
+              .getRowType()
+              .getFieldList()
+              .get(field.getFieldIndex())
+              .getType()
+              .getSqlTypeName()) {
+            case TINYINT:
+            case SMALLINT:
+            case INTEGER:
+            case BIGINT:
+              break;
+            default:
+              return decline("batch sort: only signed integer keys are verified");
+          }
+          if (field.nullDirection == RelFieldCollation.NullDirection.UNSPECIFIED)
+            return decline("batch sort: unspecified NULL order");
+          if (field.getDirection() != RelFieldCollation.Direction.ASCENDING
+              && field.getDirection() != RelFieldCollation.Direction.DESCENDING
+              && field.getDirection() != RelFieldCollation.Direction.STRICTLY_ASCENDING
+              && field.getDirection() != RelFieldCollation.Direction.STRICTLY_DESCENDING)
+            return decline("batch sort: unsupported key direction");
+          columns[index] = field.getFieldIndex();
+          flags[index] =
+              (field.getDirection().isDescending() ? 1 : 0)
+                  | (field.nullDirection == RelFieldCollation.NullDirection.FIRST ? 2 : 0);
+        }
+        sorts.put(node, new int[][] {columns, flags});
+      } else if (node instanceof BatchPhysicalExchange) {
+        if (((BatchPhysicalExchange) node).getDistribution().getType()
+            != RelDistribution.Type.SINGLETON)
+          return decline("batch exchange: only blocking SINGLETON distribution is verified");
       } else {
         return decline("batch: unsupported interior operator " + node.getRelTypeName());
       }
     }
     for (RelNode input : node.getInputs()) {
-      if (!admit(input, false, expressions)) return false;
+      if (!admit(input, false, expressions, sorts, retained)) return false;
     }
     return true;
   }
 
-  private RelNode rewrite(RelNode node, Map<RelNode, RexExpression> expressions) {
+  private RelNode rewrite(
+      RelNode node, Map<RelNode, RexExpression> expressions, Map<RelNode, int[][]> sorts) {
     if (node.getInputs().isEmpty()) return node;
     List<RelNode> inputs = new ArrayList<>();
-    boolean columnar = node instanceof BatchPhysicalCalc || node instanceof BatchPhysicalUnion;
+    boolean columnar =
+        node instanceof BatchPhysicalCalc
+            || node instanceof BatchPhysicalUnion
+            || node instanceof BatchPhysicalSort
+            || node instanceof BatchPhysicalExchange;
     for (RelNode input : node.getInputs()) {
-      RelNode rewritten = rewrite(input, expressions);
+      RelNode rewritten = rewrite(input, expressions, sorts);
       if (columnar && !(rewritten instanceof ColumnarOutput))
         rewritten = new BatchPhysicalRowDataToArrow(rewritten);
       else if (!columnar && rewritten instanceof ColumnarOutput)
@@ -156,6 +223,16 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
     if (node instanceof BatchPhysicalUnion) {
       substitutions++;
       return new BatchPhysicalNativeUnion((BatchPhysicalUnion) node, inputs);
+    }
+    if (node instanceof BatchPhysicalSort) {
+      substitutions++;
+      var encoded = sorts.get(node);
+      return new BatchPhysicalNativeSort(
+          (BatchPhysicalSort) node, inputs.get(0), encoded[0], encoded[1]);
+    }
+    if (node instanceof BatchPhysicalExchange) {
+      substitutions++;
+      return new BatchPhysicalNativeExchange(node, inputs.get(0));
     }
     return node.copy(node.getTraitSet(), inputs);
   }

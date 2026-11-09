@@ -1,8 +1,8 @@
-# Bounded execution runtime groundwork
+# Bounded execution runtime
 
-This internal runtime is groundwork for batch SQL. The SQL planner still admits only
-the [documented scalar/UNION scope](operators/batch.md); it does **not** select the
-new sort operator. No sort performance opt-in or partial-query substitution is added.
+This runtime executes the [admitted batch SQL sorts](operators/batch.md). It also
+provides native controls for future bounded operators; those controls alone do not
+admit additional SQL operators. Whole-query admission remains mandatory.
 
 ## Execution
 
@@ -25,7 +25,7 @@ closes inputs and drops the execution stream; DataFusion owns cancellation of an
 workers spawned by its operators. A consumed input cannot be replayed: Flink task
 retry must construct a fresh execution and replay its source/shuffle input.
 
-The current native sort prototype accepts signed integer keys, explicit ascending/
+The native sorter accepts signed integer keys, explicit ascending/
 descending direction and NULL placement, with no LIMIT/OFFSET. Its Arrow input and
 output remain columnar. It uses DataFusion's external sorter, the existing shared
 Tokio runtime, Flink task spill directories, and the TaskManager off-heap authority.
@@ -43,14 +43,45 @@ close does not reclaim a balance while a cancelled DataFusion worker still holds
 it. Existing streaming operators preserve their Java-owned registration contract.
 See the [reference comparison](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/bounded-datafusion-execution.md).
 
-**Admission remains blocked on the memory handoff.** Borrowed input buffers remain
-charged through Arrow Java while DataFusion also reserves their buffered footprint.
-The prototype therefore has conservative overlapping charges, which can force
-earlier spill. Output import can likewise overlap a native reservation until its
-producer releases it. Resolve shared-buffer accounting before admitting this path;
-do not replace the shared cap with an unbounded pool or silently raise its budget.
-Also verify runtime spill metrics, disk/memory exhaustion, isolated-loader execution,
-blocking Arrow shuffle/replay and unchanged upstream SQL witnesses before admission.
+The bridge stages one borrowed input, closes the Java view, and copies its logical
+rows into independent native Arrow buffers under a reusable workspace reservation.
+It then releases the borrowed C Data buffers before DataFusion retains the copy.
+The workspace remains bounded to one maximum input batch and is freed at EOF;
+DataFusion charges its retained sort state separately. This avoids charging all
+retained input through both Java and DataFusion. A transient overlap during copying
+covers the actual source and destination allocations.
+
+Output is copied into compact independent buffers under a native reservation.
+Copying logical rows matters: a small slice must not copy or pin an entire sorted
+run. After Java imports and charges the output, it acknowledges the handoff and
+native retires the output reservation. The imported batch may outlive its producing
+operator. The bridge refuses another poll until that acknowledgement. Import
+failure releases the remaining C Data callback and reservation.
+
+A schema probe rejects representations whose copy operation could retain borrowed
+buffers, including views and dictionaries. The planner checks both declared boundary
+schemas and actual native Calc output below a sort. Physical top-level nullability
+is normalized without changing SQL logical types, since source hints need not
+exclude actual NULL slots.
+
+Spillable DataFusion reservations preserve headroom for the next Arrow batch,
+copy workspace and output import within the same process off-heap authority. The
+headroom grows with observed batch size; ordinary Arrow/unspillable allocations
+can use it. It is neither a second memory cap nor a per-operator partition.
+A batch that cannot fit still fails with the existing memory-limit exception.
+
+## Shuffle and recovery
+
+The admitted exchange is Flink's blocking SINGLETON partition transformation over
+`ArrowBatch`, using ordinary Arrow IPC serialization. It introduces no process-local
+handles. Flink owns persistence, transfer and replay. Required singleton distribution
+is preserved through native Calc and transpose nodes, and consumers remain at
+parallelism/max-parallelism one so global order survives later edges.
+
+The runtime gauges `batchSortSpillCount`, `batchSortSpilledBytes` and
+`batchSortReservedBytes` snapshot DataFusion metrics on the task thread. Metric
+reporters read the snapshot without racing JNI teardown. The reserved-byte gauge
+covers the sort's native pool, not all process Arrow allocations.
 
 ## Validation and performance
 
@@ -61,12 +92,21 @@ control sorts 131,072 rows under a 256 KiB pool, asserts spill before EOF, bound
 output batches and verifies memory/file release.
 
 JNI operator controls cover multi-key order/NULL placement, EOF, a 262,144-row sort
-under a 2 MiB task pool with positive pre-EOF spill files, cleanup after success and
-cancellation, creation failure, and task interruption. These are runtime controls,
-not upstream SQL admission evidence. Aggregation is currently a native adapter test,
-not an exposed batch SQL implementation.
+under a 2 MiB task pool with positive pre-EOF spill files and DataFusion spill
+metrics, cleanup after success/cancellation, creation failure, memory denial, and
+task interruption. Copy controls verify compact variable-width slices and release
+of borrowed input. An output can outlive its producer with only its Arrow charge
+remaining. Aggregation is currently a native adapter test, not admitted batch SQL.
 
-The [operation benchmark](benchmarks/batch-sort-groundwork.md) compares prepared
-stock RowData with equal native Arrow data. It does not measure a complete SQL job
-and cannot establish an end-to-end speedup. Stock Flink remains the previous and
-current StreamFusion SQL route for sort queries.
+SQL controls compare ordered results across multiple output batches, empty input,
+parallelism-two unchained producers and unsupported-key/LIMIT fallback. A downstream
+sink fails once, then recovers all 2,051 sorted rows from the completed blocking
+Arrow shuffle: native sort/exit reach attempt 1 while producers stay on attempt 0.
+The packaged loader executes the same multi-batch sort through its isolated payload.
+Unchanged upstream signed-integer fixtures require positive native work; the STRING
+key fixture requires an explicit fallback. Both supported Flink lines are covered.
+
+The [sort benchmarks](benchmarks/batch-sort-groundwork.md) report separate prepared
+operation and complete-job measurements. Complete jobs retain scans, both transposes,
+blocking shuffle, JNI and sink completion. The previous StreamFusion behavior for
+these queries was whole-query stock Flink fallback.

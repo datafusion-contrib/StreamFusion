@@ -27,9 +27,15 @@ Native DataFusion pools cache the Java authority class on the calling thread, so
 worker callbacks retain the correct application classloader. The internal bounded
 runtime additionally keeps its owner registration alive through the pool's final
 reference, including asynchronously cancelled workers; it does not reclaim their
-balance at Java operator close. Its remaining shared-buffer accounting limitation
-is documented in the [bounded runtime](batch-execution-runtime.md), which is not
-yet admitted by the SQL planner.
+balance at Java operator close. Bounded sort copies borrowed Java input into compact
+native buffers under a reusable reservation before DataFusion retains it. Output
+uses the reverse handoff: native reserves the copy, Java imports/charges its Arrow
+buffers, then acknowledges that transfer so native can retire its copy reservation.
+Temporary overlap covers actual handoff allocations rather than charging every
+retained sort run through both allocators. Spillable sort state leaves headroom
+within the same process cap for the next input/copy/output; other consumers may use
+that headroom. See the [bounded runtime](batch-execution-runtime.md) for the lifetime
+and exhaustion controls.
 Mini-batch cleanup skips native flushes when initialization has not acquired a state handle or
 completed bundle setup. This also applies after the handle is closed: cleanup must preserve the
 original initialization failure rather than enter JNI with an absent handle. Partially acquired

@@ -1,6 +1,6 @@
 # Upstream Flink suite
 
-## Batch scalar development
+## Batch SQL development
 
 The planner factory and suite agent now install a mode-specific batch adapter.
 [Batch SQL](operators/batch.md) documents its current narrow admission. The published
@@ -17,6 +17,16 @@ those host/native expectations. Pass the current suite agent through
 `sf.extraJvmArgs`, with fresh `streamfusion.flink-suite.native-reports` and
 `streamfusion.flink-suite.sql-inventory` directories. A passing upstream assertion
 without those native/fallback witnesses is not acceleration evidence.
+
+The unchanged released batch SQL `MiscITCase` adds two positive sort contracts:
+`testNullOrdering` consumes 18 native rows across six queries and
+`testGlobalSorting` consumes 24 across four mixed-direction queries.
+`testNullOrderingOnMultiColumn` includes a STRING key and requires the exact
+`batch sort: only signed integer keys are verified` fallback. Both host lines
+retain these native/host routes. The observer records native sort input after
+successful processing; merely constructing a native plan is insufficient.
+[Sort validation evidence](benchmarks/results/batch-sort-sql-20261109.json) retains
+per-job success, batch graph types and positive native work from the focused runs.
 
 The earlier batch-host-only measurements later in this page describe their original
 revision; current batch admission is defined by the batch operator page and contracts.

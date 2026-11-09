@@ -1,0 +1,107 @@
+{
+  "date": "2026-11-09",
+  "environment": "Same host/release configuration as batch-sort-jobs-20261109.json",
+  "timer": "Native Rust timer starts after Arrow import/setup and stops before output export. Includes production input/output compact copies, DataFusion execution, memory callbacks, I/O yields and checksum consumption. Stock Java SortOperator timer starts after generated operator setup and consumes prebuilt copied BinaryRowData.",
+  "configuration": {
+    "poolBytesPerEngine": 33554432,
+    "nullEvery": 17,
+    "nativeOutputBatchRows": 1024,
+    "warmups": 3,
+    "trials": 7,
+    "randomSeed": 724719,
+    "alternatingEngineOrder": true,
+    "types": "all nullable BIGINT",
+    "order": "first column ASC NULLS FIRST",
+    "verification": "equal row count and key checksum, full row width retained"
+  },
+  "cohorts": [
+    {
+      "stage": "final production implementation",
+      "rows": 131072,
+      "width": 4,
+      "cardinality": 131072,
+      "stockNanos": [
+        38155875,
+        29928125,
+        29698250,
+        29286291,
+        29834000,
+        28887375,
+        28994416
+      ],
+      "nativeNanos": [
+        3498542,
+        3545083,
+        3415125,
+        3385458,
+        3322166,
+        3328667,
+        3276042
+      ],
+      "medianStockOverNative": 8.772299050822665
+    },
+    {
+      "stage": "final production implementation",
+      "rows": 65536,
+      "width": 8,
+      "cardinality": 127,
+      "stockNanos": [
+        12264333,
+        13620125,
+        16000417,
+        15426625,
+        14930084,
+        15536125,
+        12508375
+      ],
+      "nativeNanos": [
+        2170542,
+        2078000,
+        2064500,
+        2035083,
+        2064500,
+        2173042,
+        2347291
+      ],
+      "medianStockOverNative": 7.184833493743985
+    },
+    {
+      "stage": "copy-inclusive before metrics",
+      "rows": 131072,
+      "width": 4,
+      "cardinality": 131072,
+      "stockNanos": [
+        34576167,
+        30024875,
+        29804042,
+        28708125,
+        28193459,
+        28649625,
+        28833000
+      ],
+      "nativeNanos": [
+        3377625,
+        3281167,
+        3260583,
+        3334084,
+        3193375,
+        3185625,
+        3270250
+      ],
+      "medianStockOverNative": 8.816757128659889
+    }
+  ],
+  "previousBehavior": "SQL sort previously fell back entirely to stock Flink; there is no previous native SQL sort.",
+  "limits": [
+    "Operation timing excludes SQL planning, source/sink, shuffle, JNI entry, input import, output export and perimeter transposes",
+    "No precise before/after optimization conclusion across host cohorts",
+    "Does not establish other key types or forced-spill performance"
+  ],
+  "fingerprints": {
+    "native/engine/src/bounded_sort.rs": "275f995980641cef236d0a5c542bc96e78d07fc25b4fa89a549d13a9cc626c62",
+    "native/engine/src/bounded_exec.rs": "c224cfa4c71a1fb98801e9500ccecd184034c385eab2702459cebcb1ddcbbfaf",
+    "native/engine/src/memory.rs": "e86d8d3bad07f1445d48499d121467ddcdd205c109c463220c73b5ce957116aa",
+    "src/test/java/tech/streamfusion/operator/BatchSortAdmissionBenchmark.java": "9919e3b5b420698fac96aa467a4d1b2b8cd7206ad2342d015cce6ec99e14d172",
+    "releaseNativeLibrary": "3938f5ecf3bb9ea550a317308e2ba1e06be313b4b857001fb552658b02922e6d"
+  }
+}

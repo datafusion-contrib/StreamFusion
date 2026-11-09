@@ -32,6 +32,14 @@ public final class Native {
 
   public static native void closeBoundedSorter(long handle);
 
+  /** Releases a copied output's handoff reservation after Arrow import or C Data release. */
+  public static native void releaseBoundedSorterOutput(long handle);
+
+  public static native boolean supportsBoundedSorterSchema(long schemaAddress);
+
+  /** Task-thread snapshot: spill count, spilled bytes and native reserved bytes. */
+  public static native long[] boundedSorterExecutionStats(long handle);
+
   /** Rust-side operation timing on an already imported and finished input; no output export. */
   public static native long[] consumeBoundedSorterTimed(long handle);
 

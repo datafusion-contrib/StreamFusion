@@ -21,6 +21,7 @@ public final class NativeBatchSortOperator extends FlinkStreamOperator<ArrowBatc
   private transient long handle;
   private transient Schema inputSchema;
   private transient boolean finished;
+  private transient volatile long[] executionStats;
 
   public NativeBatchSortOperator(int[] columns, int[] flags, int batchRows) {
     this.columns = columns.clone();
@@ -32,6 +33,10 @@ public final class NativeBatchSortOperator extends FlinkStreamOperator<ArrowBatc
   public void open() throws Exception {
     super.open();
     NativeAllocator.initializeFor(this);
+    executionStats = new long[3];
+    getMetricGroup().gauge("batchSortSpillCount", () -> executionStats[0]);
+    getMetricGroup().gauge("batchSortSpilledBytes", () -> executionStats[1]);
+    getMetricGroup().gauge("batchSortReservedBytes", () -> executionStats[2]);
   }
 
   @Override
@@ -80,6 +85,7 @@ public final class NativeBatchSortOperator extends FlinkStreamOperator<ArrowBatc
       input.close();
     }
     drain(false);
+    executionStats = Native.boundedSorterExecutionStats(handle);
   }
 
   @Override
@@ -89,6 +95,7 @@ public final class NativeBatchSortOperator extends FlinkStreamOperator<ArrowBatc
     if (handle == 0) return;
     Native.finishBoundedSorter(handle);
     drain(true);
+    executionStats = Native.boundedSorterExecutionStats(handle);
   }
 
   private void drain(boolean endOfInput) {
@@ -104,13 +111,19 @@ public final class NativeBatchSortOperator extends FlinkStreamOperator<ArrowBatc
           if (endOfInput) throw new IllegalStateException("batch sort requested input after EOF");
           return;
         }
-        VectorSchemaRoot result = VectorSchemaRoot.create(inputSchema, NativeAllocator.SHARED);
+        VectorSchemaRoot result = null;
         try {
+          result = VectorSchemaRoot.create(inputSchema, NativeAllocator.SHARED);
           Data.importIntoVectorSchemaRoot(
               NativeAllocator.SHARED, array, result, NativeAllocator.DICTIONARIES);
         } catch (Throwable failure) {
-          result.close();
+          if (result != null) result.close();
           throw failure;
+        } finally {
+          // The Arrow importer closes the C struct on entry. Failures before that transfer still
+          // leave its release callback with this operator.
+          org.apache.arrow.c.StreamFusionArrayAccess.releaseIfOpen(array);
+          Native.releaseBoundedSorterOutput(handle);
         }
         ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(result));
       }

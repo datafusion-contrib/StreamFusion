@@ -84,6 +84,26 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
         .distinct().collect(java.util.stream.Collectors.toList());
   }
 
+  java.util.Set<String> subtasks(String operatorPrefix) {
+    return reporter.getMetricsByGroup().keySet().stream()
+        .filter(group -> group instanceof org.apache.flink.metrics.groups.OperatorMetricGroup)
+        .map(org.apache.flink.metrics.MetricGroup::getAllVariables)
+        .filter(
+            variables -> variables.getOrDefault("<operator_name>", "").startsWith(operatorPrefix))
+        .map(variables -> variables.getOrDefault("<subtask_index>", ""))
+        .collect(java.util.stream.Collectors.toSet());
+  }
+
+  java.util.Set<String> attempts(String operatorPrefix) {
+    return reporter.getMetricsByGroup().keySet().stream()
+        .filter(group -> group instanceof org.apache.flink.metrics.groups.OperatorMetricGroup)
+        .map(org.apache.flink.metrics.MetricGroup::getAllVariables)
+        .filter(
+            variables -> variables.getOrDefault("<operator_name>", "").startsWith(operatorPrefix))
+        .map(variables -> variables.getOrDefault("<task_attempt_num>", ""))
+        .collect(java.util.stream.Collectors.toSet());
+  }
+
   long counterValue(String name) {
     long[] total = {0};
     reporter.getMetricsByGroup().forEach((group, metrics) -> {

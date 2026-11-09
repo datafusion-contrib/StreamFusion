@@ -39,6 +39,17 @@ final class CalcOutputTypeCheck {
   }
 
   static String mismatch(RexExpression encoded, RelDataType inputType, RowType declared) {
+    return mismatch(encoded, inputType, declared, false);
+  }
+
+  static String retainedMismatch(
+      RexExpression encoded, RelDataType inputType, RelDataType outputType) {
+    return mismatch(
+        encoded, inputType, FlinkTypeFactory$.MODULE$.toLogicalRowType(outputType), true);
+  }
+
+  private static String mismatch(
+      RexExpression encoded, RelDataType inputType, RowType declared, boolean retained) {
     Schema input =
         ArrowConversion.toArrowInputSchema(
             FlinkTypeFactory$.MODULE$.toLogicalRowType(inputType),
@@ -63,7 +74,10 @@ final class CalcOutputTypeCheck {
       if (notInferable != null) {
         return notInferable;
       }
-      return mismatch(Data.importSchema(allocator, outputSchema, null).getFields(), declared, encoded);
+      Schema actual = Data.importSchema(allocator, outputSchema, null);
+      if (retained && !BatchSortTypeCheck.supported(actual))
+        return "retained Arrow representation is unsupported";
+      return mismatch(actual.getFields(), declared, encoded);
     } catch (NativeException compileFailure) {
       return "expression does not compile natively: " + compileFailure.getMessage();
     }

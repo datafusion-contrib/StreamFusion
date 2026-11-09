@@ -142,6 +142,30 @@ class StreamFusionPlannerLoaderTest {
     assertEquals(List.of(6, 8, 10), collectInts(table.executeSql(sql)));
   }
 
+  @Test
+  void sortsBlockingArrowInputFromThePackagedPayload() throws Exception {
+    TableEnvironment table = TableEnvironment.create(EnvironmentSettings.inBatchMode());
+    table.getConfig().set("parallelism.default", "2");
+    table.getConfig().set("pipeline.operator-chaining.enabled", "false");
+    table.getConfig().set("table.optimizer.range-sort.enabled", "false");
+    table.getConfig().set("taskmanager.memory.task.off-heap.size", "128m");
+    table.executeSql(
+        "CREATE TABLE batch_sort_input (id BIGINT) WITH ('connector'='datagen',"
+            + " 'number-of-rows'='2051', 'fields.id.kind'='sequence',"
+            + " 'fields.id.start'='0', 'fields.id.end'='2050')");
+    String sql = "SELECT id FROM batch_sort_input ORDER BY id DESC";
+    String plan = table.explainSql(sql);
+    assertTrue(plan.contains("NativeSort"), plan);
+    assertTrue(plan.contains("NativeExchange"), plan);
+    try (CloseableIterator<Row> rows = table.executeSql(sql).collect()) {
+      long expected = 2050;
+      while (rows.hasNext()) {
+        assertEquals(expected--, rows.next().getField(0));
+      }
+      assertEquals(-1, expected);
+    }
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"rocksdb", "tech.streamfusion.state.RocksDBNativeStateBackendFactory"})
   void installsNativeStatefulPlannerWithConfiguredHostBackend(String backend) throws Exception {

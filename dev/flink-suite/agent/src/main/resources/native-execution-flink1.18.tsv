@@ -147,3 +147,8 @@ org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTim
 org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver	changelog=false	NativeColumnarJvmOverOperator
 org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+
+# Bounded integer sort requires positive native work; unverified string keys stay stock.
+org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrdering	*	NativeBatchSortOperator
+org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testGlobalSorting	*	NativeBatchSortOperator
+org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrderingOnMultiColumn	*	!batch sort: only signed integer keys are verified

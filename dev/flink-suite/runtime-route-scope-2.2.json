@@ -1057,6 +1057,24 @@
       "display_name": "testUserDefinedScalarFunction()",
       "count": 1,
       "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrdering",
+      "display_name": "testNullOrdering()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testGlobalSorting",
+      "display_name": "testGlobalSorting()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrderingOnMultiColumn",
+      "display_name": "testNullOrderingOnMultiColumn()",
+      "count": 1,
+      "route": "batch_host_only"
     }
   ]
 }

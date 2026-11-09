@@ -36,7 +36,7 @@ final class BatchPhysicalNativeCalc extends BatchPhysicalNativeSingleRel
         ShortcutUtils.unwrapTableConfig(this),
         new NativeCalcExecNode(
             ShortcutUtils.unwrapTableConfig(this),
-            InputProperty.DEFAULT,
+            inputProperty(InputProperty.DamBehavior.PIPELINED),
             FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
             getRelDetailedDescription(),
             expression.kinds(),

@@ -27,7 +27,7 @@ final class BatchPhysicalRowDataToArrow extends BatchPhysicalNativeSingleRel
         ShortcutUtils.unwrapTableConfig(this),
         new RowDataToArrowExecNode(
             ShortcutUtils.unwrapTableConfig(this),
-            InputProperty.DEFAULT,
+            inputProperty(InputProperty.DamBehavior.PIPELINED),
             FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
             getRelDetailedDescription(),
             false,
