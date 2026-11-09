@@ -79,6 +79,11 @@ constraints. Native Parquet/ORC codecs do not imply a native filesystem batch sc
 These require further plan/runtime or semantic work; DataFusion having a physical
 operator is not sufficient to admit its Flink SQL counterpart.
 
+An internal [bounded execution adapter and sort prototype](../batch-execution-runtime.md)
+now exercise incremental input, EOF, spill, streamed output and cancellation. They
+are not selected by the SQL planner. In particular, shared Arrow/DataFusion buffer
+accounting and distributed batch execution still need verification before admission.
+
 ## Validation
 
 The unrestricted scalar candidate passed the unchanged published batch SQL Calc

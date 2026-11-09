@@ -12,6 +12,29 @@ import org.slf4j.LoggerFactory;
 /** Entry point to the native data plane. Holds the methods backed by the Rust library. */
 public final class Native {
 
+  public static native long createBoundedSorter(
+      long schemaAddress,
+      int[] columns,
+      int[] flags,
+      String[] spillDirectories,
+      int batchRows,
+      long spillReservationBytes,
+      String taskName);
+
+  public static native void pushBoundedSorter(long handle, long arrayAddress);
+
+  public static native void finishBoundedSorter(long handle);
+
+  /**
+   * Returns one for output, zero for input demand, two to yield, and minus one after completion.
+   */
+  public static native int nextBoundedSorter(long handle, long arrayAddress, long schemaAddress);
+
+  public static native void closeBoundedSorter(long handle);
+
+  /** Rust-side operation timing on an already imported and finished input; no output export. */
+  public static native long[] consumeBoundedSorterTimed(long handle);
+
   /** Key descriptor prefix selecting Flink's generated projection layout, including NULL slots. */
   public static final int STOCK_KEY_PROJECTION = Integer.MIN_VALUE;
 

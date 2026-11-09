@@ -82,7 +82,7 @@ datafusion = { version = "54.0.0", default-features = false, features = [
   "recursive_protection",
   "sql",
 ] }
-tokio = { version = "1", features = ["rt-multi-thread"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 futures = "0.3"
 # Fast hashing for the per-row grouping map (the same hasher arrow/datafusion use internally).
 ahash = "0.8"

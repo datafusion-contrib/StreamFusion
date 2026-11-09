@@ -124,10 +124,12 @@ nav:
   - Upstream SQL inventory: sql-inventory/index.md
   - Portable SQL audit: sql-parity-audit.md
   - Batch execution audit: batch-execution-audit.md
+  - Bounded runtime groundwork: batch-execution-runtime.md
   - Benchmarks:
       - benchmarks.md
       - Evidence and experiment index: benchmarks/evidence.md
       - Batch scalar comparisons: benchmarks/batch-scalars.md
+      - Batch sort groundwork: benchmarks/batch-sort-groundwork.md
       - Native Criterion suites: benchmarks/native-criterion.md
       - AppendFast Top-1: benchmarks/append-top1.md
       - Performance audit reproduction: benchmarks/performance-audit.md

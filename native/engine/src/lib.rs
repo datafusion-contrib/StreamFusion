@@ -31,6 +31,8 @@ pub(crate) use tokio::runtime::Runtime;
 streamfusion_bridge::link_allocator!();
 mod aggregates;
 mod append_buffer;
+mod bounded_exec;
+mod bounded_sort;
 mod bridge;
 mod bucket_route;
 mod calc;

@@ -1,0 +1,233 @@
+{
+  "date": "2026-11-09",
+  "flink": "2.2.1",
+  "datafusion": "54.0.0",
+  "arrow": "58.4.1",
+  "jdk": "Temurin 17.0.17+10",
+  "host": "Apple M4, 10 CPUs, 16 GiB RAM",
+  "build": "release, mimalloc, no optional RocksDB state backend",
+  "benchmark": "BatchSortAdmissionBenchmark",
+  "scope": "small-functionality operation only; no SQL or full-job speedup claim",
+  "nativeTimer": "inside Rust, after Arrow import/setup and before output export; production DataFusion plan, memory callbacks and output consumption included",
+  "stockTimer": "Java SortOperator processing of prebuilt BinaryRowData through endInput and matching key checksum consumption; generated sorter open outside timing",
+  "common": "ascending nullable BIGINT first key, NULL every 17 rows, fixed random seed 724719, same logical data and key checksum, alternating engine order, explicit/asserted 32 MiB operation pool each; prepared inputs and setup outside timing",
+  "previousStreamFusion": "SQL sort remains stock Flink; no prior native batch sorter exists",
+  "discardedCohorts": [
+    {
+      "rows": 65536,
+      "width": 4,
+      "cardinality": 65536,
+      "nullEvery": 17,
+      "warmups": 3,
+      "trials": 7,
+      "sourceStage": "initial prototype before native-I/O yielding",
+      "stockNanos": [
+        27113250,
+        81880750,
+        62163000,
+        52222416,
+        62744083,
+        45084084,
+        36063125
+      ],
+      "nativeNanos": [
+        1374083,
+        1330708,
+        5065666,
+        5056125,
+        5718625,
+        5214500,
+        6122667
+      ],
+      "stockMedianNanos": 52222416,
+      "nativeMedianNanos": 5065666,
+      "stockPoolBytes": 3145728,
+      "nativePoolBytes": 33554432,
+      "invalidReason": "Flink harness used a 3 MiB default managed pool; the native authority had 32 MiB. Excluded from performance conclusions."
+    },
+    {
+      "rows": 65536,
+      "width": 8,
+      "cardinality": 127,
+      "nullEvery": 17,
+      "warmups": 3,
+      "trials": 7,
+      "sourceStage": "initial prototype before native-I/O yielding",
+      "stockNanos": [
+        28423042,
+        37056625,
+        34280667,
+        45416167,
+        11053292,
+        45165625,
+        56598375
+      ],
+      "nativeNanos": [
+        4746000,
+        4761292,
+        4724833,
+        1358792,
+        1375458,
+        1292875,
+        1721167
+      ],
+      "stockMedianNanos": 37056625,
+      "nativeMedianNanos": 1721167,
+      "stockPoolBytes": 3145728,
+      "nativePoolBytes": 33554432,
+      "invalidReason": "Flink harness used a 3 MiB default managed pool; the native authority had 32 MiB. Excluded from performance conclusions."
+    },
+    {
+      "rows": 131072,
+      "width": 4,
+      "cardinality": 131072,
+      "nullEvery": 17,
+      "warmups": 3,
+      "trials": 7,
+      "sourceStage": "initial prototype before native-I/O yielding",
+      "stockNanos": [
+        37455042,
+        37291125,
+        30924166,
+        28506333,
+        28899500,
+        27486125,
+        28617000
+      ],
+      "nativeNanos": [
+        2837209,
+        2673500,
+        2763833,
+        2721666,
+        2514250,
+        2509708,
+        2636959
+      ],
+      "stockMedianNanos": 28899500,
+      "nativeMedianNanos": 2673500,
+      "stockPoolBytes": 3145728,
+      "nativePoolBytes": 33554432,
+      "invalidReason": "Flink harness used a 3 MiB default managed pool; the native authority had 32 MiB. Excluded from performance conclusions."
+    },
+    {
+      "rows": 131072,
+      "width": 4,
+      "cardinality": 131072,
+      "nullEvery": 17,
+      "nativePoolBytes": 33554432,
+      "warmups": 3,
+      "trials": 7,
+      "sourceStage": "native-I/O yielding with default stock harness budget, before explicit equal-budget correction",
+      "stockPoolBytes": 3145728,
+      "stockNanos": [
+        44295083,
+        37539334,
+        39274416,
+        30021834,
+        29686917,
+        28922333,
+        31397042
+      ],
+      "nativeNanos": [
+        2737083,
+        2707041,
+        2726500,
+        2684792,
+        2687542,
+        2671958,
+        2691291
+      ],
+      "invalidReason": "Flink harness default managed pool was 3 MiB; native authority was 32 MiB. Excluded from conclusions."
+    }
+  ],
+  "cohorts": [
+    {
+      "rows": 131072,
+      "width": 4,
+      "cardinality": 131072,
+      "nullEvery": 17,
+      "poolBytes": 33554432,
+      "warmups": 3,
+      "trials": 7,
+      "sourceStage": "bounded runtime with native-I/O yielding; explicit equal pool assertions",
+      "stockNanos": [
+        44681417,
+        34168875,
+        33871916,
+        41072250,
+        38343375,
+        31743750,
+        27300083
+      ],
+      "nativeNanos": [
+        2825417,
+        6782292,
+        2816292,
+        2919750,
+        3410000,
+        3247375,
+        2799458
+      ],
+      "stockMedianNanos": 34168875,
+      "nativeMedianNanos": 2919750,
+      "medianRatioStockOverNative": 11.70267146159774
+    },
+    {
+      "rows": 65536,
+      "width": 8,
+      "cardinality": 127,
+      "nullEvery": 17,
+      "poolBytes": 33554432,
+      "warmups": 3,
+      "trials": 7,
+      "sourceStage": "bounded runtime with native-I/O yielding; explicit equal pool assertions",
+      "stockNanos": [
+        10327917,
+        9655709,
+        10449917,
+        9379459,
+        9921459,
+        8490416,
+        8661083
+      ],
+      "nativeNanos": [
+        1384375,
+        1452167,
+        1377833,
+        1323375,
+        1348625,
+        1316458,
+        1311500
+      ],
+      "stockMedianNanos": 9655709,
+      "nativeMedianNanos": 1348625,
+      "medianRatioStockOverNative": 7.15966929279822
+    }
+  ],
+  "sourceFingerprints": {
+    "native/engine/src/bounded_sort.rs": "0d03011a7fbb41c5e3b1d2da9428bce77d83a69df72852cd5f29d50d5d5f55fe",
+    "native/engine/src/bounded_exec.rs": "c224cfa4c71a1fb98801e9500ccecd184034c385eab2702459cebcb1ddcbbfaf",
+    "native/engine/src/memory.rs": "1ffd7a11b214479c0081b354533bdd5c256118c943b34b26273b56ce712ba34a",
+    "src/test/java/tech/streamfusion/operator/BatchSortAdmissionBenchmark.java": "9919e3b5b420698fac96aa467a4d1b2b8cd7206ad2342d015cce6ec99e14d172"
+  },
+  "nativeDsoSha256": "d393adb93c58db97294fdb3afb8c0ab8f51d14244d40e658c90af1f070f4b162",
+  "validation": {
+    "nativeTests": {
+      "passed": 39,
+      "failed": 0,
+      "selection": "bounded_ (includes eleven new bounded driver/sort controls and existing bounded-state checks)"
+    },
+    "flink2.2.1": {
+      "passed": 43,
+      "failed": 0,
+      "selection": "13 NativePlanner, 16 transpose, 7 new bounded sort, 6 TaskOffHeapMemory, 1 benchmark; benchmark cohort in this combined run discarded because stock pool was still the default"
+    },
+    "flink1.18.1": {
+      "passed": 48,
+      "failed": 0,
+      "selection": "13 NativePlanner, 6 BatchSql, 16 transpose, 7 new bounded sort, 6 TaskOffHeapMemory"
+    },
+    "upstreamSql": "No new sort admission or upstream sort witness is claimed; existing unchanged upstream Calc evidence is retained separately in batch-sql-validation-20261109.json"
+  },
+  "nativeDsoFingerprintScope": "Final yielding implementation used in the valid equal-budget cohorts; discarded cohorts may predate the yielding change."
+}

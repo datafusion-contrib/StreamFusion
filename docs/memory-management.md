@@ -23,6 +23,13 @@ Reservations are acquired before the corresponding native capacity is made avail
 released with their owner. Arrow allocations are charged and released at their actual allocation
 lifetime; operator and zero-copy batch handles also release ownership on normal close and task
 cancellation.
+Native DataFusion pools cache the Java authority class on the calling thread, so
+worker callbacks retain the correct application classloader. The internal bounded
+runtime additionally keeps its owner registration alive through the pool's final
+reference, including asynchronously cancelled workers; it does not reclaim their
+balance at Java operator close. Its remaining shared-buffer accounting limitation
+is documented in the [bounded runtime](batch-execution-runtime.md), which is not
+yet admitted by the SQL planner.
 Mini-batch cleanup skips native flushes when initialization has not acquired a state handle or
 completed bundle setup. This also applies after the handle is closed: cleanup must preserve the
 original initialization failure rather than enter JNI with an absent handle. Partially acquired

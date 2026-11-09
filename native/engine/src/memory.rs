@@ -6,14 +6,30 @@ use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 struct FlinkTaskOffHeapPool {
     owner_id: i64,
     used: AtomicUsize,
+    authority: jni::objects::GlobalRef,
+    owns_registration: bool,
 }
 
 impl FlinkTaskOffHeapPool {
-    fn new(owner_id: i64) -> Self {
-        Self {
+    fn new(owner_id: i64) -> Result<Self, DataFusionError> {
+        let vm = crate::bridge::JVM.get().ok_or_else(|| {
+            DataFusionError::Execution("JVM memory authority is unavailable".into())
+        })?;
+        let mut env = vm
+            .attach_current_thread()
+            .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+        let class = env
+            .find_class("tech/streamfusion/operator/TaskOffHeapMemory")
+            .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+        let authority = env
+            .new_global_ref(class)
+            .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+        Ok(Self {
             owner_id,
             used: AtomicUsize::new(0),
-        }
+            authority,
+            owns_registration: false,
+        })
     }
 
     fn reserve(&self, bytes: usize) -> Result<bool, DataFusionError> {
@@ -24,7 +40,7 @@ impl FlinkTaskOffHeapPool {
             .attach_current_thread()
             .map_err(|e| DataFusionError::Execution(e.to_string()))?;
         env.call_static_method(
-            "tech/streamfusion/operator/TaskOffHeapMemory",
+            <&jni::objects::JClass>::from(self.authority.as_obj()),
             "tryReserve",
             "(JJ)Z",
             &[
@@ -44,7 +60,7 @@ impl FlinkTaskOffHeapPool {
             .attach_current_thread()
             .map_err(|e| DataFusionError::Execution(e.to_string()))?;
         env.call_static_method(
-            "tech/streamfusion/operator/TaskOffHeapMemory",
+            <&jni::objects::JClass>::from(self.authority.as_obj()),
             "release",
             "(JJ)V",
             &[
@@ -55,6 +71,65 @@ impl FlinkTaskOffHeapPool {
         .map(|_| ())
         .map_err(|e| DataFusionError::Execution(format!("release task off-heap memory: {e}")))
     }
+}
+
+impl Drop for FlinkTaskOffHeapPool {
+    fn drop(&mut self) {
+        if !self.owns_registration {
+            return;
+        }
+        // Reservations and DataFusion worker contexts retain the pool. Closing the owner here
+        // keeps async cancellation charged until its final worker releases memory.
+        let result = (|| {
+            let vm = crate::bridge::JVM.get().ok_or_else(|| {
+                DataFusionError::Execution("JVM memory authority is unavailable".into())
+            })?;
+            let mut env = vm
+                .attach_current_thread()
+                .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+            env.call_static_method(
+                <&jni::objects::JClass>::from(self.authority.as_obj()),
+                "closeOwner",
+                "(J)V",
+                &[jni::objects::JValue::Long(self.owner_id)],
+            )
+            .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+            Ok::<(), DataFusionError>(())
+        })();
+        if let Err(error) = result {
+            log::error!("close native task memory owner {}: {error}", self.owner_id);
+        }
+    }
+}
+
+/// The native bounded task owns this registration through the pool's last reference, including
+/// worker tasks cancelled asynchronously by DataFusion.
+pub(crate) fn owned_task_memory_pool(name: &str) -> Result<Arc<dyn MemoryPool>, DataFusionError> {
+    let mut pool = FlinkTaskOffHeapPool::new(0)?;
+    let vm = crate::bridge::JVM.get().unwrap();
+    let mut env = vm
+        .attach_current_thread()
+        .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+    let category = env
+        .new_string("batch")
+        .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+    let name = env
+        .new_string(name)
+        .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+    pool.owner_id = env
+        .call_static_method(
+            <&jni::objects::JClass>::from(pool.authority.as_obj()),
+            "registerOwner",
+            "(Ljava/lang/String;Ljava/lang/String;)J",
+            &[
+                jni::objects::JValue::Object(&category),
+                jni::objects::JValue::Object(&name),
+            ],
+        )
+        .and_then(|value| value.j())
+        .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+    pool.owns_registration = true;
+    Ok(Arc::new(pool))
 }
 
 impl Debug for FlinkTaskOffHeapPool {
@@ -150,7 +225,7 @@ impl OperatorMemory {
             return Ok(());
         }
         let pool: Arc<dyn MemoryPool> = if budget_bytes < -1 {
-            Arc::new(FlinkTaskOffHeapPool::new(-budget_bytes - 1))
+            Arc::new(FlinkTaskOffHeapPool::new(-budget_bytes - 1)?)
         } else {
             Arc::new(GreedyMemoryPool::new(budget_bytes as usize))
         };
