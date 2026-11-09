@@ -2759,6 +2759,7 @@ pub(crate) struct OverWindowAggregator {
     canonical_distinct: ahash::HashSet<usize>,
     canonical_distinct_loading: bool,
     canonical_frame_import: Option<canonical::FrameImport>,
+    canonical_callbacks_import: Option<canonical::CallbackImport>,
     frame_clock: i64,
 }
 
@@ -2820,6 +2821,7 @@ impl OverWindowAggregator {
             canonical_distinct: ahash::HashSet::default(),
             canonical_distinct_loading: false,
             canonical_frame_import: None,
+            canonical_callbacks_import: None,
             frame_clock: i64::MIN,
         }
     }
@@ -5416,6 +5418,7 @@ impl OverWindowAggregator {
             canonical_distinct: ahash::HashSet::default(),
             canonical_distinct_loading: false,
             canonical_frame_import: None,
+            canonical_callbacks_import: None,
             frame_clock: i64::MIN,
         }
         .with_state_retention(min_retention_ms);

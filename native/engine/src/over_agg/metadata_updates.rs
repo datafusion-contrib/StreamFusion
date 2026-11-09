@@ -3,7 +3,7 @@ use super::*;
 #[derive(Default)]
 pub(super) struct MetadataUpdates {
     keys: ahash::HashSet<ByteKey>,
-    bytes: usize,
+    pub(super) bytes: usize,
 }
 
 impl MetadataUpdates {

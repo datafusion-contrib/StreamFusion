@@ -86,12 +86,23 @@ inside a hot owner as well as between database batches. Resident metadata uses t
 The disk-backed stock projection installs each scalar or queue entry directly; heap component
 RANGE projections retain their separate map-order path. Native checkpoint bytes retain their format, and the projection continues to use released stock
 serializers. The largest encoded native or stock KV remains a lower bound
-on working memory; callback/map-order arrays in restore still require incremental transport.
-The native suite passes 1,487 checks with two existing ignores and the memory-only build passes.
-The selected 1.18 cohort passes 566 invocations across the main run and corrected hot-V1 fixture
-follow-up; the clean 2.2 cohort passes 534 with 36 expected V1-only skips. New controls check exact
-canonical bytes, continued output and receiver failure/retry for hot RANGE and V1 polling owners.
-These selected controls do not expand operator admission or replace exhaustive CI.
+on working memory; RANGE callback/map-order arrays in restore still require incremental transport.
+Unbounded event-time OVER restore now uses the same flat records for V1 polling and V2 cleanup
+metadata. Both validation and apply retain only the active owner's cursor, preserving order
+when a chunk separates a cleanup value from its physical callback. Validation installs no
+execution state. Normal processing, export and
+checkpointing reject unfinished or failed imports. Decoded buffers and timer-vector growth are
+reserved before mutation. Completed owners flush their native metadata once; a hot owner is not
+serialized again for every transfer chunk. The cursor is transient and native checkpoint bytes
+retain their existing format.
+The restore cohort passes 1,493 native checks with two existing ignores and the memory-only build
+passes. Selected OVER controls pass 385 checks on 1.18 and 353 on a clean 2.2 build, with 36 expected
+V1-only skips on 2.2. Each release includes four complete-job handoff/checkpoint scenarios.
+Native controls also check 2,051-owner chunk boundaries, validation without execution-state
+mutation, guarded failures, charged memory denial and one ledger write per completed owner.
+Earlier export controls check exact canonical bytes, continued output and receiver failure/retry
+for hot RANGE and V1 polling owners. These selected controls do not expand operator admission or
+replace exhaustive CI.
 
 The barrier pins the databases and immutable reader configuration. Native reader construction,
 metadata hydration and stock conversion all run on the asynchronous writer thread; no restore
@@ -175,9 +186,11 @@ The native importer writes RocksDB frames directly and guards unfinished/failed 
 processing or snapshotting. Decode reservations transfer into retained-state charges, including
 failed writes. Bounded OVER now computes ownership, retained-row counts and cutoff maxima by
 scanning staged buckets and timers, without per-owner Java timestamp/count maps or timer sets.
-Frame and pending transfers iterate the disk index directly. V1 polling OVER and temporal-join
-restore callback bridges share direct primitive-array collection from disk, avoiding intermediate boxed
-lists. Their native protocol arrays still remain per-owner working sets. RANGE restore still materializes callback
+Frame and pending transfers iterate the disk index directly. V1 polling OVER streams callbacks
+from that index through the shared flat bridge, without a per-owner Java timer array. The native
+import appends to its normal execution ledger. Temporal-join restore still collects its required
+primitive array directly from disk, avoiding intermediate boxed lists; this array remains a
+per-owner working set. RANGE restore still materializes callback
 and map-order arrays at the native protocol boundary; making that import protocol incremental,
 other adapters' inventories and memory capture/accounting remain open work. OVER and temporal-sort
 exports now stage each map-list row once in the shared disk spool. A scoped lazy list lets the

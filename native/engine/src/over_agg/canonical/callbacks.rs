@@ -212,3 +212,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_exportOverCanonicalCallback
 
 #[cfg(test)]
 mod tests;
+
+mod import;
+pub(in crate::over_agg) use import::CallbackImport;

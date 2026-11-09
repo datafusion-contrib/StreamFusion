@@ -15,8 +15,9 @@ import org.apache.flink.table.types.logical.TinyIntType;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
+import tech.streamfusion.operator.RowDataArrowConverter;
 
-/** Shared flat OVER metadata bridge; timer lists never cross the export boundary. */
+/** Shared bounded flat OVER metadata bridge, independent of the number of timers per owner. */
 final class StockOverCallbacks {
   static final byte CLEANUP = 0, LAST_TRIGGER = 1, EVENT = 2, PROCESSING = 3;
 
@@ -27,17 +28,69 @@ final class StockOverCallbacks {
     void accept(BinaryRowData owner, byte kind, long timestamp) throws Exception;
   }
 
-  static void export(
-      CheckpointableKeyedStateBackend<RowData> backend,
-      long handle,
-      RowType keys,
-      Receiver receiver) {
+  private static RowType type(RowType keys) {
     var fields = new ArrayList<RowType.RowField>();
     for (int p = 0; p < keys.getFieldCount(); p++)
       fields.add(new RowType.RowField("key" + p, keys.getTypeAt(p).copy(true)));
     fields.add(new RowType.RowField("__over_callback_kind", new TinyIntType(false)));
     fields.add(new RowType.RowField("__over_callback_time", new BigIntType(false)));
-    var type = new RowType(fields);
+    return new RowType(fields);
+  }
+
+  static final class Writer {
+    private final long handle;
+    private final RowType type;
+    private final boolean validating;
+    private final RowDataSerializer serializer;
+    private final RowData.FieldGetter[] keys;
+    private final ArrayList<RowData> rows = new ArrayList<>(1024);
+    private long bytes;
+
+    Writer(long handle, RowType keys, boolean validating) {
+      this.handle = handle;
+      this.type = type(keys);
+      this.validating = validating;
+      this.serializer = new RowDataSerializer(type);
+      this.keys = new RowData.FieldGetter[keys.getFieldCount()];
+      for (int i = 0; i < this.keys.length; i++)
+        this.keys[i] = RowData.createFieldGetter(keys.getTypeAt(i).copy(true), i);
+    }
+
+    void append(RowData owner, byte kind, long timestamp) throws Exception {
+      var row = new GenericRowData(type.getFieldCount());
+      for (int i = 0; i < keys.length; i++) row.setField(i, keys[i].getFieldOrNull(owner));
+      row.setField(keys.length, kind);
+      row.setField(keys.length + 1, timestamp);
+      long size = serializer.toBinaryRow(row).getSizeInBytes();
+      if (!rows.isEmpty() && (rows.size() == 1024 || bytes + size > 4L * 1024 * 1024)) send(false);
+      rows.add(row);
+      bytes += size;
+    }
+
+    void finish() {
+      send(true);
+    }
+
+    private void send(boolean last) {
+      try (var root = RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED);
+          var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
+          var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+        Data.exportVectorSchemaRoot(
+            NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array, schema);
+        Native.importOverCanonicalCallbacks(
+            handle, array.memoryAddress(), schema.memoryAddress(), last, validating);
+      }
+      rows.clear();
+      bytes = 0;
+    }
+  }
+
+  static void export(
+      CheckpointableKeyedStateBackend<RowData> backend,
+      long handle,
+      RowType keys,
+      Receiver receiver) {
+    var type = type(keys);
     var serializer = new RowDataSerializer(keys);
     Native.exportOverCanonicalCallbacks(
         handle,

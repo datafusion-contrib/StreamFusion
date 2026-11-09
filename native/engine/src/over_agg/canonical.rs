@@ -5,6 +5,7 @@ const CHUNK_ROWS: usize = 1024;
 pub(super) const STAMP: &str = "__over_retention_stamp";
 
 mod callbacks;
+pub(super) use callbacks::CallbackImport;
 mod distinct;
 mod event;
 mod frame;
@@ -20,6 +21,9 @@ impl OverWindowAggregator {
     pub(in crate::over_agg) fn ensure_canonical_ready(&self) -> Result<(), DataFusionError> {
         if self.canonical_frame_import.is_some() {
             return Err(invalid("retained frame restore is not finalized"));
+        }
+        if self.canonical_callbacks_import.is_some() {
+            return Err(invalid("callback restore is not finalized"));
         }
         if self.canonical_distinct_loading {
             return Err(invalid("DISTINCT membership restore is not finalized"));

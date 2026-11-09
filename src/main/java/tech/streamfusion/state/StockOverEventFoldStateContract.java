@@ -472,43 +472,24 @@ public final class StockOverEventFoldStateContract implements StockStateContract
       StockStateSpool partitions,
       boolean validating)
       throws Exception {
-    var rows = new ArrayList<RowData>(CHUNK_ROWS);
+    var writer = new StockOverCallbacks.Writer(handle, keyType, validating);
     try (var owners = partitions.owners()) {
       while (owners.hasNext()) {
         var owner = owners.next();
         backend.setCurrentKey(owner);
         Long deadline = cleanupEnabled ? cleanup(backend).value() : null;
-        if (deadline == null && (!pollingTimers || !partitions.hasAny(EVENT_TIMES, owner)))
-          continue;
-        var row = new GenericRowData(cleanupType.getFieldCount());
-        for (int p = 0; p < keyType.getFieldCount(); p++) row.setField(p, get(owner, keyType, p));
-        row.setField(keyType.getFieldCount(), deadline);
-        row.setField(keyType.getFieldCount() + 1, partitions.hasAny(PROCESSING_TIMES, owner));
-        if (pollingTimers) {
-          row.setField(
-              keyType.getFieldCount() + 2,
-              new org.apache.flink.table.data.GenericArrayData(
-                  partitions.timesArray(EVENT_TIMES, owner)));
+        if (deadline != null) {
+          writer.append(owner, StockOverCallbacks.CLEANUP, deadline);
+          if (partitions.hasAny(PROCESSING_TIMES, owner))
+            writer.append(owner, StockOverCallbacks.PROCESSING, deadline);
         }
-        rows.add(row);
-        if (rows.size() == CHUNK_ROWS) {
-          send(
-              validating
-                  ? Native::validateOverCleanupCanonical
-                  : Native::importOverCleanupCanonical,
-              handle,
-              cleanupType,
-              rows);
-          rows.clear();
-        }
+        if (pollingTimers)
+          try (var times = partitions.times(EVENT_TIMES, owner)) {
+            while (times.hasNext()) writer.append(owner, StockOverCallbacks.EVENT, times.next());
+          }
       }
     }
-    if (!rows.isEmpty())
-      send(
-          validating ? Native::validateOverCleanupCanonical : Native::importOverCleanupCanonical,
-          handle,
-          cleanupType,
-          rows);
+    writer.finish();
   }
 
   @Override

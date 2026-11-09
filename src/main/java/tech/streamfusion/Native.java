@@ -148,6 +148,10 @@ public final class Native {
   /** Flat cleanup values, cutoffs and physical callbacks, bounded independently of owner size. */
   public static native void exportOverCanonicalCallbacks(long handle, BatchReceiver receiver);
 
+  /** Unbounded event-time metadata chunks; unfinished/failed imports cannot run or snapshot. */
+  public static native void importOverCanonicalCallbacks(
+      long handle, long arrayAddress, long schemaAddress, boolean finalChunk, boolean validateOnly);
+
   /** Processing ROWS counters and bucket minima; transfer retained frames before importing it. */
   public static native void exportOverCanonicalProcessingRows(long handle, BatchReceiver receiver);
 
