@@ -83,6 +83,16 @@ public final class FlinkPlanCompat {
         .AggregateWindowOperator.class;
   }
 
+  public static Class<?> legacyTumblingAssigner() {
+    return org.apache.flink.table.runtime.operators.window.groupwindow.assigners
+        .TumblingWindowAssigner.class;
+  }
+
+  public static Class<?> legacySlidingAssigner() {
+    return org.apache.flink.table.runtime.operators.window.groupwindow.assigners
+        .SlidingWindowAssigner.class;
+  }
+
   public static Class<?> legacySessionAssigner() {
     return org.apache.flink.table.runtime.operators.window.groupwindow.assigners
         .SessionWindowAssigner.class;

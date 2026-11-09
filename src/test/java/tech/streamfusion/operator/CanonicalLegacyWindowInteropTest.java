@@ -45,10 +45,9 @@ import tech.streamfusion.compat.FlinkPlanCompat;
 import tech.streamfusion.state.CanonicalStateBackend;
 import tech.streamfusion.state.CanonicalStateBackendFactory;
 import tech.streamfusion.state.RocksDBNativeStateBackendFactory;
-import tech.streamfusion.state.StockSessionWindowStateContract;
 import tech.streamfusion.state.StockStateContract;
 
-class CanonicalLegacySessionInteropTest {
+class CanonicalLegacyWindowInteropTest {
   private static final SavepointType CANONICAL =
       SavepointType.savepoint(SavepointFormatType.CANONICAL);
   private static final long BASE = CanonicalSharedWindowInteropTest.BASE;
@@ -60,49 +59,66 @@ class CanonicalLegacySessionInteropTest {
 
   static Stream<Arguments> cases() {
     var cases = new ArrayList<Arguments>();
-    for (boolean ltz : new boolean[] {false, true})
-      for (String zone : List.of("UTC", "Europe/Berlin"))
-        for (boolean keyless : new boolean[] {false, true})
-          for (boolean distinct : new boolean[] {false, true})
-            for (boolean rocks : new boolean[] {false, true})
-              for (boolean compiled : new boolean[] {false, true})
-                cases.add(Arguments.of(ltz, zone, keyless, distinct, rocks, compiled));
-    return CanonicalTestMatrix.select(cases.stream());
+    for (String shape : List.of("SESSION", "TUMBLE", "HOP", "PROC_TUMBLE", "PROC_HOP"))
+      for (boolean ltz : new boolean[] {false, true})
+        for (String zone : List.of("UTC", "Europe/Berlin"))
+          for (boolean keyless : new boolean[] {false, true})
+            for (boolean distinct : new boolean[] {false, true})
+              for (boolean rocks : new boolean[] {false, true})
+                for (boolean compiled : new boolean[] {false, true})
+                  cases.add(Arguments.of(shape, ltz, zone, keyless, distinct, rocks, compiled));
+    return CanonicalTestMatrix.select(
+        cases.stream()
+            .filter(
+                args -> !((String) args.get()[0]).startsWith("PROC_") || (boolean) args.get()[1]));
   }
 
-  @ParameterizedTest
+  @ParameterizedTest(name = "{0},ltz={1},zone={2},keyless={3},distinct={4},rocks={5},compiled={6}")
   @MethodSource("cases")
-  void releasedLegacySessionsSwitchEnginesAndFinishIndependentAsyncViews(
-      boolean ltz, String zone, boolean keyless, boolean distinct, boolean rocks, boolean compiled)
+  void releasedLegacyWindowsSwitchEnginesAndFinishIndependentAsyncViews(
+      String shape,
+      boolean ltz,
+      String zone,
+      boolean keyless,
+      boolean distinct,
+      boolean rocks,
+      boolean compiled)
       throws Exception {
-    var plan = new Plan(ltz, zone, keyless, distinct, compiled);
+    var plan = new Plan(shape, ltz, zone, keyless, distinct, compiled);
     var captured = new OperatorSnapshotFutures[2];
     var expected = new OperatorSubtaskState[2];
     OperatorSubtaskState recovery = null;
     try (var reference = plan.stock(false)) {
       reference.open();
+      if (plan.processing) reference.setProcessingTime(BASE + 1000);
       for (var row :
           List.of(
               plan.row(1L, 10L, 0),
               plan.row(1L, 10L, 2000),
               plan.row(1L, 20L, 10000),
               plan.row(null, null, 12000))) plan.stockInput(reference, row);
-      reference.processWatermark(new Watermark(BASE + 500));
+      if (!plan.processing) reference.processWatermark(new Watermark(BASE + 500));
       expected[0] = snapshot(reference, 1);
       try (var source = plan.nativeHarness(rocks)) {
         source.initializeState(expected[0]);
         source.open();
-        source.processWatermark(new Watermark(BASE + 500));
+        if (plan.processing) source.setProcessingTime(BASE + 1000);
+        else source.processWatermark(new Watermark(BASE + 500));
         var owner = (AbstractNativeStatefulOperator<?>) source.getOperator();
         assertEquals(rocks, owner.directRocksDBState());
         try {
           captured[0] = CanonicalDistinctWindowAsyncTest.capture(source, 2);
+          if (plan.processing) {
+            reference.setProcessingTime(BASE + 1500);
+            source.setProcessingTime(BASE + 1500);
+          }
           var bridge = plan.row(1L, 10L, 6000);
           plan.stockInput(reference, bridge);
           plan.nativeInput(source, bridge);
           expected[1] = snapshot(reference, 3);
           captured[1] = CanonicalDistinctWindowAsyncTest.capture(source, 3);
           recovery = source.snapshot(4, 0);
+          if (plan.processing) source.setProcessingTime(BASE + 1700);
           plan.nativeInput(source, plan.row(1L, 77L, 3000));
           source.prepareSnapshotPreBarrier(5);
           owner.closeHandle();
@@ -132,12 +148,22 @@ class CanonicalLegacySessionInteropTest {
         resumed.initializeState(recovery);
         stock.open();
         resumed.open();
-        for (var row : plan.suffixRows()) {
-          plan.stockInput(stock, row);
-          plan.nativeInput(resumed, row);
+        var suffix = plan.suffixRows();
+        for (int i = 0; i < suffix.size(); i++) {
+          if (plan.processing) {
+            stock.setProcessingTime(plan.suffixClock(i));
+            resumed.setProcessingTime(plan.suffixClock(i));
+          }
+          plan.stockInput(stock, suffix.get(i));
+          plan.nativeInput(resumed, suffix.get(i));
         }
-        stock.processWatermark(Watermark.MAX_WATERMARK);
-        resumed.processWatermark(Watermark.MAX_WATERMARK);
+        if (plan.processing) {
+          stock.setProcessingTime(BASE + 30000);
+          resumed.setProcessingTime(BASE + 30000);
+        } else {
+          stock.processWatermark(Watermark.MAX_WATERMARK);
+          resumed.processWatermark(Watermark.MAX_WATERMARK);
+        }
         assertEquals(plan.output(stock), plan.output(resumed));
       }
     } finally {
@@ -157,12 +183,17 @@ class CanonicalLegacySessionInteropTest {
     final PlannerBase planner;
     final String json, query;
     final RowType input, output;
-    final boolean compiled;
+    final boolean compiled, processing;
     final int maximum;
 
-    Plan(boolean ltz, String zone, boolean keyless, boolean distinct, boolean compiled)
+    Plan(
+        String shape, boolean ltz, String zone, boolean keyless, boolean distinct, boolean compiled)
         throws Exception {
       this.compiled = compiled;
+      processing = shape.startsWith("PROC_");
+      String family = processing ? shape.substring(5) : shape;
+      String arguments =
+          family.equals("HOP") ? "INTERVAL '2' SECOND,INTERVAL '6' SECOND" : "INTERVAL '6' SECOND";
       maximum = keyless ? 1 : 128;
       var config = new Configuration();
       config.setString("streamfusion.native.enabled", "true");
@@ -172,9 +203,11 @@ class CanonicalLegacySessionInteropTest {
       table = NativePlannerTestEnvironment.create(config);
       table.getConfig().set("streamfusion.native.enabled", "false");
       table.executeSql(
-          "CREATE TABLE legacy_input(k BIGINT,v BIGINT,rt "
-              + (ltz ? "TIMESTAMP_LTZ(3)" : "TIMESTAMP(3)")
-              + ",WATERMARK FOR rt AS rt) WITH ('connector'='datagen')");
+          "CREATE TABLE legacy_input(k BIGINT,v BIGINT,"
+              + (processing
+                  ? "rt AS PROCTIME()"
+                  : "rt " + (ltz ? "TIMESTAMP_LTZ(3)" : "TIMESTAMP(3)") + ",WATERMARK FOR rt AS rt")
+              + ") WITH ('connector'='datagen')");
       table.executeSql(
           "CREATE TABLE legacy_output("
               + (keyless ? "" : "k BIGINT,")
@@ -186,10 +219,20 @@ class CanonicalLegacySessionInteropTest {
               + "COUNT("
               + (distinct ? "DISTINCT v" : "v")
               + "),SUM(v),AVG(v),"
-              + "SESSION_START(rt,INTERVAL '6' SECOND),SESSION_END(rt,INTERVAL '6' SECOND)"
+              + family
+              + "_START(rt,"
+              + arguments
+              + "),"
+              + family
+              + "_END(rt,"
+              + arguments
+              + ")"
               + " FROM legacy_input GROUP BY "
               + (keyless ? "" : "k,")
-              + "SESSION(rt,INTERVAL '6' SECOND)";
+              + family
+              + "(rt,"
+              + arguments
+              + ")";
       json = table.compilePlanSql(query).asJsonString();
       planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
       var node = node();
@@ -251,20 +294,29 @@ class CanonicalLegacySessionInteropTest {
                   n ->
                       n.getOperatorFactory() instanceof SimpleOperatorFactory
                           && ((SimpleOperatorFactory<?>) n.getOperatorFactory()).getOperator()
-                              instanceof NativeColumnarSessionWindowAggregateOperator)
+                              instanceof NativeRowWindowOperatorCore)
               .collect(java.util.stream.Collectors.toList());
       assertEquals(1, owners.size(), graph.getStreamingPlanAsJSON());
       var owner = owners.get(0);
       var operator =
-          (NativeColumnarSessionWindowAggregateOperator)
+          (NativeRowWindowOperatorCore)
               ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();
       var field = AbstractNativeStatefulOperator.class.getDeclaredField("stockStateContract");
       field.setAccessible(true);
       var contract = (StockStateContract) field.get(operator);
-      assertInstanceOf(StockSessionWindowStateContract.class, contract);
+      if (query.contains("SESSION(")) {
+        assertInstanceOf(tech.streamfusion.state.StockSessionWindowStateContract.class, contract);
+      } else {
+        assertInstanceOf(tech.streamfusion.state.StockSlicingWindowStateContract.class, contract);
+      }
       var h =
           new KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>(
-              operator, ignored -> 0, Types.INT, maximum, 1, 0);
+              (OneInputStreamOperator<ArrowBatch, ArrowBatch>) operator,
+              ignored -> 0,
+              Types.INT,
+              maximum,
+              1,
+              0);
       var config = new Configuration();
       if (rocks)
         config.setString("state.backend.type", RocksDBNativeStateBackendFactory.class.getName());
@@ -319,14 +371,25 @@ class CanonicalLegacySessionInteropTest {
     }
 
     List<RowData> suffixRows() {
+      if (processing)
+        return List.of(row(1L, 30L, 11000), row(null, 7L, 15000), row(1L, 40L, 19000));
       return List.of(
           row(1L, 5L, -10000), row(1L, 30L, 11000), row(null, 7L, 15000), row(1L, 40L, 19000));
     }
 
+    long suffixClock(int index) {
+      return BASE + new long[] {2500, 7000, 9500}[index];
+    }
+
     void suffix(KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> h)
         throws Exception {
-      for (var row : suffixRows()) stockInput(h, row);
-      h.processWatermark(Watermark.MAX_WATERMARK);
+      var rows = suffixRows();
+      for (int i = 0; i < rows.size(); i++) {
+        if (processing) h.setProcessingTime(suffixClock(i));
+        stockInput(h, rows.get(i));
+      }
+      if (processing) h.setProcessingTime(BASE + 30000);
+      else h.processWatermark(Watermark.MAX_WATERMARK);
     }
 
     List<String> output(AbstractStreamOperatorTestHarness<?> h) {

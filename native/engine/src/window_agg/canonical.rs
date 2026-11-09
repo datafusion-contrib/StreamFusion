@@ -259,7 +259,7 @@ impl TumblingAggregator {
             || self.window_millis % self.slide_millis != 0
             || count_star < -1
             || count_star >= self.aggregates.len() as i32
-            || !self.cumulative && count_star < 0
+            || !self.cumulative && !self.legacy_slices && count_star < 0
         {
             return Err(invalid("invalid shared window or COUNT(*) contract"));
         }
@@ -602,6 +602,28 @@ pub extern "system" fn Java_tech_streamfusion_Native_configureSlicingWindowCanon
 }
 
 #[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_configureLegacySlicingWindowCanonical<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    count_star: jint,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        let previous = aggregator.legacy_slices;
+        aggregator.legacy_slices = true;
+        if let Err(error) = aggregator.enable_canonical_slicing(count_star) {
+            aggregator.legacy_slices = previous;
+            report_error(&mut env, error);
+        } else {
+            aggregator.timer_watermark_uninitialized = false;
+        }
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_exportSlicingWindowCanonical<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -810,6 +832,7 @@ impl crate::state::canonical_memory::CanonicalMemoryState for TumblingAggregator
             .map(|((end, key, slot), count)| ((*end, copy_key(key), *slot), *count))
             .collect();
         target.shared_slices = self.shared_slices;
+        target.legacy_slices = self.legacy_slices;
         target.exact_panes = self.exact_panes;
         target.live_count = self.live_count;
         target.slice_timers = self

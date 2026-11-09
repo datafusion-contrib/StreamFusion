@@ -330,6 +330,7 @@ pub(crate) struct TumblingAggregator {
     calendar: Option<WindowCalendar>,
     next_timer_deadline: i64,
     shared_slices: bool,
+    legacy_slices: bool,
     timer_watermark_uninitialized: bool,
     slice_timers: BTreeMap<i64, BTreeMap<OwnedRow, i32>>,
     aggregates: Vec<WindowAggregate>,
@@ -416,6 +417,7 @@ impl TumblingAggregator {
             calendar: None,
             next_timer_deadline: i64::MIN,
             shared_slices: false,
+            legacy_slices: false,
             timer_watermark_uninitialized: false,
             slice_timers: BTreeMap::new(),
             live_count: kinds

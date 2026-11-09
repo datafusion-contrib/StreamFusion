@@ -46,7 +46,9 @@ same stock state and timer serializers as 2.2. Session TVFs are unavailable in 1
 SESSION group windows now bind their released accumulator, merge-alias and timer contract on both
 lines, including keyed/global and scalar/COUNT DISTINCT layouts. Legacy sessions reset their
 watermark on recovery and add no operator watermark state; TVFs retain their existing UNION state.
-Legacy fixed GROUP WINDOW namespaces remain unbound; use the qualified fixed TVF contracts above.
+Legacy event/processing-time TUMBLE/HOP group windows share the slicing converter with released
+TimeWindow accumulator/pane and timer namespaces. HOP requires a positive size that is an integral
+multiple of its slide. These legacy owners also reset their watermark and write no operator state.
 Buffered dedup
 uses the older eager owner, and explicit legacy V1 mode on 2.2 remains unqualified. The shared
 unbounded event-time scalar binding preserves 1.18 polling callbacks separately from pending
@@ -96,7 +98,8 @@ The existing canonical COUNT DISTINCT fixed/session bindings now use the same pi
 RocksDB capture. Scalar headers and separate value/count records stream into the stock projection
 on the asynchronous writer thread; conversion does not reconstruct the native execution sets.
 This covers admitted TUMBLE/HOP/CUMULATE contracts on both releases and admitted SESSION TVFs on
-2.2, plus legacy event-time SESSION group windows on both releases. The legacy route shares the
+2.2, plus legacy event-time SESSION and event/processing-time TUMBLE/HOP group windows on both
+releases. The legacy route shares the
 same converter and pinned RocksDB capture; it does not introduce a second state codec.
 Buffered event-time deduplication, event-time sort and window rank/deduplication additionally
 use a shared retained-row codec for nested ROW/ARRAY/MAP payloads. These already-canonical

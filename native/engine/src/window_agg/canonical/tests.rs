@@ -938,3 +938,45 @@ fn memory_capture_reserves_actual_state_and_wrappers_then_keeps_live_accounting(
         }
     }
 }
+
+#[test]
+fn legacy_hop_registers_all_windows_and_does_not_schedule_an_empty_tail() {
+    use crate::state::canonical_memory::CanonicalMemoryState;
+    let factory = || TumblingAggregator::new(6000, 2000, false, vec![0], vec![3]);
+    let mut source = factory();
+    source.legacy_slices = true;
+    source.enable_canonical_slicing(-1).unwrap();
+    let batch = RecordBatch::try_from_iter(vec![
+        ("key0", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+        ("value0", Arc::new(Int64Array::from(vec![None])) as ArrayRef),
+        ("ts", Arc::new(Int64Array::from(vec![1000])) as ArrayRef),
+    ])
+    .unwrap();
+    source.update(&batch).unwrap();
+    assert_eq!(
+        source.slice_timers.keys().copied().collect::<Vec<_>>(),
+        vec![2000, 4000, 6000]
+    );
+    let mut captured = factory();
+    source.copy_state(&mut captured).unwrap();
+    assert!(captured.legacy_slices);
+    for value in [&mut source, &mut captured] {
+        let first = value.flush(2000).unwrap();
+        assert_eq!(first.num_rows(), 1);
+        assert_eq!(
+            column_i64(&first, "result0").value(0),
+            0,
+            "NULL-only windows remain live without COUNT(*)"
+        );
+        assert_eq!(
+            value.slice_timers.keys().copied().collect::<Vec<_>>(),
+            vec![4000, 6000]
+        );
+        assert_eq!(value.flush(6000).unwrap().num_rows(), 2);
+        assert!(
+            value.slice_timers.is_empty(),
+            "legacy timers must not schedule an orphan tail"
+        );
+        assert!(value.windows.is_empty());
+    }
+}

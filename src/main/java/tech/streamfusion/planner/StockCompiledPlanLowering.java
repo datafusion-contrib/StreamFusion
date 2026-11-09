@@ -894,10 +894,16 @@ final class StockCompiledPlanLowering {
                 .<org.apache.flink.table.planner.plan.logical.LogicalWindow>readValue(
                     definition.path("window"))
             : null;
+    boolean legacySession =
+        legacyWindow instanceof org.apache.flink.table.planner.plan.logical.SessionGroupWindow;
+    boolean legacyHop =
+        legacyWindow instanceof org.apache.flink.table.planner.plan.logical.SlidingGroupWindow;
     if (legacy
+        && !legacySession
+        && !legacyHop
         && !(legacyWindow
-            instanceof org.apache.flink.table.planner.plan.logical.SessionGroupWindow))
-      return windowFallback(stock, "legacy fixed-window namespaces are not bound");
+            instanceof org.apache.flink.table.planner.plan.logical.TumblingGroupWindow))
+      return windowFallback(stock, "legacy window namespace is not bound");
     var windowing =
         legacy
             ? null
@@ -920,10 +926,12 @@ final class StockCompiledPlanLowering {
       if (windowStartColumn < 0 || windowEndColumn < 0)
         return windowFallback(stock, "attached local bounds are not available");
     }
-    boolean processingTime = !legacy && windowing.isProctime();
-    if (legacy
-        && org.apache.flink.table.types.logical.utils.LogicalTypeChecks.isProctimeAttribute(
-            legacyWindow.timeAttribute().getOutputDataType().getLogicalType()))
+    boolean processingTime =
+        legacy
+            ? org.apache.flink.table.types.logical.utils.LogicalTypeChecks.isProctimeAttribute(
+                legacyWindow.timeAttribute().getOutputDataType().getLogicalType())
+            : windowing.isProctime();
+    if (legacySession && processingTime)
       return windowFallback(stock, "legacy processing-time SESSION is not native");
     boolean ltz =
         legacy
@@ -938,7 +946,8 @@ final class StockCompiledPlanLowering {
     if (definition.path("needRetraction").asBoolean())
       return windowFallback(stock, "retracting state contract is not bound");
     var spec = legacy ? null : windowing.getWindow();
-    boolean session = legacy || FlinkCompat.isSessionWindow(spec);
+    boolean session = legacySession || !legacy && FlinkCompat.isSessionWindow(spec);
+    boolean cumulative = !legacy && WindowAggregateMatcher.isCumulative(windowing);
     if (session && local != null)
       return windowFallback(stock, "SESSION partial boundaries are not bound");
     Duration offset;
@@ -948,7 +957,7 @@ final class StockCompiledPlanLowering {
       offset = ((HoppingWindowSpec) spec).getOffset();
     } else if (spec instanceof CumulativeWindowSpec) {
       offset = ((CumulativeWindowSpec) spec).getOffset();
-    } else if (session) {
+    } else if (session || legacy) {
       offset = Duration.ZERO;
     } else {
       return windowFallback(stock, "window namespace family is not bound");
@@ -957,18 +966,44 @@ final class StockCompiledPlanLowering {
       return windowFallback(stock, "processing-time offset assignment is not bound");
     long size =
         legacy
-            ? ((org.apache.flink.table.planner.plan.logical.SessionGroupWindow) legacyWindow)
-                .gap()
-                .getValueAs(Duration.class)
-                .orElseThrow()
-                .toMillis()
+            ? legacySession
+                ? ((org.apache.flink.table.planner.plan.logical.SessionGroupWindow) legacyWindow)
+                    .gap()
+                    .getValueAs(Duration.class)
+                    .orElseThrow()
+                    .toMillis()
+                : legacyHop
+                    ? ((org.apache.flink.table.planner.plan.logical.SlidingGroupWindow)
+                            legacyWindow)
+                        .size()
+                        .getValueAs(Duration.class)
+                        .orElseThrow()
+                        .toMillis()
+                    : ((org.apache.flink.table.planner.plan.logical.TumblingGroupWindow)
+                            legacyWindow)
+                        .size()
+                        .getValueAs(Duration.class)
+                        .orElseThrow()
+                        .toMillis()
             : session
                 ? WindowAggregateMatcher.gapMillis(windowing)
                 : WindowAggregateMatcher.windowSize(windowing);
-    long slide = session ? size : WindowAggregateMatcher.windowSlide(windowing);
+    long slide =
+        legacy
+            ? legacyHop
+                ? ((org.apache.flink.table.planner.plan.logical.SlidingGroupWindow) legacyWindow)
+                    .slide()
+                    .getValueAs(Duration.class)
+                    .orElseThrow()
+                    .toMillis()
+                : size
+            : session ? size : WindowAggregateMatcher.windowSlide(windowing);
     if (slide <= 0 || size <= 0 || size % slide != 0)
       return windowFallback(stock, "window size is not a positive multiple of its slice");
-    boolean shared = !session && !finalWindows && !(spec instanceof TumblingWindowSpec);
+    boolean shared =
+        !session
+            && !finalWindows
+            && (legacy ? legacyHop && size != slide : !(spec instanceof TumblingWindowSpec));
     var raw = stockTransformations.get(stock.getId());
     if (!(raw instanceof OneInputTransformation))
       return windowFallback(stock, "state owner is not unary");
@@ -983,12 +1018,21 @@ final class StockCompiledPlanLowering {
     var processor = legacy ? stockOperator : releasedField(stockOperator, "windowProcessor");
     if (legacy) {
       var assigner = releasedField(stockOperator, "windowAssigner");
-      if (assigner.getClass() != FlinkPlanCompat.legacySessionAssigner()
-          || !Boolean.TRUE.equals(releasedField(assigner, "isEventTime"))
-          || ((Number) releasedField(assigner, "sessionGap")).longValue() != size
+      var expectedAssigner =
+          legacySession
+              ? FlinkPlanCompat.legacySessionAssigner()
+              : legacyHop
+                  ? FlinkPlanCompat.legacySlidingAssigner()
+                  : FlinkPlanCompat.legacyTumblingAssigner();
+      if (assigner.getClass() != expectedAssigner
+          || Boolean.TRUE.equals(releasedField(assigner, "isEventTime")) == processingTime
+          || ((Number) releasedField(assigner, legacySession ? "sessionGap" : "size")).longValue()
+              != size
+          || legacyHop && ((Number) releasedField(assigner, "slide")).longValue() != slide
+          || !legacySession && ((Number) releasedField(assigner, "offset")).longValue() != 0
           || Boolean.TRUE.equals(releasedField(stockOperator, "produceUpdates"))
           || ((Number) releasedField(stockOperator, "allowedLateness")).longValue() != 0)
-        return windowFallback(stock, "legacy session assignment or trigger contract is not bound");
+        return windowFallback(stock, "legacy assignment or trigger contract is not bound");
     } else {
       if (!FlinkPlanCompat.windowProcessor().isInstance(processor)) return stock;
       if (FlinkPlanCompat.windowEventTime(processor) == processingTime) return stock;
@@ -1000,13 +1044,17 @@ final class StockCompiledPlanLowering {
     if (properties.length != 0
         && properties.length != 2
         && properties.length != 3
-        && !(legacy && properties.length == 4))
+        && !(legacy && !processingTime && properties.length == 4))
       return windowFallback(stock, "window properties have an unsupported arity");
     if (properties.length >= 2
         && (!(properties[0].getProperty() instanceof WindowStart)
             || !(properties[1].getProperty() instanceof WindowEnd)))
       return windowFallback(stock, "window properties have an unsupported order");
-    if (properties.length >= 3 && !(properties[2].getProperty() instanceof RowtimeAttribute))
+    if (properties.length >= 3
+        && !(processingTime
+            ? properties[2].getProperty()
+                instanceof org.apache.flink.table.runtime.groupwindow.ProctimeAttribute
+            : properties[2].getProperty() instanceof RowtimeAttribute))
       return windowFallback(stock, "window-time property is not rowtime");
     if (properties.length == 4
         && !(properties[3].getProperty()
@@ -1031,7 +1079,7 @@ final class StockCompiledPlanLowering {
         legacy
             ? inputType.getFieldNames().indexOf(legacyWindow.timeAttribute().getName())
             : finalWindows ? -1 : WindowAggregateMatcher.timeColumn(windowing);
-    if (legacy && timeColumn < 0)
+    if (legacy && !processingTime && timeColumn < 0)
       return windowFallback(stock, "legacy session time attribute is unavailable");
     var sequence = JavaScalaConversionUtil.toScala(Arrays.asList(calls));
     var relationalType = planner.getTypeFactory().buildRelNodeRowType(inputType);
@@ -1162,18 +1210,22 @@ final class StockCompiledPlanLowering {
       finalWindowStart = FlinkPlanCompat.windowStart(spec, zoneId, size, slide, windowOffset);
     }
     StockStateContract contract =
-        legacy
-            ? tech.streamfusion.state.StockSessionWindowStateContract.legacy(
+        legacy && !session
+            ? StockSlicingWindowStateContract.legacy(
                 serializer,
                 keyType,
                 accumulatorType,
                 size,
+                slide,
+                shared,
+                countStar,
                 zone,
                 averages.stream().mapToInt(Integer::intValue).toArray(),
                 distinctViews,
-                width)
-            : session
-                ? new tech.streamfusion.state.StockSessionWindowStateContract(
+                width,
+                processingTime)
+            : legacy
+                ? tech.streamfusion.state.StockSessionWindowStateContract.legacy(
                     serializer,
                     keyType,
                     accumulatorType,
@@ -1181,22 +1233,32 @@ final class StockCompiledPlanLowering {
                     zone,
                     averages.stream().mapToInt(Integer::intValue).toArray(),
                     distinctViews,
-                    width,
-                    processingTime)
-                : new StockSlicingWindowStateContract(
-                    serializer,
-                    keyType,
-                    accumulatorType,
-                    size,
-                    slide,
-                    shared,
-                    countStar,
-                    zone,
-                    averages.stream().mapToInt(Integer::intValue).toArray(),
-                    distinctViews,
-                    width,
-                    finalWindowStart,
-                    processingTime);
+                    width)
+                : session
+                    ? new tech.streamfusion.state.StockSessionWindowStateContract(
+                        serializer,
+                        keyType,
+                        accumulatorType,
+                        size,
+                        zone,
+                        averages.stream().mapToInt(Integer::intValue).toArray(),
+                        distinctViews,
+                        width,
+                        processingTime)
+                    : new StockSlicingWindowStateContract(
+                        serializer,
+                        keyType,
+                        accumulatorType,
+                        size,
+                        slide,
+                        shared,
+                        countStar,
+                        zone,
+                        averages.stream().mapToInt(Integer::intValue).toArray(),
+                        distinctViews,
+                        width,
+                        finalWindowStart,
+                        processingTime);
     ExecNode<?> rows =
         input instanceof StreamExecExchange ? input.getInputEdges().get(0).getSource() : input;
     ExecNode<?> entry = arrowInput(rows, config, inputType, false);
@@ -1298,7 +1360,7 @@ final class StockCompiledPlanLowering {
                       : "NativeColumnarGlobalWindowAggregateSlice",
                   size,
                   slide,
-                  WindowAggregateMatcher.isCumulative(windowing),
+                  cumulative,
                   exchangeKeys,
                   types,
                   kinds,
@@ -1315,7 +1377,7 @@ final class StockCompiledPlanLowering {
               InputProperty.DEFAULT,
               outputType,
               "NativeColumnarWindowAggregate",
-              WindowAggregateMatcher.isCumulative(windowing),
+              cumulative,
               size,
               slide,
               timeColumn,

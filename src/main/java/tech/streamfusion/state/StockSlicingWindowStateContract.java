@@ -27,7 +27,7 @@ import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
 
-/** Released TVF slicing accumulators, clock-specific window timers and UNION watermark state. */
+/** Released TVF/legacy fixed-window accumulators, timers and their watermark lifecycle. */
 public final class StockSlicingWindowStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
   private static final String STATE = "window-aggs";
@@ -39,6 +39,8 @@ public final class StockSlicingWindowStateContract implements StockStateContract
   private final RowType bridgeType;
   private final RowType timerBridgeType;
   private final long slice;
+  private final long size;
+  private final boolean legacy;
   private final boolean shared;
   private final int countStar;
   private final ZoneId zone;
@@ -55,8 +57,8 @@ public final class StockSlicingWindowStateContract implements StockStateContract
 
   private transient StockWindowWatermark watermark;
   private transient CheckpointableKeyedStateBackend<RowData> timerBackend;
-  private transient KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, Long>> events;
-  private transient KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, Long>>
+  private transient KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, Object>> events;
+  private transient KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, Object>>
       processing;
 
   public StockSlicingWindowStateContract(
@@ -163,6 +165,70 @@ public final class StockSlicingWindowStateContract implements StockStateContract
       int scalarFields,
       WindowStart finalWindows,
       boolean processingTime) {
+    this(
+        keys,
+        keyType,
+        accumulators,
+        size,
+        slice,
+        shared,
+        countStar,
+        zone,
+        averageOffsets,
+        distinctViews,
+        scalarFields,
+        finalWindows,
+        processingTime,
+        false);
+  }
+
+  public static StockSlicingWindowStateContract legacy(
+      TypeSerializer<RowData> keys,
+      RowType keyType,
+      RowType accumulators,
+      long size,
+      long slice,
+      boolean shared,
+      int countStar,
+      String zone,
+      int[] averageOffsets,
+      List<StockWindowDistinctView> views,
+      int scalarFields,
+      boolean processingTime) {
+    return new StockSlicingWindowStateContract(
+        keys,
+        keyType,
+        accumulators,
+        size,
+        slice,
+        shared,
+        countStar,
+        zone,
+        averageOffsets,
+        views,
+        scalarFields,
+        null,
+        processingTime,
+        true);
+  }
+
+  private StockSlicingWindowStateContract(
+      TypeSerializer<RowData> keys,
+      RowType keyType,
+      RowType accumulators,
+      long size,
+      long slice,
+      boolean shared,
+      int countStar,
+      String zone,
+      int[] averageOffsets,
+      List<StockWindowDistinctView> distinctViews,
+      int scalarFields,
+      WindowStart finalWindows,
+      boolean processingTime,
+      boolean legacy) {
+    this.legacy = legacy;
+    this.size = size;
     this.processingTime = processingTime;
     if (shared && finalWindows != null)
       throw new IllegalArgumentException("Final windows cannot use shared-slice state");
@@ -211,7 +277,8 @@ public final class StockSlicingWindowStateContract implements StockStateContract
   public void configureNativeState(long handle, boolean persistent) {
     if (finalWindows != null) Native.setFixedWindowFinalWindows(handle, true);
     for (var view : distinctViews) view.configure(handle);
-    if (shared)
+    if (shared && legacy) Native.configureLegacySlicingWindowCanonical(handle, countStar);
+    else if (shared)
       Native.configureSlicingWindowCanonical(
           handle,
           countStar,
@@ -241,7 +308,7 @@ public final class StockSlicingWindowStateContract implements StockStateContract
   public TypeSerializer<?> namespaceSerializer(String state) {
     if (!stateDescriptors().containsKey(state))
       throw new IllegalArgumentException("Unknown window state: " + state);
-    return LongSerializer.INSTANCE;
+    return namespaceSerializer();
   }
 
   @Override
@@ -249,21 +316,25 @@ public final class StockSlicingWindowStateContract implements StockStateContract
     return Map.of(
         EVENTS,
         processingTime
-            ? StockStateInventory.Timer.empty(LongSerializer.INSTANCE)
-            : StockStateInventory.Timer.consumed(LongSerializer.INSTANCE),
+            ? StockStateInventory.Timer.empty(namespaceSerializer())
+            : StockStateInventory.Timer.consumed(namespaceSerializer()),
         PROCESSING,
         processingTime
-            ? StockStateInventory.Timer.consumed(LongSerializer.INSTANCE)
-            : StockStateInventory.Timer.empty(LongSerializer.INSTANCE));
+            ? StockStateInventory.Timer.consumed(namespaceSerializer())
+            : StockStateInventory.Timer.empty(namespaceSerializer()));
   }
 
   @Override
   public void initializeOperatorState(OperatorStateStore store, boolean restored) throws Exception {
-    watermark = new StockWindowWatermark(store, restored);
+    if (!legacy) watermark = new StockWindowWatermark(store, restored);
+    else if (!store.getRegisteredStateNames().isEmpty()
+        || !store.getRegisteredBroadcastStateNames().isEmpty())
+      throw new IllegalStateException("Legacy fixed windows have no operator-state contract");
   }
 
   @Override
   public void snapshotOperatorState(long value) throws Exception {
+    if (legacy) return;
     if (watermark == null)
       throw new IllegalStateException("Window operator state is not initialized");
     watermark.snapshot(value);
@@ -271,9 +342,55 @@ public final class StockSlicingWindowStateContract implements StockStateContract
 
   @Override
   public long restoredWatermark() {
+    if (legacy) return Long.MIN_VALUE;
     if (watermark == null)
       throw new IllegalStateException("Window operator state is not initialized");
     return watermark.restoredWatermark();
+  }
+
+  @SuppressWarnings("unchecked")
+  private TypeSerializer<Object> namespaceSerializer() {
+    return (TypeSerializer<Object>)
+        (TypeSerializer<?>)
+            (legacy
+                ? new org.apache.flink.table.runtime.operators.window.TimeWindow.Serializer()
+                : LongSerializer.INSTANCE);
+  }
+
+  private Object namespace(long end, boolean timer) {
+    return legacy
+        ? new org.apache.flink.table.runtime.operators.window.TimeWindow(
+            timer ? Math.subtractExact(end, size) : windowStart(end), end)
+        : end;
+  }
+
+  private long end(Object namespace, boolean timer) {
+    if (!legacy) return (Long) namespace;
+    var window = (org.apache.flink.table.runtime.operators.window.TimeWindow) namespace;
+    long end = window.getEnd();
+    if (window.getStart() != (timer ? Math.subtractExact(end, size) : windowStart(end)))
+      throw new IllegalStateException("Legacy fixed-window namespace has different bounds");
+    return end;
+  }
+
+  private StockWindowDistinctView.Namespaces<Object> viewNamespaces() {
+    return new StockWindowDistinctView.Namespaces<Object>() {
+      public TypeSerializer<Object> serializer() {
+        return namespaceSerializer();
+      }
+
+      public Object stock(long end, RowData key) {
+        return namespace(local(end), false);
+      }
+
+      public long nativeEnd(Object namespace, RowData key) {
+        return nativeBound(end(namespace, false));
+      }
+
+      public boolean live(Object namespace) {
+        return shared || StockSlicingWindowStateContract.this.live(end(namespace, false));
+      }
+    };
   }
 
   private long windowStart(long end) {
@@ -286,15 +403,13 @@ public final class StockSlicingWindowStateContract implements StockStateContract
 
   private void bindTimers(CheckpointableKeyedStateBackend<RowData> backend) {
     if (timerBackend == backend) return;
-    events =
-        backend.create(EVENTS, new TimerSerializer<>(keys.duplicate(), LongSerializer.INSTANCE));
+    events = backend.create(EVENTS, new TimerSerializer<>(keys.duplicate(), namespaceSerializer()));
     processing =
-        backend.create(
-            PROCESSING, new TimerSerializer<>(keys.duplicate(), LongSerializer.INSTANCE));
+        backend.create(PROCESSING, new TimerSerializer<>(keys.duplicate(), namespaceSerializer()));
     timerBackend = backend;
   }
 
-  private KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, Long>> activeTimers() {
+  private KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, Object>> activeTimers() {
     return processingTime ? processing : events;
   }
 
@@ -347,10 +462,11 @@ public final class StockSlicingWindowStateContract implements StockStateContract
                   value.setField(
                       offset, StockWindowAccumulators.zero(accumulators.getTypeAt(offset)));
               backend
-                  .getPartitionedState(end, LongSerializer.INSTANCE, descriptor)
+                  .getPartitionedState(namespace(end, false), namespaceSerializer(), descriptor)
                   .update(accRows.copy(value));
               if (!shared)
-                activeTimers().add(new TimerHeapInternalTimer<>(deadline(end), binary, end));
+                activeTimers()
+                    .add(new TimerHeapInternalTimer<>(deadline(end), binary, namespace(end, true)));
             }
           } catch (Exception failure) {
             throw new IllegalStateException("Cannot export stock window state", failure);
@@ -376,14 +492,17 @@ public final class StockSlicingWindowStateContract implements StockStateContract
                 for (int i = 0; i < key.getArity(); i++)
                   key.setField(i, timerGetters[1 + i].getFieldOrNull(row));
                 activeTimers()
-                    .add(new TimerHeapInternalTimer<>(deadline(end), keyRows.project(key), end));
+                    .add(
+                        new TimerHeapInternalTimer<>(
+                            deadline(end), keyRows.project(key), namespace(end, true)));
               }
             } catch (Exception failure) {
               throw new IllegalStateException("Cannot export shared window timers", failure);
             }
           });
     } else Native.exportTumblingAggregatorCanonical(handle, receiver);
-    for (var view : distinctViews) view.exportState(backend, keyType, handle, this::local);
+    for (var view : distinctViews)
+      view.exportState(backend, keyType, handle, viewNamespaces(), false);
   }
 
   @Override
@@ -398,7 +517,7 @@ public final class StockSlicingWindowStateContract implements StockStateContract
                 Collectors.toMap(
                     Map.Entry::getKey,
                     entry ->
-                        new StockStateInventory.State(entry.getValue(), LongSerializer.INSTANCE))),
+                        new StockStateInventory.State(entry.getValue(), namespaceSerializer()))),
         timerSchema(),
         keys);
     bindTimers(backend);
@@ -407,29 +526,29 @@ public final class StockSlicingWindowStateContract implements StockStateContract
     try (var inventory = new StockStateSpool(keyRows)) {
       long scheduled = 0, observed = 0;
       try (var timers =
-          StockTimerSnapshot.<RowData, Long>iterator(
+          StockTimerSnapshot.<RowData, Object>iterator(
               backend, processingTime ? PROCESSING : EVENTS)) {
         while (timers.hasNext()) {
           var timer = timers.next();
           var key = keyRows.toBinaryRow(timer.getKey()).copy();
-          if (timer.getTimestamp() != deadline(timer.getNamespace())
-              || !live(timer.getNamespace())
-              || !inventory.add(1, key, timer.getNamespace()))
+          long end = end(timer.getNamespace(), true);
+          if (timer.getTimestamp() != deadline(end) || !live(end) || !inventory.add(1, key, end))
             throw new IllegalStateException("Unexpected stock window timer");
           inventory.addOwner(key);
           scheduled++;
         }
       }
-      try (var entries = backend.<Long>getKeysAndNamespaces(STATE)) {
+      try (var entries = backend.<Object>getKeysAndNamespaces(STATE)) {
         var iterator = entries.iterator();
         while (iterator.hasNext()) {
           var entry = iterator.next();
           var key = keyRows.toBinaryRow(entry.f0).copy();
-          boolean future = live(entry.f1);
+          long end = end(entry.f1, false);
+          boolean future = live(end);
           if (shared && future && !inventory.hasAny(1, key))
             throw new IllegalStateException("Stock shared window key has no pending timer");
           if (!shared && future) {
-            if (!inventory.contains(1, key, entry.f1) || !inventory.add(2, key, entry.f1))
+            if (!inventory.contains(1, key, end) || !inventory.add(2, key, end))
               throw new IllegalStateException("Stock window accumulator has no matching timer");
             observed++;
           }
@@ -448,14 +567,17 @@ public final class StockSlicingWindowStateContract implements StockStateContract
       var batch =
           new StockRowBatch(
               bridgeType, (rows, array, schema) -> importBatch(rows, handle, array, schema));
-      try (var entries = backend.<Long>getKeysAndNamespaces(STATE)) {
+      try (var entries = backend.<Object>getKeysAndNamespaces(STATE)) {
         var iterator = entries.iterator();
         while (iterator.hasNext()) {
           var entry = iterator.next();
           var key = keyRows.toBinaryRow(entry.f0).copy();
-          long end = entry.f1;
+          long end = end(entry.f1, false);
           backend.setCurrentKey(key);
-          var value = backend.getPartitionedState(end, LongSerializer.INSTANCE, descriptor).value();
+          var value =
+              backend
+                  .getPartitionedState(namespace(end, false), namespaceSerializer(), descriptor)
+                  .value();
           if (value == null) throw new IllegalStateException("Stock window has no accumulator");
           // Released global combination can retain expired unshared bytes without a timer.
           // A past shared slice can still contribute when another record schedules a later window.
@@ -497,8 +619,7 @@ public final class StockSlicingWindowStateContract implements StockStateContract
     }
     if (!processingTime) Native.restoreTumblingCanonicalWatermark(handle, restoredWatermark());
     for (var view : distinctViews)
-      view.importState(
-          backend, keyType, handle, descriptor, this::nativeBound, end -> shared || live(end));
+      view.importState(backend, keyType, handle, descriptor, viewNamespaces(), false);
     if (!distinctViews.isEmpty()) Native.finishWindowCanonicalDistinct(handle);
     clear(backend);
   }

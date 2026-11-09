@@ -224,6 +224,8 @@ public final class Native {
 
   public static native void restoreTumblingCanonicalWatermark(long handle, long watermark);
 
+  public static native void configureLegacySlicingWindowCanonical(long handle, int countStar);
+
   public static native void configureSlicingWindowCanonical(
       long handle, int countStarAggregate, boolean restoresTimerWatermark);
 

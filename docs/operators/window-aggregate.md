@@ -21,7 +21,8 @@ RocksDB when that backend is configured. A savepoint pins its read view at the b
 bounded header/member frames on Flink's asynchronous writer thread, without loading the complete
 membership map into heap. Live input and concurrent captures use independent views. This covers
 admitted TUMBLE/HOP/CUMULATE bindings on 1.18 and 2.2, admitted SESSION TVFs on 2.2 and legacy
-event-time SESSION group windows on both lines. Flink 1.18 has no SESSION TVF.
+event-time SESSION and event/processing-time TUMBLE/HOP group windows on both lines.
+Flink 1.18 has no SESSION TVF.
 
 Legacy SESSION reuses the released `window-aggs`, `session-window-mapping` and window timer
 serializers. Ordinary SQL and compiled plans bind the original owner and key-group maximum,
@@ -30,17 +31,30 @@ accumulator serializer, trigger/update mode and lateness before replacing the ow
 COUNT DISTINCT layouts use the same converter and persistent records as the TVF binding.
 Legacy recovery resets watermark admission and writes no operator watermark state, while TVFs
 retain their existing UNION watermark state. Event-time-only and existing aggregate/key/view
-restrictions still apply; legacy processing-time sessions, early/late emission, retracting input
-and legacy fixed GROUP WINDOW namespaces retain stock canonical owners.
+restrictions still apply; legacy processing-time sessions, early/late emission and retracting
+input retain stock canonical owners.
 
-The legacy qualification selects seven pair-covering cases on each release from a 64-combination
-hosted provider: native memory/RocksDB, keyed/global, scalar/DISTINCT, TIMESTAMP/LTZ, UTC/Berlin
-and ordinary/compiled submission. Each imports stock state, finishes two overlapping captures on
-the writer after live input and native-owner close, resumes nonempty stock output and returns
-through an ordinary native checkpoint. An older session admitted after recovery verifies the
-watermark reset. Clean 1.18 checks pass 21 selected cases; the final clean 2.2 selection passes 85,
-including existing TVF session and automatic window-binding regressions. These component controls
-and ordinary SQL execution do not establish exhaustive job, rescale or failure qualification.
+Legacy TUMBLE/HOP uses the same slicing converter with the released TimeWindow serializer instead
+of TVF Long namespaces. HOP accumulators occupy panes, while timer namespaces describe complete
+windows. Native legacy HOP registers all containing window deadlines as input arrives, matching
+Flink's legacy trigger lifecycle without requiring a hidden COUNT(*) accumulator. Nullable COUNT
+and DISTINCT can therefore retain NULL-only windows without scheduling an empty tail. The binding
+requires zero offset, final-only emission and a positive size that is an integral multiple of the
+slide; other legacy fixed-window contracts retain stock owners. Event and processing clocks,
+watermark reset and original key-group ownership use the existing state/capture machinery.
+
+The shared legacy fixture selects fourteen pair-covering cases per release from a 256-combination
+default/hosted provider spanning SESSION, event/processing TUMBLE/HOP, native memory/RocksDB,
+keyed/global, scalar/DISTINCT, TIMESTAMP/LTZ, UTC/Berlin and ordinary/compiled submission.
+Each imports stock state, finishes two overlapping captures on the writer after live input and
+native-owner close, resumes nonempty stock output and returns through an ordinary native
+checkpoint. An older event-time window admitted after recovery verifies the watermark reset;
+processing-time controls advance both engines through the same deadlines. These component controls
+do not establish exhaustive job, rescale, failure or historical native-layout qualification.
+The combined legacy/TVF/DISTINCT/processing-time/planner regression selection passes 142 checks on
+2.2 and 129 on a clean 1.18 build, with nine expected absent-SESSION-TVF skips on 1.18. All fourteen
+legacy cases pass on each release. Native checks pass 1,544 tests with two existing ignores;
+memory-only compilation and the JNI build pass. Java-only follow-ups do not repeat native suites.
 
 Scalar-only checkpoint row bytes remain compatible. Old snapshot-backed checkpoints migrate one
 key-group blob at a time, preserving processing deadlines through aligned/clipped restore and

@@ -153,7 +153,16 @@ impl TumblingAggregator {
                     .entry((target - self.slide_millis, target, key))
                     .or_insert_with(Vec::new)
                     .push(row as u32);
-                timers.entry((timer, key)).or_insert(row);
+                if self.legacy_slices {
+                    let last = target + self.window_millis - self.slide_millis;
+                    let mut end = timer;
+                    while end <= last {
+                        timers.entry((end, key)).or_insert(row);
+                        end += self.slide_millis;
+                    }
+                } else {
+                    timers.entry((timer, key)).or_insert(row);
+                }
                 // Released 1.18 combiners see MIN until the first watermark after restore.
                 if self.timer_watermark_uninitialized {
                     timers.entry((target, key)).or_insert(row);
@@ -517,7 +526,7 @@ impl TumblingAggregator {
                 }
                 let next = end + self.slide_millis;
                 if (self.cumulative_prefix() && next <= self.shared_base(end) + self.window_millis)
-                    || (!self.cumulative && live)
+                    || (!self.cumulative && !self.legacy_slices && live)
                 {
                     let first_for_end = !self.slice_timers.contains_key(&next);
                     self.add_slice_timer(next, key.clone(), key_group)?;
