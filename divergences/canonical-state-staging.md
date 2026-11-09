@@ -28,7 +28,9 @@ JVM operator state keep their existing backend-specific snapshot behavior.
 
 Reusing the stock adapters keeps one definition of each released state layout. Window timer
 ledgers and OVER metadata now stream from pinned tables; OVER readers no longer hydrate whole
-cleanup/counter/timer maps. Shared raw scans bound rows and bytes before decoding for window,
+cleanup/counter/timer maps. Temporal-join readers similarly bypass live metadata/deadline cache
+hydration and stream the union of persisted metadata and deadline-only keys with point reads.
+Shared raw scans bound rows and bytes before decoding for window,
 session, OVER, temporal-sort, buffered-dedup and temporal/interval/window-join state. Window rank
 also bounds decoding inside a stored list and checks cancellation between its rows. Temporary disk
 I/O and operator-specific per-key/import-inventory working sets remain. Captured OVER retained

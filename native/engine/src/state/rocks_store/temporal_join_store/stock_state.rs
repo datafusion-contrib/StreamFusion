@@ -17,6 +17,63 @@ fn footprint(key: &ByteKey, value: &StockTemporalMeta) -> usize {
 }
 
 impl RocksTemporalJoinStore {
+    pub(crate) fn visit_canonical_metadata(
+        &self,
+        chunk_rows: usize,
+        mut accept: impl FnMut(
+            Vec<(ByteKey, Option<Box<[u8]>>, Option<i64>)>,
+        ) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        for table in [META_TABLE, DEADLINE_TABLE] {
+            self.db.visit_snapshot_batches(
+                chunk_rows,
+                |key| key.len() > KEY_PREFIX_LEN && key[4] == table,
+                |rows| {
+                    let mut decoded = Vec::with_capacity(rows.len());
+                    for (db_key, value) in rows {
+                        let key = Self::store_key(&db_key, db_key.len());
+                        if table == DEADLINE_TABLE
+                            && self
+                                .db
+                                .get(Self::table_prefix(&key, META_TABLE))
+                                .map_err(re)?
+                                .is_some()
+                        {
+                            continue;
+                        }
+                        let deadline = if table == DEADLINE_TABLE {
+                            Some(value.as_ref())
+                        } else {
+                            None
+                        };
+                        let stored = if table == META_TABLE {
+                            self.db
+                                .get(Self::table_prefix(&key, DEADLINE_TABLE))
+                                .map_err(re)?
+                        } else {
+                            None
+                        };
+                        let deadline = deadline
+                            .or(stored.as_deref())
+                            .map(|bytes| {
+                                let bytes = bytes
+                                    .try_into()
+                                    .map_err(|_| invalid("invalid temporal cleanup deadline"))?;
+                                Ok::<_, DataFusionError>(i64::from_le_bytes(bytes))
+                            })
+                            .transpose()?;
+                        decoded.push((key, (table == META_TABLE).then_some(value), deadline));
+                    }
+                    if !decoded.is_empty() {
+                        accept(decoded)?;
+                    }
+                    Ok(())
+                },
+            )?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn metadata_bytes(&self) -> usize {
         self.metadata
             .iter()
@@ -250,8 +307,15 @@ impl RocksTemporalJoinStore {
                 return Err(invalid("invalid temporal metadata version"));
             }
             self.source_cleaning = Some(header[1] != 0);
-            self.load_metadata_rows()?;
+            if !self.db.is_frozen() {
+                self.load_metadata_rows()?;
+            }
         } else {
+            if self.db.is_frozen() {
+                return Err(invalid(
+                    "canonical reader requires initialized temporal metadata",
+                ));
+            }
             self.upgrade_legacy_metadata()?;
             self.db.put(META_FORMAT_KEY, [1, 0]).map_err(re)?;
         }

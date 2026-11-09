@@ -109,7 +109,10 @@ list values also enforce row/byte bounds and cancellation within a stored bucket
 longer collects every persisted group or timer. OVER readers fetch cleanup stamps, processing-ROWS
 counters and RANGE timers directly from their captured tables; they do not hydrate metadata maps
 for all keys. Processing-ROWS metadata/frame ownership is checked by streaming partitions and point
-reads rather than collecting all partition keys. An individual
+reads rather than collecting all partition keys. Captured temporal-join readers likewise skip live
+metadata/deadline cache hydration. Their metadata export streams the union of persisted metadata
+and deadline-only keys through bounded scans and point reads, preserving physical callbacks and
+original cleanup deadlines without retaining a key inventory. An individual
 oversized value remains the lower bound on working memory. Receiver failure and cancellation
 release the visitor; overlapping live writes and compaction do not change its captured version.
 Captured RocksDB OVER frames also stream bounded chunks within a partition. Positions continue
@@ -138,6 +141,9 @@ all 1,450 native tests and the memory-only build.
 The shared-visitor cohort passes 1,451 native tests and the memory-only build, with 498 selected
 interchange checks on 2.2 and 450 on 1.18. Window-rank controls cancel inside a single wide stored
 bucket and verify bounded decoded batches and receiver retry.
+Temporal-join cold-reader controls cover 2,052 metadata/deadline keys, live updates, receiver
+failure/retry and cancellation with empty reader caches. The change passes 1,452 native tests, the
+memory-only build and 26 selected temporal interchange checks on each release.
 Conversion cost, barrier duration and temporary I/O have not been benchmarked.
 
 Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending

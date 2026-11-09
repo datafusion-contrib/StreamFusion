@@ -1069,3 +1069,72 @@ fn direct_import_rejects_duplicates_bad_callbacks_and_import_after_execution() {
             .contains("has not started execution"));
     }
 }
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn captured_temporal_readers_stream_metadata_without_hydrating_live_caches() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("state");
+    let mut source = operator(Some(&path));
+    source.push_left(&batch((0..2051).collect()), 10).unwrap();
+    let orphan = source
+        .store_mut()
+        .entry_keys(&batch(vec![9999]), &[0], &[-1])
+        .pop()
+        .unwrap();
+    source.store_mut().set_deadline(&orphan, 100000).unwrap();
+    source.store_mut().checkpoint("").unwrap();
+    let collect = |value: &TemporalJoiner| {
+        let mut rows = Vec::new();
+        value
+            .visit_canonical_metadata(|batch| {
+                assert!(batch.num_rows() <= 1024);
+                for row in 0..batch.num_rows() {
+                    rows.push(
+                        batch
+                            .columns()
+                            .iter()
+                            .map(|column| {
+                                format!("{:?}", ScalarValue::try_from_array(column, row).unwrap())
+                            })
+                            .collect::<Vec<_>>()
+                            .join("|"),
+                    );
+                }
+                Ok(())
+            })
+            .unwrap();
+        rows.sort();
+        rows
+    };
+    let expected = collect(&source);
+    assert_eq!(expected.len(), 2052);
+    let snapshot = crate::state::rocks_store::FrozenDatabases::capture(&path).unwrap();
+    source.push_left(&batch(vec![0]), 20).unwrap();
+    source.store_mut().set_deadline(&orphan, 200000).unwrap();
+    source.store_mut().checkpoint("").unwrap();
+    snapshot.with(|| {
+        let store = crate::state::RocksTemporalJoinStore::open_merged(
+            disk_config(&path),
+            schema(),
+            schema(),
+            &[0],
+            &[(path.to_string_lossy().into_owned(), 0)],
+            0..=127,
+            true,
+        )
+        .unwrap();
+        assert!(store.all_metadata().is_empty());
+        assert!(store.all_deadlines().is_empty());
+        assert_eq!(store.metadata_bytes(), 0);
+        let reader = operator(None).with_store(store);
+        assert!(reader
+            .visit_canonical_metadata(|_| Err(DataFusionError::Execution("receiver failed".into())))
+            .is_err());
+        assert_eq!(collect(&reader), expected);
+        assert!(reader.store.as_ref().unwrap().all_metadata().is_empty());
+        assert!(reader.store.as_ref().unwrap().all_deadlines().is_empty());
+        snapshot.cancel();
+        assert!(reader.visit_canonical_metadata(|_| Ok(())).is_err());
+    });
+}

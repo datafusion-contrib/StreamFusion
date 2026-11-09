@@ -77,52 +77,46 @@ impl TemporalJoiner {
         let empty = StockTemporalMeta::default();
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
-            let keys = store.all_metadata().keys().chain(
-                store
-                    .all_deadlines()
-                    .keys()
-                    .filter(|key| !store.all_metadata().contains_key(*key)),
-            );
-            let mut chunk = Vec::with_capacity(CHUNK_ROWS);
-            let mut flush = |chunk: &mut Vec<&ByteKey>| -> Result<(), DataFusionError> {
-                if chunk.is_empty() {
-                    return Ok(());
-                }
-                let values = chunk
+            return store.visit_canonical_metadata(CHUNK_ROWS, |rows| {
+                // Reserve raw values and callback-tree storage before decoding captured metadata.
+                let retained = rows
                     .iter()
-                    .map(|key| {
-                        (
-                            store.all_metadata().get(*key).unwrap_or(&empty),
-                            store.deadline(key),
-                        )
+                    .map(|(key, value, _)| {
+                        key.0.len() * 2 + value.as_ref().map_or(0, |value| value.len() * 6) + 64
                     })
-                    .collect::<Vec<_>>();
-                let retained = values
-                    .iter()
-                    .map(|(meta, _)| meta.callbacks.len() * 8 + 32)
                     .sum::<usize>();
                 if let Some(work) = &mut work {
                     work.try_resize(retained)?;
                 }
-                let batch = metadata_batch(store.decode_key_columns(chunk), &types, &values)?;
+                let metadata = rows
+                    .iter()
+                    .map(|(_, value, _)| {
+                        value.as_ref().map_or_else(
+                            || Ok(StockTemporalMeta::default()),
+                            |value| {
+                                StockTemporalMeta::decode(value).map_err(DataFusionError::Execution)
+                            },
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let keys = rows.iter().map(|(key, _, _)| key).collect::<Vec<_>>();
+                let values = metadata
+                    .iter()
+                    .zip(&rows)
+                    .map(|(meta, (_, _, deadline))| (meta, *deadline))
+                    .collect::<Vec<_>>();
+                let batch = metadata_batch(store.decode_key_columns(&keys), &types, &values)?;
                 if let Some(work) = &mut work {
                     work.try_resize(retained + batch.get_array_memory_size())?;
                 }
                 accept(batch)?;
-                chunk.clear();
                 if let Some(work) = &mut work {
                     work.resize(0);
                 }
                 Ok(())
-            };
-            for key in keys {
-                chunk.push(key);
-                if chunk.len() == CHUNK_ROWS {
-                    flush(&mut chunk)?;
-                }
-            }
-            return flush(&mut chunk);
+            });
         }
+
         let keys = self.metadata.keys().chain(
             self.cleanup_state
                 .keys()

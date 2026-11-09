@@ -106,6 +106,13 @@ until the callback fires.
 
 ## Canonical interchange: partial
 
+Canonical RocksDB readers capture immutable database views and leave their live metadata/deadline
+caches empty. Metadata export streams persisted cursors, physical callbacks and deadline-only keys
+in bounded batches, using point reads to join the two tables. Capture-time versions survive live
+updates; cancellation and receiver failure release the reader without consuming live state. The
+same state contract and reader architecture apply on released 1.18 and 2.2. This removes a whole
+key-inventory export working set; oversized individual values and import inventories remain open.
+
 The released 2.2.1 adapter reads live native rows and bookkeeping directly into stock map/value
 states and Void timer queues, with original key/row serializers and signed probe-map indices.
 It creates no intermediate native snapshot. Preflight validates the complete stock inventory,

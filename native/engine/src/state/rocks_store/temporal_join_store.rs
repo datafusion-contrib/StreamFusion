@@ -213,6 +213,9 @@ impl RocksTemporalJoinStore {
     }
 
     fn hydrate_deadlines(&mut self) -> Result<(), DataFusionError> {
+        if self.db.is_frozen() {
+            return Ok(());
+        }
         for row in self.db.iterator(IteratorMode::Start) {
             let (key, value) = row.map_err(re)?;
             if key.len() > KEY_PREFIX_LEN && key[4] == DEADLINE_TABLE && value.len() == 8 {
