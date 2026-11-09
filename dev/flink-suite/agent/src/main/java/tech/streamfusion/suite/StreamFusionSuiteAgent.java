@@ -328,7 +328,7 @@ public final class StreamFusionSuiteAgent {
         .type(
             namedOneOf(
                 "tech.streamfusion.operator.NativeCalcOperator",
-                "tech.streamfusion.operator.NativeBatchSortOperator",
+                "tech.streamfusion.operator.NativeBoundedBatchOperator",
                 "tech.streamfusion.operator.NativeLookupJoinOperator",
                 "tech.streamfusion.operator.NativeAsyncLookupJoinOperator",
                 "tech.streamfusion.operator.NativeFilterOperator",

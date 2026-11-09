@@ -18,7 +18,7 @@ same mailbox must deliver. Separate driver wakeups also cover DataFusion operato
 that consume inputs on worker tasks. Output is drained incrementally rather than
 collected into a result vector or concatenated into one batch.
 
-The JNI sort bridge preserves that protocol. While waiting on asynchronous native
+The shared bounded JNI bridge preserves that protocol. While waiting on asynchronous native
 I/O it yields periodically so Java can check task interruption. The deadline cannot
 preempt a synchronous CPU-bound poll or synchronous filesystem call. Cancellation
 closes inputs and drops the execution stream; DataFusion owns cancellation of any
@@ -33,6 +33,13 @@ external sorter, its candidate heap does not spill and reports memory denial whe
 it cannot fit. No per-task cap is silently raised. Unrestricted sort uses
 DataFusion's external sorter, the existing shared Tokio runtime, Flink task spill directories, and the TaskManager off-heap authority.
 It does not add a distributed scheduler or change Arrow IPC serialization.
+
+The bounded task driver and Java Arrow lifecycle are shared independently of the
+physical plan factory. The sort factory supplies the existing DataFusion sort and
+optional offset plans; its JNI data ABI, memory ownership and output acknowledgement
+remain unchanged. The shared lifecycle permits a declared result schema different
+from the input, and a factory may supply an input schema for initialization at EOF
+when no input batches arrive. These hooks do not themselves admit new SQL operators.
 
 ## Memory lifetime
 

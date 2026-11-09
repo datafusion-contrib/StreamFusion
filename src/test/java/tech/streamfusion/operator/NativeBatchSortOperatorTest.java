@@ -85,7 +85,7 @@ class NativeBatchSortOperatorTest {
       pushDescending(harness, count);
       assertTrue(harness.getOutput().isEmpty());
       assertTrue(spillFiles(harness) > 0, "must spill before EOF");
-      var statsField = NativeBatchSortOperator.class.getDeclaredField("executionStats");
+      var statsField = NativeBoundedBatchOperator.class.getDeclaredField("executionStats");
       statsField.setAccessible(true);
       long[] stats = (long[]) statsField.get(harness.getOperator());
       assertTrue(
