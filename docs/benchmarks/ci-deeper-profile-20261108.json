@@ -1697,5 +1697,53 @@
       }
     },
     "limits": "116 invocations passed without skips. Child CPU excludes external broker containers. Image preparation is separate and full CI includes cold setup. This is a selected-workload comparison, not whole-CI performance or a product of separate savings. Full source qualification remains required."
+  },
+  "focused_regressions": {
+    "run": 42538138089,
+    "source_sha": "d19522a18b57344d1034b4e73f5a380e87fd7e95",
+    "jdk": 17,
+    "flink": "2.2",
+    "trials": [
+      {
+        "suite": "regressions",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": true,
+        "compressed_recovery_results": true,
+        "parallel_catalog_close": false,
+        "elapsed_seconds": 10.75704923500001,
+        "cpu_seconds": 18.48123,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.RecoveryResultEncodingTest": {
+            "tests": 3,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 1.973
+          },
+          "tech.streamfusion.SmallBoundedCollectionTest": {
+            "tests": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 5.779
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      }
+    ],
+    "coverage": "The 8MiB collected output exceeds released Flink's 4MiB buffer; the test drains all64rows on bothengines, asserts parity and positive native records consumed. Encoding tests retain nested bytes/nulls/counts/changelog kinds and reject corrupt input."
   }
 }

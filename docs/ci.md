@@ -958,7 +958,11 @@ small-bounded-result helper. Other parity calls retain their existing collection
 An added regression sends 8 MiB through the ordinary 4 MiB collect buffer, requiring live
 draining after the brief timeout, complete stock/native row parity and positive native work.
 `hotspot_mode=runtime-regressions` qualifies this case and the three encoding cases before
-the complete required matrix. Full source qualification remains necessary.
+the complete required matrix. The focused JDK 17/Flink 2.2 run passed all four cases,
+including complete stock/native rows and positive native work for the buffer fallback.
+Full source qualification remains necessary; final matrix evidence belongs in the
+documentation-only `ci-profile-20261108.json` record so recording results does not repeat
+already proven source tests.
 
 The initial Fluss diagnostic could not load its new timing helper through a stale standalone
 test dependency; it did not execute the 29 SQL cases. `hotspot_mode=fluss-details` attributes

@@ -2413,7 +2413,7 @@
     },
     "protobuf_staleness": "Only later lifecycle calls within the same immutable CI job; initial compilation and local defaults regenerate normally."
   },
-  "full_source_qualification": {
+  "initial_full_source_qualification": {
     "run": 42524074274,
     "source_sha": "2f82b3401d5b1441d2302b37522af01847967054",
     "status": "Runtime failure; sibling runtime jobs cancelled. No whole-workflow speedup or full coverage qualification.",
