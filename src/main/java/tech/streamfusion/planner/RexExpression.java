@@ -212,6 +212,10 @@ final class RexExpression {
     return preserveCollections;
   }
 
+  boolean requiresOriginalStringInputs() {
+    return kinds.contains(KIND_CERTIFIED_BUILTIN);
+  }
+
   boolean supportsStructuredInput() {
     return preserveCollections || skipMapKeyCaches;
   }

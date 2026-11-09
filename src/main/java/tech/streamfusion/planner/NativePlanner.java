@@ -21,6 +21,27 @@ public final class NativePlanner {
 
   private NativePlanner() {}
 
+  /** Installs the batch hook while retaining Flink's optimizer and connector contracts. */
+  public static BatchPlanScan installBatch(TableConfig config) {
+    PlannerConfig plannerConfig = config.getPlannerConfig();
+    CalciteConfig calciteConfig = plannerConfig instanceof CalciteConfig
+        ? (CalciteConfig) plannerConfig : CalciteConfig$.MODULE$.DEFAULT();
+    var program = calciteConfig.getBatchProgram().isDefined()
+        ? calciteConfig.getBatchProgram().get()
+        : org.apache.flink.table.planner.plan.optimize.program.FlinkBatchProgram.buildProgram(config);
+    if (program.get(PROGRAM_NAME).isDefined()) {
+      Object installed = program.get(PROGRAM_NAME).get();
+      if (installed instanceof BatchPlanScan) return (BatchPlanScan) installed;
+      throw new IllegalStateException("Planner program name '" + PROGRAM_NAME
+          + "' is already owned by " + installed.getClass());
+    }
+    var scan = new BatchPlanScan();
+    program.addLast(PROGRAM_NAME, scan);
+    config.setPlannerConfig(CalciteConfig$.MODULE$.createBuilder(calciteConfig)
+        .replaceBatchProgram(program).build());
+    return scan;
+  }
+
   /** Installs the native optimizer stage into a streaming Table configuration. */
   public static PhysicalPlanScan install(TableConfig config) {
     // Sub-plan reuse stays enabled, scoped away from the island by digests: reuse runs after this
@@ -92,6 +113,12 @@ public final class NativePlanner {
    * convenience for inspecting whether and why a query accelerates.
    */
   public static String explain(TableEnvironment tableEnv, String sql) {
+    if (tableEnv.getConfig().get(org.apache.flink.configuration.ExecutionOptions.RUNTIME_MODE)
+        == org.apache.flink.api.common.RuntimeExecutionMode.BATCH) {
+      BatchPlanScan scan = installBatch(tableEnv.getConfig());
+      String plan = tableEnv.explainSql(sql);
+      return plan + "\n" + scan.explainSummary();
+    }
     PhysicalPlanScan scan = install(tableEnv);
     String plan = tableEnv.explainSql(sql);
     return plan + "\n" + scan.explainSummary();

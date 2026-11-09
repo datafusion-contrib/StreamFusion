@@ -1207,6 +1207,24 @@
       "forbidden_operators_on_native_routes": [
         "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
       ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testManySelectWithFilter",
+      "display_name": "testManySelectWithFilter()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testFilterOnInteger",
+      "display_name": "testFilterOnInteger()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testUserDefinedScalarFunction",
+      "display_name": "testUserDefinedScalarFunction()",
+      "count": 1,
+      "route": "native"
     }
   ]
 }

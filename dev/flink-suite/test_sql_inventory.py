@@ -24,6 +24,15 @@ def plan(substitutions, reasons=(), translated=True, operators=('StreamPhysicalC
 
 
 class SqlInventoryTest(unittest.TestCase):
+    def test_batch_columnar_island_and_host_gap_are_distinguished(self):
+        event = plan(1)
+        event['roots'][0]['operators'] = ['BatchPhysicalSink', 'BatchPhysicalArrowToRowData',
+            'BatchPhysicalNativeCalc', 'BatchPhysicalRowDataToArrow', 'BatchPhysicalTableSourceScan']
+        observation = record([event], ['tech.streamfusion.planner.NativeBatchPlanner'])
+        self.assertEqual('accelerated', inventory.classify(observation, 'passed')[0])
+        event['roots'][0]['operators'].append('BatchPhysicalHashAggregate')
+        self.assertEqual('all-or-nothing-violation', inventory.classify(observation, 'passed')[1])
+
     def test_execution_and_explain_are_distinct(self):
         self.assertEqual('accelerated', inventory.classify(record([plan(1)]), 'passed')[0])
         self.assertEqual('plan-only', inventory.classify(record([plan(1, translated=False)]), 'passed')[1])

@@ -127,6 +127,21 @@ class StreamFusionPlannerLoaderTest {
     assertEquals(List.of(6, 8, 10), collectInts(tableEnvironment.executeSql(sql)));
   }
 
+  @Test
+  void installsBatchPlannerFromThePackagedPayload() throws Exception {
+    TableEnvironment table = TableEnvironment.create(EnvironmentSettings.inBatchMode());
+    table.getConfig().set("parallelism.default", "1");
+    table.getConfig().set("taskmanager.memory.task.off-heap.size", "128m");
+    table.executeSql(
+        "CREATE TABLE batch_input (id BIGINT) WITH ('connector'='datagen',"
+            + " 'number-of-rows'='3', 'fields.id.kind'='sequence',"
+            + " 'fields.id.start'='3', 'fields.id.end'='5')");
+    String sql = "SELECT CAST(id * 2 AS INT), SHA2(CAST(id AS STRING), 256) FROM batch_input";
+    String plan = table.explainSql(sql);
+    assertTrue(plan.contains("NativeCalc"), plan);
+    assertEquals(List.of(6, 8, 10), collectInts(table.executeSql(sql)));
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"rocksdb", "tech.streamfusion.state.RocksDBNativeStateBackendFactory"})
   void installsNativeStatefulPlannerWithConfiguredHostBackend(String backend) throws Exception {

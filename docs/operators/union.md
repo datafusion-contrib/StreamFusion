@@ -2,6 +2,8 @@
 
 **Status:** native, with boundary restrictions.
 
+For bounded execution, see the separate [batch SQL admission](batch.md).
+
 `UNION ALL` substitutes to a native `Union` operator that simply concatenates its inputs' Arrow
 batches — no state, no key. It admits any row type the columnar boundary can carry.
 

@@ -17,6 +17,11 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
   private final InMemoryReporter reporter = InMemoryReporter.createWithRetainedMetrics();
   private MiniClusterResource cluster;
 
+  void setAsContext(Configuration config, int parallelism, long budget) {
+    environment(config, parallelism, budget);
+    tech.streamfusion.compat.FlinkTestContexts.setForLocalTests(cluster.getMiniCluster(), parallelism);
+  }
+
   TestStreamEnvironment environment(Configuration jobConfig, int parallelism, long budget) {
     if (cluster == null) {
       long started = CiFixtureTimings.start();
@@ -68,6 +73,15 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
       }
     });
     return total[0];
+  }
+
+  List<String> taskNames(String operatorPrefix) {
+    return reporter.getMetricsByGroup().keySet().stream()
+        .filter(group -> group instanceof org.apache.flink.metrics.groups.OperatorMetricGroup)
+        .map(org.apache.flink.metrics.MetricGroup::getAllVariables)
+        .filter(variables -> variables.getOrDefault("<operator_name>", "").startsWith(operatorPrefix))
+        .map(variables -> variables.getOrDefault("<task_name>", ""))
+        .distinct().collect(java.util.stream.Collectors.toList());
   }
 
   long counterValue(String name) {

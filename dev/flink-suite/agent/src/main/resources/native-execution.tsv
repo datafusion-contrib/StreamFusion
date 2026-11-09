@@ -1,4 +1,8 @@
 # Unchanged upstream method<TAB>fixture selector<TAB>expected route.
+# Batch Calc uses the same verified expression runtime through batch graph wrappers.
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testManySelectWithFilter	*	!batch Calc: standalone scalar pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testFilterOnInteger	*	!batch Calc: standalone scalar pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testUserDefinedScalarFunction	*	NativeCalcOperator
 # * matches every invocation; field=true/false selects a pinned fixture parameter.
 # + requires every operator; | separates alternatives; ! requires full fallback and its reason.
 org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testNotIn	*	NativeFilterOperator|NativeCalcOperator

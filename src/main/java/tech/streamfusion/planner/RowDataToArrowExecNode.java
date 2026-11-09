@@ -159,7 +159,9 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
             carryRowKind,
             sourceType,
             preserveStringCaches,
-            binaryRowKeys ? binaryRowKeySchema(rowType).serializeAsMessage() : arrowSchema),
+            binaryRowKeys ? binaryRowKeySchema(rowType).serializeAsMessage() : arrowSchema,
+            config.get(org.apache.flink.configuration.ExecutionOptions.RUNTIME_MODE)
+                == org.apache.flink.api.common.RuntimeExecutionMode.BATCH),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

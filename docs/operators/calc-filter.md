@@ -2,6 +2,9 @@
 
 **Status:** native, with gaps — the largest admission surface in the project.
 
+This page describes streaming expression coverage. [Batch SQL](batch.md) reuses
+the encoder with additional type, plan-shape and measured-performance admission.
+
 Use this page for the current admission rules. For a specific question, start at:
 
 | Topic | Sections |

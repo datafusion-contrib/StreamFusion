@@ -1,5 +1,26 @@
 # Upstream Flink suite
 
+## Batch scalar development
+
+The planner factory and suite agent now install a mode-specific batch adapter.
+[Batch SQL](operators/batch.md) documents its current narrow admission. The published
+planner test JAR can be scanned directly with the runtime module's `batch-upstream`
+Maven profile, avoiding another source checkout or Maven repository for focused
+batch iterations. The profile uses released test bytecode with its original SQL,
+fixtures and assertions; the ordinary source-suite runner remains available.
+Flink 1.18 additionally needs its released Scala Table bridge on the test classpath.
+
+The batch Calc contracts require stock fallback for `testManySelectWithFilter` and
+`testFilterOnInteger` under the measured scalar-boundary rule, and positive native
+work for `testUserDefinedScalarFunction`. Both runtime-route scope files retain
+those host/native expectations. Pass the current suite agent through
+`sf.extraJvmArgs`, with fresh `streamfusion.flink-suite.native-reports` and
+`streamfusion.flink-suite.sql-inventory` directories. A passing upstream assertion
+without those native/fallback witnesses is not acceleration evidence.
+
+The earlier batch-host-only measurements later in this page describe their original
+revision; current batch admission is defined by the batch operator page and contracts.
+
 | Task | Start here |
 | --- | --- |
 | Run the upstream suites | [Runner and suite selection](#runner-and-suite-selection) |

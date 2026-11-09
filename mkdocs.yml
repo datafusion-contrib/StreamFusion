@@ -82,6 +82,7 @@ nav:
   - Operators:
       - operators/index.md
       - Calc / filter: operators/calc-filter.md
+      - Batch SQL: operators/batch.md
       - Temporal functions: operators/temporal-functions.md
       - Union: operators/union.md
       - Expand: operators/expand.md
@@ -122,9 +123,11 @@ nav:
   - Upstream Flink suite: upstream-flink-suite.md
   - Upstream SQL inventory: sql-inventory/index.md
   - Portable SQL audit: sql-parity-audit.md
+  - Batch execution audit: batch-execution-audit.md
   - Benchmarks:
       - benchmarks.md
       - Evidence and experiment index: benchmarks/evidence.md
+      - Batch scalar comparisons: benchmarks/batch-scalars.md
       - Native Criterion suites: benchmarks/native-criterion.md
       - AppendFast Top-1: benchmarks/append-top1.md
       - Performance audit reproduction: benchmarks/performance-audit.md

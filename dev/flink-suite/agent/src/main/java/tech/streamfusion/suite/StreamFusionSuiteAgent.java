@@ -1,6 +1,7 @@
 package tech.streamfusion.suite;
 
 import static net.bytebuddy.matcher.ElementMatchers.isAnnotatedWith;
+import static net.bytebuddy.matcher.ElementMatchers.isDeclaredBy;
 import static net.bytebuddy.matcher.ElementMatchers.isBridge;
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
 import static net.bytebuddy.matcher.ElementMatchers.nameEndsWith;
@@ -195,12 +196,14 @@ public final class StreamFusionSuiteAgent {
         .type(
             namedOneOf(
                 "tech.streamfusion.planner.PhysicalPlanScan",
+                "tech.streamfusion.planner.BatchPlanScan",
                 "tech.streamfusion.planner.StockCompiledPlanLowering"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder
                     .visit(Advice.to(RecordFallback.class).on(named("recordFallback")))
-                    .visit(Advice.to(RecordSqlPlan.class).on(named("optimizeConfigured"))))
+                    .visit(Advice.to(RecordSqlPlan.class).on(named("optimizeConfigured")
+                        .or(named("optimizeRoots").and(isDeclaredBy(named("tech.streamfusion.planner.BatchPlanScan")))))))
         .type(
             namedOneOf(
                 "tech.streamfusion.state.StockGroupTypedStateContract",
@@ -1061,10 +1064,9 @@ public final class StreamFusionSuiteAgent {
     static void exit(
         @Advice.Argument(0) Object context,
         @Advice.Return(readOnly = false, typing = Assigner.Typing.DYNAMIC) Object planner) {
-      if (!planner
-          .getClass()
-          .getName()
-          .equals("org.apache.flink.table.planner.delegation.StreamPlanner")) {
+      String plannerName = planner.getClass().getName();
+      boolean batch = plannerName.equals("org.apache.flink.table.planner.delegation.BatchPlanner");
+      if (!batch && !plannerName.equals("org.apache.flink.table.planner.delegation.StreamPlanner")) {
         SqlInventory.plannerCreated(context, planner);
         return;
       }
@@ -1078,7 +1080,7 @@ public final class StreamFusionSuiteAgent {
                       "tech.streamfusion.planner.StreamFusionPlannerFactory",
                       true,
                       context.getClass().getClassLoader())
-                  .getMethod("createStreamingPlanner", contextClass)
+                  .getMethod(batch ? "createBatchPlanner" : "createStreamingPlanner", contextClass)
                   .invoke(null, context);
         }
       } catch (ReflectiveOperationException e) {
@@ -1107,7 +1109,7 @@ public final class StreamFusionSuiteAgent {
                     Class.forName("org.apache.flink.configuration.ExecutionOptions")
                         .getField("RUNTIME_MODE")
                         .get(null));
-        if (!"STREAMING".equals(runtimeMode.toString())) {
+        if (!"STREAMING".equals(runtimeMode.toString()) && !"BATCH".equals(runtimeMode.toString())) {
           return;
         }
         if (!StreamFusionSuiteAgent.markConfigForInstallation(tableConfig)) {
@@ -1118,7 +1120,7 @@ public final class StreamFusionSuiteAgent {
           ClassLoader classLoader = context.getClass().getClassLoader();
           Class<?> nativePlanner =
               Class.forName("tech.streamfusion.planner.NativePlanner", true, classLoader);
-          nativePlanner
+          if ("STREAMING".equals(runtimeMode.toString())) nativePlanner
               .getMethod("install", Class.forName("org.apache.flink.table.api.TableConfig"))
               .invoke(null, tableConfig);
           Class.forName("tech.streamfusion.Native", true, classLoader);
