@@ -223,27 +223,18 @@ impl RocksTemporalSortBuffer {
         chunk_rows: usize,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        let mut rows: Vec<Box<[u8]>> = Vec::with_capacity(chunk_rows);
-        for row in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = row.map_err(re)?;
-            if key.len() != KEY_LEN {
-                continue;
-            }
-            if value.len() < VALUE_PREFIX_LEN {
-                return Err(DataFusionError::Execution(
-                    "truncated temporal-sort row".into(),
-                ));
-            }
-            rows.push(value[VALUE_PREFIX_LEN..].into());
-            if rows.len() == chunk_rows {
-                accept(self.decode(rows.iter().map(AsRef::as_ref))?)?;
-                rows.clear();
-            }
-        }
-        if !rows.is_empty() {
-            accept(self.decode(rows.iter().map(AsRef::as_ref))?)?;
-        }
-        Ok(())
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| key.len() == KEY_LEN,
+            |rows| {
+                if rows.iter().any(|(_, value)| value.len() < VALUE_PREFIX_LEN) {
+                    return Err(DataFusionError::Execution(
+                        "truncated temporal-sort row".into(),
+                    ));
+                }
+                accept(self.decode(rows.iter().map(|(_, value)| &value[VALUE_PREFIX_LEN..]))?)
+            },
+        )
     }
 
     fn decode<'a>(

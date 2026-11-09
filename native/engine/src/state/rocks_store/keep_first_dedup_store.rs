@@ -340,32 +340,29 @@ impl RocksKeepFirstDedupStore {
         chunk_rows: usize,
         mut visitor: impl FnMut(&[StoredCandidate]) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        let mut chunk = Vec::with_capacity(chunk_rows);
-        for entry in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = entry.map_err(re)?;
-            if key.len() < KEY_PREFIX_LEN || key[4] != PENDING_TABLE {
-                continue;
-            }
-            if value.len() < PENDING_VALUE_PREFIX_LEN {
-                return Err(DataFusionError::Execution(
-                    "truncated buffered dedup candidate".into(),
-                ));
-            }
-            chunk.push(StoredCandidate {
-                key: Self::store_key(&key),
-                seq: u64::from_be_bytes(value[8..16].try_into().unwrap()),
-                rowtime: i64::from_le_bytes(value[..8].try_into().unwrap()),
-                row: value[PENDING_VALUE_PREFIX_LEN..].into(),
-            });
-            if chunk.len() == chunk_rows {
-                visitor(&chunk)?;
-                chunk.clear();
-            }
-        }
-        if !chunk.is_empty() {
-            visitor(&chunk)?;
-        }
-        Ok(())
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| key.len() >= KEY_PREFIX_LEN && key[4] == PENDING_TABLE,
+            |rows| {
+                let rows = rows
+                    .into_iter()
+                    .map(|(key, value)| {
+                        if value.len() < PENDING_VALUE_PREFIX_LEN {
+                            return Err(DataFusionError::Execution(
+                                "truncated buffered dedup candidate".into(),
+                            ));
+                        }
+                        Ok(StoredCandidate {
+                            key: Self::store_key(&key),
+                            seq: u64::from_be_bytes(value[8..16].try_into().unwrap()),
+                            rowtime: i64::from_le_bytes(value[..8].try_into().unwrap()),
+                            row: value[PENDING_VALUE_PREFIX_LEN..].into(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, DataFusionError>>()?;
+                visitor(&rows)
+            },
+        )
     }
 
     pub(crate) fn visit_canonical_markers(
@@ -373,29 +370,26 @@ impl RocksKeepFirstDedupStore {
         chunk_rows: usize,
         mut visitor: impl FnMut(&[(ByteKey, Option<i64>)]) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        let mut chunk = Vec::with_capacity(chunk_rows);
-        for entry in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = entry.map_err(re)?;
-            if key.len() < KEY_PREFIX_LEN || key[4] != EMITTED_TABLE {
-                continue;
-            }
-            if !value.is_empty() && value.len() != 8 {
-                return Err(DataFusionError::Execution(
-                    "invalid buffered dedup marker stamp".into(),
-                ));
-            }
-            let stamp =
-                (value.len() == 8).then(|| i64::from_le_bytes(value[..8].try_into().unwrap()));
-            chunk.push((Self::store_key(&key), stamp));
-            if chunk.len() == chunk_rows {
-                visitor(&chunk)?;
-                chunk.clear();
-            }
-        }
-        if !chunk.is_empty() {
-            visitor(&chunk)?;
-        }
-        Ok(())
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| key.len() >= KEY_PREFIX_LEN && key[4] == EMITTED_TABLE,
+            |rows| {
+                let rows = rows
+                    .into_iter()
+                    .map(|(key, value)| {
+                        if !value.is_empty() && value.len() != 8 {
+                            return Err(DataFusionError::Execution(
+                                "invalid buffered dedup marker stamp".into(),
+                            ));
+                        }
+                        let stamp = (value.len() == 8)
+                            .then(|| i64::from_le_bytes(value[..8].try_into().unwrap()));
+                        Ok((Self::store_key(&key), stamp))
+                    })
+                    .collect::<Result<Vec<_>, DataFusionError>>()?;
+                visitor(&rows)
+            },
+        )
     }
 
     /// Every pending candidate, keys in store order, for canonical savepoints.

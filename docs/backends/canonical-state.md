@@ -102,8 +102,10 @@ uses a captured state iterator, preserving serializers and the caller's key cont
 collecting every key.
 
 The direct cursors bound decoded working memory by the current frame/entry and owned key groups.
-Fixed-window groups and timer ledgers, session state, and OVER fold/pending/cleanup tables share
-the pinned batch visitor, with both row and byte limits before decoding. Fixed-window export no
+Fixed-window groups and timer ledgers, session state, OVER fold/pending/cleanup tables, temporal
+sort, buffered deduplication and temporal/interval/window joins share the pinned batch visitor,
+with both row and byte limits before decoding and cancellation checks while scanning. Window-rank
+list values also enforce row/byte bounds and cancellation within a stored bucket. Fixed-window export no
 longer collects every persisted group or timer. OVER readers fetch cleanup stamps, processing-ROWS
 counters and RANGE timers directly from their captured tables; they do not hydrate metadata maps
 for all keys. Processing-ROWS metadata/frame ownership is checked by streaming partitions and point
@@ -133,6 +135,9 @@ The retained-frame chunk cohort passes 585 selected bridge/interchange checks on
 line, including six 2,051-row single-partition continuations through stock heap/RocksDB and native
 RocksDB restore. Native row/byte boundary, receiver retry and cancellation controls pass alongside
 all 1,450 native tests and the memory-only build.
+The shared-visitor cohort passes 1,451 native tests and the memory-only build, with 498 selected
+interchange checks on 2.2 and 450 on 1.18. Window-rank controls cancel inside a single wide stored
+bucket and verify bounded decoded batches and receiver retry.
 Conversion cost, barrier duration and temporary I/O have not been benchmarked.
 
 Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending

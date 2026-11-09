@@ -10,43 +10,29 @@ impl RocksWindowBuffer {
         mut work: Option<MemoryReservation>,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        let mut rows: Vec<Box<[u8]>> = Vec::with_capacity(chunk);
-        let mut bytes = 0;
-        for row in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = row.map_err(re)?;
-            if key.len() != KEY_LEN || key[4] != Self::table(left) {
-                continue;
-            }
-            if value.len() < 8 {
-                return Err(DataFusionError::Execution(
-                    "truncated window-join row".into(),
-                ));
-            }
-            bytes += value.len() - 8;
-            if let Some(work) = &mut work {
-                work.try_resize(bytes)?;
-            }
-            rows.push(value[8..].into());
-            if rows.len() == chunk {
-                let batch = self.decode(left, schema, rows.iter().map(AsRef::as_ref))?;
+        self.db.visit_snapshot_batches(
+            chunk,
+            |key| key.len() == KEY_LEN && key[4] == Self::table(left),
+            |rows| {
+                if rows.iter().any(|(_, value)| value.len() < 8) {
+                    return Err(DataFusionError::Execution(
+                        "truncated window-join row".into(),
+                    ));
+                }
+                let bytes = rows.iter().map(|(_, value)| value.len()).sum::<usize>();
+                if let Some(work) = &mut work {
+                    work.try_resize(bytes)?;
+                }
+                let batch = self.decode(left, schema, rows.iter().map(|(_, value)| &value[8..]))?;
                 if let Some(work) = &mut work {
                     work.try_resize(bytes + batch.get_array_memory_size())?;
                 }
                 accept(batch)?;
-                rows.clear();
-                bytes = 0;
                 if let Some(work) = &mut work {
                     work.resize(0);
                 }
-            }
-        }
-        if !rows.is_empty() {
-            let batch = self.decode(left, schema, rows.iter().map(AsRef::as_ref))?;
-            if let Some(work) = &mut work {
-                work.try_resize(bytes + batch.get_array_memory_size())?;
-            }
-            accept(batch)?;
-        }
-        Ok(())
+                Ok(())
+            },
+        )
     }
 }

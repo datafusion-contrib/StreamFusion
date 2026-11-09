@@ -460,6 +460,7 @@ impl RocksWindowRankStore {
             return Err(invalid());
         }
         for entry in self.db.iterator(IteratorMode::Start) {
+            super::database::check_cancelled()?;
             let (key, value) = entry.map_err(re)?;
             if key.as_ref() == WATERMARK_KEY || key.as_ref() == TIMER_DEADLINE_KEY {
                 continue;
@@ -470,16 +471,20 @@ impl RocksWindowRankStore {
             let mut cursor = value.as_ref();
             let length = count(&mut cursor)?;
             let mut rows = Vec::with_capacity(chunk_rows);
+            let mut bytes = 0usize;
             for _ in 0..length {
+                super::database::check_cancelled()?;
                 let length = count(&mut cursor)?;
                 if length == 0 || length > cursor.len() {
                     return Err(invalid());
                 }
                 rows.push(&cursor[..length]);
+                bytes = bytes.saturating_add(length);
                 cursor = &cursor[length..];
-                if rows.len() == chunk_rows {
+                if rows.len() == chunk_rows || bytes >= 4 * 1024 * 1024 {
                     accept(self.decode_rows(&rows)?)?;
                     rows.clear();
+                    bytes = 0;
                 }
             }
             if !cursor.is_empty() {
@@ -732,6 +737,49 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    #[test]
+    fn canonical_rank_rows_bound_wide_values_retry_and_cancel_inside_one_bucket() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = test_config("bounded-canonical");
+        config.table_dir = directory
+            .path()
+            .join("state")
+            .to_string_lossy()
+            .into_owned();
+        let mut store = RocksWindowRankStore::create(config, &[DataType::Utf8], 0..=127).unwrap();
+        let key = key_rows(&[7]).pop().unwrap();
+        let rows = (0..3)
+            .map(|_| vec![ScalarValue::Utf8(Some("x".repeat(2 * 1024 * 1024)))])
+            .collect();
+        store
+            .put(vec![(store.db_key(0, 100, 0, &key), rows)])
+            .unwrap();
+        assert!(store
+            .visit_rows(1024, |_| Err(DataFusionError::Execution(
+                "receiver failed".into()
+            )))
+            .is_err());
+        let mut sizes = Vec::new();
+        store
+            .visit_rows(1024, |rows| {
+                sizes.push(rows.len());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(sizes, [2, 1]);
+        let context = crate::state::canonical_context::CanonicalContext::new(Default::default());
+        let mut calls = 0;
+        let result = context.with(|| {
+            store.visit_rows(1, |_| {
+                calls += 1;
+                context.cancel();
+                Ok(())
+            })
+        });
+        assert!(result.is_err());
+        assert_eq!(calls, 1);
     }
 
     #[test]
