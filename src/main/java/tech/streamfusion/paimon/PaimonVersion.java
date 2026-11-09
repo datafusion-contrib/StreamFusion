@@ -21,6 +21,7 @@ import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.DataFilePathFactory;
 import org.apache.paimon.io.RollingFileWriter;
 import org.apache.paimon.io.RollingFileWriterImpl;
+import org.apache.paimon.io.RowDataRollingFileWriter;
 import org.apache.paimon.io.SimpleStatsProducer;
 import org.apache.paimon.io.SingleFileWriter;
 import org.apache.paimon.manifest.FileSource;
@@ -69,7 +70,11 @@ final class PaimonVersion {
     return (java.util.function.Supplier<LongCounter>) () -> new LongCounter(counter.getValue());
   }
 
-  static void advanceAppendSequence(LongCounter counter, long rows) {}
+  static void writeAppendBundle(
+      RowDataRollingFileWriter output, LongCounter counter, ArrowBatchBundle bundle)
+      throws Exception {
+    output.writeBundle(bundle);
+  }
 
   static boolean isCompactionFactory(StreamOperatorFactory<?> factory) {
     return factory.getClass() == StoreCompactOperator.Factory.class
