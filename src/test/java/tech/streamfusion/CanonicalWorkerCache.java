@@ -118,7 +118,9 @@ final class CanonicalWorkerCache {
     String identity =
         System.getProperty("java.version")
             + "\n"
-            + String.join("\n", command.subList(0, classpath + 4));
+            + command.subList(0, classpath + 4).stream()
+                .filter(argument -> !argument.startsWith("-Djava.io.tmpdir="))
+                .collect(java.util.stream.Collectors.joining("\n"));
     String hash =
         hex(
             MessageDigest.getInstance("SHA-256")

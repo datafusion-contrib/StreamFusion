@@ -98,4 +98,87 @@ class CanonicalWorkerCacheTest {
     }
     assertFalse(Files.exists(classes));
   }
+
+  @Test
+  void archivesReuseMetadataAcrossStageDirectoriesWhileKeepingRuntimePathsAndRoles()
+      throws Exception {
+    Path source = directory.resolve("source");
+    Files.createDirectories(source);
+    Path probe = source.resolve("CacheProbe.java");
+    Files.writeString(
+        probe,
+        "import java.nio.file.*; public class CacheProbe {public static void main(String[] args)"
+            + " throws Exception {Files.writeString(Path.of(args[1]),"
+            + " Files.createTempFile(\"probe\", \".tmp\").getParent().toString());}}");
+    var compiler = javax.tools.ToolProvider.getSystemJavaCompiler();
+    assertNotNull(compiler);
+    assertEquals(0, compiler.run(null, null, null, "-d", source.toString(), probe.toString()));
+    Files.delete(probe);
+    var cache = new CanonicalWorkerCache(directory.resolve("metadata"));
+    String classpath = cache.classpath(List.of(source.toString())).get(0);
+    for (String stage : List.of("prefix", "suffix")) {
+      Path temporary = directory.resolve(stage);
+      Files.createDirectories(temporary);
+      Path output = directory.resolve(stage + ".txt");
+      var command = probeCommand(classpath, temporary, "stock", output);
+      try (var archive = cache.archive(command)) {
+        assertEquals(stage.equals("suffix"), command.contains("-Xshare:on"));
+        Path log = directory.resolve(stage + ".log");
+        var process =
+            new ProcessBuilder(command)
+                .redirectErrorStream(true)
+                .redirectOutput(log.toFile())
+                .start();
+        try {
+          assertTrue(process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS));
+          assertEquals(
+              0,
+              process.exitValue(),
+              () -> {
+                try {
+                  return Files.readString(log);
+                } catch (java.io.IOException failure) {
+                  return failure.toString();
+                }
+              });
+          archive.trained();
+        } finally {
+          if (process.isAlive()) {
+            process.destroyForcibly();
+            process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
+          }
+        }
+      }
+      assertEquals(temporary.toString(), Files.readString(output));
+    }
+    try (var files = Files.list(directory.resolve("metadata"))) {
+      assertEquals(1, files.filter(path -> path.toString().endsWith(".jsa")).count());
+    }
+    for (boolean differentRole : List.of(false, true)) {
+      var command =
+          probeCommand(
+              classpath,
+              directory.resolve("third"),
+              differentRole ? "native" : "stock",
+              directory.resolve("third.txt"));
+      if (!differentRole) command.add(1, "-Ddifferent.worker.configuration=true");
+      try (var archive = cache.archive(command)) {
+        assertFalse(command.contains("-Xshare:on"));
+      }
+    }
+  }
+
+  private static java.util.ArrayList<String> probeCommand(
+      String classpath, Path temporary, String role, Path output) {
+    return new java.util.ArrayList<>(
+        List.of(
+            Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+            "-Xmx128m",
+            "-Djava.io.tmpdir=" + temporary,
+            "-cp",
+            classpath,
+            "CacheProbe",
+            role,
+            output.toString()));
+  }
 }

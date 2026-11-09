@@ -682,7 +682,11 @@ so the harness snapshots compiled class directories into deterministic JARs whil
 classpath order and resource paths. Compiled directories remain immutable for each Surefire
 fork. Snapshot names derive from their contents; an existing snapshot is checked for corruption
 and retained without changing its timestamp. Changed compiled bytes produce a new snapshot.
-Archive keys include the JDK, VM arguments, classpath, worker class and engine role. Caches live
+Archive keys include the JDK, VM arguments, classpath, worker class and engine role. A stage's
+`java.io.tmpdir` is excluded from the metadata key: it remains a fresh runtime argument, not a
+reason to rebuild an identical archive. A real child-JVM control reuses one archive across two
+stage directories and checks actual temporary-file placement; changed roles and other VM
+settings still select different archives. Caches live
 under the current runner's temporary directory and are removed after outcomes and failed
 archive diagnostics are uploaded. Default local Maven runs do not enable this cache.
 Each runner uses four fresh 1 GiB Surefire JVMs, with process reuse disabled. The earlier 2.2-only
