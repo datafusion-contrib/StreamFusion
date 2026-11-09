@@ -20,13 +20,26 @@ impl RocksTemporalJoinStore {
     pub(crate) fn visit_canonical_metadata(
         &self,
         chunk_rows: usize,
+        accept: impl FnMut(
+            Vec<(ByteKey, Option<Box<[u8]>>, Option<i64>)>,
+        ) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.visit_canonical_metadata_charged(chunk_rows, None, accept)
+    }
+
+    pub(crate) fn visit_canonical_metadata_charged(
+        &self,
+        chunk_rows: usize,
+        work: Option<datafusion::execution::memory_pool::MemoryReservation>,
         mut accept: impl FnMut(
             Vec<(ByteKey, Option<Box<[u8]>>, Option<i64>)>,
         ) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         for table in [META_TABLE, DEADLINE_TABLE] {
-            self.db.visit_snapshot_batches(
+            self.db.visit_snapshot_batches_charged(
                 chunk_rows,
+                work.as_ref()
+                    .map(datafusion::execution::memory_pool::MemoryReservation::new_empty),
                 |key| key.len() > KEY_PREFIX_LEN && key[4] == table,
                 |rows| {
                     let mut decoded = Vec::with_capacity(rows.len());
@@ -35,7 +48,7 @@ impl RocksTemporalJoinStore {
                         if table == DEADLINE_TABLE
                             && self
                                 .db
-                                .get(Self::table_prefix(&key, META_TABLE))
+                                .get_pinned(Self::table_prefix(&key, META_TABLE))
                                 .map_err(re)?
                                 .is_some()
                         {
@@ -196,6 +209,45 @@ impl RocksTemporalJoinStore {
             retained = value.after_event(last, right, cleaning);
         })?;
         Ok(retained)
+    }
+
+    pub(crate) fn import_metadata_owned_bytes(
+        &self,
+        key: &ByteKey,
+        value: &StockTemporalMeta,
+        cleanup: Option<i64>,
+    ) -> usize {
+        footprint(key, value)
+            + if cleanup.is_some() {
+                key.0.len() + GROUP_ENTRY_OVERHEAD
+            } else {
+                0
+            }
+    }
+
+    pub(crate) fn import_metadata_owned(
+        &mut self,
+        key: ByteKey,
+        value: StockTemporalMeta,
+        cleanup: Option<i64>,
+    ) -> Result<(), DataFusionError> {
+        self.metadata_delta += footprint(&key, &value) as isize;
+        self.metadata.insert(key.clone(), value);
+        if let Some(deadline) = cleanup {
+            self.deadlines.insert(key.clone(), deadline);
+        }
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        writes.put(
+            Self::table_prefix(&key, META_TABLE),
+            self.metadata[&key].encode(),
+        )?;
+        if let Some(deadline) = cleanup {
+            writes.put(
+                Self::table_prefix(&key, DEADLINE_TABLE),
+                deadline.to_le_bytes(),
+            )?;
+        }
+        writes.finish()
     }
 
     pub(crate) fn import_metadata(

@@ -106,26 +106,33 @@ until the callback fires.
 
 ## Canonical interchange: partial
 
-Restore callback membership lives in the shared scoped disk spool. Its native metadata bridge now
-fills one primitive timer array directly from disk, without an intermediate boxed Java list.
-The per-owner native callback array remains a protocol working set; this does not expand admission.
+Restore callback membership lives in the shared scoped disk spool. The metadata bridge shares
+OVER's bounded key/kind/long-value transport. It streams owner markers, signed probe cursors,
+registered values, cleanup clocks and individual physical callbacks instead of collecting a
+per-owner Java timer array or native Arrow list. Export borrows encoded callback values from the
+captured database; restore builds only the active owner's normal execution callback tree and
+moves it into state once. The largest encoded database value remains a working-memory floor.
+This changes transport, not operator admission.
 
 Canonical RocksDB readers capture immutable database views and leave their live metadata/deadline
 caches empty. Metadata export streams persisted cursors, physical callbacks and deadline-only keys
 in bounded batches, using point reads to join the two tables. Capture-time versions survive live
 updates; cancellation and receiver failure release the reader without consuming live state. The
 same state contract and reader architecture apply on released 1.18 and 2.2. This removes a whole
-key-inventory export working set; oversized individual values and import inventories remain open.
+key-inventory export working set; oversized individual values remain a working-memory floor.
 
 The released 2.2.1 adapter reads live native rows and bookkeeping directly into stock map/value
 states and Void timer queues, with original key/row serializers and signed probe-map indices.
 It creates no intermediate native snapshot. Preflight validates the complete stock inventory,
 serializers, row keys/timestamps and callback ownership before native mutation. Owner unions
 and callback membership live in the shared temporary disk inventory instead of global Java maps.
-The adapter rereads source rows after validation, with only each owner's callback array retained
-for metadata transfer. The scratch index closes and deletes on failure without changing stock
-state or registering temporary source descriptors. Large per-owner callback arrays remain open
-bounded-memory work.
+The adapter validates native row and metadata transfers in a first pass, then rereads the
+unchanged source to apply them. Row batches obey a 1,024-row and four-MiB payload estimate,
+allowing an oversized row. An open native restore guard blocks processing, cleanup, export and
+checkpointing until all rows and metadata finish; malformed transfers leave that guard failed.
+Native metadata reservations cover callback-tree growth and encoding before installation. The
+scratch index closes and deletes on failure without changing stock state or registering temporary
+source descriptors. These shared contracts run on both released Flink lines.
 
 Eighty positive operator cases cover INNER/LEFT, both stock/native stores, the shared metadata
 trace, unchanged-state handoff, ordinary native recovery, NULL payloads, all four row kinds,

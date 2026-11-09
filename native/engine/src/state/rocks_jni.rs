@@ -2278,7 +2278,10 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBTemporalJo
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
         let joiner = unsafe { &mut *(handle as *mut TemporalJoiner) };
-        match joiner.store_mut().checkpoint(&snapshot_directory) {
+        match joiner
+            .ensure_canonical_ready()
+            .and_then(|_| joiner.store_mut().checkpoint(&snapshot_directory))
+        {
             Ok(m) => manifest_array(&mut env, &m),
             Err(e) => {
                 let _ = env.throw_new(

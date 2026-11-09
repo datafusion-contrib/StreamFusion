@@ -446,6 +446,7 @@ fn callback_writer_obeys_keyless_row_and_wide_key_byte_bounds() {
     {
         let mut writer = CallbackWriter::new(
             vec![],
+            FIELDS,
             memory.temporary_reservation(),
             |batch: RecordBatch| {
                 sizes.push(batch.num_rows());
@@ -471,6 +472,7 @@ fn callback_writer_obeys_keyless_row_and_wide_key_byte_bounds() {
     {
         let mut writer = CallbackWriter::new(
             types,
+            FIELDS,
             memory.temporary_reservation(),
             |batch: RecordBatch| {
                 assert_eq!(
@@ -530,7 +532,8 @@ fn failed_receivers_denied_work_and_mid_owner_cancellation_release_charges() {
     let denied: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1));
     let mut memory = OperatorMemory::unaccounted();
     memory.attach_pool("denied callbacks", &denied, 0).unwrap();
-    let mut writer = CallbackWriter::new(vec![], memory.temporary_reservation(), |_| Ok(()));
+    let mut writer =
+        CallbackWriter::new(vec![], FIELDS, memory.temporary_reservation(), |_| Ok(()));
     assert!(writer.push(&[], EVENT, 1).is_err());
     drop(writer);
     assert_eq!(denied.reserved(), 0);

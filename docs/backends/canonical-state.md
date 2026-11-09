@@ -77,8 +77,9 @@ stock-state adapters on Flink's asynchronous writer thread. Each savepoint owns 
 native reader and a temporary stock-schema RocksDB backend, including disk-backed timer queues.
 This reuses the qualified map/list/timer conversion logic instead of duplicating every layout in a
 second streaming codec. It adds temporary disk I/O compared with the direct value-state cursors.
-OVER callback export now shares a flat key/kind/timestamp bridge for RANGE cutoffs, cleanup values,
-processing callbacks and V1 physical event callbacks. Frozen RocksDB readers borrow and validate
+OVER and temporal-join metadata export share a flat key/kind/long-value bridge. OVER uses it for
+RANGE cutoffs, cleanup values, processing callbacks and V1 physical event callbacks. Temporal joins
+use it for independent signed probe cursors, registered values, cleanup clocks and callbacks. Frozen RocksDB readers borrow and validate
 encoded timer entries without rebuilding per-owner timer vectors or Arrow lists. The bridge emits
 at most 1,024 records with a four-MiB payload estimate, allowing an oversized key. Raw snapshot
 batches and conversion buffers draw from the native memory pool, and cancellation is checked
@@ -194,9 +195,12 @@ failed writes. Bounded OVER now computes ownership, retained-row counts and cuto
 scanning staged buckets and timers, without per-owner Java timestamp/count maps or timer sets.
 Frame and pending transfers iterate the disk index directly. V1 polling OVER streams callbacks
 from that index through the shared flat bridge, without a per-owner Java timer array. The native
-import appends to its normal execution ledger. Temporal-join restore still collects its required
-primitive array directly from disk, avoiding intermediate boxed lists; this array remains a
-per-owner working set. RANGE now streams its callbacks and map membership independently of
+import appends to its normal execution ledger. Temporal joins use the same transport, reading
+individual callbacks from the disk index and borrowing encoded metadata during export. A first
+native validation pass installs no execution state; the apply pass moves each active owner's
+normal callback tree into state once. Processing, cleanup, export and checkpointing reject an
+unfinished or failed restore. Row payloads are separately bounded by row count and a four-MiB
+estimate. RANGE streams its callbacks and map membership independently of
 frame rows, keeping the restored owner guarded until both finish. Other adapters' inventories
 and memory capture/accounting remain open work. OVER and temporal-sort
 exports now stage each map-list row once in the shared disk spool. A scoped lazy list lets the

@@ -8,6 +8,75 @@ pub(crate) struct StockTemporalMeta {
     pub(crate) callbacks: BTreeSet<i64>,
 }
 
+pub(super) struct TemporalMetaView<'a> {
+    pub(super) next_index: Option<i64>,
+    pub(super) registered: Option<i64>,
+    callbacks: &'a [u8],
+}
+
+impl<'a> TemporalMetaView<'a> {
+    pub(super) fn new(bytes: &'a [u8]) -> Result<Self, String> {
+        if bytes.len() < 6 || bytes[0] != 1 || bytes[1] & !3 != 0 {
+            return Err("invalid temporal metadata version or flags".into());
+        }
+        let mut offset = 2;
+        let mut optional = |present: bool| -> Result<Option<i64>, String> {
+            if !present {
+                return Ok(None);
+            }
+            let value = bytes
+                .get(offset..offset + 8)
+                .ok_or("truncated temporal metadata value")?;
+            offset += 8;
+            Ok(Some(i64::from_be_bytes(value.try_into().unwrap())))
+        };
+        let next_index = optional(bytes[1] & 1 != 0)?;
+        let registered = optional(bytes[1] & 2 != 0)?;
+        let count = bytes
+            .get(offset..offset + 4)
+            .ok_or("missing temporal callback count")?;
+        let count = u32::from_be_bytes(count.try_into().unwrap()) as usize;
+        offset += 4;
+        if count
+            .checked_mul(8)
+            .and_then(|size| size.checked_add(offset))
+            != Some(bytes.len())
+        {
+            return Err("invalid temporal callback length".into());
+        }
+        Ok(Self {
+            next_index,
+            registered,
+            callbacks: &bytes[offset..],
+        })
+    }
+
+    pub(super) fn callbacks(&self) -> impl Iterator<Item = Result<i64, String>> + '_ {
+        let mut values = self.callbacks.chunks_exact(8);
+        let mut previous = None;
+        let mut registered_seen = self.registered.is_none();
+        let mut done = false;
+        std::iter::from_fn(move || {
+            if done {
+                return None;
+            }
+            if let Some(value) = values.next() {
+                let time = i64::from_be_bytes(value.try_into().unwrap());
+                if previous.is_some_and(|previous| previous >= time) {
+                    done = true;
+                    return Some(Err("duplicate or unordered temporal callbacks".into()));
+                }
+                previous = Some(time);
+                registered_seen |= self.registered == Some(time);
+                Some(Ok(time))
+            } else {
+                done = true;
+                (!registered_seen).then(|| Err("registered temporal timer has no callback".into()))
+            }
+        })
+    }
+}
+
 impl StockTemporalMeta {
     pub(crate) fn probe(&mut self, timestamp: i64) -> i64 {
         let index = self.next_index.unwrap_or(0);
@@ -67,10 +136,11 @@ impl StockTemporalMeta {
 
     /// Internal native-checkpoint value; canonical export reads the fields directly.
     pub(crate) fn encode(&self) -> Vec<u8> {
-        let mut bytes = vec![
+        let mut bytes = Vec::with_capacity(self.encoded_bytes());
+        bytes.extend_from_slice(&[
             1,
             u8::from(self.next_index.is_some()) | (u8::from(self.registered.is_some()) << 1),
-        ];
+        ]);
         for value in [self.next_index, self.registered].into_iter().flatten() {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
@@ -85,52 +155,18 @@ impl StockTemporalMeta {
         bytes
     }
 
+    pub(crate) fn encoded_bytes(&self) -> usize {
+        6 + usize::from(self.next_index.is_some()) * 8
+            + usize::from(self.registered.is_some()) * 8
+            + self.callbacks.len() * 8
+    }
+
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < 6 || bytes[0] != 1 || bytes[1] & !3 != 0 {
-            return Err("invalid temporal metadata version or flags".into());
-        }
-        let mut offset = 2;
-        let mut read_optional = |present: bool| -> Result<Option<i64>, String> {
-            if !present {
-                return Ok(None);
-            }
-            let value = bytes
-                .get(offset..offset + 8)
-                .ok_or("truncated temporal metadata value")?;
-            offset += 8;
-            Ok(Some(i64::from_be_bytes(value.try_into().unwrap())))
-        };
-        let next_index = read_optional(bytes[1] & 1 != 0)?;
-        let registered = read_optional(bytes[1] & 2 != 0)?;
-        let count = bytes
-            .get(offset..offset + 4)
-            .ok_or("missing temporal callback count")?;
-        let count = u32::from_be_bytes(count.try_into().unwrap()) as usize;
-        offset += 4;
-        if count
-            .checked_mul(8)
-            .and_then(|length| offset.checked_add(length))
-            != Some(bytes.len())
-        {
-            return Err("invalid temporal callback length".into());
-        }
-        let mut callbacks = BTreeSet::new();
-        let mut previous = None;
-        for value in bytes[offset..].chunks_exact(8) {
-            let time = i64::from_be_bytes(value.try_into().unwrap());
-            if previous.is_some_and(|previous| previous >= time) {
-                return Err("duplicate or unordered temporal callbacks".into());
-            }
-            previous = Some(time);
-            callbacks.insert(time);
-        }
-        if registered.is_some_and(|time| !callbacks.contains(&time)) {
-            return Err("registered temporal timer has no callback".into());
-        }
+        let view = TemporalMetaView::new(bytes)?;
         Ok(Self {
-            next_index,
-            registered,
-            callbacks,
+            next_index: view.next_index,
+            registered: view.registered,
+            callbacks: view.callbacks().collect::<Result<_, _>>()?,
         })
     }
 }

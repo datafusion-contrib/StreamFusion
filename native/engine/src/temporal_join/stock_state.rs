@@ -167,6 +167,7 @@ pub(super) fn metadata_header(bytes: &[u8]) -> bool {
 
 impl TemporalJoiner {
     pub(crate) fn expire_processing_time(&mut self, now_ms: i64) -> Result<(), DataFusionError> {
+        self.ensure_canonical_ready()?;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             for key in self.store_mut().due_keys(now_ms) {

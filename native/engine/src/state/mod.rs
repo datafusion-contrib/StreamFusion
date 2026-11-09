@@ -1,3 +1,4 @@
+pub(crate) mod canonical_records;
 use crate::*;
 
 pub(crate) mod canonical_context;

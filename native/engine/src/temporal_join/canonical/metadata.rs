@@ -68,6 +68,7 @@ impl TemporalJoiner {
         &self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        self.ensure_canonical_ready()?;
         let types = self
             .left_keys
             .iter()
@@ -335,8 +336,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_importTemporalJoinCanonical
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
         let joiner = unsafe { &mut *(handle as *mut TemporalJoiner) };
-        let batch = import_record_batch(array, schema);
-        if let Err(error) = joiner.import_canonical_metadata(&batch) {
+        let result = joiner.import_canonical_metadata(&import_record_batch(array, schema));
+        if let Err(error) = result {
             if matches!(error, DataFusionError::ResourcesExhausted(_)) {
                 throw_memory_limit(&mut env, &error.to_string());
             } else {

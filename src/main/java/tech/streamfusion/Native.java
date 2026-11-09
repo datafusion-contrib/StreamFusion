@@ -514,6 +514,15 @@ public final class Native {
   public static native void importTemporalJoinCanonicalRows(
       long handle, boolean left, long array, long schema);
 
+  /** Bounded temporal cursor, cleanup and physical callback records. */
+  public static native void exportTemporalJoinCanonicalRecords(long handle, BatchReceiver receiver);
+
+  public static native void validateTemporalJoinCanonicalRows(
+      long handle, boolean left, long array, long schema);
+
+  public static native void importTemporalJoinCanonicalRecords(
+      long handle, long array, long schema, boolean last, boolean validating);
+
   public static native void exportTemporalJoinCanonicalMetadata(
       long handle, BatchReceiver receiver);
 

@@ -65,6 +65,7 @@ pub(crate) struct TemporalJoiner {
     last_sweep_ms: i64,
     external_cleanup_timers: bool,
     canonical_import_open: bool,
+    canonical_metadata_import: Option<canonical::MetadataImport>,
     pub(crate) memory: OperatorMemory,
     /// Persistent-state mode: the probe rows, the versioned build side, and the cleanup deadlines
     /// live in the persistent store; the in-memory maps stay empty, and a watermark firing walks
@@ -114,6 +115,7 @@ impl TemporalJoiner {
             last_sweep_ms: 0,
             external_cleanup_timers: false,
             canonical_import_open: true,
+            canonical_metadata_import: None,
             memory: OperatorMemory::unaccounted(),
             #[cfg(feature = "rocksdb-state")]
             store: None,
@@ -315,6 +317,7 @@ impl TemporalJoiner {
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<(), DataFusionError> {
+        self.ensure_canonical_ready()?;
         self.canonical_import_open = false;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
@@ -374,6 +377,7 @@ impl TemporalJoiner {
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<(), DataFusionError> {
+        self.ensure_canonical_ready()?;
         self.canonical_import_open = false;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
@@ -435,6 +439,7 @@ impl TemporalJoiner {
         watermark: i64,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        self.ensure_canonical_ready()?;
         self.canonical_import_open = false;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
@@ -680,6 +685,8 @@ impl TemporalJoiner {
     }
 
     pub(crate) fn snapshot(&self) -> Vec<u8> {
+        self.ensure_canonical_ready()
+            .expect("unfinished temporal restore");
         Self::snapshot_parts(vec![
             self.serialize_left(),
             self.serialize_right(),
@@ -1383,6 +1390,7 @@ impl TemporalJoiner {
     /// versions, optional cleanup deadlines, and independent cursor/callback metadata. Stock
     /// canonical export must visit live state directly rather than convert these snapshots.
     pub(crate) fn canonical_partitions(&self) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        self.ensure_canonical_ready()?;
         let store = self.store.as_ref().expect("temporal-join rocksdb store");
         let left = store.scan_left()?;
         let right = store.scan_right()?;
