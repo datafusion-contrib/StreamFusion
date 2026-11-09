@@ -84,6 +84,35 @@ fn read_tail_list(batch: &RecordBatch, column: usize) -> Result<Option<Vec<i64>>
     Ok(Some(times.values().to_vec()))
 }
 
+pub(in crate::over_agg) struct FrameImport {
+    key: ByteKey,
+    position: i64,
+    last_time: i64,
+    failed: bool,
+}
+
+impl FrameImport {
+    fn bytes(&self) -> usize {
+        std::mem::size_of::<Self>() + byte_key_bytes(&self.key.0)
+    }
+}
+
+struct FrameChunk {
+    original: RecordBatch,
+    key_types: Vec<DataType>,
+    converter: Option<RowConverter>,
+    key: ByteKey,
+    rows: Vec<BufferedRow>,
+    folds: Vec<DataType>,
+    cleanup: Option<i64>,
+    last_trigger: Option<i64>,
+    timers: Option<Vec<i64>>,
+    order: Option<Vec<i64>>,
+    position: i64,
+    next_seq: i64,
+    work: Option<MemoryReservation>,
+}
+
 impl OverWindowAggregator {
     pub(super) fn canonical_frame(&self) -> Result<&BoundedOverAggregator, DataFusionError> {
         let OverInner::Bounded(inner) = &self.inner else {
@@ -274,7 +303,7 @@ impl OverWindowAggregator {
         &self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         let inner = self.canonical_frame()?;
         if !inner.capture_inputs {
             return Err(invalid("original frame inputs are not bound"));
@@ -352,6 +381,40 @@ impl OverWindowAggregator {
         &mut self,
         batch: &RecordBatch,
     ) -> Result<(), DataFusionError> {
+        self.import_canonical_frame_chunk(batch, true, false)
+    }
+
+    pub(in crate::over_agg) fn import_canonical_frame_chunk(
+        &mut self,
+        batch: &RecordBatch,
+        final_chunk: bool,
+        validate_only: bool,
+    ) -> Result<(), DataFusionError> {
+        let result = self
+            .decode_frame_chunk(batch, final_chunk)
+            .and_then(|chunk| {
+                if validate_only {
+                    Ok(())
+                } else {
+                    self.apply_frame_chunk(chunk, final_chunk)
+                }
+            });
+        if result.is_err() && !validate_only {
+            if let Some(import) = &mut self.canonical_frame_import {
+                import.failed = true;
+                // The temporary chunk has dropped; retain the charge for any state a failed
+                // write installed until the caller closes this target.
+                let _ = self.account();
+            }
+        }
+        result
+    }
+
+    fn decode_frame_chunk(
+        &self,
+        batch: &RecordBatch,
+        final_chunk: bool,
+    ) -> Result<FrameChunk, DataFusionError> {
         let inner = self.canonical_frame()?;
         let folds = inner.fold_types.clone();
         let arity = batch
@@ -438,11 +501,18 @@ impl OverWindowAggregator {
         let times = metadata[0];
         let clocks = metadata[1];
         let positions = metadata[2];
-        if positions
-            .values()
-            .iter()
-            .enumerate()
-            .any(|(index, position)| *position != index as i64)
+        positions
+            .value(0)
+            .checked_add(batch.num_rows() as i64)
+            .ok_or_else(|| invalid("frame position overflow"))?;
+        if positions.value(0) < 0
+            || positions
+                .values()
+                .iter()
+                .enumerate()
+                .any(|(index, position)| {
+                    *position != positions.value(0).saturating_add(index as i64)
+                })
             || times.values().windows(2).any(|pair| {
                 if self.proctime {
                     pair[0] >= pair[1]
@@ -482,10 +552,14 @@ impl OverWindowAggregator {
             }
         }
         let state_offset = arity + 3;
-        self.validate_frame_fold(batch, state_offset)?;
+        if final_chunk {
+            self.validate_frame_fold(batch, state_offset)?;
+        }
         let last = batch.num_rows() - 1;
         for column in state_offset..batch.num_columns() - 2 {
-            if (0..last).any(|row| !batch.column(column).is_null(row)) {
+            if (0..if final_chunk { last } else { batch.num_rows() })
+                .any(|row| !batch.column(column).is_null(row))
+            {
                 return Err(invalid("raw frame state must occur only on the final row"));
             }
         }
@@ -497,10 +571,10 @@ impl OverWindowAggregator {
         let timers = read_tail_list(batch, cleanup_column + 2)?;
         let order = read_tail_list(batch, cleanup_column + 3)?;
         let range = self.range_offset().is_some();
-        if cleanup.is_some() != (range || self.deadline_cleaning()) {
+        if cleanup.is_some() != (final_chunk && (range || self.deadline_cleaning())) {
             return Err(invalid("frame cleanup deadline is missing or unexpected"));
         }
-        if range {
+        if range && final_chunk {
             if last_trigger.is_none_or(|fired| fired < times.value(last))
                 || timers.is_none()
                 || order.is_none()
@@ -533,12 +607,21 @@ impl OverWindowAggregator {
         let mut converter = Some(key_row_converter_from_types(&key_types));
         let keys = encode_keys(&mut converter, &arrays, batch.num_rows());
         let key = ByteKey::from(keys.row(0).data());
-        if keys.iter().any(|row| row.data() != key.0.as_ref()) || inner.keys.contains_key(&key) {
+        if keys.iter().any(|row| row.data() != key.0.as_ref()) {
             return Err(invalid("mixed or duplicate retained partition"));
         }
         let fold = (0..folds.len())
             .map(|index| ScalarValue::try_from_array(batch.column(state_offset + index), last))
             .collect::<Result<Vec<_>, _>>()?;
+        let mut work = self.memory.temporary_reservation();
+        let mut bytes = batch.num_rows() * inner.row_bytes()
+            + inner.fold_bytes()
+            + batch.get_array_memory_size() * 3
+            + std::mem::size_of::<FrameImport>()
+            + byte_key_bytes(&key.0);
+        if let Some(work) = &mut work {
+            work.try_resize(bytes)?;
+        }
         let rows = (0..batch.num_rows())
             .map(|row| {
                 let values = self
@@ -550,12 +633,61 @@ impl OverWindowAggregator {
                     times.value(row),
                     &values,
                     &inner.kinds,
-                    (row == last).then(|| fold.clone()),
+                    (final_chunk && row == last).then(|| fold.clone()),
                 );
-                frame.set_input(Some(FrameInput::owned(&original, row, clocks.value(row))?));
+                let input = FrameInput::owned(&original, row, clocks.value(row))?;
+                bytes = bytes.saturating_add(input.bytes() + std::mem::size_of::<BufferedExtra>());
+                if let Some(work) = &mut work {
+                    work.try_resize(bytes)?;
+                }
+                frame.set_input(Some(input));
                 Ok(frame)
             })
             .collect::<Result<Vec<_>, DataFusionError>>()?;
+        Ok(FrameChunk {
+            original,
+            key_types,
+            converter,
+            key,
+            rows,
+            folds,
+            cleanup,
+            last_trigger,
+            timers,
+            order,
+            position: positions.value(0),
+            next_seq,
+            work,
+        })
+    }
+
+    fn apply_frame_chunk(
+        &mut self,
+        mut chunk: FrameChunk,
+        final_chunk: bool,
+    ) -> Result<(), DataFusionError> {
+        let inner = self.canonical_frame()?;
+        if let Some(import) = &self.canonical_frame_import {
+            if import.failed
+                || import.key != chunk.key
+                || import.position != chunk.position
+                || if self.proctime {
+                    import.last_time >= chunk.rows[0].rt
+                } else {
+                    import.last_time > chunk.rows[0].rt
+                }
+            {
+                return Err(invalid("frame continuation changed owner, position or ordering; failed targets must be closed"));
+            }
+        } else if chunk.position != 0 || inner.keys.contains_key(&chunk.key) {
+            return Err(invalid(
+                "duplicate retained partition or nonzero initial position",
+            ));
+        }
+        let end = chunk
+            .position
+            .checked_add(chunk.rows.len() as i64)
+            .ok_or_else(|| invalid("frame position overflow"))?;
         #[cfg(feature = "rocksdb-state")]
         let persistent = self.store.is_some();
         #[cfg(not(feature = "rocksdb-state"))]
@@ -563,60 +695,135 @@ impl OverWindowAggregator {
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
             let group = store.key_group(binary_row_hash(
-                &original,
+                &chunk.original,
                 &self.key_columns,
                 0,
                 &self.key_timestamp_precisions,
             ));
-            if !store.owns_group(group) || store.has_frame(&store.frame_prefix(group, &key.0))? {
+            if !store.owns_group(group)
+                || self.canonical_frame_import.is_none()
+                    && store.has_frame(&store.frame_prefix(group, &chunk.key.0))?
+            {
                 return Err(invalid("unowned or duplicate retained partition"));
             }
         }
+        // Source validation checks the complete stock map. Applying also checks earlier chunks,
+        // using frame keys on disk rather than retaining their timestamps in a second inventory.
+        if let Some(order) = &chunk.order {
+            let membership = order.iter().copied().collect::<ahash::HashSet<_>>();
+            if inner
+                .keys
+                .get(&chunk.key)
+                .is_some_and(|rows| rows.iter().any(|row| !membership.contains(&row.rt)))
+            {
+                return Err(invalid("RANGE map order omits earlier frame timestamps"));
+            }
+            #[cfg(feature = "rocksdb-state")]
+            if let Some(store) = &self.store {
+                let prefix =
+                    store.frame_prefix(self.store_fold_key_group(&chunk.key.0), &chunk.key.0);
+                store.visit_frame_times(&prefix, |time| {
+                    if membership.contains(&time) {
+                        Ok(())
+                    } else {
+                        Err(invalid("RANGE map order omits earlier frame timestamps"))
+                    }
+                })?;
+            }
+        }
+        if self.canonical_frame_import.is_none() {
+            let import = FrameImport {
+                key: chunk.key.clone(),
+                position: 0,
+                last_time: chunk.rows[0].rt,
+                failed: false,
+            };
+            self.retention_bytes += import.bytes();
+            self.canonical_frame_import = Some(import);
+        }
         self.bind_canonical_frame_inputs()?;
-        self.inner.seed_key_codec(&key_types);
-        self.key_converter = converter;
-        self.input_schema = Some(original.schema());
+        self.inner.seed_key_codec(&chunk.key_types);
+        self.key_converter = chunk.converter;
+        self.input_schema = Some(chunk.original.schema());
+        let last_time = chunk.rows.last().unwrap().rt;
         #[cfg(feature = "rocksdb-state")]
         if persistent {
-            self.write_canonical_frame(&key.0, &rows, &folds)?;
+            self.write_canonical_frame(&chunk.key.0, &chunk.rows, &chunk.folds)?;
         }
         let OverInner::Bounded(inner) = &mut self.inner else {
             unreachable!()
         };
         if !persistent {
-            inner.keys.insert(key.clone(), rows);
+            if inner.track {
+                inner.bytes += chunk.rows.len() * inner.row_bytes()
+                    + chunk
+                        .rows
+                        .iter()
+                        .map(BufferedRow::text_bytes)
+                        .sum::<usize>()
+                    + if chunk.position == 0 {
+                        byte_key_bytes(&chunk.key.0)
+                    } else {
+                        0
+                    }
+                    + if final_chunk { inner.fold_bytes() } else { 0 };
+            }
+            inner
+                .keys
+                .entry(chunk.key.clone())
+                .or_default()
+                .append(&mut chunk.rows);
         }
-        if let (Some(maps), Some(order)) = (&mut inner.range_order, order) {
-            maps.insert(key.clone(), HeapRangeOrder::canonical(&order));
+        if let (Some(maps), Some(order)) = (&mut inner.range_order, chunk.order) {
+            let order = HeapRangeOrder::canonical(&order);
+            if inner.track {
+                inner.bytes += byte_key_bytes(&chunk.key.0) + order.bytes();
+            }
+            maps.insert(chunk.key.clone(), order);
         }
-        if inner.track {
-            inner.recompute_bytes();
-        }
-        if let Some(deadline) = cleanup {
-            if self.cleanup_state.insert(key.clone(), deadline).is_none() {
-                self.retention_bytes += byte_key_bytes(&key.0);
+        if let Some(deadline) = chunk.cleanup {
+            if self
+                .cleanup_state
+                .insert(chunk.key.clone(), deadline)
+                .is_none()
+            {
+                self.retention_bytes += byte_key_bytes(&chunk.key.0);
             }
         }
-        if let Some(armed) = timers {
+        if let Some(armed) = chunk.timers {
             let protocol = RangeTimers {
-                last: last_trigger,
+                last: chunk.last_trigger,
                 armed,
             };
-            if let Some(previous) = self.range_timers.remove(&key) {
-                self.retention_bytes -= byte_key_bytes(&key.0) + previous.bytes();
+            if let Some(previous) = self.range_timers.remove(&chunk.key) {
+                self.retention_bytes -= byte_key_bytes(&chunk.key.0) + previous.bytes();
             }
-            self.retention_bytes += byte_key_bytes(&key.0) + protocol.bytes();
-            self.range_timers.insert(key.clone(), protocol);
+            self.retention_bytes += byte_key_bytes(&chunk.key.0) + protocol.bytes();
+            self.range_timers.insert(chunk.key.clone(), protocol);
         }
-        self.mark_store_metadata(&key.0);
+        if final_chunk {
+            self.mark_store_metadata(&chunk.key.0);
+        }
         if self.proctime {
-            self.next_seq = self.next_seq.max(next_seq);
+            self.next_seq = self.next_seq.max(chunk.next_seq);
             #[cfg(feature = "rocksdb-state")]
             if let Some(store) = &mut self.store {
                 store.adopt_next_seq(self.next_seq as u64);
             }
         }
-        self.account()
+        let import = self.canonical_frame_import.as_mut().unwrap();
+        import.position = end;
+        import.last_time = last_time;
+        drop(chunk.rows);
+        drop(chunk.work);
+        self.account()?;
+        if final_chunk {
+            let import = self.canonical_frame_import.take().unwrap();
+            self.retention_bytes -= import.bytes();
+            drop(import);
+            self.account()?;
+        }
+        Ok(())
     }
 
     #[cfg(feature = "rocksdb-state")]
@@ -715,6 +922,29 @@ pub extern "system" fn Java_tech_streamfusion_Native_importOverCanonicalFrames<'
     crate::bridge::jni_guard(env, move |mut env| {
         let operator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
         let result = operator.import_canonical_frame(&import_record_batch(array, schema));
+        if let Err(error) = result {
+            report(&mut env, error);
+        }
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_importOverCanonicalFrameChunk<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    array: jlong,
+    schema: jlong,
+    final_chunk: jni::sys::jboolean,
+    validate_only: jni::sys::jboolean,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let operator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
+        let result = operator.import_canonical_frame_chunk(
+            &import_record_batch(array, schema),
+            final_chunk != 0,
+            validate_only != 0,
+        );
         if let Err(error) = result {
             report(&mut env, error);
         }

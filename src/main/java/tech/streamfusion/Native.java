@@ -138,6 +138,10 @@ public final class Native {
   public static native void importOverCanonicalFrames(
       long handle, long arrayAddress, long schemaAddress);
 
+  /** Bounded retained-input chunk; validate-only decodes without changing the target. */
+  public static native void importOverCanonicalFrameChunk(
+      long handle, long arrayAddress, long schemaAddress, boolean finalChunk, boolean validateOnly);
+
   /** Event-time RANGE key protocol, including pending-only keys and empty callbacks. */
   public static native void exportOverCanonicalRange(long handle, BatchReceiver receiver);
 

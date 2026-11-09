@@ -10,7 +10,7 @@ impl OverWindowAggregator {
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         let inner = self.canonical_frame()?;
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         if !self.processing_rows() {
             return Err(invalid("not a processing-time ROWS frame"));
         }

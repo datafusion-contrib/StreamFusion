@@ -136,9 +136,14 @@ from task off-heap memory before scratch creation and released after close, incl
 Complete validation precedes applying native state;
 subsequent passes reread the unchanged source. Failed conversion closes cursors and deletes the
 index without registering scratch descriptors in source state. Bounded OVER validates one owner
-at a time instead of copying retained rows for the entire job. Its individual partition/frame
-buffers, per-owner callback arrays and other adapters' import inventories remain open work. Asynchronous capture is not a claim that every conversion path has a
-fixed working set. OVER cleanup, counter and both event-timer policies now share incremental
+at a time using bucket counts, then streams retained and pending row payloads in batches of at
+most 1,024 rows with a payload estimate of four MiB, before installing any native state.
+Original input clocks and positions span chunks; raw accumulators occur only at the end.
+The native importer writes RocksDB frames directly and guards unfinished/failed restores from
+processing or snapshotting. Decode reservations transfer into retained-state charges, including
+failed writes. Per-owner timestamp/count inventories, callback/map-order arrays, individual stock
+list values and other adapters' import inventories remain open work. Asynchronous capture does
+not imply that every conversion path has a fixed working set. OVER cleanup, counter and both event-timer policies now share incremental
 metadata persistence during normal processing. The journal deduplicates changed keys and writes
 bounded row/byte batches, retaining updates if a flush fails. Normal capture does not rebuild
 metadata inventories; native restore reconciles older metadata once before processing resumes.
@@ -159,7 +164,7 @@ Cold-reader controls preserve empty metadata maps while checking original frames
 physical timers and cleanup deadlines after live writes. The wide-state cases include 2,051-row
 hot OVER partitions, 2,052 temporal metadata/deadline keys, 2 MiB companion entries and a single
 large rank bucket. They check row/byte boundaries, receiver failure/retry and cancellation inside
-a partition. The metadata foundation native suite passes 1,477 tests with two existing ignores; the
+a partition. The earlier metadata foundation native suite passes 1,477 tests with two existing ignores; the
 memory-only build also passes. Its selected state/restore cohort passes 779 checks on 1.18 and 751 on 2.2,
 with 32 V1-only skips on 2.2 and four complete jobs per line included. Other selected
 operator/planner matrices run on both releases. A final 2.2 accounting cohort passes 314 checks,
@@ -173,9 +178,15 @@ handoffs per release preserve exact canonical state and continued execution acro
 The index controls cover 4,099 owners, signed timer ordering, duplicate/prefix isolation, failed
 receivers, denied task memory and failed open, with scratch deletion and reservation release.
 Flink 2.2 passes a 114-check resource/recovery follow-up and a 63-check clean-build cleanup cohort;
-these overlap the broader per-contract controls and are not cumulative totals. The complete CI
-matrix remains required. These controls do not expand operator admission or qualify every
-complete-job matrix on 1.18.
+these overlap the broader per-contract controls and are not cumulative totals. The native suite
+for chunked imports subsequently passes 1,482 tests with two existing ignores and the memory-only
+build. It covers all three bounded shapes on heap and RocksDB, broken
+continuations, prior-chunk RANGE ownership, memory denial/transfer and write failure.
+Its shared Flink 1.18 cohort passes 537 checks, while the corrected 2.2 cohort passes 311 runtime
+and accounting checks alongside 229 frame-bridge checks. The twelve 2,051-row handoffs per line
+cover all three bounded shapes and both stock/native stores. These cohorts overlap earlier runs;
+the full CI matrix remains required. These controls do not expand operator admission or qualify
+every complete-job matrix on 1.18.
 Conversion cost, barrier duration and temporary I/O have not been benchmarked.
 
 Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending

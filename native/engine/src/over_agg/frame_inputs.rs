@@ -174,6 +174,7 @@ impl OverWindowAggregator {
         &self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        self.ensure_canonical_ready()?;
         let OverInner::Bounded(inner) = &self.inner else {
             return Err(DataFusionError::Execution(
                 "not a bounded OVER frame".into(),

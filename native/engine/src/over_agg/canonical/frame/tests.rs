@@ -664,3 +664,6 @@ fn captured_hot_partition_frames_obey_row_and_byte_bounds_without_early_accumula
         });
     }
 }
+
+#[cfg(feature = "rocksdb-state")]
+mod chunks;

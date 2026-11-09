@@ -1827,7 +1827,9 @@ bytes and both timer domains across handoffs and ordinary native checkpoints. De
 cover negative watermarks, future-only neutral folds and overlapping restored callbacks; cold
 RocksDB controls retain 2,051 keys through live changes, receiver failure/retry and cancellation.
 Four isolated 1.18 engine-switch jobs pass for ROWS with cleanup and RANGE without cleanup,
-including ordinary native-checkpoint recovery. The metadata foundation native suite passes 1,477 tests and the memory-only build. Selected state/restore controls pass 779 checks on 1.18 and 751 on 2.2, with
+including ordinary native-checkpoint recovery. The earlier metadata foundation native suite
+passes 1,477 tests and the memory-only build. Selected state/restore controls pass 779 checks on
+1.18 and 751 on 2.2, with
 32 V1-specific invocations skipped on 2.2; the four complete jobs per line are included in those
 counts. These selected controls do not qualify the entire historical 192-job matrix on 1.18 or
 cross-release upgrades. Very large individual stock values,
@@ -1845,7 +1847,28 @@ batches; this does not extend automatic stock DISTINCT admission. Benchmarking s
 Restore validation uses the shared temporary disk inventory for owner unions, physical callbacks
 and pending timestamp membership on both Flink lines. Event OVER checks timer relationships by
 point reads and scans, then rereads source buckets for separate native validation and apply passes.
-Bounded OVER validates every owner before importing, retaining one partition at a time instead of
-all retained rows across the job. Its per-partition frame buffers and large individual stock list
-values still require further bounded-memory work. Scratch indexes close and delete on failure;
-stock source state remains intact until successful conversion.
+Bounded OVER retains bucket counts and protocol metadata rather than copying a partition's row
+payloads. Retained and pending inputs transfer in batches of at most 1,024 rows with a four-MiB
+payload estimate, allowing an oversized individual row and final protocol metadata. Preflight
+checks the complete source and decodes its native frame/pending batches before any apply pass.
+Each stock timestamp list is still read through the released serializer as one value.
+
+The native frame importer accepts contiguous global positions across chunks, preserves original
+input clocks and installs the raw accumulator only on the final row. RocksDB writes each chunk
+directly; heap targets append to their normal retained state. Incomplete or failed imports cannot
+process rows or produce snapshots; failed targets must close while the source stays available
+for a fresh attempt. Temporary decode reservations transfer into retained-state accounting, and
+failed writes keep retained memory charged until close. RANGE final metadata also checks prior
+frame timestamps through a key-only prefix scan on RocksDB.
+
+The native suite passes 1,482 tests with two existing ignores, and the memory-only build passes.
+Chunk controls retain 2,051 rows across all three shapes and both native stores, preserve raw
+floating accumulators, reject broken continuations and missing prior RANGE timestamps, and cover
+memory denial, exact-budget transfer and write failure. Per-owner bucket/count inventories,
+callback/map-order arrays and large individual stock list values still require further
+bounded-memory work. The shared Flink 1.18 cohort passes 537 checks. The corrected 2.2 cohort
+passes 311 runtime/accounting checks, alongside 229 frame-bridge controls. Twelve 2,051-row
+handoffs per release cover all three bounded shapes and both stock/native stores. These selected
+cohorts overlap and do not replace exhaustive CI. Scratch indexes close and delete on failure;
+stock source entries clear only
+after successful conversion and scratch close. Benchmarking remains deferred.

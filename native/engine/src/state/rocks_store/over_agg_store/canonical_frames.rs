@@ -27,6 +27,30 @@ impl RocksOverAggStore {
         }
     }
 
+    pub(crate) fn visit_frame_times(
+        &self,
+        prefix: &[u8],
+        mut accept: impl FnMut(i64) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        let mut rows = self.db.raw_iterator();
+        rows.seek(prefix);
+        while rows.valid() {
+            super::super::database::check_cancelled()?;
+            let key = rows.key().unwrap();
+            if !key.starts_with(prefix) {
+                break;
+            }
+            if key.len() == prefix.len() + FRAME_SUFFIX_LEN {
+                let time =
+                    (u64::from_be_bytes(key[prefix.len()..prefix.len() + 8].try_into().unwrap())
+                        ^ RT_SIGN_FLIP) as i64;
+                accept(time)?;
+            }
+            rows.next();
+        }
+        rows.status().map_err(re)
+    }
+
     /// Reads one live partition at a time, without producing a native checkpoint or retaining
     /// other partitions' frame values and original inputs.
     pub(crate) fn visit_frames(

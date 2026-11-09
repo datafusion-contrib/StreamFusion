@@ -2758,6 +2758,7 @@ pub(crate) struct OverWindowAggregator {
     key_timestamp_precisions: Vec<i32>,
     canonical_distinct: ahash::HashSet<usize>,
     canonical_distinct_loading: bool,
+    canonical_frame_import: Option<canonical::FrameImport>,
     frame_clock: i64,
 }
 
@@ -2818,6 +2819,7 @@ impl OverWindowAggregator {
             key_timestamp_precisions: vec![-1; key_arity],
             canonical_distinct: ahash::HashSet::default(),
             canonical_distinct_loading: false,
+            canonical_frame_import: None,
             frame_clock: i64::MIN,
         }
     }
@@ -3616,7 +3618,7 @@ impl OverWindowAggregator {
         &mut self,
         snapshot_dir: &str,
     ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         let watermark = self.watermark;
         self.sync_store_cleanup()?;
         self.store
@@ -3734,7 +3736,7 @@ impl OverWindowAggregator {
     /// resident — nothing folds here; emission and the per-key fold are watermark-driven
     /// (`flush`) — while the deadline bookkeeping runs exactly as on memory state.
     pub(crate) fn push(&mut self, batch: RecordBatch, now_ms: i64) -> Result<(), DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         #[cfg(feature = "rocksdb-state")]
         let batch = if self.store.is_some() {
             strip_string_caches(&Self::normalize_interval_columns(&batch))
@@ -4628,7 +4630,7 @@ impl OverWindowAggregator {
         batch: RecordBatch,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         self.frame_clock = now_ms;
         #[cfg(feature = "rocksdb-state")]
         let batch = if self.store.is_some() {
@@ -4722,7 +4724,7 @@ impl OverWindowAggregator {
         now_ms: i64,
         due: Option<&ahash::HashSet<ByteKey>>,
     ) -> Result<RecordBatch, DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         self.watermark = self.watermark.max(watermark);
         if self.deadline_cleaning() {
             self.maybe_sweep(now_ms);
@@ -4826,7 +4828,7 @@ impl OverWindowAggregator {
 
     #[cfg(test)]
     pub(crate) fn snapshot(&mut self) -> Vec<u8> {
-        self.ensure_canonical_distinct_ready()
+        self.ensure_canonical_ready()
             .expect("incomplete DISTINCT restore");
         let accumulators = self.snapshot_accumulators();
         let buffer = self.snapshot_buffer();
@@ -5065,7 +5067,7 @@ impl OverWindowAggregator {
         max_parallelism: usize,
         timestamp_precisions: &[i32],
     ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         let store = self.store.as_ref().expect("over rocksdb store");
         self.next_seq = store.next_seq() as i64;
         if matches!(self.inner, OverInner::Bounded(_)) {
@@ -5165,7 +5167,7 @@ impl OverWindowAggregator {
         max_parallelism: usize,
         timestamp_precisions: &[i32],
     ) -> BTreeMap<i32, Vec<u8>> {
-        self.ensure_canonical_distinct_ready()
+        self.ensure_canonical_ready()
             .expect("incomplete DISTINCT restore");
         // The retention stamp is one more trailing state column; it partitions with its row.
         let state_columns = self.inner.snapshot_state_columns()
@@ -5413,6 +5415,7 @@ impl OverWindowAggregator {
             key_timestamp_precisions: vec![-1; key_arity],
             canonical_distinct: ahash::HashSet::default(),
             canonical_distinct_loading: false,
+            canonical_frame_import: None,
             frame_clock: i64::MIN,
         }
         .with_state_retention(min_retention_ms);

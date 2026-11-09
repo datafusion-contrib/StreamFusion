@@ -111,15 +111,22 @@ class CanonicalBoundedRangeInteropTest {
 
   @ParameterizedTest
   @CsvSource({
-    "false,false,false",
-    "false,false,true",
-    "true,false,false",
-    "true,false,true",
-    "false,true,false",
-    "false,true,true"
+    "false,false,false,false",
+    "false,false,false,true",
+    "false,false,true,false",
+    "false,false,true,true",
+    "true,false,false,false",
+    "true,false,false,true",
+    "true,false,true,false",
+    "true,false,true,true",
+    "false,true,false,false",
+    "false,true,false,true",
+    "false,true,true,false",
+    "false,true,true,true"
   })
   void largeSinglePartitionRetainsCountsAndRawStateAcrossChunkedCapture(
-      boolean processingRows, boolean eventRows, boolean stockStore) throws Exception {
+      boolean processingRows, boolean eventRows, boolean stockStore, boolean nativeStore)
+      throws Exception {
     var plan = new Plan("BIGINT", false, processingRows, eventRows, 10000, 0);
     try (var reference = plan.stock(stockStore);
         var source = plan.nativeHarness(true)) {
@@ -142,7 +149,7 @@ class CanonicalBoundedRangeInteropTest {
       assertEquals(plan.stockOutput(reference), plan.nativeOutput(source));
       var captured = snapshot(source);
       try (var stock = plan.stock(stockStore);
-          var nativeAgain = plan.nativeHarness(true)) {
+          var nativeAgain = plan.nativeHarness(nativeStore)) {
         stock.initializeState(captured);
         nativeAgain.initializeState(captured);
         stock.setProcessingTime(1000);
@@ -194,6 +201,7 @@ class CanonicalBoundedRangeInteropTest {
     for (String mode :
         List.of(
             "hiddenCount",
+            "rawCount",
             "missingCleanup",
             "missingAccumulator",
             "wrongTime",
@@ -261,6 +269,7 @@ class CanonicalBoundedRangeInteropTest {
       String expected;
       switch (mode) {
         case "hiddenCount":
+        case "rawCount":
           assertTrue(plan.hiddenCount >= 0);
           var saved = accumulator.value();
           var changed = new GenericRowData(plan.accumulator.getFieldCount());
@@ -268,9 +277,20 @@ class CanonicalBoundedRangeInteropTest {
             changed.setField(
                 i,
                 RowData.createFieldGetter(plan.accumulator.getTypeAt(i), i).getFieldOrNull(saved));
-          changed.setField(plan.hiddenCount, 99L);
+          int countField = plan.hiddenCount;
+          if (mode.equals("rawCount")) {
+            int slot = 0, offset = 0;
+            while (slot < plan.kinds.length && plan.kinds[slot] != 3) offset += plan.widths[slot++];
+            assertTrue(slot < plan.kinds.length, "The captured owner must contain COUNT");
+            countField =
+                java.util.stream.IntStream.range(0, plan.accumulator.getFieldCount())
+                    .filter(index -> index != plan.hiddenCount)
+                    .toArray()[offset];
+          }
+          changed.setField(countField, mode.equals("rawCount") ? null : Long.valueOf(99));
           accumulator.update(changed);
-          expected = "hidden input count";
+          expected =
+              mode.equals("rawCount") ? "NULL required frame accumulator" : "hidden input count";
           break;
         case "missingCleanup":
           cleanup.clear();

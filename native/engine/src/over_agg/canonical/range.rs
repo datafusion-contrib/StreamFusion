@@ -21,7 +21,7 @@ impl OverWindowAggregator {
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         self.canonical_frame()?;
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         if self.range_offset().is_none() {
             return Err(invalid("not a rowtime RANGE frame"));
         }

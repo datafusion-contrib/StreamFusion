@@ -59,7 +59,7 @@ impl OverWindowAggregator {
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         self.canonical_event()?;
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
             return store.visit_pending(CHUNK_ROWS, accept);
@@ -206,7 +206,7 @@ impl OverWindowAggregator {
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         self.canonical_event()?;
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         if self.event_polling {
             return self.visit_polling_metadata(accept);
         }

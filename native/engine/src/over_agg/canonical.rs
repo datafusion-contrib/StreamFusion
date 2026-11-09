@@ -7,6 +7,7 @@ pub(super) const STAMP: &str = "__over_retention_stamp";
 mod distinct;
 mod event;
 mod frame;
+pub(super) use frame::FrameImport;
 mod proc_rows;
 mod range;
 
@@ -15,6 +16,16 @@ fn invalid(message: &str) -> DataFusionError {
 }
 
 impl OverWindowAggregator {
+    pub(in crate::over_agg) fn ensure_canonical_ready(&self) -> Result<(), DataFusionError> {
+        if self.canonical_frame_import.is_some() {
+            return Err(invalid("retained frame restore is not finalized"));
+        }
+        if self.canonical_distinct_loading {
+            return Err(invalid("DISTINCT membership restore is not finalized"));
+        }
+        Ok(())
+    }
+
     fn canonical_fold(&self) -> Result<&OverAggregator, DataFusionError> {
         let OverInner::Aggregates(inner) = &self.inner else {
             return Err(invalid(
@@ -55,7 +66,7 @@ impl OverWindowAggregator {
         &self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         let inner = self.canonical_fold()?;
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
@@ -346,7 +357,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_captureOverFoldCanonicalSna
     crate::bridge::jni_guard(env, move |mut env| {
         let owner = unsafe { &*(handle as *const OverWindowAggregator) };
         let result = (|| {
-            owner.ensure_canonical_distinct_ready()?;
+            owner.ensure_canonical_ready()?;
             let inner = owner.canonical_fold()?;
             if !inner.keys.is_empty() {
                 return Err(invalid("persistent operator has undrained resident folds"));
