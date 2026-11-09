@@ -1872,3 +1872,14 @@ handoffs per release cover all three bounded shapes and both stock/native stores
 cohorts overlap and do not replace exhaustive CI. Scratch indexes close and delete on failure;
 stock source entries clear only
 after successful conversion and scratch close. Benchmarking remains deferred.
+
+
+OVER map-list export now stages original rows in the shared scoped disk spool and writes each
+stock timestamp bucket once. Released list/row serializers iterate the staged rows directly into
+the RocksDB projection. This removes repeated full-bucket get/add/put and Java list accumulation
+from both bounded and unbounded event-time export. Arrival order within each bucket, processing
+clocks, raw accumulators and physical timers remain independent. Heap component backends receive
+owned lists before the spool closes. The largest encoded stock KV remains an intrinsic writer
+working set, and restore still deserializes individual stock lists; that import work remains open.
+Shared spool controls cover interleaved owners/timestamps, 8,195 rows, a two-MiB row, multiple
+readers and failure cleanup without changing stock serializer metadata.

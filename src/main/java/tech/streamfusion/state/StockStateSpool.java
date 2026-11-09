@@ -21,8 +21,8 @@ import org.rocksdb.RocksIterator;
 import org.rocksdb.WriteOptions;
 import tech.streamfusion.operator.TaskOffHeapMemory;
 
-/** Scoped disk inventory for validating restored owners and timer relationships before import. */
-final class StockRestoreInventory implements AutoCloseable {
+/** Scoped disk storage for canonical conversion owners, timer relationships and row payloads. */
+final class StockStateSpool implements AutoCloseable {
   private static final byte[] PRESENT = new byte[0];
   private static final int WRITE_BUFFER_BYTES = 1024 * 1024, WRITE_BUFFERS = 2;
   private final TypeSerializer<RowData> keys;
@@ -33,24 +33,21 @@ final class StockRestoreInventory implements AutoCloseable {
   private final TaskOffHeapMemory.Reservation memory;
   private boolean closed;
 
-  StockRestoreInventory(TypeSerializer<RowData> keys) throws Exception {
+  StockStateSpool(TypeSerializer<RowData> keys) throws Exception {
     this(keys, Path.of(System.getProperty("java.io.tmpdir")));
   }
 
-  StockRestoreInventory(TypeSerializer<RowData> keys, Path temporaryDirectory) throws Exception {
+  StockStateSpool(TypeSerializer<RowData> keys, Path temporaryDirectory) throws Exception {
     this.keys = keys.duplicate();
     RocksDB.loadLibrary();
     memory =
         TaskOffHeapMemory.reserve(
-            "state",
-            "canonical restore inventory write buffers",
-            WRITE_BUFFER_BYTES * WRITE_BUFFERS);
+            "state", "canonical state spool write buffers", WRITE_BUFFER_BYTES * WRITE_BUFFERS);
     File scratch = null;
     Options allocatedOptions = null;
     WriteOptions allocatedWrites = null;
     try {
-      scratch =
-          Files.createTempDirectory(temporaryDirectory, "streamfusion-restore-inventory-").toFile();
+      scratch = Files.createTempDirectory(temporaryDirectory, "streamfusion-state-spool-").toFile();
       allocatedOptions = new Options();
       allocatedWrites = new WriteOptions();
       allocatedOptions
@@ -103,7 +100,7 @@ final class StockRestoreInventory implements AutoCloseable {
 
   private byte[] prefix(int section, RowData key) throws Exception {
     if (section <= 0 || section > 255)
-      throw new IllegalArgumentException("Invalid inventory section");
+      throw new IllegalArgumentException("Invalid state spool section");
     byte[] owner = owner(key);
     return ByteBuffer.allocate(5 + owner.length)
         .put((byte) section)
@@ -127,6 +124,21 @@ final class StockRestoreInventory implements AutoCloseable {
     return true;
   }
 
+  void put(int section, RowData key, long slot, byte[] value) throws Exception {
+    db.put(writes, entry(section, key, slot), value);
+  }
+
+  byte[] get(int section, RowData key, long slot) throws Exception {
+    return db.get(entry(section, key, slot));
+  }
+
+  <V> CloseableIterator<V> values(int section, RowData key, TypeSerializer<V> serializer)
+      throws Exception {
+    return scan(
+        prefix(section, key),
+        iterator -> serializer.deserialize(new DataInputDeserializer(iterator.value())));
+  }
+
   boolean contains(int section, RowData key, long value) throws Exception {
     return db.get(entry(section, key, value)) != null;
   }
@@ -139,20 +151,26 @@ final class StockRestoreInventory implements AutoCloseable {
 
   CloseableIterator<RowData> owners() {
     return scan(
-        new byte[] {0}, key -> keys.deserialize(new DataInputDeserializer(key, 1, key.length - 1)));
+        new byte[] {0},
+        iterator -> {
+          byte[] key = iterator.key();
+          return keys.deserialize(new DataInputDeserializer(key, 1, key.length - 1));
+        });
   }
 
   CloseableIterator<Long> times(int section, RowData key) throws Exception {
     return scan(
         prefix(section, key),
-        encoded ->
-            ByteBuffer.wrap(encoded, encoded.length - Long.BYTES, Long.BYTES).getLong()
-                ^ Long.MIN_VALUE);
+        iterator -> {
+          byte[] encoded = iterator.key();
+          return ByteBuffer.wrap(encoded, encoded.length - Long.BYTES, Long.BYTES).getLong()
+              ^ Long.MIN_VALUE;
+        });
   }
 
   @FunctionalInterface
   private interface Decoder<T> {
-    T decode(byte[] key) throws Exception;
+    T decode(RocksIterator iterator) throws Exception;
   }
 
   private <T> CloseableIterator<T> scan(byte[] prefix, Decoder<T> decoder) {
@@ -165,7 +183,7 @@ final class StockRestoreInventory implements AutoCloseable {
           try {
             iterator.status();
           } catch (Exception failure) {
-            throw new IllegalStateException("Cannot read restore inventory", failure);
+            throw new IllegalStateException("Cannot read canonical state spool", failure);
           }
           return false;
         }
@@ -178,11 +196,11 @@ final class StockRestoreInventory implements AutoCloseable {
       public T next() {
         if (!hasNext()) throw new NoSuchElementException();
         try {
-          T result = decoder.decode(iterator.key());
+          T result = decoder.decode(iterator);
           iterator.next();
           return result;
         } catch (Exception failure) {
-          throw new IllegalStateException("Cannot decode restore inventory", failure);
+          throw new IllegalStateException("Cannot decode canonical state spool", failure);
         }
       }
 

@@ -274,75 +274,76 @@ public final class StockOverEventFoldStateContract implements StockStateContract
       throws Exception {
     clear(backend);
     folds.exportState(backend, handle, persistent);
-    var serializer = new RowDataSerializer(inputType);
-    visit(
-        Native::exportOverPendingCanonical,
-        handle,
-        root -> {
-          if (root.getFieldVectors().size() < nativeInputType.getFieldCount())
-            throw new IllegalArgumentException("Event OVER pending input is incomplete");
-          var reader = ArrowConversion.createArrowReader(root, nativeInputType);
-          for (int i = 0; i < root.getRowCount(); i++) {
-            var nativeRow = reader.read(i);
-            var row = new GenericRowData(inputType.getFieldCount());
-            for (int p = 0; p < inputType.getFieldCount(); p++)
-              row.setField(p, get(nativeRow, inputType, p));
-            var owner = key(row);
-            var timestamp = time(row);
-            backend.setCurrentKey(owner);
-            var state = inputs(backend);
-            var peers = state.get(timestamp);
-            if (peers == null) {
-              peers = new ArrayList<>();
-              if (!pollingTimers)
+    try (var lists =
+        new StockMapListSpool<Long>(
+            keySerializer(), LongSerializer.INSTANCE, new RowDataSerializer(inputType))) {
+      visit(
+          Native::exportOverPendingCanonical,
+          handle,
+          root -> {
+            if (root.getFieldVectors().size() < nativeInputType.getFieldCount())
+              throw new IllegalArgumentException("Event OVER pending input is incomplete");
+            var reader = ArrowConversion.createArrowReader(root, nativeInputType);
+            for (int i = 0; i < root.getRowCount(); i++) {
+              var nativeRow = reader.read(i);
+              var row = new GenericRowData(inputType.getFieldCount());
+              for (int p = 0; p < inputType.getFieldCount(); p++)
+                row.setField(p, get(nativeRow, inputType, p));
+              var owner = key(row);
+              var timestamp = time(row);
+              if (lists.append(owner, timestamp, row) && !pollingTimers)
                 events.add(new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
             }
-            peers.add(serializer.copy(row));
-            state.put(timestamp, peers);
-          }
-        });
-    visit(
-        Native::exportOverCleanupCanonical,
-        handle,
-        root -> {
-          if (!cleanupEnabled && !pollingTimers && root.getRowCount() != 0)
-            throw new IllegalArgumentException("Event OVER cleanup was not configured");
-          if (root.getFieldVectors().size() != cleanupType.getFieldCount())
-            throw new IllegalArgumentException("Event OVER cleanup ownership is missing");
-          var reader = ArrowConversion.createArrowReader(root, cleanupType);
-          for (int i = 0; i < root.getRowCount(); i++) {
-            var row = reader.read(i);
-            var owner = new GenericRowData(keyType.getFieldCount());
-            for (int p = 0; p < keyType.getFieldCount(); p++)
-              owner.setField(p, get(row, keyType, p));
-            var binary = new RowDataSerializer(keyType).toBinaryRow(owner).copy();
-            backend.setCurrentKey(binary);
-            int arity = keyType.getFieldCount();
-            if (!row.isNullAt(arity)) {
-              if (!cleanupEnabled)
-                throw new IllegalArgumentException("Unconfigured event OVER cleanup");
-              long deadline = row.getLong(arity);
-              cleanup(backend).update(deadline);
-              if (row.getBoolean(arity + 1))
-                processing.add(
-                    new TimerHeapInternalTimer<>(deadline, binary, VoidNamespace.INSTANCE));
-            } else if (row.getBoolean(arity + 1))
-              throw new IllegalArgumentException("Cleanup timer has no deadline");
-            if (pollingTimers) {
-              var timers = row.getArray(arity + 2);
-              for (int t = 0; t < timers.size(); t++)
-                events.add(
-                    new TimerHeapInternalTimer<>(
-                        timers.getLong(t), binary, VoidNamespace.INSTANCE));
+          });
+      lists.visit(
+          backend,
+          (owner, timestamp, rows) -> {
+            backend.setCurrentKey(owner);
+            inputs(backend).put(timestamp, rows);
+          });
+      visit(
+          Native::exportOverCleanupCanonical,
+          handle,
+          root -> {
+            if (!cleanupEnabled && !pollingTimers && root.getRowCount() != 0)
+              throw new IllegalArgumentException("Event OVER cleanup was not configured");
+            if (root.getFieldVectors().size() != cleanupType.getFieldCount())
+              throw new IllegalArgumentException("Event OVER cleanup ownership is missing");
+            var reader = ArrowConversion.createArrowReader(root, cleanupType);
+            for (int i = 0; i < root.getRowCount(); i++) {
+              var row = reader.read(i);
+              var owner = new GenericRowData(keyType.getFieldCount());
+              for (int p = 0; p < keyType.getFieldCount(); p++)
+                owner.setField(p, get(row, keyType, p));
+              var binary = new RowDataSerializer(keyType).toBinaryRow(owner).copy();
+              backend.setCurrentKey(binary);
+              int arity = keyType.getFieldCount();
+              if (!row.isNullAt(arity)) {
+                if (!cleanupEnabled)
+                  throw new IllegalArgumentException("Unconfigured event OVER cleanup");
+                long deadline = row.getLong(arity);
+                cleanup(backend).update(deadline);
+                if (row.getBoolean(arity + 1))
+                  processing.add(
+                      new TimerHeapInternalTimer<>(deadline, binary, VoidNamespace.INSTANCE));
+              } else if (row.getBoolean(arity + 1))
+                throw new IllegalArgumentException("Cleanup timer has no deadline");
+              if (pollingTimers) {
+                var timers = row.getArray(arity + 2);
+                for (int t = 0; t < timers.size(); t++)
+                  events.add(
+                      new TimerHeapInternalTimer<>(
+                          timers.getLong(t), binary, VoidNamespace.INSTANCE));
+              }
             }
-          }
-        });
+          });
+    }
   }
 
   private static final int EVENT_TIMES = 1, PROCESSING_TIMES = 2, PENDING_TIMES = 3, FOLDS = 4;
 
   private void preflight(
-      CheckpointableKeyedStateBackend<RowData> backend, StockRestoreInventory partitions)
+      CheckpointableKeyedStateBackend<RowData> backend, StockStateSpool partitions)
       throws Exception {
     var inventory = new HashMap<String, StockStateInventory.State>();
     stateDescriptors()
@@ -439,7 +440,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   private void transferPending(
       CheckpointableKeyedStateBackend<RowData> backend,
       long handle,
-      StockRestoreInventory partitions,
+      StockStateSpool partitions,
       boolean validating)
       throws Exception {
     var rows = new ArrayList<RowData>(CHUNK_ROWS);
@@ -476,7 +477,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   private void transferCleanup(
       CheckpointableKeyedStateBackend<RowData> backend,
       long handle,
-      StockRestoreInventory partitions,
+      StockStateSpool partitions,
       boolean validating)
       throws Exception {
     var rows = new ArrayList<RowData>(CHUNK_ROWS);
@@ -525,7 +526,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   public void importState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
-    try (var partitions = new StockRestoreInventory(new RowDataSerializer(keyType))) {
+    try (var partitions = new StockStateSpool(new RowDataSerializer(keyType))) {
       preflight(backend, partitions);
       folds.requireEmpty(handle);
       visit(

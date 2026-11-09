@@ -232,7 +232,7 @@ public final class StockBufferedDedupStateContract implements StockStateContract
       throws Exception {
     if (!timers(backend, PROCESSING_TIMERS).isEmpty())
       throw new IllegalStateException("Buffered dedup has unexpected processing-time timers");
-    try (var inventory = new StockRestoreInventory(keySerializer)) {
+    try (var inventory = new StockStateSpool(keySerializer)) {
       var waiting = waiting(backend);
       var emitted = emitted(backend);
       try (var iterator =

@@ -313,7 +313,7 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
     var sorts = new StockKeyProjection(sortType);
     var rows = new RowDataSerializer(rowType);
     var pending = new ArrayList<RowData>(CHUNK_ROWS);
-    try (var inventory = new StockRestoreInventory(new RowDataSerializer(keyType))) {
+    try (var inventory = new StockStateSpool(new RowDataSerializer(keyType))) {
       inventory.collectOwners(backend, stateDescriptors().keySet());
       try (var owners = inventory.owners()) {
         while (owners.hasNext()) {

@@ -44,7 +44,12 @@ of full original `RowData` rows, `lastTriggeringTsState` and the Void event-time
 live native input batches or the persistent row store in chunks; it does not first write or decode
 a native checkpoint. The cutoff is independent of buffered rows, including an empty buffer and
 valid MIN or MAX timestamps. Stock serializers encode the actual empty key and rows, so exported
-state does not require StreamFusion classes on the stock classpath.
+state does not require StreamFusion classes on the stock classpath. Export stages each original
+row once in the shared temporary disk spool, then the released ListSerializer streams one
+complete timestamp bucket into the RocksDB projection. It does not repeatedly read and rewrite
+a growing Java list. Heap component backends receive owned lists. Scratch storage closes and
+deletes on success or failure; no helper descriptors enter stock metadata. Individual stock list
+imports and the largest encoded KV remain conversion working sets.
 
 Import validates descriptor ownership, the empty key, row/time/INSERT consistency and exact timer
 membership before installing native state. Nullable and nested payloads retain their full original
@@ -110,8 +115,10 @@ job fixtures use BIGINT payloads and TIMESTAMP(3); wider schemas/precisions are 
 qualification, and native connector/writer delivery and failure matrices remain open.
 
 The native suite passes 1,300 tests with two existing ignores, and the no-RocksDB build passes.
-A clean Flink 1.18 build passes 73 shared sort/OVER processing and checkpoint controls without
-claiming canonical interchange on 1.18. Both unchanged released temporal-sort restore programs
+The shared map-list spool cohort additionally passes 103 selected actual-operator interchange
+cases, 28 malformed-state/failure cases and all 128 temporal precision cases on Flink 1.18.
+These qualify the exercised component layouts, rather than the complete 2.2 job matrix on that
+line. Earlier shared processing/checkpoint controls overlap this evidence. Both unchanged released temporal-sort restore programs
 also pass as stock-only controls; their secondary comparison/proctime shapes remain outside the
 native sort contract. Earlier cohorts overlap these runs and are not cumulative coverage.
 

@@ -20,7 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 import tech.streamfusion.NativeMemoryLimitException;
 import tech.streamfusion.operator.TaskOffHeapMemory;
 
-class StockRestoreInventoryTest {
+class StockStateSpoolTest {
   @TempDir Path temporaryDirectory;
 
   private final RowDataSerializer keys = new RowDataSerializer(RowType.of(new VarCharType()));
@@ -41,7 +41,7 @@ class StockRestoreInventoryTest {
   @Test
   void manyOwnersAndSignedTimersStayIndependentAcrossRepeatedPasses() throws Exception {
     long initialMemory = TaskOffHeapMemory.reservedBytes();
-    try (var inventory = new StockRestoreInventory(keys, temporaryDirectory)) {
+    try (var inventory = new StockStateSpool(keys, temporaryDirectory)) {
       assertEquals(initialMemory + 2 * 1024 * 1024, TaskOffHeapMemory.reservedBytes());
       for (int i = 0; i < 4099; i++) {
         var owner = key("owner" + i);
@@ -85,7 +85,7 @@ class StockRestoreInventoryTest {
         assertThrows(
             IllegalStateException.class,
             () -> {
-              try (var inventory = new StockRestoreInventory(keys, temporaryDirectory)) {
+              try (var inventory = new StockStateSpool(keys, temporaryDirectory)) {
                 for (var name : List.of("", "a", "aa", "a" + (char) 0, "ab")) {
                   inventory.addOwner(key(name));
                   inventory.add(1, key(name), name.length());
@@ -112,14 +112,13 @@ class StockRestoreInventoryTest {
         TaskOffHeapMemory.reserve("test", "inventory denial", TaskOffHeapMemory.availableBytes())) {
       long reserved = TaskOffHeapMemory.reservedBytes();
       assertThrows(
-          NativeMemoryLimitException.class,
-          () -> new StockRestoreInventory(keys, temporaryDirectory));
+          NativeMemoryLimitException.class, () -> new StockStateSpool(keys, temporaryDirectory));
       assertEquals(reserved, TaskOffHeapMemory.reservedBytes());
       assertEmptyDirectory();
     }
     assertThrows(
         java.nio.file.NoSuchFileException.class,
-        () -> new StockRestoreInventory(keys, temporaryDirectory.resolve("missing")));
+        () -> new StockStateSpool(keys, temporaryDirectory.resolve("missing")));
     assertEquals(initialMemory, TaskOffHeapMemory.reservedBytes());
     assertEmptyDirectory();
   }

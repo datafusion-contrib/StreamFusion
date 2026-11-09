@@ -18,6 +18,10 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
         "Flink 2.2 configures state backends through job configuration");
   }
 
+  public static boolean serializesKeyedValues(CheckpointableKeyedStateBackend<?> backend) {
+    return backend instanceof org.apache.flink.state.rocksdb.RocksDBKeyedStateBackend;
+  }
+
   public static int keyGroupPrefixBytes(CheckpointableKeyedStateBackend<?> backend) {
     return org.apache.flink.runtime.state.CompositeKeySerializationUtils
         .computeRequiredBytesInKeyGroupPrefix(

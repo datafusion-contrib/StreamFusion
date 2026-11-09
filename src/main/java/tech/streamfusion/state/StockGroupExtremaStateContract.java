@@ -404,7 +404,7 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
     Native.exportGroupExtremaCanonical(handle, persistent, reject, reject);
     var state = state(backend);
     var maps = maps(backend);
-    try (var source = new StockRestoreInventory(keys)) {
+    try (var source = new StockStateSpool(keys)) {
       source.collectOwners(backend, stateDescriptors().keySet());
       for (boolean validating : new boolean[] {true, false}) {
         visitHeaders(backend, state, source, handle, persistent, validating);
@@ -417,7 +417,7 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
   private void visitHeaders(
       CheckpointableKeyedStateBackend<RowData> backend,
       StockValueState<RowData> state,
-      StockRestoreInventory source,
+      StockStateSpool source,
       long handle,
       boolean persistent,
       boolean validating)
@@ -475,7 +475,7 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
   private void visitEntries(
       CheckpointableKeyedStateBackend<RowData> backend,
       StockMapState<Object, Long>[] maps,
-      StockRestoreInventory source,
+      StockStateSpool source,
       long handle,
       boolean persistent,
       boolean validating)

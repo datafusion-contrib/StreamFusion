@@ -142,7 +142,13 @@ Original input clocks and positions span chunks; raw accumulators occur only at 
 The native importer writes RocksDB frames directly and guards unfinished/failed restores from
 processing or snapshotting. Decode reservations transfer into retained-state charges, including
 failed writes. Per-owner timestamp/count inventories, callback/map-order arrays, individual stock
-list values and other adapters' import inventories remain open work. Asynchronous capture does
+list values on import and other adapters' inventories remain open work. OVER and temporal-sort
+exports now stage each map-list row once in the shared disk spool. A scoped lazy list lets the
+released stock ListSerializer stream each timestamp bucket into the RocksDB projection once,
+without per-row bucket reads or repeated list reconstruction. Heap component backends receive
+ordinary owned lists. No scratch descriptors or helper serializers enter the savepoint. Working
+memory still includes the largest encoded stock KV required by Flink's snapshot iterator; list
+import has not yet eliminated deserialization of that value into Java rows. Asynchronous capture does
 not imply that every conversion path has a fixed working set. OVER cleanup, counter and both event-timer policies now share incremental
 metadata persistence during normal processing. The journal deduplicates changed keys and writes
 bounded row/byte batches, retaining updates if a flush fails. Normal capture does not rebuild
@@ -186,7 +192,13 @@ Its shared Flink 1.18 cohort passes 537 checks, while the corrected 2.2 cohort p
 and accounting checks alongside 229 frame-bridge checks. The twelve 2,051-row handoffs per line
 cover all three bounded shapes and both stock/native stores. These cohorts overlap earlier runs;
 the full CI matrix remains required. These controls do not expand operator admission or qualify
-every complete-job matrix on 1.18.
+every complete-job matrix on 1.18. The map-list spool controls retain 8,195 interleaved rows,
+multiple independent readers and a two-MiB row. Released list serialization remains byte-for-byte
+identical, heap values survive spool close, and receiver failure closes readers, deletes scratch
+state and releases the fixed write-buffer reservation. The selected 2.2 cohort passes 658 checks
+with 32 V1-only skips, including all 128 temporal precision cases before adding their optional
+local pairwise selector. The final clean Flink 1.18 cohort passes 574 selected checks. A separate
+131-check spool/precision follow-up includes the full 128 precision cases on that line. These are overlapping controls, rather than exhaustive admission qualification.
 Conversion cost, barrier duration and temporary I/O have not been benchmarked.
 
 Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending

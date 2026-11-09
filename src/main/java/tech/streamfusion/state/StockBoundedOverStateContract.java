@@ -333,21 +333,6 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     return selected;
   }
 
-  private void put(CheckpointableKeyedStateBackend<RowData> backend, RowData row) throws Exception {
-    put(backend, row, time(row));
-  }
-
-  private void put(CheckpointableKeyedStateBackend<RowData> backend, RowData row, long timestamp)
-      throws Exception {
-    var key = key(row);
-    backend.setCurrentKey(key);
-    var state = inputs(backend);
-    var peers = state.get(timestamp);
-    peers = peers == null ? new ArrayList<>() : new ArrayList<>(peers);
-    peers.add(new RowDataSerializer(inputType).copy(row));
-    state.put(timestamp, peers);
-  }
-
   @Override
   public void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
       throws Exception {
@@ -361,138 +346,151 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
     clear(backend);
-    var inputReaderType = inputType;
-    visit(
-        Native::exportOverCanonicalFrames,
-        handle,
-        root -> {
-          int arity = root.getFieldVectors().size() - nativeAccumulatorType.getFieldCount() - 7;
-          if (arity < nativeInputType.getFieldCount())
-            throw new IllegalArgumentException("bounded OVER native input is incomplete");
-          var expected = ArrowConversion.toArrowSchema(nativeAccumulatorType).getFields();
-          for (int i = 0; i < expected.size(); i++)
-            if (!expected
-                .get(i)
-                .getType()
-                .equals(root.getSchema().getFields().get(arity + 3 + i).getType()))
-              throw new IllegalArgumentException("bounded OVER raw accumulator type changed");
-          var reader = ArrowConversion.createArrowReader(root, inputReaderType);
-          BinaryRowData owner = null;
-          for (int i = 0; i < root.getRowCount(); i++) {
-            var row = reader.read(i);
-            var key = key(row);
-            if (owner != null && !owner.equals(key))
-              throw new IllegalArgumentException("Mixed bounded OVER frame keys");
-            owner = key;
-            if (processingRows) {
-              var clock = (org.apache.arrow.vector.BigIntVector) root.getVector(arity + 1);
-              if (clock.isNull(i))
-                throw new IllegalArgumentException("Missing retained processing clock");
-              put(backend, row, clock.get(i));
-            } else put(backend, row);
-          }
-          if ("false"
-              .equals(
-                  root.getSchema().getCustomMetadata().get("streamfusion.canonical.frame.final")))
-            return;
-          var positions = (org.apache.arrow.vector.BigIntVector) root.getVector(arity + 2);
-          long retained = Math.addExact(positions.get(root.getRowCount() - 1), 1);
-          var raw =
-              ArrowConversion.createArrowReader(
-                  columns(root, arity + 3, nativeAccumulatorType.getFieldCount()),
-                  nativeAccumulatorType);
-          backend.setCurrentKey(owner);
-          var saved = raw.read(root.getRowCount() - 1);
-          var accumulator = new GenericRowData(accumulatorType.getFieldCount());
-          for (int p = 0; p < accumulatorFields.length; p++)
-            accumulator.setField(accumulatorFields[p], get(saved, nativeAccumulatorType, p));
-          if (hiddenCount >= 0) accumulator.setField(hiddenCount, retained);
-          accumulators(backend).update(new RowDataSerializer(accumulatorType).copy(accumulator));
-          if (eventRows) {
-            scalar(backend, COUNT).update(Math.min(precedingRows, retained));
-            scalar(backend, LAST).update(time(reader.read(root.getRowCount() - 1)));
-          }
-        });
-    if (processingRows) {
+    try (var lists =
+        new StockMapListSpool<Long>(
+            keys, LongSerializer.INSTANCE, new RowDataSerializer(inputType))) {
+      var inputReaderType = inputType;
       visit(
-          Native::exportOverCanonicalProcessingRows,
+          Native::exportOverCanonicalFrames,
+          handle,
+          root -> {
+            int arity = root.getFieldVectors().size() - nativeAccumulatorType.getFieldCount() - 7;
+            if (arity < nativeInputType.getFieldCount())
+              throw new IllegalArgumentException("bounded OVER native input is incomplete");
+            var expected = ArrowConversion.toArrowSchema(nativeAccumulatorType).getFields();
+            for (int i = 0; i < expected.size(); i++)
+              if (!expected
+                  .get(i)
+                  .getType()
+                  .equals(root.getSchema().getFields().get(arity + 3 + i).getType()))
+                throw new IllegalArgumentException("bounded OVER raw accumulator type changed");
+            var reader = ArrowConversion.createArrowReader(root, inputReaderType);
+            BinaryRowData owner = null;
+            for (int i = 0; i < root.getRowCount(); i++) {
+              var row = reader.read(i);
+              var key = key(row);
+              if (owner != null && !owner.equals(key))
+                throw new IllegalArgumentException("Mixed bounded OVER frame keys");
+              owner = key;
+              if (processingRows) {
+                var clock = (org.apache.arrow.vector.BigIntVector) root.getVector(arity + 1);
+                if (clock.isNull(i))
+                  throw new IllegalArgumentException("Missing retained processing clock");
+                lists.append(key, clock.get(i), row);
+              } else lists.append(key, time(row), row);
+            }
+            if ("false"
+                .equals(
+                    root.getSchema().getCustomMetadata().get("streamfusion.canonical.frame.final")))
+              return;
+            var positions = (org.apache.arrow.vector.BigIntVector) root.getVector(arity + 2);
+            long retained = Math.addExact(positions.get(root.getRowCount() - 1), 1);
+            var raw =
+                ArrowConversion.createArrowReader(
+                    columns(root, arity + 3, nativeAccumulatorType.getFieldCount()),
+                    nativeAccumulatorType);
+            backend.setCurrentKey(owner);
+            var saved = raw.read(root.getRowCount() - 1);
+            var accumulator = new GenericRowData(accumulatorType.getFieldCount());
+            for (int p = 0; p < accumulatorFields.length; p++)
+              accumulator.setField(accumulatorFields[p], get(saved, nativeAccumulatorType, p));
+            if (hiddenCount >= 0) accumulator.setField(hiddenCount, retained);
+            accumulators(backend).update(new RowDataSerializer(accumulatorType).copy(accumulator));
+            if (eventRows) {
+              scalar(backend, COUNT).update(Math.min(precedingRows, retained));
+              scalar(backend, LAST).update(time(reader.read(root.getRowCount() - 1)));
+            }
+          });
+      if (!processingRows) {
+        visit(
+            Native::exportOverPendingCanonical,
+            handle,
+            root -> {
+              var reader = ArrowConversion.createArrowReader(root, inputType);
+              for (int i = 0; i < root.getRowCount(); i++) {
+                var row = reader.read(i);
+                lists.append(key(row), time(row), row);
+                if (eventRows)
+                  events.add(
+                      new TimerHeapInternalTimer<>(time(row), key(row), VoidNamespace.INSTANCE));
+              }
+            });
+      }
+      lists.visit(
+          backend,
+          (owner, timestamp, values) -> {
+            backend.setCurrentKey(owner);
+            inputs(backend).put(timestamp, values);
+          });
+      if (processingRows) {
+        visit(
+            Native::exportOverCanonicalProcessingRows,
+            handle,
+            root -> {
+              var reader = ArrowConversion.createArrowReader(root, protocolType);
+              for (int i = 0; i < root.getRowCount(); i++) {
+                var row = reader.read(i);
+                int k = keyType.getFieldCount();
+                var owner = protocolKey(row);
+                backend.setCurrentKey(owner);
+                scalar(backend, COUNT).update(row.getLong(k));
+                scalar(backend, SMALLEST).update(row.getLong(k + 1));
+                if (cleanupEnabled) {
+                  if (row.isNullAt(k + 2))
+                    throw new IllegalArgumentException("Processing ROWS cleanup is missing");
+                  long deadline = row.getLong(k + 2);
+                  scalar(backend, cleanupState).update(deadline);
+                  processing.add(
+                      new TimerHeapInternalTimer<>(deadline, owner, VoidNamespace.INSTANCE));
+                } else if (!row.isNullAt(k + 2))
+                  throw new IllegalArgumentException("Unexpected processing ROWS cleanup");
+              }
+            });
+        return;
+      }
+      if (eventRows) return;
+      visit(
+          Native::exportOverCanonicalRange,
           handle,
           root -> {
             var reader = ArrowConversion.createArrowReader(root, protocolType);
             for (int i = 0; i < root.getRowCount(); i++) {
               var row = reader.read(i);
-              int k = keyType.getFieldCount();
-              var owner = protocolKey(row);
+              var keyRow = new GenericRowData(keyType.getFieldCount());
+              for (int k = 0; k < keyType.getFieldCount(); k++)
+                keyRow.setField(k, get(row, keyType, k));
+              var owner = new RowDataSerializer(keyType).toBinaryRow(keyRow).copy();
               backend.setCurrentKey(owner);
-              scalar(backend, COUNT).update(row.getLong(k));
-              scalar(backend, SMALLEST).update(row.getLong(k + 1));
-              if (cleanupEnabled) {
-                if (row.isNullAt(k + 2))
-                  throw new IllegalArgumentException("Processing ROWS cleanup is missing");
-                long deadline = row.getLong(k + 2);
-                scalar(backend, cleanupState).update(deadline);
-                processing.add(
-                    new TimerHeapInternalTimer<>(deadline, owner, VoidNamespace.INSTANCE));
-              } else if (!row.isNullAt(k + 2))
-                throw new IllegalArgumentException("Unexpected processing ROWS cleanup");
+              int k = keyType.getFieldCount();
+              if (row.isNullAt(k)) scalar(backend, cleanupState).clear();
+              else scalar(backend, cleanupState).update(row.getLong(k));
+              if (row.isNullAt(k + 1)) scalar(backend, LAST).clear();
+              else scalar(backend, LAST).update(row.getLong(k + 1));
+              if (backend instanceof org.apache.flink.runtime.state.heap.HeapKeyedStateBackend) {
+                var order = row.getArray(k + 3);
+                var state = inputs(backend);
+                var saved = new LinkedHashMap<Long, List<RowData>>();
+                for (int p = 0; p < order.size(); p++) {
+                  long timestamp = order.getLong(p);
+                  var peers = state.get(timestamp);
+                  if (peers == null || saved.put(timestamp, peers) != null)
+                    throw new IllegalArgumentException("bounded OVER map order has no input");
+                }
+                var timestamps = state.keys();
+                if (timestamps != null)
+                  for (var timestamp : timestamps)
+                    if (!saved.containsKey(timestamp))
+                      throw new IllegalArgumentException("bounded OVER input has no map order");
+                state.clear();
+                for (var entry : saved.entrySet()) state.put(entry.getKey(), entry.getValue());
+              }
+              var timers = row.getArray(k + 2);
+              for (int p = 0; p < timers.size(); p++)
+                events.add(
+                    new TimerHeapInternalTimer<>(timers.getLong(p), owner, VoidNamespace.INSTANCE));
             }
           });
-      return;
     }
-    visit(
-        Native::exportOverPendingCanonical,
-        handle,
-        root -> {
-          var reader = ArrowConversion.createArrowReader(root, inputType);
-          for (int i = 0; i < root.getRowCount(); i++) {
-            var row = reader.read(i);
-            put(backend, row);
-            if (eventRows)
-              events.add(new TimerHeapInternalTimer<>(time(row), key(row), VoidNamespace.INSTANCE));
-          }
-        });
-    if (eventRows) return;
-    visit(
-        Native::exportOverCanonicalRange,
-        handle,
-        root -> {
-          var reader = ArrowConversion.createArrowReader(root, protocolType);
-          for (int i = 0; i < root.getRowCount(); i++) {
-            var row = reader.read(i);
-            var keyRow = new GenericRowData(keyType.getFieldCount());
-            for (int k = 0; k < keyType.getFieldCount(); k++)
-              keyRow.setField(k, get(row, keyType, k));
-            var owner = new RowDataSerializer(keyType).toBinaryRow(keyRow).copy();
-            backend.setCurrentKey(owner);
-            int k = keyType.getFieldCount();
-            if (row.isNullAt(k)) scalar(backend, cleanupState).clear();
-            else scalar(backend, cleanupState).update(row.getLong(k));
-            if (row.isNullAt(k + 1)) scalar(backend, LAST).clear();
-            else scalar(backend, LAST).update(row.getLong(k + 1));
-            if (backend instanceof org.apache.flink.runtime.state.heap.HeapKeyedStateBackend) {
-              var order = row.getArray(k + 3);
-              var state = inputs(backend);
-              var saved = new LinkedHashMap<Long, List<RowData>>();
-              for (int p = 0; p < order.size(); p++) {
-                long timestamp = order.getLong(p);
-                var peers = state.get(timestamp);
-                if (peers == null || saved.put(timestamp, peers) != null)
-                  throw new IllegalArgumentException("bounded OVER map order has no input");
-              }
-              var timestamps = state.keys();
-              if (timestamps != null)
-                for (var timestamp : timestamps)
-                  if (!saved.containsKey(timestamp))
-                    throw new IllegalArgumentException("bounded OVER input has no map order");
-              state.clear();
-              for (var entry : saved.entrySet()) state.put(entry.getKey(), entry.getValue());
-            }
-            var timers = row.getArray(k + 2);
-            for (int p = 0; p < timers.size(); p++)
-              events.add(
-                  new TimerHeapInternalTimer<>(timers.getLong(p), owner, VoidNamespace.INSTANCE));
-          }
-        });
   }
 
   private BinaryRowData protocolKey(RowData row) {
@@ -514,9 +512,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   }
 
   private void preflight(
-      CheckpointableKeyedStateBackend<RowData> backend,
-      StockRestoreInventory partitions,
-      long handle)
+      CheckpointableKeyedStateBackend<RowData> backend, StockStateSpool partitions, long handle)
       throws Exception {
     var inventory = new HashMap<String, StockStateInventory.State>();
     stateDescriptors()
@@ -551,9 +547,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   }
 
   private Partition readPartition(
-      CheckpointableKeyedStateBackend<RowData> backend,
-      StockRestoreInventory partitions,
-      RowData owner)
+      CheckpointableKeyedStateBackend<RowData> backend, StockStateSpool partitions, RowData owner)
       throws Exception {
     var partition = new Partition(new RowDataSerializer(keyType).toBinaryRow(owner).copy());
     try (var timers = partitions.times(1, owner)) {
@@ -821,7 +815,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   public void importState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
-    try (var partitions = new StockRestoreInventory(new RowDataSerializer(keyType))) {
+    try (var partitions = new StockStateSpool(new RowDataSerializer(keyType))) {
       preflight(backend, partitions, handle);
       try (var owners = partitions.owners()) {
         while (owners.hasNext()) {

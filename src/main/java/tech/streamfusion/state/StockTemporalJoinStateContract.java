@@ -203,7 +203,7 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
       CheckpointableKeyedStateBackend<RowData> backend,
       String queue,
       StockKeyProjection projection,
-      StockRestoreInventory retained,
+      StockStateSpool retained,
       int section)
       throws Exception {
     try (var iterator = StockTimerSnapshot.<RowData, VoidNamespace>iterator(backend, queue)) {
@@ -218,7 +218,7 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
   }
 
   private void preflight(
-      CheckpointableKeyedStateBackend<RowData> backend, StockRestoreInventory retained)
+      CheckpointableKeyedStateBackend<RowData> backend, StockStateSpool retained)
       throws Exception {
     var expected = new HashMap<String, StockStateInventory.State>();
     stateDescriptors()
@@ -371,7 +371,7 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
   public void importState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
-    try (var retained = new StockRestoreInventory(new RowDataSerializer(keyType))) {
+    try (var retained = new StockStateSpool(new RowDataSerializer(keyType))) {
       preflight(backend, retained);
       for (int side = 0; side < 2; side++) {
         var rows = new ArrayList<RowData>(CHUNK);
