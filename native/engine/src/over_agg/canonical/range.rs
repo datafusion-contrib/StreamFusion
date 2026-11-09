@@ -45,30 +45,37 @@ impl OverWindowAggregator {
         let types = self.cleanup_key_types();
         let converter = key_row_converter_from_types(&types);
         let deadline = self.canonical_cleanup_stamp(key)?;
-        let times = match &self.inner {
-            OverInner::Bounded(inner) => inner
-                .keys
-                .get(key)
-                .map(|rows| rows.iter().map(|row| row.rt).collect::<Vec<_>>())
-                .unwrap_or_default(),
-            _ => unreachable!(),
-        };
         #[cfg(feature = "rocksdb-state")]
-        let times = if let Some(store) = &self.store {
-            let prefix = store.frame_prefix(self.store_fold_key_group(key), key);
-            store
-                .load_frames(&[prefix])?
-                .pop()
-                .unwrap()
-                .iter()
-                .map(|row| row.rt)
-                .collect()
+        let frozen = self.frozen_store().is_some();
+        #[cfg(not(feature = "rocksdb-state"))]
+        let frozen = false;
+        let order = if frozen {
+            Vec::new()
         } else {
-            times
+            let times = match &self.inner {
+                OverInner::Bounded(inner) => inner
+                    .keys
+                    .get(key)
+                    .map(|rows| rows.iter().map(|row| row.rt).collect::<Vec<_>>())
+                    .unwrap_or_default(),
+                _ => unreachable!(),
+            };
+            #[cfg(feature = "rocksdb-state")]
+            let times = if let Some(store) = &self.store {
+                let prefix = store.frame_prefix(self.store_fold_key_group(key), key);
+                store
+                    .load_frames(&[prefix])?
+                    .pop()
+                    .unwrap()
+                    .iter()
+                    .map(|row| row.rt)
+                    .collect()
+            } else {
+                times
+            };
+            self.frame_map_order(key, &times)?
+                .ok_or_else(|| invalid("missing RANGE membership order"))?
         };
-        let order = self
-            .frame_map_order(key, &times)?
-            .ok_or_else(|| invalid("missing RANGE membership order"))?;
         let mut fields = key_fields(&types);
         let mut columns = decode_byte_keys(Some(&converter), &[key], &types);
         fields.push(Field::new(DEADLINE, DataType::Int64, true));

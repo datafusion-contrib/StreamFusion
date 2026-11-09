@@ -82,7 +82,7 @@ impl FrameInput {
         Ok(Self { row, clock })
     }
 
-    pub(super) fn bytes(&self) -> usize {
+    pub(crate) fn bytes(&self) -> usize {
         std::mem::size_of::<Self>() + self.row.get_array_memory_size()
     }
 

@@ -502,7 +502,23 @@ fn frozen_frame_readers_keep_metadata_on_disk_through_live_updates() {
             execute(&mut source, Some(key), 1000, Some(key as f64), 100);
         }
         source.checkpoint_store("").unwrap();
-        let expected = frames(&source);
+        let frame_values = |value: &OverWindowAggregator| {
+            let frames = frames(value)
+                .into_iter()
+                .map(|batch| {
+                    batch
+                        .project(&(0..batch.num_columns() - 4).collect::<Vec<_>>())
+                        .unwrap()
+                })
+                .collect::<Vec<_>>();
+            super::super::tests::rows_of(&frames)
+        };
+        let expected = frame_values(&source);
+        let expected_cleanup = source
+            .cleanup_state
+            .iter()
+            .map(|(key, &stamp)| (key.clone(), stamp))
+            .collect::<Vec<_>>();
         let protocol = |value: &OverWindowAggregator| {
             let mut out = Vec::new();
             if shape == 0 {
@@ -520,6 +536,16 @@ fn frozen_frame_readers_keep_metadata_on_disk_through_live_updates() {
                     })
                     .unwrap();
             }
+            if shape == 2 {
+                out = out
+                    .into_iter()
+                    .map(|batch| {
+                        batch
+                            .project(&(0..batch.num_columns() - 1).collect::<Vec<_>>())
+                            .unwrap()
+                    })
+                    .collect();
+            }
             super::super::tests::rows_of(&out)
         };
         let expected_protocol = protocol(&source);
@@ -532,12 +558,109 @@ fn frozen_frame_readers_keep_metadata_on_disk_through_live_updates() {
             assert!(reader.cleanup_state.is_empty());
             assert!(reader.proc_rows.is_empty());
             assert!(reader.range_timers.is_empty());
-            assert_eq!(frames(&reader), expected);
+            assert_eq!(frame_values(&reader), expected);
+            for (key, stamp) in &expected_cleanup {
+                assert_eq!(
+                    reader.canonical_cleanup_stamp(&key.0).unwrap(),
+                    Some(*stamp)
+                );
+            }
             assert_eq!(protocol(&reader), expected_protocol);
             assert_eq!(reader.retention_bytes, 0);
             assert!(reader.cleanup_state.is_empty());
             assert!(reader.proc_rows.is_empty());
             assert!(reader.range_timers.is_empty());
+        });
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn captured_hot_partition_frames_obey_row_and_byte_bounds_without_early_accumulators() {
+    for (count, payload) in [(2051usize, 0usize), (3, 2 * 1024 * 1024)] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("state");
+        let mut source = operator(2, false, 0, true, &path);
+        let OverInner::Bounded(inner) = &mut source.inner else {
+            unreachable!()
+        };
+        inner.offset = 10000;
+        source.bind_canonical_frame_inputs().unwrap();
+        let template = input(Some(7), 1000, Some(1.0));
+        let mut columns = template
+            .columns()
+            .iter()
+            .map(|column| {
+                arrow::compute::take(
+                    column,
+                    &arrow::array::UInt32Array::from(vec![0; count]),
+                    None,
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        columns[2] = Arc::new(Int64Array::from_iter_values(
+            (0..count).map(|i| 1000 + i as i64),
+        ));
+        if payload > 0 {
+            columns[3] = Arc::new(StringArray::from(vec!["x".repeat(payload); count]));
+        }
+        source
+            .push(
+                RecordBatch::try_new(template.schema(), columns).unwrap(),
+                100,
+            )
+            .unwrap();
+        source.flush(4000, 101).unwrap();
+        source.checkpoint_store("").unwrap();
+        let snapshot = crate::state::rocks_store::FrozenDatabases::capture(&path).unwrap();
+        snapshot.with(|| {
+            let reader = operator(2, false, 0, true, &path);
+            assert!(reader
+                .visit_canonical_frames(|_| Err(invalid("receiver failed")))
+                .is_err());
+            let mut seen = 0;
+            let mut chunks = 0;
+            let mut final_chunks = 0;
+            reader
+                .visit_canonical_frames(|batch| {
+                    assert!(batch.num_rows() <= CHUNK_ROWS);
+                    if payload > 0 {
+                        assert!(batch.num_rows() <= 2);
+                    }
+                    let positions = column_at_i64(&batch, 7);
+                    assert_eq!(positions.value(0), seen as i64);
+                    seen += batch.num_rows();
+                    assert_eq!(positions.value(batch.num_rows() - 1), seen as i64 - 1);
+                    let last =
+                        batch.schema().metadata()["streamfusion.canonical.frame.final"] == "true";
+                    if last {
+                        final_chunks += 1;
+                        assert_eq!(seen, count);
+                        assert_eq!(
+                            ScalarValue::try_from_array(batch.column(10), batch.num_rows() - 1)?,
+                            ScalarValue::Int64(Some(count as i64))
+                        );
+                    } else {
+                        for column in
+                            &batch.columns()[8..8 + reader.canonical_frame()?.fold_types.len()]
+                        {
+                            assert_eq!(column.null_count(), batch.num_rows());
+                        }
+                    }
+                    chunks += 1;
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(seen, count);
+            assert_eq!(final_chunks, 1);
+            if payload == 0 {
+                assert_eq!(chunks, 3);
+            } else {
+                assert!(chunks >= 2, "wide input must cross the byte bound");
+            }
+            snapshot.cancel();
+            assert!(reader.visit_canonical_frames(|_| Ok(())).is_err());
         });
     }
 }

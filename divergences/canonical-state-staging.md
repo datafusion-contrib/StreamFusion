@@ -29,7 +29,11 @@ JVM operator state keep their existing backend-specific snapshot behavior.
 Reusing the stock adapters keeps one definition of each released state layout. Window timer
 ledgers and OVER metadata now stream from pinned tables; OVER readers no longer hydrate whole
 cleanup/counter/timer maps. Shared raw scans bound rows and bytes before decoding. Temporary disk
-I/O, retained OVER partitions and operator-specific per-key/import-inventory working sets remain. Eliminating that staging would require
+I/O and operator-specific per-key/import-inventory working sets remain. Captured OVER retained
+frames now use bounded chunks within each partition. The stock RocksDB projection determines
+canonical map order from encoded keys, so RANGE export does not retain and reinsert a partition's
+inputs. Heap-backed component transfers retain their map-order reconstruction; that path is not
+the asynchronous stock projection. Eliminating that staging would require
 additional streaming codecs for map/list/timer layouts; it is separate from moving conversion off
 the task thread. The expanded capture mechanisms still require the broader qualification matrix.
 

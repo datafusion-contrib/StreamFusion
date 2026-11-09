@@ -179,6 +179,17 @@ impl OverWindowAggregator {
         times: Vec<i64>,
         state: Vec<ScalarValue>,
     ) -> Result<RecordBatch, DataFusionError> {
+        self.canonical_frame_chunk(key, inputs, times, state, None)
+    }
+
+    fn canonical_frame_chunk(
+        &self,
+        key: &[u8],
+        inputs: &[FrameInput],
+        times: Vec<i64>,
+        state: Vec<ScalarValue>,
+        chunk: Option<(usize, bool)>,
+    ) -> Result<RecordBatch, DataFusionError> {
         let inner = self.canonical_frame()?;
         let input_schema = inputs
             .first()
@@ -197,22 +208,41 @@ impl OverWindowAggregator {
         }
         let originals = concat_batches(&input_schema, inputs.iter().map(|input| &input.row))?;
         let rows = inputs.len();
-        let order = self.frame_map_order(key, &times)?;
+        let order = if chunk.is_none() {
+            self.frame_map_order(key, &times)?
+        } else {
+            None
+        };
         let mut columns = originals.columns().to_vec();
         columns.push(Arc::new(Int64Array::from(times)));
         columns.push(Arc::new(Int64Array::from(
             inputs.iter().map(|input| input.clock).collect::<Vec<_>>(),
         )));
-        columns.push(Arc::new(Int64Array::from_iter_values(0..rows as i64)));
+        let position = chunk.map_or(0, |(position, _)| position);
+        let end = position
+            .checked_add(rows)
+            .and_then(|end| i64::try_from(end).ok())
+            .ok_or_else(|| invalid("frame position overflow"))?;
+        columns.push(Arc::new(Int64Array::from_iter_values(position as i64..end)));
         for (value, ty) in state.into_iter().zip(&inner.fold_types) {
             let mut values = vec![null_scalar(ty); rows];
-            values[rows - 1] = value;
+            if chunk.is_none_or(|(_, last)| last) {
+                values[rows - 1] = value;
+            }
             columns.push(scalars_to_array(values, ty));
         }
-        let protocol = self.canonical_range_timers(key)?;
+        let protocol = if chunk.is_none() {
+            self.canonical_range_timers(key)?
+        } else {
+            None
+        };
         let protocol = protocol.as_ref();
         for value in [
-            self.canonical_cleanup_stamp(key)?,
+            if chunk.is_none() {
+                self.canonical_cleanup_stamp(key)?
+            } else {
+                None
+            },
             protocol.and_then(|timers| timers.last),
         ] {
             let mut values = vec![None; rows];
@@ -224,8 +254,19 @@ impl OverWindowAggregator {
             rows,
         ));
         columns.push(tail_list(order.as_deref(), rows));
-        let batch = RecordBatch::try_new(frame_schema(&input_schema, &inner.fold_types), columns)?;
-        self.validate_frame_fold(&batch, originals.num_columns() + 3)?;
+        let mut schema = frame_schema(&input_schema, &inner.fold_types);
+        if let Some((_, last)) = chunk {
+            let mut metadata = schema.metadata().clone();
+            metadata.insert(
+                "streamfusion.canonical.frame.final".into(),
+                last.to_string(),
+            );
+            schema = Arc::new(schema.as_ref().clone().with_metadata(metadata));
+        }
+        let batch = RecordBatch::try_new(schema, columns)?;
+        if chunk.is_none_or(|(_, last)| last) {
+            self.validate_frame_fold(&batch, originals.num_columns() + 3)?;
+        }
         Ok(batch)
     }
 
@@ -242,6 +283,29 @@ impl OverWindowAggregator {
         if let Some(store) = &self.store {
             if !inner.keys.is_empty() {
                 return Err(invalid("persistent frame has undrained resident state"));
+            }
+            if store.is_frozen() {
+                return store.visit_frame_chunks(
+                    CHUNK_ROWS,
+                    4 * 1024 * 1024,
+                    |key, rows, position, last| {
+                        let inputs = rows
+                            .iter()
+                            .map(|row| {
+                                row.input
+                                    .clone()
+                                    .ok_or_else(|| invalid("missing original frame input"))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        accept(self.canonical_frame_chunk(
+                            key,
+                            &inputs,
+                            rows.iter().map(|row| row.rt).collect(),
+                            rows.last().unwrap().values[inner.kinds.len()..].to_vec(),
+                            Some((position, last)),
+                        )?)
+                    },
+                );
             }
             return store.visit_frames(|key, rows| {
                 let inputs = rows

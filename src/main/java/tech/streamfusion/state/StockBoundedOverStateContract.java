@@ -400,6 +400,12 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
               put(backend, row, clock.get(i));
             } else put(backend, row);
           }
+          if ("false"
+              .equals(
+                  root.getSchema().getCustomMetadata().get("streamfusion.canonical.frame.final")))
+            return;
+          var positions = (org.apache.arrow.vector.BigIntVector) root.getVector(arity + 2);
+          long retained = Math.addExact(positions.get(root.getRowCount() - 1), 1);
           var raw =
               ArrowConversion.createArrowReader(
                   columns(root, arity + 3, nativeAccumulatorType.getFieldCount()),
@@ -409,10 +415,10 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
           var accumulator = new GenericRowData(accumulatorType.getFieldCount());
           for (int p = 0; p < accumulatorFields.length; p++)
             accumulator.setField(accumulatorFields[p], get(saved, nativeAccumulatorType, p));
-          if (hiddenCount >= 0) accumulator.setField(hiddenCount, (long) root.getRowCount());
+          if (hiddenCount >= 0) accumulator.setField(hiddenCount, retained);
           accumulators(backend).update(new RowDataSerializer(accumulatorType).copy(accumulator));
           if (eventRows) {
-            scalar(backend, COUNT).update(Math.min(precedingRows, root.getRowCount()));
+            scalar(backend, COUNT).update(Math.min(precedingRows, retained));
             scalar(backend, LAST).update(time(reader.read(root.getRowCount() - 1)));
           }
         });
@@ -472,22 +478,24 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
             else scalar(backend, cleanupState).update(row.getLong(k));
             if (row.isNullAt(k + 1)) scalar(backend, LAST).clear();
             else scalar(backend, LAST).update(row.getLong(k + 1));
-            var order = row.getArray(k + 3);
-            var state = inputs(backend);
-            var saved = new LinkedHashMap<Long, List<RowData>>();
-            for (int p = 0; p < order.size(); p++) {
-              long timestamp = order.getLong(p);
-              var peers = state.get(timestamp);
-              if (peers == null || saved.put(timestamp, peers) != null)
-                throw new IllegalArgumentException("bounded OVER map order has no input");
+            if (backend instanceof org.apache.flink.runtime.state.heap.HeapKeyedStateBackend) {
+              var order = row.getArray(k + 3);
+              var state = inputs(backend);
+              var saved = new LinkedHashMap<Long, List<RowData>>();
+              for (int p = 0; p < order.size(); p++) {
+                long timestamp = order.getLong(p);
+                var peers = state.get(timestamp);
+                if (peers == null || saved.put(timestamp, peers) != null)
+                  throw new IllegalArgumentException("bounded OVER map order has no input");
+              }
+              var timestamps = state.keys();
+              if (timestamps != null)
+                for (var timestamp : timestamps)
+                  if (!saved.containsKey(timestamp))
+                    throw new IllegalArgumentException("bounded OVER input has no map order");
+              state.clear();
+              for (var entry : saved.entrySet()) state.put(entry.getKey(), entry.getValue());
             }
-            var timestamps = state.keys();
-            if (timestamps != null)
-              for (var timestamp : timestamps)
-                if (!saved.containsKey(timestamp))
-                  throw new IllegalArgumentException("bounded OVER input has no map order");
-            state.clear();
-            for (var entry : saved.entrySet()) state.put(entry.getKey(), entry.getValue());
             var timers = row.getArray(k + 2);
             for (int p = 0; p < timers.size(); p++)
               events.add(

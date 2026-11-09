@@ -110,10 +110,14 @@ for all keys. Processing-ROWS metadata/frame ownership is checked by streaming p
 reads rather than collecting all partition keys. An individual
 oversized value remains the lower bound on working memory. Receiver failure and cancellation
 release the visitor; overlapping live writes and compaction do not change its captured version.
-Retained OVER frames and their timestamp-order protocol still use a partition at a time. The general
-adapters also retain per-key and import-inventory working sets; these remain open bounded-memory
-work, including very large individual partitions and values. Asynchronous capture is not a claim
-that every conversion path has a fixed working set. Shared capture and timer controls pass
+Captured RocksDB OVER frames also stream bounded chunks within a partition. Positions continue
+across chunks, and the stock accumulator and hidden counts are installed only from the final chunk.
+RANGE export does not build a timestamp inventory or reinsert the projection's inputs: the stock
+RocksDB map and canonical writer already iterate encoded keys in order. Heap-backed component
+transfers retain their separate map-order reconstruction. The general adapters still retain other
+per-key and import-inventory working sets, and oversized individual stock map/list values remain
+open bounded-memory work. Asynchronous capture is not a claim that every conversion path has a
+fixed working set. Shared capture and timer controls pass
 on both releases, with representative operator matrices and isolated First-N, grouped arithmetic,
 regular-join, normalization and eager-deduplication jobs on 1.18. The earlier 1.18 cohort passed 861
 checks with 138 window exclusions; shared windows are now separately qualified by 295 runtime
@@ -125,6 +129,10 @@ The metadata streaming cohort passes 614 integration checks on 2.2 and 430 on 1.
 native tests and a memory-only native build. Cold-reader controls retain empty metadata maps while
 checking original frame/counter/timer values after live writes; cleanup controls cross batch
 boundaries, fail/retry receivers and cancel reads.
+The retained-frame chunk cohort passes 585 selected bridge/interchange checks on each released
+line, including six 2,051-row single-partition continuations through stock heap/RocksDB and native
+RocksDB restore. Native row/byte boundary, receiver retry and cancellation controls pass alongside
+all 1,450 native tests and the memory-only build.
 Conversion cost, barrier duration and temporary I/O have not been benchmarked.
 
 Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending

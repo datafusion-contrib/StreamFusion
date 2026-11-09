@@ -109,6 +109,68 @@ class CanonicalBoundedRangeInteropTest {
     assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
   }
 
+  @ParameterizedTest
+  @CsvSource({
+    "false,false,false",
+    "false,false,true",
+    "true,false,false",
+    "true,false,true",
+    "false,true,false",
+    "false,true,true"
+  })
+  void largeSinglePartitionRetainsCountsAndRawStateAcrossChunkedCapture(
+      boolean processingRows, boolean eventRows, boolean stockStore) throws Exception {
+    var plan = new Plan("BIGINT", false, processingRows, eventRows, 10000, 0);
+    try (var reference = plan.stock(stockStore);
+        var source = plan.nativeHarness(true)) {
+      reference.setProcessingTime(1000);
+      source.setProcessingTime(1000);
+      reference.open();
+      source.open();
+      var prefix = new ArrayList<RowData>();
+      for (int i = 0; i < 2051; i++) {
+        var row = plan.row(1L, i % 7, 1000 + i);
+        plan.pushStock(reference, row);
+        prefix.add(row);
+      }
+      source.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(prefix, plan.input, NativeAllocator.SHARED, true))));
+      reference.processWatermark(new Watermark(4000));
+      source.processWatermark(new Watermark(4000));
+      assertEquals(plan.stockOutput(reference), plan.nativeOutput(source));
+      var captured = snapshot(source);
+      try (var stock = plan.stock(stockStore);
+          var nativeAgain = plan.nativeHarness(true)) {
+        stock.initializeState(captured);
+        nativeAgain.initializeState(captured);
+        stock.setProcessingTime(1000);
+        nativeAgain.setProcessingTime(1000);
+        stock.open();
+        nativeAgain.open();
+        reference.setProcessingTime(4001);
+        source.setProcessingTime(4001);
+        stock.setProcessingTime(4001);
+        nativeAgain.setProcessingTime(4001);
+        var suffix = plan.row(1L, 99, 4001);
+        plan.pushStock(reference, suffix);
+        plan.pushStock(stock, suffix);
+        plan.push(source, suffix);
+        plan.push(nativeAgain, suffix);
+        reference.processWatermark(new Watermark(4001));
+        stock.processWatermark(new Watermark(4001));
+        source.processWatermark(new Watermark(4001));
+        nativeAgain.processWatermark(new Watermark(4001));
+        var expected = plan.stockOutput(reference);
+        assertFalse(expected.isEmpty());
+        assertEquals(expected, plan.stockOutput(stock));
+        assertEquals(expected, plan.nativeOutput(source));
+        assertEquals(expected, plan.nativeOutput(nativeAgain));
+      }
+    }
+  }
+
   private static OperatorSubtaskState snapshot(
       org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness<?> harness)
       throws Exception {
