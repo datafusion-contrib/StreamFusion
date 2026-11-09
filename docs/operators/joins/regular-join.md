@@ -240,12 +240,20 @@ NULL padding remain unchanged.
 
 ## Direct stock canonical state adapter
 
-An explicitly bound Flink 2.2.1 adapter projects the native join's actual left/right retained
+An explicitly bound adapter for released Flink 1.18.1 and 2.2.1 projects the native join's actual left/right retained
 rows, multiplicities, association degrees and original TTL write timestamps into released stock
 state descriptors and serializers. It handles independent scalar, unique-key map and occurrence
 map layouts. Both input sides and every transfer batch validate before any native insertion;
 a malformed right side cannot leave valid left rows imported. Native export visits live state,
 including indexed RocksDB records and legacy buckets, without an intermediate native snapshot.
+
+Actual operator capture controls additionally pin two independent native RocksDB views, mutate
+both live sides, close the native handle and finish the views in reverse order on the writer.
+Released stock continuation checks rows, multiplicities, outer association degrees and original
+TTL ages through expiry. Six join kinds and the three released side layouts include qualified
+global joins; native processing time and stock TTL time advance together. Local pair selection
+runs nineteen cases from the default 48 combinations. This qualifies the exercised capture
+lifecycle on both releases, not every schema, rescale or connector/failure combination.
 
 The clean direct-operator component passes 78 Java controls across six join kinds, three side
 shapes, keyed/keyless paths and both native stores. It covers continued stock/native execution,

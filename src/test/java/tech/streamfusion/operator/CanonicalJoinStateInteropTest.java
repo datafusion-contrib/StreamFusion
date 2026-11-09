@@ -63,6 +63,192 @@ class CanonicalJoinStateInteropTest {
   private static final RowType EMPTY_KEY = RowType.of();
   @TempDir Path directory;
 
+  static Stream<Arguments> captures() {
+    var cases = new ArrayList<Arguments>();
+    for (int kind = 0; kind < 6; kind++)
+      for (int shape = 0; shape < 3; shape++)
+        for (boolean keyless : new boolean[] {false, true})
+          for (boolean ttl : new boolean[] {false, true})
+            if (!keyless || shape == 2) cases.add(Arguments.of(kind, shape, keyless, ttl));
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
+  }
+
+  @ParameterizedTest(name = "kind={0},shape={1},keyless={2},ttl={3}")
+  @MethodSource("captures")
+  void independentRocksViewsKeepRowsDegreesCountsAndAgesAfterOwnerClose(
+      int kind, int shape, boolean keyless, boolean ttl) throws Exception {
+    var expected = new org.apache.flink.runtime.checkpoint.OperatorSubtaskState[2];
+    var captured = new org.apache.flink.streaming.api.operators.OperatorSnapshotFutures[2];
+    long retention = ttl ? 1000 : 0;
+    try (var reference = stock(kind, shape, retention, keyless);
+        var source = nativeHarness(kind, shape, retention, keyless)) {
+      reference.open();
+      reference.setStateTtlProcessingTime(1000);
+      send(reference, true, row(RowKind.INSERT, 1, 10, 100));
+      send(reference, true, row(RowKind.INSERT, 2, 20, 200));
+      send(reference, false, row(RowKind.INSERT, 1, 30, 300));
+      send(reference, false, row(RowKind.INSERT, 3, 40, 400));
+      expected[0] = stockSnapshot(reference, 1);
+      source.initializeState(expected[0]);
+      source.open();
+      source.setStateTtlProcessingTime(1000);
+      source.setProcessingTime(1000);
+      var owner = (NativeColumnarUpdatingJoinOperator) source.getOperator();
+      assertTrue(owner.directRocksDBState());
+      try {
+        captured[0] = CanonicalDistinctWindowAsyncTest.capture(source, 2);
+        reference.setStateTtlProcessingTime(1400);
+        source.setStateTtlProcessingTime(1400);
+        source.setProcessingTime(1400);
+        for (var event :
+            List.of(
+                new Event(true, row(RowKind.DELETE, 1, 10, 100)),
+                new Event(true, row(RowKind.INSERT, 1, 11, 101)),
+                new Event(false, row(RowKind.INSERT, 2, 50, 500)))) {
+          send(reference, event.left, event.row);
+          push(source, event);
+        }
+        expected[1] = stockSnapshot(reference, 3);
+        captured[1] = CanonicalDistinctWindowAsyncTest.capture(source, 3);
+        push(source, new Event(false, row(RowKind.DELETE, 1, 30, 300)));
+        push(source, new Event(true, row(RowKind.INSERT, 9, 90, 900)));
+        source.prepareSnapshotPreBarrier(4);
+        owner.closeHandle();
+        owner.handle = 0;
+        for (int stage = 1; stage >= 0; stage--) {
+          var saved = CanonicalDistinctWindowAsyncTest.finishOnWriter(captured[stage]);
+          try (var stock = stock(kind, shape, retention, keyless);
+              var returned = stock(kind, shape, retention, keyless)) {
+            stock.initializeState(expected[stage]);
+            returned.initializeState(saved);
+            stock.open();
+            returned.open();
+            int emitted = 0;
+            for (long time : new long[] {1800, 2100, 2500}) {
+              stock.setStateTtlProcessingTime(time);
+              returned.setStateTtlProcessingTime(time);
+              for (var event :
+                  List.of(
+                      new Event(false, row(RowKind.INSERT, 1, time, time)),
+                      new Event(true, row(RowKind.INSERT, 3, time + 1, time + 1)),
+                      new Event(false, row(RowKind.INSERT, 2, time + 2, time + 2)))) {
+                send(stock, event.left, event.row);
+                send(returned, event.left, event.row);
+              }
+              var rows = drain(stock);
+              emitted += rows.size();
+              assertEquals(rows, drain(returned), "capture=" + stage + ",clock=" + time);
+            }
+            var removals = new ArrayList<Event>();
+            removals.add(new Event(false, row(RowKind.DELETE, 1, 30, 300)));
+            removals.add(new Event(false, row(RowKind.DELETE, 3, 40, 400)));
+            if (stage == 1) removals.add(new Event(false, row(RowKind.DELETE, 2, 50, 500)));
+            for (long time : new long[] {1800, 2100, 2500}) {
+              removals.add(new Event(false, row(RowKind.DELETE, 1, time, time)));
+              removals.add(new Event(false, row(RowKind.DELETE, 2, time + 2, time + 2)));
+            }
+            removals.add(new Event(true, row(RowKind.INSERT, 4, 99, 999)));
+            for (var event : removals) {
+              send(stock, event.left, event.row);
+              send(returned, event.left, event.row);
+            }
+            var tail = drain(stock);
+            emitted += tail.size();
+            assertEquals(tail, drain(returned));
+            assertTrue(emitted > 0);
+          } finally {
+            saved.discardState();
+          }
+        }
+      } finally {
+        for (var future : captured) if (future != null) future.cancel();
+        CanonicalDistinctWindowAsyncTest.discardOutput(source);
+      }
+    } finally {
+      for (var state : expected) if (state != null) state.discardState();
+    }
+  }
+
+  private static org.apache.flink.runtime.checkpoint.OperatorSubtaskState stockSnapshot(
+      org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness<?> harness, long id)
+      throws Exception {
+    harness.prepareSnapshotPreBarrier(id);
+    return harness
+        .snapshotWithLocalState(id, 0, SavepointType.savepoint(SavepointFormatType.CANONICAL))
+        .getJobManagerOwnedState();
+  }
+
+  private static KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+      nativeHarness(int kind, int shape, long ttl, boolean keyless) throws Exception {
+    int[] keys = keyless ? new int[0] : new int[] {0};
+    var operator =
+        new NativeColumnarUpdatingJoinOperator(
+            keys,
+            keys,
+            keyless ? new int[0] : new int[] {1},
+            kind,
+            INPUT,
+            INPUT,
+            new int[0],
+            new int[0],
+            new int[0],
+            new long[0],
+            new double[0],
+            new String[0],
+            NativeUdf.Binding.EMPTY,
+            keyless
+                ? new int[] {Native.STOCK_KEY_PROJECTION}
+                : new int[] {Native.STOCK_KEY_PROJECTION, -1},
+            shape == 0,
+            shape == 0,
+            false,
+            -1,
+            ttl,
+            ttl,
+            keyless ? 1 : 128);
+    var contract = contract(kind, shape, ttl, keyless);
+    operator.setStockStateContract(contract);
+    var harness =
+        new KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>(
+            operator,
+            ignored -> 0,
+            ignored -> 0,
+            org.apache.flink.api.common.typeinfo.Types.INT,
+            keyless ? 1 : 128,
+            1,
+            0);
+    var config = new Configuration();
+    config.setString(
+        org.apache.flink.configuration.StateBackendOptions.STATE_BACKEND.key(),
+        tech.streamfusion.state.RocksDBNativeStateBackendFactory.class.getName());
+    tech.streamfusion.state.CanonicalStateBackend.install(
+        org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
+            .getExecutionEnvironment(),
+        config,
+        harness.getStreamConfig().getOperatorID().toHexString(),
+        operator.getClass().getSimpleName(),
+        contract,
+        CanonicalJoinStateInteropTest.class.getClassLoader());
+    harness.setStateBackend(
+        new tech.streamfusion.state.CanonicalStateBackendFactory()
+            .createFromConfig(config, CanonicalJoinStateInteropTest.class.getClassLoader()));
+    harness.setup(new ArrowBatchSerializer());
+    return harness;
+  }
+
+  private static void push(
+      KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch> harness,
+      Event event)
+      throws Exception {
+    var record =
+        new StreamRecord<>(
+            new ArrowBatch(
+                RowDataArrowConverter.write(
+                    List.of(event.row), INPUT, NativeAllocator.SHARED, true)));
+    if (event.left) harness.processElement1(record);
+    else harness.processElement2(record);
+  }
+
   @ParameterizedTest
   @CsvSource({
     "count,false,false", "count,true,false", "key,false,false", "key,true,false",

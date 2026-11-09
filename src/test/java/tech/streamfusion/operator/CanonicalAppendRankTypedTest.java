@@ -161,6 +161,94 @@ class CanonicalAppendRankTypedTest {
     }
   }
 
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource({
+    "false,false,false", "false,false,true", "false,true,false", "false,true,true",
+    "true,false,false", "true,false,true", "true,true,false", "true,true,true"
+  })
+  void retainedRankViewsFinishAfterLiveWinnerChangesAndOwnerClose(
+      boolean fast, boolean ttl, boolean rank) throws Exception {
+    var type = RowType.of(new IntType(), new VarCharType(100), new IntType());
+    var output = rank ? appendRank(type) : type;
+    int[] key = {1};
+    var keySelector = selector(type, key);
+    var keyType = (RowType) keySelector.getProducedType().toLogicalType();
+    long retention = ttl ? 1000 : 0;
+    var contract =
+        new StockAppendTopNStateContract(
+            new RowDataSerializer(keyType),
+            keySelector,
+            selector(type, 2),
+            keyType,
+            type,
+            new int[] {2},
+            fast,
+            false,
+            ttl);
+    var captured = new org.apache.flink.streaming.api.operators.OperatorSnapshotFutures[2];
+    var expected = new org.apache.flink.runtime.checkpoint.OperatorSubtaskState[2];
+    try (var reference = stock(type, output, key, 2, retention, fast, rank, true);
+        var source = nativeHarness(type, key, 2, retention, fast, rank, true, contract)) {
+      reference.open();
+      synchronizeCacheClock(reference, fast);
+      time(reference, 1000);
+      feed(
+          reference,
+          type,
+          List.of(
+              row("released", 1, 20, 1), row("released", 1, 10, 2),
+              row("released", 2, 30, 3), row("released", null, 40, 4)));
+      expected[0] = snapshot(reference);
+      source.initializeState(expected[0]);
+      source.open();
+      time(source, 1000);
+      var owner = (CanonicalRank) source.getOperator();
+      assertEquals("rocksdb", owner.storage());
+      try {
+        captured[0] = CanonicalDistinctWindowAsyncTest.capture(source, 2);
+        var changes = List.of(row("released", 1, 5, 5), row("released", null, 15, 6));
+        time(reference, 1400);
+        feed(reference, type, changes);
+        push(source, type, changes, 1400);
+        expected[1] = snapshot(reference);
+        captured[1] = CanonicalDistinctWindowAsyncTest.capture(source, 3);
+        push(source, type, List.of(row("released", 1, -99, 7)), 1600);
+        owner.closeHandle();
+        owner.handle = 0;
+        for (int stage = 1; stage >= 0; stage--) {
+          var saved = CanonicalDistinctWindowAsyncTest.finishOnWriter(captured[stage]);
+          try (var stock = stock(type, output, key, 2, retention, fast, rank, false);
+              var returned = stock(type, output, key, 2, retention, fast, rank, true)) {
+            stock.initializeState(expected[stage]);
+            returned.initializeState(saved);
+            stock.open();
+            returned.open();
+            synchronizeCacheClock(stock, fast);
+            synchronizeCacheClock(returned, fast);
+            for (long now : new long[] {1800, 2100, 2500}) {
+              var rows =
+                  List.of(row("released", 1, 12, (int) now), row("released", 2, 8, (int) now + 1));
+              time(stock, now);
+              time(returned, now);
+              feed(stock, type, rows);
+              feed(returned, type, rows);
+              assertEquals(
+                  bytes(output, stock.extractOutputValues()),
+                  bytes(output, returned.extractOutputValues()));
+            }
+          } finally {
+            saved.discardState();
+          }
+        }
+      } finally {
+        for (var future : captured) if (future != null) future.cancel();
+        CanonicalDistinctWindowAsyncTest.discardOutput(source);
+      }
+    } finally {
+      for (var state : expected) if (state != null) state.discardState();
+    }
+  }
+
   private static void synchronizeCacheClock(
       KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness, boolean fast)
       throws Exception {

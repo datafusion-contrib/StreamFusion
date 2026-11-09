@@ -65,14 +65,21 @@ metadata columns from entering the persistent row codec or the join output.
 
 ## Stock canonical savepoint interoperability
 
-The unmerged [#569 implementation](https://github.com/datafusion-contrib/StreamFusion/issues/569)
-has a direct state adapter for released Flink 2.2.1 event-time window joins. A bound operator
+The [#569 implementation](https://github.com/datafusion-contrib/StreamFusion/issues/569)
+has a direct state adapter for released Flink 1.18.1 and 2.2.1 event-time window joins. A bound operator
 exports its live left and right input rows into stock `left-records` and `right-records`
 `ListState<RowData>`, using the original join-key serializer, `LongSerializer` window-end
 namespaces, and the stock `window-timers` event-time queue. Flink's canonical writer writes that
 projection directly; no native checkpoint or IPC snapshot is produced first. Imported rows enter
 native pending state without replaying input or firing windows. Memory imports own their Arrow
 buffers after Java releases the transfer batch; persistent imports retain individual store records.
+
+Two pending actual-operator savepoints also finish on the writer in reverse order after live
+input changes and native-handle closure. Their independently restored stock operators preserve
+pending row lists and callbacks through continued firing. The pair-selected fourteen cases per
+release span four join kinds, both native/stock stores, keyed/global input and UTC/fixed/regional
+zones; the default provider retains all 96 combinations. The live reference and native operator
+receive the same watermark frontier before capture, accounting for the released restore reset.
 
 Operator harnesses cover both switch directions and both stores, INNER/LEFT/RIGHT/FULL, keyed and
 keyless input, NULLs and duplicates, empty saves, partial firing, immediate re-export, and continued

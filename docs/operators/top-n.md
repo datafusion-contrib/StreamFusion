@@ -433,6 +433,13 @@ capture independent native state and convert asynchronously through a temporary 
 ownership independently of the live operator. This qualification does not extend automatically to
 all rank algorithms or cross-version upgrades.
 
+Append rank has separate actual-operator controls on both releases: AppendFast and FastTop1,
+with/without rank output and TTL. Each imports nonempty released state, pins two native RocksDB
+views around winner changes, continues live input, closes the native handle and completes the
+views in reverse order on the writer. Stock continuation checks each saved winner/list and its
+original TTL age through expiry. These eight cases qualify this capture lifecycle for the
+exercised typed contract; broader rank type/algorithm qualification remains separate.
+
 The Flink 2.2.1 first-N counter now has automatic stock canonical binding in normal SQL and stock
 compiled-plan execution. It preserves `counterState`, the stock INT/TTL serializers, actual grouping
 keys, original write ages, stock identities and resolved maximum parallelism. Export reads live

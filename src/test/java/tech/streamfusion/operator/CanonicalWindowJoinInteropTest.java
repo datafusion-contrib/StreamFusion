@@ -174,6 +174,69 @@ class CanonicalWindowJoinInteropTest {
     assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
   }
 
+  @ParameterizedTest(name = "kind={0},stockRocks={1},nativeRocks={2},keyless={3},zone={4}")
+  @MethodSource("cases")
+  void pendingRowsAndTimersFinishTwoPinnedViewsAfterLiveWritesAndOwnerClose(
+      String kind, boolean stockStore, boolean nativeStore, boolean keyless, String zone)
+      throws Exception {
+    var plan = new Plan(kind, keyless, zone);
+    var captured = new org.apache.flink.streaming.api.operators.OperatorSnapshotFutures[2];
+    var expected = new OperatorSubtaskState[2];
+    try (var reference = plan.stock(stockStore);
+        var source = plan.nativeHarness(nativeStore)) {
+      reference.open();
+      plan.prefix(reference);
+      plan.watermarks(reference, plan.deadline(plan.local + 1000));
+      stockOutput(reference);
+      expected[0] = snapshot(reference);
+      source.initializeState(expected[0]);
+      source.open();
+      source.processWatermark1(new Watermark(plan.deadline(plan.local + 1000)));
+      source.processWatermark2(new Watermark(plan.deadline(plan.local + 1000)));
+      var owner = (NativeWindowJoinOperator) source.getOperator();
+      assertEquals(nativeStore, owner.directRocksDBState());
+      try {
+        captured[0] = CanonicalDistinctWindowAsyncTest.capture(source, 2);
+        plan.extra(reference);
+        plan.extraNative(source);
+        expected[1] = snapshot(reference);
+        captured[1] = CanonicalDistinctWindowAsyncTest.capture(source, 3);
+        plan.extraNative(source);
+        source.prepareSnapshotPreBarrier(4);
+        owner.closeHandle();
+        owner.handle = 0;
+        for (int stage = 1; stage >= 0; stage--) {
+          var saved = CanonicalDistinctWindowAsyncTest.finishOnWriter(captured[stage]);
+          try (var stock = plan.stock(stockStore);
+              var returned = plan.stock(!stockStore)) {
+            stock.initializeState(expected[stage]);
+            returned.initializeState(saved);
+            stock.open();
+            returned.open();
+            plan.extra(stock);
+            plan.extra(returned);
+            int emitted = 0;
+            for (long end : new long[] {plan.local + 2000, plan.local + 4000}) {
+              plan.watermarks(stock, plan.deadline(end));
+              plan.watermarks(returned, plan.deadline(end));
+              var rows = stockOutput(stock);
+              emitted += rows.size();
+              assertEquals(rows, stockOutput(returned));
+            }
+            assertTrue(emitted > 0);
+          } finally {
+            saved.discardState();
+          }
+        }
+      } finally {
+        for (var future : captured) if (future != null) future.cancel();
+        CanonicalDistinctWindowAsyncTest.discardOutput(source);
+      }
+    } finally {
+      for (var state : expected) if (state != null) state.discardState();
+    }
+  }
+
   static Stream<Arguments> shapes() {
     var cases = new ArrayList<Arguments>();
     for (String kind : List.of("INNER", "LEFT", "RIGHT", "FULL"))

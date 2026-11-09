@@ -115,6 +115,19 @@ selection also includes six buffered-winner captures across nested keys and TTL 
 parameter/pair selections do not establish exhaustive or cross-release upgrade qualification.
 Retained grouped DISTINCT with per-entry TTL
 is outside current canonical admission and remains later coverage expansion.
+
+Additional actual-operator writer controls cover regular joins, window joins and append rank on
+both releases. Each captures two versions, changes live state, closes the native handle, finishes
+the futures in reverse order and compares nonempty stock continuation with independent stock
+captures. Regular joins check all six kinds, released value/unique-map/occurrence-map layouts and
+TTL ages; window joins check pending lists, namespaces and timers; append rank checks winner/list
+changes, rank output and TTL. Local selection adds 41 capture cases per release (19 regular joins,
+14 window joins and eight ranks); default providers retain 48/96/8 combinations respectively.
+Clocked harnesses align native processing time with stock TTL time and restore-compatible event
+frontiers. These controls qualify the exercised contracts, not the entire operator inventory.
+The 1.18 selection passes 67 checks, including shared capture/cancellation/routing controls.
+A clean 2.2 regression batch passes 233 without skips, including the existing join, window-join
+and typed append-rank controls. No Rust code changed, so native builds and suites were not repeated.
 OVER retained input and interval/temporal join payloads now use that same retained-row codec.
 Already-canonical ROW/ARRAY/MAP payloads therefore remain in native RocksDB instead of selecting
 the snapshot-backed memory path. Aggregate-state, ordering and partition-key admission remain

@@ -123,4 +123,16 @@ class CanonicalDistinctWindowAsyncTest {
                 0),
             new MemCheckpointStreamFactory(16 * 1024 * 1024));
   }
+
+  static void discardOutput(
+      org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness<?> source) {
+    Object event;
+    while ((event = source.getOutput().poll()) != null) {
+      if (event instanceof org.apache.flink.streaming.runtime.streamrecord.StreamRecord) {
+        var value =
+            ((org.apache.flink.streaming.runtime.streamrecord.StreamRecord<?>) event).getValue();
+        if (value instanceof ArrowBatch) ((ArrowBatch) value).root().close();
+      }
+    }
+  }
 }
