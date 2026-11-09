@@ -2445,193 +2445,387 @@
     "upstream_conclusion": "success",
     "strict_docs_run": 42524074281,
     "strict_docs_conclusion": "success",
-    "canonical_jdk17": {
-      "status": "all 16 jobs passed",
+    "canonical_complete_matrix": {
+      "status": "all 32 jobs passed",
       "coverage": {
-        "same_class_outcome_multiset": true,
-        "same_partition_inventory": true,
-        "class_reports": 116,
-        "inventory_classes": 118,
-        "tests": 3620,
-        "skipped": 0
+        "11": {
+          "same_class_outcome_multiset": true,
+          "same_partition_inventory": true,
+          "class_reports": 116,
+          "inventory_classes": 118,
+          "tests": 3620,
+          "skipped": 0
+        },
+        "17": {
+          "same_class_outcome_multiset": true,
+          "same_partition_inventory": true,
+          "class_reports": 116,
+          "inventory_classes": 118,
+          "tests": 3620,
+          "skipped": 0
+        }
       },
       "comparison": {
         "42499556204": {
           "source_sha": "3c727bb1071d04583e6926f4fde8dfdf5ad6d117",
-          "jobs": [
-            {
-              "job": 128792093923,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 6)",
-              "elapsed_seconds": 2908.0
+          "groups": {
+            "11": {
+              "jobs": [
+                {
+                  "job": 128792093991,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 5)",
+                  "elapsed_seconds": 3353.0
+                },
+                {
+                  "job": 128792094033,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 3)",
+                  "elapsed_seconds": 3654.0
+                },
+                {
+                  "job": 128792094037,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 10)",
+                  "elapsed_seconds": 2805.0
+                },
+                {
+                  "job": 128792094052,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 16)",
+                  "elapsed_seconds": 3521.0
+                },
+                {
+                  "job": 128792094053,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 15)",
+                  "elapsed_seconds": 3295.0
+                },
+                {
+                  "job": 128792094065,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 4)",
+                  "elapsed_seconds": 3845.0
+                },
+                {
+                  "job": 128792094069,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 9)",
+                  "elapsed_seconds": 4248.0
+                },
+                {
+                  "job": 128792094079,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 1)",
+                  "elapsed_seconds": 2533.0
+                },
+                {
+                  "job": 128792094087,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 7)",
+                  "elapsed_seconds": 3404.0
+                },
+                {
+                  "job": 128792094090,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 11)",
+                  "elapsed_seconds": 4378.0
+                },
+                {
+                  "job": 128792094096,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 2)",
+                  "elapsed_seconds": 3580.0
+                },
+                {
+                  "job": 128792094111,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 6)",
+                  "elapsed_seconds": 2680.0
+                },
+                {
+                  "job": 128792094112,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 14)",
+                  "elapsed_seconds": 4379.0
+                },
+                {
+                  "job": 128792094125,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 13)",
+                  "elapsed_seconds": 2508.0
+                },
+                {
+                  "job": 128792094126,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 12)",
+                  "elapsed_seconds": 2440.0
+                },
+                {
+                  "job": 128792094136,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 8)",
+                  "elapsed_seconds": 3494.0
+                }
+              ],
+              "runner_seconds": 54117.0,
+              "max_job_seconds": 4379.0
             },
-            {
-              "job": 128792093926,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 2)",
-              "elapsed_seconds": 1911.0
-            },
-            {
-              "job": 128792093931,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 16)",
-              "elapsed_seconds": 2284.0
-            },
-            {
-              "job": 128792093933,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 4)",
-              "elapsed_seconds": 1951.0
-            },
-            {
-              "job": 128792093935,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 3)",
-              "elapsed_seconds": 2865.0
-            },
-            {
-              "job": 128792093940,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 9)",
-              "elapsed_seconds": 3242.0
-            },
-            {
-              "job": 128792093994,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 14)",
-              "elapsed_seconds": 2567.0
-            },
-            {
-              "job": 128792094017,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 12)",
-              "elapsed_seconds": 2744.0
-            },
-            {
-              "job": 128792094018,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 10)",
-              "elapsed_seconds": 2539.0
-            },
-            {
-              "job": 128792094041,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 1)",
-              "elapsed_seconds": 1819.0
-            },
-            {
-              "job": 128792094044,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 5)",
-              "elapsed_seconds": 2375.0
-            },
-            {
-              "job": 128792094049,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 11)",
-              "elapsed_seconds": 2668.0
-            },
-            {
-              "job": 128792094058,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 13)",
-              "elapsed_seconds": 2846.0
-            },
-            {
-              "job": 128792094074,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 7)",
-              "elapsed_seconds": 2584.0
-            },
-            {
-              "job": 128792094089,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 15)",
-              "elapsed_seconds": 3152.0
-            },
-            {
-              "job": 128792094131,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 8)",
-              "elapsed_seconds": 2753.0
+            "17": {
+              "jobs": [
+                {
+                  "job": 128792093923,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 6)",
+                  "elapsed_seconds": 2908.0
+                },
+                {
+                  "job": 128792093926,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 2)",
+                  "elapsed_seconds": 1911.0
+                },
+                {
+                  "job": 128792093931,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 16)",
+                  "elapsed_seconds": 2284.0
+                },
+                {
+                  "job": 128792093933,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 4)",
+                  "elapsed_seconds": 1951.0
+                },
+                {
+                  "job": 128792093935,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 3)",
+                  "elapsed_seconds": 2865.0
+                },
+                {
+                  "job": 128792093940,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 9)",
+                  "elapsed_seconds": 3242.0
+                },
+                {
+                  "job": 128792093994,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 14)",
+                  "elapsed_seconds": 2567.0
+                },
+                {
+                  "job": 128792094017,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 12)",
+                  "elapsed_seconds": 2744.0
+                },
+                {
+                  "job": 128792094018,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 10)",
+                  "elapsed_seconds": 2539.0
+                },
+                {
+                  "job": 128792094041,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 1)",
+                  "elapsed_seconds": 1819.0
+                },
+                {
+                  "job": 128792094044,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 5)",
+                  "elapsed_seconds": 2375.0
+                },
+                {
+                  "job": 128792094049,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 11)",
+                  "elapsed_seconds": 2668.0
+                },
+                {
+                  "job": 128792094058,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 13)",
+                  "elapsed_seconds": 2846.0
+                },
+                {
+                  "job": 128792094074,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 7)",
+                  "elapsed_seconds": 2584.0
+                },
+                {
+                  "job": 128792094089,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 15)",
+                  "elapsed_seconds": 3152.0
+                },
+                {
+                  "job": 128792094131,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 8)",
+                  "elapsed_seconds": 2753.0
+                }
+              ],
+              "runner_seconds": 41208.0,
+              "max_job_seconds": 3242.0
             }
-          ],
-          "runner_seconds": 41208.0,
-          "max_job_seconds": 3242.0
+          },
+          "runner_seconds": 95325.0,
+          "max_job_seconds": 4379.0
         },
         "42524074274": {
           "source_sha": "2f82b3401d5b1441d2302b37522af01847967054",
-          "jobs": [
-            {
-              "job": 128865613790,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 10)",
-              "elapsed_seconds": 2170.0
+          "groups": {
+            "11": {
+              "jobs": [
+                {
+                  "job": 128865613884,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 6)",
+                  "elapsed_seconds": 3530.0
+                },
+                {
+                  "job": 128865613885,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 1)",
+                  "elapsed_seconds": 2027.0
+                },
+                {
+                  "job": 128865613956,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 13)",
+                  "elapsed_seconds": 3281.0
+                },
+                {
+                  "job": 128865613987,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 8)",
+                  "elapsed_seconds": 1973.0
+                },
+                {
+                  "job": 128865613992,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 14)",
+                  "elapsed_seconds": 2685.0
+                },
+                {
+                  "job": 128865613995,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 4)",
+                  "elapsed_seconds": 2613.0
+                },
+                {
+                  "job": 128865614008,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 10)",
+                  "elapsed_seconds": 2724.0
+                },
+                {
+                  "job": 128865614020,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 12)",
+                  "elapsed_seconds": 2184.0
+                },
+                {
+                  "job": 128865614025,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 5)",
+                  "elapsed_seconds": 3200.0
+                },
+                {
+                  "job": 128865614046,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 16)",
+                  "elapsed_seconds": 2440.0
+                },
+                {
+                  "job": 128865614061,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 7)",
+                  "elapsed_seconds": 3210.0
+                },
+                {
+                  "job": 128865614067,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 3)",
+                  "elapsed_seconds": 3217.0
+                },
+                {
+                  "job": 128865614126,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 11)",
+                  "elapsed_seconds": 2229.0
+                },
+                {
+                  "job": 128865614149,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 9)",
+                  "elapsed_seconds": 3421.0
+                },
+                {
+                  "job": 128865614150,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 2)",
+                  "elapsed_seconds": 2433.0
+                },
+                {
+                  "job": 128865614156,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 15)",
+                  "elapsed_seconds": 3464.0
+                }
+              ],
+              "runner_seconds": 44631.0,
+              "max_job_seconds": 3530.0
             },
-            {
-              "job": 128865613857,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 13)",
-              "elapsed_seconds": 2366.0
-            },
-            {
-              "job": 128865613879,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 2)",
-              "elapsed_seconds": 2258.0
-            },
-            {
-              "job": 128865613888,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 16)",
-              "elapsed_seconds": 2176.0
-            },
-            {
-              "job": 128865613895,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 9)",
-              "elapsed_seconds": 2470.0
-            },
-            {
-              "job": 128865613915,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 7)",
-              "elapsed_seconds": 1796.0
-            },
-            {
-              "job": 128865613917,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 14)",
-              "elapsed_seconds": 2928.0
-            },
-            {
-              "job": 128865613926,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 12)",
-              "elapsed_seconds": 2396.0
-            },
-            {
-              "job": 128865613929,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 8)",
-              "elapsed_seconds": 1720.0
-            },
-            {
-              "job": 128865613930,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 3)",
-              "elapsed_seconds": 2253.0
-            },
-            {
-              "job": 128865613932,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 5)",
-              "elapsed_seconds": 2326.0
-            },
-            {
-              "job": 128865613994,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 1)",
-              "elapsed_seconds": 2211.0
-            },
-            {
-              "job": 128865614001,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 15)",
-              "elapsed_seconds": 2457.0
-            },
-            {
-              "job": 128865614023,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 4)",
-              "elapsed_seconds": 1919.0
-            },
-            {
-              "job": 128865614062,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 6)",
-              "elapsed_seconds": 2503.0
-            },
-            {
-              "job": 128865614101,
-              "name": "Canonical savepoint jobs (JDK 17) (shard 11)",
-              "elapsed_seconds": 1752.0
+            "17": {
+              "jobs": [
+                {
+                  "job": 128865613790,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 10)",
+                  "elapsed_seconds": 2170.0
+                },
+                {
+                  "job": 128865613857,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 13)",
+                  "elapsed_seconds": 2366.0
+                },
+                {
+                  "job": 128865613879,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 2)",
+                  "elapsed_seconds": 2258.0
+                },
+                {
+                  "job": 128865613888,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 16)",
+                  "elapsed_seconds": 2176.0
+                },
+                {
+                  "job": 128865613895,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 9)",
+                  "elapsed_seconds": 2470.0
+                },
+                {
+                  "job": 128865613915,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 7)",
+                  "elapsed_seconds": 1796.0
+                },
+                {
+                  "job": 128865613917,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 14)",
+                  "elapsed_seconds": 2928.0
+                },
+                {
+                  "job": 128865613926,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 12)",
+                  "elapsed_seconds": 2396.0
+                },
+                {
+                  "job": 128865613929,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 8)",
+                  "elapsed_seconds": 1720.0
+                },
+                {
+                  "job": 128865613930,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 3)",
+                  "elapsed_seconds": 2253.0
+                },
+                {
+                  "job": 128865613932,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 5)",
+                  "elapsed_seconds": 2326.0
+                },
+                {
+                  "job": 128865613994,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 1)",
+                  "elapsed_seconds": 2211.0
+                },
+                {
+                  "job": 128865614001,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 15)",
+                  "elapsed_seconds": 2457.0
+                },
+                {
+                  "job": 128865614023,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 4)",
+                  "elapsed_seconds": 1919.0
+                },
+                {
+                  "job": 128865614062,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 6)",
+                  "elapsed_seconds": 2503.0
+                },
+                {
+                  "job": 128865614101,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 11)",
+                  "elapsed_seconds": 1752.0
+                }
+              ],
+              "runner_seconds": 35701.0,
+              "max_job_seconds": 2928.0
             }
-          ],
-          "runner_seconds": 35701.0,
-          "max_job_seconds": 2928.0
+          },
+          "runner_seconds": 80332.0,
+          "max_job_seconds": 3530.0
         }
       },
-      "limits": "Complete JDK17 canonical group only, including cold setup. Other groups and overall qualification remain separate. Observational cross-run comparison includes runner and cache variability; elapsed excludes queue delay."
+      "limits": "Complete canonical/savepoint matrix only, including cold setup. Overall source qualification failed in runtime and sibling runtime jobs were cancelled. Observational cross-run comparison includes runner/cache variability and excludes queue delay. No complete-workflow speedup is established."
     }
   }
 }

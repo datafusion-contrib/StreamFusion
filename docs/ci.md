@@ -914,12 +914,15 @@ savepoint jobs. Full source CI must still qualify all recovery assertions, cold 
 complete class inventories and the combined configuration. This is test execution
 throughput within each runner, not fewer cases or additional required runners.
 
-The full required JDK 17 savepoint group subsequently passed all 16 jobs at source
+The full required savepoint matrix subsequently passed all 32 jobs at source
 `2f82b3401d5b1441d2302b37522af01847967054`. Artifact comparisons retained the exact
-118-class partition inventory, 116 runnable classes, 3,620 cases and zero skips.
-Including cold setup, runner time fell from 41,208 to 35,701 seconds (13.4%) versus
-the preceding completed source run; the longest job fell from 3,242 to 2,928 seconds
-(54.0 to 48.8 minutes). These are complete-group observations with runner/cache variability,
+118-class partition inventory, 116 runnable classes, 3,620 cases and zero skips per JDK.
+Including cold setup, combined runner time fell from 95,325 to 80,332 seconds (15.7%)
+versus the preceding completed source run, saving 4.16 runner hours without adding jobs.
+JDK 11 runner time fell from 54,117 to 44,631 seconds (17.5%), with the longest job
+falling from 4,379 to 3,530 seconds (73.0 to 58.8 minutes). JDK 17 runner time fell from
+41,208 to 35,701 seconds (13.4%), with the longest job falling from 3,242 to 2,928 seconds
+(54.0 to 48.8 minutes). These are complete-matrix observations with runner/cache variability,
 not a whole-workflow speedup. The same source failed a Flink 1.18/JDK 17 binary recovery
 case because its result accumulator was missing, and fail-fast cancelled sibling runtime
 jobs. Full runtime qualification and the cause of that failure remain unresolved; the
