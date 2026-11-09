@@ -67,21 +67,10 @@ class CanonicalKafkaSinkJobTest {
 
   static Stream<Arguments> cases() {
     String selected = System.getProperty("sf.canonical.kafka.sink.mode", "all");
-    return Stream.of("continue", "no-input", "checkpoint", "rescale", "rescale-uids")
-        .filter(mode -> selected.equals("all") || selected.equals(mode))
-        .flatMap(
-            mode ->
-                Stream.of(false, true)
-                    .flatMap(
-                        ordinary ->
-                            Stream.of(false, true)
-                                .filter(first -> !mode.equals("checkpoint") || first)
-                                .flatMap(
-                                    first ->
-                                        Stream.of("incrementing", "pooling")
-                                            .map(
-                                                naming ->
-                                                    Arguments.of(mode, ordinary, first, naming)))));
+    return fixtureCases(
+            Stream.of("continue", "no-input", "checkpoint", "rescale", "rescale-uids")
+                .filter(mode -> selected.equals("all") || selected.equals(mode)))
+        .filter(test -> !test.get()[0].equals("checkpoint") || (boolean) test.get()[2]);
   }
 
   static Stream<Arguments> fixtureCases(Stream<String> modes) {
@@ -93,10 +82,15 @@ class CanonicalKafkaSinkJobTest {
                 .flatMap(
                     ordinary ->
                         Stream.of(false, true)
-                            .filter(first -> !smoke || first == mode.equals("full-batch"))
+                            .filter(
+                                first ->
+                                    !smoke
+                                        || first
+                                            == (mode.equals("full-batch")
+                                                || mode.equals("checkpoint")))
                             .flatMap(
                                 first ->
-                                    Stream.of("incrementing", "pooling")
+                                    CanonicalKafkaSinkJobWorker.transactionNamingStrategies()
                                         .filter(naming -> !smoke || naming.equals("incrementing"))
                                         .map(
                                             naming ->
@@ -169,9 +163,7 @@ class CanonicalKafkaSinkJobTest {
             + "','properties.bootstrap.servers'='"
             + kafka.getBootstrapServers()
             + "','format'='json','sink.delivery-guarantee'='exactly-once','sink.parallelism'='%SINK_PARALLELISM%'"
-            + ",'sink.transaction-naming-strategy'='"
-            + naming
-            + "'"
+            + CanonicalKafkaSinkJobWorker.transactionNamingOption(naming)
             + ",'sink.transactional-id-prefix'='"
             + topic
             + "')");
@@ -216,6 +208,9 @@ class CanonicalKafkaSinkJobTest {
           mode.equals("process-failure") || completedRecovery ? 42 : 0);
       assertFalse(Files.exists(root.resolve("failed-savepoint")));
       if (mode.equals("fence")) {
+        assertEquals(
+            CanonicalKafkaSinkJobWorker.failureEvidence(),
+            Files.readString(root.resolve("failed-failure-evidence")));
         assertTrue(Files.exists(root.resolve("failed-rejected-savepoint")));
         assertTrue(
             Long.parseLong(Files.readString(root.resolve("failed-failed-committables"))) > 0);
@@ -373,16 +368,14 @@ class CanonicalKafkaSinkJobTest {
                           + "/"
                           + owned
                           + "/"
-                          + (naming.equals("pooling")
-                              ? "EXPLICIT_BY_WRITER_STATE"
-                              : "IMPLICIT_BY_SUBTASK_ID"))
+                          + CanonicalKafkaSinkJobWorker.transactionOwnership(naming))
               .collect(Collectors.toList())
               .toString(),
           writerState.get(0)[6],
           "Saved transaction ownership must match the released rescaling contract");
       if (incoming > 0)
         assertTrue(
-            Integer.parseInt(writerState.get(0)[7]) > 0,
+            inventory.stream().mapToInt(cells -> Integer.parseInt(cells[7])).sum() > 0,
             "The handoff must retain actual precommitted transaction state: stage="
                 + stage
                 + ", mode="

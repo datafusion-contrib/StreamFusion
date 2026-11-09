@@ -601,12 +601,14 @@ JDK and shard, and selection manifests record the line. The former five-family s
 Each line selects from its own compiled test inventory and duration estimates, preserving every
 method and inherited parameterized invocation. Canonical job fixtures and their typed-state
 bases now live in shared test sources for joins, sort, normalization, deduplication, rank,
-window and grouped aggregates and managed UDFs. Kafka source and partition-discovery jobs are
-shared as well. This adds 87 job classes to the 1.18 inventory (106 total, compared with 118 on
-2.2). The 12 Kafka sink/pipeline job classes still use the 2.2 connector's transaction naming and
-ownership contract;
-porting their assertions to the released 1.18 connector layout remains open. Release adapters
-retain version-specific runtime behavior. Compilation and selection parity do not establish
+window and grouped aggregates and managed UDFs. Kafka source, partition-discovery and all twelve
+sink/pipeline job classes are shared as well. Both release lines now compile the same 118-class
+canonical job inventory. Narrow fixture adapters inspect each released connector's recovery
+format: 1.18's legacy writer prefix and committer collector, or 2.2's explicit writer ownership
+and precommitted transactions. The 1.18 connector uses its released incrementing transaction
+scheme; 2.2 retains both incrementing and pooling providers. Local fixture selection can sample
+scenarios across all twelve classes while hosted CI retains every release-supported provider.
+Release adapters retain version-specific runtime behavior. Compilation and selection parity do not establish
 that all handoffs pass: the complete required matrix remains the qualification gate. Adding a
 shared fixture automatically includes it in both lines' required canonical matrix. The existing
 three runtime shards retain the other default Surefire classes on both lines: the two selections

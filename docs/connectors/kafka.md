@@ -236,6 +236,19 @@ Flink 1.18 Kafka transaction, rescale or process-failure matrices.
 
 ## Canonical sink handoffs (partial)
 
+Sink and pipeline handoff fixtures are shared between released Flink 1.18.1/Kafka connector
+3.2.0-1.18 and Flink 2.2.1/connector 5.0.0-2.2. They cover continuation, no-input returns,
+native-checkpoint recovery, writer/joint-reader rescaling, controlled batch barriers, fencing,
+task/process failure and recovery after completed-savepoint acknowledgement loss. The 1.18
+connector has no transaction-naming option or pooling strategy: its writer stores the prefix,
+its subtask partitions determine ownership, and pending transactions are decoded from the
+released committer collector. The 2.2 fixture keeps its explicit writer-ownership and
+precommitted-ID checks. Fencing on 1.18 matches actual persisted pending transaction IDs against
+the IDs fenced at the broker; its runtime has no failed-committable metric. The 2.2 metric check
+remains required. Both require pending transaction state when input advanced, exact
+`read_committed` effects, native work and unchanged stock identities. Shared source/compilation
+coverage does not by itself qualify every scenario on both releases.
+
 Native Kafka serialization is synchronous and owns no durable state. Its unchanged Flink Kafka
 writer and committer retain their released state codecs and transaction ownership. Canonical
 identity binding treats the encoder as an explicitly declared stateless representation stage and

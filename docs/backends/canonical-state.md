@@ -46,7 +46,11 @@ same stock state and timer serializers as 2.2. Session TVFs are unavailable in 1
 uses the older eager owner, and explicit legacy V1 mode on 2.2 remains unqualified. The shared
 unbounded event-time scalar binding preserves 1.18 polling callbacks separately from pending
 timestamps; its captured RocksDB reader leaves metadata on disk. These same-line controls do not qualify the whole
-1.18 operator inventory or cross-line upgrades. Custom stock source/committer fixtures retain their
+1.18 operator inventory or cross-line upgrades. Both lines now compile the same 118 canonical
+job fixture classes, including all twelve Kafka sink/pipeline families. Their release adapters
+inspect the host connector's own writer/committer recovery format and retain exact transaction,
+identity and external-effect assertions; compilation parity is separate from job qualification.
+Custom stock source/committer fixtures retain their
 state and external effects in the qualified jobs. Native connector protocols have separate
 qualification: the [Kafka handoff matrices](../connectors/kafka.md#canonical-sink-handoffs-partial)
 include real-broker exactly-once sink and both-native pipelines, writer rescaling, transaction

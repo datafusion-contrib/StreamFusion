@@ -51,7 +51,9 @@ public final class CanonicalKafkaJobWorker {
     var config = new Configuration();
     config.setString("restart-strategy.type", "none");
     config.setString("rest.port", "0");
-    config.setString("execution.checkpointing.dir", root.resolve("checkpoints").toUri().toString());
+    config.set(
+        org.apache.flink.configuration.CheckpointingOptions.CHECKPOINTS_DIRECTORY,
+        root.resolve("checkpoints").toUri().toString());
     config.setString("metrics.reporter.kafka.factory.class", ReporterFactory.class.getName());
     if (checkpoint)
       config.setString(

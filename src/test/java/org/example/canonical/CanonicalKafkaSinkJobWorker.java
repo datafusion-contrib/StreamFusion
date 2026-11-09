@@ -35,6 +35,22 @@ public final class CanonicalKafkaSinkJobWorker {
     }
   }
 
+  public static java.util.stream.Stream<String> transactionNamingStrategies() {
+    return CanonicalWorkerCompat.kafkaNamingStrategies();
+  }
+
+  public static String transactionNamingOption(String naming) {
+    return CanonicalWorkerCompat.kafkaNamingOption(naming);
+  }
+
+  public static String transactionOwnership(String naming) {
+    return CanonicalWorkerCompat.kafkaOwnership(naming);
+  }
+
+  public static String failureEvidence() {
+    return CanonicalWorkerCompat.kafkaFailureEvidence();
+  }
+
   private static void run(String[] args) throws Exception {
     boolean nativeRun = args[0].equals("native");
     Path root = Path.of(args[1]);
@@ -64,7 +80,9 @@ public final class CanonicalKafkaSinkJobWorker {
     var config = new Configuration();
     config.setString("restart-strategy.type", "none");
     config.setString("rest.port", "0");
-    config.setString("execution.checkpointing.dir", root.resolve("checkpoints").toUri().toString());
+    config.set(
+        org.apache.flink.configuration.CheckpointingOptions.CHECKPOINTS_DIRECTORY,
+        root.resolve("checkpoints").toUri().toString());
     if (checkpoint)
       config.setString(
           "execution.checkpointing.externalized-checkpoint-retention", "RETAIN_ON_CANCELLATION");
@@ -129,7 +147,7 @@ public final class CanonicalKafkaSinkJobWorker {
       if (compiled) {
         plan =
             Files.exists(planFile)
-                ? table.loadPlan(PlanReference.fromFile(planFile.toString()))
+                ? table.loadPlan(PlanReference.fromFile(planFile.toFile()))
                 : table.compilePlanSql(query);
         String portable = plan.asJsonString();
         if (portable.contains("tech.streamfusion")) throw new AssertionError("Nonportable plan");
@@ -230,13 +248,21 @@ public final class CanonicalKafkaSinkJobWorker {
                     SavepointFormatType.CANONICAL)
                 .get(90, TimeUnit.SECONDS);
         job.getJobExecutionResult().get(30, TimeUnit.SECONDS);
-        if (Reporter.failedCommittables() == 0)
+        saveInventory(root, stage, rejected);
+        long failedCommittables = Reporter.failedCommittables();
+        if (failureEvidence().equals("FENCED_COMMITTABLE_STATE")) {
+          var fenced = Files.readAllLines(root.resolve(stage + "-fenced-transactions"));
+          failedCommittables =
+              Files.readAllLines(root.resolve(stage + "-precommitted-transactions")).stream()
+                  .filter(fenced::contains)
+                  .count();
+        }
+        if (failedCommittables == 0)
           throw new AssertionError("Fenced transaction was not reported by the stock committer");
         Files.writeString(root.resolve(stage + "-rejected-savepoint"), rejected);
         Files.writeString(
-            root.resolve(stage + "-failed-committables"),
-            Long.toString(Reporter.failedCommittables()));
-        saveInventory(root, stage, rejected);
+            root.resolve(stage + "-failed-committables"), Long.toString(failedCommittables));
+        Files.writeString(root.resolve(stage + "-failure-evidence"), failureEvidence());
         Files.writeString(root.resolve(stage + "-native-rows"), Long.toString(Reporter.rows()));
         Files.writeString(
             root.resolve(stage + "-native-source-output"), Long.toString(Reporter.sourceOutput()));
@@ -472,7 +498,7 @@ public final class CanonicalKafkaSinkJobWorker {
 
   private static void saveInventory(Path root, String stage, String pointer) throws Exception {
     Path location = Path.of(java.net.URI.create(pointer));
-    var writerSerializer =
+    var kafkaSink =
         org.apache.flink.connector.kafka.sink.KafkaSink.<String>builder()
             .setBootstrapServers("unused:9092")
             .setRecordSerializer(
@@ -481,8 +507,9 @@ public final class CanonicalKafkaSinkJobWorker {
                     .setValueSerializationSchema(
                         new org.apache.flink.api.common.serialization.SimpleStringSchema())
                     .build())
-            .build()
-            .getWriterStateSerializer();
+            .build();
+    var writerSerializer = kafkaSink.getWriterStateSerializer();
+    var committableSerializer = kafkaSink.getCommittableSerializer();
     try (var input =
         new DataInputStream(
             Files.newInputStream(
@@ -491,18 +518,20 @@ public final class CanonicalKafkaSinkJobWorker {
           org.apache.flink.runtime.checkpoint.Checkpoints.loadCheckpointMetadata(
               input, CanonicalKafkaSinkJobWorker.class.getClassLoader(), pointer);
       var inventory = new ArrayList<String>();
+      var transactions = new ArrayList<String>();
       for (var state : metadata.getOperatorStates()) {
         var sourceOffsets = new ArrayList<String>();
         var writerPrefixes = new ArrayList<String>();
         var ownership = new ArrayList<String>();
         int pendingTransactions = 0;
         var names = new java.util.TreeSet<String>();
-        for (var subtask : state.getStates())
-          for (var handle : subtask.getManagedOperatorState())
+        for (var subtask : state.getSubtaskStates().entrySet())
+          for (var handle : subtask.getValue().getManagedOperatorState())
             for (var entry : handle.getStateNameToPartitionOffsets().entrySet()) {
               names.add(entry.getKey());
               if (!entry.getKey().equals("SourceReaderState")
-                  && !entry.getKey().equals("writer_raw_states")) continue;
+                  && !entry.getKey().equals("writer_raw_states")
+                  && !entry.getKey().equals("streaming_committer_raw_states")) continue;
               try (var stream = handle.openInputStream()) {
                 for (long offset : entry.getValue().getOffsets()) {
                   stream.seek(offset);
@@ -527,18 +556,22 @@ public final class CanonicalKafkaSinkJobWorker {
                                   .readVersionAndDeSerialize(
                                       new CanonicalFixtureFactory.OffsetSerializer(), bytes)
                                   .offset));
+                  } else if (entry.getKey().equals("streaming_committer_raw_states")) {
+                    var committables =
+                        CanonicalWorkerCompat.kafkaPendingCommittables(
+                            committableSerializer, bytes, subtask.getKey(), state.getParallelism());
+                    transactions.addAll(committables);
+                    pendingTransactions += committables.size();
                   } else {
-                    var writer =
+                    Object writer =
                         org.apache.flink.core.io.SimpleVersionedSerialization
                             .readVersionAndDeSerialize(writerSerializer, bytes);
-                    writerPrefixes.add(writer.getTransactionalIdPrefix());
-                    ownership.add(
-                        writer.getOwnedSubtaskId()
-                            + "/"
-                            + writer.getTotalNumberOfOwnedSubtasks()
-                            + "/"
-                            + writer.getTransactionOwnership());
-                    pendingTransactions += writer.getPrecommittedTransactionalIds().size();
+                    String[] writerState =
+                        CanonicalWorkerCompat.kafkaWriterState(
+                            writer, subtask.getKey(), state.getParallelism());
+                    writerPrefixes.add(writerState[0]);
+                    ownership.add(writerState[1]);
+                    pendingTransactions += Integer.parseInt(writerState[2]);
                   }
                 }
               }
@@ -568,6 +601,8 @@ public final class CanonicalKafkaSinkJobWorker {
       }
       java.util.Collections.sort(inventory);
       Files.write(root.resolve(stage + "-inventory.tsv"), inventory);
+      java.util.Collections.sort(transactions);
+      Files.write(root.resolve(stage + "-precommitted-transactions"), transactions);
     }
   }
 
