@@ -197,7 +197,7 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
       if (Boolean.getBoolean("sf.recoveryResults.profile")) {
         System.out.println(
             "[recovery-capture] task="
-                + getRuntimeContext().getTaskNameWithSubtasks()
+                + Thread.currentThread().getName()
                 + " rows="
                 + rows.size()
                 + " bytes="
