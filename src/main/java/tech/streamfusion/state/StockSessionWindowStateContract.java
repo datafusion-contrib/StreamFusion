@@ -32,7 +32,9 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
-/** Released SESSION accumulators, DISTINCT views, merge aliases and timers for legacy SQL and TVFs. */
+/**
+ * Released SESSION accumulators, DISTINCT views, merge aliases and timers for legacy SQL and TVFs.
+ */
 public final class StockSessionWindowStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
   private static final String STATE = "window-aggs";
@@ -120,7 +122,8 @@ public final class StockSessionWindowStateContract implements StockStateContract
       String zone,
       int[] averageOffsets,
       List<StockWindowDistinctView> distinctViews,
-      int scalarFields) {
+      int scalarFields,
+      boolean processingTime) {
     return new StockSessionWindowStateContract(
         keys,
         keyType,
@@ -130,7 +133,7 @@ public final class StockSessionWindowStateContract implements StockStateContract
         averageOffsets,
         distinctViews,
         scalarFields,
-        false,
+        processingTime,
         true);
   }
 
@@ -255,6 +258,7 @@ public final class StockSessionWindowStateContract implements StockStateContract
   public void configureNativeState(long handle, boolean persistent) {
     for (var view : distinctViews) view.configure(handle, true);
     if (!processingTime) Native.restoreSessionCanonicalWatermark(handle, restoredWatermark());
+    else if (legacy) Native.configureSessionCanonicalProcessingTime(handle);
   }
 
   private ValueStateDescriptor<RowData> descriptor() {

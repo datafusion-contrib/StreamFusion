@@ -5,6 +5,7 @@ pub(super) struct SessionAdmission {
     pub(super) watermark: i64,
     calendar: WindowCalendar,
     epoch_bounds: bool,
+    event_time: bool,
 }
 
 impl SessionAdmission {
@@ -37,6 +38,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_configureSessionCanonicalAd
                     .expect("session admission reference"),
             ),
             epoch_bounds: epoch_bounds != 0,
+            event_time: true,
         });
     });
 }
@@ -51,7 +53,36 @@ pub extern "system" fn Java_tech_streamfusion_Native_advanceSessionCanonicalAdmi
     crate::bridge::jni_guard(env, move |mut env| {
         let aggregator = unsafe { &mut *(handle as *mut SessionAggregator) };
         match aggregator.admission.as_mut() {
-            Some(admission) => admission.watermark = admission.watermark.max(watermark),
+            Some(admission) => {
+                if admission.event_time {
+                    admission.watermark = admission.watermark.max(watermark);
+                }
+            }
+            None => env
+                .throw_new(
+                    "java/lang/IllegalStateException",
+                    "SESSION admission is not configured",
+                )
+                .expect("session admission failure"),
+        }
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_configureSessionCanonicalProcessingTime<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut SessionAggregator) };
+        match aggregator.admission.as_mut() {
+            Some(admission) => {
+                admission.event_time = false;
+                admission.watermark = i64::MIN;
+            }
             None => env
                 .throw_new(
                     "java/lang/IllegalStateException",

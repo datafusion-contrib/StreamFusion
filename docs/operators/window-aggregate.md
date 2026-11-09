@@ -21,7 +21,7 @@ RocksDB when that backend is configured. A savepoint pins its read view at the b
 bounded header/member frames on Flink's asynchronous writer thread, without loading the complete
 membership map into heap. Live input and concurrent captures use independent views. This covers
 admitted TUMBLE/HOP/CUMULATE bindings on 1.18 and 2.2, admitted SESSION TVFs on 2.2 and legacy
-event-time SESSION and event/processing-time TUMBLE/HOP group windows on both lines.
+event/processing-time SESSION/TUMBLE/HOP group windows on both lines.
 Flink 1.18 has no SESSION TVF.
 
 Legacy SESSION reuses the released `window-aggs`, `session-window-mapping` and window timer
@@ -30,9 +30,11 @@ including a singleton maximum for global sessions. The binding checks the actual
 accumulator serializer, trigger/update mode and lateness before replacing the owner. Scalar and
 COUNT DISTINCT layouts use the same converter and persistent records as the TVF binding.
 Legacy recovery resets watermark admission and writes no operator watermark state, while TVFs
-retain their existing UNION watermark state. Event-time-only and existing aggregate/key/view
-restrictions still apply; legacy processing-time sessions, early/late emission and retracting
-input retain stock canonical owners.
+retain their existing UNION watermark state. Legacy processing-time SESSION shares the same
+converter and pinned RocksDB capture. Its admission ignores event watermarks and uses the
+processing clock, matching the released legacy merging function; the existing 2.2 TVF watermark
+admission behavior remains separate. Existing aggregate/key/view restrictions still apply;
+early/late emission and retracting input retain stock canonical owners.
 
 Legacy TUMBLE/HOP uses the same slicing converter with the released TimeWindow serializer instead
 of TVF Long namespaces. HOP accumulators occupy panes, while timer namespaces describe complete
@@ -43,16 +45,25 @@ requires zero offset, final-only emission and a positive size that is an integra
 slide; other legacy fixed-window contracts retain stock owners. Event and processing clocks,
 watermark reset and original key-group ownership use the existing state/capture machinery.
 
-The shared legacy fixture selects fourteen pair-covering cases per release from a 256-combination
-default/hosted provider spanning SESSION, event/processing TUMBLE/HOP, native memory/RocksDB,
+The shared legacy fixture selects fourteen pair-covering cases plus all regional HOP combinations
+(44 distinct local cases) per release from a 288-combination
+default/hosted provider spanning event/processing SESSION/TUMBLE/HOP, native memory/RocksDB,
 keyed/global, scalar/DISTINCT, TIMESTAMP/LTZ, UTC/Berlin and ordinary/compiled submission.
 Each imports stock state, finishes two overlapping captures on the writer after live input and
 native-owner close, resumes nonempty stock output and returns through an ordinary native
 checkpoint. An older event-time window admitted after recovery verifies the watermark reset;
-processing-time controls advance both engines through the same deadlines. These component controls
-do not establish exhaustive job, rescale, failure or historical native-layout qualification.
-The combined legacy/TVF/DISTINCT/processing-time/planner regression selection passes 142 checks on
-2.2 and 129 on a clean 1.18 build, with nine expected absent-SESSION-TVF skips on 1.18. All fourteen
+processing-time controls advance both engines through the same deadlines and send event
+watermarks ahead of all deadlines before merging and ordinary native recovery. These component controls
+do not establish exhaustive job, rescale, failure or historical native-layout qualification. Heap
+restores additionally compare every released timer before firing and continued output against a
+stock reference re-exported through RocksDB, matching the projection's canonical timer ordering.
+The RocksDB continuation matrix compares against a direct stock restore. At a spring DST gap,
+several legacy HOP windows share an epoch deadline, and stock heap/RocksDB timer ordering alone can change when shared panes are
+cleared. A stock-only 2.2.1 restore reproduces different COUNT/SUM results from identical saved
+state. State interchange preserves the timer entries and both backend continuation checks remain active;
+identical output across different stock timer orderings at that upstream boundary is not qualified.
+The combined legacy/TVF/DISTINCT/processing-time/planner regression selection passes 170 checks on
+2.2 and 141 on a clean 1.18 build, with 25 expected absent-SESSION-TVF skips on 1.18. All 44
 legacy cases pass on each release. Native checks pass 1,544 tests with two existing ignores;
 memory-only compilation and the JNI build pass. Java-only follow-ups do not repeat native suites.
 

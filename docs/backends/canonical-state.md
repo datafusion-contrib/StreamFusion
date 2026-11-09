@@ -24,7 +24,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
 | [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Automatic binding, namespaced/DISTINCT state and selected complete-job handoffs | Complete phase/type/view and failure matrix |
-| [Sessions](../operators/window-aggregate.md) | Automatic partitioned TVF and legacy event-time SESSION binding, operator recovery and selected complete-job handoffs | Native unpartitioned SESSION TVF assignment and wider merging/timer/recovery matrix |
+| [Sessions](../operators/window-aggregate.md) | Automatic partitioned TVF and legacy event/processing-time SESSION binding, operator recovery and selected complete-job handoffs | Native unpartitioned SESSION TVF assignment and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
 | [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
 | [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts (1.18 V1 / 2.2 V2) with automatic binding | Explicit legacy V1 on 2.2, wider keys/types, DISTINCT/views and bounded event-ROWS cleanup |
@@ -42,10 +42,16 @@ windows (including two-phase and DISTINCT controls) and selected unbounded event
 ROWS/RANGE jobs on both native stores. Component controls additionally cover typed/grouped state, ranks, fixed TUMBLE/HOP/CUMULATE
 windows, interval joins, temporal state and processing-time OVER. Shared-window binding preserves
 1.18's uninitialized timer-service watermark until the first post-restore watermark; it uses the
-same stock state and timer serializers as 2.2. Session TVFs are unavailable in 1.18; legacy event-time
+same stock state and timer serializers as 2.2. Session TVFs are unavailable in 1.18; legacy event/processing-time
 SESSION group windows now bind their released accumulator, merge-alias and timer contract on both
 lines, including keyed/global and scalar/COUNT DISTINCT layouts. Legacy sessions reset their
 watermark on recovery and add no operator watermark state; TVFs retain their existing UNION state.
+Legacy processing-time SESSION admits against the processing clock even after event watermarks
+advance; the 2.2 TVF watermark-based merging rule retains its own admission mode. Both use the
+same converters, pinned captures and checkpoint state encoding. Legacy window controls
+compare heap-restored timers and continued RocksDB output separately. Stock-only
+2.2.1 legacy HOP restores can change results when DST-gap timers tie and heap/RocksDB clear shared
+panes in different orders; this upstream output-order boundary remains outside qualification.
 Legacy event/processing-time TUMBLE/HOP group windows share the slicing converter with released
 TimeWindow accumulator/pane and timer namespaces. HOP requires a positive size that is an integral
 multiple of its slide. These legacy owners also reset their watermark and write no operator state.
@@ -98,9 +104,8 @@ The existing canonical COUNT DISTINCT fixed/session bindings now use the same pi
 RocksDB capture. Scalar headers and separate value/count records stream into the stock projection
 on the asynchronous writer thread; conversion does not reconstruct the native execution sets.
 This covers admitted TUMBLE/HOP/CUMULATE contracts on both releases and admitted SESSION TVFs on
-2.2, plus legacy event-time SESSION and event/processing-time TUMBLE/HOP group windows on both
-releases. The legacy route shares the
-same converter and pinned RocksDB capture; it does not introduce a second state codec.
+2.2, plus legacy event/processing-time SESSION/TUMBLE/HOP group windows on both releases.
+The legacy route shares the same converter and pinned RocksDB capture; it does not introduce a second state codec.
 Buffered event-time deduplication, event-time sort and window rank/deduplication additionally
 use a shared retained-row codec for nested ROW/ARRAY/MAP payloads. These already-canonical
 payloads now stay in native RocksDB during capture. Scalar checkpoint bytes remain unchanged;

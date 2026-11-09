@@ -209,6 +209,8 @@ public final class Native {
 
   public static native void advanceSessionCanonicalAdmission(long handle, long watermark);
 
+  public static native void configureSessionCanonicalProcessingTime(long handle);
+
   public static native void bindSessionCanonicalDistinct(long handle, int aggregate);
 
   public static native void exportSessionCanonicalDistinct(

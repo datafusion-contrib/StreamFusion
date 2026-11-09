@@ -931,8 +931,6 @@ final class StockCompiledPlanLowering {
             ? org.apache.flink.table.types.logical.utils.LogicalTypeChecks.isProctimeAttribute(
                 legacyWindow.timeAttribute().getOutputDataType().getLogicalType())
             : windowing.isProctime();
-    if (legacySession && processingTime)
-      return windowFallback(stock, "legacy processing-time SESSION is not native");
     boolean ltz =
         legacy
             ? legacyWindow
@@ -1233,7 +1231,8 @@ final class StockCompiledPlanLowering {
                     zone,
                     averages.stream().mapToInt(Integer::intValue).toArray(),
                     distinctViews,
-                    width)
+                    width,
+                    processingTime)
                 : session
                     ? new tech.streamfusion.state.StockSessionWindowStateContract(
                         serializer,

@@ -59,7 +59,8 @@ class CanonicalLegacyWindowInteropTest {
 
   static Stream<Arguments> cases() {
     var cases = new ArrayList<Arguments>();
-    for (String shape : List.of("SESSION", "TUMBLE", "HOP", "PROC_TUMBLE", "PROC_HOP"))
+    for (String shape :
+        List.of("SESSION", "TUMBLE", "HOP", "PROC_TUMBLE", "PROC_HOP", "PROC_SESSION"))
       for (boolean ltz : new boolean[] {false, true})
         for (String zone : List.of("UTC", "Europe/Berlin"))
           for (boolean keyless : new boolean[] {false, true})
@@ -67,10 +68,20 @@ class CanonicalLegacyWindowInteropTest {
               for (boolean rocks : new boolean[] {false, true})
                 for (boolean compiled : new boolean[] {false, true})
                   cases.add(Arguments.of(shape, ltz, zone, keyless, distinct, rocks, compiled));
-    return CanonicalTestMatrix.select(
+    var available =
         cases.stream()
             .filter(
-                args -> !((String) args.get()[0]).startsWith("PROC_") || (boolean) args.get()[1]));
+                args -> !((String) args.get()[0]).startsWith("PROC_") || (boolean) args.get()[1])
+            .collect(java.util.stream.Collectors.toList());
+    return Stream.concat(
+            CanonicalTestMatrix.select(available.stream()),
+            available.stream()
+                .filter(
+                    args ->
+                        ((String) args.get()[0]).endsWith("HOP")
+                            && (boolean) args.get()[1]
+                            && args.get()[2].equals("Europe/Berlin")))
+        .distinct();
   }
 
   @ParameterizedTest(name = "{0},ltz={1},zone={2},keyless={3},distinct={4},rocks={5},compiled={6}")
@@ -104,6 +115,10 @@ class CanonicalLegacyWindowInteropTest {
         source.open();
         if (plan.processing) source.setProcessingTime(BASE + 1000);
         else source.processWatermark(new Watermark(BASE + 500));
+        if (plan.processing) {
+          reference.processWatermark(new Watermark(Long.MAX_VALUE - 1));
+          source.processWatermark(new Watermark(Long.MAX_VALUE - 1));
+        }
         var owner = (AbstractNativeStatefulOperator<?>) source.getOperator();
         assertEquals(rocks, owner.directRocksDBState());
         try {
@@ -126,28 +141,51 @@ class CanonicalLegacyWindowInteropTest {
           for (int stage = 1; stage >= 0; stage--) {
             var saved = CanonicalDistinctWindowAsyncTest.finishOnWriter(captured[stage]);
             try (var stock = plan.stock(true);
-                var returned = plan.stock(false)) {
+                var returned = plan.stock(true)) {
               stock.initializeState(expected[stage]);
               returned.initializeState(saved);
               stock.open();
               returned.open();
+              // Match the projection's released RocksDB timer ordering before heap continuation.
+              var heapReference = snapshot(stock, 6);
+              try (var stockHeap = plan.stock(false);
+                  var returnedHeap = plan.stock(false)) {
+                stockHeap.initializeState(heapReference);
+                returnedHeap.initializeState(saved);
+                stockHeap.open();
+                returnedHeap.open();
+                var timers = stockTimers(stockHeap);
+                assertFalse(timers.isEmpty());
+                assertEquals(timers, stockTimers(returnedHeap));
+                plan.suffix(stockHeap);
+                plan.suffix(returnedHeap);
+                var rows = plan.output(stockHeap);
+                assertFalse(rows.isEmpty());
+                assertEquals(rows, plan.output(returnedHeap), shape + ", heap stage=" + stage);
+              } finally {
+                heapReference.discardState();
+              }
               plan.suffix(stock);
               plan.suffix(returned);
               var rows = plan.output(stock);
               assertFalse(rows.isEmpty());
-              assertEquals(rows, plan.output(returned));
+              assertEquals(rows, plan.output(returned), shape + ", RocksDB stage=" + stage);
             }
           }
         } finally {
           for (var future : captured) if (future != null) future.cancel();
         }
       }
-      try (var stock = plan.stock(false);
+      try (var stock = plan.stock(true);
           var resumed = plan.nativeHarness(rocks)) {
         stock.initializeState(expected[1]);
         resumed.initializeState(recovery);
         stock.open();
         resumed.open();
+        if (plan.processing) {
+          stock.processWatermark(new Watermark(Long.MAX_VALUE - 1));
+          resumed.processWatermark(new Watermark(Long.MAX_VALUE - 1));
+        }
         var suffix = plan.suffixRows();
         for (int i = 0; i < suffix.size(); i++) {
           if (plan.processing) {
@@ -169,6 +207,35 @@ class CanonicalLegacyWindowInteropTest {
     } finally {
       for (var state : expected) if (state != null) state.discardState();
       if (recovery != null) recovery.discardState();
+    }
+  }
+
+  static List<String> stockTimers(AbstractStreamOperatorTestHarness<?> harness) throws Exception {
+    var operator =
+        (org.apache.flink.streaming.api.operators.AbstractStreamOperator<?>) harness.getOperator();
+    var backend =
+        (org.apache.flink.runtime.state.CheckpointableKeyedStateBackend<?>)
+            operator.getKeyedStateBackend();
+    var resources = backend.savepoint().getSnapshotResources();
+    try (var entries = resources.createKVStateIterator()) {
+      var metadata = resources.getMetaInfoSnapshots();
+      var result = new ArrayList<String>();
+      while (entries.isValid()) {
+        if (metadata.get(entries.kvStateId()).getName().startsWith("_timer_state/"))
+          result.add(
+              metadata.get(entries.kvStateId()).getName()
+                  + ":"
+                  + entries.keyGroup()
+                  + ":"
+                  + Base64.getEncoder().encodeToString(entries.key())
+                  + ":"
+                  + Base64.getEncoder().encodeToString(entries.value()));
+        entries.next();
+      }
+      Collections.sort(result);
+      return result;
+    } finally {
+      resources.release();
     }
   }
 
