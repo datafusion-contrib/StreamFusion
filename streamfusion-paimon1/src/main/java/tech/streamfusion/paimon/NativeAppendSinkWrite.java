@@ -82,6 +82,8 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
   private int nextId;
 
   NativeAppendSinkWrite(FileStoreTable table, StoreSinkWrite delegate, String[] directories) {
+    if (!PaimonAppendSequence.supported())
+      throw new IllegalStateException("Paimon append sequence contract unavailable");
     this.delegate = delegate;
     this.directories = directories;
     this.rowType = LogicalTypeConversion.toLogicalType(table.rowType());
@@ -186,9 +188,11 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
       throws Exception {
     if (delegate instanceof NativePaimonStoreSinkWrite)
       ((NativePaimonStoreSinkWrite) delegate).beforeBucket(partition, bucket);
-    ((StoreSinkWriteImpl) delegate)
-        .getWrite()
-        .writeBundle(partition, bucket, new ArrowBatchBundle(root, rowType));
+    var bundle = new ArrowBatchBundle(root, rowType);
+    PaimonAppendSequence.write(
+        PaimonAppendSequence.counter(fileWrite(), partition, bucket),
+        bundle.rowCount(),
+        () -> ((StoreSinkWriteImpl) delegate).getWrite().writeBundle(partition, bucket, bundle));
   }
 
   private void flush(Bucket key) throws Exception {

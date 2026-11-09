@@ -23,6 +23,7 @@ import org.apache.paimon.fs.Path;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.DataFilePathFactory;
 import org.apache.paimon.io.RollingFileWriter;
+import org.apache.paimon.io.RowDataRollingFileWriter;
 import org.apache.paimon.io.SingleFileWriter;
 import org.apache.paimon.manifest.FileSource;
 import org.apache.paimon.memory.MemoryPoolFactory;
@@ -67,6 +68,7 @@ final class PaimonVersion {
   }
 
   static java.lang.reflect.Method appendWriterFactory() {
+    if (!PaimonAppendSequence.supported()) return null;
     return NativePaimonAppendRewriter.writerFactory(
         AppendOnlyFileStoreWrite.class, LongCounter.class);
   }
@@ -75,8 +77,12 @@ final class PaimonVersion {
     return counter;
   }
 
-  static void advanceAppendSequence(LongCounter counter, long rows) {
-    counter.add(rows);
+  static void writeAppendBundle(
+      RowDataRollingFileWriter output, LongCounter counter, ArrowBatchBundle bundle)
+      throws Exception {
+    if (!PaimonAppendSequence.supported())
+      throw new IllegalStateException("Paimon append sequence contract unavailable");
+    PaimonAppendSequence.write(counter, bundle.rowCount(), () -> output.writeBundle(bundle));
   }
 
   static boolean isCompactionFactory(StreamOperatorFactory<?> factory) {

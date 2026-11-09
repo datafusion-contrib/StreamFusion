@@ -27,6 +27,7 @@ import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.table.Table;
 import tech.streamfusion.paimon.NativePaimonFileFormat;
+import tech.streamfusion.paimon.PaimonAppendSequence;
 import tech.streamfusion.paimon.PaimonCodecs;
 import tech.streamfusion.paimon.PaimonKeyValueLayout;
 import tech.streamfusion.paimon.PaimonMergeOptions;
@@ -95,6 +96,9 @@ final class PaimonSinkMatcher {
       return Planned.fallback("the sink is not a Paimon data table");
     }
     boolean primaryKey = !table.primaryKeys().isEmpty();
+    if (!primaryKey && !PaimonAppendSequence.supported()) {
+      return Planned.fallback("the released append bundle sequence contract is unavailable");
+    }
     if (!primaryKey && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) sink.getInput())) {
       return Planned.fallback("an append table takes an insert-only input");
     }

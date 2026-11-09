@@ -28,6 +28,10 @@ import org.apache.paimon.table.sink.CommitMessage;
 final class PaimonTestCompat {
   private PaimonTestCompat() {}
 
+  static boolean appendCompactionSharesSequence() {
+    return false;
+  }
+
   static boolean wrappingSum() {
     return true;
   }

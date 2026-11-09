@@ -13,11 +13,14 @@ import org.apache.paimon.io.RowDataRollingFileWriter;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.utils.LongCounter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.ArrowFileBatch;
 
 /** Copies Java-selected append files in order through released Rust readers and stock writers. */
 final class NativePaimonAppendRewriter implements CompactRewriter {
+  private static final Logger LOG = LoggerFactory.getLogger(NativePaimonAppendRewriter.class);
   private static final Method WRITER = PaimonVersion.appendWriterFactory();
   private final FileStoreTable table;
   private final Object write;
@@ -95,9 +98,10 @@ final class NativePaimonAppendRewriter implements CompactRewriter {
             for (var batch = reader.next(); batch != null; batch = reader.next())
               try (var root = batch) {
                 if (root.getRowCount() == 0) continue;
-                PaimonVersion.advanceAppendSequence(sequence, root.getRowCount());
-                output.writeBundle(new ArrowBatchBundle(root, type));
-                written += root.getRowCount();
+                var bundle = new ArrowBatchBundle(root, type);
+                long rows = bundle.rowCount();
+                PaimonVersion.writeAppendBundle(output, sequence, bundle);
+                written += rows;
               }
           }
         }
@@ -117,6 +121,12 @@ final class NativePaimonAppendRewriter implements CompactRewriter {
   }
 
   private List<DataFileMeta> stockRewrite(List<DataFileMeta> files) throws Exception {
+    LOG.info(
+        "Using Java Paimon append compaction: reason={}, partition={}, bucket={}, files={}",
+        fallbackReason,
+        partition,
+        bucket,
+        files.size());
     counters.stockGroups.inc();
     return stock.rewrite(files);
   }

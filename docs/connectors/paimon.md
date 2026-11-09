@@ -657,6 +657,26 @@ and checkpoint failure/recovery. Its many-writer transition case compares comple
 and destination buckets, verifies native encoding and continuous sequence ranges, and permits
 different file boundaries. Cases without that transition also compare per-file statistics and
 footer layout against the stock twin.
+
+Paimon 1.0.0's bundle API counts file rows without advancing the append writer's sequence
+counter. The legacy adapter compensates once per bundle, using the counter owned by Paimon's
+bucket writer. It reserves the bundle's captured row count before calling the host because
+file rolling can materialize metadata during that call, and restores the reservation if the
+write or rolling close fails. Direct writes and replayed native spills share this boundary;
+compaction uses the same compatibility helper. Paimon 2.0.0 and 2.1.0 retain their own row-based
+sequence counting without compensation. A legacy host whose checked writer contract differs
+keeps the stock append sink and rewriter. File indexes and other unsupported auxiliary metadata
+retain their existing stock admission paths.
+
+`PaimonCompactionNativeAppendTest` writes actual native Parquet/ORC files for fixed and unaware
+append tables across empty/multiple bundles, rolling, checkpoints, writer refresh and restart.
+It checks stock-readable values, host sequence ranges and native file footers, then
+requires positive native compaction groups, files and rows from those inputs. The legacy
+failure tests additionally cover row and bundle format fallbacks and aborted write/close calls.
+Fixed buckets continue their committed sequence; unaware bucket writers retain Paimon's local
+sequence restart when reopened. Compaction preserves the release-specific host contract too:
+1.0 shares its counter across rolled files, while 2.0/2.1 supply a fresh counter per output file.
+
 The [release spill diagnostic](../optimizations/paimon-append-spill.md) measured **1.12× throughput**
 against the previous native path that reverted to Java spilling and encoding.
 
@@ -1171,6 +1191,13 @@ Append rewrites likewise delegate before output for unavailable writer factories
 writer shapes/settings/types, deletion vectors, expiry, row tracking/evolution, indexes/sidecars,
 historical schemas, unsafe ORC input or the projected decode budget. Append does not introduce a
 merge or sort policy. Its budget check covers one file at a time; PK checks the concurrent sorted runs.
+
+Negative input sequence metadata retains stock append compaction with `ambiguous-sequences`.
+Normal INFO diagnostics report the concrete append fallback reason, partition, bucket and input
+file count; zero native errors alone does not prove native rewriting occurred. Fixing future
+native writes does not repair historical manifests. Stock compaction can preserve a negative
+starting sequence, so it is not a guaranteed metadata repair. StreamFusion does not renumber
+existing files or relax the admission check; historical-file migration remains separate work.
 
 The [merge-engine worker comparison](../benchmarks/paimon-merge-compaction-20261105/README.md)
 records all three additional engines on both releases and formats, including the slower nested
