@@ -187,6 +187,7 @@ impl OverWindowAggregator {
         self.inner.seed_key_codec(&types);
         self.key_converter = converter;
         for (key, deadline, timers, order) in records {
+            self.mark_store_metadata(&key.0);
             if let Some(deadline) = deadline {
                 if self.cleanup_state.insert(key.clone(), deadline).is_none() {
                     self.retention_bytes += byte_key_bytes(&key.0);

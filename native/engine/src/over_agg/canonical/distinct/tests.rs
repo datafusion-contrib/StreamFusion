@@ -433,3 +433,42 @@ fn retained_membership_duplicates_are_rejected_without_changing_valid_views() {
         assert_eq!(rows_of(&members(&source, 1)), rows_of(&members(&target, 1)));
     }
 }
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn polling_timers_and_multiple_distinct_views_remain_independent_during_capture() {
+    for rows in [false, true] {
+        for global in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("state");
+            let mut source = operator(global, rows, false, true, &path);
+            source.bind_event_cleanup_timers().unwrap();
+            source.bind_event_polling().unwrap();
+            source
+                .push(input(&[Some(7)], &[Some(2.0)], 10), 100)
+                .unwrap();
+            source
+                .push(input(&[Some(7)], &[Some(3.0)], 20), 100)
+                .unwrap();
+            source.flush(10, 200).unwrap();
+            let expected = (0..3)
+                .map(|slot| rows_of(&members(&source, slot)))
+                .collect::<Vec<_>>();
+            assert!(expected.iter().all(|rows| rows.len() == 1));
+            source
+                .canonical_partitions(128, if global { &[i32::MIN] } else { &[i32::MIN, -1] })
+                .unwrap();
+            source.checkpoint_store("").unwrap();
+            let snapshot = crate::state::rocks_store::FrozenDatabases::capture(&path).unwrap();
+            source.flush(20, 900).unwrap();
+            snapshot.with(|| {
+                let mut reader = operator(global, rows, false, true, &path);
+                reader.bind_event_cleanup_timers().unwrap();
+                reader.bind_event_polling().unwrap();
+                for (slot, expected) in expected.iter().enumerate() {
+                    assert_eq!(&rows_of(&members(&reader, slot)), expected);
+                }
+            });
+        }
+    }
+}

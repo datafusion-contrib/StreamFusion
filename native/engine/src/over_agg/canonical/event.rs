@@ -358,12 +358,9 @@ impl OverWindowAggregator {
             times: stamps,
             timer_armed,
         } = self.prepare_canonical_cleanup(batch)?;
-        #[cfg(feature = "rocksdb-state")]
-        if self.store.is_some() {
-            self.write_store_cleanup(batch)?;
-        }
         for row in 0..batch.num_rows() {
             let key = ByteKey::from(keys.row(row).data());
+            self.mark_store_metadata(&key.0);
             if timer_armed.as_ref().is_some_and(|armed| !armed.value(row)) {
                 if self.event_cleanup_unarmed.insert(key.clone()) {
                     self.retention_bytes += byte_key_bytes(&key.0);

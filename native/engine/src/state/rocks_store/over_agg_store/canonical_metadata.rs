@@ -73,9 +73,16 @@ impl RocksOverAggStore {
         chunk_rows: usize,
         mut accept: impl FnMut(&[u8], &[u8]) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        self.visit_metadata(RANGE_TIMERS_TABLE, chunk_rows, |_, key, value| {
-            accept(key, value)
-        })
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| self.is_range_timer_key(key),
+            |rows| {
+                for (key, value) in rows {
+                    accept(&key[self.range_timer_prefix_len()..], &value)?;
+                }
+                Ok(())
+            },
+        )
     }
 
     pub(crate) fn visit_processing_rows(

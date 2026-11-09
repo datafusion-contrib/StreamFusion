@@ -4,6 +4,8 @@ mod canonical;
 mod cleanup;
 mod event_cleanup;
 mod event_polling;
+#[cfg(feature = "rocksdb-state")]
+mod metadata_updates;
 use event_cleanup::EVENT_CLEANUP_ARMED;
 mod proc_rows;
 mod range_flush;
@@ -2736,6 +2738,8 @@ pub(crate) struct OverWindowAggregator {
     /// map stay empty between bundles.
     #[cfg(feature = "rocksdb-state")]
     store: Option<crate::state::RocksOverAggStore>,
+    #[cfg(feature = "rocksdb-state")]
+    metadata_updates: metadata_updates::MetadataUpdates,
     /// Point deletes a cleanup staged this call (an expired key clearing its fold or stamp row
     /// silently), written with the call's other store writes so a restore cannot resurrect the
     /// cleared state.
@@ -2799,6 +2803,8 @@ impl OverWindowAggregator {
             memory: OperatorMemory::unaccounted(),
             #[cfg(feature = "rocksdb-state")]
             store: None,
+            #[cfg(feature = "rocksdb-state")]
+            metadata_updates: metadata_updates::MetadataUpdates::default(),
             #[cfg(feature = "rocksdb-state")]
             store_tombstones: Vec::new(),
             #[cfg(feature = "rocksdb-state")]
@@ -2906,6 +2912,10 @@ impl OverWindowAggregator {
             Some(deadline) => {
                 if minimum > *deadline {
                     *deadline = armed;
+                    #[cfg(feature = "rocksdb-state")]
+                    if self.store.is_some() {
+                        self.metadata_updates.mark(key);
+                    }
                     if self.event_cleanup_unarmed.remove(key) {
                         self.retention_bytes -= byte_key_bytes(key);
                     }
@@ -2914,12 +2924,16 @@ impl OverWindowAggregator {
             None => {
                 self.retention_bytes += byte_key_bytes(key);
                 self.cleanup_state.insert(ByteKey::from(key), armed);
+                self.mark_store_metadata(key);
                 if self.event_cleanup_unarmed.remove(key) {
                     self.retention_bytes -= byte_key_bytes(key);
                 }
             }
         }
     }
+
+    #[cfg(not(feature = "rocksdb-state"))]
+    fn mark_store_metadata(&mut self, _key: &[u8]) {}
 
     /// Flink's `cleanupState`: drops the key's fold/frame state and its retention stamp, silently
     /// (emitting nothing). On the persistent store the fold row tombstones with the call's other
@@ -2961,6 +2975,7 @@ impl OverWindowAggregator {
         if self.last_write_ms.remove(key).is_some() {
             self.retention_bytes -= byte_key_bytes(key);
         }
+        self.mark_store_metadata(key);
     }
 
     /// Lazy stand-in for the fired cleanup timer at a key touch (divergences/28): a timer
@@ -3006,6 +3021,7 @@ impl OverWindowAggregator {
             for key in due {
                 if self.pending_rows.contains_key(&key) {
                     let armed = now_ms.saturating_add(self.max_retention_ms);
+                    self.mark_store_metadata(&key.0);
                     self.cleanup_state.insert(key, armed);
                 } else {
                     self.clear_key(&key.0);
@@ -3183,6 +3199,12 @@ impl OverWindowAggregator {
         &mut self,
         restored_at_ms: i64,
     ) -> Result<(), DataFusionError> {
+        self.hydrate_store_retention(restored_at_ms)?;
+        self.reconcile_store_metadata()
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    fn hydrate_store_retention(&mut self, restored_at_ms: i64) -> Result<(), DataFusionError> {
         if self.event_polling {
             self.polling_bound = false;
             self.cleanup_state.clear();
@@ -3690,15 +3712,17 @@ impl OverWindowAggregator {
         Ok(self)
     }
 
+    fn retained_state_bytes(&self) -> usize {
+        buffered_batches_bytes(&self.buffered) + self.inner.state_bytes() + self.retention_bytes
+    }
+
     /// Re-accounts after a state change: the buffered batches are recounted (cheap, per batch not
     /// per row) and the inner fold state and retention maps report their tracked bytes.
     fn account(&mut self) -> Result<(), DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        self.flush_metadata_updates()?;
         if self.memory.tracking() {
-            self.memory.set(
-                buffered_batches_bytes(&self.buffered)
-                    + self.inner.state_bytes()
-                    + self.retention_bytes,
-            );
+            self.memory.set(self.retained_state_bytes());
             self.memory.account()?;
         }
         Ok(())
@@ -3728,7 +3752,7 @@ impl OverWindowAggregator {
         }
         self.observe_heap_snapshot(&batch, false);
         self.register_range_batch(&batch);
-        self.register_polling_batch(&batch)?;
+        self.register_polling_batch(&batch);
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             self.persist_range_stamps(&batch)?;
@@ -3845,6 +3869,7 @@ impl OverWindowAggregator {
             }
         };
         if registered {
+            self.mark_store_metadata(key);
             self.register_range_timer(key, maximum);
         }
     }
@@ -4355,6 +4380,11 @@ impl OverWindowAggregator {
             _ => self.inner.update(&projected),
         };
         self.retention_bytes = self.retention_bytes - proc_bytes + self.proc_rows_bytes();
+        if proc_enabled {
+            for (key, _) in &touched {
+                self.mark_store_metadata(&key.0);
+            }
+        }
 
         let OverInner::Bounded(inner) = &self.inner else {
             unreachable!("bounded store fold on a non-bounded shape");
@@ -5368,6 +5398,8 @@ impl OverWindowAggregator {
             memory: OperatorMemory::unaccounted(),
             #[cfg(feature = "rocksdb-state")]
             store: None,
+            #[cfg(feature = "rocksdb-state")]
+            metadata_updates: metadata_updates::MetadataUpdates::default(),
             #[cfg(feature = "rocksdb-state")]
             store_tombstones: Vec::new(),
             #[cfg(feature = "rocksdb-state")]

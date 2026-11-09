@@ -169,6 +169,16 @@ pub(crate) struct RocksOverAggStore {
 
 impl RocksOverAggStore {
     #[cfg(test)]
+    pub(crate) fn metadata_io_counts(&self) -> (usize, usize) {
+        self.db.io_counts()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_next_metadata_write(&self) {
+        self.db.fail_next_write();
+    }
+
+    #[cfg(test)]
     pub(crate) fn insert_frame_fixture(&self, prefix: &[u8], rt: i64, seq: u64, value: &[u8]) {
         self.db
             .put(Self::frame_db_key(prefix, rt, seq), value)
@@ -919,6 +929,7 @@ impl RocksOverAggStore {
         if self.db.is_frozen() {
             return Ok(());
         }
+        self.upgrade_polling_ledger()?;
         let canonical = self
             .distinct_element_types
             .iter()
@@ -939,7 +950,10 @@ impl RocksOverAggStore {
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for row in self.db.iterator(IteratorMode::Start) {
             let (key, _) = row.map_err(re)?;
-            if key.len() <= KEY_PREFIX_LEN || key[4] < DISTINCT_TABLE_BASE {
+            if key.len() <= KEY_PREFIX_LEN
+                || key[4] < DISTINCT_TABLE_BASE
+                || self.is_range_timer_key(&key)
+            {
                 continue;
             }
             let slot = usize::from(key[4] - DISTINCT_TABLE_BASE);
@@ -1109,7 +1123,11 @@ impl RocksOverAggStore {
         };
         self.db.visit_snapshot_batches(
             chunk_rows,
-            |key| key.len() > KEY_PREFIX_LEN && key[4] == DISTINCT_TABLE_BASE + slot as u8,
+            |key| {
+                key.len() > KEY_PREFIX_LEN
+                    && key[4] == DISTINCT_TABLE_BASE + slot as u8
+                    && !self.is_range_timer_key(key)
+            },
             |rows| {
                 let encoded = rows
                     .iter()

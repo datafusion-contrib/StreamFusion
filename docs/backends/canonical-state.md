@@ -129,9 +129,12 @@ RocksDB map and canonical writer already iterate encoded keys in order. Heap-bac
 transfers retain their separate map-order reconstruction. The general adapters still retain other
 per-key and import-inventory working sets, and oversized individual stock map/list values remain
 open bounded-memory work. Asynchronous capture is not a claim that every conversion path has a
-fixed working set. Existing checkpoint metadata flushes also still collect cleanup, counter or
-RANGE-timer inventories before pinning; those flush working sets remain part of the memory audit.
-The new V1 polling ledger updates incrementally during processing. Shared capture and timer controls pass
+fixed working set. OVER cleanup, counter and both event-timer policies now share incremental
+metadata persistence during normal processing. The journal deduplicates changed keys and writes
+bounded row/byte batches, retaining updates if a flush fails. Normal capture does not rebuild
+metadata inventories; native restore reconciles older metadata once before processing resumes.
+Unbounded polling metadata uses a tagged namespace alongside DISTINCT membership tables, with
+bounded migration of the older scalar ledger. Shared capture and timer controls pass
 on both releases, with representative operator matrices and isolated First-N, grouped arithmetic,
 regular-join, normalization and eager-deduplication jobs on 1.18. The earlier 1.18 cohort passed 861
 checks with 138 window exclusions; shared windows are now separately qualified by 295 runtime
@@ -139,12 +142,19 @@ checks and 408 planner checks, with 54 SESSION TVF capability skips. Released 2.
 six stock and six native invocations across First-N, append/update/retract ranks and eager dedup,
 with positive native canonical-import and subsequent-input evidence. Representative checks do not
 replace the exhaustive CI matrix or expand the partial stock-layout inventory above.
+Seven OVER variants with 2,051 keys each verify that capture performs no state scans and writes
+only the reserved watermark/sequence batch. Their pinned metadata survives live writes, and failed
+journal writes retry without losing updates. DISTINCT membership and polling metadata also retain
+independent values through capture and native recovery.
 Cold-reader controls preserve empty metadata maps while checking original frames, counters,
 physical timers and cleanup deadlines after live writes. The wide-state cases include 2,051-row
 hot OVER partitions, 2,052 temporal metadata/deadline keys, 2 MiB companion entries and a single
 large rank bucket. They check row/byte boundaries, receiver failure/retry and cancellation inside
-a partition. The synced native suite passes 1,473 tests with two existing ignores; the memory-only
-build also passes. Selected operator/planner matrices and isolated jobs run on both releases.
+a partition. The metadata foundation native suite passes 1,477 tests with two existing ignores; the
+memory-only build also passes. Its selected state/restore cohort passes 779 checks on 1.18 and 751 on 2.2,
+with 32 V1-only skips on 2.2 and four complete jobs per line included. Other selected
+operator/planner matrices run on both releases. A final 2.2 accounting cohort passes 314 checks,
+with 32 V1-only skips, including scalar TTL, processing ROWS and task memory ownership.
 Released scalar/DISTINCT group restore programs additionally pass two stock and two native
 invocations with positive canonical import/continued input and no fallback; their assertions
 remain unchanged. These controls preserve existing layout coverage rather than expanding admission.

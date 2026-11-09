@@ -71,8 +71,6 @@ impl OverWindowAggregator {
             for key in &keys {
                 self.register_range_timer(&key.0, 0);
             }
-            #[cfg(feature = "rocksdb-state")]
-            self.persist_polling_keys(keys.iter())?;
         }
         // Flink restores physical timers, but starts the timer service before its first watermark.
         if first {
@@ -83,12 +81,9 @@ impl OverWindowAggregator {
         Ok(())
     }
 
-    pub(super) fn register_polling_batch(
-        &mut self,
-        batch: &RecordBatch,
-    ) -> Result<(), DataFusionError> {
+    pub(super) fn register_polling_batch(&mut self, batch: &RecordBatch) {
         if !self.event_polling {
-            return Ok(());
+            return;
         }
         let arrays = self
             .key_columns
@@ -104,44 +99,12 @@ impl OverWindowAggregator {
         for row in 0..batch.num_rows() {
             self.register_range_timer(keys.row(row).data(), timestamp);
         }
-        #[cfg(feature = "rocksdb-state")]
-        if self.store.is_some() {
-            let keys = (0..batch.num_rows())
-                .map(|row| ByteKey::from(keys.row(row).data()))
-                .collect::<ahash::HashSet<_>>();
-            self.persist_polling_keys(keys.iter())?;
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "rocksdb-state")]
-    fn persist_polling_keys<'a>(
-        &mut self,
-        keys: impl Iterator<Item = &'a ByteKey>,
-    ) -> Result<(), DataFusionError> {
-        if self.store.is_none() {
-            return Ok(());
-        }
-        let mut entries = Vec::new();
-        let mut bytes = 0usize;
-        for key in keys {
-            let store = self.store.as_ref().unwrap();
-            let db_key = store.range_timer_key(self.store_fold_key_group(&key.0), &key.0);
-            let value = self.range_timers.get(key).map(RangeTimers::encode);
-            bytes = bytes.saturating_add(db_key.len() + value.as_ref().map_or(0, Vec::len));
-            entries.push((db_key, value));
-            if entries.len() == 1024 || bytes >= 4 * 1024 * 1024 {
-                self.store.as_mut().unwrap().write_range_timers(&entries)?;
-                entries.clear();
-                bytes = 0;
-            }
-        }
-        self.store.as_mut().unwrap().write_range_timers(&entries)
     }
 
     pub(super) fn remove_event_ledger(&mut self, key: &[u8]) {
         if let Some(timers) = self.range_timers.remove(key) {
             self.retention_bytes -= byte_key_bytes(key) + timers.bytes();
+            self.mark_store_metadata(key);
         }
     }
 
@@ -158,6 +121,10 @@ impl OverWindowAggregator {
             if count != 0 {
                 timers.armed.drain(..count);
                 due.insert(key.clone());
+                #[cfg(feature = "rocksdb-state")]
+                if self.store.is_some() {
+                    self.metadata_updates.mark(&key.0);
+                }
             }
         }
         Ok(Some(due))
@@ -188,8 +155,6 @@ impl OverWindowAggregator {
                 self.remove_event_ledger(&key.0);
             }
         }
-        #[cfg(feature = "rocksdb-state")]
-        self.persist_polling_keys(due.iter())?;
         self.account()
     }
 
@@ -397,34 +362,8 @@ impl OverWindowAggregator {
         }
         self.inner.seed_key_codec(&types);
         self.key_converter = converter;
-        #[cfg(feature = "rocksdb-state")]
-        if let Some(store) = &self.store {
-            let mut stamps = Vec::new();
-            let mut timers = Vec::new();
-            for (key, stamp, armed, times) in &records {
-                let group = self.store_fold_key_group(&key.0);
-                stamps.push((
-                    store.stamp_key(group, &key.0),
-                    stamp.map(|stamp| (stamp, *armed)),
-                ));
-                if !times.is_empty() {
-                    timers.push((
-                        store.range_timer_key(group, &key.0),
-                        Some(
-                            RangeTimers {
-                                last: None,
-                                armed: times.clone(),
-                            }
-                            .encode(),
-                        ),
-                    ));
-                }
-            }
-            let store = self.store.as_mut().unwrap();
-            store.write_cleanup_stamps(&stamps)?;
-            store.write_range_timers(&timers)?;
-        }
         for (key, stamp, armed, times) in records {
+            self.mark_store_metadata(&key.0);
             if let Some(stamp) = stamp {
                 if self.cleanup_state.insert(key.clone(), stamp).is_none() {
                     self.retention_bytes += byte_key_bytes(&key.0);

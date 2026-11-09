@@ -215,43 +215,19 @@ impl OverWindowAggregator {
             .write_cleanup_stamps(&entries)?;
         if self.range_offset().is_some() {
             self.restore_range_timer_batch(batch, &keys);
-            self.sync_store_range_timers()?;
         }
         if self.processing_rows() {
             self.restore_proc_rows_batch(batch, &keys);
-            self.sync_store_proc_rows()?;
+        }
+        if self.range_offset().is_some() || self.processing_rows() {
+            self.persist_restored_protocol(&keys)?;
         }
         Ok(())
     }
 
     #[cfg(feature = "rocksdb-state")]
     pub(super) fn sync_store_cleanup(&mut self) -> Result<(), DataFusionError> {
-        if self.range_offset().is_some() {
-            self.sync_store_range_timers()?;
-        }
-        if self.processing_rows() {
-            self.sync_store_proc_rows()?;
-        }
-        if self.range_offset().is_none() && self.retention_scheme() != RetentionScheme::Deadline {
-            return Ok(());
-        }
         self.flush_tombstones()?;
-        let store = self.store.as_ref().expect("over rocksdb store");
-        let mut entries = store
-            .scan_stamps()?
-            .into_iter()
-            .filter(|(key, _)| !self.cleanup_state.contains_key(key.as_ref()))
-            .map(|(key, _)| (store.stamp_key(self.store_fold_key_group(&key), &key), None))
-            .collect::<Vec<_>>();
-        entries.extend(self.cleanup_state.iter().map(|(key, &deadline)| {
-            (
-                store.stamp_key(self.store_fold_key_group(&key.0), &key.0),
-                Some((deadline, !self.event_cleanup_unarmed.contains(key))),
-            )
-        }));
-        self.store
-            .as_mut()
-            .expect("over rocksdb store")
-            .write_cleanup_stamps(&entries)
+        self.flush_metadata_updates()
     }
 }

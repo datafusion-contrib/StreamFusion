@@ -1827,12 +1827,16 @@ bytes and both timer domains across handoffs and ordinary native checkpoints. De
 cover negative watermarks, future-only neutral folds and overlapping restored callbacks; cold
 RocksDB controls retain 2,051 keys through live changes, receiver failure/retry and cancellation.
 Four isolated 1.18 engine-switch jobs pass for ROWS with cleanup and RANGE without cleanup,
-including ordinary native-checkpoint recovery. The synced native suite passes 1,473 tests and the
-memory-only build. Shared selected OVER controls pass 537 checks on 1.18 and 509 on 2.2, with
+including ordinary native-checkpoint recovery. The metadata foundation native suite passes 1,477 tests and the memory-only build. Selected state/restore controls pass 779 checks on 1.18 and 751 on 2.2, with
 32 V1-specific invocations skipped on 2.2; the four complete jobs per line are included in those
 counts. These selected controls do not qualify the entire historical 192-job matrix on 1.18 or
 cross-release upgrades. Very large individual stock values,
-restore inventories and broader operator/layout coverage remain open. Existing OVER checkpoint
-cleanup/counter/RANGE metadata flushes still collect inventories before pinning and require shared
-bounded or incremental flushing; the V1 polling ledger itself already updates during processing.
-Benchmarking stays deferred.
+restore inventories and broader operator/layout coverage remain open. Cleanup, counters and both
+event-time timer policies now share one incremental metadata journal. It persists deduplicated key
+updates in bounded row/byte batches during processing, retains failed writes for retry, and avoids
+full metadata scans or rewrites at normal capture. Native restore reconciles legacy metadata once.
+Controls cover seven OVER variants with 2,051 keys each, asserting no state scan and only the
+reserved watermark/sequence batch at capture, followed by live updates and unchanged pinned reads.
+Polling metadata is tagged within the native table namespace so multiple DISTINCT memberships and
+floating-key normalization remain independent. Earlier scalar polling ledgers migrate in bounded
+batches; this does not extend automatic stock DISTINCT admission. Benchmarking stays deferred.

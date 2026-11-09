@@ -217,22 +217,6 @@ impl OverWindowAggregator {
         }
         self.retention_bytes = self.retention_bytes - before + self.proc_rows_bytes();
     }
-
-    #[cfg(feature = "rocksdb-state")]
-    pub(super) fn sync_store_proc_rows(&mut self) -> Result<(), DataFusionError> {
-        let store = self.store.as_ref().expect("OVER store");
-        let entries = self
-            .proc_rows
-            .iter()
-            .map(|(key, state)| {
-                (
-                    store.proc_rows_key(self.store_fold_key_group(&key.0), &key.0),
-                    state.encode(),
-                )
-            })
-            .collect::<Vec<_>>();
-        self.store.as_mut().unwrap().replace_proc_rows(&entries)
-    }
 }
 
 #[no_mangle]

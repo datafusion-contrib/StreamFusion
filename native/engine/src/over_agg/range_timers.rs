@@ -144,15 +144,20 @@ impl OverWindowAggregator {
             let previous = timers.bytes();
             timers.armed.insert(position, timestamp);
             self.retention_bytes += timers.bytes() - previous;
+            self.mark_store_metadata(key);
         }
     }
 
     pub(super) fn fire_range_timers(&mut self, watermark: i64) {
-        for timers in self.range_timers.values_mut() {
+        for (key, timers) in &mut self.range_timers {
             let fired = timers.armed.partition_point(|time| *time <= watermark);
             if fired != 0 {
                 timers.last = Some(timers.armed[fired - 1]);
                 timers.armed.drain(..fired);
+                #[cfg(feature = "rocksdb-state")]
+                if self.store.is_some() {
+                    self.metadata_updates.mark(&key.0);
+                }
             }
         }
     }
@@ -177,25 +182,6 @@ impl OverWindowAggregator {
                 self.range_timers.insert(key.clone(), timers);
             }
         }
-    }
-
-    #[cfg(feature = "rocksdb-state")]
-    pub(super) fn sync_store_range_timers(&mut self) -> Result<(), DataFusionError> {
-        let store = self.store.as_ref().expect("OVER store");
-        let entries = self
-            .range_timers
-            .iter()
-            .map(|(key, timers)| {
-                (
-                    store.range_timer_key(self.store_fold_key_group(&key.0), &key.0),
-                    timers.encode(),
-                )
-            })
-            .collect::<Vec<_>>();
-        self.store
-            .as_mut()
-            .expect("OVER store")
-            .replace_range_timers(&entries)
     }
 }
 

@@ -247,3 +247,91 @@ fn wide_membership_visitors_bound_bytes_retry_and_cancel_within_one_partition() 
     assert!(result.is_err());
     assert_eq!(calls, 1);
 }
+
+#[test]
+fn tagged_polling_ledgers_and_floating_memberships_survive_native_database_restore() {
+    for aligned in [false, true] {
+        for legacy in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let types = if legacy {
+                vec![DataType::Float64]
+            } else {
+                vec![DataType::Float64, DataType::Float32]
+            };
+            let mut store = RocksOverAggStore::create(
+                config(&directory.path().join("source")),
+                &[DataType::Int64],
+                &[],
+                &types,
+                schema(),
+                0..=7,
+            )
+            .unwrap();
+            let converter = RowConverter::new(vec![SortField::new(DataType::Int64)]).unwrap();
+            let owners = converter
+                .convert_columns(&[Arc::new(Int64Array::from(vec![7]))])
+                .unwrap();
+            let key = owners.row(0).data();
+            let mut timer_key = store.range_timer_key(1, key);
+            if legacy {
+                timer_key.remove(KEY_PREFIX_LEN);
+            }
+            let mut timer_value = vec![1, 0];
+            timer_value.extend_from_slice(&0_i64.to_le_bytes());
+            timer_value.extend_from_slice(&11_i64.to_le_bytes());
+            store.db.put(&timer_key, &timer_value).unwrap();
+            for (slot, ty) in types.iter().enumerate() {
+                let values: ArrayRef = match ty {
+                    DataType::Float64 => {
+                        Arc::new(arrow::array::Float64Array::from(vec![f64::NAN, 1.0]))
+                    }
+                    _ => Arc::new(arrow::array::Float32Array::from(vec![f32::NAN, 1.0])),
+                };
+                let prefix = store.distinct_prefix(slot, 1, key);
+                let entries = store
+                    .encode_distinct_elements(slot, &values)
+                    .unwrap()
+                    .into_iter()
+                    .map(|row| {
+                        let mut out = prefix.clone();
+                        out.extend(row);
+                        out
+                    })
+                    .collect::<Vec<_>>();
+                store.write_distinct(&entries).unwrap();
+            }
+            let snapshot = directory.path().join("checkpoint");
+            let manifest = store.checkpoint(10, snapshot.to_str().unwrap()).unwrap();
+            let recovered = RocksOverAggStore::open_merged(
+                config(&directory.path().join("recovered")),
+                &[DataType::Int64],
+                &[],
+                &types,
+                schema(),
+                0..=7,
+                &[(snapshot.to_str().unwrap().into(), manifest.snapshot_id)],
+                aligned,
+            )
+            .unwrap();
+            assert_eq!(
+                recovered.scan_range_timers().unwrap(),
+                vec![(key.into(), timer_value.clone())]
+            );
+            assert_eq!(
+                recovered.range_timer_state(1, key).unwrap(),
+                Some(timer_value)
+            );
+            for slot in 0..types.len() {
+                assert_eq!(recovered.scan_distinct(slot, 1, key).unwrap().len(), 2);
+                let mut count = 0;
+                recovered
+                    .visit_all_distinct(slot, &[DataType::Int64], 1, |rows| {
+                        count += rows.len();
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(count, 2);
+            }
+        }
+    }
+}

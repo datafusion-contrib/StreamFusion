@@ -69,21 +69,4 @@ impl RocksOverAggStore {
         }
         Ok(entries)
     }
-
-    pub(crate) fn replace_proc_rows(
-        &mut self,
-        entries: &[(Vec<u8>, Vec<u8>)],
-    ) -> Result<(), DataFusionError> {
-        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
-        for entry in self.db.iterator(IteratorMode::Start) {
-            let (key, _) = entry.map_err(re)?;
-            if key.len() >= KEY_PREFIX_LEN && key[4] == PROC_ROWS_TABLE {
-                writes.delete(key)?;
-            }
-        }
-        for (key, value) in entries {
-            writes.put(key, value)?;
-        }
-        writes.finish()
-    }
 }

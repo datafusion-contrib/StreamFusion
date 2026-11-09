@@ -49,6 +49,12 @@ struct Database {
     clock: Arc<StateClock>,
     write_batch_size: usize,
     path: PathBuf,
+    #[cfg(test)]
+    scans: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    write_batches: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    fail_write: std::sync::atomic::AtomicBool,
 }
 
 static DATABASES: OnceLock<Mutex<HashMap<PathBuf, Weak<Database>>>> = OnceLock::new();
@@ -94,6 +100,8 @@ impl ReadView {
     }
 
     pub(super) fn iterator(&self, mode: IteratorMode<'_>) -> DBIteratorWithThreadMode<'_, DB> {
+        #[cfg(test)]
+        self.database.scans.fetch_add(1, Ordering::Relaxed);
         self.snapshot.iterator(mode)
     }
 }
@@ -129,6 +137,12 @@ impl StateDb {
             clock,
             write_batch_size,
             path: path.clone(),
+            #[cfg(test)]
+            scans: Default::default(),
+            #[cfg(test)]
+            write_batches: Default::default(),
+            #[cfg(test)]
+            fail_write: Default::default(),
         });
         databases()
             .lock()
@@ -144,6 +158,19 @@ impl StateDb {
         self.view
             .clone()
             .unwrap_or_else(|| ReadView::new(Arc::clone(&self.database)))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn io_counts(&self) -> (usize, usize) {
+        (
+            self.database.scans.load(Ordering::Relaxed),
+            self.database.write_batches.load(Ordering::Relaxed),
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_next_write(&self) {
+        self.database.fail_write.store(true, Ordering::Relaxed);
     }
 
     pub(crate) fn is_frozen(&self) -> bool {
@@ -186,10 +213,14 @@ impl StateDb {
     }
 
     pub(crate) fn iterator(&self, mode: IteratorMode<'_>) -> DBIteratorWithThreadMode<'_, DB> {
+        #[cfg(test)]
+        self.database.scans.fetch_add(1, Ordering::Relaxed);
         self.database.db.iterator_opt(mode, self.options())
     }
 
     pub(crate) fn raw_iterator(&self) -> DBRawIteratorWithThreadMode<'_, DB> {
+        #[cfg(test)]
+        self.database.scans.fetch_add(1, Ordering::Relaxed);
         self.database.db.raw_iterator_opt(self.options())
     }
 
@@ -290,6 +321,15 @@ impl StateWrite for StateDb {
             return Err(DataFusionError::Execution(
                 "canonical read view cannot write state".to_owned(),
             ));
+        }
+        #[cfg(test)]
+        {
+            if self.database.fail_write.swap(false, Ordering::Relaxed) {
+                return Err(DataFusionError::Execution(
+                    "injected state write failure".into(),
+                ));
+            }
+            self.database.write_batches.fetch_add(1, Ordering::Relaxed);
         }
         self.database.db.write_opt(batch, options).map_err(re)
     }

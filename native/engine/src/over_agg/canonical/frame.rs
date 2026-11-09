@@ -606,8 +606,9 @@ impl OverWindowAggregator {
                 self.retention_bytes -= byte_key_bytes(&key.0) + previous.bytes();
             }
             self.retention_bytes += byte_key_bytes(&key.0) + protocol.bytes();
-            self.range_timers.insert(key, protocol);
+            self.range_timers.insert(key.clone(), protocol);
         }
+        self.mark_store_metadata(&key.0);
         if self.proctime {
             self.next_seq = self.next_seq.max(next_seq);
             #[cfg(feature = "rocksdb-state")]

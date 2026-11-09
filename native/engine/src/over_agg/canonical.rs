@@ -231,9 +231,14 @@ impl OverWindowAggregator {
                 }
             } else if self.deadline_cleaning() {
                 let bytes = byte_key_bytes(&key.0);
-                if self.cleanup_state.insert(key, stamps.value(row)).is_none() {
+                if self
+                    .cleanup_state
+                    .insert(key.clone(), stamps.value(row))
+                    .is_none()
+                {
                     self.retention_bytes += bytes;
                 }
+                self.mark_store_metadata(&key.0);
             }
         }
         if !self.canonical_distinct.is_empty() {

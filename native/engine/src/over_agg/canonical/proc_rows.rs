@@ -148,6 +148,7 @@ impl OverWindowAggregator {
         }
         let before = self.proc_rows_bytes();
         for row in 0..batch.num_rows() {
+            self.mark_store_metadata(keys.row(row).data());
             self.proc_rows.insert(
                 ByteKey::from(keys.row(row).data()),
                 ProcRowsState {
