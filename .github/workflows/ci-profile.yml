@@ -6,22 +6,31 @@ on:
       suite:
         description: 'Paired JVM comparison to run'
         type: choice
-        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only]
+        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots]
         default: runtime
+      native_run:
+        description: 'Existing native-producing run for runtime-hotspots'
+        type: string
+      hotspot_mode:
+        description: 'Attribute slow classes or compare their worker counts'
+        type: choice
+        options: [attribution, parallel, plan-cache, canonical-parallel, deeper-runtime, fluss-details, recursive-completion, recovery-diagnostics, recovery-transport, fluss-close, runtime-regressions]
+        default: attribution
 
 permissions:
   contents: read
+  actions: read
 
 env:
   RUST_BACKTRACE: '1'
 
 concurrency:
-  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}
+  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}-${{ inputs.hotspot_mode }}
   cancel-in-progress: true
 
 jobs:
   native:
-    if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+    if: ${{ inputs.suite != 'runtime-hotspots' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -92,7 +101,7 @@ jobs:
 
   runtime:
     needs: native
-    if: inputs.suite != 'canonical' && inputs.suite != 'native-only'
+    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -143,5 +152,144 @@ jobs:
           name: runtime-startup-profile-flink${{ matrix.line }}-jdk${{ matrix.jdk }}${{ matrix.jfr && '-jfr' || '' }}
           path: |
             ${{ runner.temp }}/runtime-startup-profile/
+            streamfusion-runtime/target/surefire-reports/*runtime-profile*
+          retention-days: 7
+
+  hotspots:
+    if: inputs.suite == 'runtime-hotspots' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        jdk: ${{ fromJSON(inputs.hotspot_mode == 'parallel' && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'fluss-details' || inputs.hotspot_mode == 'fluss-close' || inputs.hotspot_mode == 'recursive-completion' || inputs.hotspot_mode == 'runtime-regressions' || inputs.hotspot_mode == 'recovery-diagnostics' || inputs.hotspot_mode == 'recovery-transport') && '["17"]' || '["11", "17"]') }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+          cache: maven
+      - name: Verify native artifact source and completed producer
+        id: native
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN: ${{ inputs.native_run }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', path]))
+          run_id = os.environ['NATIVE_RUN']
+          if not re.fullmatch(r'[0-9]+', run_id):
+              raise SystemExit('Expected a numeric native workflow run ID')
+          repo = os.environ['GITHUB_REPOSITORY']
+          run = api(f'repos/{repo}/actions/runs/{run_id}')
+          sha = run['head_sha']
+          jobs = api(f'repos/{repo}/actions/runs/{run_id}/jobs?per_page=100')['jobs']
+          if not any(j['name'] == 'Shared debug native libraries' and j['conclusion'] == 'success' for j in jobs):
+              raise SystemExit('Native producer has not succeeded')
+          subprocess.run(['git', 'diff', '--exit-code', sha, 'HEAD', '--',
+                          'native', 'rust-toolchain.toml', '.cargo', '.github/actions/setup-rust'], check=True)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'artifact=debug-native-{sha}\n')
+          print(f'Reusing native libraries from successful producer at {sha}')
+          PY
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ steps.native.outputs.artifact }}
+          run-id: ${{ inputs.native_run }}
+          github-token: ${{ github.token }}
+          path: native/target/debug
+      - name: Compile the unchanged complete runtime inventory
+        env:
+          HOTSPOT_MODE: ${{ inputs.hotspot_mode }}
+        run: |
+          profile=()
+          profile_name=''
+          projects='streamfusion-runtime'
+          goal='test-compile'
+          skip=()
+          if [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
+            profile=(-Pcanonical-kafka)
+            profile_name='canonical-kafka'
+          elif [[ "$HOTSPOT_MODE" == 'deeper-runtime' || "$HOTSPOT_MODE" == 'fluss-details' || "$HOTSPOT_MODE" == 'fluss-close' ]]; then
+            projects='streamfusion-fluss'
+            goal='test'
+            skip=(-DskipTests)
+          elif [[ "$HOTSPOT_MODE" == 'recovery-diagnostics' ]]; then
+            profile=(-Pflink-1.18,ci-diagnostics)
+            profile_name='flink-1.18,ci-diagnostics'
+            goal='test'
+            skip=(-DskipTests)
+          elif [[ "$HOTSPOT_MODE" == 'recovery-transport' ]]; then
+            profile=(-Pflink-1.18)
+            profile_name='flink-1.18'
+          fi
+          python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects "$projects"
+          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
+          mvn -B -ntp "${profile[@]}" -pl "$projects" -am "$goal" "${skip[@]}" -Dnative.build.skip=true
+      - name: Attribute measured slow classes under current CI worker settings
+        env:
+          HOTSPOT_MODE: ${{ inputs.hotspot_mode }}
+        run: |
+          args=(--line 2.2 --repetitions 1 --hotspots)
+          if [[ "$HOTSPOT_MODE" == 'parallel' ]]; then
+            args=(--line 2.2 --repetitions 2 --slow-mix --parallel)
+          elif [[ "$HOTSPOT_MODE" == 'plan-cache' ]]; then
+            args=(--line 2.2 --repetitions 2 --plan-cache)
+          fi
+          nproc
+          free -m
+          vmstat -w 15 > "$RUNNER_TEMP/runtime-hotspots-vmstat.txt" &
+          memory_sampler=$!
+          trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
+          if [[ "$HOTSPOT_MODE" == 'deeper-runtime' || "$HOTSPOT_MODE" == 'fluss-details' || "$HOTSPOT_MODE" == 'fluss-close' ]]; then
+            (
+              while true; do
+                date -u
+                docker stats --no-stream --format '{{json .}}'
+                sleep 15
+              done
+            ) > "$RUNNER_TEMP/runtime-hotspots-containers.txt" &
+            container_sampler=$!
+            trap 'kill "$memory_sampler" "$container_sampler" 2>/dev/null || true' EXIT
+            if [[ "$HOTSPOT_MODE" == 'deeper-runtime' ]]; then
+              python3 bin/profile-ci-details.py --line 2.2 --suite recursive --output "$RUNNER_TEMP/runtime-hotspots/recursive"
+            fi
+            comparison=()
+            if [[ "$HOTSPOT_MODE" == 'fluss-close' ]]; then
+              started=$SECONDS
+              docker pull zookeeper:3.9.2
+              docker pull apache/fluss:1.0.0
+              mkdir -p "$RUNNER_TEMP/runtime-hotspots"
+              echo "Docker image preparation: $((SECONDS - started)) seconds" > "$RUNNER_TEMP/runtime-hotspots/image-preparation.txt"
+              comparison=(--compare-close)
+            fi
+            python3 bin/profile-ci-details.py --line 2.2 --suite fluss "${comparison[@]}" --output "$RUNNER_TEMP/runtime-hotspots/fluss"
+          elif [[ "$HOTSPOT_MODE" == 'runtime-regressions' ]]; then
+            python3 bin/profile-ci-details.py --line 2.2 --suite regressions --output "$RUNNER_TEMP/runtime-hotspots/regressions"
+          elif [[ "$HOTSPOT_MODE" == 'recursive-completion' ]]; then
+            python3 bin/profile-ci-details.py --line 2.2 --suite recursive --compare-completion --output "$RUNNER_TEMP/runtime-hotspots/recursive-completion"
+          elif [[ "$HOTSPOT_MODE" == 'recovery-diagnostics' ]]; then
+            python3 bin/profile-ci-details.py --line 1.18 --suite recovery --output "$RUNNER_TEMP/runtime-hotspots/recovery"
+          elif [[ "$HOTSPOT_MODE" == 'recovery-transport' ]]; then
+            python3 bin/profile-ci-details.py --line 1.18 --suite recovery --compare-transport --output "$RUNNER_TEMP/runtime-hotspots/recovery-transport"
+          elif [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
+            python3 bin/profile-canonical-ci.py --parallel --repetitions 2 --output "$RUNNER_TEMP/runtime-hotspots"
+          else
+            python3 bin/profile-runtime-ci.py "${args[@]}" --output "$RUNNER_TEMP/runtime-hotspots"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-hotspots-${{ inputs.hotspot_mode }}-jdk${{ matrix.jdk }}
+          path: |
+            ${{ runner.temp }}/runtime-hotspots/
+            ${{ runner.temp }}/runtime-hotspots-vmstat.txt
+            ${{ runner.temp }}/runtime-hotspots-containers.txt
             streamfusion-runtime/target/surefire-reports/*runtime-profile*
           retention-days: 7

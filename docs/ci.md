@@ -29,6 +29,23 @@ git push -u fork HEAD
 gh pr create --repo datafusion-contrib/StreamFusion --base main --head YOUR_LOGIN:YOUR_BRANCH
 ```
 
+After syncing the fork's default branch with already-merged upstream code, the native
+dependency cache can be primed there once:
+
+```sh
+gh workflow run ci-profile.yml --repo YOUR_LOGIN/YOUR_FORK --ref main -f suite=native-only
+```
+
+GitHub lets feature branches restore the default branch's cache, while sibling branches
+cannot restore each other's caches ([cache access rules](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)).
+The native-only producer builds the complete workspace with the normal debug dependency
+configuration. A verified sibling-branch run restored that default-branch cache in about
+33 seconds, then built in 24.06 seconds with 42 positive-duration compilation units and
+no RocksDB rebuild. Cold builds of the same native tree recorded 639 such units and
+598.57–632 seconds. The consumer created no duplicate branch cache. This is native setup
+evidence, not whole-CI latency or a same-run CPU comparison; normal tests and source
+validation still run. Cargo rebuilds changed project crates and dependencies as needed.
+
 Pushes to any branch in a fork run CI and the upstream Flink suite. Paimon and release diagnostics
 retain their path filters; docs changes build the strict MkDocs site in the fork. Branch pushes
 in the canonical repository skip those jobs unless the branch is `main`; development branches
@@ -247,8 +264,7 @@ the paired runtime diagnostic:
 | Flink / JDK | Fresh Surefire forks | Heap per fork |
 | --- | ---: | ---: |
 | 1.18 / 11 or 17 | 4 | 2 GiB |
-| 2.2 / 17 | 4 | 2 GiB |
-| 2.2 / 11 | 2 | 4 GiB |
+| 2.2 / 11 or 17 | 4 | 2 GiB |
 
 Every combination caps the configured Java heaps at 8 GiB in total. Native allocations,
 metaspace and VM overhead still need headroom; full CI validates the complete test selection.
@@ -259,6 +275,12 @@ reuse and usual compiler settings. The default 8 GiB per-fork heap
 combined with CPU-based fork counts leaves insufficient predictable headroom for Arrow buffers, native
 operators, embedded clusters and the Maven process on hosted runners.
 
+Savepoint CI uses four fresh 1 GiB parent forks per job, each retaining its existing fresh
+1 GiB engine worker for a handoff stage. The configured parent heaps total 4 GiB, with
+8 GiB of combined parent/worker heaps when all four workers run. The required matrix
+remains 32 jobs; first-tier compilation, immutable metadata sharing and fresh engine
+process boundaries remain in place. The test step records processors, memory and `vmstat`.
+
 Released Flink MiniClusters keep completed execution graphs and serialized results in an
 unbounded in-memory archive. Its JVM shutdown hook can retain this archive even after the
 cluster stops, so closing private clusters or rotating the shared cluster does not reliably
@@ -267,8 +289,8 @@ without reflecting into Flink internals or evicting results during a scenario. C
 their shared launcher-session cluster and all within-class lifecycle, failure and recovery checks.
 The tradeoff is additional JVM and native-library startup per class;
 complete CI elapsed time, rather than local function throughput, measures that overhead.
-The 4 GiB per-fork cap also leaves room for the temporary copies made while checkpointing and serializing
-large binary collection results. The two configured heaps total at most 8 GiB; Arrow/native
+The aggregate heap cap also leaves room for the temporary copies made while checkpointing and serializing
+large binary collection results. The configured heaps total at most 8 GiB; Arrow/native
 allocations, Maven, containers and the operating system still need separate headroom.
 A local JDK 11/Flink 1.18 diagnostic ran the same 447 cases without skips or failures in
 354.31 seconds with one fork and 239.08 seconds with two. Both runs use fresh processes per
@@ -693,6 +715,10 @@ build step. The cache action then reported the entry up to date instead of enric
 [The action's save logic](https://github.com/Swatinem/rust-cache/blob/d1527c8f67ef9af357290475d4af4b0fab8f12e0/src/save.ts)
 returns early on an exact hit. Keeping the producer scope consistent avoids that incomplete
 entry. `native-only` runs just this build/cache diagnostic without starting Java comparisons.
+The [warm-cache verification](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42506483948)
+on the corrected source restored the same key and completed Cargo in 29.50 seconds,
+rebuilding 42 of 639 units with no RocksDB units rebuilt. This measures dependency reuse;
+the Cargo duration excludes cache download and is not a repeated workflow comparison.
 
 The runtime comparison covers Flink 1.18/2.2 and JDK 11/17. It runs the unchanged OVER,
 decimal negate/absolute-value, string collection and stateful SQL rescaling classes with the
@@ -731,15 +757,319 @@ uninstrumented timing jobs. Medians across three alternating pairs:
 | 2.2 / 11 | 291.44 s | 293.22 s | -0.6% | +8.2% |
 | 2.2 / 17 | 251.09 s | 213.19 s | 15.1% | +8.3% |
 
-Flink 2.2/JDK 11 therefore retains two 4 GiB forks. Its string collection class alone took
+The initial smaller probe selected two 4 GiB forks for Flink 2.2/JDK 11. Its string collection class alone took
 278.29 seconds with two forks and 287.18 with four; the other classes also slowed under four.
-The other combinations use four 2 GiB forks. These observations measure the selected test mix,
+The other combinations selected four 2 GiB forks. These observations measure the selected test mix,
 not the complete matrix. The timing workflow's separate initial JFR export failed after tests
 passed; [the corrected JFR-only run](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42495045635)
 passed both instrumented modes. Its default run recorded 439.12 seconds of summed C2 compiler
 activity intervals across four JVMs; the first-tier run recorded no C2 events. This is activity
 attribution, not compiler CPU seconds or an instrumented speedup claim. Detailed counts,
 sample summaries and all timing trials are retained in the November 8 evidence file.
+
+All twelve runtime jobs in the [complete-matrix source run](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42499556204)
+passed. Summed runtime runner execution fell from 14.55 to 8.94 hours (38.5%); the longest
+runtime job fell from 103.6 to 78.2 minutes. The required runtime matrix remains twelve jobs:
+fork counts change Java processes within each runner. Grouped across all three shards per
+Flink/JDK combination, the class report multiset retains identical test, failure, error and
+skip counts, including the additional JVM-boundary verification on JDK 17.
+
+| Flink / JDK | Previous runner minutes | Updated runner minutes | Reduction |
+| --- | ---: | ---: | ---: |
+| 1.18 / 11 | 173.82 | 88.68 | 49.0% |
+| 1.18 / 17 | 192.40 | 110.18 | 42.7% |
+| 2.2 / 11 | 231.08 | 194.37 | 15.9% |
+| 2.2 / 17 | 275.50 | 143.38 | 48.0% |
+
+All twelve runners reported four CPUs, with zero swap usage in the recorded `vmstat`
+samples. These before/after hosted measurements include runner and cache variability;
+the alternating paired probes above separately test the selected settings. The complete
+source workflow subsequently passed in 161.6 minutes elapsed and 38.57 runner-hours,
+compared with 194.8 minutes and 44.74 runner-hours previously (17.0% and 13.8% reductions).
+All 32 savepoint artifacts retained the same partition inventories and class-level outcomes:
+116 runnable classes, 3,620 cases and no skips per JDK. Savepoint execution changed little,
+from 27.19 to 26.48 runner-hours, and its longest job increased from 70.5 to 73.0 minutes.
+Both exact-head aggregates and strict docs passed;
+[PR #614](https://github.com/datafusion-contrib/StreamFusion/pull/614) merged with its tested
+head unchanged. These final measurements are recorded on the follow-up branch to preserve
+that qualification.
+
+Two further observations identify follow-up measurements without claiming an optimization.
+One completed runtime job compiled its 1,029 test sources three times, taking approximately
+10.01, 9.52 and 11.07 seconds; eliminating the later passes could address about 21 seconds
+in that observed job. Reanalysis of the earlier default-JVM JFR recordings found 64.98
+seconds of main-thread retry sleeps inside result collection and 80.72 seconds waiting on
+futures in the string-collection class. Recorded waits exclude short unrecorded waits,
+overlap asynchronous work and are not CPU time. They do not establish removable delay,
+safe fixture reuse, or a measured benefit from changing polling.
+
+Repeated lifecycle invocations now set `sf.protobuf.checkStaleness=true` after the job's
+initial complete compilation. The protobuf generator otherwise rewrites unchanged test
+sources, causing another compilation of the runtime's entire test inventory. A real Java 11
+Maven fixture using the released protobuf/compiler plugins reproduced that rewrite and
+dependent recompilation on an unchanged second pass. With staleness checking, the generated
+source and dependent class timestamps stayed unchanged and javac compiled no sources.
+A subsequent normal compile regenerated and recompiled an edited proto successfully.
+Skipping the protobuf mojo entirely was rejected: it drops the generated source root and
+the same fixture failed to compile its dependent source.
+
+The initial compilation and ordinary Maven defaults keep staleness checking disabled, so
+changes to proto inputs or generator versions still regenerate code. The optimization is
+limited to subsequent invocations within the same immutable CI checkout, including package
+verification. The observed 21-second repeated compilation remains a baseline observation;
+the full updated workflow must establish the actual saving.
+
+The next runtime investigation selects `runtime-hotspots` in the manually dispatched
+**CI startup profile** workflow. It selects the five slow aggregate/state and recursive-conversion classes from
+the completed Flink 2.2 runtime reports, retaining all 2,759 cases without skips. Both JDKs
+use their current first-tier compiler and worker settings. This is one instrumented
+attribution run, not a paired speedup measurement. Optional aggregate timers cover stock
+and native fixture planning and private metrics-cluster startup/close; JFR records execution
+samples, native stacks, compiler activity and sampled allocations. Ordinary tests leave
+these timers disabled. Successful profiles remove recordings and temporary fixture data.
+
+Supply a native-producing workflow run as `native_run`. The diagnostic verifies a successful
+producer in the same repository and unchanged native sources/toolchain before downloading
+its existing artifact, avoiding a duplicate native build. It has no push trigger and adds
+no required jobs. Runtime evidence for the preceding PR is retained separately while that
+PR's source head and required CI remain unchanged.
+
+Set `hotspot_mode=parallel` to run two alternating pairs on JDK 11 using these five
+classes, with first-tier compilation fixed and two 4 GiB versus four 2 GiB workers.
+These comparisons have no JFR or fixture-timing instrumentation and must retain identical
+individual outcomes across all four trials. The broader mix addresses a limitation of the
+earlier probe: its JDK 11 elapsed time was dominated by the string-collection class.
+The completed full Flink 2.2/JDK 11 jobs recorded 46.5–52.9% mean idle CPU in 30-second
+`vmstat` samples. That observation motivates this comparison but does not prove that
+additional processes improve its elapsed time or CPU cost.
+
+The [broader worker comparison](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42513596995)
+completed all four trials with identical individual case outcomes: 11,036 invocations passed,
+with no failures or skips. Two alternating pairs on the same JDK 11 runner measured median
+elapsed time of 1,396.32 seconds with two fresh 4 GiB forks and 1,070.20 seconds with four
+fresh 2 GiB forks, a 23.4% reduction. Child CPU time increased from 2,210.25 to 2,920.23
+seconds (32.1%). Each individual class ran slower with four workers; additional overlap
+shortened overall completion. The required runtime matrix now selects four 2 GiB workers
+for Flink 2.2/JDK 11 as well, retaining the same twelve jobs and total Java heap budget.
+The complete required matrix must qualify this setting. These gains are not multiplied
+with the separate fixture-cache measurements.
+
+JDK 11 compilation recordings identify the compiler by `compileLevel`; newer JDKs expose
+the compiler name directly. The reader supports both schemas. Verified test outcomes,
+elapsed/CPU measurements and fixture timings are saved before optional JFR decoding so
+an attribution failure retains those measurements for offline analysis without repeating
+the test execution.
+The larger JDK 11 recordings also exceeded the consumer's 512 MiB constant-pool budget;
+postprocessing now allows a 2 GiB reader heap after the test JVMs have exited. Both real
+JDK schemas were decoded successfully, and the raw failed recordings were removed after
+recovering their attribution locally.
+
+The [completed attribution](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42511164171)
+retained all 2,759 cases without skips on both JDKs. On JDK 17 the fixture timers recorded
+1,245.10 summed seconds in repeated aggregate/state plan construction, versus 148.70
+seconds in private metrics-cluster startup and close. These intervals overlap across forks.
+Both JDKs repeatedly sampled Flink's generated-code splitter and parser; inclusive frame
+counts overlap and are not exact CPU attribution. The released 2.2.1 runtime bytecode
+confirms that generated classes enter the splitter with the configured threshold.
+The [follow-up evidence](benchmarks/ci-runtime-followup-20261108.json) retains class outcomes,
+timers, sample summaries and the Java 11 postprocessing limitation.
+
+The `hotspot_mode=plan-cache` experiment compares two alternating pairs on each JDK.
+Only the two aggregate/state fixture builders participate: a cache retains
+serialized unopened operator definitions, keyed by all planning inputs. Every fixture
+deserializes independent operators, functions and serializers, then creates its existing
+fresh harness/backend and runs every original assertion, snapshot and recovery stage.
+The cache retains at most 128 definitions and 32 MiB per fixture builder; it never retains
+open operators, backend state or a shared running job. These fixture builders enable it
+by default; `-Dsf.fixturePlanCache=false` retains uncached construction for comparisons.
+Both settings use released Flink's normal generated-code splitting configuration. Timed
+comparisons have no JFR or fixture timers, hold the current worker/heap settings fixed,
+and compare individual case outcomes across all 2,759 invocations in each trial.
+
+The [completed fixture comparison](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42517795512)
+passed all 22,072 invocations across both JDKs without failures, errors or skips, retaining
+identical individual case outcomes between settings. Medians across two alternating pairs:
+
+| JDK | Reference elapsed | Cached definitions | Elapsed reduction | CPU reduction |
+| --- | ---: | ---: | ---: | ---: |
+| 11 | 1,042.88 s | 675.31 s | 35.2% | 52.5% |
+| 17 | 1,068.60 s | 568.39 s | 46.8% | 58.8% |
+
+Those recorded comparisons used the preceding PR's worker budgets: two 4 GiB forks on
+JDK 11 and four 2 GiB forks on JDK 17. They establish fixture-construction savings within
+those selected workloads, not a complete-matrix improvement or a product of separate
+worker and cache gains. Future hotspot/cache comparisons follow the current four-fork
+2 GiB budget. Worker-only and compiler comparisons explicitly disable fixture caching;
+the cache comparison explicitly toggles it, and attribution runs use the current default.
+Complete required CI must qualify the combined configuration and every remaining fixture.
+
+`hotspot_mode=canonical-parallel` investigates the remaining savepoint execution cost
+without adding required runners. It selects eight complete classes with comparable measured
+durations (108–181 seconds on JDK 17 in the latest complete source run), retaining all
+64 cases. One separate preparation phase runs those same cases and prepares worker
+metadata. Two alternating pairs then compare two fresh 2 GiB parent forks with four fresh
+1 GiB parent forks, holding the total parent heap cap at 4 GiB. Each running parent still
+starts its existing fresh 1 GiB engine worker; the maximum configured parent-plus-worker
+heaps are 6 GiB and 8 GiB respectively. Both variants use the existing first-tier compiler,
+released Flink configuration and metadata archives. Preparation cost, complete case outcomes,
+elapsed/CPU time and `vmstat` samples are retained. This is a controlled diagnostic;
+the complete matrix remains necessary before changing the required savepoint worker count.
+
+The [completed savepoint worker comparison](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42518477689)
+passed all 640 invocations across both JDKs including preparation, with no skips. Timed
+measurement medians across two alternating pairs:
+
+| JDK | Two parent forks | Four parent forks | Elapsed reduction | CPU increase |
+| --- | ---: | ---: | ---: | ---: |
+| 11 | 665.69 s | 540.48 s | 18.8% | 19.6% |
+| 17 | 563.81 s | 414.06 s | 26.6% | 13.5% |
+
+Separate preparation took 739.42 seconds on JDK 11 and 601.76 seconds on JDK 17;
+each phase retained the same two metadata archives. Recorded samples showed zero swap
+use on both runners. These comparisons select four fresh 1 GiB parents for the existing
+savepoint jobs. Full source CI must still qualify all recovery assertions, cold setup,
+complete class inventories and the combined configuration. This is test execution
+throughput within each runner, not fewer cases or additional required runners.
+
+The full required savepoint matrix subsequently passed all 32 jobs at source
+`2f82b3401d5b1441d2302b37522af01847967054`. Artifact comparisons retained the exact
+118-class partition inventory, 116 runnable classes, 3,620 cases and zero skips per JDK.
+Including cold setup, combined runner time fell from 95,325 to 80,332 seconds (15.7%)
+versus the preceding completed source run, saving 4.16 runner hours without adding jobs.
+JDK 11 runner time fell from 54,117 to 44,631 seconds (17.5%), with the longest job
+falling from 4,379 to 3,530 seconds (73.0 to 58.8 minutes). JDK 17 runner time fell from
+41,208 to 35,701 seconds (13.4%), with the longest job falling from 3,242 to 2,928 seconds
+(54.0 to 48.8 minutes). These are complete-matrix observations with runner/cache variability,
+not a whole-workflow speedup. The same source failed a Flink 1.18/JDK 17 binary recovery
+case because its result accumulator was missing, and fail-fast cancelled sibling runtime
+jobs. Full runtime qualification and the cause of that failure remain unresolved; the
+passing upstream suite and this savepoint group do not substitute for them.
+
+Further attribution uses `hotspot_mode=deeper-runtime` on a separate source branch. It
+retains all 1,817 recursive conversion cases and all 29 Fluss SQL cases on JDK 17/Flink 2.2.
+Optional timers separate environment construction, SQL conversion, explain, submission,
+collection, and Fluss broker/catalog lifecycle. JFR retains sampled execution, recorded
+main-thread waits, GC activity and heap summaries; container samples account separately
+for Fluss processes outside the test JVM. Instrumented durations are attribution, not
+speedup measurements. Wait intervals exclude unrecorded short waits and can overlap across
+threads; GC activity is not exact stop-the-world pause time and heap summaries are not RSS.
+
+The [completed recursive attribution](benchmarks/ci-deeper-profile-20261108.json) passed all
+1,817 cases without skips. Across its two JVMs, collection took 516.31 summed seconds;
+JFR recorded 510.72 seconds of main-thread sleep in released Flink's collect-result retry.
+Explain calls took 37.34 summed seconds and private-cluster start/close took 95.16 seconds.
+The released 2.2.1 collector hard-codes a 100 ms retry rather than exposing a polling option.
+`hotspot_mode=recursive-completion` therefore compares two alternating pairs with an optional
+100 ms event-driven wait for job completion before collecting. A timeout falls through to
+normal live collection, avoiding a deadlock when a result exceeds the collector buffer.
+Both modes retain every row, original assertion and native execution check, four fresh
+2 GiB forks and first-tier compilation. The comparison disables JFR and phase timers.
+The [complete comparison](benchmarks/ci-deeper-profile-20261108.json) passed all 7,268
+invocations without skips and with identical individual outcomes. Median elapsed fell
+from 461.44 to 342.33 seconds (25.8%); child CPU increased from 605.48 to 628.22 seconds
+(3.76%). Four forks were configured, but the two selected classes create two fresh JVMs
+per trial; this is not a measurement of the complete runtime group under four busy forks.
+The two recursive classes now opt into this brief completion wait through a dedicated
+small-bounded-result helper. Other parity calls retain their existing collection behavior.
+`sf.parity.awaitSmallResults=false` retains the control behavior for comparisons.
+An added regression sends 8 MiB through the ordinary 4 MiB collect buffer, requiring live
+draining after the brief timeout, complete stock/native row parity and positive native work.
+`hotspot_mode=runtime-regressions` qualifies this case and the three encoding cases before
+the complete required matrix. The focused JDK 17/Flink 2.2 run passed all four cases,
+including complete stock/native rows and positive native work for the buffer fallback.
+Complete source qualification subsequently passed; its final matrix evidence is in the
+documentation-only `ci-profile-20261108.json` record. The other benchmark JSON files retain
+their historical experiment and pre-qualification candidate snapshots.
+
+The initial Fluss diagnostic could not load its new timing helper through a stale standalone
+test dependency; it did not execute the 29 SQL cases. `hotspot_mode=fluss-details` attributes
+that suite independently using the current Maven reactor and its test artifacts.
+The [completed Fluss attribution](benchmarks/ci-deeper-profile-20261108.json) then passed
+all 29 cases without skips: catalog closure took 116.20 seconds, with JFR recording 117.88
+seconds of main-thread wait in the released client's Netty shutdown. Stock collection took
+103.16 seconds, native collection 13.14 seconds and explain calls 3.92 seconds. Elapsed
+time includes the current Maven reactor; recorded child CPU excludes broker containers.
+Released Fluss calls Netty's default graceful shutdown without exposing a client quiet-period
+option. `hotspot_mode=fluss-close` compares two alternating pairs of the existing serial
+catalog closures versus closing the two independent catalogs concurrently on this same runner.
+Both closures complete before the test continues; their errors remain failures and the
+temporary executor is shut down. Each case retains fresh environments, catalogs and all
+existing assertions. `sf.fluss.parallelCatalogClose=false` retains serial closure for comparisons.
+The comparison disables JFR and phase timers and separately records Docker image preparation.
+The [complete closure comparison](benchmarks/ci-deeper-profile-20261108.json) passed all
+116 invocations without skips and retained identical individual outcomes. Median elapsed,
+including the Maven reactor, fell from 324.26 to 267.13 seconds (17.6%). Child CPU changed
+from 48.33 to 48.86 seconds (+1.09%), excluding the external broker containers. Docker
+image preparation took 18 seconds separately; each trial retained fresh containers, JVMs,
+environments and catalogs. These measurements select parallel catalog closure by default
+for the qualification candidate, which subsequently passed the complete required matrix.
+
+`hotspot_mode=recovery-diagnostics` repeats the complete 54-case binary collection class
+on Flink 1.18/JDK 17 with alternating 2/4 GiB heaps, retaining its 28 existing skips.
+All four trials retain that Flink line when selecting profiles and validating outcomes.
+It logs recovery result-accumulator presence, encoded sizes and heap usage alongside JFR
+and GC logs. The optional `ci-diagnostics` Maven profile supplies an error-level SLF4J
+provider with explicit accumulator-registry warnings so task-side serialization errors are
+visible. Released Flink 1.18 bytecode catches accumulator serialization failures, logs a
+warning and returns no snapshot; the diagnostic retains those warnings even if a later
+snapshot succeeds. Ordinary test logging is unchanged.
+The [completed four-trial diagnostic](benchmarks/ci-deeper-profile-20261108.json) passed all
+216 invocations with the same 112 existing skips and no serialization warning. One complete
+831-row result encoded to 165,299,820 bytes. The 2 GiB trials recorded before-GC heap maxima
+of 2,098,188,448 and 2,102,691,184 bytes, with full compactions. This confirms memory pressure;
+the original missing-accumulator failure's cause remains unconfirmed.
+`hotspot_mode=recovery-transport` compares two alternating pairs at the unchanged 2 GiB
+heap with optional result-accumulator compression (`sf.recoveryResults.compress`). Checkpoint contents, captured rows and parity assertions are
+unchanged. Only serialized accumulator rows use fast JDK deflate; decoding streams each
+row through the released Flink serializer. The comparison uses ordinary test logging,
+no JFR and no phase timers, while retaining encoded sizes and individual outcomes.
+Separate round trips on released Flink 1.18.1 and 2.2.1 under Java 11 passed all three
+codec cases: nested wide binary values, nulls, multiset counts, every changelog kind and
+corrupt-input rejection.
+The [complete transport comparison](benchmarks/ci-deeper-profile-20261108.json) passed all
+four full-class trials with identical individual outcomes (216 invocations, 112 existing
+skips). The wide 831-row result fell from 165,299,820 bytes to approximately 1.6 MB while
+retaining every row. Median elapsed changed from 84.75 to 83.75 seconds (1.18%) and child
+CPU from 107.95 to 104.17 seconds (3.50%). Elapsed ranges overlap; this establishes a
+large transport-size reduction, not a material execution speedup. Point-in-time heap
+messages are not peak memory measurements. The qualification candidate enables compact
+transport by default, retaining `sf.recoveryResults.compress=false` for the original
+transport comparison. That candidate subsequently passed full required CI.
+Any failed trial remains a failed diagnostic; its verified counts and condensed failure
+evidence are retained. Raw recordings and bulky successful reports are removed after analysis.
+
+### Complete follow-up qualification
+
+Source `eb87b1c588c83dd65b6c3ba708f36e6e53a87e5c` passed all
+[62 CI jobs](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650664),
+[19 upstream checks](https://github.com/jordepic/StreamFusion-contrib/actions/runs/42538650683),
+strict docs and the path-selected compatibility workflow. All 12 runtime jobs and 32
+savepoint jobs remain. The [final source evidence](benchmarks/ci-profile-20261108.json)
+compares every existing runtime class outcome counter and skip count with the preceding
+complete passing source, accounting only for 24 added runnable regression cases.
+The runtime matrix executed 102,464 cases with the same 3,212 existing skips; the savepoint
+matrix retained 118 selected/116 runnable classes and 3,620 cases without skips per JDK.
+The previously failing binary recovery case passed in its complete runtime job; its original
+missing-accumulator cause remains unconfirmed.
+
+| Completed execution | Previous runner hours | Combined runner hours | Reduction |
+| --- | ---: | ---: | ---: |
+| Runtime, 12 jobs | 8.94 | 8.05 | 10.0% |
+| Savepoints, 32 jobs | 26.48 | 21.53 | 18.7% |
+| Other CI, 18 jobs | 3.14 | 3.50 | -11.4% |
+| Complete CI, 62 jobs | 38.57 | 33.08 | 14.2% |
+
+The longest runtime job fell from 78.2 to 58.3 minutes; the longest savepoint job fell from
+73.0 to 62.4 minutes. The Flink 1.18/JDK 11 cohort used 5.8% more runner time, while the
+other cohorts improved; all individual cohort observations are retained. These are
+cross-run observations including cold setup and runner/cache variability, not products of
+the selected paired gains.
+
+Whole-workflow elapsed time increased from 161.6 to 230.8 minutes. Median delay between
+the completed native dependency and Java/savepoint job starts increased from 36.4 to
+90.7 minutes, including runner waiting and orchestration. No end-to-end wall-clock speedup
+is established by this run. The default-branch cache experiment above separately removes
+the measured cold native dependency rebuild from subsequent matching branch builds.
 
 The `runtime-parallel` diagnostic holds first-tier compilation fixed and compares two fresh
 4 GiB forks with four fresh 2 GiB forks in three alternating pairs on every Flink/JDK combination.

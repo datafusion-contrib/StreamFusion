@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Attribute remaining CI phases and diagnose missing recovery accumulators."""
+
+import argparse
+from collections import Counter
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import resource
+import shutil
+import subprocess
+import time
+import xml.etree.ElementTree as ET
+
+import ci_jfr
+
+ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("runtime_profile", Path(__file__).with_name("profile-runtime-ci.py"))
+runtime_profile = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runtime_profile)
+SUITES = {
+    "recursive": ("streamfusion-runtime", {
+        "FlinkRecursiveScalarSqlHarnessTest": (1134, {"1.18": 0, "2.2": 0}),
+        "FlinkRecursiveTableFunctionSqlHarnessTest": (683, {"1.18": 0, "2.2": 0}),
+    }),
+    "fluss": ("streamfusion-fluss", {"FlussSqlTest": (29, {"1.18": 0, "2.2": 0})}),
+    "recovery": ("streamfusion-runtime", {"FlinkBinaryCollectionSqlHarnessTest": (54, {"1.18": 28, "2.2": 0})}),
+    "regressions": ("streamfusion-runtime", {
+        "SmallBoundedCollectionTest": (1, {"1.18": 0, "2.2": 0}),
+        "RecoveryResultEncodingTest": (3, {"1.18": 0, "2.2": 0}),
+    }),
+}
+
+
+def profile(output, line, suite, compare_completion=False, compare_transport=False, compare_close=False):
+    output.mkdir(parents=True, exist_ok=False)
+    temporary = output / "tmp"
+    temporary.mkdir()
+    java_home = Path(os.environ["JAVA_HOME"])
+    paired = compare_completion or compare_transport or compare_close
+    attribution = not paired and suite != "regressions"
+    if attribution:
+        ci_jfr.configuration(java_home, temporary / "details.jfc")
+    module, selection = SUITES[suite]
+    reports = ROOT / module / "target/surefire-reports"
+    configurations = ([("2g", False), ("2g", True), ("2g", True), ("2g", False)]
+                      if paired else [(heap, False) for heap in (
+                          ["2g", "4g", "4g", "2g"] if suite == "recovery" else ["2g"])])
+    trials = []
+    failed = False
+    expected_cases = None
+    try:
+        for index, (heap, candidate) in enumerate(configurations):
+            completion = not compare_completion or candidate
+            compressed = not compare_transport or candidate
+            parallel_close = not compare_close or candidate
+            suffix = f"details-{line}-{suite}-{index}"
+            recorded = output / "jfr" / str(index)
+            recorded.mkdir(parents=True)
+            fixtures = temporary / f"fixtures-{index}"
+            environment = {**os.environ, "TMPDIR": str(temporary),
+                           "JAVA_TOOL_OPTIONS": f'-XX:TieredStopAtLevel=1 -Djava.io.tmpdir="{temporary}"'}
+            profiles = (["ci-diagnostics"] if suite == "recovery" and not paired else []) + (["flink-1.18"] if line == "1.18" else [])
+            extra = f"-Xmx{heap}"
+            if attribution:
+                extra += (f" -XX:StartFlightRecording=filename={recorded},"
+                     f"settings={temporary / 'details.jfc'},dumponexit=true "
+                     f"-XX:ErrorFile={output / 'hs_err_pid%p.log'} "
+                     f"-Xlog:gc*:file={output / ('gc-' + str(index) + '-%p.log')}")
+            command = ["mvn", "-B", "-ntp"] + (["-P" + ",".join(profiles)] if profiles else []) + ["-pl", module,
+                       f"-Dtest={','.join('tech.streamfusion.' + name for name in selection)}",
+                       "-Dsf.testForks=4", "-Dsf.testReuseForks=false", f"-Dsf.extraJvmArgs={extra}",
+                       "-Dsf.fixturePlanCache=true", f"-Dsf.parity.awaitSmallResults={str(completion).lower()}",
+                       f"-Dsf.recoveryResults.compress={str(compressed).lower()}",
+                       f"-Dsf.fluss.parallelCatalogClose={str(parallel_close).lower()}",
+                       "-Dsf.recoveryResults.profile=true", "-Dorg.slf4j.simpleLogger.defaultLogLevel=error",
+                       "-Dorg.slf4j.simpleLogger.log.org.apache.flink.runtime.accumulators.AccumulatorRegistry=warn",
+                       f"-Dsurefire.reportNameSuffix={suffix}"]
+            if suite == "fluss":
+                command.extend(["-am", "-Dsurefire.failIfNoSpecifiedTests=false",
+                                "-Dsf.protobuf.checkStaleness=true", "-Dnative.build.skip=true", "test"])
+            else:
+                command.append("surefire:test@default-test")
+            if attribution:
+                command.append(f"-Dsf.fixtureTimingsDirectory={fixtures}")
+            log = output / (suffix + ".log")
+            start = time.monotonic()
+            cpu = resource.getrusage(resource.RUSAGE_CHILDREN)
+            with log.open("w") as stream:
+                result = subprocess.run(command, cwd=ROOT, env=environment, stdout=stream, stderr=subprocess.STDOUT)
+            elapsed = time.monotonic() - start
+            after = resource.getrusage(resource.RUSAGE_CHILDREN)
+            trial = {"suite": suite, "line": line, "heap": heap, "forks": 4,
+                     "instrumented": attribution, "await_small_results": completion,
+                     "compressed_recovery_results": compressed,
+                     "parallel_catalog_close": parallel_close,
+                     "elapsed_seconds": elapsed,
+                     "cpu_seconds": after.ru_utime + after.ru_stime - cpu.ru_utime - cpu.ru_stime,
+                     "exit_code": result.returncode}
+            try:
+                cases, counts, classes = runtime_profile.outcomes(reports, suffix, line, selection)
+                if expected_cases is not None and cases != expected_cases:
+                    raise ValueError("Individual outcomes changed between diagnostic trials")
+                expected_cases = cases
+                trial.update({"validated": True, "outcomes": counts, "classes": classes})
+            except ValueError as error:
+                failed = True
+                trial.update({"validated": False, "validation_error": str(error)[:1200]})
+                counts = Counter()
+                for path in reports.glob(f"TEST-*-{suffix}.xml"):
+                    report = ET.parse(path).getroot()
+                    counts.update({k: int(report.get(k, 0)) for k in ["tests", "errors", "failures", "skipped"]})
+                trial["outcomes"] = dict(counts)
+            raw = log.read_text()
+            lines = raw.splitlines()
+            diagnostic = set()
+            for number, log_line in enumerate(lines):
+                if any(word in log_line for word in ["Failed to serialize accumulators", "OutOfMemoryError", "exceeds the maximum"]):
+                    diagnostic.update(range(max(0, number - 1), min(len(lines), number + 28)))
+            trial["diagnostic_messages"] = [lines[n][:1500] for n in sorted(diagnostic)][-240:]
+            trial["recovery_messages"] = [line[:1500] for line in raw.splitlines()
+                                           if "[recovery-result]" in line or "[recovery-capture]" in line]
+            trial["fixture_timings"] = [
+                {"name": m[1], "calls": int(m[2]), "seconds": int(m[3]) / 1e9}
+                for path in fixtures.glob("*.txt")
+                for m in re.finditer(r"\[ci-fixture-timing\] (\S+) calls=(\d+) nanoseconds=(\d+)", path.read_text())]
+            trials.append(trial)
+            (output / "summary.json").write_text(json.dumps(trials, indent=2) + "\n")
+            if attribution:
+                trial["jfr"] = ci_jfr.summarize(list(recorded.glob("*.jfr")), java_home, len(selection))
+            (output / "summary.json").write_text(json.dumps(trials, indent=2) + "\n")
+            if result.returncode:
+                selected = [(line if len(line) <= 1500 else line[:750] + " ... " + line[-750:]) for line in raw.splitlines() if any(
+                    word in line for word in ["[ERROR]", "OutOfMemory", "accumulator", "Accumulator", "[recovery-"])]
+                (output / (suffix + ".failure.txt")).write_text("\n".join(selected[-160:]) + "\n")
+                failed = True
+            log.unlink()
+            for path in reports.glob(f"*-{suffix}.*"):
+                path.unlink()
+            print(f"{suite} trial {index + 1}, heap={heap}: {trial['outcomes']}, validated={trial['validated']}", flush=True)
+    finally:
+        shutil.rmtree(temporary)
+        if suite == "fluss":
+            plans = ROOT / "streamfusion-fluss/target/fluss-sql-plans"
+            if plans.exists():
+                shutil.rmtree(plans)
+    if failed:
+        raise RuntimeError("A diagnostic trial failed; inspect the retained summary and condensed failure evidence")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--suite", choices=SUITES, required=True)
+    parser.add_argument("--line", choices=("1.18", "2.2"), required=True)
+    comparison = parser.add_mutually_exclusive_group()
+    comparison.add_argument("--compare-completion", action="store_true")
+    comparison.add_argument("--compare-transport", action="store_true")
+    comparison.add_argument("--compare-close", action="store_true")
+    args = parser.parse_args()
+    if args.compare_completion and args.suite != "recursive":
+        parser.error("Completion comparison retains the complete small recursive workload")
+    if args.compare_transport and args.suite != "recovery":
+        parser.error("Transport comparison retains the complete binary recovery workload")
+    if args.compare_close and args.suite != "fluss":
+        parser.error("Catalog closure comparison retains the complete Fluss SQL workload")
+    profile(args.output.resolve(), args.line, args.suite, args.compare_completion, args.compare_transport, args.compare_close)
+
+
+if __name__ == "__main__":
+    main()

@@ -98,6 +98,7 @@
              and the native library loads per fork, so classes are isolated across JVMs. The
              bench profile pins this to 1: timing measurements must not share the machine. -->
         <sf.testForks>0.5C</sf.testForks>
+        <sf.protobuf.checkStaleness>false</sf.protobuf.checkStaleness>
         <sf.testReuseForks>true</sf.testReuseForks>
     </properties>
 
@@ -537,6 +538,7 @@
                 <version>0.6.1</version>
                 <configuration>
                     <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
+                    <checkStaleness>${sf.protobuf.checkStaleness}</checkStaleness>
                 </configuration>
                 <executions>
                     <execution>
@@ -659,6 +661,17 @@
     </build>
 
     <profiles>
+        <profile>
+            <id>ci-diagnostics</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                    <version>1.7.36</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+        </profile>
         <profile>
             <id>canonical-savepoints</id>
             <modules><module>dev/canonical-savepoints</module></modules>

@@ -53,7 +53,7 @@ class FlinkRecursiveScalarSqlHarnessTest {
       String shape, String bridge, String position) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
-          NativeFailureParity.run(
+          NativeFailureParity.runSmallBounded(
               () -> environment(shape, bridge, position, 48, metrics),
               "SELECT id,p,recursive_scalar(id,p) AS v FROM src");
       if ((shape.equals("array") || shape.equals("map/array"))

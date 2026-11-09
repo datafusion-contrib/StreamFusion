@@ -31,6 +31,7 @@ import tech.streamfusion.operator.*;
 import tech.streamfusion.state.*;
 
 final class MiniBatchGroupStockFixture implements AutoCloseable {
+  private static final FixturePlanCache PLANS = new FixturePlanCache();
   final KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness;
   final RowDataKeySelector selector;
   final RowType inputType, outputType, accumulatorType, seedType;
@@ -50,9 +51,15 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
       throws Exception {
     this.rocks = rocks;
     this.global = global;
-    var stock = graph(type, global, false, distinct);
+    var stock =
+        tech.streamfusion.CiFixtureTimings.measure(
+            "minibatch.stock-plan",
+            () ->
+                PLANS.get(
+                    List.of(type, global, false, distinct),
+                    () -> new FixtureNodes(graph(type, global, false, distinct).getStreamNodes())));
     StreamNode node =
-        stock.getStreamNodes().stream()
+        stock.stream()
             .filter(
                 n -> {
                   Object op = operator(n);
@@ -81,7 +88,7 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
     harness.setup((TypeSerializer<RowData>) node.getTypeSerializerOut());
     if (global) {
       var localNode =
-          stock.getStreamNodes().stream()
+          stock.stream()
               .filter(
                   n -> {
                     Object localOp = operator(n);
@@ -103,17 +110,23 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
       local = null;
       seedType = inputType;
     }
-    var nativeGraph = graph(type, global, true, distinct);
+    var nativeGraph =
+        tech.streamfusion.CiFixtureTimings.measure(
+            "minibatch.native-plan",
+            () ->
+                PLANS.get(
+                    List.of(type, global, true, distinct),
+                    () -> new FixtureNodes(graph(type, global, true, distinct).getStreamNodes())));
     template =
         (NativeColumnarGroupAggregateOperator)
-            nativeGraph.getStreamNodes().stream()
+            nativeGraph.stream()
                 .map(MiniBatchGroupStockFixture::operator)
                 .filter(NativeColumnarGroupAggregateOperator.class::isInstance)
                 .findFirst()
-                .orElseThrow(() -> new AssertionError(nativeGraph.getStreamingPlanAsJSON()));
+                .orElseThrow(() -> new AssertionError(nativeGraph.toString()));
     seedTemplate =
         global
-            ? nativeGraph.getStreamNodes().stream()
+            ? nativeGraph.stream()
                 .map(MiniBatchGroupStockFixture::operator)
                 .filter(NativeColumnarLocalGroupAggregateOperator.class::isInstance)
                 .findFirst()
@@ -215,11 +228,11 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
             planner,
             distinct
                 ? "INSERT INTO output_table SELECT k,COUNT(*),SUM(DISTINCT a),SUM(DISTINCT a)"
-                      + " FILTER(WHERE a>1),COUNT(DISTINCT a),COUNT(DISTINCT a) FILTER(WHERE"
-                      + " a>1),AVG(a),COUNT(DISTINCT v) FROM fixture.db.input_table GROUP BY k"
+                    + " FILTER(WHERE a>1),COUNT(DISTINCT a),COUNT(DISTINCT a) FILTER(WHERE"
+                    + " a>1),AVG(a),COUNT(DISTINCT v) FROM fixture.db.input_table GROUP BY k"
                 : "INSERT INTO output_table SELECT k,COUNT(*),AVG(a) FILTER(WHERE"
-                      + " a>1),MIN(v),MAX(v),SUM(a) FILTER(WHERE a>1) FROM fixture.db.input_table"
-                      + " GROUP BY k"));
+                    + " a>1),MIN(v),MAX(v),SUM(a) FILTER(WHERE a>1) FROM fixture.db.input_table"
+                    + " GROUP BY k"));
   }
 
   RowData seed(Long key, Integer value, String text, boolean javaCache) throws Exception {

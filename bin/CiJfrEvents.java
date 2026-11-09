@@ -25,6 +25,21 @@ class CiJfrEvents {
     return result.append('"').toString();
   }
 
+  private static void stack(StringBuilder line, RecordedEvent event) {
+    line.append(",[");
+    RecordedStackTrace stack = event.getStackTrace();
+    if (stack != null) {
+      List<RecordedFrame> frames = stack.getFrames();
+      for (int index = 0; index < Math.min(32, frames.size()); index++) {
+        if (index > 0) line.append(',');
+        RecordedFrame frame = frames.get(index);
+        line.append(
+            quote(frame.getMethod().getType().getName() + "." + frame.getMethod().getName()));
+      }
+    }
+    line.append(']');
+  }
+
   public static void main(String[] arguments) throws Exception {
     try (RecordingFile recording = new RecordingFile(Path.of(arguments[0]));
         BufferedWriter output =
@@ -36,20 +51,30 @@ class CiJfrEvents {
         if (type.equals("jdk.ExecutionSample") || type.equals("jdk.NativeMethodSample")) {
           RecordedThread thread = event.getThread("sampledThread");
           line.append(',').append(quote(thread == null ? "<unknown>" : thread.getJavaName()));
-          line.append(",[");
-          RecordedStackTrace stack = event.getStackTrace();
-          if (stack != null) {
-            List<RecordedFrame> frames = stack.getFrames();
-            for (int index = 0; index < Math.min(32, frames.size()); index++) {
-              if (index > 0) line.append(',');
-              RecordedFrame frame = frames.get(index);
-              line.append(
-                  quote(frame.getMethod().getType().getName() + "." + frame.getMethod().getName()));
-            }
-          }
-          line.append(']');
+          stack(line, event);
+        } else if (type.equals("jdk.ThreadPark")
+            || type.equals("jdk.ThreadSleep")
+            || type.equals("jdk.JavaMonitorWait")) {
+          RecordedThread thread = event.getThread();
+          line.append(',').append(quote(thread == null ? "<unknown>" : thread.getJavaName()));
+          line.append(',').append(event.getDuration().toNanos() / 1_000_000_000.0);
+          stack(line, event);
+        } else if (type.equals("jdk.GarbageCollection")) {
+          line.append(',')
+              .append(quote(event.getString("name") + " / " + event.getString("cause")));
+          line.append(',').append(event.getDuration().toNanos() / 1_000_000_000.0);
+        } else if (type.equals("jdk.GCHeapSummary")) {
+          line.append(',').append(quote(String.valueOf((Object) event.getValue("when"))));
+          line.append(',').append(event.getLong("heapUsed"));
         } else if (type.equals("jdk.Compilation")) {
-          line.append(',').append(quote(event.getString("compiler")));
+          String compiler;
+          if (event.getEventType().getField("compiler") != null) {
+            compiler = event.getString("compiler");
+          } else {
+            int level = event.getShort("compileLevel");
+            compiler = level == 4 ? "c2" : level >= 1 && level <= 3 ? "c1" : "level-" + level;
+          }
+          line.append(',').append(quote(compiler));
           line.append(',').append(event.getDuration().toNanos() / 1_000_000_000.0);
         } else if (type.equals("jdk.ObjectAllocationSample")) {
           line.append(',').append(quote(event.getClass("objectClass").getName()));

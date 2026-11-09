@@ -27,6 +27,19 @@ class JfrTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             ci_jfr.collect(io.StringIO('["jdk.Compilation", "c2", "not a duration"]'), defaultdict(Counter))
 
+    def test_waits_and_gc_activity_remain_distinct_and_heap_is_a_maximum(self):
+        events = [["jdk.ThreadPark", "main", 2.5, ["example.await", "example.run"]],
+                  ["jdk.ThreadSleep", "worker", 40, ["example.retry"]],
+                  ["jdk.GarbageCollection", "G1 / allocation", 0.25],
+                  ["jdk.GCHeapSummary", "Before GC", 1000],
+                  ["jdk.GCHeapSummary", "Before GC", 600]]
+        counters = defaultdict(Counter)
+        ci_jfr.collect(io.StringIO("\n".join(json.dumps(x) for x in events)), counters)
+        self.assertEqual({"example.await > example.run": 2.5}, counters["main_wait_seconds_by_stack"])
+        self.assertEqual(40, counters["wait_seconds_by_thread"]["worker"])
+        self.assertEqual(0.25, counters["gc_activity_seconds"]["G1 / allocation"])
+        self.assertEqual(1000, counters["gc_heap_used_max_bytes"]["Before GC"])
+
 
 if __name__ == "__main__":
     unittest.main()

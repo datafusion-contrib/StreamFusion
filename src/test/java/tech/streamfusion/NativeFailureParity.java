@@ -21,8 +21,21 @@ import tech.streamfusion.planner.PhysicalPlanScan;
 
 /** Independent executions: a host exception must never prevent the native-enabled run. */
 final class NativeFailureParity {
-  enum Phase { SETUP, PLANNING, SUBMISSION, INITIALIZATION, ROW_EVALUATION, COLLECTION }
-  enum Route { HOST, NATIVE, FALLBACK, UNPLANNED }
+  enum Phase {
+    SETUP,
+    PLANNING,
+    SUBMISSION,
+    INITIALIZATION,
+    ROW_EVALUATION,
+    COLLECTION
+  }
+
+  enum Route {
+    HOST,
+    NATIVE,
+    FALLBACK,
+    UNPLANNED
+  }
 
   static final class Outcome {
     private final List<List<Object>> rows;
@@ -181,7 +194,8 @@ final class NativeFailureParity {
         Throwable cause = outcome.rootCause();
         assertTrue(causeType.isInstance(cause), outcome.toString());
         if (message != null) {
-          assertTrue(String.valueOf(outcome.rootCauseMessage).contains(message), outcome.toString());
+          assertTrue(
+              String.valueOf(outcome.rootCauseMessage).contains(message), outcome.toString());
         }
         assertEquals(phase, outcome.phase(), outcome.toString());
       }
@@ -195,7 +209,10 @@ final class NativeFailureParity {
         assertNotNull(outcome.failure(), outcome.toString());
         assertTrue(
             expected.test(outcome.rootCause()),
-            () -> outcome + "\n" + org.apache.flink.util.ExceptionUtils.stringifyException(outcome.failure()));
+            () ->
+                outcome
+                    + "\n"
+                    + org.apache.flink.util.ExceptionUtils.stringifyException(outcome.failure()));
         assertEquals(phase, outcome.phase(), outcome.toString());
       }
       assertEquals(nativeRoute, nativeRun.route(), this::toString);
@@ -221,7 +238,9 @@ final class NativeFailureParity {
     void assertSuccess(Route nativeRoute) {
       assertEquals(null, host.failure(), this::toString);
       assertEquals(null, nativeRun.failure(), this::toString);
-      assertEquals(NativeParity.multiset(host.rows()), NativeParity.multiset(nativeRun.rows()),
+      assertEquals(
+          NativeParity.multiset(host.rows()),
+          NativeParity.multiset(nativeRun.rows()),
           this::toString);
       assertEquals(nativeRoute, nativeRun.route(), this::toString);
     }
@@ -260,25 +279,47 @@ final class NativeFailureParity {
     return run(environment, environment, sql);
   }
 
-  static Comparison run(Supplier<TableEnvironment> hostEnvironment,
-      Supplier<TableEnvironment> nativeEnvironment, String sql) {
+  static Comparison runSmallBounded(Supplier<TableEnvironment> environment, String sql) {
+    boolean awaitSmallResults =
+        Boolean.parseBoolean(System.getProperty("sf.parity.awaitSmallResults", "true"));
+    return new Comparison(
+        execute(environment, sql, false, false, awaitSmallResults),
+        execute(environment, sql, true, false, awaitSmallResults));
+  }
+
+  static Comparison run(
+      Supplier<TableEnvironment> hostEnvironment,
+      Supplier<TableEnvironment> nativeEnvironment,
+      String sql) {
     Outcome host = execute(hostEnvironment, sql, false);
     Outcome nativeRun = execute(nativeEnvironment, sql, true);
     return new Comparison(host, nativeRun);
   }
 
-  static Comparison runRecovery(Supplier<TableEnvironment> hostEnvironment,
-      Supplier<TableEnvironment> nativeEnvironment, String sql) {
-    return new Comparison(execute(hostEnvironment, sql, false, true),
-        execute(nativeEnvironment, sql, true, true));
+  static Comparison runRecovery(
+      Supplier<TableEnvironment> hostEnvironment,
+      Supplier<TableEnvironment> nativeEnvironment,
+      String sql) {
+    return new Comparison(
+        execute(hostEnvironment, sql, false, true), execute(nativeEnvironment, sql, true, true));
   }
 
-  private static Outcome execute(Supplier<TableEnvironment> environment, String sql, boolean nativeRun) {
+  private static Outcome execute(
+      Supplier<TableEnvironment> environment, String sql, boolean nativeRun) {
     return execute(environment, sql, nativeRun, false);
   }
 
-  private static Outcome execute(Supplier<TableEnvironment> environment, String sql,
-      boolean nativeRun, boolean recovery) {
+  private static Outcome execute(
+      Supplier<TableEnvironment> environment, String sql, boolean nativeRun, boolean recovery) {
+    return execute(environment, sql, nativeRun, recovery, false);
+  }
+
+  private static Outcome execute(
+      Supplier<TableEnvironment> environment,
+      String sql,
+      boolean nativeRun,
+      boolean recovery,
+      boolean awaitSmallResults) {
     List<List<Object>> rows = new ArrayList<>();
     PhysicalPlanScan scan = null;
     Phase phase = Phase.SETUP;
@@ -287,26 +328,53 @@ final class NativeFailureParity {
     List<String> resultTypes = List.of();
     String plan = "";
     try {
-      TableEnvironment table = environment.get();
+      String timing = nativeRun ? "parity.native." : "parity.host.";
+      TableEnvironment table = CiFixtureTimings.measure(timing + "environment", environment::get);
       if (nativeRun) scan = NativePlanner.install(table);
       phase = Phase.PLANNING;
-      var query = table.sqlQuery(sql);
+      var query = CiFixtureTimings.measure(timing + "sql-query", () -> table.sqlQuery(sql));
       resultTypes =
           query.getResolvedSchema().getColumnDataTypes().stream()
               .map(Object::toString)
               .collect(ListCollectors.toList());
-      plan = query.explain();
+      plan = CiFixtureTimings.measure(timing + "explain", query::explain);
       phase = Phase.SUBMISSION;
       if (recovery) {
-        result = query.executeInsert(org.apache.flink.table.api.TableDescriptor
-            .forConnector("recovery-results").build());
+        result =
+            CiFixtureTimings.measure(
+                timing + "submit",
+                () ->
+                    query.executeInsert(
+                        org.apache.flink.table.api.TableDescriptor.forConnector("recovery-results")
+                            .build()));
         phase = Phase.COLLECTION;
-        var completed = result.getJobClient().orElseThrow().getJobExecutionResult().get();
-        rows.addAll(RecoveryResultTableFactory.results(
-            completed, query.getResolvedSchema().toPhysicalRowDataType()));
+        TableResult submitted = result;
+        var completed =
+            CiFixtureTimings.measure(
+                timing + "completion",
+                () -> submitted.getJobClient().orElseThrow().getJobExecutionResult().get());
+        rows.addAll(
+            CiFixtureTimings.measure(
+                timing + "decode-results",
+                () ->
+                    RecoveryResultTableFactory.results(
+                        completed, query.getResolvedSchema().toPhysicalRowDataType())));
       } else {
-        result = query.execute();
+        result = CiFixtureTimings.measure(timing + "submit", query::execute);
         phase = Phase.COLLECTION;
+        long collectedStarted = CiFixtureTimings.start();
+        if (awaitSmallResults) {
+          try {
+            result
+                .getJobClient()
+                .orElseThrow()
+                .getJobExecutionResult()
+                .handle((completed, error) -> null)
+                .get(100, TimeUnit.MILLISECONDS);
+          } catch (TimeoutException stillRunning) {
+            // Drain larger or slower jobs normally instead of waiting on a full collect buffer.
+          }
+        }
         try (var iterator = result.collect()) {
           while (iterator.hasNext()) {
             var row = iterator.next();
@@ -317,6 +385,8 @@ final class NativeFailureParity {
             }
             rows.add(fields);
           }
+        } finally {
+          CiFixtureTimings.record(timing + "collect", collectedStarted);
         }
       }
     } catch (Exception error) {
@@ -329,13 +399,22 @@ final class NativeFailureParity {
         phase = failurePhase(failure, phase);
       }
     }
-    Route route = !nativeRun ? Route.HOST
-        : scan == null || scan.operatorTypes().isEmpty() ? Route.UNPLANNED
-        : scan.substitutions() > 0 ? Route.NATIVE : Route.FALLBACK;
-    return new Outcome(rows, failure, phase, route,
+    Route route =
+        !nativeRun
+            ? Route.HOST
+            : scan == null || scan.operatorTypes().isEmpty()
+                ? Route.UNPLANNED
+                : scan.substitutions() > 0 ? Route.NATIVE : Route.FALLBACK;
+    return new Outcome(
+        rows,
+        failure,
+        phase,
+        route,
         scan == null ? List.of() : List.copyOf(scan.fallbackReasons()),
         scan == null ? List.of() : List.copyOf(scan.operatorTypes()),
-        scan == null ? 0 : scan.substitutions(), resultTypes, plan);
+        scan == null ? 0 : scan.substitutions(),
+        resultTypes,
+        plan);
   }
 
   static Exception terminalFailure(CompletableFuture<?> completion, Exception collectionFailure) {
@@ -356,7 +435,9 @@ final class NativeFailureParity {
     return collectionFailure;
   }
 
-  /** Prefer the originating operator frame; the collect API also transports remote task failures. */
+  /**
+   * Prefer the originating operator frame; the collect API also transports remote task failures.
+   */
   static Phase failurePhase(Throwable error, Phase observed) {
     List<Throwable> causes = new ArrayList<>();
     for (Throwable cause = error; cause != null; cause = cause.getCause()) causes.add(cause);
@@ -366,17 +447,20 @@ final class NativeFailureParity {
         if (method.equals("open")
             || method.equals("initializeState")
             || method.equals("createStreamOperator")) return Phase.INITIALIZATION;
-        if (method.equals("processElement") || method.equals("processElement1")
-            || method.equals("processElement2") || method.equals("endInput")
-            || method.equals("finishBundle") || method.equals("flushBundle")
+        if (method.equals("processElement")
+            || method.equals("processElement1")
+            || method.equals("processElement2")
+            || method.equals("endInput")
+            || method.equals("finishBundle")
+            || method.equals("flushBundle")
             || (frame.getClassName().equals("tech.streamfusion.operator.BatchCoalescer")
                 && method.equals("flush"))
-            || method.equals("eval") || method.equals("accumulate")) return Phase.ROW_EVALUATION;
+            || method.equals("eval")
+            || method.equals("accumulate")) return Phase.ROW_EVALUATION;
       }
     }
     return observed;
   }
-
 
   private NativeFailureParity() {}
 }
