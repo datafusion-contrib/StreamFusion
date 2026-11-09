@@ -512,8 +512,20 @@ Import checks the complete view before making the restored operator available; d
 orphaned or excessive memberships cannot be used as a valid restore. Counted views preserve
 frequencies independently of their scalar. Export restores draining aggregate factories before
 calling the receiver so callback failure leaves live state intact.
-Typed RocksDB session state still supports scalar accumulators; membership state retains the
-existing snapshot-backed native checkpoint path.
+The fixed/session stores now share a native codec that separates scalar headers from value/count
+records. Internal constructors exercise these records through native execution, bridging,
+checkpoint recovery and key-group clipping. Scalar-only state keeps its previous row bytes.
+Membership import has per-owner disk counters and rejects duplicates, orphans and excessive set
+entries before applying a frame; counted cardinalities remain independent of their signed maps.
+Snapshot readers visit bounded membership frames without reconstructing execution sets. The
+execution path may still reconstruct the touched window/session; that cost is separate from
+canonical conversion. Production JNI/planner admission and the canonical adapters still select
+the existing memory/snapshot-backed DISTINCT path until their wiring and both-line tests land.
+Eight storage controls pass within the 1,522-test native suite (two existing ignores), covering
+pinned hot-owner frames, canonical header/member completion, duplicate/orphan/excess rejection,
+signed counters, Java floating identity, fixed-window processing, session bridging and clipped
+checkpoint recovery. Memory-only compilation and the native library build also pass. Java
+qualification waits for the canonical wiring; these controls do not widen production admission.
 Native controls cover both stores, keyless state, bridging, malformed namespaces, bounded export
 and memory-limit cleanup. This foundation alone does not qualify the whole SESSION family.
 

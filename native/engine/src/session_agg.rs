@@ -721,8 +721,7 @@ impl SessionAggregator {
                     .iter()
                     .map(|scalar| scalar.to_array().expect("state array"))
                     .collect();
-                accumulator
-                    .merge_batch(&state)
+                restore_accumulator_state(&mut accumulator, &state)
                     .expect("failed to restore session");
                 column += count;
                 accumulator

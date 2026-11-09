@@ -17,6 +17,7 @@ mod canonical_transfer;
 pub(crate) use canonical_snapshot::{RocksCanonicalSnapshot, RocksReadSnapshot};
 mod decoded_cache;
 mod raw_store;
+pub(crate) mod window_memberships;
 pub(crate) use raw_store::RocksRawStore;
 pub(crate) mod interval_buffer;
 #[cfg(test)]

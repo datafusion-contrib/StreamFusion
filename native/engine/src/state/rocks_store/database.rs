@@ -180,6 +180,10 @@ impl StateDb {
         self.database.fail_write.store(true, Ordering::Relaxed);
     }
 
+    pub(super) fn write_batch_size(&self) -> usize {
+        self.database.write_batch_size
+    }
+
     pub(crate) fn is_frozen(&self) -> bool {
         self.view.is_some()
     }

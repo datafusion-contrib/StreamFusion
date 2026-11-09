@@ -1,9 +1,9 @@
+use super::window_memberships::{persisted_key_group, WindowStateCodec};
 use super::{
     checkpoint_files, copy_checkpoint_db, merged_timer_deadline, open_shared_db, re,
     stored_timer_deadline, write_timer_deadline, FlinkWriteBatch, OpenedDb, TIMER_DEADLINE_KEY,
 };
 use crate::*;
-use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, Direction, IteratorMode, Options, DB};
 #[cfg(test)]
 use std::sync::Arc;
@@ -53,7 +53,7 @@ pub(crate) struct RocksSessionAggStore {
     _cache: Option<Cache>,
     max_parallelism: usize,
     key_groups: std::ops::RangeInclusive<i32>,
-    state_converter: RowConverter,
+    state_codec: WindowStateCodec,
     watermark: i64,
     next_exclusive_end: Option<i64>,
     timer_deadline: i64,
@@ -67,13 +67,16 @@ impl RocksSessionAggStore {
         state_types: &[DataType],
         key_groups: std::ops::RangeInclusive<i32>,
     ) -> Result<Self, DataFusionError> {
-        if !rocks_row_supported(state_types) {
-            return Err(DataFusionError::Plan(
-                "session state shape not supported by RocksDB".into(),
-            ));
-        }
+        Self::create_with_codec(config, WindowStateCodec::scalar(state_types)?, key_groups)
+    }
+
+    pub(crate) fn create_with_codec(
+        config: RocksStoreConfig,
+        state_codec: WindowStateCodec,
+        key_groups: std::ops::RangeInclusive<i32>,
+    ) -> Result<Self, DataFusionError> {
         let opened = open_shared_db(&config, &[(None, 0)])?;
-        Self::attach(opened, &config, state_types, key_groups)
+        Self::attach(opened, &config, state_codec, key_groups)
     }
 
     /// [`RocksSessionAggStore::create`] over restored checkpoint directories: an aligned single
@@ -86,9 +89,25 @@ impl RocksSessionAggStore {
         sources: &[(String, i64)],
         aligned: bool,
     ) -> Result<Self, DataFusionError> {
+        Self::open_merged_with_codec(
+            config,
+            WindowStateCodec::scalar(state_types)?,
+            key_groups,
+            sources,
+            aligned,
+        )
+    }
+
+    pub(crate) fn open_merged_with_codec(
+        config: RocksStoreConfig,
+        state_codec: WindowStateCodec,
+        key_groups: std::ops::RangeInclusive<i32>,
+        sources: &[(String, i64)],
+        aligned: bool,
+    ) -> Result<Self, DataFusionError> {
         if aligned && sources.len() == 1 {
             copy_checkpoint_db(&sources[0].0, &config.table_dir)?;
-            let mut store = Self::create(config, state_types, key_groups)?;
+            let mut store = Self::create_with_codec(config, state_codec, key_groups)?;
             store.generation = sources[0].1;
             store.watermark = store
                 .db
@@ -100,7 +119,7 @@ impl RocksSessionAggStore {
             store.timer_deadline = stored_timer_deadline(&store.db)?;
             return Ok(store);
         }
-        let mut store = Self::create(config, state_types, key_groups)?;
+        let mut store = Self::create_with_codec(config, state_codec, key_groups)?;
         let mut writes = FlinkWriteBatch::new(&store.db, store.write_batch_size);
         for (source, _) in sources {
             let source_db =
@@ -116,8 +135,7 @@ impl RocksSessionAggStore {
                 } else if key.as_ref() == TIMER_DEADLINE_KEY {
                     store.timer_deadline = merged_timer_deadline(store.timer_deadline, &value);
                 } else if key.len() >= 4 {
-                    let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
-                    if store.key_groups.contains(&kg) {
+                    if persisted_key_group(&key).is_some_and(|kg| store.key_groups.contains(&kg)) {
                         writes.put(key, value)?;
                     }
                 }
@@ -131,22 +149,15 @@ impl RocksSessionAggStore {
     fn attach(
         opened: OpenedDb,
         config: &RocksStoreConfig,
-        state_types: &[DataType],
+        state_codec: WindowStateCodec,
         key_groups: std::ops::RangeInclusive<i32>,
     ) -> Result<Self, DataFusionError> {
-        let state_converter = RowConverter::new(
-            state_types
-                .iter()
-                .map(|data_type| SortField::new(data_type.clone()))
-                .collect(),
-        )
-        .map_err(|e| DataFusionError::External(Box::new(e)))?;
         Ok(Self {
             db: opened.db,
             _cache: opened.cache,
             max_parallelism: config.max_parallelism,
             key_groups,
-            state_converter,
+            state_codec,
             watermark: i64::MIN,
             next_exclusive_end: None,
             timer_deadline: i64::MIN,
@@ -204,6 +215,7 @@ impl RocksSessionAggStore {
     ) -> Result<Vec<Vec<(i64, i64, Vec<ScalarValue>)>>, DataFusionError> {
         let mut counts = Vec::with_capacity(prefixes.len());
         let mut bounds: Vec<(i64, i64)> = Vec::new();
+        let mut owners = Vec::new();
         let mut raw_states: Vec<Box<[u8]>> = Vec::new();
         for prefix in prefixes {
             let mut count = 0usize;
@@ -219,15 +231,25 @@ impl RocksSessionAggStore {
                     session_start_from(&key[key.len() - SESSION_START_LEN..]),
                     i64::from_le_bytes(value[..8].try_into().expect("session end")),
                 ));
+                owners.push(key);
                 raw_states.push(value[8..].into());
                 count += 1;
             }
             counts.push(count);
         }
         let refs: Vec<&[u8]> = raw_states.iter().map(AsRef::as_ref).collect();
+        let states = if self.state_codec.has_memberships() {
+            owners
+                .iter()
+                .zip(&raw_states)
+                .map(|(key, state)| self.state_codec.decode_state(&self.db, key, state))
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            self.decode_states(&refs)?
+        };
         let mut sessions = bounds
             .into_iter()
-            .zip(self.decode_states(&refs)?)
+            .zip(states)
             .map(|((start, end), state)| (start, end, state));
         Ok(counts
             .into_iter()
@@ -247,21 +269,13 @@ impl RocksSessionAggStore {
         if deletes.is_empty() && entries.is_empty() {
             return Ok(());
         }
-        let rows = self
-            .state_converter
-            .convert_columns(state_columns)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for db_key in deletes {
             writes.delete(db_key)?;
+            self.state_codec.delete_owner_into(&mut writes, db_key)?;
         }
-        for ((db_key, end), row) in entries.iter().zip(rows.iter()) {
-            let row = row.data();
-            let mut value = Vec::with_capacity(8 + row.len());
-            value.extend_from_slice(&end.to_le_bytes());
-            value.extend_from_slice(row);
-            writes.put(db_key, value)?;
-        }
+        self.state_codec
+            .write_rows(&mut writes, entries, state_columns)?;
         writes.finish()
     }
 
@@ -281,7 +295,7 @@ impl RocksSessionAggStore {
         watermark: i64,
         calendar: Option<&crate::window_calendar::WindowCalendar>,
     ) -> Result<Vec<StoredSession>, DataFusionError> {
-        let mut closed: Vec<(Box<[u8]>, i64, i64, Box<[u8]>)> = Vec::new();
+        let mut closed: Vec<(Box<[u8]>, i64, Box<[u8]>)> = Vec::new();
         let mut candidates = Vec::new();
         let mut next_end: Option<i64> = None;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
@@ -304,14 +318,8 @@ impl RocksSessionAggStore {
                     next_end = Some(next_end.map_or(end, |previous| previous.min(end)));
                     continue;
                 }
-                let start = session_start_from(&key[key.len() - SESSION_START_LEN..]);
-                closed.push((
-                    key[KEY_GROUP_LEN..key.len() - SESSION_START_LEN].into(),
-                    start,
-                    end,
-                    value[8..].into(),
-                ));
-                writes.delete(key)?;
+                writes.delete(&key)?;
+                closed.push((key, end, value[8..].into()));
             }
         }
         if let Some(calendar) = calendar {
@@ -326,41 +334,50 @@ impl RocksSessionAggStore {
                     next_end = Some(next_end.map_or(deadline, |previous| previous.min(deadline)));
                     continue;
                 }
-                let start = session_start_from(&key[key.len() - SESSION_START_LEN..]);
-                closed.push((
-                    key[KEY_GROUP_LEN..key.len() - SESSION_START_LEN].into(),
-                    start,
-                    end,
-                    value[8..].into(),
-                ));
-                writes.delete(key)?;
+                writes.delete(&key)?;
+                closed.push((key, end, value[8..].into()));
             }
         }
-        writes.finish()?;
         self.next_exclusive_end = next_end;
-        closed.sort_unstable_by(|a, b| (a.0.as_ref(), a.1).cmp(&(b.0.as_ref(), b.1)));
-        self.into_sessions(closed)
+        closed.sort_unstable_by(|a, b| {
+            let left = (
+                &a.0[KEY_GROUP_LEN..a.0.len() - SESSION_START_LEN],
+                session_start_from(&a.0[a.0.len() - SESSION_START_LEN..]),
+            );
+            let right = (
+                &b.0[KEY_GROUP_LEN..b.0.len() - SESSION_START_LEN],
+                session_start_from(&b.0[b.0.len() - SESSION_START_LEN..]),
+            );
+            left.cmp(&right)
+        });
+        let owners = if self.state_codec.has_memberships() {
+            closed.iter().map(|row| row.0.clone()).collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let sessions = self.into_sessions(closed, false)?;
+        for owner in owners {
+            self.state_codec.delete_owner_into(&mut writes, &owner)?;
+        }
+        writes.finish()?;
+        Ok(sessions)
     }
 
     /// Every committed session, for canonical savepoints.
     pub(crate) fn scan_all(&self) -> Result<Vec<StoredSession>, DataFusionError> {
-        let mut sessions: Vec<(Box<[u8]>, i64, i64, Box<[u8]>)> = Vec::new();
-        for row in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = row.map_err(re)?;
-            if key.as_ref() == WATERMARK_KEY
-                || key.as_ref() == TIMER_DEADLINE_KEY
-                || key.len() < MIN_KEY_LEN
-            {
+        let mut rows = Vec::new();
+        for entry in self.db.iterator(IteratorMode::Start) {
+            let (key, value) = entry.map_err(re)?;
+            if key.len() < MIN_KEY_LEN || i32::from_be_bytes(key[..4].try_into().unwrap()) < 0 {
                 continue;
             }
-            sessions.push((
-                key[KEY_GROUP_LEN..key.len() - SESSION_START_LEN].into(),
-                session_start_from(&key[key.len() - SESSION_START_LEN..]),
-                i64::from_le_bytes(value[..8].try_into().expect("session end")),
+            rows.push((
+                key,
+                i64::from_le_bytes(value[..8].try_into().unwrap()),
                 value[8..].into(),
             ));
         }
-        self.into_sessions(sessions)
+        self.into_sessions(rows, false)
     }
 
     pub(crate) fn visit_sessions(
@@ -370,64 +387,56 @@ impl RocksSessionAggStore {
     ) -> Result<(), DataFusionError> {
         self.db.visit_snapshot_batches(
             chunk_rows,
-            |key| key.len() >= 4 && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0,
+            |key| key.len() >= MIN_KEY_LEN && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0,
             |entries| {
                 let mut rows = Vec::with_capacity(entries.len());
                 for (key, value) in entries {
-                    if key.len() < MIN_KEY_LEN || value.len() < 8 {
+                    if value.len() < 8 {
                         return Err(DataFusionError::Execution(
                             "invalid persisted session".into(),
                         ));
                     }
                     rows.push((
-                        key[KEY_GROUP_LEN..key.len() - SESSION_START_LEN].into(),
-                        session_start_from(&key[key.len() - SESSION_START_LEN..]),
+                        key,
                         i64::from_le_bytes(value[..8].try_into().unwrap()),
                         value[8..].into(),
                     ));
                 }
-                accept(self.into_sessions(rows)?)
+                accept(self.into_sessions(rows, true)?)
             },
         )
     }
 
     fn into_sessions(
         &self,
-        rows: Vec<(Box<[u8]>, i64, i64, Box<[u8]>)>,
+        rows: Vec<(Box<[u8]>, i64, Box<[u8]>)>,
+        headers: bool,
     ) -> Result<Vec<StoredSession>, DataFusionError> {
-        let states: Vec<&[u8]> = rows.iter().map(|(_, _, _, state)| state.as_ref()).collect();
-        let states = self.decode_states(&states)?;
+        let values = rows
+            .iter()
+            .map(|(_, _, state)| state.as_ref())
+            .collect::<Vec<_>>();
+        let states = if !headers && self.state_codec.has_memberships() {
+            rows.iter()
+                .map(|(key, _, state)| self.state_codec.decode_state(&self.db, key, state))
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            self.decode_states(&values)?
+        };
         Ok(rows
             .into_iter()
             .zip(states)
-            .map(|((key, start, end, _), state)| StoredSession {
-                start,
+            .map(|((owner, end, _), state)| StoredSession {
+                start: session_start_from(&owner[owner.len() - SESSION_START_LEN..]),
                 end,
-                key,
+                key: owner[KEY_GROUP_LEN..owner.len() - SESSION_START_LEN].into(),
                 state,
             })
             .collect())
     }
 
     fn decode_states(&self, values: &[&[u8]]) -> Result<Vec<Vec<ScalarValue>>, DataFusionError> {
-        if values.is_empty() {
-            return Ok(Vec::new());
-        }
-        let parser = self.state_converter.parser();
-        let rows: Vec<_> = values.iter().map(|value| parser.parse(value)).collect();
-        let columns = self
-            .state_converter
-            .convert_rows(rows)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
-        let mut out = Vec::with_capacity(values.len());
-        for row in 0..values.len() {
-            let mut scalars = Vec::with_capacity(columns.len());
-            for column in &columns {
-                scalars.push(ScalarValue::try_from_array(column, row)?);
-            }
-            out.push(scalars);
-        }
-        Ok(out)
+        self.state_codec.decode_headers(values)
     }
 
     /// Persists the late-data watermark, then takes one native checkpoint — touched keys were
@@ -449,6 +458,12 @@ impl RocksSessionAggStore {
         }
         self.generation += 1;
         checkpoint_files(&self.db, snapshot_dir, self.generation)
+    }
+}
+
+impl super::window_memberships::WindowMembershipState for RocksSessionAggStore {
+    fn membership_state(&self) -> (&StateDb, &WindowStateCodec) {
+        (&self.db, &self.state_codec)
     }
 }
 

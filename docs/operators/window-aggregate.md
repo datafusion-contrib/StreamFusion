@@ -15,6 +15,15 @@ immediately. Sixteen ordinary-checkpoint controls cover TIMESTAMP/TIMESTAMP_LTZ 
 
 ## Stock canonical savepoint interoperability
 
+Fixed windows and sessions share a native persistent-state codec for scalar headers and
+record-level DISTINCT memberships. Its internal store paths cover continued native execution,
+session bridging, checkpoint recovery, clipped key groups, immutable capture and bounded member
+frames. Scalar-only checkpoint row bytes remain compatible. Cached counted cardinalities and
+signed map frequencies remain independent; set imports keep a per-owner disk inventory for
+completion checks. This is storage groundwork: the production canonical DISTINCT bindings still
+use memory aggregation with snapshot-backed RocksDB until the adapters and JNI/planner admission
+are connected and qualified on both releases.
+
 The native transfer foundation can explicitly bind COUNT(DISTINCT) slots, project each scalar
 cardinality and visit its retained values as flat, namespaced rows. Import validates every
 namespace/key/slot against the scalar state. Set-based imports validate the cardinality against

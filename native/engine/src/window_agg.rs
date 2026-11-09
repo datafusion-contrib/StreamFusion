@@ -1896,8 +1896,7 @@ impl TumblingAggregator {
                     .iter()
                     .map(|scalar| scalar.to_array().expect("state array"))
                     .collect();
-                accumulator
-                    .merge_batch(&state)
+                restore_accumulator_state(&mut accumulator, &state)
                     .expect("failed to restore window group");
                 column += count;
                 accumulator
