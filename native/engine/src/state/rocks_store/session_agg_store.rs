@@ -36,6 +36,7 @@ fn session_start_from(bytes: &[u8]) -> i64 {
 /// One persisted session read back from the store: its bounds, the group key's arrow-row bytes
 /// (the aggregator's own key encoding), and the accumulator state scalars in snapshot order.
 pub(crate) struct StoredSession {
+    pub(crate) key_group: i32,
     pub(crate) start: i64,
     pub(crate) end: i64,
     pub(crate) key: Box<[u8]>,
@@ -132,7 +133,9 @@ impl RocksSessionAggStore {
                             .watermark
                             .max(i64::from_be_bytes(value[..8].try_into().unwrap()));
                     }
-                } else if key.as_ref() == TIMER_DEADLINE_KEY {
+                } else if key.as_ref() == TIMER_DEADLINE_KEY
+                    || key.as_ref() == super::SNAPSHOT_TIMER_KEY
+                {
                     store.timer_deadline = merged_timer_deadline(store.timer_deadline, &value);
                 } else if key.len() >= 4 {
                     if persisted_key_group(&key).is_some_and(|kg| store.key_groups.contains(&kg)) {
@@ -255,6 +258,52 @@ impl RocksSessionAggStore {
             .into_iter()
             .map(|count| sessions.by_ref().take(count).collect())
             .collect())
+    }
+
+    pub(crate) fn visit_session_bounds(
+        &self,
+        prefix: &[u8],
+        mut accept: impl FnMut(i64, i64) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        for row in self
+            .db
+            .iterator(IteratorMode::From(prefix, Direction::Forward))
+        {
+            super::database::check_cancelled()?;
+            let (key, value) = row.map_err(re)?;
+            if !key.starts_with(prefix) {
+                break;
+            }
+            if key.len() < MIN_KEY_LEN || value.len() < 8 {
+                return Err(DataFusionError::Execution(
+                    "invalid persisted session bounds".into(),
+                ));
+            }
+            accept(
+                session_start_from(&key[key.len() - SESSION_START_LEN..]),
+                i64::from_le_bytes(value[..8].try_into().unwrap()),
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn owner_for_end(
+        &self,
+        key_group: i32,
+        key: &[u8],
+        end: i64,
+    ) -> Result<Option<Vec<u8>>, DataFusionError> {
+        let mut owner = None;
+        self.visit_session_bounds(&self.key_prefix(key_group, key), |start, stored_end| {
+            if stored_end == end {
+                if owner.is_some() {
+                    return Err(DataFusionError::Execution("duplicate session end".into()));
+                }
+                owner = Some(self.db_key(key_group, key, start));
+            }
+            Ok(())
+        })?;
+        Ok(owner)
     }
 
     /// Writes a bundle's touched keys through in one columnar conversion: the merged-away starts'
@@ -427,6 +476,7 @@ impl RocksSessionAggStore {
             .into_iter()
             .zip(states)
             .map(|((owner, end, _), state)| StoredSession {
+                key_group: i32::from_be_bytes(owner[..4].try_into().unwrap()),
                 start: session_start_from(&owner[owner.len() - SESSION_START_LEN..]),
                 end,
                 key: owner[KEY_GROUP_LEN..owner.len() - SESSION_START_LEN].into(),

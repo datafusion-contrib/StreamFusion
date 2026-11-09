@@ -287,3 +287,65 @@ fn legacy_raw_group_payloads_migrate_into_record_level_rocks_state() {
         );
     }
 }
+
+#[test]
+fn previous_snapshot_backed_extrema_checkpoints_upgrade_to_typed_rocks_state() {
+    for ttl in [0, 1000] {
+        for aligned in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut source = prototype(0, ttl);
+            source
+                .update(&input(0, &[Some(1), Some(5), None], 0), 1000)
+                .unwrap();
+            source.update(&input(0, &[Some(1)], 3), 1100).unwrap();
+            let parts = source
+                .snapshot_partitions(128, &[i32::MIN, -1])
+                .into_iter()
+                .map(|(group, payload)| {
+                    let mut part = group.to_be_bytes().to_vec();
+                    part.extend_from_slice(&payload);
+                    part
+                })
+                .collect::<Vec<_>>();
+            let mut old = crate::state::RocksSnapshotStore::open_merged(
+                config(&directory.path().join("old"), ttl),
+                &[],
+                0..=127,
+                false,
+            )
+            .unwrap();
+            let saved = directory.path().join("checkpoint");
+            let manifest = old
+                .checkpoint(&parts, i64::MIN, saved.to_str().unwrap())
+                .unwrap();
+            drop(old);
+            let base = prototype(0, ttl);
+            let store = RocksStore::open_merged(
+                config(&directory.path().join("typed"), ttl),
+                codec(&base),
+                &[(saved.to_string_lossy().into_owned(), manifest.snapshot_id)],
+                0..=127,
+                aligned,
+                1200,
+            )
+            .unwrap();
+            let mut target = base
+                .with_backend(store)
+                .with_read_through_budget(128 * 1024)
+                .unwrap();
+            target.migrate_legacy_snapshot_store(1200).unwrap();
+            assert_eq!(target.memory.state_bytes, 0);
+            assert_eq!(
+                normalized(&memory_frames(&source)),
+                normalized(&frames(&mut target))
+            );
+            target.store.set_clock(1300);
+            let batch = input(0, &[Some(5)], 3);
+            assert_eq!(
+                source.update(&batch, 1300).unwrap(),
+                target.update(&batch, 1300).unwrap()
+            );
+            assert!(target.store.legacy_snapshot_reader().unwrap().is_none());
+        }
+    }
+}

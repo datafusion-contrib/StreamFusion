@@ -15,14 +15,21 @@ immediately. Sixteen ordinary-checkpoint controls cover TIMESTAMP/TIMESTAMP_LTZ 
 
 ## Stock canonical savepoint interoperability
 
-Fixed windows and sessions share a native persistent-state codec for scalar headers and
-record-level DISTINCT memberships. Its internal store paths cover continued native execution,
-session bridging, checkpoint recovery, clipped key groups, immutable capture and bounded member
-frames. Scalar-only checkpoint row bytes remain compatible. Cached counted cardinalities and
-signed map frequencies remain independent; set imports keep a per-owner disk inventory for
-completion checks. This is storage groundwork: the production canonical DISTINCT bindings still
-use memory aggregation with snapshot-backed RocksDB until the adapters and JNI/planner admission
-are connected and qualified on both releases.
+Fixed windows and sessions use a shared native persistent-state codec for scalar headers and
+record-level DISTINCT memberships. Existing canonical COUNT DISTINCT bindings now select native
+RocksDB when that backend is configured. A savepoint pins its read view at the barrier and converts
+bounded header/member frames on Flink's asynchronous writer thread, without loading the complete
+membership map into heap. Live input and concurrent captures use independent views. This covers
+admitted TUMBLE/HOP/CUMULATE bindings on 1.18 and 2.2, plus admitted SESSION TVFs on 2.2; 1.18
+has no SESSION TVF. It does not expand the canonical whitelist.
+
+Scalar-only checkpoint row bytes remain compatible. Old snapshot-backed checkpoints migrate one
+key-group blob at a time, preserving processing deadlines through aligned/clipped restore and
+empty timer-only checkpoints. That legacy migration retains a one-partition memory floor.
+Cached counted cardinalities and signed map frequencies remain independent; set imports keep a
+per-owner disk inventory for completion checks. Processing and snapshots reject unfinished
+membership imports. Ordinary execution may reconstruct the touched window/session; canonical
+conversion streams the separate records directly.
 
 The native transfer foundation can explicitly bind COUNT(DISTINCT) slots, project each scalar
 cardinality and visit its retained values as flat, namespaced rows. Import validates every

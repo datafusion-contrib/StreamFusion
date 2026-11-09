@@ -668,6 +668,10 @@ then use the complete matrix for the final qualification. The 2,500-key window-d
 continuation sends three native Arrow batches while retaining every stock input and result
 assertion, avoiding 2,500 individual input conversions per invocation.
 
+The local fixed-window job selector `streamfusion.test.groupArithmeticJobSmoke=true` keeps
+continued-input jobs and one no-input RocksDB recovery control, so both parameterized methods
+receive executable cases. Default and hosted providers remain exhaustive.
+
 The canonical unbounded event-time OVER state, planner and full-job fixtures are shared between
 released Flink 1.18 and 2.2. The release adapters choose the actual V1 polling or V2 timestamp
 owner; V1-specific callback cases run on 1.18 and are explicitly skipped on 2.2. Existing full-job

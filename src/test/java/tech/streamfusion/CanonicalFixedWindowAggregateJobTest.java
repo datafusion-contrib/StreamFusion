@@ -32,6 +32,8 @@ class CanonicalFixedWindowAggregateJobTest {
   }
 
   static Stream<Arguments> cases(boolean recovery) {
+    if (recovery && Boolean.getBoolean("streamfusion.test.groupArithmeticJobSmoke"))
+      return Stream.of(Arguments.of("no-input", false, true, "rocksdb"));
     return CanonicalGroupArithmeticJobTest.cases()
         .filter(args -> recovery != args.get()[0].equals("continue"));
   }

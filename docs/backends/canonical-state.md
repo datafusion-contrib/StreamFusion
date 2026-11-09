@@ -87,11 +87,12 @@ stock-state adapters on Flink's asynchronous writer thread. Each savepoint owns 
 native reader and a temporary stock-schema RocksDB backend, including disk-backed timer queues.
 This reuses the qualified map/list/timer conversion logic instead of duplicating every layout in a
 second streaming codec. It adds temporary disk I/O compared with the direct value-state cursors.
-Canonical DISTINCT fixed/session windows still select memory aggregation with raw RocksDB
-checkpoint backing and use memory capture. Their membership-capable persistent stores remain
-required before all existing canonical contracts have native RocksDB asynchronous capture.
-Retained grouped DISTINCT with per-entry TTL is outside current canonical admission; it remains
-coverage expansion after these existing-contract storage gaps.
+The existing canonical COUNT DISTINCT fixed/session bindings now use the same pinned native
+RocksDB capture. Scalar headers and separate value/count records stream into the stock projection
+on the asynchronous writer thread; conversion does not reconstruct the native execution sets.
+This covers admitted TUMBLE/HOP/CUMULATE contracts on both releases and admitted SESSION TVFs on
+2.2. It does not qualify additional state layouts. Retained grouped DISTINCT with per-entry TTL
+is outside current canonical admission and remains later coverage expansion.
 OVER and temporal-join metadata export share a flat key/kind/long-value bridge. OVER uses it for
 RANGE cutoffs, cleanup values, processing callbacks and V1 physical event callbacks. Temporal joins
 use it for independent signed probe cursors, registered values, cleanup clocks and callbacks. Frozen RocksDB readers borrow and validate
@@ -497,8 +498,8 @@ is cleared. A synchronous capture failure cancels both futures without replacing
 error. This preserves stock operator metadata such as UNION list distribution without an
 intermediate native snapshot. Window watermark support prepares the released `watermark` UNION
 list with its `LongSerializer` and minimum-on-restore rule, including Flink's maximum-value sentinel;
-it rejects unexpected operator/broadcast state and incompatible metadata. These foundations do not
-yet qualify native windows for stock savepoint interchange under #569.
+it rejects unexpected operator/broadcast state and incompatible metadata. Qualified native-window interchange remains limited to the contracts documented above;
+these timer foundations alone do not qualify additional layouts.
 
 The native SESSION transfer primitive visits scalar accumulators and actual merged bounds
 directly from memory or typed RocksDB, in batches of at most 1,024 sessions. The persistent
@@ -512,20 +513,34 @@ Import checks the complete view before making the restored operator available; d
 orphaned or excessive memberships cannot be used as a valid restore. Counted views preserve
 frequencies independently of their scalar. Export restores draining aggregate factories before
 calling the receiver so callback failure leaves live state intact.
-The fixed/session stores now share a native codec that separates scalar headers from value/count
-records. Internal constructors exercise these records through native execution, bridging,
-checkpoint recovery and key-group clipping. Scalar-only state keeps its previous row bytes.
-Membership import has per-owner disk counters and rejects duplicates, orphans and excessive set
-entries before applying a frame; counted cardinalities remain independent of their signed maps.
-Snapshot readers visit bounded membership frames without reconstructing execution sets. The
-execution path may still reconstruct the touched window/session; that cost is separate from
-canonical conversion. Production JNI/planner admission and the canonical adapters still select
-the existing memory/snapshot-backed DISTINCT path until their wiring and both-line tests land.
-Eight storage controls pass within the 1,522-test native suite (two existing ignores), covering
-pinned hot-owner frames, canonical header/member completion, duplicate/orphan/excess rejection,
-signed counters, Java floating identity, fixed-window processing, session bridging and clipped
-checkpoint recovery. Memory-only compilation and the native library build also pass. Java
-qualification waits for the canonical wiring; these controls do not widen production admission.
+The fixed/session stores share a native codec that separates scalar headers from value/count
+records. Production JNI construction, backend admission and canonical adapters use this codec.
+Scalar-only state keeps its previous row bytes. Membership import has per-owner disk counters
+and rejects duplicates, orphans and excessive set entries before applying a frame; counted
+cardinalities remain independent of their signed maps. Processing, canonical export and native
+checkpointing reject unfinished membership imports. Snapshot readers visit at most 1,024 records
+with a four-MiB payload estimate, including repeated owner keys and allowing an oversized record,
+without reconstructing execution sets. The execution path may still reconstruct the touched
+window/session; that cost is separate from canonical conversion.
+
+Existing snapshot-backed window/session and retracting MIN/MAX checkpoints migrate at open,
+one opaque key-group partition at a time, into typed records. Aligned and clipped restore keep
+processing deadlines, including empty timer-only checkpoints. Legacy blobs still impose a
+one-partition memory floor during migration; new canonical conversion does not use that path.
+The native cohort passes 1,529 tests with two existing ignores; memory-only compilation and
+the JNI library build pass. Controls include bidirectional bounded header/member transfer,
+pending-import rejection, hot-owner pinned capture after live-owner closure, floating identity,
+signed counters, shared-pane accounting, session bridging and legacy checkpoint migration.
+These tests do not widen the canonical planner whitelist.
+The selected 1.18 Java cohort passes 723 checks with 29 expected host/layout skips, including
+six applicable asynchronous COUNT DISTINCT capture cases and three complete-job controls.
+The captures finish on a writer thread after further live writes and native-owner closure;
+two independent snapshots restore into stock Flink. The complete jobs require the native storage
+route and retain stock/native result and continued-input assertions. This local selection uses
+the existing parameter/pair smoke selector and does not qualify the exhaustive matrix.
+A clean 2.2 build passes 1144 checks with 0 skips, including all eight asynchronous
+DISTINCT captures, the existing SESSION interoperability/processing-clock controls and six
+complete-job controls across DISTINCT fixed windows and scalar sessions.
 Native controls cover both stores, keyless state, bridging, malformed namespaces, bounded export
 and memory-limit cleanup. This foundation alone does not qualify the whole SESSION family.
 

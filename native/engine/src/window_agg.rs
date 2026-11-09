@@ -369,6 +369,15 @@ pub(crate) struct TumblingAggregator {
 }
 
 impl TumblingAggregator {
+    fn require_complete_canonical_import(&self) -> Result<(), DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.store {
+            use crate::state::rocks_store::window_memberships::WindowMembershipState;
+            store.require_complete_membership_import()?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn new(
         window_millis: i64,
         slide_millis: i64,
@@ -570,6 +579,7 @@ impl TumblingAggregator {
         timer_deadline: i64,
         snapshot_dir: &str,
     ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
+        self.require_complete_canonical_import()?;
         self.require_flushed_partial_buffer()?;
         self.write_through_store()?;
         let watermark = self.current_watermark;
@@ -783,6 +793,7 @@ impl TumblingAggregator {
         batch: &RecordBatch,
         discard_closed_windows: bool,
     ) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
         self.snapshot_cache = None;
         if self.shared_slices {
             return self.update_shared(batch, discard_closed_windows);
@@ -1051,6 +1062,7 @@ impl TumblingAggregator {
         batch: &RecordBatch,
         discard_closed: bool,
     ) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
         self.snapshot_cache = None;
         let starts = column_i64(batch, "window_start");
         let ends = column_i64(batch, "window_end");
@@ -1307,6 +1319,7 @@ impl TumblingAggregator {
     /// cumulative windows sharing a start differ by it; each result column takes the aggregate's
     /// own output type.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        self.require_complete_canonical_import()?;
         self.snapshot_cache = None;
         self.current_watermark = self.current_watermark.max(watermark);
         self.timer_watermark_uninitialized = false;
@@ -1508,6 +1521,7 @@ impl TumblingAggregator {
     /// Global half of two-phase aggregation: merges incoming partials
     /// `[key, partial0..partialN-1, slice_end]` into the window each slice belongs to.
     pub(crate) fn update_partial(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
         if self.stock_partial_buffer.is_some() {
             return self.buffer_stock_partial(batch);
         }
@@ -1826,6 +1840,7 @@ impl TumblingAggregator {
             let window = self.windows.get_mut(&end).expect("touched window resident");
             let start = window.start;
             let mut accumulators = window.keys.remove(&key).expect("touched group resident");
+            let released = track.then(|| owned_row_bytes(&key) + accumulators_bytes(&accumulators));
             let mut column = 0;
             for accumulator in accumulators.iter_mut() {
                 for scalar in accumulator.state().expect("state") {
@@ -1840,9 +1855,8 @@ impl TumblingAggregator {
                     .db_key(key_group, end, key.row().data()),
                 start,
             ));
-            if track {
-                self.memory
-                    .forget(owned_row_bytes(&key) + accumulators_bytes(&accumulators));
+            if let Some(released) = released {
+                self.memory.forget(released);
             }
         }
         self.windows.retain(|_, window| !window.keys.is_empty());
@@ -1959,6 +1973,20 @@ impl TumblingAggregator {
     /// a canonical or raw restore continues on the direct persistent path. The blob carries the
     /// late-data watermark in schema metadata; the processing-time deadline arrives from the
     /// host's restored timer frame.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        use crate::state::rocks_store::window_memberships::WindowMembershipState;
+        if let Some(mut reader) = self.store.as_ref().unwrap().legacy_snapshot_reader()? {
+            while let Some((group, partition)) = reader.next_partition()? {
+                self.import_partitions(&[partition], reader.timer_deadline)?;
+                reader.applied(group)?;
+            }
+            self.import_partitions(&[], reader.timer_deadline)?;
+            reader.finish()?;
+        }
+        Ok(())
+    }
+
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn import_partitions(
         &mut self,

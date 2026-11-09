@@ -412,6 +412,7 @@ impl TumblingAggregator {
                             .merge_count(count);
                         continue;
                     }
+                    let before = self.memory.tracking().then(|| source.size());
                     let state = source.state()?;
                     let columns = state
                         .iter()
@@ -421,6 +422,9 @@ impl TumblingAggregator {
                         let mut restored = aggregate.create_accumulator();
                         restored.merge_batch(&columns)?;
                         *source = restored;
+                    }
+                    if let Some(before) = before {
+                        self.memory.record(source.size() as isize - before as isize);
                     }
                     target.merge_batch(&columns)?;
                 }

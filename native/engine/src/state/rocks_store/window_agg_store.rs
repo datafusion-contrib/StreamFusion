@@ -34,6 +34,7 @@ fn window_end_from(bytes: &[u8]) -> i64 {
 /// arrow-row bytes (the aggregator's own key encoding), and the accumulator state scalars in
 /// snapshot order.
 pub(crate) struct StoredWindowGroup {
+    pub(crate) key_group: i32,
     pub(crate) end: i64,
     pub(crate) start: i64,
     pub(crate) key: Box<[u8]>,
@@ -130,7 +131,9 @@ impl RocksWindowAggStore {
                             .watermark
                             .max(i64::from_be_bytes(value[..8].try_into().unwrap()));
                     }
-                } else if key.as_ref() == TIMER_DEADLINE_KEY {
+                } else if key.as_ref() == TIMER_DEADLINE_KEY
+                    || key.as_ref() == super::SNAPSHOT_TIMER_KEY
+                {
                     store.timer_deadline = merged_timer_deadline(store.timer_deadline, &value);
                 } else if key.as_ref() == SHARED_SLICES_KEY {
                     store.shared_slices = value.as_ref() == [1];
@@ -532,6 +535,7 @@ impl RocksWindowAggStore {
             .into_iter()
             .zip(states)
             .map(|((owner, start, _), state)| StoredWindowGroup {
+                key_group: i32::from_be_bytes(owner[..4].try_into().unwrap()),
                 end: window_end_from(&owner[4..KEY_PREFIX_LEN]),
                 start,
                 key: owner[offset..].into(),

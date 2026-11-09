@@ -4579,6 +4579,22 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
 
 #[cfg(feature = "rocksdb-state")]
 impl GroupAggregator<RocksGroupStore> {
+    pub(crate) fn migrate_legacy_snapshot_store(
+        &mut self,
+        now_ms: i64,
+    ) -> Result<(), DataFusionError> {
+        if self.kinds.iter().any(|kind| matches!(kind, 38 | 39)) {
+            if let Some(mut reader) = self.store.legacy_snapshot_reader()? {
+                while let Some((group, partition)) = reader.next_partition()? {
+                    self.import_partitions(&[partition], now_ms)?;
+                    reader.applied(group)?;
+                }
+                reader.finish()?;
+            }
+        }
+        Ok(())
+    }
+
     /// Decodes restored blob key groups once at open and writes them through the typed store, so
     /// a canonical or raw restore continues on the direct persistent path.
     pub(crate) fn import_partitions(
@@ -4589,6 +4605,10 @@ impl GroupAggregator<RocksGroupStore> {
         for bytes in snapshots {
             self.load_snapshot(bytes, restored_at_ms);
             self.store.end_bundle()?;
+            if let Some(bytes) = self.store.resident_bytes() {
+                self.memory.set(bytes + self.staging_bytes());
+                self.memory.account()?;
+            }
         }
         Ok(())
     }

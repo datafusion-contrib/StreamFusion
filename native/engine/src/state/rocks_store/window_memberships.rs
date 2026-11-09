@@ -16,6 +16,7 @@ pub(crate) struct WindowStateCodec {
     converter: RowConverter,
     fields: Vec<StateField>,
     types: Vec<DataType>,
+    import_pending: std::cell::Cell<bool>,
 }
 
 struct Membership {
@@ -71,6 +72,7 @@ impl WindowStateCodec {
             .map_err(re)?,
             fields: (0..types.len()).map(StateField::Scalar).collect(),
             types: types.to_vec(),
+            import_pending: std::cell::Cell::new(false),
         })
     }
 
@@ -117,7 +119,15 @@ impl WindowStateCodec {
             converter: RowConverter::new(physical).map_err(re)?,
             fields,
             types,
+            import_pending: std::cell::Cell::new(false),
         })
+    }
+
+    fn require_complete_import(&self) -> Result<(), DataFusionError> {
+        if self.import_pending.get() {
+            return Err(invalid("membership import is not finished"));
+        }
+        Ok(())
     }
 
     pub(crate) fn has_memberships(&self) -> bool {
@@ -352,7 +362,9 @@ impl WindowStateCodec {
                 .convert_rows([parser.parse(&key[prefix.len()..])])
                 .map_err(re)?;
             let value = ScalarValue::try_from_array(&columns[0], 0)?;
-            bytes = bytes.saturating_add(value.size() + std::mem::size_of::<(ScalarValue, i64)>());
+            bytes = bytes
+                .saturating_add(owner.len())
+                .saturating_add(value.size() + std::mem::size_of::<(ScalarValue, i64)>());
             batch.push((value, count));
             if batch.len() == CHUNK_ROWS || bytes >= CHUNK_BYTES {
                 accept(&batch)?;
@@ -374,6 +386,7 @@ impl WindowStateCodec {
         owner: &[u8],
         header: &[u8],
     ) -> Result<Vec<ScalarValue>, DataFusionError> {
+        self.require_complete_import()?;
         let mut headers = self.decode_headers(&[header])?.pop().unwrap().into_iter();
         let mut output = Vec::with_capacity(self.types.len());
         for (field, layout) in self.fields.iter().enumerate() {
@@ -550,6 +563,20 @@ impl WindowStateCodec {
 pub(crate) trait WindowMembershipState {
     fn membership_state(&self) -> (&StateDb, &WindowStateCodec);
 
+    fn require_complete_membership_import(&self) -> Result<(), DataFusionError> {
+        self.membership_state().1.require_complete_import()
+    }
+
+    fn finish_membership_import(&self) {
+        self.membership_state().1.import_pending.set(false);
+    }
+
+    fn legacy_snapshot_reader(
+        &self,
+    ) -> Result<Option<super::legacy_snapshot::LegacySnapshotReader>, DataFusionError> {
+        super::legacy_snapshot::LegacySnapshotReader::open(self.membership_state().0)
+    }
+
     fn contains_owner(&self, owner: &[u8]) -> Result<bool, DataFusionError> {
         Ok(self
             .membership_state()
@@ -592,6 +619,9 @@ pub(crate) trait WindowMembershipState {
             }
         }
         codec.converter.convert_columns(columns).map_err(re)?;
+        if codec.has_memberships() && !entries.is_empty() {
+            codec.import_pending.set(true);
+        }
         let mut writes = FlinkWriteBatch::new(db, db.write_batch_size());
         for (owner, _) in entries {
             codec.delete_owner_into(&mut writes, owner)?;

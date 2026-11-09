@@ -106,6 +106,15 @@ pub(crate) fn session_bytes(session: &Session) -> usize {
 }
 
 impl SessionAggregator {
+    fn require_complete_canonical_import(&self) -> Result<(), DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.store {
+            use crate::state::rocks_store::window_memberships::WindowMembershipState;
+            store.require_complete_membership_import()?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn new(gap_millis: i64, value_types: Vec<i64>, kinds: Vec<i64>) -> Self {
         SessionAggregator {
             gap_millis,
@@ -189,6 +198,7 @@ impl SessionAggregator {
         timer_deadline: i64,
         snapshot_dir: &str,
     ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
+        self.require_complete_canonical_import()?;
         let watermark = self.current_watermark;
         self.store
             .as_mut()
@@ -218,6 +228,7 @@ impl SessionAggregator {
     }
 
     pub(crate) fn update(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
         let ts = column_i64(batch, "ts");
         // One value column per aggregate (value0, value1, …); each accumulator reads its own.
         let values: Vec<&ArrayRef> = (0..self.aggregates.len())
@@ -447,6 +458,7 @@ impl SessionAggregator {
     /// `[key, window_start, window_end, result0..resultN-1]`. The end is the session's own bound,
     /// not a fixed offset, so it travels as its own column.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        self.require_complete_canonical_import()?;
         self.current_watermark = self.current_watermark.max(watermark);
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
@@ -776,6 +788,20 @@ impl SessionAggregator {
     /// a canonical or raw restore continues on the direct persistent path. The blob carries no
     /// watermark (matching the memory restore); the processing-time deadline arrives from the
     /// host's restored timer frame.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        use crate::state::rocks_store::window_memberships::WindowMembershipState;
+        if let Some(mut reader) = self.store.as_ref().unwrap().legacy_snapshot_reader()? {
+            while let Some((group, partition)) = reader.next_partition()? {
+                self.import_partitions(&[partition], reader.timer_deadline)?;
+                reader.applied(group)?;
+            }
+            self.import_partitions(&[], reader.timer_deadline)?;
+            reader.finish()?;
+        }
+        Ok(())
+    }
+
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn import_partitions(
         &mut self,

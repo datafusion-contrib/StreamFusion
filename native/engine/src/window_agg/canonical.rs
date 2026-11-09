@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "rocksdb-state")]
+use crate::state::rocks_store::window_memberships::WindowMembershipState;
 use jni::objects::JObject;
 
 const CHUNK_ROWS: usize = 1024;
@@ -340,6 +342,7 @@ impl TumblingAggregator {
         &mut self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
         self.require_flushed_partial_buffer()?;
         self.validate_canonical_distinct_complete()?;
         #[cfg(feature = "rocksdb-state")]
@@ -502,14 +505,7 @@ impl TumblingAggregator {
                     )
                 })
                 .collect::<Vec<_>>();
-            let db_keys = entries
-                .iter()
-                .map(|(key, _)| key.clone())
-                .collect::<Vec<_>>();
-            if store.get(&db_keys)?.iter().any(Option::is_some) {
-                return Err(invalid("duplicate persisted keyed window"));
-            }
-            store.put(&entries, &batch.columns()[2 + arity..])?;
+            store.import_headers(&entries, &batch.columns()[2 + arity..])?;
             self.key_types = types;
             if let Some(converter) = converter {
                 self.key_converter = Some(converter);

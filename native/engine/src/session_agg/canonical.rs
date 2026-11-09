@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "rocksdb-state")]
+use crate::state::rocks_store::window_memberships::WindowMembershipState;
 use jni::objects::JObject;
 
 const CHUNK_ROWS: usize = 1024;
@@ -89,6 +91,7 @@ impl SessionAggregator {
         &mut self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
         self.validate_canonical_distinct_complete()?;
         let fields = self.canonical_state_fields()?;
         #[cfg(feature = "rocksdb-state")]
@@ -227,46 +230,11 @@ impl SessionAggregator {
                 return Err(invalid("duplicate session namespace"));
             }
         }
-        #[cfg(feature = "rocksdb-state")]
-        let persisted = if let Some(store) = &self.store {
-            let row_indices = (0..batch.num_rows())
-                .map(|row| (encoded.row(row).owned(), row))
-                .collect::<HashMap<_, _>>();
-            let probes = incoming.keys().cloned().collect::<Vec<_>>();
-            let columns = (2..2 + arity).collect::<Vec<_>>();
-            let mut encoder =
-                BinaryRowBatchEncoder::new(batch, &columns, &self.key_timestamp_precisions);
-            let prefixes = probes
-                .iter()
-                .map(|key| {
-                    store.key_prefix(
-                        store.key_group(encoder.hash(row_indices[key])),
-                        key.row().data(),
-                    )
-                })
-                .collect::<Vec<_>>();
-            Some(
-                probes
-                    .into_iter()
-                    .zip(store.sessions_for(&prefixes)?)
-                    .collect::<HashMap<_, _>>(),
-            )
-        } else {
-            None
-        };
         for (key, sessions) in &mut incoming {
             if let Some(existing) = self.sessions.get(key) {
                 for (&start, session) in existing {
                     if sessions.insert(start, session.end).is_some() {
                         return Err(invalid("duplicate session namespace"));
-                    }
-                }
-            }
-            #[cfg(feature = "rocksdb-state")]
-            if let Some(persisted) = &persisted {
-                for (start, end, _) in &persisted[key] {
-                    if sessions.insert(*start, *end).is_some() {
-                        return Err(invalid("duplicate persisted session namespace"));
                     }
                 }
             }
@@ -277,6 +245,46 @@ impl SessionAggregator {
                 }
                 previous_end = Some(end);
             }
+        }
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.store {
+            let columns = (2..2 + arity).collect::<Vec<_>>();
+            let mut encoder =
+                BinaryRowBatchEncoder::new(batch, &columns, &self.key_timestamp_precisions);
+            let mut checked = ahash::HashSet::default();
+            let mut entries = Vec::with_capacity(batch.num_rows());
+            for row in 0..batch.num_rows() {
+                let key = encoded.row(row).owned();
+                let group = store.key_group(encoder.hash(row));
+                if checked.insert(key.clone()) {
+                    let incoming = &incoming[&key];
+                    store.visit_session_bounds(
+                        &store.key_prefix(group, key.row().data()),
+                        |start, end| {
+                            if incoming
+                                .range(..=end)
+                                .next_back()
+                                .is_some_and(|(_, &incoming_end)| incoming_end >= start)
+                            {
+                                return Err(invalid(
+                                    "overlapping or duplicate persisted session namespace",
+                                ));
+                            }
+                            Ok(())
+                        },
+                    )?;
+                }
+                entries.push((
+                    store.db_key(group, key.row().data(), starts.value(row)),
+                    ends.value(row),
+                ));
+            }
+            store.import_headers(&entries, &batch.columns()[2 + arity..])?;
+            self.key_types = types;
+            if let Some(converter) = converter {
+                self.key_converter = Some(converter);
+            }
+            return Ok(());
         }
         let mut expected_counts = Vec::new();
         let mut restored = Vec::with_capacity(batch.num_rows());
@@ -324,26 +332,6 @@ impl SessionAggregator {
         self.key_types = types;
         if let Some(converter) = converter {
             self.key_converter = Some(converter);
-        }
-        #[cfg(feature = "rocksdb-state")]
-        if let Some(store) = &mut self.store {
-            let columns = (2..2 + arity).collect::<Vec<_>>();
-            let mut encoder =
-                BinaryRowBatchEncoder::new(batch, &columns, &self.key_timestamp_precisions);
-            let entries = (0..batch.num_rows())
-                .map(|row| {
-                    (
-                        store.db_key(
-                            store.key_group(encoder.hash(row)),
-                            encoded.row(row).data(),
-                            starts.value(row),
-                        ),
-                        ends.value(row),
-                    )
-                })
-                .collect::<Vec<_>>();
-            store.write(&[], &entries, &batch.columns()[2 + arity..])?;
-            return Ok(());
         }
         self.canonical_distinct_counts.extend(expected_counts);
         for (key, start, session) in restored {

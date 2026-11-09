@@ -474,8 +474,68 @@ fn canonical_header_and_membership_frames_stay_on_disk_until_complete() {
         .import_membership_rows(0, &[(key.clone(), ScalarValue::Int64(Some(9999)), 1)])
         .is_err());
     store.validate_membership_owner(&key, &header).unwrap();
+    store.finish_membership_import();
     let state = store.get(&[key.clone()]).unwrap().pop().unwrap().unwrap().1;
     assert_eq!(state[3], ScalarValue::Int64(Some(-7)));
     assert_eq!(store.take_closed(1000).unwrap().len(), 1);
     assert!(store.get(&[key]).unwrap()[0].is_none());
+}
+
+#[test]
+fn repeated_wide_owner_keys_contribute_to_the_frame_bound() {
+    let temp = tempfile::tempdir().unwrap();
+    let db = fixture(temp.path());
+    let codec = codec();
+    let key = owner(1, &vec![b'x'; 2 * 1024 * 1024]);
+    codec
+        .encode_rows(&db, &[(key.clone(), 0)], &state(&codec, &[1, 2, 3], 3))
+        .unwrap();
+    let mut batches = Vec::new();
+    codec
+        .visit_memberships(&db, &key, 0, |rows| {
+            batches.push(rows.len());
+            assert!(rows.len() <= 2);
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(batches.iter().sum::<usize>(), 3);
+    assert!(batches.len() >= 2);
+}
+
+#[test]
+fn empty_snapshot_backed_checkpoints_keep_processing_deadlines_after_upgrade() {
+    for aligned in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let mut old =
+            RocksSnapshotStore::open_merged(config(&temp.path().join("old")), &[], 0..=127, false)
+                .unwrap();
+        let saved = temp.path().join("checkpoint");
+        let manifest = old.checkpoint(&[], 4567, saved.to_str().unwrap()).unwrap();
+        drop(old);
+        let sources = [(saved.to_string_lossy().into_owned(), manifest.snapshot_id)];
+        let store = RocksWindowAggStore::open_merged_with_codec(
+            config(&temp.path().join("window")),
+            WindowStateCodec::new(&build_aggregates(&[3], &[0])).unwrap(),
+            0..=127,
+            &sources,
+            aligned,
+        )
+        .unwrap();
+        let mut window = TumblingAggregator::new(1000, 1000, false, vec![0], vec![3])
+            .with_store(store, vec![DataType::Int64]);
+        window.migrate_legacy_snapshot_store().unwrap();
+        assert_eq!(window.store_timer_deadline(), 4567);
+        let store = RocksSessionAggStore::open_merged_with_codec(
+            config(&temp.path().join("session")),
+            WindowStateCodec::new(&build_aggregates(&[3], &[0])).unwrap(),
+            0..=127,
+            &sources,
+            aligned,
+        )
+        .unwrap();
+        let mut session =
+            SessionAggregator::new(1000, vec![0], vec![3]).with_store(store, vec![DataType::Int64]);
+        session.migrate_legacy_snapshot_store().unwrap();
+        assert_eq!(session.store_timer_deadline(), 4567);
+    }
 }

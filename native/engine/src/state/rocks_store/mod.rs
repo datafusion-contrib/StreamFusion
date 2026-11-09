@@ -16,6 +16,7 @@ use database::{StateClock, StateWrite};
 mod canonical_transfer;
 pub(crate) use canonical_snapshot::{RocksCanonicalSnapshot, RocksReadSnapshot};
 mod decoded_cache;
+pub(crate) mod legacy_snapshot;
 mod raw_store;
 pub(crate) mod window_memberships;
 pub(crate) use raw_store::RocksRawStore;
@@ -587,6 +588,12 @@ fn multi_get_pinned<'db>(
 }
 
 impl<C: RocksStateCodec> RocksStore<C> {
+    pub(crate) fn legacy_snapshot_reader(
+        &self,
+    ) -> Result<Option<legacy_snapshot::LegacySnapshotReader>, DataFusionError> {
+        legacy_snapshot::LegacySnapshotReader::open(&self.db)
+    }
+
     pub(crate) fn decoded_cache_stats(&self) -> [i64; 4] {
         self.decoded_cache
             .as_ref()

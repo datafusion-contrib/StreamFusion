@@ -128,8 +128,12 @@ remain tracked in
   multisets as companion element tables: a bundle point-reads only the elements its batches name,
   the running count/sum/extreme rides the main row, changes write through as element-level deltas,
   and a retraction that removes the current extreme reseeks the ordered element table (a numeric
-  MIN/MAX over an insert-only input needs no multiset at all and runs as a plain running value). Typed
-  stores persist an operator's processing-time timer deadline under a reserved key, so proctime
+  MIN/MAX over an insert-only input needs no multiset at all and runs as a plain running value).
+  Fixed/session COUNT DISTINCT stores likewise separate scalar headers from per-value set/count
+  records. Canonical capture pins those records and converts bounded frames asynchronously;
+  execution can reconstruct the touched window/session. Previous snapshot-backed checkpoints
+  migrate one key-group blob at a time when opened, preserving processing deadlines.
+  Typed stores persist an operator's processing-time timer deadline under a reserved key, so proctime
   windows, sessions, rank, and the window and interval joins run direct too. Every native operator
   now reads and writes RocksDB per key; the generic snapshot path remains only as the fallback for
   a shape whose state has no fixed-type native codec (a DISTINCT over a value type with no faithful

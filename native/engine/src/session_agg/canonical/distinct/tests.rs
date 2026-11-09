@@ -189,3 +189,140 @@ fn scalar_cardinality_is_not_interchangeable_with_membership_or_counted_frequenc
         );
     }
 }
+
+#[cfg(feature = "rocksdb-state")]
+fn persistent(keyless: bool, counted: bool, path: &std::path::Path) -> SessionAggregator {
+    let base = create(keyless, counted);
+    let store = crate::state::RocksSessionAggStore::create_with_codec(
+        crate::state::RocksStoreConfig {
+            table_dir: path.to_string_lossy().into_owned(),
+            max_parallelism: 128,
+            options_json: include_str!("../../../../benches/fixtures/rocks-options.json").into(),
+            ttl_ms: 0,
+            shared_resources: 0,
+        },
+        crate::state::rocks_store::window_memberships::WindowStateCodec::new(&base.aggregates)
+            .unwrap(),
+        0..=127,
+    )
+    .unwrap();
+    base.with_store(
+        store,
+        if keyless {
+            vec![]
+        } else {
+            vec![DataType::Int64]
+        },
+    )
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn persistent_sessions_stream_import_and_export_then_bridge_after_engine_switches() {
+    for keyless in [false, true] {
+        for counted in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let mut source = create(keyless, counted);
+            let mut target = persistent(keyless, counted, &temp.path().join("target"));
+            let values = (0..2051).map(Some).collect::<Vec<_>>();
+            source
+                .update(&input(keyless, &vec![100; values.len()], &values))
+                .unwrap();
+            source
+                .update(&input(keyless, &[2100], &[Some(5000)]))
+                .unwrap();
+            source
+                .visit_canonical_state(|batch| {
+                    target.import_canonical_state(&batch, usize::from(!keyless))
+                })
+                .unwrap();
+            assert!(target.update(&input(keyless, &[900], &[Some(7)])).is_err());
+            assert!(target.visit_canonical_state(|_| Ok(())).is_err());
+            source
+                .visit_canonical_distinct(0, |batch| target.import_canonical_distinct(0, &batch))
+                .unwrap();
+            target.finish_canonical_distinct().unwrap();
+            assert!(
+                target.sessions.is_empty(),
+                "persistent canonical import must retain only disk rows"
+            );
+            let mut returned = create(keyless, counted);
+            copy(&mut target, &mut returned, keyless);
+            for (time, value) in [(1100, 7), (1900, 9), (3000, 7)] {
+                let batch = input(keyless, &[time], &[Some(value)]);
+                for owner in [&mut source, &mut target, &mut returned] {
+                    owner.update(&batch).unwrap();
+                }
+            }
+            let expected = render(&source.flush(10000).unwrap());
+            assert_eq!(expected, render(&target.flush(10000).unwrap()));
+            assert_eq!(expected, render(&returned.flush(10000).unwrap()));
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn previous_snapshot_backed_session_checkpoints_keep_views_and_timer_deadlines() {
+    use crate::state::rocks_store::window_memberships::{WindowMembershipState, WindowStateCodec};
+    use crate::state::{RocksSessionAggStore, RocksSnapshotStore, RocksStoreConfig};
+    for aligned in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let mut source = create(false, true);
+        source
+            .update(&input(
+                false,
+                &[100, 200, 2000],
+                &[Some(1), Some(1), Some(5)],
+            ))
+            .unwrap();
+        let parts = source
+            .snapshot_partitions(128, &[-1])
+            .into_iter()
+            .map(|(group, payload)| {
+                let mut part = group.to_be_bytes().to_vec();
+                part.extend_from_slice(&payload);
+                part
+            })
+            .collect::<Vec<_>>();
+        let config = |name: &str| RocksStoreConfig {
+            table_dir: temp.path().join(name).to_string_lossy().into_owned(),
+            max_parallelism: 128,
+            options_json: include_str!("../../../../benches/fixtures/rocks-options.json").into(),
+            ttl_ms: 0,
+            shared_resources: 0,
+        };
+        let mut old = RocksSnapshotStore::open_merged(config("old"), &[], 0..=127, false).unwrap();
+        let saved = temp.path().join("checkpoint");
+        let manifest = old
+            .checkpoint(&parts, 4567, saved.to_str().unwrap())
+            .unwrap();
+        drop(old);
+        let base = create(false, true);
+        let store = RocksSessionAggStore::open_merged_with_codec(
+            config("typed"),
+            WindowStateCodec::new(&base.aggregates).unwrap(),
+            0..=127,
+            &[(saved.to_string_lossy().into_owned(), manifest.snapshot_id)],
+            aligned,
+        )
+        .unwrap();
+        let mut target = base.with_store(store, vec![DataType::Int64]);
+        target.migrate_legacy_snapshot_store().unwrap();
+        assert_eq!(target.store_timer_deadline(), 4567);
+        let suffix = input(false, &[1100, 1900], &[Some(1), Some(9)]);
+        source.update(&suffix).unwrap();
+        target.update(&suffix).unwrap();
+        assert_eq!(
+            render(&source.flush(10000).unwrap()),
+            render(&target.flush(10000).unwrap())
+        );
+        assert!(target
+            .store
+            .as_ref()
+            .unwrap()
+            .legacy_snapshot_reader()
+            .unwrap()
+            .is_none());
+    }
+}

@@ -1,6 +1,7 @@
 //! JNI lifecycle for Rust-owned RocksDB state. Java controls Flink lifecycle and file upload;
 //! every state read, write, flush, and compaction stays inside Rust/RocksDB.
 
+use super::rocks_store::window_memberships::WindowStateCodec;
 use crate::*;
 use jni::objects::{
     JByteArray, JClass, JDoubleArray, JIntArray, JLongArray, JObject, JObjectArray, JString,
@@ -294,6 +295,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBGroupAggregato
                 .with_read_through_budget(memory_budget_bytes)
         });
         let aggregator = aggregator.and_then(|mut aggregator| {
+            aggregator.migrate_legacy_snapshot_store(now_millis)?;
             let restored = read_restored_partitions(&mut env, &restored_partitions);
             aggregator.import_partitions(&restored, now_millis)?;
             Ok(aggregator)
@@ -2623,7 +2625,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbWindowAggregatorSupp
             .map(window_key_data_type)
             .collect();
         (rocks_row_supported(&key_types)
-            && rocks_row_supported(&window_state_types(&kinds, &value_types))) as jboolean
+            && WindowStateCodec::new(&build_aggregates(&kinds, &value_types)).is_ok())
+            as jboolean
     })
 }
 
@@ -2633,7 +2636,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbWindowAggregatorSupp
 fn open_window_agg_store(
     env: &mut JNIEnv,
     config: RocksStoreConfig,
-    state_types: &[DataType],
+    state_codec: WindowStateCodec,
     source_directories: &JObjectArray,
     source_snapshot_tokens: &JObjectArray,
     key_group_start: jint,
@@ -2651,11 +2654,11 @@ fn open_window_agg_store(
         .collect();
     let key_groups = key_group_start..=key_group_end;
     if source_dirs.is_empty() {
-        RocksWindowAggStore::create(config, state_types, key_groups)
+        RocksWindowAggStore::create_with_codec(config, state_codec, key_groups)
     } else {
-        RocksWindowAggStore::open_merged(
+        RocksWindowAggStore::open_merged_with_codec(
             config,
-            state_types,
+            state_codec,
             key_groups,
             &source_dirs
                 .into_iter()
@@ -2696,7 +2699,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowAggregat
         let value_types = read_int_array(&env, &value_types);
         let key_descriptor = read_i32_array(&env, &key_timestamp_precisions);
         let key_types = window_key_data_types(read_int_array(&env, &key_types), &key_descriptor);
-        let state_types = window_state_types(&kinds, &value_types);
+        let state_codec = WindowStateCodec::new(&build_aggregates(&kinds, &value_types));
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
             max_parallelism: max_parallelism as usize,
@@ -2705,16 +2708,18 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowAggregat
             shared_resources,
         };
         let store = if rocks_row_supported(&key_types) {
-            open_window_agg_store(
-                &mut env,
-                config,
-                &state_types,
-                &source_directories,
-                &source_snapshot_tokens,
-                key_group_start,
-                key_group_end,
-                aligned,
-            )
+            state_codec.and_then(|codec| {
+                open_window_agg_store(
+                    &mut env,
+                    config,
+                    codec,
+                    &source_directories,
+                    &source_snapshot_tokens,
+                    key_group_start,
+                    key_group_end,
+                    aligned,
+                )
+            })
         } else {
             Err(DataFusionError::Plan(
                 "window key shape not supported by RocksDB".into(),
@@ -2731,6 +2736,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowAggregat
             .with_key_timestamp_precisions(key_descriptor)
             .with_store(store, key_types)
             .with_read_through_budget(memory_budget_bytes)?;
+            aggregator.migrate_legacy_snapshot_store()?;
             let restored = read_restored_partitions(&mut env, &restored_partitions);
             aggregator.import_partitions(&restored, restored_timer_deadline)?;
             Ok(aggregator)
@@ -2883,7 +2889,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbSessionAggregatorSup
             .map(window_key_data_type)
             .collect();
         (rocks_row_supported(&key_types)
-            && rocks_row_supported(&window_state_types(&kinds, &value_types))) as jboolean
+            && WindowStateCodec::new(&build_aggregates(&kinds, &value_types)).is_ok())
+            as jboolean
     })
 }
 
@@ -2893,7 +2900,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbSessionAggregatorSup
 fn open_session_agg_store(
     env: &mut JNIEnv,
     config: RocksStoreConfig,
-    state_types: &[DataType],
+    state_codec: WindowStateCodec,
     source_directories: &JObjectArray,
     source_snapshot_tokens: &JObjectArray,
     key_group_start: jint,
@@ -2911,11 +2918,11 @@ fn open_session_agg_store(
         .collect();
     let key_groups = key_group_start..=key_group_end;
     if source_dirs.is_empty() {
-        RocksSessionAggStore::create(config, state_types, key_groups)
+        RocksSessionAggStore::create_with_codec(config, state_codec, key_groups)
     } else {
-        RocksSessionAggStore::open_merged(
+        RocksSessionAggStore::open_merged_with_codec(
             config,
-            state_types,
+            state_codec,
             key_groups,
             &source_dirs
                 .into_iter()
@@ -2954,7 +2961,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSessionAggrega
         let value_types = read_int_array(&env, &value_types);
         let key_descriptor = read_i32_array(&env, &key_timestamp_precisions);
         let key_types = window_key_data_types(read_int_array(&env, &key_types), &key_descriptor);
-        let state_types = window_state_types(&kinds, &value_types);
+        let state_codec = WindowStateCodec::new(&build_aggregates(&kinds, &value_types));
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
             max_parallelism: max_parallelism as usize,
@@ -2963,16 +2970,18 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSessionAggrega
             shared_resources,
         };
         let store = if rocks_row_supported(&key_types) {
-            open_session_agg_store(
-                &mut env,
-                config,
-                &state_types,
-                &source_directories,
-                &source_snapshot_tokens,
-                key_group_start,
-                key_group_end,
-                aligned,
-            )
+            state_codec.and_then(|codec| {
+                open_session_agg_store(
+                    &mut env,
+                    config,
+                    codec,
+                    &source_directories,
+                    &source_snapshot_tokens,
+                    key_group_start,
+                    key_group_end,
+                    aligned,
+                )
+            })
         } else {
             Err(DataFusionError::Plan(
                 "session key shape not supported by RocksDB".into(),
@@ -2983,6 +2992,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSessionAggrega
                 .with_key_timestamp_precisions(key_descriptor)
                 .with_store(store, key_types)
                 .with_read_through_budget(memory_budget_bytes)?;
+            aggregator.migrate_legacy_snapshot_store()?;
             let restored = read_restored_partitions(&mut env, &restored_partitions);
             aggregator.import_partitions(&restored, restored_timer_deadline)?;
             Ok(aggregator)
