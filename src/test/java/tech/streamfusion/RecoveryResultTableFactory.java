@@ -9,8 +9,6 @@ import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
-import org.apache.flink.core.memory.DataInputDeserializer;
-import org.apache.flink.core.memory.DataOutputSerializer;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
@@ -37,6 +35,7 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
   private static final String RESULTS = "streamfusion-recovery-results";
 
   static List<List<Object>> results(JobExecutionResult job, DataType type) throws Exception {
+    boolean compressed = Boolean.getBoolean("sf.recoveryResults.compress");
     List<byte[]> encoded = job.getAccumulatorResult(RESULTS);
     if (Boolean.getBoolean("sf.recoveryResults.profile")) {
       System.out.println(
@@ -57,7 +56,7 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
     List<List<Object>> result = new ArrayList<>();
     for (byte[] bytes : encoded) {
       Row row =
-          (Row) converter.toExternal(serializer.deserialize(new DataInputDeserializer(bytes)));
+          (Row) converter.toExternal(RecoveryResultEncoding.decode(serializer, bytes, compressed));
       List<Object> fields = new ArrayList<>();
       fields.add(row.getKind().shortString());
       for (int i = 0; i < row.getArity(); i++) {
@@ -188,10 +187,9 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
     @Override
     public void finish() throws Exception {
       var results = new ListAccumulator<byte[]>();
+      boolean compressed = Boolean.getBoolean("sf.recoveryResults.compress");
       for (RowData value : rows) {
-        var output = new DataOutputSerializer(64);
-        serializer.serialize(value, output);
-        results.add(output.getCopyOfBuffer());
+        results.add(RecoveryResultEncoding.encode(serializer, value, compressed));
       }
       getRuntimeContext().addAccumulator(RESULTS, results);
       if (Boolean.getBoolean("sf.recoveryResults.profile")) {

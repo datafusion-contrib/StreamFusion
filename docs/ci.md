@@ -953,6 +953,15 @@ The [completed four-trial diagnostic](benchmarks/ci-deeper-profile-20261108.json
 831-row result encoded to 165,299,820 bytes. The 2 GiB trials recorded before-GC heap maxima
 of 2,098,188,448 and 2,102,691,184 bytes, with full compactions. This confirms memory pressure;
 the original missing-accumulator failure's cause remains unconfirmed.
+`hotspot_mode=recovery-transport` compares two alternating pairs at the unchanged 2 GiB
+heap with optional result-accumulator compression (`sf.recoveryResults.compress`, default
+false during investigation). Checkpoint contents, captured rows and parity assertions are
+unchanged. Only serialized accumulator rows use fast JDK deflate; decoding streams each
+row through the released Flink serializer. The comparison uses ordinary test logging,
+no JFR and no phase timers, while retaining encoded sizes and individual outcomes.
+Separate round trips on released Flink 1.18.1 and 2.2.1 under Java 11 passed all three
+codec cases: nested wide binary values, nulls, multiset counts, every changelog kind and
+corrupt-input rejection. End-to-end timing and full qualification remain required.
 Any failed trial remains a failed diagnostic; its verified counts and condensed failure
 evidence are retained. Raw recordings and bulky successful reports are removed after analysis.
 

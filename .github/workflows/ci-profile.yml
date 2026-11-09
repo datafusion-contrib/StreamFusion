@@ -14,7 +14,7 @@ on:
       hotspot_mode:
         description: 'Attribute slow classes or compare their worker counts'
         type: choice
-        options: [attribution, parallel, plan-cache, canonical-parallel, deeper-runtime, fluss-details, recursive-completion, recovery-diagnostics]
+        options: [attribution, parallel, plan-cache, canonical-parallel, deeper-runtime, fluss-details, recursive-completion, recovery-diagnostics, recovery-transport]
         default: attribution
 
 permissions:
@@ -162,7 +162,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        jdk: ${{ fromJSON(inputs.hotspot_mode == 'parallel' && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'fluss-details' || inputs.hotspot_mode == 'recursive-completion' || inputs.hotspot_mode == 'recovery-diagnostics') && '["17"]' || '["11", "17"]') }}
+        jdk: ${{ fromJSON(inputs.hotspot_mode == 'parallel' && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'fluss-details' || inputs.hotspot_mode == 'recursive-completion' || inputs.hotspot_mode == 'recovery-diagnostics' || inputs.hotspot_mode == 'recovery-transport') && '["17"]' || '["11", "17"]') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -225,6 +225,9 @@ jobs:
             profile_name='flink-1.18,ci-diagnostics'
             goal='test'
             skip=(-DskipTests)
+          elif [[ "$HOTSPOT_MODE" == 'recovery-transport' ]]; then
+            profile=(-Pflink-1.18)
+            profile_name='flink-1.18'
           fi
           python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects "$projects"
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
@@ -262,6 +265,8 @@ jobs:
             python3 bin/profile-ci-details.py --line 2.2 --suite recursive --compare-completion --output "$RUNNER_TEMP/runtime-hotspots/recursive-completion"
           elif [[ "$HOTSPOT_MODE" == 'recovery-diagnostics' ]]; then
             python3 bin/profile-ci-details.py --line 1.18 --suite recovery --output "$RUNNER_TEMP/runtime-hotspots/recovery"
+          elif [[ "$HOTSPOT_MODE" == 'recovery-transport' ]]; then
+            python3 bin/profile-ci-details.py --line 1.18 --suite recovery --compare-transport --output "$RUNNER_TEMP/runtime-hotspots/recovery-transport"
           elif [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
             python3 bin/profile-canonical-ci.py --parallel --repetitions 2 --output "$RUNNER_TEMP/runtime-hotspots"
           else
