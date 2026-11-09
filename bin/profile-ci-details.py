@@ -30,12 +30,12 @@ SUITES = {
 }
 
 
-def profile(output, line, suite, compare_completion=False, compare_transport=False):
+def profile(output, line, suite, compare_completion=False, compare_transport=False, compare_close=False):
     output.mkdir(parents=True, exist_ok=False)
     temporary = output / "tmp"
     temporary.mkdir()
     java_home = Path(os.environ["JAVA_HOME"])
-    paired = compare_completion or compare_transport
+    paired = compare_completion or compare_transport or compare_close
     if not paired:
         ci_jfr.configuration(java_home, temporary / "details.jfc")
     module, selection = SUITES[suite]
@@ -50,6 +50,7 @@ def profile(output, line, suite, compare_completion=False, compare_transport=Fal
         for index, (heap, candidate) in enumerate(configurations):
             completion = compare_completion and candidate
             compressed = compare_transport and candidate
+            parallel_close = compare_close and candidate
             suffix = f"details-{line}-{suite}-{index}"
             recorded = output / "jfr" / str(index)
             recorded.mkdir(parents=True)
@@ -68,6 +69,7 @@ def profile(output, line, suite, compare_completion=False, compare_transport=Fal
                        "-Dsf.testForks=4", "-Dsf.testReuseForks=false", f"-Dsf.extraJvmArgs={extra}",
                        "-Dsf.fixturePlanCache=true", f"-Dsf.parity.awaitSmallResults={str(completion).lower()}",
                        f"-Dsf.recoveryResults.compress={str(compressed).lower()}",
+                       f"-Dsf.fluss.parallelCatalogClose={str(parallel_close).lower()}",
                        "-Dsf.recoveryResults.profile=true", "-Dorg.slf4j.simpleLogger.defaultLogLevel=error",
                        "-Dorg.slf4j.simpleLogger.log.org.apache.flink.runtime.accumulators.AccumulatorRegistry=warn",
                        f"-Dsurefire.reportNameSuffix={suffix}"]
@@ -88,6 +90,7 @@ def profile(output, line, suite, compare_completion=False, compare_transport=Fal
             trial = {"suite": suite, "line": line, "heap": heap, "forks": 4,
                      "instrumented": not paired, "await_small_results": completion,
                      "compressed_recovery_results": compressed,
+                     "parallel_catalog_close": parallel_close,
                      "elapsed_seconds": elapsed,
                      "cpu_seconds": after.ru_utime + after.ru_stime - cpu.ru_utime - cpu.ru_stime,
                      "exit_code": result.returncode}
@@ -150,12 +153,15 @@ def main():
     comparison = parser.add_mutually_exclusive_group()
     comparison.add_argument("--compare-completion", action="store_true")
     comparison.add_argument("--compare-transport", action="store_true")
+    comparison.add_argument("--compare-close", action="store_true")
     args = parser.parse_args()
     if args.compare_completion and args.suite != "recursive":
         parser.error("Completion comparison retains the complete small recursive workload")
     if args.compare_transport and args.suite != "recovery":
         parser.error("Transport comparison retains the complete binary recovery workload")
-    profile(args.output.resolve(), args.line, args.suite, args.compare_completion, args.compare_transport)
+    if args.compare_close and args.suite != "fluss":
+        parser.error("Catalog closure comparison retains the complete Fluss SQL workload")
+    profile(args.output.resolve(), args.line, args.suite, args.compare_completion, args.compare_transport, args.compare_close)
 
 
 if __name__ == "__main__":

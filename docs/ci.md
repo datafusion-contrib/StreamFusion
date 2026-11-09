@@ -938,6 +938,18 @@ The experimental `sf.parity.awaitSmallResults` property defaults to false.
 The initial Fluss diagnostic could not load its new timing helper through a stale standalone
 test dependency; it did not execute the 29 SQL cases. `hotspot_mode=fluss-details` attributes
 that suite independently using the current Maven reactor and its test artifacts.
+The [completed Fluss attribution](benchmarks/ci-deeper-profile-20261108.json) then passed
+all 29 cases without skips: catalog closure took 116.20 seconds, with JFR recording 117.88
+seconds of main-thread wait in the released client's Netty shutdown. Stock collection took
+103.16 seconds, native collection 13.14 seconds and explain calls 3.92 seconds. Elapsed
+time includes the current Maven reactor; recorded child CPU excludes broker containers.
+Released Fluss calls Netty's default graceful shutdown without exposing a client quiet-period
+option. `hotspot_mode=fluss-close` compares two alternating pairs of the existing serial
+catalog closures versus closing the two independent catalogs concurrently on this same runner.
+Both closures complete before the test continues; their errors remain failures and the
+temporary executor is shut down. Each case retains fresh environments, catalogs and all
+existing assertions. `sf.fluss.parallelCatalogClose` defaults to false during investigation.
+The comparison disables JFR and phase timers and separately records Docker image preparation.
 
 `hotspot_mode=recovery-diagnostics` repeats the complete 54-case binary collection class
 on Flink 1.18/JDK 17 with alternating 2/4 GiB heaps, retaining its 28 existing skips.

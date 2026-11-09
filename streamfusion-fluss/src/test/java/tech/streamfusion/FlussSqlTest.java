@@ -27,6 +27,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executors;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.ExplainDetail;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -85,10 +88,34 @@ class FlussSqlTest {
   void closeEnvironments() throws Exception {
     long started = CiFixtureTimings.start();
     try {
-      IOUtils.closeAll(
+      var catalogs =
           environments.values().stream()
               .<AutoCloseable>map(tables -> tables.getCatalog("fluss").orElseThrow()::close)
-              .collect(ListCollectors.toList()));
+              .collect(ListCollectors.toList());
+      if (Boolean.getBoolean("sf.fluss.parallelCatalogClose")) {
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+          var pending =
+              catalogs.stream()
+                  .map(
+                      catalog ->
+                          CompletableFuture.runAsync(
+                              () -> {
+                                try {
+                                  catalog.close();
+                                } catch (Exception failure) {
+                                  throw new CompletionException(failure);
+                                }
+                              },
+                              executor))
+                  .collect(ListCollectors.toList());
+          CompletableFuture.allOf(pending.toArray(new CompletableFuture<?>[0])).get();
+        } finally {
+          executor.shutdownNow();
+        }
+      } else {
+        IOUtils.closeAll(catalogs);
+      }
     } finally {
       environments.clear();
       CiFixtureTimings.record("fluss.catalog-close", started);
