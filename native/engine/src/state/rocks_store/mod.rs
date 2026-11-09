@@ -113,6 +113,35 @@ pub(crate) trait RocksStateCodec {
     }
     fn stamp_write_ms(&self, _value: &mut Self::Value, _ts_ms: i64) {}
 
+    /// Independent map entries may outlive their accumulator's TTL.
+    fn preserve_expired_main(&self) -> bool {
+        false
+    }
+
+    fn multiset_has_timestamps(&self, _table: usize) -> bool {
+        false
+    }
+
+    fn multiset_write_ms(
+        &self,
+        _value: &Self::Value,
+        _table: usize,
+        _element: &ScalarValue,
+    ) -> i64 {
+        0
+    }
+
+    fn restore_multiset_entry_at(
+        &self,
+        value: &mut Self::Value,
+        table: usize,
+        element: ScalarValue,
+        count: i64,
+        _written: Option<i64>,
+    ) {
+        self.restore_multiset_entry(value, table, element, count);
+    }
+
     /// A codec whose value already carries a self-contained byte payload (an arrow-row the
     /// operator encoded) can persist its own layout directly, skipping the store's columnar
     /// conversion in both directions. A raw codec implements all three methods;
@@ -131,12 +160,13 @@ pub(crate) trait RocksStateCodec {
     /// A codec whose value keeps per-key multisets (a MIN/MAX retraction multiset, a DISTINCT
     /// value set) declares one companion element table per multiset: `(table byte, element type)`.
     /// The main row then keys as `[key_group][0][key]` and each element as
-    /// `[key_group][table][key][element arrow-row bytes]` → `[count i64 LE]`. The resident
+    /// `[key_group][table][key][element arrow-row bytes]` → `[count i64 LE, optional write age]`.
+    /// The resident
     /// multiset is a PARTIAL view: a bundle point-reads exactly the (key, element) pairs its
     /// batches name (never the whole set), the running value each emit needs travels in the main
     /// row, changes write through as element-level deltas via the value's armed change journal,
-    /// and only canonical savepoints materialize a full set. Companion values carry no TTL prefix;
-    /// their lifetime follows the main row.
+    /// and canonical readers stream the committed records. Untimestamped companions follow the
+    /// main row's lifetime; timestamped companions preserve their independent TTL ages.
     fn multiset_tables(&self) -> Vec<(u8, DataType)> {
         Vec::new()
     }
@@ -191,6 +221,45 @@ pub(crate) trait RocksStateCodec {
     }
 }
 
+#[derive(Clone, Copy)]
+struct CompanionValue {
+    bytes: [u8; 16],
+    len: usize,
+}
+
+impl AsRef<[u8]> for CompanionValue {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+}
+
+fn encode_companion_count(count: i64, written: Option<i64>) -> CompanionValue {
+    let mut value = CompanionValue {
+        bytes: [0; 16],
+        len: if written.is_some() { 16 } else { 8 },
+    };
+    value.bytes[..8].copy_from_slice(&count.to_le_bytes());
+    if let Some(written) = written {
+        value.bytes[8..].copy_from_slice(&written.to_le_bytes());
+    }
+    value
+}
+
+fn decode_companion_count(
+    bytes: &[u8],
+    timestamped: bool,
+) -> Result<(i64, Option<i64>), DataFusionError> {
+    if bytes.len() != if timestamped { 16 } else { 8 } {
+        return Err(DataFusionError::Execution(
+            "invalid persisted companion count".into(),
+        ));
+    }
+    Ok((
+        i64::from_le_bytes(bytes[..8].try_into().unwrap()),
+        timestamped.then(|| i64::from_le_bytes(bytes[8..].try_into().unwrap())),
+    ))
+}
+
 pub(crate) fn rocks_row_supported(types: &[DataType]) -> bool {
     types.iter().all(|data_type| {
         streamfusion_bridge::timestamp::is_component_timestamp(data_type)
@@ -222,9 +291,20 @@ pub(crate) fn rocks_group_supported(
     value_types: &[DataType],
     state_types: &[DataType],
 ) -> bool {
-    !kinds
-        .iter()
-        .any(|kind| matches!(kind, 12..=16 | 19..=21 | 38 | 39))
+    !kinds.iter().any(|kind| matches!(kind, 12..=16 | 19..=21))
+        && kinds.iter().zip(value_types).all(|(kind, ty)| {
+            !matches!(kind, 38 | 39)
+                || matches!(
+                    ty,
+                    DataType::Int64
+                        | DataType::Int32
+                        | DataType::Int16
+                        | DataType::Int8
+                        | DataType::Date32
+                        | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                        | DataType::Boolean
+                )
+        })
         && rocks_row_supported(state_types)
         && kinds.iter().zip(value_types).all(|(&kind, value_type)| {
             !matches!(kind, 7 | 9 | 17 | 18 | 34)
@@ -665,7 +745,12 @@ impl<C: RocksStateCodec> RocksStore<C> {
         // reading an expired/absent main row) rather than any timestamp of its own.
         let multiset_tables = codec.multiset_tables();
         let table = (!multiset_tables.is_empty()).then_some(MULTISET_MAIN_TABLE);
-        let mut ttls = vec![(table, config.ttl_ms)];
+        let main_ttl = if codec.preserve_expired_main() {
+            0
+        } else {
+            config.ttl_ms
+        };
+        let mut ttls = vec![(table, main_ttl)];
         ttls.extend(multiset_tables.iter().map(|&(table, _)| (Some(table), 0)));
         let opened = open_shared_db(&config, &ttls)?;
         Self::attach(&opened, config, codec, table)
@@ -772,6 +857,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
             let table = &self.multisets[position];
             let mut owners: Vec<usize> = Vec::new();
             let mut counts: Vec<i64> = Vec::new();
+            let mut timestamps = Vec::new();
             let mut elements: Vec<Vec<u8>> = Vec::new();
             for (owner, key) in keys.iter().enumerate() {
                 let prefix = self.multiset_prefix(table.table, &key.0);
@@ -784,9 +870,12 @@ impl<C: RocksStateCodec> RocksStore<C> {
                         break;
                     }
                     owners.push(owner);
-                    counts.push(i64::from_le_bytes(
-                        value[..8].try_into().expect("multiset count"),
-                    ));
+                    let (count, written) = decode_companion_count(
+                        &value,
+                        self.codec.multiset_has_timestamps(position),
+                    )?;
+                    counts.push(count);
+                    timestamps.push(written);
                     elements.push(db_key[prefix.len()..].to_vec());
                 }
             }
@@ -802,8 +891,13 @@ impl<C: RocksStateCodec> RocksStore<C> {
             for (row, (&owner, &count)) in owners.iter().zip(&counts).enumerate() {
                 let element = ScalarValue::try_from_array(&columns[0], row)?;
                 if let Some(Slot::Present { state, .. }) = self.working.get_mut(&*keys[owner].0) {
-                    self.codec
-                        .restore_multiset_entry(state, position, element, count);
+                    self.codec.restore_multiset_entry_at(
+                        state,
+                        position,
+                        element,
+                        count,
+                        timestamps[row],
+                    );
                 }
             }
         }
@@ -882,12 +976,15 @@ impl<C: RocksStateCodec> RocksStore<C> {
             for (value, (index, key)) in fetched.into_iter().zip(&probe_meta) {
                 match value {
                     Ok(Some(bytes)) => {
-                        let count =
-                            i64::from_le_bytes(bytes[..8].try_into().expect("multiset count"));
+                        let (count, written) = decode_companion_count(
+                            &bytes,
+                            self.codec.multiset_has_timestamps(position),
+                        )?;
                         let element = ScalarValue::try_from_array(&elements, *index)?;
                         if let Some(Slot::Present { state, .. }) = self.working.get_mut(&*key.0) {
-                            self.codec
-                                .restore_multiset_entry(state, position, element, count);
+                            self.codec.restore_multiset_entry_at(
+                                state, position, element, count, written,
+                            );
                         }
                     }
                     Ok(None) => {}
@@ -900,19 +997,26 @@ impl<C: RocksStateCodec> RocksStore<C> {
 
     /// Drains the bundle's journaled element changes into encoded companion keys (`None` count =
     /// delete), one columnar conversion per table.
-    fn drain_multiset_ops(&mut self) -> Result<Vec<(Vec<u8>, Option<i64>)>, DataFusionError> {
+    fn drain_multiset_ops(
+        &mut self,
+    ) -> Result<Vec<(Vec<u8>, Option<CompanionValue>)>, DataFusionError> {
         if self.multisets.is_empty() {
             return Ok(Vec::new());
         }
         let tables = self.multisets.len();
         let mut scalars: Vec<Vec<ScalarValue>> = vec![Vec::new(); tables];
-        let mut entries: Vec<Vec<(ByteKey, Option<i64>)>> = vec![Vec::new(); tables];
+        let mut entries: Vec<Vec<(ByteKey, Option<CompanionValue>)>> = vec![Vec::new(); tables];
         for (key, slot) in self.working.iter_mut() {
             if let Slot::Present { state, dirty: true } = slot {
                 for position in 0..tables {
                     for (element, count) in self.codec.drain_multiset_changes(state, position) {
+                        let written = self
+                            .codec
+                            .multiset_has_timestamps(position)
+                            .then(|| self.codec.multiset_write_ms(state, position, &element));
+                        let value = count.map(|count| encode_companion_count(count, written));
                         scalars[position].push(element);
-                        entries[position].push((key.clone(), count));
+                        entries[position].push((key.clone(), value));
                     }
                 }
             }
@@ -1015,7 +1119,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
         }
         for (db_key, count) in multiset_changes {
             match count {
-                Some(count) => writes.put(db_key, count.to_le_bytes())?,
+                Some(value) => writes.put(db_key, value)?,
                 None => writes.delete(db_key)?,
             }
         }
@@ -1038,7 +1142,13 @@ impl<C: RocksStateCodec> RocksStore<C> {
             let ts = (prefix > 0)
                 .then(|| i64::from_le_bytes(value[..8].try_into().expect("ttl prefix")));
             match ts {
-                Some(t) if expire && self.now_ms >= t.saturating_add(self.config.ttl_ms) => Err(()),
+                Some(t)
+                    if expire
+                        && !self.codec.preserve_expired_main()
+                        && self.now_ms >= t.saturating_add(self.config.ttl_ms) =>
+                {
+                    Err(())
+                }
                 other => Ok(other),
             }
         };
@@ -1308,6 +1418,8 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
             let prefix = self.multiset_prefix(table.table, key);
             let upper = prefix_successor(&prefix);
             let is_min = self.codec.multiset_extreme_is_min(position);
+            let timestamped = self.codec.multiset_has_timestamps(position);
+            let ttl = StateTtl::new(self.config.ttl_ms, self.now_ms);
             let mut iterator = if is_min {
                 self.db
                     .iterator(IteratorMode::From(&prefix, Direction::Forward))
@@ -1317,12 +1429,17 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
             };
             let mut committed = || -> Result<Option<ScalarValue>, DataFusionError> {
                 for row in iterator.by_ref() {
-                    let (db_key, _) = row.map_err(re)?;
+                    database::check_cancelled()?;
+                    let (db_key, value) = row.map_err(re)?;
                     if !is_min && db_key.as_ref() >= upper.as_slice() {
                         continue;
                     }
                     if !db_key.starts_with(&prefix) {
                         return Ok(None);
+                    }
+                    let (_, written) = decode_companion_count(&value, timestamped)?;
+                    if written.is_some_and(|written| ttl.expired(written)) {
+                        continue;
                     }
                     return table.decode_element(&db_key[prefix.len()..]).map(Some);
                 }

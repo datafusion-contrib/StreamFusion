@@ -82,11 +82,16 @@ Continued input updates the live database independently; concurrent savepoints o
 These exports construct neither a stock-schema database nor a complete intermediate state file.
 The backend retains its working directory and memory-pool ownership until readers finish or cancel.
 
-The remaining native RocksDB contracts pin the same database read views and run their existing
+Contracts running on direct native RocksDB pin the same database read views and run their existing
 stock-state adapters on Flink's asynchronous writer thread. Each savepoint owns an independent
 native reader and a temporary stock-schema RocksDB backend, including disk-backed timer queues.
 This reuses the qualified map/list/timer conversion logic instead of duplicating every layout in a
 second streaming codec. It adds temporary disk I/O compared with the direct value-state cursors.
+Canonical DISTINCT fixed/session windows still select memory aggregation with raw RocksDB
+checkpoint backing and use memory capture. Their membership-capable persistent stores remain
+required before all existing canonical contracts have native RocksDB asynchronous capture.
+Retained grouped DISTINCT with per-entry TTL is outside current canonical admission; it remains
+coverage expansion after these existing-contract storage gaps.
 OVER and temporal-join metadata export share a flat key/kind/long-value bridge. OVER uses it for
 RANGE cutoffs, cleanup values, processing callbacks and V1 physical event callbacks. Temporal joins
 use it for independent signed probe cursors, registered values, cleanup clocks and callbacks. Frozen RocksDB readers borrow and validate
@@ -1617,9 +1622,11 @@ actual MapView IDs and serializers, including ExternalSerializer snapshots; equi
 alone do not establish serializer compatibility. A fresh raw projection backend avoids TTL wrapper
 filtering or clock refresh during import. Header and map validation finish before any apply, and
 source entries are cleared only after success. Export visits live native state directly in bounded
-frames. Mapped extrema use memory aggregation with raw RocksDB snapshot backing when RocksDB is
-configured. Their ordinary native checkpoints add an optional absent-header frame only when
-orphaned views exist; the default and append-only formats are unchanged.
+frames. Qualified per-record mapped extrema use direct RocksDB accumulator headers and separate
+record-level companion maps. Savepoint capture pins the database; the asynchronous writer streams
+both tables without hydrating the maps. Independent map ages and expired accumulator presence
+survive conversion. Mini-batch mapped execution retains raw RocksDB snapshot backing. Legacy raw
+snapshots remain readable; the default and append-only formats are unchanged.
 Unqualified upstream grouped owners in the rank-template path remain stock-owned. Qualified isolated
 arithmetic jobs verify custom source and committing-sink state, both transposes, immediate re-export,
 native checkpoint recovery and rescaling through one, three and two tasks. They compare full
@@ -1820,6 +1827,13 @@ Its separate 194-control and 32-job cohorts qualify the precise subset on the
 32 rejection/plan controls and 34 shared Flink 1.18 processing regressions kept separate.
 Retraction/view, type/precision and broader failure/version coverage remain open under #569.
 
+
+Local aggregate lifecycle, orphan/cache boundary and corruption cohorts also honor
+`streamfusion.test.canonicalSmoke=true`: the shared selector retains every parameter value and
+pair while avoiding repeated stock RocksDB backend construction for the full Cartesian product.
+Default tests and CI retain the exhaustive providers. The independent asynchronous capture test
+runs all eight type declarations with TTL on/off, then converts two pinned captures on a writer
+thread after live writes and owner close.
 
 The structured retracting MIN/MAX adapter additionally binds integral, date, time and boolean
 cached selections and retained map keys. Its bounded transport uses a lossless internal long

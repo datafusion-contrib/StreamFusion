@@ -160,6 +160,13 @@ impl StateDb {
             .unwrap_or_else(|| ReadView::new(Arc::clone(&self.database)))
     }
 
+    pub(super) fn read_snapshot(&self) -> Self {
+        Self {
+            database: Arc::clone(&self.database),
+            view: Some(self.pin()),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn io_counts(&self) -> (usize, usize) {
         (

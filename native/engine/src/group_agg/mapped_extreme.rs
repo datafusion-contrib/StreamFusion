@@ -7,6 +7,8 @@ pub(crate) struct MappedExtreme {
     pub(super) map_size: i64,
     extreme: Option<MinMaxKey>,
     written: Option<BTreeMap<MinMaxKey, i64>>,
+    journal: Option<Box<ahash::HashSet<MinMaxKey>>>,
+    stale: bool,
 }
 
 #[cfg(test)]
@@ -269,7 +271,7 @@ mod tests {
             assert_eq!(key.aggs[1].emit(&DataType::Int64), value(5));
         }
         #[cfg(feature = "rocksdb-state")]
-        assert!(!crate::state::rocks_group_supported(
+        assert!(crate::state::rocks_group_supported(
             &[38],
             &[DataType::Int64],
             &[DataType::Binary]
@@ -285,6 +287,8 @@ impl MappedExtreme {
             map_size: 0,
             extreme: None,
             written: None,
+            journal: None,
+            stale: false,
         }
     }
 
@@ -317,11 +321,17 @@ impl MappedExtreme {
         {
             self.counts.remove(key);
             self.written.as_mut().unwrap().remove(key);
+            if let Some(journal) = &mut self.journal {
+                journal.insert(key.clone());
+            }
         }
         self.counts.get(key).copied().unwrap_or(0)
     }
 
     fn put(&mut self, key: MinMaxKey, count: i64, ttl: StateTtl) {
+        if let Some(journal) = &mut self.journal {
+            journal.insert(key.clone());
+        }
         if count == 0 {
             self.counts.remove(&key);
             if let Some(times) = &mut self.written {
@@ -343,12 +353,19 @@ impl MappedExtreme {
                 times.retain(|key, written| {
                     if ttl.expired(*written) {
                         self.counts.remove(key);
+                        if let Some(journal) = &mut self.journal {
+                            journal.insert(key.clone());
+                        }
                         false
                     } else {
                         true
                     }
                 });
             }
+        }
+        if self.journal.is_some() {
+            self.stale = true;
+            return;
         }
         self.extreme = if self.is_min {
             self.counts.first_key_value()
@@ -450,6 +467,7 @@ impl MappedExtreme {
     pub(super) fn clear_header(&mut self) {
         self.extreme = None;
         self.map_size = 0;
+        self.stale = false;
     }
 
     pub(super) fn entry_written(&self, key: &MinMaxKey) -> Option<i64> {
@@ -465,12 +483,135 @@ impl MappedExtreme {
     }
 
     pub(super) fn import_entry(&mut self, key: MinMaxKey, count: i64, written: Option<i64>) {
+        if let Some(journal) = &mut self.journal {
+            journal.insert(key.clone());
+        }
+        self.load_entry(key, count, written);
+    }
+
+    fn load_entry(&mut self, key: MinMaxKey, count: i64, written: Option<i64>) {
         self.counts.insert(key.clone(), count);
         if let Some(written) = written {
             self.written
                 .get_or_insert_with(BTreeMap::new)
                 .insert(key, written);
         }
+    }
+
+    pub(super) fn has_external_entries(&self) -> bool {
+        self.journal.is_some()
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(super) fn arm_journal(&mut self) {
+        self.journal = Some(Box::new(self.counts.keys().cloned().collect()));
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(super) fn restore_entry(&mut self, value: ScalarValue, count: i64, written: Option<i64>) {
+        self.load_entry(
+            MinMaxKey::from_scalar(&value),
+            count,
+            if self.written.is_some() {
+                written
+            } else {
+                None
+            },
+        );
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(super) fn drain_changes(&mut self, ty: &DataType) -> Vec<(ScalarValue, Option<i64>)> {
+        self.journal.as_mut().map_or_else(Vec::new, |journal| {
+            journal
+                .drain()
+                .map(|key| (key.scalar(ty), self.counts.get(&key).copied()))
+                .collect()
+        })
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(super) fn needs_reseek(&self) -> bool {
+        self.stale
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(super) fn resolve(
+        &mut self,
+        committed: &mut dyn FnMut() -> Result<Option<ScalarValue>, DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        let resident = if self.is_min {
+            self.counts.first_key_value()
+        } else {
+            self.counts.last_key_value()
+        };
+        let mut best = resident.map(|(key, _)| key.clone());
+        while let Some(value) = committed()? {
+            let key = MinMaxKey::from_scalar(&value);
+            if self.counts.contains_key(&key)
+                || self
+                    .journal
+                    .as_ref()
+                    .is_some_and(|journal| journal.contains(&key))
+            {
+                continue;
+            }
+            if best
+                .as_ref()
+                .is_none_or(|current| self.better(&key, current))
+            {
+                best = Some(key);
+            }
+            break;
+        }
+        self.extreme = best;
+        if self.extreme.is_none() {
+            self.map_size = 0;
+        }
+        self.stale = false;
+        Ok(())
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(super) fn header(&self) -> ScalarValue {
+        let mut bytes = Vec::with_capacity(18);
+        let value = self
+            .stock_selected()
+            .expect("supported RocksDB mapped scalar");
+        bytes.push(u8::from(value.is_some()));
+        bytes.extend_from_slice(&value.unwrap_or(0).to_le_bytes());
+        bytes.extend_from_slice(&self.map_size.to_le_bytes());
+        bytes.push(u8::from(self.written.is_some()));
+        ScalarValue::Binary(Some(bytes))
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(super) fn restore_persisted_header(
+        &mut self,
+        scalar: ScalarValue,
+        ty: &DataType,
+    ) -> Result<(), DataFusionError> {
+        let ScalarValue::Binary(Some(bytes)) = scalar else {
+            return Err(DataFusionError::Execution(
+                "missing mapped RocksDB header".into(),
+            ));
+        };
+        if bytes.len() != 18 || bytes[0] > 1 || bytes[17] > 1 {
+            return Err(DataFusionError::Execution(
+                "invalid mapped RocksDB header".into(),
+            ));
+        }
+        let selected = (bytes[0] == 1)
+            .then(|| {
+                stock_extrema::decode_key(i64::from_le_bytes(bytes[1..9].try_into().unwrap()), ty)
+            })
+            .transpose()?;
+        self.restore_header(
+            selected,
+            i64::from_le_bytes(bytes[9..17].try_into().unwrap()),
+        );
+        self.written = (bytes[17] == 1).then(BTreeMap::new);
+        Ok(())
     }
 
     pub(super) fn emit(&self, ty: &DataType) -> ScalarValue {
@@ -530,6 +671,9 @@ impl MappedExtreme {
             self.map_size += i64::from(!self.counts.contains_key(&key));
         }
         self.counts.insert(key, count);
+        if let Some(journal) = &mut self.journal {
+            journal.extend(self.counts.keys().cloned());
+        }
     }
 
     pub(super) fn bytes(&self) -> usize {
@@ -543,6 +687,9 @@ impl MappedExtreme {
                 .keys()
                 .map(|key| 64 + std::mem::size_of::<MinMaxKey>() + key_bytes(key))
                 .sum::<usize>()
+            + self.journal.as_ref().map_or(0, |journal| {
+                journal.iter().map(|key| 80 + key_bytes(key)).sum::<usize>()
+            })
             + self.extreme.as_ref().map_or(0, key_bytes)
             + self
                 .written
@@ -626,6 +773,9 @@ impl MappedExtreme {
                 written.insert(key.clone(), times.value(row));
             }
             self.counts.insert(key, counts.value(row));
+        }
+        if let Some(journal) = &mut self.journal {
+            journal.extend(self.counts.keys().cloned());
         }
     }
 }

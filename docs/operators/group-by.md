@@ -3203,10 +3203,11 @@ ExternalSerializer snapshots. Matching value bytes alone is insufficient for sto
 Import reads raw state in a fresh projection backend without applying a TTL API wrapper, validates
 the entire source before applying it, and clears source state only after success. Export visits
 live headers and map entries directly in bounded batches, including maps larger than a batch.
-Memory and RocksDB configurations are covered; mapped extrema use the existing memory aggregate
-with raw RocksDB snapshot backing, rather than the direct per-key RocksDB aggregate. Ordinary native
-checkpoints retain absent-header markers in an optional private frame when orphaned maps exist.
-Default and append-only snapshot layouts retain their existing format.
+Qualified per-record mapped extrema use the direct per-key RocksDB aggregate: fixed-size
+accumulator headers and timestamped companion map records. A canonical savepoint pins native
+RocksDB state and converts bounded frames on the asynchronous writer, including orphan maps.
+Mini-batch mapped execution retains memory aggregation with raw RocksDB snapshot backing.
+Legacy raw checkpoints remain readable; default and append-only layouts retain their format.
 
 The state/lifecycle qualification covers 420 Flink 2.2.1 cases: 32 independent generated-layout
 controls; 72 retracting, 92 append-only and 128 INT-key lifecycle/overflow/recovery cases; twenty
@@ -3408,13 +3409,23 @@ for complete validation and apply passes. Scratch state closes and deletes on fa
 stock values remain working-set limits. The generated RAW placeholder retains its
 non-null one-byte NullSerializer payload.
 
-Both native memory and raw keyed RocksDB use the existing bounded header/entry transfer. An
+Both native memory and direct keyed RocksDB use the bounded header/entry transfer. An
 internal signed-long carrier holds integral values, epoch days, millisecond times or BOOLEAN 0/1
 losslessly; it is not the savepoint's value type. The writer converts each carrier back to the
 actual boxed Flink value and uses the captured stock serializer. Native import rejects out-of-
 range narrow integers and invalid BOOLEAN carriers before mutation. Existing native checkpoint
-formats, C Data ownership and the stock canonical container remain unchanged. Export reads live
-state directly, without an intermediate native snapshot.
+formats remain readable; C Data ownership and the stock canonical container are unchanged.
+Direct RocksDB export streams a pinned view of headers and companion records without rebuilding
+execution maps. Continued live writes and closing the original owner preserve that frozen view.
+
+The direct RocksDB change passes four new native storage controls within the 1,514-test native
+suite (two existing ignores), plus memory-only compilation. Java qualification passes 1,265
+aggregate/snapshot checks and a separate 24-check cohort on Flink 2.2, and 734 selected checks
+on Flink 1.18. Both lines run all sixteen type/TTL cases that complete two pinned captures on a
+writer thread after live writes and native-owner close. Four compiled complete jobs per line
+cover BIGINT/BOOLEAN continuation on both native stores and require direct RocksDB execution
+when requested. The newer local pairwise selector reduces legacy cohort repetition; these
+selections do not establish exhaustive release-line or all-operator qualification.
 
 The consolidated 1,232-check cohort passes 128 repeated-switch cases with and without visible
 COUNT(value), sixteen native-checkpoint returns, 144 independent-cache/orphan-view cases, 384

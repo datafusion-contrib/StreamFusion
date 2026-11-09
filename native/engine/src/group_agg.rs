@@ -962,8 +962,8 @@ impl GroupAggState {
             GroupAggState::Extremes { journal, .. } => *journal = Some(Box::default()),
             GroupAggState::Distinct { set, .. } => set.arm_journal(),
             GroupAggState::DistinctRunning { counts, .. } => counts.arm_journal(),
-            GroupAggState::Mapped(_)
-            | GroupAggState::Collection(_)
+            GroupAggState::Mapped(mapped) => mapped.arm_journal(),
+            GroupAggState::Collection(_)
             | GroupAggState::Json(_)
             | GroupAggState::List(_)
             | GroupAggState::Ordered(_)
@@ -1016,8 +1016,8 @@ impl GroupAggState {
             }),
             GroupAggState::Distinct { set, .. } => set.drain_journal(),
             GroupAggState::DistinctRunning { counts, .. } => counts.drain_journal(),
-            GroupAggState::Mapped(_)
-            | GroupAggState::Collection(_)
+            GroupAggState::Mapped(mapped) => mapped.drain_changes(element_type),
+            GroupAggState::Collection(_)
             | GroupAggState::Json(_)
             | GroupAggState::List(_)
             | GroupAggState::Ordered(_)
@@ -1032,6 +1032,7 @@ impl GroupAggState {
     #[cfg(feature = "rocksdb-state")]
     fn multiset_extreme_stale(&self) -> bool {
         matches!(self, GroupAggState::Extremes { stale: true, .. })
+            || matches!(self, GroupAggState::Mapped(mapped) if mapped.needs_reseek())
     }
 
     /// Re-establishes a killed extreme: the best of the resident live elements and the committed
@@ -1043,6 +1044,9 @@ impl GroupAggState {
         &mut self,
         committed: &mut dyn FnMut() -> Result<Option<ScalarValue>, DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        if let GroupAggState::Mapped(mapped) = self {
+            return mapped.resolve(committed);
+        }
         let GroupAggState::Extremes {
             is_min,
             counts,
@@ -1160,7 +1164,7 @@ impl GroupStateCodec {
         let multiset_aggs: Vec<usize> = kinds
             .iter()
             .enumerate()
-            .filter(|&(_, &kind)| matches!(kind, 1 | 2 | 7 | 9 | 17 | 18 | 34))
+            .filter(|&(_, &kind)| matches!(kind, 1 | 2 | 7 | 9 | 17 | 18 | 34 | 38 | 39))
             .map(|(i, _)| i)
             .collect();
         let distinct_view_columns = if distinct_view_columns.is_empty() {
@@ -1198,6 +1202,33 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
                 &self.value_types,
                 &self.state_types,
             )
+    }
+    fn preserve_expired_main(&self) -> bool {
+        self.kinds.iter().any(|kind| matches!(kind, 38 | 39))
+    }
+    fn multiset_has_timestamps(&self, table: usize) -> bool {
+        matches!(self.kinds[self.multiset_aggs[table]], 38 | 39)
+    }
+    fn multiset_write_ms(&self, state: &GroupKeyState, table: usize, element: &ScalarValue) -> i64 {
+        match &state.aggs[self.multiset_aggs[table]] {
+            GroupAggState::Mapped(mapped) => mapped
+                .entry_written(&MinMaxKey::from_scalar(element))
+                .unwrap_or(0),
+            _ => 0,
+        }
+    }
+    fn restore_multiset_entry_at(
+        &self,
+        state: &mut GroupKeyState,
+        table: usize,
+        element: ScalarValue,
+        count: i64,
+        written: Option<i64>,
+    ) {
+        match &mut state.aggs[self.multiset_aggs[table]] {
+            GroupAggState::Mapped(mapped) => mapped.restore_entry(element, count, written),
+            aggregate => aggregate.restore_multiset_entry(element, count),
+        }
     }
     fn multiset_tables(&self) -> Vec<(u8, DataType)> {
         self.multiset_aggs
@@ -1272,7 +1303,7 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
         Some((column, rows))
     }
     fn multiset_extreme_is_min(&self, table: usize) -> bool {
-        self.kinds[self.multiset_aggs[table]] == 1
+        matches!(self.kinds[self.multiset_aggs[table]], 1 | 38)
     }
     fn multiset_extreme_stale(&self, state: &GroupKeyState, table: usize) -> bool {
         state.aggs[self.multiset_aggs[table]].multiset_extreme_stale()
@@ -1290,6 +1321,9 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
         for (i, state_type) in self.state_types.iter().enumerate() {
             fields.push((format!("s{i}"), state_type.clone()));
             fields.push((format!("n{i}"), DataType::Int64));
+        }
+        if self.preserve_expired_main() {
+            fields.push(("accumulator_present".into(), DataType::Boolean));
         }
         fields
     }
@@ -1328,6 +1362,11 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
                 states.iter().map(|state| state.aggs[i].persisted_count()),
             )));
         }
+        if self.preserve_expired_main() {
+            columns.push(Arc::new(BooleanArray::from_iter(
+                states.iter().map(|state| Some(state.accumulator_present)),
+            )));
+        }
         columns
     }
     fn decode_row(
@@ -1351,7 +1390,9 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
             let scalar = ScalarValue::try_from_array(&columns[1 + 2 * i], row)?;
             let mut state = GroupAggState::new(kind, value_type);
             match &mut state {
-                GroupAggState::Mapped(_) => unreachable!("mapped extrema use raw keyed snapshots"),
+                GroupAggState::Mapped(mapped) => {
+                    mapped.restore_persisted_header(scalar, value_type)?
+                }
                 GroupAggState::Collection(collection) => collection.restore(scalar)?,
                 GroupAggState::Json(json) => json.restore(scalar)?,
                 GroupAggState::List(list) => list.restore(scalar)?,
@@ -1378,7 +1419,17 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
             aggs.push(state);
         }
         Ok(GroupKeyState {
-            accumulator_present: true,
+            accumulator_present: if self.preserve_expired_main() {
+                columns
+                    .last()
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<BooleanArray>()
+                    .unwrap()
+                    .value(row)
+            } else {
+                true
+            },
             aggs,
             records: count(0),
             last_output: None,
@@ -1426,7 +1477,7 @@ pub(crate) fn group_state_types(kinds: &[i64], value_types: &[DataType]) -> Vec<
 impl GroupAggState {
     fn persisted_scalar(&self, state_type: &DataType) -> ScalarValue {
         match self {
-            Self::Mapped(_) => unreachable!("mapped extrema use raw keyed snapshots"),
+            Self::Mapped(mapped) => mapped.header(),
             Self::Collection(state) => state.snapshot(),
             Self::Json(state) => state.snapshot(),
             Self::List(state) => state.snapshot(),
@@ -1847,7 +1898,7 @@ impl GroupAggregator {
         let filter_columns = vec![-1; kinds.len()];
         let count_columns = vec![-1; kinds.len()];
         let distinct_view_columns = vec![-1; kinds.len()];
-        let has_retractable_extremes = kinds.iter().any(|kind| matches!(kind, 1 | 2));
+        let has_retractable_extremes = kinds.iter().any(|kind| matches!(kind, 1 | 2 | 38 | 39));
         GroupAggregator {
             has_retractable_extremes,
             kinds,
@@ -3414,6 +3465,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             self.store.end_bundle()?;
         }
         self.memory.record(self.store.footprint_delta());
+        if !self.mini_batch {
+            if let Some(bytes) = self.store.resident_bytes() {
+                self.memory.set(bytes + self.staging_bytes());
+            }
+        }
         self.memory.account()?;
 
         // Mini-batch output is produced only by `flush_mini_batch`. Avoid constructing empty key

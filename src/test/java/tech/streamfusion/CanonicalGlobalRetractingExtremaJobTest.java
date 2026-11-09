@@ -15,11 +15,6 @@ class CanonicalGlobalRetractingExtremaJobTest extends CanonicalGlobalGroupArithm
   }
 
   @Override
-  void configureBackend(Path root, String backend) throws Exception {
-    CanonicalRetractingExtremaJobTest.configureRawStorage(root, backend);
-  }
-
-  @Override
   Map<String, String> expectedTable(String mode) {
     return Map.of("0", mode.equals("rescale") ? "5|6" : "5|11");
   }

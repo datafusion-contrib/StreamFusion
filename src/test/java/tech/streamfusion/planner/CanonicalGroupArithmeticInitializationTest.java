@@ -455,6 +455,11 @@ class CanonicalGroupArithmeticInitializationTest {
       return directRocksDBState();
     }
 
+    void closeNativeOwner() {
+      closeHandle();
+      handle = 0;
+    }
+
     void assertStorage() {
       assertEquals(persistent, rocksdbState(), "actual requested native storage");
       assertEquals(direct, directRocksDBState(), "actual direct or raw-keyed state path");

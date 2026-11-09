@@ -15,16 +15,6 @@ class CanonicalRetractingExtremaJobTest extends CanonicalGroupArithmeticJobTest 
   }
 
   @Override
-  void configureBackend(Path root, String backend) throws Exception {
-    configureRawStorage(root, backend);
-  }
-
-  static void configureRawStorage(Path root, String backend) throws Exception {
-    if (backend.equals("rocksdb"))
-      Files.writeString(root.resolve("native-storage"), "rocksdb-snapshot");
-  }
-
-  @Override
   Map<String, String> expectedTable(String mode) {
     if (mode.equals("rescale")) {
       var expected = new java.util.HashMap<String, String>();
