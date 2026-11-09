@@ -27,6 +27,10 @@ final class FixtureNodes implements Serializable {
     }
   }
 
+  static boolean cacheable() {
+    return true;
+  }
+
   Stream<StreamNode> stream() {
     return nodes.stream();
   }

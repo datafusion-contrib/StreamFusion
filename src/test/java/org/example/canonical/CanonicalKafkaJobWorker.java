@@ -214,7 +214,7 @@ public final class CanonicalKafkaJobWorker {
         inventory.add(
             state.getOperatorID()
                 + "\t"
-                + state.getOperatorName().orElse("")
+                + CanonicalWorkerCompat.operatorName(state)
                 + "\t"
                 + state.getParallelism()
                 + "\t"

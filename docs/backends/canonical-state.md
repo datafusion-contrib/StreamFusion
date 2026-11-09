@@ -101,6 +101,12 @@ checkpointing reject unfinished or failed imports. Decoded buffers and timer-vec
 reserved before mutation. Completed owners flush their native metadata once; a hot owner is not
 serialized again for every transfer chunk. The cursor is transient and native checkpoint bytes
 retain their existing format.
+The temporal metadata cohort adds split 2,051-callback transfers, signed cursor extremes,
+independent metadata-only owners, malformed phase/order rejection, denied-memory cleanup and
+flat-record checks against an immutable captured database after live updates. All 24 temporal
+native checks pass, and the memory-only build passes. Selected shared snapshot/temporal/OVER
+checks pass 514 cases on 1.18 and 482 on a clean 2.2 build, with 36 expected V1-only skips on 2.2.
+These are focused component selections, not exhaustive job portability qualification.
 The RANGE/memory cohort passes 1,499 native checks with two existing ignores and the memory-only
 build passes. Selected OVER controls pass 572 checks on 1.18 and 540 on a clean 2.2 build, with
 36 expected V1-only skips on 2.2. Each release includes six complete-job continued handoffs across

@@ -599,14 +599,27 @@ JDK and shard, and selection manifests record the line. The former five-family s
 1.18's runtime shard is replaced by this exhaustive compiled-inventory selection.
 
 Each line selects from its own compiled test inventory and duration estimates, preserving every
-method and inherited parameterized invocation. The current source inventories have 118 canonical
-classes on 2.2 and 19 shared classes on 1.18, including abstract bases; these counts are not equal
-portability qualification. Porting and qualifying the remaining release-specific fixtures remains
-open work. Adding a shared fixture automatically includes it in both lines' required canonical
-matrix. The existing three runtime shards retain the other default Surefire classes on both
-lines: the two selections have a complete union and empty intersection within each compiled
-inventory. Nested classes and ORC tag handling are unchanged. Every line/JDK/shard is required
+method and inherited parameterized invocation. Canonical job fixtures and their typed-state
+bases now live in shared test sources for joins, sort, normalization, deduplication, rank,
+window and grouped aggregates and managed UDFs. Kafka source and partition-discovery jobs are
+shared as well. This adds 87 job classes to the 1.18 inventory (106 total, compared with 118 on
+2.2). The 12 Kafka sink/pipeline job classes still use the 2.2 connector's transaction naming and
+ownership contract;
+porting their assertions to the released 1.18 connector layout remains open. Release adapters
+retain version-specific runtime behavior. Compilation and selection parity do not establish
+that all handoffs pass: the complete required matrix remains the qualification gate. Adding a
+shared fixture automatically includes it in both lines' required canonical matrix. The existing
+three runtime shards retain the other default Surefire classes on both lines: the two selections
+have a complete union and empty intersection within each compiled inventory. Nested classes and ORC tag handling are unchanged. Every line/JDK/shard is required
 by `All CI tests`; no local smoke flag is set in hosted canonical CI.
+
+Local qualification includes all four temporal native-checkpoint-to-canonical continuations on
+1.18 (compiled plans and ordinary SQL, both native stores). Fifteen focused cache, managed-UDF
+failure and mini-batch ordering controls also pass on 1.18. A clean 2.2 build retains all 118
+canonical job classes and passes the same controls plus its transient-factory restoration test
+(16 checks). These selections do not qualify the
+remaining inherited job providers or the newly shared Kafka source cases; hosted CI runs their
+full providers.
 
 Canonical scheduling now uses that complete matrix's class times with startup compilation
 and metadata sharing enabled, replacing estimates from the earlier JVM settings. For the
@@ -647,6 +660,11 @@ providers remain exhaustive by default; `sf.canonical.eventOver.job.smoke=true` 
 local ROWS-cleanup/RANGE selection for fast complete-job iteration. This selection is not the
 full 1.18 job-matrix qualification.
 
+Unopened fixture definitions use the same scoped cache on both releases. Flink 1.18 StreamNode
+graphs are not serializable, so managed-UDF and mini-batch graph fixtures construct independent graphs there;
+2.2 retains serialized graph definitions and restores transient operator factories. Neither path
+shares running operators, user-function instances or state between cases.
+
 Canonical workers also use class-data sharing through `SF_CANONICAL_CDS_DIR`, set only for
 their test step. The first successful worker on each classpath records loaded classes, then
 HotSpot builds a metadata archive. Later stages use that archive in fresh JVMs with
@@ -662,7 +680,7 @@ and retained without changing its timestamp. Changed compiled bytes produce a ne
 Archive keys include the JDK, VM arguments, classpath, worker class and engine role. Caches live
 under the current runner's temporary directory and are removed after outcomes and failed
 archive diagnostics are uploaded. Default local Maven runs do not enable this cache.
-Each runner uses two fresh 2 GiB Surefire JVMs, with process reuse disabled. The earlier 2.2-only
+Each runner uses four fresh 1 GiB Surefire JVMs, with process reuse disabled. The earlier 2.2-only
 change preserved its 118 classes on each JDK while reducing that line's runner jobs from 64 to 32.
 The required two-line matrix now has 64 jobs, preserving each line's compiled inventory. The stock
 and native worker processes retain their separate 1 GiB heaps; native memory and containers

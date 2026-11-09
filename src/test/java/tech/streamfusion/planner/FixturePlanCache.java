@@ -32,7 +32,9 @@ final class FixturePlanCache {
     if (!enabled) return factory.create();
     byte[] serialized = plans.get(key);
     if (serialized == null) {
-      serialized = InstantiationUtil.serializeObject(factory.create());
+      T definition = factory.create();
+      if (definition instanceof FixtureNodes && !FixtureNodes.cacheable()) return definition;
+      serialized = InstantiationUtil.serializeObject(definition);
       if (serialized.length <= maximumBytes) {
         while (plans.size() >= maximumEntries || bytes + serialized.length > maximumBytes) {
           var oldest = plans.entrySet().iterator();
