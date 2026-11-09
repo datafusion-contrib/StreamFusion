@@ -97,6 +97,30 @@ class NativeBatchSortOperatorTest {
   }
 
   @Test
+  void topkBoundsRetainedInputAndAppliesOffsetAfterAllBatches() throws Exception {
+    try (var harness = harness(new int[] {0}, new int[] {0}, 2, 3, 16)) {
+      pushDescending(harness, 262144);
+      assertTrue(harness.getOutput().isEmpty());
+      assertEquals(0, NativeAllocator.SHARED.getAllocatedMemory());
+      assertEquals(0, spillFiles(harness));
+      harness.endInput();
+      List<String> expected = new ArrayList<>();
+      for (int value = 4; value <= 16; value++) expected.add(value + ":" + value % 37);
+      assertEquals(expected, drain(harness));
+    }
+  }
+
+  @Test
+  void oversizedTopkFailsWithinTheSharedAuthorityAndReleasesItsInput() throws Exception {
+    try (var harness = harness(new int[] {0}, new int[] {0}, 1024, 0, 262144)) {
+      assertThrows(
+          tech.streamfusion.NativeMemoryLimitException.class,
+          () -> pushDescending(harness, 262144));
+    }
+    assertEquals(0, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  @Test
   void cancellationReleasesRetainedInput() throws Exception {
     try (var harness = harness(new int[] {0}, new int[] {0}, 1024)) {
       push(harness, List.of(GenericRowData.of(2L, 3), GenericRowData.of(1L, 4)));
@@ -188,9 +212,15 @@ class NativeBatchSortOperatorTest {
 
   private static OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness(
       int[] keys, int[] flags, int batchRows) throws Exception {
+    return harness(keys, flags, batchRows, 0, -1);
+  }
+
+  private static OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness(
+      int[] keys, int[] flags, int batchRows, long offset, long end) throws Exception {
     var harness =
         new OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch>(
-            new NativeBatchSortOperator(keys, flags, batchRows), new ArrowBatchSerializer());
+            new NativeBatchSortOperator(keys, flags, batchRows, offset, end),
+            new ArrowBatchSerializer());
     harness.setup(new ArrowBatchSerializer());
     harness.open();
     return harness;

@@ -26,9 +26,12 @@ workers spawned by its operators. A consumed input cannot be replayed: Flink tas
 retry must construct a fresh execution and replay its source/shuffle input.
 
 The native sorter accepts signed integer keys, explicit ascending/
-descending direction and NULL placement, with no LIMIT/OFFSET. Its Arrow input and
-output remain columnar. It uses DataFusion's external sorter, the existing shared
-Tokio runtime, Flink task spill directories, and the TaskManager off-heap authority.
+descending direction and NULL placement. Its Arrow input and output remain columnar. Sorted LIMIT/FETCH uses the same driver with DataFusion's
+TopK sort and a subsequent offset stream, preserving Flink's local/global stages.
+TopK retains candidates under the shared memory authority; unlike the unrestricted
+external sorter, its candidate heap does not spill and reports memory denial when
+it cannot fit. No per-task cap is silently raised. Unrestricted sort uses
+DataFusion's external sorter, the existing shared Tokio runtime, Flink task spill directories, and the TaskManager off-heap authority.
 It does not add a distributed scheduler or change Arrow IPC serialization.
 
 ## Memory lifetime
@@ -99,7 +102,9 @@ of borrowed input. An output can outlive its producer with only its Arrow charge
 remaining. Aggregation is currently a native adapter test, not admitted batch SQL.
 
 SQL controls compare ordered results across multiple output batches, empty input,
-parallelism-two unchained producers and unsupported-key/LIMIT fallback. A downstream
+parallelism-two unchained producers and unsupported-key fallback. Sorted-limit
+controls cover local/global candidates, offsets crossing Arrow batches, repeated
+keys, beyond-end offsets, empty input and zero-row limits. A downstream
 sink fails once, then recovers all 2,051 sorted rows from the completed blocking
 Arrow shuffle: native sort/exit reach attempt 1 while producers stay on attempt 0.
 The packaged loader executes the same multi-batch sort through its isolated payload.

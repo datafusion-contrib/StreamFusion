@@ -7,6 +7,7 @@ import java.util.Map;
 import org.apache.calcite.rel.RelDistribution;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexVisitorImpl;
@@ -14,19 +15,24 @@ import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalCal
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalExchange;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSink;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSort;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSortLimit;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalUnion;
 import org.apache.flink.table.planner.plan.optimize.program.BatchOptimizeContext;
 import org.apache.flink.table.planner.plan.optimize.program.FlinkOptimizeProgram;
+import org.apache.flink.table.planner.plan.utils.SortUtil;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 import org.apache.flink.table.runtime.functions.scalar.BuiltInScalarFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tech.streamfusion.Native;
 import tech.streamfusion.compat.FlinkCompat;
 
 /** Whitelist-first batch substitution; every interior computation must remain columnar. */
 public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext> {
   static final String SCALAR_COST_FALLBACK =
       "batch Calc: standalone scalar pipeline has no verified speedup";
+  static final String SORT_LIMIT_COST_FALLBACK =
+      "batch sort limit: standalone pipeline has no verified speedup";
   private static final Logger LOG = LoggerFactory.getLogger(BatchPlanScan.class);
   private final List<String> reasons = new ArrayList<>();
   private final List<String> operators = new ArrayList<>();
@@ -61,7 +67,11 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
         if (admitted
             && (!expressions.isEmpty() || !sorts.isEmpty())
             && !amortizesRowBoundaries(root, expressions, false))
-          admitted = decline(SCALAR_COST_FALLBACK);
+          admitted =
+              decline(
+                  sorts.keySet().stream().anyMatch(node -> node instanceof BatchPhysicalSortLimit)
+                      ? SORT_LIMIT_COST_FALLBACK
+                      : SCALAR_COST_FALLBACK);
       } catch (NoClassDefFoundError
           | NoSuchMethodError
           | NoSuchFieldError
@@ -146,12 +156,20 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
         expressions.put(node, encoded);
       } else if (node instanceof BatchPhysicalUnion && ((BatchPhysicalUnion) node).all) {
         if (!NativeConfig.operatorEnabled("union")) return decline("batch UNION ALL: disabled");
-      } else if (node instanceof BatchPhysicalSort) {
+      } else if (isSort(node)) {
         if (!NativeConfig.operatorEnabled("sort")) return decline("batch sort: disabled");
         if (!BatchSortTypeCheck.supported(node.getRowType()))
           return decline("batch sort: retained Arrow representation is unsupported");
         retained = true;
-        var sort = (BatchPhysicalSort) node;
+        var sort = (Sort) node;
+        if (node instanceof BatchPhysicalSortLimit) {
+          if (!Native.supportsBoundedSorterLimits())
+            return decline("batch sort: bounded limits unavailable");
+          long start = SortUtil.getLimitStart(sort.offset);
+          long end = SortUtil.getLimitEnd(sort.offset, sort.fetch);
+          if (start < 0 || end < start || end == Long.MAX_VALUE)
+            return decline("batch sort: invalid or unsupported limit bounds");
+        }
         var collations = sort.getCollation().getFieldCollations();
         int[] columns = new int[collations.size()];
         int[] flags = new int[collations.size()];
@@ -205,7 +223,7 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
     boolean columnar =
         node instanceof BatchPhysicalCalc
             || node instanceof BatchPhysicalUnion
-            || node instanceof BatchPhysicalSort
+            || isSort(node)
             || node instanceof BatchPhysicalExchange;
     for (RelNode input : node.getInputs()) {
       RelNode rewritten = rewrite(input, expressions, sorts);
@@ -224,17 +242,20 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
       substitutions++;
       return new BatchPhysicalNativeUnion((BatchPhysicalUnion) node, inputs);
     }
-    if (node instanceof BatchPhysicalSort) {
+    if (isSort(node)) {
       substitutions++;
       var encoded = sorts.get(node);
-      return new BatchPhysicalNativeSort(
-          (BatchPhysicalSort) node, inputs.get(0), encoded[0], encoded[1]);
+      return new BatchPhysicalNativeSort((Sort) node, inputs.get(0), encoded[0], encoded[1]);
     }
     if (node instanceof BatchPhysicalExchange) {
       substitutions++;
       return new BatchPhysicalNativeExchange(node, inputs.get(0));
     }
     return node.copy(node.getTraitSet(), inputs);
+  }
+
+  private static boolean isSort(RelNode node) {
+    return node instanceof BatchPhysicalSort || node instanceof BatchPhysicalSortLimit;
   }
 
   private boolean decline(String reason) {

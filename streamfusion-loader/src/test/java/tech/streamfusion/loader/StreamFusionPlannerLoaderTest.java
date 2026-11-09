@@ -144,6 +144,15 @@ class StreamFusionPlannerLoaderTest {
 
   @Test
   void sortsBlockingArrowInputFromThePackagedPayload() throws Exception {
+    assertPackagedSort(0, -1);
+  }
+
+  @Test
+  void limitsBlockingArrowInputFromThePackagedPayload() throws Exception {
+    assertPackagedSort(1023, 1025);
+  }
+
+  private static void assertPackagedSort(long offset, long fetch) throws Exception {
     TableEnvironment table = TableEnvironment.create(EnvironmentSettings.inBatchMode());
     table.getConfig().set("parallelism.default", "2");
     table.getConfig().set("pipeline.operator-chaining.enabled", "false");
@@ -153,16 +162,18 @@ class StreamFusionPlannerLoaderTest {
         "CREATE TABLE batch_sort_input (id BIGINT) WITH ('connector'='datagen',"
             + " 'number-of-rows'='2051', 'fields.id.kind'='sequence',"
             + " 'fields.id.start'='0', 'fields.id.end'='2050')");
-    String sql = "SELECT id FROM batch_sort_input ORDER BY id DESC";
+    String sql = "SELECT id FROM batch_sort_input"
+        + (fetch < 0 ? "" : " WHERE SHA2(CAST(id AS STRING), 256) <> ''") + " ORDER BY id DESC";
+    if (fetch >= 0) sql += " OFFSET " + offset + " ROWS FETCH NEXT " + fetch + " ROWS ONLY";
     String plan = table.explainSql(sql);
     assertTrue(plan.contains("NativeSort"), plan);
     assertTrue(plan.contains("NativeExchange"), plan);
     try (CloseableIterator<Row> rows = table.executeSql(sql).collect()) {
-      long expected = 2050;
+      long expected = 2050 - offset;
       while (rows.hasNext()) {
         assertEquals(expected--, rows.next().getField(0));
       }
-      assertEquals(-1, expected);
+      assertEquals(fetch < 0 ? -1 : 2050 - offset - fetch, expected);
     }
   }
 

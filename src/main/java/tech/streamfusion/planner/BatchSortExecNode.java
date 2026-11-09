@@ -20,6 +20,8 @@ final class BatchSortExecNode extends ExecNodeBase<ArrowBatch>
     implements BatchExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
   private final int[] columns;
   private final int[] flags;
+  private final long offset;
+  private final long end;
 
   BatchSortExecNode(
       ReadableConfig config,
@@ -27,6 +29,8 @@ final class BatchSortExecNode extends ExecNodeBase<ArrowBatch>
       String description,
       int[] columns,
       int[] flags,
+      long offset,
+      long end,
       InputProperty inputProperty) {
     super(
         ExecNodeContext.newNodeId(),
@@ -37,6 +41,8 @@ final class BatchSortExecNode extends ExecNodeBase<ArrowBatch>
         description);
     this.columns = columns;
     this.flags = flags;
+    this.offset = offset;
+    this.end = end;
   }
 
   @Override
@@ -48,7 +54,8 @@ final class BatchSortExecNode extends ExecNodeBase<ArrowBatch>
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta("native-batch-sort", getDescription(), getDescription(), config),
-        new NativeBatchSortOperator(columns, flags, NativeConfig.transposeBatchRows(config, 1024)),
+        new NativeBatchSortOperator(
+            columns, flags, NativeConfig.transposeBatchRows(config, 1024), offset, end),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

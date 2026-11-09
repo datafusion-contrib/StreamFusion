@@ -1075,6 +1075,42 @@
       "display_name": "testNullOrderingOnMultiColumn()",
       "count": 1,
       "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByWithOffsetAndFetch",
+      "display_name": "testOrderByWithOffsetAndFetch()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimit",
+      "display_name": "testOrderByLimit()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLessThanOffset",
+      "display_name": "testOrderByLessThanOffset()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByRepeatedFields",
+      "display_name": "testOrderByRepeatedFields()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimitBehindField",
+      "display_name": "testOrderByLimitBehindField()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderBehindField",
+      "display_name": "testOrderBehindField()",
+      "count": 1,
+      "route": "batch_host_only"
     }
   ]
 }

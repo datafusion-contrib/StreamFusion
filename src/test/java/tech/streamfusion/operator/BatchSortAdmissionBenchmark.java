@@ -12,12 +12,15 @@ import org.apache.arrow.c.Data;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.memory.ManagedMemoryUseCase;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
+import org.apache.flink.streaming.api.operators.BoundedOneInput;
+import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.planner.codegen.sort.SortCodeGenerator;
 import org.apache.flink.table.planner.plan.nodes.exec.spec.SortSpec;
+import org.apache.flink.table.runtime.operators.sort.SortLimitOperator;
 import org.apache.flink.table.runtime.operators.sort.SortOperator;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.BigIntType;
@@ -37,6 +40,12 @@ class BatchSortAdmissionBenchmark {
     int count = Integer.getInteger("sf.batch.sort.rows", 65536);
     int width = Integer.getInteger("sf.batch.sort.width", 4);
     int cardinality = Integer.getInteger("sf.batch.sort.cardinality", count);
+    int offset = Integer.getInteger("sf.batch.sort.offset", 0);
+    int fetch = Integer.getInteger("sf.batch.sort.fetch", -1);
+    long end = fetch < 0 ? -1 : (long) offset + fetch;
+    boolean nullsFirst =
+        Boolean.parseBoolean(
+            System.getProperty("sf.batch.sort.nullsFirst", fetch < 0 ? "true" : "false"));
     int warmups = Integer.getInteger("sf.batch.sort.warmups", 3);
     int trials = Integer.getInteger("sf.batch.sort.trials", 7);
     LogicalType[] types = new LogicalType[width];
@@ -45,16 +54,25 @@ class BatchSortAdmissionBenchmark {
     var serializer = new RowDataSerializer(type);
     List<RowData> rows = new ArrayList<>(count);
     Random random = new Random(724719);
-    long checksum = 0;
     for (int index = 0; index < count; index++) {
       var row = new GenericRowData(width);
       for (int column = 0; column < width; column++) {
         Long value = index % 17 == 0 ? null : Math.floorMod(random.nextLong(), (long) cardinality);
         row.setField(column, value);
-        if (column == 0 && value != null) checksum += value;
       }
       rows.add(serializer.toBinaryRow(row).copy());
     }
+    List<Long> sortedKeys = new ArrayList<>();
+    for (RowData row : rows) sortedKeys.add(row.isNullAt(0) ? null : row.getLong(0));
+    sortedKeys.sort(
+        nullsFirst
+            ? java.util.Comparator.nullsFirst(Long::compareTo)
+            : java.util.Comparator.nullsLast(Long::compareTo));
+    int from = Math.min(count, offset), to = fetch < 0 ? count : (int) Math.min(count, end);
+    long expectedRows = to - from;
+    long checksum = 0;
+    for (Long key : sortedKeys.subList(from, to))
+      checksum = checksum * 31 + (key == null ? Long.MIN_VALUE : key);
     List<Long> stockTimes = new ArrayList<>();
     List<Long> nativeTimes = new ArrayList<>();
     long previous = TaskOffHeapMemory.capacityBytes();
@@ -69,15 +87,21 @@ class BatchSortAdmissionBenchmark {
                   new Configuration(),
                   getClass().getClassLoader(),
                   type,
-                  SortSpec.builder().addField(0, true, true).build());
-          var operator =
-              new SortOperator(
-                  generator.generateNormalizedKeyComputer("AdmissionSortKey"),
-                  generator.generateRecordComparator("AdmissionSortCompare"),
-                  128,
-                  false,
-                  64 * 1024,
-                  false);
+                  SortSpec.builder().addField(0, true, !nullsFirst).build());
+          OneInputStreamOperator<RowData, RowData> operator =
+              fetch >= 0
+                  ? new SortLimitOperator(
+                      true,
+                      offset,
+                      end,
+                      generator.generateRecordComparator("AdmissionLimitCompare"))
+                  : new SortOperator(
+                      generator.generateNormalizedKeyComputer("AdmissionSortKey"),
+                      generator.generateRecordComparator("AdmissionSortCompare"),
+                      128,
+                      false,
+                      64 * 1024,
+                      false);
           try (var environment =
                   new org.apache.flink.runtime.operators.testutils.MockEnvironmentBuilder()
                       .setManagedMemorySize(32L << 20)
@@ -100,7 +124,8 @@ class BatchSortAdmissionBenchmark {
                   public void collect(StreamRecord<RowData> record) {
                     RowData row = record.getValue();
                     consumed[0]++;
-                    if (!row.isNullAt(0)) consumed[1] += row.getLong(0);
+                    consumed[1] =
+                        consumed[1] * 31 + (row.isNullAt(0) ? Long.MIN_VALUE : row.getLong(0));
                   }
                 });
             harness.open();
@@ -115,14 +140,16 @@ class BatchSortAdmissionBenchmark {
                     NativeAllocator.SHARED, root.getSchema(), NativeAllocator.DICTIONARIES, schema);
                 try {
                   handle =
-                      Native.createBoundedSorter(
+                      Native.createBoundedLimitedSorter(
                           schema.memoryAddress(),
                           new int[] {0},
-                          new int[] {2},
+                          new int[] {nullsFirst ? 2 : 0},
                           harness.getEnvironment().getIOManager().getSpillingDirectoriesPaths(),
                           1024,
                           4L << 20,
-                          "sort-admission");
+                          "sort-admission",
+                          offset,
+                          end);
                 } finally {
                   schema.release();
                 }
@@ -144,19 +171,29 @@ class BatchSortAdmissionBenchmark {
             } else {
               long started = System.nanoTime();
               for (RowData row : rows) operator.processElement(new StreamRecord<>(row));
-              operator.endInput();
+              ((BoundedOneInput) operator).endInput();
               nanos = System.nanoTime() - started;
             }
-            assertEquals(count, consumed[0]);
-            assertEquals(checksum, consumed[1]);
+            assertEquals(expectedRows, consumed[0]);
+            assertEquals(checksum, consumed[1], nativeRun ? "native" : "stock");
             if (trial >= 0) (nativeRun ? nativeTimes : stockTimes).add(nanos);
           }
         }
       }
       System.out.printf(
-          "[batch-sort-admission] rows=%d width=%d cardinality=%d nullEvery=17 poolBytes=%d"
-              + " warmups=%d trials=%d stockNanos=%s nativeNanos=%s%n",
-          count, width, cardinality, 32L << 20, warmups, trials, stockTimes, nativeTimes);
+          "[batch-sort-admission] rows=%d width=%d cardinality=%d offset=%d fetch=%d nullEvery=17"
+              + " nullsFirst=%s poolBytes=%d warmups=%d trials=%d stockNanos=%s nativeNanos=%s%n",
+          count,
+          width,
+          cardinality,
+          offset,
+          fetch,
+          nullsFirst,
+          32L << 20,
+          warmups,
+          trials,
+          stockTimes,
+          nativeTimes);
     } finally {
       TaskOffHeapMemory.resetForTests(previous == 0 ? -1 : previous);
     }

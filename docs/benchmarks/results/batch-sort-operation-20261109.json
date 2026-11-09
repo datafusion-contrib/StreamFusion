@@ -38,7 +38,9 @@
         3328667,
         3276042
       ],
-      "medianStockOverNative": 8.772299050822665
+      "medianStockOverNative": 8.772299050822665,
+      "validComparison": false,
+      "invalidReason": "Different NULL ordering between engines"
     },
     {
       "stage": "final production implementation",
@@ -63,7 +65,9 @@
         2173042,
         2347291
       ],
-      "medianStockOverNative": 7.184833493743985
+      "medianStockOverNative": 7.184833493743985,
+      "validComparison": false,
+      "invalidReason": "Different NULL ordering between engines"
     },
     {
       "stage": "copy-inclusive before metrics",
@@ -88,7 +92,9 @@
         3185625,
         3270250
       ],
-      "medianStockOverNative": 8.816757128659889
+      "medianStockOverNative": 8.816757128659889,
+      "validComparison": false,
+      "invalidReason": "Different NULL ordering between engines"
     }
   ],
   "previousBehavior": "SQL sort previously fell back entirely to stock Flink; there is no previous native SQL sort.",
@@ -103,5 +109,11 @@
     "native/engine/src/memory.rs": "e86d8d3bad07f1445d48499d121467ddcdd205c109c463220c73b5ce957116aa",
     "src/test/java/tech/streamfusion/operator/BatchSortAdmissionBenchmark.java": "9919e3b5b420698fac96aa467a4d1b2b8cd7206ad2342d015cce6ec99e14d172",
     "releaseNativeLibrary": "3938f5ecf3bb9ea550a317308e2ba1e06be313b4b857001fb552658b02922e6d"
+  },
+  "status": "discarded: stock NULLS LAST versus native NULLS FIRST in the original prepared-sort harness",
+  "invalidReason": "Flink SortSpec.addField third argument is nullIsLast, not nullsFirst. These timed comparisons used different NULL orderings. They are excluded from acceleration claims. Full SQL job cohorts are unaffected.",
+  "actualNullOrdering": {
+    "stock": "ASC NULLS LAST",
+    "native": "ASC NULLS FIRST"
   }
 }

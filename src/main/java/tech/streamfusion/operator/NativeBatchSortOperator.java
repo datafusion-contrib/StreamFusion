@@ -18,15 +18,23 @@ public final class NativeBatchSortOperator extends FlinkStreamOperator<ArrowBatc
   private final int[] columns;
   private final int[] flags;
   private final int batchRows;
+  private final long offset;
+  private final long end;
   private transient long handle;
   private transient Schema inputSchema;
   private transient boolean finished;
   private transient volatile long[] executionStats;
 
   public NativeBatchSortOperator(int[] columns, int[] flags, int batchRows) {
+    this(columns, flags, batchRows, 0, -1);
+  }
+
+  public NativeBatchSortOperator(int[] columns, int[] flags, int batchRows, long offset, long end) {
     this.columns = columns.clone();
     this.flags = flags.clone();
     this.batchRows = batchRows;
+    this.offset = offset;
+    this.end = end;
   }
 
   @Override
@@ -54,18 +62,31 @@ public final class NativeBatchSortOperator extends FlinkStreamOperator<ArrowBatc
         try (ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
           Data.exportSchema(allocator, inputSchema, NativeAllocator.DICTIONARIES, schema);
           try {
+            String[] directories =
+                getContainingTask().getEnvironment().getIOManager().getSpillingDirectoriesPaths();
+            long reservation =
+                Math.min(64L << 20, Math.max(64L << 10, TaskOffHeapMemory.capacityBytes() / 8));
+            String task = tech.streamfusion.compat.RuntimeCompat.taskName(getRuntimeContext());
             handle =
-                Native.createBoundedSorter(
-                    schema.memoryAddress(),
-                    columns,
-                    flags,
-                    getContainingTask()
-                        .getEnvironment()
-                        .getIOManager()
-                        .getSpillingDirectoriesPaths(),
-                    batchRows,
-                    Math.min(64L << 20, Math.max(64L << 10, TaskOffHeapMemory.capacityBytes() / 8)),
-                    tech.streamfusion.compat.RuntimeCompat.taskName(getRuntimeContext()));
+                offset == 0 && end == -1
+                    ? Native.createBoundedSorter(
+                        schema.memoryAddress(),
+                        columns,
+                        flags,
+                        directories,
+                        batchRows,
+                        reservation,
+                        task)
+                    : Native.createBoundedLimitedSorter(
+                        schema.memoryAddress(),
+                        columns,
+                        flags,
+                        directories,
+                        batchRows,
+                        reservation,
+                        task,
+                        offset,
+                        end);
           } finally {
             schema.release();
           }

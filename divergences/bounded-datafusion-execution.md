@@ -18,6 +18,13 @@ Arroyo resets bounded physical execution for a streaming batch/window. Here a
 bounded Flink task executes its plan once across all incoming batches, with one
 explicit EOF per input. Task retry rebuilds that execution; inputs are not rewindable.
 
+Arroyo's ordinary SQL planner rejects non-windowed ORDER BY and LIMIT. Bounded
+sorted limits instead follow Comet's `SortExec.with_fetch` followed by
+`GlobalLimitExec` for the offset. Flink still owns its local/global physical stages
+and singleton exchange; each bounded native task applies only its own bounds.
+A logical zero-row limit still consumes input before returning no output, so it
+does not suppress upstream evaluation or failures in an existing sort-limit stage.
+
 Comet's plan memory pool waits for spawned-worker reservations to be returned before
 releasing its host memory manager. StreamFusion can keep its independent Java owner
 registration alive through the last pool reference instead. DataFusion reservations

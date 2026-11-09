@@ -21,6 +21,20 @@ public final class Native {
       long spillReservationBytes,
       String taskName);
 
+  public static native boolean supportsBoundedSorterLimits();
+
+  /** The exclusive end includes offset; minus one leaves the sort unrestricted. */
+  public static native long createBoundedLimitedSorter(
+      long schemaAddress,
+      int[] columns,
+      int[] flags,
+      String[] spillDirectories,
+      int batchRows,
+      long spillReservationBytes,
+      String taskName,
+      long offset,
+      long end);
+
   public static native void pushBoundedSorter(long handle, long arrayAddress);
 
   public static native void finishBoundedSorter(long handle);

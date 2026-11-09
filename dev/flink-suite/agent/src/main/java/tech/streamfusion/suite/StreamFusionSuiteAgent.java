@@ -4,6 +4,7 @@ import static net.bytebuddy.matcher.ElementMatchers.isAnnotatedWith;
 import static net.bytebuddy.matcher.ElementMatchers.isDeclaredBy;
 import static net.bytebuddy.matcher.ElementMatchers.isBridge;
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
+import static net.bytebuddy.matcher.ElementMatchers.isPrivate;
 import static net.bytebuddy.matcher.ElementMatchers.nameEndsWith;
 import static net.bytebuddy.matcher.ElementMatchers.nameStartsWith;
 import static net.bytebuddy.matcher.ElementMatchers.named;
@@ -315,7 +316,8 @@ public final class StreamFusionSuiteAgent {
                     ? builder
                     : builder.visit(
                         Advice.to(RequireNativeExecution.class)
-                            .on(namedOneOf(NativeExecution.testMethods(type.getName())))))
+                            .on(namedOneOf(NativeExecution.testMethods(type.getName()))
+                                .and(not(isPrivate())))))
         .type(named("org.apache.flink.table.planner.plan.nodes.exec.testutils.RestoreTestBase"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->

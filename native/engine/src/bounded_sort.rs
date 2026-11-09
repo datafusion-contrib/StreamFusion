@@ -3,7 +3,7 @@ use crate::*;
 use datafusion::execution::config::SessionConfig;
 use datafusion::execution::disk_manager::{DiskManagerBuilder, DiskManagerMode};
 use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
-use datafusion::physical_plan::{sorts::sort::SortExec, ExecutionPlan};
+use datafusion::physical_plan::{limit::GlobalLimitExec, sorts::sort::SortExec, ExecutionPlan};
 
 struct BoundedSorter {
     input: BoundedInput,
@@ -25,6 +25,29 @@ impl BoundedSorter {
         flags: &[i32],
         context: Arc<TaskContext>,
     ) -> Result<Self, DataFusionError> {
+        Self::try_new_limited(schema, columns, flags, 0, None, context)
+    }
+
+    fn try_new_limited(
+        schema: SchemaRef,
+        columns: &[usize],
+        flags: &[i32],
+        mut offset: usize,
+        mut end: Option<usize>,
+        context: Arc<TaskContext>,
+    ) -> Result<Self, DataFusionError> {
+        if end.is_some_and(|end| end < offset) {
+            return Err(DataFusionError::Execution(
+                "invalid bounded sort limit".into(),
+            ));
+        }
+        // A zero-row limit must still consume its input, preserving upstream evaluation/failures.
+        if end == Some(offset) {
+            offset = offset
+                .checked_add(1)
+                .ok_or_else(|| DataFusionError::Execution("bounded sort limit overflow".into()))?;
+            end = Some(offset);
+        }
         // Flink source nullability is a logical hint; actual NULL slots can still arrive.
         let schema = Arc::new(Schema::new_with_metadata(
             schema
@@ -68,15 +91,20 @@ impl BoundedSorter {
             });
         }
         let input = BoundedInput::new(schema);
-        let plan = Arc::new(SortExec::new(
-            LexOrdering::new(ordering).unwrap(),
-            input.execution_plan()?,
-        ));
+        let plan = Arc::new(
+            SortExec::new(LexOrdering::new(ordering).unwrap(), input.execution_plan()?)
+                .with_fetch(end),
+        );
+        let output: Arc<dyn ExecutionPlan> = if offset == 0 {
+            plan.clone()
+        } else {
+            Arc::new(GlobalLimitExec::new(plan.clone(), offset, None))
+        };
         let pool = context.runtime_env().memory_pool.clone();
         let output_rows = context.session_config().batch_size();
         let input_memory = MemoryConsumer::new("BoundedArrowInput").register(&pool);
         let output_memory = MemoryConsumer::new("BoundedArrowOutput").register(&pool);
-        let execution = BoundedExecution::try_new(plan.clone(), vec![input.clone()], context)?;
+        let execution = BoundedExecution::try_new(output, vec![input.clone()], context)?;
         Ok(Self {
             input,
             execution,
@@ -295,46 +323,125 @@ pub extern "system" fn Java_tech_streamfusion_Native_createBoundedSorter<'local>
     spill_reservation: jlong,
     task_name: JString<'local>,
 ) -> jlong {
-    jni_guard(env, move |mut env| {
-        let schema = import_schema(schema_address);
-        let columns = read_columns(&env, &columns);
-        let flags = read_i32_array(&env, &flags);
-        let directories = read_string_array(&mut env, &directories);
-        let task_name: String = env
-            .get_string(&task_name)
-            .expect("bounded task name")
-            .into();
-        let result = (|| {
-            if directories.is_empty() || batch_rows <= 0 || spill_reservation <= 0 {
-                return Err(DataFusionError::Execution("bounded sort needs host spill directories and positive batch/reservation sizes".into()));
-            }
-            let pool = owned_task_memory_pool(&task_name)?;
-            let runtime_env = RuntimeEnvBuilder::new()
-                .with_memory_pool(pool)
-                .with_disk_manager_builder(DiskManagerBuilder::default().with_mode(
-                    DiskManagerMode::Directories(directories.into_iter().map(Into::into).collect()),
-                ))
-                .build_arc()?;
-            let context = Arc::new(
-                TaskContext::default()
-                    .with_runtime(runtime_env)
-                    .with_session_config(
-                        SessionConfig::new()
-                            .with_batch_size(batch_rows as usize)
-                            .with_sort_spill_reservation_bytes(spill_reservation as usize),
-                    ),
-            );
-            let _runtime = runtime().enter();
-            BoundedSorter::try_new(schema, &columns, &flags, context)
-        })();
-        match result {
-            Ok(sorter) => into_handle(sorter),
-            Err(error) => {
-                throw_error(&mut env, error);
-                0
-            }
-        }
+    jni_guard(env, move |env| {
+        create_sorter(
+            env,
+            schema_address,
+            columns,
+            flags,
+            directories,
+            batch_rows,
+            spill_reservation,
+            task_name,
+            0,
+            -1,
+        )
     })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_supportsBoundedSorterLimits<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jboolean {
+    jni_guard(env, move |_env| 1)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_createBoundedLimitedSorter<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    schema_address: jlong,
+    columns: JIntArray<'local>,
+    flags: JIntArray<'local>,
+    directories: JObjectArray<'local>,
+    batch_rows: jint,
+    spill_reservation: jlong,
+    task_name: JString<'local>,
+    offset: jlong,
+    end: jlong,
+) -> jlong {
+    jni_guard(env, move |env| {
+        create_sorter(
+            env,
+            schema_address,
+            columns,
+            flags,
+            directories,
+            batch_rows,
+            spill_reservation,
+            task_name,
+            offset,
+            end,
+        )
+    })
+}
+
+fn create_sorter<'local>(
+    env: &mut JNIEnv<'local>,
+    schema_address: jlong,
+    columns: JIntArray<'local>,
+    flags: JIntArray<'local>,
+    directories: JObjectArray<'local>,
+    batch_rows: jint,
+    spill_reservation: jlong,
+    task_name: JString<'local>,
+    offset: jlong,
+    end: jlong,
+) -> jlong {
+    let schema = import_schema(schema_address);
+    let columns = read_columns(env, &columns);
+    let flags = read_i32_array(env, &flags);
+    let directories = read_string_array(env, &directories);
+    let task_name: String = env
+        .get_string(&task_name)
+        .expect("bounded task name")
+        .into();
+    let result = (|| {
+        if directories.is_empty() || batch_rows <= 0 || spill_reservation <= 0 {
+            return Err(DataFusionError::Execution(
+                "bounded sort needs host spill directories and positive batch/reservation sizes"
+                    .into(),
+            ));
+        }
+        let pool = owned_task_memory_pool(&task_name)?;
+        let runtime_env = RuntimeEnvBuilder::new()
+            .with_memory_pool(pool)
+            .with_disk_manager_builder(DiskManagerBuilder::default().with_mode(
+                DiskManagerMode::Directories(directories.into_iter().map(Into::into).collect()),
+            ))
+            .build_arc()?;
+        let context = Arc::new(
+            TaskContext::default()
+                .with_runtime(runtime_env)
+                .with_session_config(
+                    SessionConfig::new()
+                        .with_batch_size(batch_rows as usize)
+                        .with_sort_spill_reservation_bytes(spill_reservation as usize),
+                ),
+        );
+        let _runtime = runtime().enter();
+        if offset < 0 || end < -1 || end >= 0 && end < offset {
+            return Err(DataFusionError::Execution(
+                "invalid bounded sort limit".into(),
+            ));
+        }
+        BoundedSorter::try_new_limited(
+            schema,
+            &columns,
+            &flags,
+            offset as usize,
+            (end >= 0).then_some(end as usize),
+            context,
+        )
+    })();
+    match result {
+        Ok(sorter) => into_handle(sorter),
+        Err(error) => {
+            throw_error(env, error);
+            0
+        }
+    }
 }
 
 #[no_mangle]
@@ -476,8 +583,10 @@ pub extern "system" fn Java_tech_streamfusion_Native_consumeBoundedSorterTimed<'
                                     "bounded sort benchmark requires an Int64 first column".into(),
                                 )
                             })?;
-                        for key in keys.iter().flatten() {
-                            checksum = checksum.wrapping_add(key);
+                        for key in keys.iter() {
+                            checksum = checksum
+                                .wrapping_mul(31)
+                                .wrapping_add(key.unwrap_or(i64::MIN));
                         }
                         rows += batch.num_rows() as i64;
                         std::hint::black_box(&batch);
@@ -518,6 +627,83 @@ mod tests {
     use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
     use datafusion::physical_plan::streaming::{PartitionStream, StreamingTableExec};
     use datafusion::physical_plan::SendableRecordBatchStream;
+
+    #[test]
+    fn bounded_topk_consumes_all_batches_before_applying_offset_and_fetch() {
+        runtime().block_on(async {
+            let expected = [None, None, Some(1_i64), Some(2), Some(4), Some(4)];
+            for (offset, end) in [(0, 1), (2, 5), (5, 12), (9, 12), (0, 0), (2, 2)] {
+                let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(8 * 1024 * 1024));
+                let context = Arc::new(
+                    TaskContext::default()
+                        .with_runtime(
+                            RuntimeEnvBuilder::new()
+                                .with_memory_pool(pool.clone())
+                                .build_arc()
+                                .unwrap(),
+                        )
+                        .with_session_config(SessionConfig::new().with_batch_size(2)),
+                );
+                let schema = Arc::new(Schema::new(vec![Field::new("key", DataType::Int64, true)]));
+                let mut sorter = BoundedSorter::try_new_limited(
+                    schema.clone(),
+                    &[0],
+                    &[2],
+                    offset,
+                    Some(end),
+                    context,
+                )
+                .unwrap();
+                for values in [
+                    vec![Some(4_i64), None],
+                    vec![Some(2), Some(4)],
+                    vec![None, Some(1)],
+                ] {
+                    sorter
+                        .push(
+                            RecordBatch::try_new(
+                                schema.clone(),
+                                vec![Arc::new(Int64Array::from(values))],
+                            )
+                            .unwrap(),
+                        )
+                        .unwrap();
+                    assert!(matches!(
+                        sorter.next_event().await.unwrap(),
+                        Some(ExecutionEvent::InputNeeded(_))
+                    ));
+                }
+                sorter.finish().unwrap();
+                let mut actual = Vec::new();
+                loop {
+                    match sorter.next_event().await.unwrap() {
+                        Some(ExecutionEvent::Output(batch)) => {
+                            assert!(batch.num_rows() <= 2);
+                            actual.extend(
+                                batch
+                                    .column(0)
+                                    .as_any()
+                                    .downcast_ref::<Int64Array>()
+                                    .unwrap()
+                                    .iter(),
+                            );
+                            drop(batch);
+                            sorter.output_memory.free();
+                        }
+                        Some(ExecutionEvent::Finished) => break,
+                        None => {}
+                        _ => panic!("input demand after EOF"),
+                    }
+                }
+                assert_eq!(
+                    actual,
+                    expected[offset.min(expected.len())..end.min(expected.len())]
+                );
+                drop(sorter);
+                assert_eq!(pool.reserved(), 0);
+            }
+        });
+    }
 
     #[test]
     fn compact_output_owns_only_the_selected_rows() {

@@ -170,7 +170,9 @@
       ],
       "stockMedianNanos": 34168875,
       "nativeMedianNanos": 2919750,
-      "medianRatioStockOverNative": 11.70267146159774
+      "medianRatioStockOverNative": 11.70267146159774,
+      "validComparison": false,
+      "invalidReason": "Different NULL ordering between engines"
     },
     {
       "rows": 65536,
@@ -201,7 +203,9 @@
       ],
       "stockMedianNanos": 9655709,
       "nativeMedianNanos": 1348625,
-      "medianRatioStockOverNative": 7.15966929279822
+      "medianRatioStockOverNative": 7.15966929279822,
+      "validComparison": false,
+      "invalidReason": "Different NULL ordering between engines"
     }
   ],
   "sourceFingerprints": {
@@ -229,5 +233,11 @@
     },
     "upstreamSql": "No new sort admission or upstream sort witness is claimed; existing unchanged upstream Calc evidence is retained separately in batch-sql-validation-20261109.json"
   },
-  "nativeDsoFingerprintScope": "Final yielding implementation used in the valid equal-budget cohorts; discarded cohorts may predate the yielding change."
+  "nativeDsoFingerprintScope": "Final yielding implementation used in the valid equal-budget cohorts; discarded cohorts may predate the yielding change.",
+  "status": "discarded: stock NULLS LAST versus native NULLS FIRST in the original prepared-sort harness",
+  "invalidReason": "Flink SortSpec.addField third argument is nullIsLast, not nullsFirst. These timed comparisons used different NULL orderings. They are excluded from acceleration claims. Full SQL job cohorts are unaffected.",
+  "actualNullOrdering": {
+    "stock": "ASC NULLS LAST",
+    "native": "ASC NULLS FIRST"
+  }
 }

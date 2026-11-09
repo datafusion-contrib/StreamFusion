@@ -152,3 +152,11 @@ org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTim
 org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrdering	*	NativeBatchSortOperator
 org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testGlobalSorting	*	NativeBatchSortOperator
 org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrderingOnMultiColumn	*	!batch sort: only signed integer keys are verified
+
+# Cheap standalone sorted limits retain stock after the complete-job performance gate.
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByWithOffsetAndFetch	*	!batch sort limit: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimit	*	!batch sort limit: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLessThanOffset	*	!batch sort limit: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByRepeatedFields	*	!batch sort limit: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimitBehindField	*	!batch sort: only signed integer keys are verified
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderBehindField	*	!batch sort: only signed integer keys are verified

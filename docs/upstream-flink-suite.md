@@ -28,6 +28,15 @@ successful processing; merely constructing a native plan is insufficient.
 [Sort validation evidence](benchmarks/results/batch-sort-sql-20261109.json) retains
 per-job success, batch graph types and positive native work from the focused runs.
 
+The released `SortLimitITCase` runs unchanged on both lines. Four signed-integer
+methods require the standalone sorted-limit performance fallback; two STRING-key
+methods require the signed-integer-key fallback. Candidate runs before the cost
+gate passed all assertions with positive bounded-sort work; those witnesses are
+labelled candidate-only, not current admission. Local composed SHA2/sorted-limit
+controls exercise the admitted native path. Private helper overloads of test method
+names are excluded from execution-contract advice, so the outer JUnit invocation
+owns one scope. No helper SQL or assertion is changed.
+
 The earlier batch-host-only measurements later in this page describe their original
 revision; current batch admission is defined by the batch operator page and contracts.
 

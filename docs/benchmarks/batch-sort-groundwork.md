@@ -52,7 +52,7 @@ format: copied Flink `BinaryRowData` and Arrow `RecordBatch` buffers imported in
 Rust before timing. All columns are nullable BIGINT; every seventeenth row is NULL,
 the other values use a fixed random seed and the stated cardinality. Both engines
 sort the first key ascending with NULLs first and consume the same row count/key
-checksum. The full row width is retained by their production sort operators.
+order-sensitive hash, including NULL positions. The full row width is retained by their production sort operators.
 
 Stock uses its generated normalized-key comparator and `SortOperator`, with setup
 outside the Java timer. Native timing starts and ends inside Rust, after import/setup
@@ -61,31 +61,74 @@ input/output ownership copies, memory callbacks, I/O yielding and streamed resul
 consumption. Initial JNI/import/export and perimeter transposes are excluded from
 this small-functionality timer; the complete-job results above retain them.
 
-Both operators receive 32 MiB pools. Each cohort uses three warmups, seven retained
+The native authority and stock full-sort managed-memory pool are 32 MiB. Stock
+TopK uses its normal JVM heap rather than that managed pool; both use the same
+8 GiB Java heap, while native TopK remains subject to the 32 MiB native authority. Each cohort uses three warmups, seven retained
 trials, alternating engine order, and 1,024-row native output batches. These are
 one-partition operation measurements, not SQL job throughput.
 
-Current copy-inclusive results, in median milliseconds [range]:
+The earlier prepared-operation cohorts are **invalid comparisons**: the Flink
+sort-spec flag was interpreted as NULLS FIRST, but it means NULLS LAST. Stock and
+native therefore sorted NULLs differently. The former 8.77×/7.18× and prototype
+ratios are withdrawn; their raw trials remain explicitly marked discarded in
+[operation evidence](results/batch-sort-operation-20261109.json) and
+[groundwork evidence](results/batch-sort-groundwork-20261109.json). Four still earlier
+cohorts also had unequal memory budgets. None establishes an acceleration claim.
+The complete SQL jobs above use identical SQL and no NULL keys and are unaffected.
 
-| Rows | BIGINT columns | Key cardinality | Stock operation | Native operation | Stock/native |
+The corrected harness now passes the inverse `nullsFirst` flag to Flink and
+validates an order-sensitive key hash, including NULL positions, against a sorted
+reference. Corrected full-sort and TopK measurements are recorded separately.
+
+Corrected full-sort results, median milliseconds [range], with matching ASC NULLS FIRST:
+
+| Rows | BIGINT columns | Cardinality | Stock | Native | Stock/native |
 |---:|---:|---:|---:|---:|---:|
-| 131,072 | 4 | 131,072 | 29.70 [28.89–38.16] | 3.39 [3.28–3.55] | 8.77× |
-| 65,536 | 8 | 127 | 14.93 [12.26–16.00] | 2.08 [2.04–2.35] | 7.18× |
+| 131,072 | 4 | 131,072 | 25.00 [23.09–41.97] | 3.50 [3.31–3.64] | 7.14× |
+| 65,536 | 8 | 127 | 11.06 [9.99–13.57] | 2.05 [1.97–2.13] | 5.39× |
 
-[Current operation evidence](results/batch-sort-operation-20261109.json) retains all
-trials and the copy-inclusive pre-metrics control. These gains include the copies
-required to transfer retained ownership safely.
+[Corrected evidence](results/batch-sort-corrected-operation-20261109.json) retains the
+trial arrays and library fingerprint. These are the current valid prepared full-sort
+comparisons; no before/after speedup is inferred from discarded cohorts.
 
-The earlier prototype, before the compact ownership copies, measured 34.17/2.92 ms
-(stock/native) for 131,072 rows × four BIGINTs, and 9.66/1.35 ms for 65,536 rows × eight
-BIGINTs with cardinality 127. Those historical cohorts are retained in
-[groundwork evidence](results/batch-sort-groundwork-20261109.json). Their source
-fingerprints differ from the current implementation; do not interpret cross-cohort
-changes as a measured optimization.
+## Sorted LIMIT/FETCH
 
-Four still earlier exploratory cohorts used Flink's test-harness default of 3 MiB
-against native's 32 MiB. They are invalid comparisons, excluded from all conclusions,
-and explicitly marked discarded in that evidence.
+The driver also runs DataFusion TopK and applies the offset after sorting. It
+preserves Flink's local/global stages and blocking Arrow shuffle. Prepared tests
+use matching ASC NULLS LAST and validate an order-sensitive key hash. Stock uses
+its normal heap-based sort-limit operator; native retains its 32 MiB authority.
+Times are median milliseconds with the observed range in brackets.
+
+| Prepared rows × BIGINT columns | Cardinality | Offset / fetch | Stock median ms | Native median ms | Stock/native |
+|---:|---:|---:|---:|---:|---:|
+| 131,072 × 4 | 131,072 | 0 / 64 | 2.20 [2.17–2.25] | 0.89 [0.86–0.90] | 2.48× |
+| 65,536 × 8 | 127 | 1,023 / 16,384 | 12.08 [11.01–14.00] | 6.83 [6.67–6.94] | 1.77× |
+
+The complete jobs use the two-key BIGINT query above, followed by OFFSET/FETCH.
+The SHA2 composition additionally filters with
+`WHERE SHA2(CAST(id AS STRING), 256) <> ''` before sorting, retaining evaluation
+of the predicate in both engines. Two warmups/five alternating trials and the
+same complete-job boundaries/resources apply.
+
+| Rows | Offset / fetch | SHA2 filter | Stock median ms | Native median ms | Stock/native |
+|---:|---:|:---:|---:|---:|---:|
+| 1,000,000 | 0 / 64 | no | 104.92 [103.55–138.82] | 107.29 [102.57–116.63] | 0.98× |
+| 2,000,000 | 1,023 / 16,384 | no | 166.43 [150.26–211.48] | 220.58 [193.03–244.98] | 0.75× |
+| 1,000,000 | 0 / 64 | yes | 245.23 [225.10–257.72] | 149.05 [139.04–151.71] | 1.65× |
+| 2,000,000 | 1,023 / 16,384 | yes | 463.09 [449.46–524.65] | 293.84 [285.84–297.01] | 1.58× |
+
+**Standalone sorted limits remain stock.** Their prepared single-key operations
+are faster, but the complete two-key jobs did not establish a gain. The larger
+candidate was slower, and a 4,096-row batching diagnostic still lost (175/204 ms
+stock/native). A sorted limit therefore does not qualify an island by itself;
+it can compose with the existing SHA2, unrestricted-sort or accepted UDF rules.
+This preserves the scalar admission design without a performance opt-in.
+
+[Sorted-limit evidence](results/batch-sorted-limit-20261109.json) retains every
+trial, ranges, the rejected candidates and the batching diagnostic. Previous
+StreamFusion behavior was stock fallback for all these sorted-limit queries,
+including the now-admitted compositions. These local results do not establish
+remote-network throughput or performance for other types, key counts or limits.
 
 ## Environment and reproduction
 
@@ -111,3 +154,10 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
 The low-cardinality complete job uses 2,000,000 rows/cardinality 64. The wide
 operation cohort uses 65,536 rows/width 8/cardinality 127. These harnesses preserve
 the production boundaries described above and do not change Nexmark.
+
+For the admitted small-limit composition, add
+`-Dsf.batch.sort.job.fetch=64 -Dsf.batch.sort.job.sha2=true` to the complete-job
+command. The large composition uses rows 2,000,000, cardinality 64, offset 1,023
+and fetch 16,384. Prepared TopK uses `sf.batch.sort.offset`/`sf.batch.sort.fetch`;
+its NULL order defaults to last and is independently configurable with
+`sf.batch.sort.nullsFirst`. The full-sort default remains NULLS FIRST.

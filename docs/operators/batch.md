@@ -21,7 +21,7 @@ STRING results, and legacy variable-width BINARY projections remain outside batc
 admission. Their streaming producer/consumer rules are not inferred for new batch
 boundaries.
 
-Each source-to-sink path must also contain an admitted sort, a natively encoded `SHA2`
+Each source-to-sink path must also contain an admitted unrestricted sort, a natively encoded `SHA2`
 call or a verified user-defined scalar function. Sort and SHA-256 complete-job comparisons demonstrate
 a gain with both row/Arrow conversions included. User functions retain the
 repository's accepted performance exception and their existing type/lifecycle rules.
@@ -34,7 +34,14 @@ of ascending/descending direction and NULLS FIRST/LAST. Scalar payload columns u
 the existing Arrow boundary types. Admission probes the actual native Calc output
 schema below a sort: view/dictionary or other representations that cannot be
 copied into independently owned buffers keep the whole query on stock Flink.
-Other key types, LIMIT/OFFSET and range sorting remain outside this admission.
+The same keys support finite sorted LIMIT and OFFSET/FETCH through Flink's existing local
+and global sort-limit stages. Each local stage retains `offset + fetch` candidates;
+the final stage applies the original offset after its singleton Arrow exchange.
+A sorted limit alone does not qualify a source-to-sink path: the measured cheap
+standalone jobs did not beat stock after their row/Arrow boundaries. They keep
+stock with `batch sort limit: standalone pipeline has no verified speedup`.
+Sorted limits can compose with another qualifying operation, such as SHA2 or an
+accepted user function. Other key types and range sorting remain outside admission.
 For example, a STRING key reports `batch sort: only signed integer keys are verified`.
 
 Cheap standalone scalar pipelines retain stock Flink with the reason:
@@ -81,7 +88,8 @@ constraints. Native Parquet/ORC codecs do not imply a native filesystem batch sc
 ## Remaining gaps
 
 - GROUP BY/DISTINCT, hash/sort aggregation and intermediate accumulator schemas.
-- ORDER BY with keys other than signed integers, sorted LIMIT/OFFSET, range sorting,
+- ORDER BY with keys other than signed integers, standalone sorted limits without a
+  qualifying operation, OFFSET without finite FETCH, unsorted LIMIT/OFFSET, range sorting,
   OVER/rank and other batch sort operators.
 - Batch joins, their input-consumption order, distribution and external-memory strategy.
 - Expand/UNNEST/correlate, nested boundary types and set-operation plans outside UNION ALL.
@@ -129,3 +137,11 @@ completed blocking shuffle. The recovery control observes sort/exit attempts 0 a
 The [sort measurements](../benchmarks/batch-sort-groundwork.md) retain separate
 operation and conversion-inclusive complete-job results, with raw trials and
 [validation witnesses](../benchmarks/results/batch-sort-sql-20261109.json).
+
+Sorted-limit candidate runs passed all six unchanged released upstream methods on
+both lines before the performance gate. Current contracts require stock fallback
+for the four cheap signed-key fixtures and key-type fallback for the two STRING
+fixtures. The admitted SHA2 compositions have separate positive native SQL
+controls, including offsets crossing output batches and a packaged-loader test.
+[Sorted-limit witnesses](../benchmarks/results/batch-sorted-limit-validation-20261109.json)
+distinguish those candidate native observations from the final admission results.

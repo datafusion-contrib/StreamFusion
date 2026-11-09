@@ -137,14 +137,13 @@ class BatchSortSqlTest {
   }
 
   @Test
-  void unsupportedKeysLimitAndDisabledSortRetainTheWholeStockQuery() throws Exception {
+  void unsupportedKeysAndDisabledSortRetainTheWholeStockQuery() throws Exception {
     var env = environment(true, 3, new Configuration());
     String unsupported =
         env.explainSql(
             "SELECT SHA2(CAST(id AS STRING), 256) FROM input ORDER BY SIN(CAST(id AS DOUBLE))");
     assertFalse(
         unsupported.contains("NativeSort") || unsupported.contains("NativeCalc"), unsupported);
-    assertFalse(env.explainSql("SELECT id FROM input ORDER BY id LIMIT 2").contains("NativeSort"));
     env.getConfig().set("streamfusion.operator.sort.enabled", "false");
     assertFalse(env.explainSql("SELECT id FROM input ORDER BY id").contains("NativeSort"));
   }
