@@ -1744,6 +1744,6 @@
         "fixture_timings": []
       }
     ],
-    "coverage": "The 8MiB collected output exceeds released Flink's 4MiB buffer; the test drains all64rows on bothengines, asserts parity and positive native records consumed. Encoding tests retain nested bytes/nulls/counts/changelog kinds and reject corrupt input."
+    "coverage": "The 8MiB collected output exceeds released Flink's 4MiB buffer; the test drains all 64 rows on both engines, asserts parity and positive native records consumed. Encoding tests retain nested bytes/nulls/counts/changelog kinds and reject corrupt input."
   }
 }

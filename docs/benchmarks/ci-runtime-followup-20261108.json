@@ -2411,7 +2411,19 @@
       "default_enabled": true,
       "scope": "Two execution-test fixture builders, independent deserialization, bounded128entries32MiB each"
     },
-    "protobuf_staleness": "Only later lifecycle calls within the same immutable CI job; initial compilation and local defaults regenerate normally."
+    "protobuf_staleness": "Only later lifecycle calls within the same immutable CI job; initial compilation and local defaults regenerate normally.",
+    "recursive_collection": {
+      "default_enabled": true,
+      "scope": "Two measured small bounded recursive test classes; event-driven completion wait limited to 100ms, then normal live draining."
+    },
+    "recovery_transport": {
+      "compressed_accumulator_rows": true,
+      "scope": "Test result transport only; checkpointed rows, comparisons and native assertions retained."
+    },
+    "fluss_catalog_close": {
+      "parallel": true,
+      "scope": "The two independent test catalogs close concurrently; both finishes and errors are awaited before the next case."
+    }
   },
   "initial_full_source_qualification": {
     "run": 42524074274,
@@ -2827,5 +2839,6 @@
       },
       "limits": "Complete canonical/savepoint matrix only, including cold setup. Overall source qualification failed in runtime and sibling runtime jobs were cancelled. Observational cross-run comparison includes runner/cache variability and excludes queue delay. No complete-workflow speedup is established."
     }
-  }
+  },
+  "combined_source_qualification": "Pending complete CI on the combined candidate; final source-qualified matrix evidence is recorded in ci-profile-20261108.json."
 }
