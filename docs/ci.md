@@ -973,8 +973,15 @@ option. `hotspot_mode=fluss-close` compares two alternating pairs of the existin
 catalog closures versus closing the two independent catalogs concurrently on this same runner.
 Both closures complete before the test continues; their errors remain failures and the
 temporary executor is shut down. Each case retains fresh environments, catalogs and all
-existing assertions. `sf.fluss.parallelCatalogClose` defaults to false during investigation.
+existing assertions. `sf.fluss.parallelCatalogClose=false` retains serial closure for comparisons.
 The comparison disables JFR and phase timers and separately records Docker image preparation.
+The [complete closure comparison](benchmarks/ci-deeper-profile-20261108.json) passed all
+116 invocations without skips and retained identical individual outcomes. Median elapsed,
+including the Maven reactor, fell from 324.26 to 267.13 seconds (17.6%). Child CPU changed
+from 48.33 to 48.86 seconds (+1.09%), excluding the external broker containers. Docker
+image preparation took 18 seconds separately; each trial retained fresh containers, JVMs,
+environments and catalogs. These measurements select parallel catalog closure by default
+for the qualification candidate; the complete required matrix must still pass.
 
 `hotspot_mode=recovery-diagnostics` repeats the complete 54-case binary collection class
 on Flink 1.18/JDK 17 with alternating 2/4 GiB heaps, retaining its 28 existing skips.

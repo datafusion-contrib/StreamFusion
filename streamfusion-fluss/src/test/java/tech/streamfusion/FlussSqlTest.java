@@ -92,7 +92,7 @@ class FlussSqlTest {
           environments.values().stream()
               .<AutoCloseable>map(tables -> tables.getCatalog("fluss").orElseThrow()::close)
               .collect(ListCollectors.toList());
-      if (Boolean.getBoolean("sf.fluss.parallelCatalogClose")) {
+      if (Boolean.parseBoolean(System.getProperty("sf.fluss.parallelCatalogClose", "true"))) {
         var executor = Executors.newFixedThreadPool(2);
         try {
           var pending =

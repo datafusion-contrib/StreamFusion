@@ -55,7 +55,7 @@ def profile(output, line, suite, compare_completion=False, compare_transport=Fal
         for index, (heap, candidate) in enumerate(configurations):
             completion = not compare_completion or candidate
             compressed = not compare_transport or candidate
-            parallel_close = compare_close and candidate
+            parallel_close = not compare_close or candidate
             suffix = f"details-{line}-{suite}-{index}"
             recorded = output / "jfr" / str(index)
             recorded.mkdir(parents=True)

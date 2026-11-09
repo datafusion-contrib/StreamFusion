@@ -1546,5 +1546,156 @@
       }
     },
     "limits": "7,268 invocations passed without skips. This establishes improvement for the measured recursive workload, not full runtime CI under four simultaneously busy forks. CPU increases 3.76%; complete required CI must qualify the combined change and both Flink/JDK lines."
+  },
+  "fluss_catalog_close": {
+    "run": 42534186998,
+    "source_sha": "5657b6fd8c68ec7c95f766c020d697e036a71b97",
+    "jdk": 17,
+    "flink": "2.2",
+    "method": "Two alternating pairs with fresh test JVMs and containers on the same runner, C1 and four configured 2GiB forks fixed. Only one class is selected, so one test JVM runs in each trial. No JFR or phase timers. The complete current Maven reactor is included in each elapsed measurement. Individual case identity/outcomes are identical across all four trials.",
+    "docker_image_preparation_seconds": 18,
+    "trials": [
+      {
+        "suite": "fluss",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": false,
+        "parallel_catalog_close": false,
+        "elapsed_seconds": 322.342463349,
+        "cpu_seconds": 48.582564,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 29,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlussSqlTest": {
+            "tests": 29,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 296.115
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      },
+      {
+        "suite": "fluss",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": false,
+        "parallel_catalog_close": true,
+        "elapsed_seconds": 268.68904716099996,
+        "cpu_seconds": 50.020113,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 29,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlussSqlTest": {
+            "tests": 29,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 239.793
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      },
+      {
+        "suite": "fluss",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": false,
+        "parallel_catalog_close": true,
+        "elapsed_seconds": 265.56394068399993,
+        "cpu_seconds": 47.69288199999999,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 29,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlussSqlTest": {
+            "tests": 29,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 238.322
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      },
+      {
+        "suite": "fluss",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": false,
+        "parallel_catalog_close": false,
+        "elapsed_seconds": 326.183378922,
+        "cpu_seconds": 48.07889900000001,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 29,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlussSqlTest": {
+            "tests": 29,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 298.671
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      }
+    ],
+    "medians": {
+      "elapsed_seconds": {
+        "serial_median": 324.2629211355,
+        "parallel_median": 267.12649392249995,
+        "reduction_percent": 17.620401066184314
+      },
+      "cpu_seconds": {
+        "serial_median": 48.3307315,
+        "parallel_median": 48.856497499999996,
+        "reduction_percent": -1.0878502842440887
+      }
+    },
+    "limits": "116 invocations passed without skips. Child CPU excludes external broker containers. Image preparation is separate and full CI includes cold setup. This is a selected-workload comparison, not whole-CI performance or a product of separate savings. Full source qualification remains required."
   }
 }
