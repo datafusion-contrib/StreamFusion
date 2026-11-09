@@ -1932,3 +1932,16 @@ These are upstream backend-format controls. Native execution and actual stock/na
 are established separately by StreamFusion's shared operator and isolated complete-job tests.
 The `bin/canonical-savepoints.sh` SQL/native evidence workflow retains its separately qualified
 2.2 restore programs; this profile does not claim that absent framework exists on 1.18.
+
+## Rank streaming and shared transfer audit
+
+The rank/list streaming cohort reuses the unchanged released append, update and retract rank
+programs, plus interval/temporal/window joins and window rank/dedup restore programs. Stock and
+native each pass 32 invocations with no skips. The native audit confirms 29 native routes, two
+expected stock window-join fallbacks and one interval elision. Thin contract import entry points
+retain the owned row list for instrumentation while the shared sender owns batching and C Data;
+retracting metadata headers and validation passes cannot count as imported rows. All four temporal
+programs now require canonical import and later input in the actual native temporal owner; new
+negative controls reject validation-only and input-only evidence. All 202 canonical execution-audit
+controls pass. These are released fixture
+proofs, not exhaustive operator/layout or cross-release upgrade qualification.

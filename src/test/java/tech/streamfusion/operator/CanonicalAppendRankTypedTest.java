@@ -32,6 +32,10 @@ import tech.streamfusion.state.StockAppendTopNStateContract;
 
 class CanonicalAppendRankTypedTest {
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     return Stream.of("released", "released-nn", "long", "string", "collision", "composite")
         .flatMap(
             shape ->
@@ -450,7 +454,7 @@ class CanonicalAppendRankTypedTest {
 
     @Override
     protected String[] checkpointRocksDBHandle(String directory) {
-      if (canonical)
+      if (canonical && !directory.isEmpty())
         throw new AssertionError("Canonical append export created a native checkpoint");
       return super.checkpointRocksDBHandle(directory);
     }

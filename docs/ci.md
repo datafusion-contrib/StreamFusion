@@ -643,7 +643,8 @@ For local canonical iteration, `-Dstreamfusion.test.canonicalSmoke=true` selects
 representatives from the largest positive operator matrices, including typed grouped-state
 lifecycles, numeric/string/temporal extrema, temporal-sort precision, interval typed-key and
 processing-clock matrices, window-deduplication, shared-pane offsets/DISTINCT, processing-clock
-windows, and unbounded event-time OVER state/planner matrices. Every individual parameter value and
+windows, typed append/update/retract rank matrices, and unbounded event-time OVER state/planner
+matrices. Every individual parameter value and
 every pair of values present in the original provider remains represented. The interval
 operator selections reduce 171 event-time invocations to 63 and 208 processing-time invocations
 to 69 locally; default/CI retain the original providers and every invocation. Existing release

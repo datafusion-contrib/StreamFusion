@@ -447,15 +447,7 @@ public final class StockSlicingWindowStateContract implements StockStateContract
                       .toArray(new org.apache.flink.table.types.logical.LogicalType[0])));
       var batch =
           new StockRowBatch(
-              bridgeType,
-              (a, schema) -> {
-                if (shared)
-                  Native.importSlicingWindowCanonical(
-                      handle, keyType.getFieldCount(), false, a, schema);
-                else
-                  Native.importTumblingAggregatorCanonical(
-                      handle, keyType.getFieldCount(), a, schema);
-              });
+              bridgeType, (rows, array, schema) -> importBatch(rows, handle, array, schema));
       try (var entries = backend.<Long>getKeysAndNamespaces(STATE)) {
         var iterator = entries.iterator();
         while (iterator.hasNext()) {
@@ -530,5 +522,11 @@ public final class StockSlicingWindowStateContract implements StockStateContract
     for (int i = 0; i < getters.length; i++)
       getters[i] = RowData.createFieldGetter(type.getTypeAt(i), i);
     return getters;
+  }
+
+  private void importBatch(List<RowData> rows, long handle, long array, long schema) {
+    if (shared)
+      Native.importSlicingWindowCanonical(handle, keyType.getFieldCount(), false, array, schema);
+    else Native.importTumblingAggregatorCanonical(handle, keyType.getFieldCount(), array, schema);
   }
 }

@@ -72,6 +72,18 @@ final class StockMapListSnapshot {
       TypeSerializer<V> rows,
       BucketReceiver<N, K> receiver)
       throws Exception {
+    visitRaw(backend, name, keys, namespace, mapKeys, new ListSerializer<>(rows), receiver);
+  }
+
+  static <N, K, V> void visitRaw(
+      CheckpointableKeyedStateBackend<RowData> backend,
+      String name,
+      TypeSerializer<RowData> keys,
+      TypeSerializer<N> namespace,
+      TypeSerializer<K> mapKeys,
+      TypeSerializer<V> values,
+      BucketReceiver<N, K> receiver)
+      throws Exception {
     int prefix = FlinkStateBackendCompat.keyGroupPrefixBytes(backend);
     var resources = backend.savepoint().getSnapshotResources();
     try (AutoCloseable release = resources::release) {
@@ -79,7 +91,7 @@ final class StockMapListSnapshot {
         throw new IllegalArgumentException("Canonical map owner serializer changed");
       var metadata = resources.getMetaInfoSnapshots();
       int selected = -1;
-      var expected = new MapSerializer<>(mapKeys, new ListSerializer<>(rows));
+      TypeSerializer<?> expected = mapKeys == null ? values : new MapSerializer<>(mapKeys, values);
       for (int i = 0; i < metadata.size(); i++) {
         var state = metadata.get(i);
         if (!state.getName().equals(name)) continue;
@@ -90,12 +102,12 @@ final class StockMapListSnapshot {
             state.getTypeSerializerSnapshot(
                 StateMetaInfoSnapshot.CommonSerializerKeys.VALUE_SERIALIZER);
         if (state.getBackendStateType() != StateMetaInfoSnapshot.BackendStateType.KEY_VALUE
-            || !"MAP"
+            || !(mapKeys == null ? "VALUE" : "MAP")
                 .equals(state.getOption(StateMetaInfoSnapshot.CommonOptionsKeys.KEYED_STATE_TYPE))
             || namespaceSnapshot == null
-            || !namespace.equals(namespaceSnapshot.restoreSerializer())
+            || !sameSerializer(namespace, namespaceSnapshot.restoreSerializer())
             || valueSnapshot == null
-            || !expected.equals(valueSnapshot.restoreSerializer()))
+            || !sameSerializer(expected, valueSnapshot.restoreSerializer()))
           throw new IllegalArgumentException("Canonical map/list serializer changed: " + name);
         selected = i;
       }
@@ -108,7 +120,7 @@ final class StockMapListSnapshot {
             int group = CompositeKeySerializationUtils.readKeyGroup(prefix, input);
             var owner = CompositeKeySerializationUtils.readKey(keys, input, ambiguous);
             N ns = CompositeKeySerializationUtils.readNamespace(namespace, input, ambiguous);
-            K mapKey = mapKeys.deserialize(input);
+            K mapKey = mapKeys == null ? null : mapKeys.deserialize(input);
             if (group != entries.keyGroup()
                 || !backend.getKeyGroupRange().contains(group)
                 || input.available() != 0)
@@ -118,6 +130,15 @@ final class StockMapListSnapshot {
           entries.next();
         }
       }
+    }
+  }
+
+  private static boolean sameSerializer(TypeSerializer<?> expected, TypeSerializer<?> actual) {
+    try {
+      return expected.getClass() == actual.getClass() && expected.equals(actual);
+    } catch (ClassCastException mismatch) {
+      // Released composite serializers may cast nested serializers before checking their types.
+      return false;
     }
   }
 

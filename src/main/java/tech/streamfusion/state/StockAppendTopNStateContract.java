@@ -34,12 +34,10 @@ import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.MapListRepresentation;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Released append Top-N lists, fast Top-1 rows, and independent first-observed rank bounds. */
 public final class StockAppendTopNStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
-  private static final int CHUNK_ROWS = 1024;
   private final TypeSerializer<RowData> keys;
   private final RowType keyType;
   private final RowDataKeySelector keySelector;
@@ -142,7 +140,12 @@ public final class StockAppendTopNStateContract implements StockStateContract {
     var serializer = new RowDataSerializer(rowType);
     var sortProjection = new StockKeyProjection(sortType);
     int arity = rowType.getFieldCount();
-    try (ArrowSchema rowSchema = ArrowSchema.allocateNew(NativeAllocator.SHARED);
+    try (var staged =
+            top1
+                ? null
+                : new StockMapListSpool<RowData, RowData>(
+                    keys, new RowDataSerializer(sortType), serializer);
+        ArrowSchema rowSchema = ArrowSchema.allocateNew(NativeAllocator.SHARED);
         AutoCloseable release =
             () -> {
               if (rowSchema.snapshot().release != 0) rowSchema.release();
@@ -191,17 +194,20 @@ public final class StockAppendTopNStateContract implements StockStateContract {
                                 rowType.getTypeAt(sortColumns[column]), sortColumns[column])
                             .getFieldOrNull(payload));
                   RowData sortKey = sortProjection.project(sort);
-                  Object old = lists.get(sortKey);
-                  var rows = new ArrayList<RowData>();
-                  if (old != null) rows.addAll(values(old));
-                  rows.add(payload);
-                  lists.put(sortKey, ttl ? new TtlValue<>(rows, written) : rows);
+                  staged.append(key, sortKey, payload, written);
                 }
               }
             } catch (Exception failure) {
               throw new IllegalStateException("Cannot project append Top-N state", failure);
             }
           });
+      if (staged != null)
+        staged.visitWithMetadata(
+            backend,
+            (owner, sort, retained, written) -> {
+              backend.setCurrentKey(owner);
+              lists.put(sort, ttl ? new TtlValue<>(retained, written) : retained);
+            });
     }
   }
 
@@ -212,15 +218,6 @@ public final class StockAppendTopNStateContract implements StockStateContract {
           column,
           RowData.createFieldGetter(bridgeType.getTypeAt(column), column).getFieldOrNull(row));
     return copy;
-  }
-
-  @SuppressWarnings("unchecked")
-  private List<RowData> values(Object stored) {
-    return (List<RowData>) (ttl ? ((TtlValue<?>) stored).getUserValue() : stored);
-  }
-
-  private long written(Object stored) {
-    return ttl ? ((TtlValue<?>) stored).getLastAccessTimestamp() : 0;
   }
 
   @Override
@@ -286,97 +283,107 @@ public final class StockAppendTopNStateContract implements StockStateContract {
       boolean validateOnly)
       throws Exception {
     var winner = top1 ? winner(backend) : null;
-    var lists = top1 ? null : lists(backend);
-    var serializer = new RowDataSerializer(rowType);
-    var keySerializer = keys.duplicate();
-    var sortSerializer = new RowDataSerializer(sortType);
-    var seen = new java.util.HashSet<RowData>();
-    List<RowData> rows = new ArrayList<>(CHUNK_ROWS);
-    try (var stream = backend.getKeys(dataName(), VoidNamespace.INSTANCE)) {
-      var iterator = stream.iterator();
-      while (iterator.hasNext()) {
-        RowData key = keySerializer.copy(iterator.next());
-        validateKey(key, keyType);
-        if (!seen.add(key)) throw new IllegalStateException("Duplicate append Top-N partition key");
-        backend.setCurrentKey(key);
-        byte[] encoded = bytes(new RowDataSerializer(keyType).toBinaryRow(key));
-        if (top1) {
-          var value = winner.value();
-          if (value == null || value.getUserValue() == null)
-            throw new IllegalStateException("Append Top-1 has an empty winner");
-          RowData payload = serializer.copy(value.getUserValue());
-          validatePayload(key, null, payload);
-          rows.add(
-              transfer(
-                  payload,
-                  encoded,
-                  0,
-                  value.getLastAccessTimestamp(),
-                  payload.getRowKind().toByteValue()));
-          if (rows.size() == CHUNK_ROWS) {
-            importBatch(handle, persistent, rows, validateOnly);
-            rows.clear();
+    var rows = new RowDataSerializer(rowType);
+    var binaryKeys = new RowDataSerializer(keyType);
+    var sortKeys = new RowDataSerializer(sortType);
+    var batch =
+        new StockRowBatch(
+            bridgeType,
+            true,
+            (transferred, array, schema) ->
+                importBatch(handle, persistent, transferred, validateOnly, array, schema));
+    var ownerType =
+        new RowDataSerializer(RowType.of(keyType, new VarBinaryType(VarBinaryType.MAX_LENGTH)));
+    try (var inventory = new StockStateSpool(ownerType)) {
+      if (top1) {
+        try (var stream = backend.getKeys(dataName(), VoidNamespace.INSTANCE)) {
+          var iterator = stream.iterator();
+          while (iterator.hasNext()) {
+            var key = keys.copy(iterator.next());
+            validateKey(key, keyType);
+            if (!inventory.add(1, GenericRowData.of(key, new byte[0]), 0))
+              throw new IllegalStateException("Duplicate append Top-N partition key");
+            backend.setCurrentKey(key);
+            var value = winner.value();
+            if (value == null || value.getUserValue() == null)
+              throw new IllegalStateException("Append Top-1 has an empty winner");
+            var payload = value.getUserValue();
+            validatePayload(key, null, payload);
+            batch.append(
+                transfer(
+                    payload,
+                    bytes(binaryKeys.toBinaryRow(key)),
+                    0,
+                    value.getLastAccessTimestamp(),
+                    payload.getRowKind().toByteValue()));
           }
-        } else {
-          var seenSorts = new java.util.HashSet<RowData>();
-          for (var entry : lists.entries()) {
-            RowData sort = sortSerializer.copy(entry.getKey());
-            validateKey(sort, sortType);
-            if (!seenSorts.add(sort))
-              throw new IllegalStateException("Duplicate append Top-N sort key");
-            if (entry.getValue() == null
-                || values(entry.getValue()) == null
-                || values(entry.getValue()).isEmpty())
-              throw new IllegalStateException("Append Top-N has an empty retained list");
-            for (var value : values(entry.getValue())) {
-              if (value == null)
-                throw new IllegalStateException("Append Top-N has a NULL retained row");
-              RowData payload = serializer.copy(value);
-              validatePayload(key, sort, payload);
-              rows.add(
-                  transfer(
-                      payload,
-                      encoded,
-                      0,
-                      written(entry.getValue()),
-                      payload.getRowKind().toByteValue()));
-              if (rows.size() == CHUNK_ROWS) {
-                importBatch(handle, persistent, rows, validateOnly);
-                rows.clear();
+        }
+      } else {
+        TypeSerializer<?> listType = new ListSerializer<>(rows);
+        if (ttl) listType = new TtlSerializer<>(LongSerializer.INSTANCE, listType);
+        StockMapListSnapshot.visitRaw(
+            backend,
+            dataName(),
+            keys,
+            VoidNamespaceSerializer.INSTANCE,
+            sortKeys,
+            listType,
+            (key, namespace, sort, encoded) -> {
+              validateKey(key, keyType);
+              validateKey(sort, sortType);
+              if (!inventory.add(2, GenericRowData.of(key, bytes(sortKeys.toBinaryRow(sort))), 0))
+                throw new IllegalStateException("Duplicate append Top-N sort key");
+              var values = StockRankValues.list(encoded, ttl, rows);
+              if (values.size == 0)
+                throw new IllegalStateException("Append Top-N has an empty retained list");
+              byte[] owner = bytes(binaryKeys.toBinaryRow(key));
+              for (var payload : values) {
+                if (payload == null)
+                  throw new IllegalStateException("Append Top-N has a NULL retained row");
+                validatePayload(key, sort, payload);
+                batch.append(
+                    transfer(
+                        payload, owner, 0, values.written, payload.getRowKind().toByteValue()));
               }
-            }
+              inventory.add(3, GenericRowData.of(key, new byte[0]), 0);
+            });
+        try (var stream = backend.getKeys(dataName(), VoidNamespace.INSTANCE)) {
+          var iterator = stream.iterator();
+          while (iterator.hasNext()) {
+            var key = keys.copy(iterator.next());
+            validateKey(key, keyType);
+            if (!inventory.add(1, GenericRowData.of(key, new byte[0]), 0))
+              throw new IllegalStateException("Duplicate append Top-N partition key");
+            if (!inventory.contains(3, GenericRowData.of(key, new byte[0]), 0))
+              throw new IllegalStateException("Append Top-N has an empty retained list");
           }
         }
       }
-    }
-    if (variableBound) {
-      var bound = bound(backend);
-      seen.clear();
-      try (var stream = backend.getKeys("rankEnd", VoidNamespace.INSTANCE)) {
-        var iterator = stream.iterator();
-        while (iterator.hasNext()) {
-          RowData key = keySerializer.copy(iterator.next());
-          validateKey(key, keyType);
-          if (!seen.add(key)) throw new IllegalStateException("Duplicate append Top-N bound key");
-          backend.setCurrentKey(key);
-          var value = bound.value();
-          if (value == null || value.getUserValue() == null)
-            throw new IllegalStateException("Append Top-N has an empty rank bound");
-          rows.add(
-              transfer(
-                  new GenericRowData(rowType.getFieldCount()),
-                  bytes(new RowDataSerializer(keyType).toBinaryRow(key)),
-                  value.getUserValue(),
-                  value.getLastAccessTimestamp(),
-                  (byte) -1));
-          if (rows.size() == CHUNK_ROWS) {
-            importBatch(handle, persistent, rows, validateOnly);
-            rows.clear();
+      if (variableBound) {
+        var bound = bound(backend);
+        try (var stream = backend.getKeys("rankEnd", VoidNamespace.INSTANCE)) {
+          var iterator = stream.iterator();
+          while (iterator.hasNext()) {
+            var key = keys.copy(iterator.next());
+            validateKey(key, keyType);
+            if (!inventory.add(4, GenericRowData.of(key, new byte[0]), 0))
+              throw new IllegalStateException("Duplicate append Top-N bound key");
+            backend.setCurrentKey(key);
+            var value = bound.value();
+            if (value == null || value.getUserValue() == null)
+              throw new IllegalStateException("Append Top-N has an empty rank bound");
+            batch.append(
+                transfer(
+                    new GenericRowData(rowType.getFieldCount()),
+                    bytes(binaryKeys.toBinaryRow(key)),
+                    value.getUserValue(),
+                    value.getLastAccessTimestamp(),
+                    (byte) -1));
           }
         }
       }
+      batch.flush();
     }
-    if (!rows.isEmpty()) importBatch(handle, persistent, rows, validateOnly);
   }
 
   private static byte[] bytes(BinaryRowData row) {
@@ -398,23 +405,13 @@ public final class StockAppendTopNStateContract implements StockStateContract {
   }
 
   private void importBatch(
-      long handle, boolean persistent, List<RowData> rows, boolean validateOnly) {
-    try (VectorSchemaRoot root =
-            RowDataArrowConverter.write(rows, bridgeType, NativeAllocator.SHARED);
-        ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED);
-        ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      Data.exportVectorSchemaRoot(
-          NativeAllocator.SHARED,
-          MapListRepresentation.forExport(root),
-          NativeAllocator.DICTIONARIES,
-          array,
-          schema);
-      if (validateOnly)
-        Native.validateAppendTopNCanonical(
-            handle, persistent, array.memoryAddress(), schema.memoryAddress());
-      else
-        Native.importAppendTopNCanonical(
-            handle, persistent, array.memoryAddress(), schema.memoryAddress());
-    }
+      long handle,
+      boolean persistent,
+      List<RowData> rows,
+      boolean validateOnly,
+      long array,
+      long schema) {
+    if (validateOnly) Native.validateAppendTopNCanonical(handle, persistent, array, schema);
+    else Native.importAppendTopNCanonical(handle, persistent, array, schema);
   }
 }

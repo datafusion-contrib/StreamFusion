@@ -441,8 +441,7 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
       final int input = side;
       var batch =
           new StockRowBatch(
-              transfers[side],
-              (a, s) -> Native.importIntervalJoinCanonicalRows(handle, input == 0, a, s));
+              transfers[side], (rows, a, s) -> send(handle, input, rows, false, a, s));
       StockMapListSnapshot.visit(
           backend,
           cacheName(side),
@@ -465,9 +464,7 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
           });
       batch.flush();
       var timers =
-          new StockRowBatch(
-              TIMER_TRANSFER,
-              (a, s) -> Native.importIntervalJoinCanonicalTimers(handle, input == 0, a, s));
+          new StockRowBatch(TIMER_TRANSFER, (rows, a, s) -> send(handle, input, rows, true, a, s));
       var deadline = timer(backend, side);
       var serializer = new RowDataSerializer(keyType);
       try (var stream = backend.getKeys(timerName(side), VoidNamespace.INSTANCE)) {
@@ -484,5 +481,11 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
       timers.flush();
     }
     clear(backend);
+  }
+
+  private void send(
+      long handle, int side, List<RowData> rows, boolean timers, long array, long schema) {
+    if (timers) Native.importIntervalJoinCanonicalTimers(handle, side == 0, array, schema);
+    else Native.importIntervalJoinCanonicalRows(handle, side == 0, array, schema);
   }
 }

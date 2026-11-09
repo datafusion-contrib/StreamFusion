@@ -414,8 +414,7 @@ public final class StockWindowRankStateContract implements StockStateContract {
         }
       }
     }
-    var batch =
-        new StockRowBatch(rowType, (a, s) -> Native.importWindowRankerCanonical(handle, a, s));
+    var batch = new StockRowBatch(rowType, (rows, a, s) -> importBatch(rows, handle, a, s));
     if (deduplicate) {
       try (var entries = backend.<Long>getKeysAndNamespaces(stateName())) {
         var iterator = entries.iterator();
@@ -440,5 +439,9 @@ public final class StockWindowRankStateContract implements StockStateContract {
     }
     batch.flush();
     clear(backend);
+  }
+
+  private void importBatch(List<RowData> rows, long handle, long array, long schema) {
+    Native.importWindowRankerCanonical(handle, array, schema);
   }
 }

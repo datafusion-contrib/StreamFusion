@@ -499,6 +499,13 @@ winners/bounds fail without consuming source state. Failed validation leaves an 
 retry. Receiver errors retain the original Java exception and release moved Arrow buffers; native
 state remains exportable. Closing a failed memory-limited target releases its prior reservation.
 
+Append export stages each retained sort list once in the shared disk spool, carrying its last
+original write timestamp into the released TTL serializer. Restore reads raw canonical map/list
+values and decodes one row at a time, preserving TTL envelopes and stored row kinds. Duplicate
+partition/sort/bound inventories stay on disk. A shared sender bounds transfers by 1,024 rows
+and a four-MiB payload estimate, allowing an oversized entry. An encoded KV remains the
+working-memory floor; native checkpoint bytes and admission are unchanged.
+
 Stock-bound rank keeps per-record changes under table mini-batching, with pending transposes and
 coalescers flushed before the barrier. Append constructors and native restore honor the requested
 update-before policy: fast Top-1 emits UPDATE_BEFORE when requested, then UPDATE_AFTER, even with
@@ -556,7 +563,10 @@ The direct adapter writes `data-state-with-update` MAP: actual unique row key â†
 `Tuple2<RowData, Integer>`. The integer preserves ordering within equal sort values. Fast Top-1
 uses `Top1-Rank-State` VALUE. Export visits live memory or raw RocksDB partitions through at most
 1,024-row Arrow transfers, without an intermediate native snapshot. Hidden overflow rows and
-retained row kinds survive.
+retained row kinds survive. Restore stages typed unique rows and inner positions in the shared
+disk spool, validating duplicate keys and consecutive tie order without whole-job key sets or
+per-partition Java sort trees. The shared sender retains owned buffers and a four-MiB payload
+estimate as well as the row limit, including the existing nested map/list C Data representation.
 
 Import requires an empty native target and validates all source state before applying any transfer.
 Foreign descriptors, key/payload disagreements, duplicate unique keys or tied positions, invalid
@@ -625,7 +635,13 @@ Import checks the full descriptor inventory, an empty target, declared non-null 
 and sort selectors, retained values and all metadata before copying state. Source owner keys are
 the union of all three descriptors, streamed repeatedly from the shared temporary disk inventory.
 The index closes and deletes on failure without adding descriptors to stock source state.
-Per-owner sort maps and individual retained lists remain conversion working sets.
+Export stages each retained list once, including present empty headers and independent TTL
+stamps. Native counters already arrive in sort order; a read-only disk-backed sorted-map view
+validates strict comparator order while the released serializer streams entries once. Heap
+component receivers retain ordinary owned collections. Restore validates raw list/counter
+snapshot bytes and decodes individual entries, retaining original timestamps, signed counts,
+nullable-value rejection and row kinds. Duplicate inventories stay on disk, with bounded row/byte
+transfers. The largest encoded KV remains a working-memory floor.
 A full validation pass precedes insertion; native frames also
 check existing earlier chunks. Successful import consumes the projected source. A denied target
 must be closed; source state remains available for a fresh target. Receiver failure preserves the

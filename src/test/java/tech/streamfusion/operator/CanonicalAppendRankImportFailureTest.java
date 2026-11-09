@@ -3,8 +3,6 @@ package tech.streamfusion.operator;
 import static org.junit.jupiter.api.Assertions.*;
 import static tech.streamfusion.operator.CanonicalAppendRankTtlInteropTest.*;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Proxy;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -62,7 +60,8 @@ class CanonicalAppendRankImportFailureTest {
       var state = lists(backend, !kind.equals("wrong-ttl"), payloadType);
       var rowSerializer = new RowDataSerializer(payloadType);
       var keySerializer = new RowDataSerializer(KEY);
-      for (int key = 0; key < 1025; key++) {
+      int prefix = 2051;
+      for (int key = 0; key < prefix; key++) {
         RowData row = GenericRowData.of((long) key, 10L, 3L);
         backend.setCurrentKey(keySerializer.copy(selector().getKey(row)));
         state.put(
@@ -71,12 +70,28 @@ class CanonicalAppendRankImportFailureTest {
                 ? List.of(rowSerializer.copy(row))
                 : new TtlValue<>(List.of(rowSerializer.copy(row)), 1000));
       }
+      int maximum = backend.getKeyGroupRange().getEndKeyGroup() + 1;
+      assertEquals(0, backend.getKeyGroupRange().getStartKeyGroup());
+      long lastOwner = 5000;
+      RowData badKey;
+      do {
+        badKey = keySerializer.copy(selector().getKey(GenericRowData.of(lastOwner++, 0L, 0L)));
+      } while (org.apache.flink.runtime.state.KeyGroupRangeAssignment.assignToKeyGroup(
+              badKey, maximum)
+          != maximum - 1);
+      lastOwner--;
+      int earlier = 0;
+      for (long key = 0; key < prefix; key++)
+        if (org.apache.flink.runtime.state.KeyGroupRangeAssignment.assignToKeyGroup(
+                keySerializer.copy(selector().getKey(GenericRowData.of(key, 0L, 0L))), maximum)
+            < maximum - 1) earlier++;
+      assertTrue(
+          earlier > 1024, "Corrupt canonical tail must follow a complete valid transfer chunk");
       RowData bad =
           GenericRowData.of(
-              kind.equals("partition") ? 2001L : 2000L,
+              kind.equals("partition") ? lastOwner + 1 : lastOwner,
               20L,
               kind.equals("null-primitive") ? null : 3L);
-      RowData badKey = keySerializer.copy(selector().getKey(GenericRowData.of(2000L, 0L, 0L)));
       backend.setCurrentKey(badKey);
       RowData sort =
           keySerializer.copy(
@@ -97,7 +112,7 @@ class CanonicalAppendRankImportFailureTest {
                 VoidNamespaceSerializer.INSTANCE,
                 new ValueStateDescriptor<>("foreign", LongSerializer.INSTANCE))
             .update(1L);
-      var ordered = orderedKeys(backend, badKey);
+      var ordered = backend;
       var contract =
           new StockAppendTopNStateContract(
               new RowDataSerializer(KEY),
@@ -120,13 +135,13 @@ class CanonicalAppendRankImportFailureTest {
                       ? "empty retained list"
                       : kind.equals("foreign-state")
                           ? "descriptor is not owned"
-                          : kind.equals("null-primitive") ? "NULL non-null" : "TtlValue";
+                          : kind.equals("null-primitive") ? "NULL non-null" : "serializer changed";
       assertTrue(failure.toString().contains(expected), failure.toString());
       assertEquals(0, nativeRows(handle, rocks));
       backend.setCurrentKey(badKey);
       assertNotNull(state.get(sort));
       try (var retainedKeys = backend.getKeys("data-state-with-append", VoidNamespace.INSTANCE)) {
-        assertEquals(1026, retainedKeys.count());
+        assertEquals(prefix + 1, retainedKeys.count());
       }
       // A fresh retry must report the same corruption, rather than consume or clear the source.
       var retry = assertThrows(Exception.class, () -> contract.importState(ordered, handle, rocks));
@@ -156,35 +171,6 @@ class CanonicalAppendRankImportFailureTest {
         VoidNamespaceSerializer.INSTANCE,
         new MapStateDescriptor<RowData, Object>(
             "data-state-with-append", new RowDataSerializer(KEY), serializer));
-  }
-
-  @SuppressWarnings("unchecked")
-  private static CheckpointableKeyedStateBackend<RowData> orderedKeys(
-      CheckpointableKeyedStateBackend<RowData> backend, RowData tail) {
-    return (CheckpointableKeyedStateBackend<RowData>)
-        Proxy.newProxyInstance(
-            CanonicalAppendRankImportFailureTest.class.getClassLoader(),
-            new Class<?>[] {CheckpointableKeyedStateBackend.class},
-            (proxy, method, args) -> {
-              if (method.getName().equals("getKeys") && args[0].equals("data-state-with-append"))
-                return Stream.concat(
-                    java.util.stream.IntStream.range(0, 1025)
-                        .mapToObj(
-                            key -> {
-                              try {
-                                return new RowDataSerializer(KEY)
-                                    .copy(selector().getKey(GenericRowData.of((long) key, 0L, 0L)));
-                              } catch (Exception failure) {
-                                throw new IllegalStateException(failure);
-                              }
-                            }),
-                    Stream.of(tail));
-              try {
-                return method.invoke(backend, args);
-              } catch (InvocationTargetException failure) {
-                throw failure.getCause();
-              }
-            });
   }
 
   private long create(boolean rocks) {

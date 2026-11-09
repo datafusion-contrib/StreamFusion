@@ -194,6 +194,34 @@ class StockMapListSpoolTest {
     assertNoScratch();
   }
 
+  @Test
+  void explicitEmptyHeadersAndLastWrittenListAgesStayIndependent() throws Exception {
+    try (var spool = spool()) {
+      var owner = GenericRowData.of(1L);
+      assertTrue(spool.start(owner, 10L, 100));
+      assertFalse(spool.start(owner, 10L, 200));
+      assertEquals(100L, spool.metadata(owner, 10L));
+      assertNull(spool.metadata(owner, 20L));
+      spool.append(owner, 20L, GenericRowData.of(1L, null), 200);
+      spool.append(owner, 20L, GenericRowData.of(2L, null), 300);
+      int[] seen = {0};
+      spool.visitWithMetadata(
+          true,
+          (key, time, values, stamp) -> {
+            if (time == 10) {
+              assertEquals(100L, stamp);
+              assertTrue(values.isEmpty());
+            } else {
+              assertEquals(300L, stamp);
+              assertEquals(2, values.size());
+            }
+            seen[0]++;
+          });
+      assertEquals(2, seen[0]);
+    }
+    assertNoScratch();
+  }
+
   private void assertNoScratch() throws Exception {
     try (var files = Files.list(directory)) {
       assertEquals(0, files.count());

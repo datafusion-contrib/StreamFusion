@@ -285,10 +285,7 @@ public final class StockWindowJoinStateContract implements StockStateContract {
     preflight(backend);
     for (int side = 0; side < 2; side++) {
       final int input = side;
-      var batch =
-          new StockRowBatch(
-              inputs[side],
-              (a, s) -> Native.importWindowJoinCanonicalRows(handle, input == 0, a, s));
+      var batch = new StockRowBatch(inputs[side], (rows, a, s) -> send(handle, input, rows, a, s));
       try (var stream = backend.<Long>getKeysAndNamespaces(name(side))) {
         var iterator = stream.iterator();
         while (iterator.hasNext()) {
@@ -303,5 +300,9 @@ public final class StockWindowJoinStateContract implements StockStateContract {
       batch.flush();
     }
     clear(backend);
+  }
+
+  private void send(long handle, int side, List<RowData> rows, long array, long schema) {
+    Native.importWindowJoinCanonicalRows(handle, side == 0, array, schema);
   }
 }

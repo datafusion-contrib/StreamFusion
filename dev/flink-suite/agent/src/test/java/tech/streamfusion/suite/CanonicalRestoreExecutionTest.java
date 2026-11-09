@@ -180,12 +180,16 @@ class CanonicalRestoreExecutionTest {
 
   @org.junit.jupiter.params.ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(
-      strings = {"none", "open", "importOnly", "calc", "interval", "fallback"})
+      strings = {"none", "open", "importOnly", "inputOnly", "calc", "interval", "fallback"})
   void missingOrUnrelatedWorkCannotQualifyTemporalRestore(String mode) {
     var scope = NativeExecution.beginRestore(TEMPORAL, new Object(), "temporal-join-table-join");
     if (mode.equals("open") || mode.equals("importOnly")) {
       NativeExecution.opened(new NativeTemporalJoinOperator());
       if (mode.equals("importOnly")) NativeExecution.restored("NativeTemporalJoinOperator", 3);
+    } else if (mode.equals("inputOnly")) {
+      var join = new NativeTemporalJoinOperator();
+      NativeExecution.opened(join);
+      NativeExecution.completed(join, 2);
     } else if (mode.equals("calc")) {
       var calc = new NativeCalcOperator();
       NativeExecution.opened(calc);
@@ -196,6 +200,19 @@ class CanonicalRestoreExecutionTest {
       NativeExecution.completed(join, 2);
     } else if (mode.equals("fallback")) NativeExecution.fallback("temporal unsupported");
     assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void temporalValidationCannotSatisfyCanonicalImportEvidence(boolean validating) {
+    var scope = NativeExecution.beginRestore(TEMPORAL, new Object(), "temporal-join-table-join");
+    var join = new NativeTemporalJoinOperator();
+    NativeExecution.opened(join);
+    StreamFusionSuiteAgent.RecordCanonicalTemporalJoinImport.exit(
+        0, java.util.List.of(1), validating);
+    NativeExecution.completed(join, 2);
+    if (validating) assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+    else assertDoesNotThrow(() -> NativeExecution.finish(scope));
   }
 
   @Test

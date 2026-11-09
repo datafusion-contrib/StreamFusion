@@ -20,7 +20,7 @@ import tech.streamfusion.compat.FlinkStateBackendCompat;
 
 /** Stages map-list rows once and lets the released stock serializer iterate each bucket once. */
 final class StockMapListSpool<K, V> implements AutoCloseable {
-  private static final int ROWS = 1, COUNTS = 2;
+  private static final int ROWS = 1, COUNTS = 2, METADATA = 3;
   private final TypeSerializer<RowData> owners;
   private final TypeSerializer<V> rows;
   private final TypeSerializer<K> mapKeys;
@@ -56,9 +56,33 @@ final class StockMapListSpool<K, V> implements AutoCloseable {
     return output.getCopyOfBuffer();
   }
 
+  private RowData bucket(RowData owner, K mapKey) throws Exception {
+    return GenericRowData.of(encode(owners, owner), encode(mapKeys, mapKey));
+  }
+
+  boolean start(RowData owner, K mapKey, long metadata) throws Exception {
+    var bucket = bucket(owner, mapKey);
+    if (spool.contains(COUNTS, bucket, 0)) return false;
+    spool.put(COUNTS, bucket, 0, ByteBuffer.allocate(4).putInt(0).array());
+    spool.put(METADATA, bucket, 0, ByteBuffer.allocate(8).putLong(metadata).array());
+    spool.addOwner(bucket);
+    return true;
+  }
+
+  Long metadata(RowData owner, K mapKey) throws Exception {
+    byte[] value = spool.get(METADATA, bucket(owner, mapKey), 0);
+    return value == null ? null : ByteBuffer.wrap(value).getLong();
+  }
+
+  boolean append(RowData owner, K mapKey, V row, long metadata) throws Exception {
+    boolean first = append(owner, mapKey, row);
+    spool.put(METADATA, bucket(owner, mapKey), 0, ByteBuffer.allocate(8).putLong(metadata).array());
+    return first;
+  }
+
   /** Returns true only for the first row of this owner/map-key bucket. */
   boolean append(RowData owner, K mapKey, V row) throws Exception {
-    var bucket = GenericRowData.of(encode(owners, owner), encode(mapKeys, mapKey));
+    var bucket = bucket(owner, mapKey);
     byte[] count = spool.get(COUNTS, bucket, 0);
     int position = count == null ? 0 : ByteBuffer.wrap(count).getInt();
     int next = Math.addExact(position, 1);
@@ -79,7 +103,23 @@ final class StockMapListSpool<K, V> implements AutoCloseable {
     visit(FlinkStateBackendCompat.serializesKeyedValues(backend), receiver);
   }
 
+  @FunctionalInterface
+  interface MetadataReceiver<K, V> {
+    void accept(RowData owner, K mapKey, List<V> rows, long metadata) throws Exception;
+  }
+
+  void visitWithMetadata(
+      CheckpointableKeyedStateBackend<RowData> backend, MetadataReceiver<K, V> receiver)
+      throws Exception {
+    visitWithMetadata(FlinkStateBackendCompat.serializesKeyedValues(backend), receiver);
+  }
+
   void visit(boolean serialized, BucketReceiver<K, V> receiver) throws Exception {
+    visitWithMetadata(
+        serialized, (owner, key, rows, metadata) -> receiver.accept(owner, key, rows));
+  }
+
+  void visitWithMetadata(boolean serialized, MetadataReceiver<K, V> receiver) throws Exception {
     try (var buckets = spool.owners()) {
       while (buckets.hasNext()) {
         var bucket = buckets.next();
@@ -87,7 +127,12 @@ final class StockMapListSpool<K, V> implements AutoCloseable {
         K mapKey = mapKeys.deserialize(new DataInputDeserializer(bucket.getBinary(1)));
         int size = ByteBuffer.wrap(spool.get(COUNTS, bucket, 0)).getInt();
         try (var values = new BucketList(bucket, size)) {
-          receiver.accept(owner, mapKey, serialized ? values : new ArrayList<>(values));
+          byte[] metadata = spool.get(METADATA, bucket, 0);
+          receiver.accept(
+              owner,
+              mapKey,
+              serialized ? values : new ArrayList<>(values),
+              metadata == null ? 0 : ByteBuffer.wrap(metadata).getLong());
         }
       }
     }

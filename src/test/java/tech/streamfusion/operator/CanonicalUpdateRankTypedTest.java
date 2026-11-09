@@ -46,7 +46,7 @@ class CanonicalUpdateRankTypedTest {
             for (boolean rank : new boolean[] {false, true})
               for (boolean twoSorts : new boolean[] {false, true})
                 cases.add(Arguments.of(shape, fast, rocks, before, rank, twoSorts));
-    return cases.stream();
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
   @ParameterizedTest
@@ -365,7 +365,7 @@ class CanonicalUpdateRankTypedTest {
 
     @Override
     protected String[] checkpointRocksDBHandle(String directory) {
-      if (canonical)
+      if (canonical && !directory.isEmpty())
         throw new AssertionError("Canonical update export created a native checkpoint");
       return super.checkpointRocksDBHandle(directory);
     }

@@ -230,6 +230,24 @@ cover 2,051-entry namespaced tuple buckets, typed/null sort keys, independent ma
 receiver failure, exact released list bytes and 1,024-row/four-MiB transfer boundaries including
 an oversized value. These component selections do not establish complete-job or full-variant
 qualification, and native checkpoint formats are unchanged.
+Append and retracting rank export now stage retained peer lists once, keeping explicit empty
+headers and the original TTL timestamp. Retracting count maps use the native comparator order
+through a lazy sorted-map view; the released serializer emits entries without a second Java
+TreeMap. Restore validates raw canonical TTL/list/counter envelopes and decodes one entry at a
+time. Updating-rank restore indexes unique keys and consecutive inner positions on disk. All
+three use the shared row/byte sender and preserve existing nested map/list C Data conventions.
+Released 2.2 restore programs pass 32 stock and 32 native invocations across ranks, joins and
+window rank/dedup, retaining 29 native routes, two expected fallbacks and one interval elision.
+Import audit hooks see the actual transferred rows after successful application; metadata-only
+retract frames and temporal validation passes cannot satisfy native import evidence.
+A final clean 1.18 cohort passes 508 checks. The selected 2.2 rank cohort qualifies 311 checks
+across the initial run and a 66-check typed rerun after correcting stale guards: an empty-directory
+native flush creates no checkpoint files and is required before pinning. The final released fixture
+run also passes 202 execution-audit controls. These selections overlap earlier cohorts and do not
+replace complete-job/full-variant qualification.
+Heap stock component backends receive normal owned collections. Native rank stores can still
+decode one complete encoded partition, so an oversized native or stock KV remains a memory
+floor; this does not establish fixed memory below that entry size or expand operator admission.
 For bounded OVER, unbounded event-time OVER and temporal sort, restore stages those opaque map
 values on disk and decodes one row at a time with the released row serializer. The shared reader
 checks the captured map/list and namespace serializers and parses composite keys through Flink's
