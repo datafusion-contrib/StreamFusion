@@ -282,3 +282,57 @@ fn typed_null_companion_entries_keep_signed_counts_and_duplicate_guards() {
         );
     }
 }
+
+#[test]
+fn wide_companion_entries_bound_bytes_and_cancel_inside_one_owner() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut store = owner(&directory, 0);
+    let key = keys().remove(0);
+    store.insert(
+        key.clone(),
+        Header {
+            value: 3,
+            written: 0,
+        },
+    );
+    let rows = (0..3)
+        .map(|index| {
+            (
+                key.clone(),
+                ScalarValue::Utf8(Some(format!("{}{}", "x".repeat(2 * 1024 * 1024), index))),
+                1,
+            )
+        })
+        .collect::<Vec<_>>();
+    store.import_canonical_multiset_batch(0, &rows).unwrap();
+    let mut sizes = Vec::new();
+    store
+        .for_each_canonical_multiset_batch(0, 1024, |rows| {
+            sizes.push(rows.len());
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(sizes, [2, 1]);
+    assert!(store
+        .for_each_canonical_multiset_batch(0, 1024, |_| Err(invalid("receiver failed")))
+        .is_err());
+    let mut count = 0;
+    store
+        .for_each_canonical_multiset_batch(0, 1024, |rows| {
+            count += rows.len();
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(count, 3);
+    let context = crate::state::canonical_context::CanonicalContext::new(Default::default());
+    let mut calls = 0;
+    let result = context.with(|| {
+        store.for_each_canonical_multiset_batch(0, 1, |_| {
+            calls += 1;
+            context.cancel();
+            Ok(())
+        })
+    });
+    assert!(result.is_err());
+    assert_eq!(calls, 1);
+}

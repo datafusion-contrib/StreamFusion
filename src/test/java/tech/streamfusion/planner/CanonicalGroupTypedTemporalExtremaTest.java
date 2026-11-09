@@ -17,6 +17,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalGroupTypedTemporalExtremaTest {
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     boolean smoke = Boolean.getBoolean("sf.canonical.group.temporal.smoke");
     return Stream.of("DATE", "TIME(0)", "TIME(3)", "BOOLEAN")
         .flatMap(

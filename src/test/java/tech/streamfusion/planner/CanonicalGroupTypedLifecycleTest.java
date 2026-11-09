@@ -16,6 +16,10 @@ import org.junit.jupiter.params.provider.*;
 
 class CanonicalGroupTypedLifecycleTest {
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE")
         .flatMap(
             type ->
@@ -72,6 +76,10 @@ class CanonicalGroupTypedLifecycleTest {
   }
 
   static Stream<Arguments> recoveryCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allRecoveryCases());
+  }
+
+  private static Stream<Arguments> allRecoveryCases() {
     return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE")
         .flatMap(
             type ->

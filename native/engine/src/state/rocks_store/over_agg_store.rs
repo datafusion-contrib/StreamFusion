@@ -916,6 +916,9 @@ impl RocksOverAggStore {
     }
 
     fn canonicalize_floating_distinct(&mut self) -> Result<(), DataFusionError> {
+        if self.db.is_frozen() {
+            return Ok(());
+        }
         let canonical = self
             .distinct_element_types
             .iter()
@@ -1026,16 +1029,19 @@ impl RocksOverAggStore {
         }
         let prefix = self.distinct_prefix(slot, key_group, key);
         let mut elements: Vec<Box<[u8]>> = Vec::with_capacity(chunk_rows);
+        let mut bytes = 0usize;
         for row in self
             .db
             .iterator(IteratorMode::From(&prefix, Direction::Forward))
         {
+            super::database::check_cancelled()?;
             let (db_key, _) = row.map_err(re)?;
             if !db_key.starts_with(&prefix) {
                 break;
             }
+            bytes = bytes.saturating_add(db_key.len() - prefix.len());
             elements.push(db_key[prefix.len()..].into());
-            if elements.len() == chunk_rows {
+            if elements.len() == chunk_rows || bytes >= 4 * 1024 * 1024 {
                 let refs = elements
                     .iter()
                     .map(|value| value.as_ref())
@@ -1047,6 +1053,7 @@ impl RocksOverAggStore {
                         .collect(),
                 )?;
                 elements.clear();
+                bytes = 0;
             }
         }
         if !elements.is_empty() {
@@ -1084,8 +1091,7 @@ impl RocksOverAggStore {
         types.push(self.distinct_element_types[slot].clone());
         let converter = RowConverter::new(types.into_iter().map(SortField::new).collect())?;
         let key_converter = key_row_converter_from_types(key_types);
-        let mut encoded: Vec<Box<[u8]>> = Vec::with_capacity(chunk_rows);
-        let decode = |encoded: &mut Vec<Box<[u8]>>| {
+        let decode = |encoded: &[&[u8]]| {
             let parser = converter.parser();
             let columns = converter.convert_rows(encoded.iter().map(|row| parser.parse(row)))?;
             let key_columns = columns[..key_types.len()].to_vec();
@@ -1099,23 +1105,19 @@ impl RocksOverAggStore {
                     ))
                 })
                 .collect::<Result<Vec<_>, DataFusionError>>()?;
-            encoded.clear();
             Ok::<_, DataFusionError>(result)
         };
-        for row in self.db.iterator(IteratorMode::Start) {
-            let (key, _) = row.map_err(re)?;
-            if key.len() <= KEY_PREFIX_LEN || key[4] != DISTINCT_TABLE_BASE + slot as u8 {
-                continue;
-            }
-            encoded.push(key[KEY_PREFIX_LEN..].into());
-            if encoded.len() == chunk_rows {
-                accept(decode(&mut encoded)?)?;
-            }
-        }
-        if !encoded.is_empty() {
-            accept(decode(&mut encoded)?)?;
-        }
-        Ok(())
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| key.len() > KEY_PREFIX_LEN && key[4] == DISTINCT_TABLE_BASE + slot as u8,
+            |rows| {
+                let encoded = rows
+                    .iter()
+                    .map(|(key, _)| &key[KEY_PREFIX_LEN..])
+                    .collect::<Vec<_>>();
+                accept(decode(&encoded)?)
+            },
+        )
     }
 
     /// Stages the range covering everything under `prefix` for deletion — a cleared key's frames

@@ -22,32 +22,32 @@ impl<C: RocksStateCodec> RocksStore<C> {
         }
         self.checkpoint("")?;
         let prefix = self.key_prefix_len();
-        let mut batch = Vec::with_capacity(chunk_rows);
-        for entry in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = entry.map_err(re)?;
-            if key.len() < prefix
-                || key.as_ref() == SNAPSHOT_TIMER_KEY
-                || self.table.is_some_and(|table| key[4] != table)
-                || i32::from_be_bytes(key[..4].try_into().unwrap()) < 0
-            {
-                continue;
-            }
-            if let Some(value) = self
-                .decode_values_with_visibility(&[value.as_ref()], false)?
-                .pop()
-                .flatten()
-            {
-                batch.push((ByteKey::from(&key[prefix..]), value));
-            }
-            if batch.len() == chunk_rows {
-                consume(&batch)?;
-                batch.clear();
-            }
-        }
-        if !batch.is_empty() {
-            consume(&batch)?;
-        }
-        Ok(())
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| {
+                key.len() >= prefix
+                    && !self.table.is_some_and(|table| key[4] != table)
+                    && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0
+            },
+            |entries| {
+                let values = entries
+                    .iter()
+                    .map(|(_, value)| value.as_ref())
+                    .collect::<Vec<_>>();
+                let decoded = self.decode_values_with_visibility(&values, false)?;
+                let rows = entries
+                    .into_iter()
+                    .zip(decoded)
+                    .filter_map(|((key, _), value)| {
+                        value.map(|value| (ByteKey::from(&key[prefix..]), value))
+                    })
+                    .collect::<Vec<_>>();
+                if !rows.is_empty() {
+                    consume(&rows)?;
+                }
+                Ok(())
+            },
+        )
     }
 
     /// Streams one companion table by its main-row keys, retaining bounded decoded frames.
@@ -67,7 +67,9 @@ impl<C: RocksStateCodec> RocksStore<C> {
         let table = &self.multisets[position];
         let main_prefix = self.key_prefix_len();
         let mut batch = Vec::with_capacity(chunk_rows);
+        let mut bytes = 0usize;
         for entry in self.db.iterator(IteratorMode::Start) {
+            database::check_cancelled()?;
             let (key, value) = entry.map_err(re)?;
             if key.len() < main_prefix
                 || self.table.is_some_and(|table| key[4] != table)
@@ -89,6 +91,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
                 .db
                 .iterator(IteratorMode::From(&prefix, Direction::Forward))
             {
+                database::check_cancelled()?;
                 let (key, value) = entry.map_err(re)?;
                 if !key.starts_with(&prefix) {
                     break;
@@ -100,10 +103,15 @@ impl<C: RocksStateCodec> RocksStore<C> {
                         .map_err(|_| invalid("malformed companion count"))?,
                 );
                 let element = table.decode_element(&key[prefix.len()..])?;
+                bytes = bytes
+                    .saturating_add(owner.0.len())
+                    .saturating_add(key.len())
+                    .saturating_add(value.len());
                 batch.push((owner.clone(), element, count));
-                if batch.len() == chunk_rows {
+                if batch.len() == chunk_rows || bytes >= 4 * 1024 * 1024 {
                     consume(&batch)?;
                     batch.clear();
+                    bytes = 0;
                 }
             }
         }

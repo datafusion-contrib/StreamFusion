@@ -104,7 +104,11 @@ collecting every key.
 The direct cursors bound decoded working memory by the current frame/entry and owned key groups.
 Fixed-window groups and timer ledgers, session state, OVER fold/pending/cleanup tables, temporal
 sort, buffered deduplication and temporal/interval/window joins share the pinned batch visitor,
-with both row and byte limits before decoding and cancellation checks while scanning. Window-rank
+with both row and byte limits before decoding and cancellation checks while scanning. Typed
+header scans use that same reader; DISTINCT/extrema companion visits also bound bytes and check
+cancellation within each owner, retaining original TTL ages and signed counts. OVER DISTINCT
+membership visitors use the same byte limits, with cancellation inside a partition; their existing
+component-transfer coverage is unchanged. Window-rank
 list values also enforce row/byte bounds and cancellation within a stored bucket. Fixed-window export no
 longer collects every persisted group or timer. OVER readers fetch cleanup stamps, processing-ROWS
 counters and RANGE timers directly from their captured tables; they do not hydrate metadata maps
@@ -144,6 +148,11 @@ bucket and verify bounded decoded batches and receiver retry.
 Temporal-join cold-reader controls cover 2,052 metadata/deadline keys, live updates, receiver
 failure/retry and cancellation with empty reader caches. The change passes 1,452 native tests, the
 memory-only build and 26 selected temporal interchange checks on each release.
+The companion-bound cohort passes 1,454 native tests, the memory-only build, 105 selected grouped
+checks on 2.2 and 102 on 1.18 (excluding unavailable CHAR extrema), and 19 OVER membership bridge
+checks on each line. Released scalar/DISTINCT group-restore programs additionally pass two stock
+and two native invocations; their audit confirms positive native import/continued input without
+fallback. These controls preserve existing layout coverage rather than expanding admission.
 Conversion cost, barrier duration and temporary I/O have not been benchmarked.
 
 Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending

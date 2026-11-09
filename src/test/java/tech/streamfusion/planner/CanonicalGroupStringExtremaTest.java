@@ -18,6 +18,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalGroupStringExtremaTest {
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     boolean smoke = Boolean.getBoolean("sf.canonical.group.string.smoke");
     return Stream.of("STRING", "VARCHAR(4096)", "CHAR(4)")
         .filter(

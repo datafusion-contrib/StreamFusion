@@ -179,3 +179,71 @@ fn membership_visitors_decode_composite_variable_keys_without_accumulator_rows()
         assert_eq!(actual, expected);
     }
 }
+
+#[test]
+fn wide_membership_visitors_bound_bytes_retry_and_cancel_within_one_partition() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut store = RocksOverAggStore::create(
+        config(directory.path()),
+        &[],
+        &[],
+        &[DataType::Utf8],
+        schema(),
+        0..=7,
+    )
+    .unwrap();
+    let converter = RowConverter::new(vec![SortField::new(DataType::Int64)]).unwrap();
+    let keys = converter
+        .convert_columns(&[Arc::new(Int64Array::from(vec![7]))])
+        .unwrap();
+    let key = keys.row(0).data();
+    let prefix = store.distinct_prefix(0, 1, key);
+    let values: ArrayRef = Arc::new(arrow::array::StringArray::from(
+        (0..3)
+            .map(|i| format!("{}{}", "x".repeat(2 * 1024 * 1024), i))
+            .collect::<Vec<_>>(),
+    ));
+    let entries = store
+        .encode_distinct_elements(0, &values)
+        .unwrap()
+        .into_iter()
+        .map(|element| {
+            let mut key = prefix.clone();
+            key.extend(element);
+            key
+        })
+        .collect::<Vec<_>>();
+    store.write_distinct(&entries).unwrap();
+    let mut sizes = Vec::new();
+    store
+        .visit_distinct(0, 1, key, 1024, |rows| {
+            sizes.push(rows.len());
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(sizes, [2, 1]);
+    assert!(store
+        .visit_all_distinct(0, &[DataType::Int64], 1024, |_| Err(
+            DataFusionError::Execution("receiver failed".into())
+        ))
+        .is_err());
+    let mut sizes = Vec::new();
+    store
+        .visit_all_distinct(0, &[DataType::Int64], 1024, |rows| {
+            sizes.push(rows.len());
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(sizes, [2, 1]);
+    let context = crate::state::canonical_context::CanonicalContext::new(Default::default());
+    let mut calls = 0;
+    let result = context.with(|| {
+        store.visit_distinct(0, 1, key, 1, |_| {
+            calls += 1;
+            context.cancel();
+            Ok(())
+        })
+    });
+    assert!(result.is_err());
+    assert_eq!(calls, 1);
+}

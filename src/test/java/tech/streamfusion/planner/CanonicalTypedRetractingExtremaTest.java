@@ -20,6 +20,10 @@ class CanonicalTypedRetractingExtremaTest {
   }
 
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     boolean smoke = Boolean.getBoolean("sf.canonical.group.retracting.typed.smoke");
     return types()
         .filter(type -> !smoke || List.of("DATE", "TIME(0)", "TIME(3)", "BOOLEAN").contains(type))

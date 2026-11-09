@@ -1902,6 +1902,17 @@ CANONICAL_UPSTREAM_TESTS='tech.streamfusion.canonical.FirstNRestoreTest#testRest
   bin/canonical-savepoints.sh sql -Dnative.build.skip=true
 ```
 
+The additional `TypedGroupRestoreTest` selector inherits the released group-aggregate restore
+assertions and chooses the scalar and shared DISTINCT programs. Both stock and native runs pass
+two invocations. The execution audit requires canonical import and subsequent input in the native
+group owner; both routes are native with no expected fallback. The released fixtures and assertions
+are unchanged, and the selector does not expand operator admission.
+
+```sh
+CANONICAL_UPSTREAM_TESTS='tech.streamfusion.canonical.TypedGroupRestoreTest#testRestore' \
+  bin/canonical-savepoints.sh sql -Dnative.build.skip=true
+```
+
 ## Released Flink 1.18 canonical protocol controls
 
 The canonical fixture module also accepts `-Pflink-1.18,canonical-stock`. Flink 1.18 predates

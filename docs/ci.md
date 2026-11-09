@@ -628,7 +628,8 @@ This is a CI scheduling optimization, not a SQL throughput result. See the
 [CI profile](benchmarks/ci-profile-20261107.json) for measurements and their limits.
 
 For local canonical iteration, `-Dstreamfusion.test.canonicalSmoke=true` selects deterministic
-representatives from the largest positive operator matrices. Every individual parameter value and
+representatives from the largest positive operator matrices, including typed grouped-state
+lifecycles and numeric/string/temporal extrema. Every individual parameter value and
 every pair of values present in the original provider remains represented. Existing release
 assumptions still apply; a skipped case does not qualify a native path. Named corruption and
 regression providers remain exhaustive. This is an iteration check, not full matrix qualification;

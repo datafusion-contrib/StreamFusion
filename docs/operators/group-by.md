@@ -3288,6 +3288,14 @@ do not extend to the additional mixed-layout jobs.
 
 ## Typed scalar and shared DISTINCT canonical binding (partial)
 
+Canonical RocksDB header scans share the pinned row/byte-bounded reader, while companion visits
+also limit bytes and observe cancellation within a single owner. Conversion preserves signed
+membership counts and original TTL ages; it does not hydrate every owner's companion tables.
+Capture flushes pending metadata with an empty checkpoint path before pinning the database. That
+flush creates no native checkpoint files. Stock serializers and the qualified state layouts below
+remain unchanged. The released scalar/DISTINCT restore programs pass two stock and two native
+invocations, with audited native import and continued input and no expected fallback.
+
 A second Flink 2.2.1 binding extends the preceding BIGINT contract. Normal SQL and portable stock
 compiled plans capture the actual generated single-phase accumulator, original aggregate calls,
 key serializer, operator identities and maximum parallelism. Composite and variable-width keys

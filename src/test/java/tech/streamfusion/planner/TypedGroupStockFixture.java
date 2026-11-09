@@ -327,8 +327,8 @@ final class TypedGroupStockFixture implements AutoCloseable {
 
     @Override
     protected String[] checkpointRocksDBHandle(String path) {
-      if (checkpoint) return super.checkpointRocksDBHandle(path);
-      throw new AssertionError("canonical export checkpointed native RocksDB");
+      if (checkpoint || path.isEmpty()) return super.checkpointRocksDBHandle(path);
+      throw new AssertionError("canonical export created native checkpoint files");
     }
   }
 

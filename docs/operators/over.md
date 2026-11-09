@@ -1286,6 +1286,10 @@ raw accumulators and counters. RANGE conversion skips heap-map reordering for th
 projection, whose encoded-key iteration determines canonical order. Import validation still retains
 its inventories and individual stock list/map values can be large, so fully bounded conversion
 remains unfinished. These changes preserve the existing stock-layout coverage below.
+Native DISTINCT membership visitors likewise bound rows and bytes and observe cancellation within
+one partition; captured readers use the table normalization already performed during live open.
+These are transfer primitives and do not add an automatic stock DISTINCT binding.
+
 
 The raw unbounded-fold transfer interface visits resident or typed-RocksDB accumulators directly
 in batches of at most 1,024 keys, with original retention stamps. It preserves raw floating sums,
