@@ -78,6 +78,14 @@ public final class FlinkPlanCompat {
     throw new UnsupportedOperationException("Flink 1.18 compiled plans use JSON");
   }
 
+  public static Class<?> legacyWindowOperator() {
+    return org.apache.flink.table.runtime.operators.window.AggregateWindowOperator.class;
+  }
+
+  public static Class<?> legacySessionAssigner() {
+    return org.apache.flink.table.runtime.operators.window.assigners.SessionWindowAssigner.class;
+  }
+
   public static Class<?> windowOperator() {
     return org.apache.flink.table.runtime.operators.window.slicing.SlicingWindowOperator.class;
   }

@@ -32,7 +32,7 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
-/** Released event-time SESSION accumulators, DISTINCT views, merge aliases and timers. */
+/** Released SESSION accumulators, DISTINCT views, merge aliases and timers for legacy SQL and TVFs. */
 public final class StockSessionWindowStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
   private static final String STATE = "window-aggs";
@@ -50,7 +50,7 @@ public final class StockSessionWindowStateContract implements StockStateContract
   private final int[] averageOffsets;
   private final List<StockWindowDistinctView> distinctViews;
   private final int scalarFields;
-  private final boolean processingTime;
+  private final boolean processingTime, legacy;
   private transient StockWindowWatermark watermark;
   private transient CheckpointableKeyedStateBackend<RowData> timerBackend;
   private transient KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, TimeWindow>>
@@ -99,6 +99,53 @@ public final class StockSessionWindowStateContract implements StockStateContract
       List<StockWindowDistinctView> distinctViews,
       int scalarFields,
       boolean processingTime) {
+    this(
+        keys,
+        keyType,
+        accumulators,
+        gap,
+        zone,
+        averageOffsets,
+        distinctViews,
+        scalarFields,
+        processingTime,
+        false);
+  }
+
+  public static StockSessionWindowStateContract legacy(
+      TypeSerializer<RowData> keys,
+      RowType keyType,
+      RowType accumulators,
+      long gap,
+      String zone,
+      int[] averageOffsets,
+      List<StockWindowDistinctView> distinctViews,
+      int scalarFields) {
+    return new StockSessionWindowStateContract(
+        keys,
+        keyType,
+        accumulators,
+        gap,
+        zone,
+        averageOffsets,
+        distinctViews,
+        scalarFields,
+        false,
+        true);
+  }
+
+  private StockSessionWindowStateContract(
+      TypeSerializer<RowData> keys,
+      RowType keyType,
+      RowType accumulators,
+      long gap,
+      String zone,
+      int[] averageOffsets,
+      List<StockWindowDistinctView> distinctViews,
+      int scalarFields,
+      boolean processingTime,
+      boolean legacy) {
+    this.legacy = legacy;
     this.processingTime = processingTime;
     if (gap <= 0
         || scalarFields < 0
@@ -184,17 +231,22 @@ public final class StockSessionWindowStateContract implements StockStateContract
 
   @Override
   public void initializeOperatorState(OperatorStateStore store, boolean restored) throws Exception {
-    watermark = new StockWindowWatermark(store, restored);
+    if (!legacy) watermark = new StockWindowWatermark(store, restored);
+    else if (!store.getRegisteredStateNames().isEmpty()
+        || !store.getRegisteredBroadcastStateNames().isEmpty())
+      throw new IllegalStateException("Legacy SESSION has no operator-state contract");
   }
 
   @Override
   public long restoredWatermark() {
+    if (legacy) return Long.MIN_VALUE;
     if (watermark == null) throw new IllegalStateException("SESSION watermark is not initialized");
     return watermark.restoredWatermark();
   }
 
   @Override
   public void snapshotOperatorState(long value) throws Exception {
+    if (legacy) return;
     if (watermark == null) throw new IllegalStateException("SESSION watermark is not initialized");
     watermark.snapshot(value);
   }

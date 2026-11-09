@@ -20,8 +20,27 @@ record-level DISTINCT memberships. Existing canonical COUNT DISTINCT bindings no
 RocksDB when that backend is configured. A savepoint pins its read view at the barrier and converts
 bounded header/member frames on Flink's asynchronous writer thread, without loading the complete
 membership map into heap. Live input and concurrent captures use independent views. This covers
-admitted TUMBLE/HOP/CUMULATE bindings on 1.18 and 2.2, plus admitted SESSION TVFs on 2.2; 1.18
-has no SESSION TVF. It does not expand the canonical whitelist.
+admitted TUMBLE/HOP/CUMULATE bindings on 1.18 and 2.2, admitted SESSION TVFs on 2.2 and legacy
+event-time SESSION group windows on both lines. Flink 1.18 has no SESSION TVF.
+
+Legacy SESSION reuses the released `window-aggs`, `session-window-mapping` and window timer
+serializers. Ordinary SQL and compiled plans bind the original owner and key-group maximum,
+including a singleton maximum for global sessions. The binding checks the actual assigner,
+accumulator serializer, trigger/update mode and lateness before replacing the owner. Scalar and
+COUNT DISTINCT layouts use the same converter and persistent records as the TVF binding.
+Legacy recovery resets watermark admission and writes no operator watermark state, while TVFs
+retain their existing UNION watermark state. Event-time-only and existing aggregate/key/view
+restrictions still apply; legacy processing-time sessions, early/late emission, retracting input
+and legacy fixed GROUP WINDOW namespaces retain stock canonical owners.
+
+The legacy qualification selects seven pair-covering cases on each release from a 64-combination
+hosted provider: native memory/RocksDB, keyed/global, scalar/DISTINCT, TIMESTAMP/LTZ, UTC/Berlin
+and ordinary/compiled submission. Each imports stock state, finishes two overlapping captures on
+the writer after live input and native-owner close, resumes nonempty stock output and returns
+through an ordinary native checkpoint. An older session admitted after recovery verifies the
+watermark reset. Clean 1.18 checks pass 21 selected cases; the final clean 2.2 selection passes 85,
+including existing TVF session and automatic window-binding regressions. These component controls
+and ordinary SQL execution do not establish exhaustive job, rescale or failure qualification.
 
 Scalar-only checkpoint row bytes remain compatible. Old snapshot-backed checkpoints migrate one
 key-group blob at a time, preserving processing deadlines through aligned/clipped restore and
@@ -118,7 +137,8 @@ phase and invocation association; open-only or unrelated work cannot stand in fo
 Three unpartitioned SESSION programs now execute typed native GROUP BY after the stock session
 table function. Their grouped savepoint state is empty, so they receive processing credit only;
 separate nonempty GROUP BY jobs establish that adapter's interchange scope. Native unpartitioned
-session assignment remains unqualified. Partitioned sessions use the separate window contract. Retracting window inputs, asynchronous state,
+SESSION TVF assignment remains unqualified; legacy global SESSION uses the direct session binding
+described above. Partitioned sessions use the separate window contract. Retracting window inputs, asynchronous state,
 unaligned checkpoints, unsupported aggregate/view schemas, session FILTER and processing-time
 partial-window plans retain stock owners. Wider schemas, filtered/value-type combinations,
 connector transactions, writer rescaling and failure/version matrices remain tracked in

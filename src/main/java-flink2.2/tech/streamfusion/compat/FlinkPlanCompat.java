@@ -78,6 +78,16 @@ public final class FlinkPlanCompat {
     return plan.asSmileBytes();
   }
 
+  public static Class<?> legacyWindowOperator() {
+    return org.apache.flink.table.runtime.operators.window.groupwindow.operator
+        .AggregateWindowOperator.class;
+  }
+
+  public static Class<?> legacySessionAssigner() {
+    return org.apache.flink.table.runtime.operators.window.groupwindow.assigners
+        .SessionWindowAssigner.class;
+  }
+
   public static Class<?> windowOperator() {
     return org.apache.flink.table.runtime.operators.window.tvf.common.WindowAggOperator.class;
   }
