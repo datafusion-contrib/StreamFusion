@@ -227,6 +227,13 @@ For a targeted checkpoint fixture run, add `-Dsf.canonical.kafka.mode=checkpoint
 complete matrix. This is a correctness lane, independent of the benchmark environment flag.
 
 
+Portable-plan sink admission reads the released sink's declared ability specifications directly
+on both Flink lines. The 1.18 adapter does not translate the schema-only placeholder input into
+an execution graph while checking admission. This preserves the same metadata/constraint and
+connector-option gates as ordinary SQL, including stock fallback for unsupported sink abilities.
+All 22 shared ordinary/compiled planning cases pass on each release. This does not qualify the
+Flink 1.18 Kafka transaction, rescale or process-failure matrices.
+
 ## Canonical sink handoffs (partial)
 
 Native Kafka serialization is synchronous and owns no durable state. Its unchanged Flink Kafka
