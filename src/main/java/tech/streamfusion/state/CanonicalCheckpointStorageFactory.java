@@ -88,9 +88,11 @@ public final class CanonicalCheckpointStorageFactory
           || !Boolean.parseBoolean(delegated.toMap().getOrDefault(ACTIVE, "false"))) {
         return provider;
       }
+      // This fixed engine metadata graph must share its consumer's class definitions.
       OperatorIdentityProjection projection =
           InstantiationUtil.deserializeObject(
-              Base64.getDecoder().decode(delegated.getString(IDENTITIES, "")), loader);
+              Base64.getDecoder().decode(delegated.getString(IDENTITIES, "")),
+              OperatorIdentityProjection.class.getClassLoader());
       return new CanonicalCheckpointStorage(provider, projection);
     } catch (Exception failure) {
       throw new IllegalConfigurationException(

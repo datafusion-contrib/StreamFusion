@@ -274,7 +274,11 @@ input and snapshots managed operator metadata; the keyed backend's `savepoint()`
 state. The native checkpoint callback remains separate. Flink 2.2 retains its compatible operator
 snapshot entry point and uses the same state contracts and writer. Flink 1.18 materializes its
 storage provider explicitly so its older executor cannot bypass operator-ID projection with an
-already-created storage instance. All timer-bearing adapters inspect canonical snapshot bytes through Flink's released serializers,
+already-created storage instance. Operator-ID metadata deserializes with its defining engine
+classloader, while storage-provider loading retains the configured user classloader. This avoids
+casting between distinct copies of the projection class across Flink's isolated planner/user
+boundary; a shared regression deliberately exposes both copies. The image rerun remains CI
+qualification. All timer-bearing adapters inspect canonical snapshot bytes through Flink's released serializers,
 avoiding stale live queue iteration hints when a deadline is removed and reinserted. Shared controls
 check removal, reinsertion, namespace changes and preserved key context on heap and RocksDB state.
 
