@@ -4,6 +4,7 @@ use jni::objects::JObject;
 const CHUNK_ROWS: usize = 1024;
 pub(super) const STAMP: &str = "__over_retention_stamp";
 
+mod callbacks;
 mod distinct;
 mod event;
 mod frame;

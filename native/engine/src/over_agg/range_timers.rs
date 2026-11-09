@@ -9,6 +9,47 @@ pub(crate) struct RangeTimers {
     pub(crate) armed: Vec<i64>,
 }
 
+#[cfg(feature = "rocksdb-state")]
+pub(super) struct RangeTimerView<'a> {
+    bytes: &'a [u8],
+    pub(super) last: Option<i64>,
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl<'a> RangeTimerView<'a> {
+    pub(super) fn new(bytes: &'a [u8]) -> Result<Self, DataFusionError> {
+        if bytes.len() < 10 || (bytes.len() - 10) % 8 != 0 || bytes[0] != 1 || bytes[1] > 1 {
+            return Err(DataFusionError::Execution(
+                "invalid OVER RANGE timers".into(),
+            ));
+        }
+        Ok(Self {
+            bytes,
+            last: (bytes[1] == 1).then(|| i64::from_le_bytes(bytes[2..10].try_into().unwrap())),
+        })
+    }
+
+    pub(super) fn armed(&self) -> impl Iterator<Item = Result<i64, DataFusionError>> + '_ {
+        let mut previous = None;
+        self.bytes[10..]
+            .chunks_exact(8)
+            .enumerate()
+            .map(move |(index, bytes)| {
+                if index % 1024 == 0 {
+                    crate::state::canonical_context::check_cancelled()?;
+                }
+                let timer = i64::from_le_bytes(bytes.try_into().unwrap());
+                if previous.is_some_and(|previous| previous >= timer) {
+                    return Err(DataFusionError::Execution(
+                        "unordered OVER RANGE timers".into(),
+                    ));
+                }
+                previous = Some(timer);
+                Ok(timer)
+            })
+    }
+}
+
 impl RangeTimers {
     pub(crate) fn bytes(&self) -> usize {
         std::mem::size_of::<Self>() + self.armed.capacity() * std::mem::size_of::<i64>()
@@ -26,23 +67,11 @@ impl RangeTimers {
 
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self, DataFusionError> {
-        if bytes.len() < 10 || (bytes.len() - 10) % 8 != 0 || bytes[0] != 1 || bytes[1] > 1 {
-            return Err(DataFusionError::Execution(
-                "invalid OVER RANGE timers".into(),
-            ));
-        }
-        let last = (bytes[1] == 1).then(|| i64::from_le_bytes(bytes[2..10].try_into().unwrap()));
-        let mut armed = Vec::new();
-        for chunk in bytes[10..].chunks_exact(8) {
-            let timer = i64::from_le_bytes(chunk.try_into().unwrap());
-            if armed.last().is_some_and(|previous| *previous >= timer) {
-                return Err(DataFusionError::Execution(
-                    "unordered OVER RANGE timers".into(),
-                ));
-            }
-            armed.push(timer);
-        }
-        Ok(Self { last, armed })
+        let view = RangeTimerView::new(bytes)?;
+        Ok(Self {
+            last: view.last,
+            armed: view.armed().collect::<Result<Vec<_>, _>>()?,
+        })
     }
 }
 

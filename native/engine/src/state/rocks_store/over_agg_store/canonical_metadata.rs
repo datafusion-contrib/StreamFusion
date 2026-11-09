@@ -47,13 +47,34 @@ impl RocksOverAggStore {
         self.db.get(self.range_timer_key(group, key)).map_err(re)
     }
 
+    pub(crate) fn has_range_timer_state(
+        &self,
+        group: i32,
+        key: &[u8],
+    ) -> Result<bool, DataFusionError> {
+        self.db
+            .get_pinned(self.range_timer_key(group, key))
+            .map(|value| value.is_some())
+            .map_err(re)
+    }
+
     pub(crate) fn visit_cleanup_stamps(
         &self,
         chunk_rows: usize,
+        accept: impl FnMut(Vec<(Box<[u8]>, i64, bool)>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.visit_cleanup_stamps_charged(chunk_rows, None, accept)
+    }
+
+    pub(crate) fn visit_cleanup_stamps_charged(
+        &self,
+        chunk_rows: usize,
+        work: Option<MemoryReservation>,
         mut accept: impl FnMut(Vec<(Box<[u8]>, i64, bool)>) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        self.db.visit_snapshot_batches(
+        self.db.visit_snapshot_batches_charged(
             chunk_rows,
+            work,
             |key| key.len() >= KEY_PREFIX_LEN && key[4] == STAMPS_TABLE,
             |rows| {
                 let rows = rows
@@ -71,10 +92,20 @@ impl RocksOverAggStore {
     pub(crate) fn visit_range_timers(
         &self,
         chunk_rows: usize,
+        accept: impl FnMut(&[u8], &[u8]) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.visit_range_timers_charged(chunk_rows, None, accept)
+    }
+
+    pub(crate) fn visit_range_timers_charged(
+        &self,
+        chunk_rows: usize,
+        work: Option<MemoryReservation>,
         mut accept: impl FnMut(&[u8], &[u8]) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        self.db.visit_snapshot_batches(
+        self.db.visit_snapshot_batches_charged(
             chunk_rows,
+            work,
             |key| self.is_range_timer_key(key),
             |rows| {
                 for (key, value) in rows {

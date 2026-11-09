@@ -301,40 +301,30 @@ public final class StockOverEventFoldStateContract implements StockStateContract
             backend.setCurrentKey(owner);
             inputs(backend).put(timestamp, rows);
           });
-      visit(
-          Native::exportOverCleanupCanonical,
+      StockOverCallbacks.export(
+          backend,
           handle,
-          root -> {
-            if (!cleanupEnabled && !pollingTimers && root.getRowCount() != 0)
-              throw new IllegalArgumentException("Event OVER cleanup was not configured");
-            if (root.getFieldVectors().size() != cleanupType.getFieldCount())
-              throw new IllegalArgumentException("Event OVER cleanup ownership is missing");
-            var reader = ArrowConversion.createArrowReader(root, cleanupType);
-            for (int i = 0; i < root.getRowCount(); i++) {
-              var row = reader.read(i);
-              var owner = new GenericRowData(keyType.getFieldCount());
-              for (int p = 0; p < keyType.getFieldCount(); p++)
-                owner.setField(p, get(row, keyType, p));
-              var binary = new RowDataSerializer(keyType).toBinaryRow(owner).copy();
-              backend.setCurrentKey(binary);
-              int arity = keyType.getFieldCount();
-              if (!row.isNullAt(arity)) {
+          keyType,
+          (owner, kind, timestamp) -> {
+            switch (kind) {
+              case StockOverCallbacks.CLEANUP:
                 if (!cleanupEnabled)
                   throw new IllegalArgumentException("Unconfigured event OVER cleanup");
-                long deadline = row.getLong(arity);
-                cleanup(backend).update(deadline);
-                if (row.getBoolean(arity + 1))
-                  processing.add(
-                      new TimerHeapInternalTimer<>(deadline, binary, VoidNamespace.INSTANCE));
-              } else if (row.getBoolean(arity + 1))
-                throw new IllegalArgumentException("Cleanup timer has no deadline");
-              if (pollingTimers) {
-                var timers = row.getArray(arity + 2);
-                for (int t = 0; t < timers.size(); t++)
-                  events.add(
-                      new TimerHeapInternalTimer<>(
-                          timers.getLong(t), binary, VoidNamespace.INSTANCE));
-              }
+                cleanup(backend).update(timestamp);
+                break;
+              case StockOverCallbacks.PROCESSING:
+                if (!cleanupEnabled || !Long.valueOf(timestamp).equals(cleanup(backend).value()))
+                  throw new IllegalArgumentException("Cleanup timer has no deadline");
+                processing.add(
+                    new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
+                break;
+              case StockOverCallbacks.EVENT:
+                if (!pollingTimers)
+                  throw new IllegalArgumentException("Unexpected V2 event callback");
+                events.add(new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
+                break;
+              default:
+                throw new IllegalArgumentException("Unexpected event OVER cutoff");
             }
           });
     }

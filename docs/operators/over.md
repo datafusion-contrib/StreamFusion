@@ -1886,11 +1886,34 @@ and decodes individual rows with the released serializer. This covers bounded pr
 bounded event-time ROWS/RANGE and unbounded event-time pending inputs on both release lines;
 it preserves original per-owner map order and peer order without allocating a complete Java list.
 Pending rows transfer with both row and byte limits. Both bounded ROWS shapes use disk scans and
-scalar inventory summaries even for a hot partition; RANGE still materializes callback/map-order
-arrays at its native protocol boundary. V1 polling callback metadata also fills its required
+scalar inventory summaries even for a hot partition; RANGE restore still materializes callback/map-order
+arrays at its native protocol boundary. V1 polling restore metadata also fills its required
 primitive timer array directly from disk instead of building a boxed list first. The array itself
 remains a per-owner working set. Broader operator/layout admission remains separate work.
 A four-store-combination control creates 2,051 distinct processing clocks in stock Flink, verifies
 exact canonical bytes after a native round trip and continues output. Stock fixture construction
 avoids thousands of unrelated one-row native RocksDB frame updates in the correctness runner. Shared spool controls cover interleaved owners/timestamps, 8,195 rows, a two-MiB row, multiple
 readers and failure cleanup without changing stock serializer metadata.
+
+
+Canonical OVER callback export uses one flat bridge for cleanup values, RANGE last-trigger
+cutoffs and physical event/processing callbacks. This removes per-owner timer vectors/lists from
+frozen RocksDB conversion and serves resident metadata without cloning its timer lists. A checked
+borrowed iterator preserves the existing encoded ledger, including tagged V1 namespaces. Batches
+use 1,024-record and four-MiB payload-estimate bounds, plus an oversized key. Both raw database
+batches and converted Arrow buffers are charged; denied memory, receiver failure and mid-owner
+cancellation release the work and leave the source available for retry. The largest encoded entry
+remains a working set. The stock projection still uses released value/map/timer serializers.
+Heap component RANGE projection retains the old map-order reconstruction; restore callback and
+map-order arrays remain open work. Native checkpoint formats and operator admission do not change.
+
+Native controls cover 2,051 callbacks for one owner, keyless records, two-MiB keys, signed timer
+extrema, malformed headers/order, independent pinned versions, empty and mid-owner cancellation,
+denied raw/decoded memory, failure/retry and cold reader caches. Java controls round-trip a hot
+RANGE owner and V1 physical callbacks through both source/target stores, compare exact canonical
+bytes, continue output and check C Data release after a receiver exception.
+
+The flat-callback cohort passes 1,487 native tests with two existing ignores, plus the memory-only
+build. Selected Java controls pass 566 invocations on 1.18 across the main and hot-V1 follow-up
+runs, and 534 on a clean 2.2 build with 36 expected V1-only skips. These overlap earlier cohorts;
+exhaustive CI and broader operator/layout qualification remain separate.

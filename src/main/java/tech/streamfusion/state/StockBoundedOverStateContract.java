@@ -447,6 +447,29 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
         return;
       }
       if (eventRows) return;
+      if (tech.streamfusion.compat.FlinkStateBackendCompat.serializesKeyedValues(backend)) {
+        StockOverCallbacks.export(
+            backend,
+            handle,
+            keyType,
+            (owner, kind, timestamp) -> {
+              switch (kind) {
+                case StockOverCallbacks.CLEANUP:
+                  scalar(backend, cleanupState).update(timestamp);
+                  break;
+                case StockOverCallbacks.LAST_TRIGGER:
+                  scalar(backend, LAST).update(timestamp);
+                  break;
+                case StockOverCallbacks.EVENT:
+                  events.add(
+                      new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
+                  break;
+                default:
+                  throw new IllegalArgumentException("Unexpected RANGE processing callback");
+              }
+            });
+        return;
+      }
       visit(
           Native::exportOverCanonicalRange,
           handle,

@@ -248,6 +248,49 @@ class CanonicalEventUnboundedOverInteropTest {
   }
 
   @ParameterizedTest
+  @MethodSource("inventoryStores")
+  void hotV1PhysicalCallbacksCrossExportChunksAndReturnToStockExactly(
+      boolean stockStore, boolean nativeStore) throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(FlinkPlanCompat.unboundedOverVersion() == 1);
+    var plan = new Plan("BIGINT", true, false, 1000);
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    try (var reference = plan.stock(stockStore);
+        var target = plan.nativeHarness(nativeStore)) {
+      reference.open();
+      time(reference, 100);
+      plan.stockInput(reference, List.of(plan.row(1L, 3L, 10)));
+      var backend =
+          (CheckpointableKeyedStateBackend<RowData>)
+              reference.getOperator().<RowData>getKeyedStateBackend();
+      var owner = plan.selector.getKey(plan.row(1L, 3L, 10));
+      var operator = (KeyedProcessOperator<RowData, RowData, RowData>) reference.getOperator();
+      var timers =
+          operator.getInternalTimerService(
+              "user-timers", VoidNamespaceSerializer.INSTANCE, operator);
+      backend.setCurrentKey(owner);
+      for (long timestamp = 100; timestamp < 2151; timestamp++)
+        timers.registerEventTimeTimer(VoidNamespace.INSTANCE, timestamp);
+      var saved = snapshot(reference);
+      var expectedState = raw(reference);
+      target.initializeState(saved);
+      target.open();
+      try (var returned = plan.stock(stockStore)) {
+        returned.initializeState(snapshot(target));
+        returned.open();
+        assertEquals(expectedState, raw(returned));
+        reference.processWatermark(new Watermark(50));
+        returned.processWatermark(new Watermark(50));
+        target.processWatermark(new Watermark(50));
+        var expected = plan.stockOutput(reference);
+        assertFalse(expected.isEmpty());
+        assertEquals(expected, plan.stockOutput(returned));
+        assertEquals(expected, plan.nativeOutput(target));
+      }
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  @ParameterizedTest
   @MethodSource("pollingCases")
   void pollingCallbacksRetainTheirPhysicalTimersAcrossTheFirstRestoredWatermark(
       boolean rows, boolean stockStore, boolean nativeStore, long ttl) throws Exception {

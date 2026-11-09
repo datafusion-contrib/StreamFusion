@@ -181,6 +181,16 @@ impl StateDb {
         &self,
         chunk_rows: usize,
         accept: impl Fn(&[u8]) -> bool,
+        consume: impl FnMut(Vec<(Box<[u8]>, Box<[u8]>)>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.visit_snapshot_batches_charged(chunk_rows, None, accept, consume)
+    }
+
+    pub(crate) fn visit_snapshot_batches_charged(
+        &self,
+        chunk_rows: usize,
+        mut work: Option<MemoryReservation>,
+        accept: impl Fn(&[u8]) -> bool,
         mut consume: impl FnMut(Vec<(Box<[u8]>, Box<[u8]>)>) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         let mut reader = super::canonical_snapshot::RocksReadSnapshot::new(self);
@@ -189,7 +199,18 @@ impl StateDb {
             if rows.is_empty() {
                 return Ok(());
             }
+            if let Some(work) = &mut work {
+                let bytes = rows.capacity() * std::mem::size_of::<(Box<[u8]>, Box<[u8]>)>()
+                    + rows
+                        .iter()
+                        .map(|(key, value)| key.len() + value.len())
+                        .sum::<usize>();
+                work.try_resize(bytes)?;
+            }
             consume(rows)?;
+            if let Some(work) = &mut work {
+                work.resize(0);
+            }
         }
     }
 

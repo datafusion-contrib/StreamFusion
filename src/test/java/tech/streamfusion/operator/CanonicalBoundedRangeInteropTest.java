@@ -186,6 +186,67 @@ class CanonicalBoundedRangeInteropTest {
 
   @ParameterizedTest
   @MethodSource("clockStores")
+  void hotRangeCallbacksStreamWithoutListsAndReceiverFailureKeepsStateForRetry(
+      boolean stockStore, boolean nativeStore) throws Exception {
+    var plan = new Plan("BIGINT", false, false, false, 10000, 0);
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    try (var reference = plan.stock(stockStore);
+        var target = plan.nativeHarness(nativeStore)) {
+      reference.open();
+      for (int i = 0; i < 2051; i++) plan.pushStock(reference, plan.row(1L, i % 7, 1000 + i));
+      var original = snapshot(reference);
+      var expectedState = CanonicalUnboundedOverScalarTest.raw(reference);
+      target.initializeState(original);
+      target.open();
+      var sentinel = new IllegalStateException("flat callback receiver sentinel");
+      long callbackAllocated = NativeAllocator.SHARED.getAllocatedMemory();
+      long handle = ((NativeOverAggregateOperator) target.getOperator()).handle;
+      assertSame(
+          sentinel,
+          assertThrows(
+              IllegalStateException.class,
+              () ->
+                  tech.streamfusion.Native.exportOverCanonicalCallbacks(
+                      handle,
+                      (a, s) -> {
+                        try (var array = org.apache.arrow.c.ArrowArray.wrap(a);
+                            var schema = org.apache.arrow.c.ArrowSchema.wrap(s);
+                            var root =
+                                org.apache.arrow.c.Data.importVectorSchemaRoot(
+                                    NativeAllocator.SHARED,
+                                    array,
+                                    schema,
+                                    NativeAllocator.DICTIONARIES)) {
+                          assertEquals(1024, root.getRowCount());
+                          assertTrue(
+                              root.getFieldVectors().stream()
+                                  .noneMatch(
+                                      vector ->
+                                          vector
+                                              instanceof
+                                              org.apache.arrow.vector.complex.ListVector));
+                          throw sentinel;
+                        }
+                      })));
+      assertEquals(callbackAllocated, NativeAllocator.SHARED.getAllocatedMemory());
+      try (var returned = plan.stock(stockStore)) {
+        returned.initializeState(snapshot(target));
+        returned.open();
+        assertEquals(expectedState, CanonicalUnboundedOverScalarTest.raw(returned));
+        reference.processWatermark(new Watermark(4000));
+        returned.processWatermark(new Watermark(4000));
+        target.processWatermark(new Watermark(4000));
+        var expected = plan.stockOutput(reference);
+        assertEquals(2051, expected.size());
+        assertEquals(expected, plan.stockOutput(returned));
+        assertEquals(expected, plan.nativeOutput(target));
+      }
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  @ParameterizedTest
+  @MethodSource("clockStores")
   void manyProcessingClockBucketsRestoreWithoutReconstructingAnInventory(
       boolean stockStore, boolean nativeStore) throws Exception {
     var plan = new Plan("BIGINT", false, true, false, 10000, 0);

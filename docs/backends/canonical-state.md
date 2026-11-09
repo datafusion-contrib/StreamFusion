@@ -77,6 +77,22 @@ stock-state adapters on Flink's asynchronous writer thread. Each savepoint owns 
 native reader and a temporary stock-schema RocksDB backend, including disk-backed timer queues.
 This reuses the qualified map/list/timer conversion logic instead of duplicating every layout in a
 second streaming codec. It adds temporary disk I/O compared with the direct value-state cursors.
+OVER callback export now shares a flat key/kind/timestamp bridge for RANGE cutoffs, cleanup values,
+processing callbacks and V1 physical event callbacks. Frozen RocksDB readers borrow and validate
+encoded timer entries without rebuilding per-owner timer vectors or Arrow lists. The bridge emits
+at most 1,024 records with a four-MiB payload estimate, allowing an oversized key. Raw snapshot
+batches and conversion buffers draw from the native memory pool, and cancellation is checked
+inside a hot owner as well as between database batches. Resident metadata uses the same bridge.
+The disk-backed stock projection installs each scalar or queue entry directly; heap component
+RANGE projections retain their separate map-order path. Native checkpoint bytes retain their format, and the projection continues to use released stock
+serializers. The largest encoded native or stock KV remains a lower bound
+on working memory; callback/map-order arrays in restore still require incremental transport.
+The native suite passes 1,487 checks with two existing ignores and the memory-only build passes.
+The selected 1.18 cohort passes 566 invocations across the main run and corrected hot-V1 fixture
+follow-up; the clean 2.2 cohort passes 534 with 36 expected V1-only skips. New controls check exact
+canonical bytes, continued output and receiver failure/retry for hot RANGE and V1 polling owners.
+These selected controls do not expand operator admission or replace exhaustive CI.
+
 The barrier pins the databases and immutable reader configuration. Native reader construction,
 metadata hydration and stock conversion all run on the asynchronous writer thread; no restore
 constructor or TTL adoption scan runs at capture. Reader configuration and its shared-cache lease
@@ -160,9 +176,9 @@ processing or snapshotting. Decode reservations transfer into retained-state cha
 failed writes. Bounded OVER now computes ownership, retained-row counts and cutoff maxima by
 scanning staged buckets and timers, without per-owner Java timestamp/count maps or timer sets.
 Frame and pending transfers iterate the disk index directly. V1 polling OVER and temporal-join
-callback bridges share direct primitive-array collection from disk, avoiding intermediate boxed
-lists. Their native protocol arrays still remain per-owner working sets. RANGE still materializes callback
-and map-order arrays only at the native protocol boundary; making that protocol incremental,
+restore callback bridges share direct primitive-array collection from disk, avoiding intermediate boxed
+lists. Their native protocol arrays still remain per-owner working sets. RANGE restore still materializes callback
+and map-order arrays at the native protocol boundary; making that import protocol incremental,
 other adapters' inventories and memory capture/accounting remain open work. OVER and temporal-sort
 exports now stage each map-list row once in the shared disk spool. A scoped lazy list lets the
 released stock ListSerializer stream each timestamp bucket into the RocksDB projection once,

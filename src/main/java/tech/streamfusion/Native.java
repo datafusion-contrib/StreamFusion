@@ -145,6 +145,9 @@ public final class Native {
   /** Event-time RANGE key protocol, including pending-only keys and empty callbacks. */
   public static native void exportOverCanonicalRange(long handle, BatchReceiver receiver);
 
+  /** Flat cleanup values, cutoffs and physical callbacks, bounded independently of owner size. */
+  public static native void exportOverCanonicalCallbacks(long handle, BatchReceiver receiver);
+
   /** Processing ROWS counters and bucket minima; transfer retained frames before importing it. */
   public static native void exportOverCanonicalProcessingRows(long handle, BatchReceiver receiver);
 

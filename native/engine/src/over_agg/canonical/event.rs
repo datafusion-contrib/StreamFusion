@@ -9,7 +9,7 @@ struct PreparedEventBatch {
 }
 
 impl OverWindowAggregator {
-    fn canonical_event(&self) -> Result<(), DataFusionError> {
+    pub(super) fn canonical_event(&self) -> Result<(), DataFusionError> {
         match &self.inner {
             OverInner::Bounded(_) => {
                 self.canonical_frame()?;
@@ -32,7 +32,7 @@ impl OverWindowAggregator {
         }
     }
 
-    fn event_key_types(&self) -> Result<Vec<DataType>, DataFusionError> {
+    pub(super) fn event_key_types(&self) -> Result<Vec<DataType>, DataFusionError> {
         if self.key_columns.is_empty() {
             return Ok(Vec::new());
         }
