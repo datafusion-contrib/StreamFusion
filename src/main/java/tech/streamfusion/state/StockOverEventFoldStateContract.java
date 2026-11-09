@@ -41,7 +41,7 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
-/** Released V2 event-time unbounded folds, pending buckets and independent cleanup timers. */
+/** Released event-time unbounded folds, pending buckets and physical event/cleanup timers. */
 public final class StockOverEventFoldStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
   private static final String INPUT = "inputState";
@@ -55,6 +55,8 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   private final int[] keyColumns;
   private final int timeColumn;
   private final boolean cleanupEnabled;
+  private final boolean pollingTimers =
+      tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion() == 1;
   private transient RowData constantRow;
   private transient CheckpointableKeyedStateBackend<RowData> timerBackend;
   private transient KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, VoidNamespace>>
@@ -105,8 +107,13 @@ public final class StockOverEventFoldStateContract implements StockStateContract
     var metadata = new ArrayList<RowType.RowField>();
     for (int i = 0; i < keyType.getFieldCount(); i++)
       metadata.add(new RowType.RowField("key" + i, keyType.getTypeAt(i).copy(true)));
-    metadata.add(new RowType.RowField("__over_retention_stamp", new BigIntType(false)));
+    metadata.add(new RowType.RowField("__over_retention_stamp", new BigIntType(pollingTimers)));
     metadata.add(new RowType.RowField("__sf_over_cleanup_armed", new BooleanType(false)));
+    if (pollingTimers)
+      metadata.add(
+          new RowType.RowField(
+              "__sf_over_polling_timers",
+              new org.apache.flink.table.types.logical.ArrayType(false, new BigIntType(false))));
     cleanupType = new RowType(metadata);
   }
 
@@ -137,6 +144,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   @Override
   public void configureNativeState(long handle, boolean persistent) {
     if (cleanupEnabled) Native.bindOverEventCleanupTimers(handle);
+    if (pollingTimers) Native.bindOverEventPollingTimers(handle);
   }
 
   private void bind(CheckpointableKeyedStateBackend<RowData> backend) {
@@ -188,7 +196,9 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   }
 
   private static Object get(RowData row, RowType type, int index) {
-    return RowData.createFieldGetter(type.getTypeAt(index), index).getFieldOrNull(row);
+    return row.isNullAt(index)
+        ? null
+        : RowData.createFieldGetter(type.getTypeAt(index), index).getFieldOrNull(row);
   }
 
   private BinaryRowData key(RowData row) {
@@ -295,7 +305,8 @@ public final class StockOverEventFoldStateContract implements StockStateContract
             var peers = state.get(timestamp);
             if (peers == null) {
               peers = new ArrayList<>();
-              events.add(new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
+              if (!pollingTimers)
+                events.add(new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
             }
             peers.add(serializer.copy(row));
             state.put(timestamp, peers);
@@ -305,7 +316,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
         Native::exportOverCleanupCanonical,
         handle,
         root -> {
-          if (!cleanupEnabled && root.getRowCount() != 0)
+          if (!cleanupEnabled && !pollingTimers && root.getRowCount() != 0)
             throw new IllegalArgumentException("Event OVER cleanup was not configured");
           if (root.getFieldVectors().size() != cleanupType.getFieldCount())
             throw new IllegalArgumentException("Event OVER cleanup ownership is missing");
@@ -317,11 +328,24 @@ public final class StockOverEventFoldStateContract implements StockStateContract
               owner.setField(p, get(row, keyType, p));
             var binary = new RowDataSerializer(keyType).toBinaryRow(owner).copy();
             backend.setCurrentKey(binary);
-            long deadline = row.getLong(keyType.getFieldCount());
-            cleanup(backend).update(deadline);
-            if (row.getBoolean(keyType.getFieldCount() + 1))
-              processing.add(
-                  new TimerHeapInternalTimer<>(deadline, binary, VoidNamespace.INSTANCE));
+            int arity = keyType.getFieldCount();
+            if (!row.isNullAt(arity)) {
+              if (!cleanupEnabled)
+                throw new IllegalArgumentException("Unconfigured event OVER cleanup");
+              long deadline = row.getLong(arity);
+              cleanup(backend).update(deadline);
+              if (row.getBoolean(arity + 1))
+                processing.add(
+                    new TimerHeapInternalTimer<>(deadline, binary, VoidNamespace.INSTANCE));
+            } else if (row.getBoolean(arity + 1))
+              throw new IllegalArgumentException("Cleanup timer has no deadline");
+            if (pollingTimers) {
+              var timers = row.getArray(arity + 2);
+              for (int t = 0; t < timers.size(); t++)
+                events.add(
+                    new TimerHeapInternalTimer<>(
+                        timers.getLong(t), binary, VoidNamespace.INSTANCE));
+            }
           }
         });
   }
@@ -395,7 +419,9 @@ public final class StockOverEventFoldStateContract implements StockStateContract
           }
           partition.pending.add(timestamp);
         }
-      if (!partition.pending.equals(partition.events))
+      if (pollingTimers
+          ? !partition.pending.isEmpty() && partition.events.isEmpty()
+          : !partition.pending.equals(partition.events))
         throw new IllegalArgumentException("Event OVER pending buckets and event timers differ");
       if (cleanupEnabled
           && partition.cleanup == null
@@ -448,12 +474,17 @@ public final class StockOverEventFoldStateContract implements StockStateContract
       long handle, Map<BinaryRowData, Partition> partitions, boolean validating) {
     var rows = new ArrayList<RowData>(CHUNK_ROWS);
     for (var partition : partitions.values()) {
-      if (partition.cleanup == null) continue;
+      if (partition.cleanup == null && (!pollingTimers || partition.events.isEmpty())) continue;
       var row = new GenericRowData(cleanupType.getFieldCount());
       for (int p = 0; p < keyType.getFieldCount(); p++)
         row.setField(p, get(partition.key, keyType, p));
       row.setField(keyType.getFieldCount(), partition.cleanup);
       row.setField(keyType.getFieldCount() + 1, !partition.processing.isEmpty());
+      if (pollingTimers)
+        row.setField(
+            keyType.getFieldCount() + 2,
+            new org.apache.flink.table.data.GenericArrayData(
+                partition.events.toArray(Long[]::new)));
       rows.add(row);
       if (rows.size() == CHUNK_ROWS) {
         send(

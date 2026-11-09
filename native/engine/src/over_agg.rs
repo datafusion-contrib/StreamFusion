@@ -3,6 +3,7 @@ use crate::*;
 mod canonical;
 mod cleanup;
 mod event_cleanup;
+mod event_polling;
 use event_cleanup::EVENT_CLEANUP_ARMED;
 mod proc_rows;
 mod range_flush;
@@ -2710,6 +2711,8 @@ pub(crate) struct OverWindowAggregator {
     proc_rows: HashMap<ByteKey, ProcRowsState>,
     processing_rows_external_timers: bool,
     event_cleanup_external_timers: bool,
+    event_polling: bool,
+    polling_bound: bool,
     event_cleanup_unarmed: ahash::HashSet<ByteKey>,
     /// Per-key last-write wall clock for the proctime unbounded shape's per-value TTL
     /// (`StateTtlConfig`, OnCreateAndWrite / NeverReturnExpired — stamped on every processed row).
@@ -2785,6 +2788,8 @@ impl OverWindowAggregator {
             proc_rows: HashMap::default(),
             processing_rows_external_timers: false,
             event_cleanup_external_timers: false,
+            event_polling: false,
+            polling_bound: false,
             event_cleanup_unarmed: ahash::HashSet::default(),
             last_write_ms: HashMap::default(),
             pending_rows: HashMap::default(),
@@ -2947,8 +2952,8 @@ impl OverWindowAggregator {
         if self.event_cleanup_unarmed.remove(key) {
             self.retention_bytes -= byte_key_bytes(key);
         }
-        if let Some(timers) = self.range_timers.remove(key) {
-            self.retention_bytes -= byte_key_bytes(key) + timers.bytes();
+        if !self.event_polling {
+            self.remove_event_ledger(key);
         }
         if self.proc_rows.remove(key).is_some() {
             self.retention_bytes -= byte_key_bytes(key) + std::mem::size_of::<ProcRowsState>();
@@ -3031,7 +3036,9 @@ impl OverWindowAggregator {
         for row in 0..batch.num_rows() {
             let key = keys_encoded.row(row).data();
             self.expire_if_due(key, now_ms);
-            self.register_cleanup(key, now_ms);
+            if self.deadline_cleaning() {
+                self.register_cleanup(key, now_ms);
+            }
             match self.pending_rows.get_mut(key) {
                 Some(count) => *count += 1,
                 None => {
@@ -3060,7 +3067,9 @@ impl OverWindowAggregator {
                     self.retention_bytes -= byte_key_bytes(key);
                 }
             }
-            self.register_cleanup(key, now_ms);
+            if self.deadline_cleaning() {
+                self.register_cleanup(key, now_ms);
+            }
         }
     }
 
@@ -3174,6 +3183,13 @@ impl OverWindowAggregator {
         &mut self,
         restored_at_ms: i64,
     ) -> Result<(), DataFusionError> {
+        if self.event_polling {
+            self.polling_bound = false;
+            self.cleanup_state.clear();
+            self.event_cleanup_unarmed.clear();
+            self.range_timers.clear();
+            self.retention_bytes = 0;
+        }
         if self.processing_rows() {
             let before = self.proc_rows_bytes();
             for (key, bytes) in self.store.as_ref().unwrap().scan_proc_rows()? {
@@ -3340,6 +3356,9 @@ impl OverWindowAggregator {
                 if self.deadline_cleaning()
                     || self.range_offset().is_some()
                     || self.processing_rows()
+                    || batch
+                        .column_by_name(event_polling::POLLING_TIMERS)
+                        .is_some()
                 {
                     self.write_store_cleanup(&batch)?;
                 }
@@ -3704,11 +3723,12 @@ impl OverWindowAggregator {
         let input_rows = batch.num_rows();
         let batch = filter_record_batch(&batch, &on_time)?;
         self.late_drops += (input_rows - batch.num_rows()) as u64;
-        if self.deadline_cleaning() {
+        if self.deadline_cleaning() || self.event_polling {
             self.register_batch(&batch, now_ms);
         }
         self.observe_heap_snapshot(&batch, false);
         self.register_range_batch(&batch);
+        self.register_polling_batch(&batch)?;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             self.persist_range_stamps(&batch)?;
@@ -4503,7 +4523,12 @@ impl OverWindowAggregator {
     /// anyway — its pending rows deferred the cleanup, exactly as memory mode — and re-arms
     /// through the post-fire settle.
     #[cfg(feature = "rocksdb-state")]
-    fn flush_store(&mut self, watermark: i64, now_ms: i64) -> Result<RecordBatch, DataFusionError> {
+    fn flush_store(
+        &mut self,
+        watermark: i64,
+        now_ms: i64,
+        due: Option<&ahash::HashSet<ByteKey>>,
+    ) -> Result<RecordBatch, DataFusionError> {
         // A sweep may have cleared idle keys this call; their deletes must land before hydration.
         self.flush_tombstones()?;
         let schema = self.input_schema.clone().unwrap_or_else(|| {
@@ -4512,11 +4537,28 @@ impl OverWindowAggregator {
                 .expect("over rocksdb store")
                 .payload_schema()
         });
-        let complete = self
-            .store
-            .as_mut()
-            .expect("over rocksdb store")
-            .take_complete(watermark, &schema)?;
+        let complete = if let Some(due) = due {
+            let mut converter = Some(key_row_converter_from_types(&self.store_key_types));
+            let key_columns = &self.key_columns;
+            self.store
+                .as_mut()
+                .expect("over rocksdb store")
+                .take_complete_matching(watermark, &schema, |batch| {
+                    let arrays = key_columns
+                        .iter()
+                        .map(|&column| batch.column(column))
+                        .collect::<Vec<_>>();
+                    let keys = encode_keys(&mut converter, &arrays, batch.num_rows());
+                    (0..batch.num_rows())
+                        .map(|row| due.contains(keys.row(row).data()))
+                        .collect()
+                })?
+        } else {
+            self.store
+                .as_mut()
+                .expect("over rocksdb store")
+                .take_complete(watermark, &schema)?
+        };
         let Some(complete) = complete else {
             self.expire_range(watermark);
             self.flush_tombstones()?;
@@ -4533,7 +4575,7 @@ impl OverWindowAggregator {
             self.write_bounded_stamps(&touched)?;
             Self::append_aggregates(&complete, &aggregates)
         } else {
-            let settle = self.deadline_cleaning().then_some(now_ms);
+            let settle = (self.deadline_cleaning() || self.event_polling).then_some(now_ms);
             let aggregates = self.fold_unbounded_on_store(&complete, Arc::new(rt), settle)?;
             Self::append_aggregates(&complete, &aggregates)
         };
@@ -4638,6 +4680,18 @@ impl OverWindowAggregator {
     /// rest buffered. Returns an empty batch when nothing is complete. `now_ms` is the host's
     /// processing-time reading — the cleanup-deadline clock.
     fn flush_inner(&mut self, watermark: i64, now_ms: i64) -> Result<RecordBatch, DataFusionError> {
+        let due = self.begin_polling(watermark)?;
+        let output = self.flush_rows_inner(watermark, now_ms, due.as_ref())?;
+        self.finish_polling(watermark, now_ms, due)?;
+        Ok(output)
+    }
+
+    fn flush_rows_inner(
+        &mut self,
+        watermark: i64,
+        now_ms: i64,
+        due: Option<&ahash::HashSet<ByteKey>>,
+    ) -> Result<RecordBatch, DataFusionError> {
         self.ensure_canonical_distinct_ready()?;
         self.watermark = self.watermark.max(watermark);
         if self.deadline_cleaning() {
@@ -4645,7 +4699,7 @@ impl OverWindowAggregator {
         }
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
-            return self.flush_store(watermark, now_ms);
+            return self.flush_store(watermark, now_ms, due);
         }
         let schema = match &self.input_schema {
             Some(schema) => schema.clone(),
@@ -4657,10 +4711,26 @@ impl OverWindowAggregator {
         };
         let all = concat_batches(&schema, &self.buffered).expect("failed to concat over buffer");
         let rt_millis = rt_to_millis(all.column(self.rt_column));
-        let complete_mask: BooleanArray = rt_millis
-            .iter()
-            .map(|v| Some(v.unwrap() <= watermark))
-            .collect();
+        let complete_mask: BooleanArray = if let Some(due) = due {
+            let key_arrays = self
+                .key_columns
+                .iter()
+                .map(|&column| all.column(column))
+                .collect::<Vec<_>>();
+            let keys = encode_keys(&mut self.key_converter, &key_arrays, all.num_rows());
+            rt_millis
+                .iter()
+                .enumerate()
+                .map(|(row, time)| {
+                    Some(time.unwrap() <= watermark && due.contains(keys.row(row).data()))
+                })
+                .collect()
+        } else {
+            rt_millis
+                .iter()
+                .map(|time| Some(time.unwrap() <= watermark))
+                .collect()
+        };
         let complete =
             filter_record_batch(&all, &complete_mask).expect("failed to filter complete");
         let pending_mask = arrow::compute::not(&complete_mask).expect("failed to negate mask");
@@ -4682,7 +4752,7 @@ impl OverWindowAggregator {
         // The inner fold grows here (completed rows enter the per-key state), so even a flush can
         // exceed the budget.
         let aggregates = self.inner.update(&self.keyed_subbatch(&complete, rt));
-        if self.deadline_cleaning() {
+        if self.deadline_cleaning() || self.event_polling {
             self.settle_fired(&complete, now_ms);
         }
         self.expire_range(watermark);
@@ -5092,7 +5162,7 @@ impl OverWindowAggregator {
         );
         let cleanup = Self::partition_snapshot(
             &self.snapshot_cleanup(),
-            if self.range_offset().is_some() || self.processing_rows() {
+            if self.range_offset().is_some() || self.processing_rows() || self.event_polling {
                 3
             } else if self.event_cleanup_external_timers || !self.event_cleanup_unarmed.is_empty() {
                 2
@@ -5287,6 +5357,8 @@ impl OverWindowAggregator {
             proc_rows: HashMap::default(),
             processing_rows_external_timers: false,
             event_cleanup_external_timers: false,
+            event_polling: false,
+            polling_bound: false,
             event_cleanup_unarmed: ahash::HashSet::default(),
             last_write_ms: HashMap::default(),
             pending_rows: HashMap::default(),
@@ -5325,6 +5397,14 @@ impl OverWindowAggregator {
         aggregator.restore_cleanup(cleanup, &mut stamps);
         aggregator.adopt_restored_stamps(stamps, restored_at_ms, has_ttl_column);
         aggregator.restore_range_order(range_order);
+        if let Some(schema) = &aggregator.input_schema {
+            let types = aggregator
+                .key_columns
+                .iter()
+                .map(|&column| schema.field(column).data_type().clone())
+                .collect::<Vec<_>>();
+            aggregator.inner.seed_key_codec(&types);
+        }
         aggregator
     }
 
@@ -5393,6 +5473,20 @@ impl OverWindowAggregator {
                 .keys()
                 .map(|key| byte_key_bytes(&key.0))
                 .sum();
+        }
+        if self.event_polling {
+            self.retention_bytes = self
+                .cleanup_state
+                .keys()
+                .chain(self.pending_rows.keys())
+                .chain(self.event_cleanup_unarmed.iter())
+                .map(|key| byte_key_bytes(&key.0))
+                .sum::<usize>()
+                + self
+                    .range_timers
+                    .iter()
+                    .map(|(key, timers)| byte_key_bytes(&key.0) + timers.bytes())
+                    .sum::<usize>();
         }
     }
 

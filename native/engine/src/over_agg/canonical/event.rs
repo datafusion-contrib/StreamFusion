@@ -179,7 +179,7 @@ impl OverWindowAggregator {
                 &times,
             )?;
         }
-        if self.deadline_cleaning() {
+        if self.deadline_cleaning() || self.event_polling {
             for row in 0..batch.num_rows() {
                 let key = ByteKey::from(keys.row(row).data());
                 if !self.pending_rows.contains_key(&key) {
@@ -207,6 +207,9 @@ impl OverWindowAggregator {
     ) -> Result<(), DataFusionError> {
         self.canonical_event()?;
         self.ensure_canonical_distinct_ready()?;
+        if self.event_polling {
+            return self.visit_polling_metadata(accept);
+        }
         if self.range_offset().is_some() {
             return Err(invalid(
                 "RANGE cleanup belongs to the event-time frame protocol",
@@ -345,6 +348,9 @@ impl OverWindowAggregator {
     }
 
     fn import_canonical_cleanup(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        if self.event_polling {
+            return self.transfer_polling_metadata(batch, false);
+        }
         let PreparedEventBatch {
             key_types: types,
             key_converter: converter,
@@ -479,10 +485,14 @@ pub extern "system" fn Java_tech_streamfusion_Native_validateOverCleanupCanonica
     schema: jlong,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
-        let operator = unsafe { &*(handle as *const OverWindowAggregator) };
+        let operator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
         let result = {
             let batch = import_record_batch(array, schema);
-            operator.prepare_canonical_cleanup(&batch).map(|_| ())
+            if operator.event_polling {
+                operator.transfer_polling_metadata(&batch, true)
+            } else {
+                operator.prepare_canonical_cleanup(&batch).map(|_| ())
+            }
         };
         if let Err(error) = result {
             report(&mut env, error);

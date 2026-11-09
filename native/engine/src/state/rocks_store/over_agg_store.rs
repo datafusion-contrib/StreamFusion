@@ -1211,6 +1211,52 @@ impl RocksOverAggStore {
             .map(Some)
     }
 
+    pub(crate) fn take_complete_matching(
+        &mut self,
+        watermark: i64,
+        schema: &SchemaRef,
+        mut matches: impl FnMut(&RecordBatch) -> Vec<bool>,
+    ) -> Result<Option<RecordBatch>, DataFusionError> {
+        let mut complete: Vec<(u64, Box<[u8]>)> = Vec::new();
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        self.db.visit_snapshot_batches(
+            1024,
+            |key| key.len() == PENDING_KEY_LEN && key[4] == PENDING_TABLE,
+            |rows| {
+                let eligible = rows
+                    .into_iter()
+                    .filter(|(_, value)| {
+                        i64::from_le_bytes(value[..8].try_into().expect("pending rowtime"))
+                            <= watermark
+                    })
+                    .collect::<Vec<_>>();
+                if eligible.is_empty() {
+                    return Ok(());
+                }
+                let batch =
+                    self.decode_payload(schema, eligible.iter().map(|(_, value)| &value[8..]))?;
+                let matched = matches(&batch);
+                assert_eq!(matched.len(), eligible.len(), "pending match count");
+                for ((key, value), matched) in eligible.into_iter().zip(matched) {
+                    if matched {
+                        let seq =
+                            u64::from_be_bytes(key[5..].try_into().expect("arrival sequence"));
+                        complete.push((seq, value[8..].into()));
+                        writes.delete(key)?;
+                    }
+                }
+                Ok(())
+            },
+        )?;
+        writes.finish()?;
+        if complete.is_empty() {
+            return Ok(None);
+        }
+        complete.sort_unstable_by_key(|&(seq, _)| seq);
+        self.decode_payload(schema, complete.iter().map(|(_, row)| row.as_ref()))
+            .map(Some)
+    }
+
     /// Every pending row in arrival order — restore-time deferral derivation and canonical
     /// savepoints.
     pub(crate) fn scan_pending(

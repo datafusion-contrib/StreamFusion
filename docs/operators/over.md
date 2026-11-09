@@ -1781,12 +1781,12 @@ oracle. Rescaling redistributes 64 keys through 1→3→2/maxP128; global operat
 The one-hour cleanup configuration in complete jobs does not establish exact wall-clock expiry;
 controlled callback tests qualify idle, overdue, overflow and unarmed-deadline behavior.
 
-A separate released Flink 1.18 build passes all 212 shared callback/checkpoint and Arrow controls,
-including compilation of the common operator/contract code. This is a shared-code regression,
-not stock canonical compatibility on 1.18. Earlier component/smoke cohorts overlap the current
-proof and are not added cumulatively.
+Earlier Flink 1.18 validation covered 212 shared callback/checkpoint and Arrow controls,
+including compilation of the common operator/contract code. That run established shared-code
+regression coverage. The V1 canonical qualification below adds actual stock/native handoffs;
+overlapping cohorts are not added cumulatively.
 
-Legacy event-time V1, unbounded DECIMAL, DISTINCT/views, wider keys/payloads, bounded event-ROWS
+Flink 2.2 explicitly configured for legacy V1, unbounded DECIMAL, DISTINCT/views, wider keys/payloads, bounded event-ROWS
 processing cleanup and the wider rescale/version/failure/connector matrix remain unfinished in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.
 
@@ -1798,6 +1798,38 @@ with the released stock accumulator/key serializers. Memory folds capture indepe
 counters, frames and retention metadata, then convert through an independent stock backend
 asynchronously. This visits resident state and can retain an additional copy; broader qualification
 of the new capture path is ongoing. Ordinary checkpoints keep their native format. Shared
-Flink 1.18 component controls cover the processing-time fold contract; event-time unbounded V1
-remains a stock canonical fallback. The wider complete-job matrices above qualify Flink 2.2 only.
+Flink 1.18 component controls cover the processing-time fold and the V1 event-time scalar contract
+below. The wider historical complete-job matrices above qualify Flink 2.2 only.
 Benchmarking is deferred.
+
+### Flink 1.18 unbounded event-time polling timers
+
+The same BIGINT/FLOAT/DOUBLE scalar layouts and BIGINT/global keys bind the released Flink 1.18
+ROWS/RANGE owners. Their state serializers remain shared with the 2.2 binding, while a narrow
+native policy preserves the V1 physical timer lifecycle. V1 registers a per-key polling callback
+at zero before its first nonnegative watermark, then at the current watermark plus one. A callback
+processes all eligible timestamp buckets, creates a neutral accumulator for future-only input,
+re-arms while input remains, and refreshes processing cleanup even for orphan callbacks.
+
+Canonical import retains these physical timers independently of pending timestamps. A restored
+positive polling timer can coexist with a newly registered zero timer before the first watermark;
+export preserves both. Native RocksDB stores polling updates during input/watermark processing,
+rather than rebuilding that ledger at the savepoint barrier. Captured readers stream the pinned
+ledger and cleanup table with point reads and bounded raw batches; they do not hydrate timer,
+cleanup or pending-key maps. Memory capture and ordinary private checkpoints retain the same
+logical metadata. The private checkpoint's existing optional metadata footer carries the new
+polling columns; older private checkpoints without a ledger re-arm their pending keys at zero.
+This migration cannot reconstruct physical callbacks that older writers did not record. Pending
+input also seeds the restored key codec when no accumulator has fired yet, on both policies.
+
+The shared controlled matrices compare released stock and native outputs, exact managed-state
+bytes and both timer domains across handoffs and ordinary native checkpoints. Dedicated V1 cases
+cover negative watermarks, future-only neutral folds and overlapping restored callbacks; cold
+RocksDB controls retain 2,051 keys through live changes, receiver failure/retry and cancellation.
+Four isolated 1.18 engine-switch jobs pass for ROWS with cleanup and RANGE without cleanup,
+including ordinary native-checkpoint recovery. The final native suite passes 1,459 tests and the
+memory-only build. Shared selected OVER controls pass 537 checks on 1.18 and 509 on 2.2, with
+32 V1-specific invocations skipped on 2.2; the four complete jobs per line are included in those
+counts. These selected controls do not qualify the entire historical 192-job matrix on 1.18 or
+cross-release upgrades. Very large individual stock values,
+restore inventories and broader operator/layout coverage remain open. Benchmarking stays deferred.

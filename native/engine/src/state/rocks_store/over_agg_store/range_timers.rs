@@ -49,6 +49,21 @@ impl RocksOverAggStore {
         Ok(entries)
     }
 
+    pub(crate) fn write_range_timers(
+        &mut self,
+        entries: &[(Vec<u8>, Option<Vec<u8>>)],
+    ) -> Result<(), DataFusionError> {
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        for (key, value) in entries {
+            if let Some(value) = value {
+                writes.put(key, value)?;
+            } else {
+                writes.delete(key)?;
+            }
+        }
+        writes.finish()
+    }
+
     pub(crate) fn replace_range_timers(
         &mut self,
         entries: &[(Vec<u8>, Vec<u8>)],

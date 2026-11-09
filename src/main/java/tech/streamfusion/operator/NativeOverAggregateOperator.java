@@ -95,11 +95,21 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   @Override
   protected void configureCapturedHandle(long captured, boolean persistent) {
     if (eventCleanupTimers) Native.bindOverEventCleanupTimers(captured);
+    configureEventPolling(captured);
   }
 
   @Override
   protected void configureStateHandle() {
     if (eventCleanupTimers) Native.bindOverEventCleanupTimers(handle);
+    configureEventPolling(handle);
+  }
+
+  private void configureEventPolling(long stateHandle) {
+    if (!proctime
+        && (frameKind == 0 || frameKind == 3)
+        && java.util.Arrays.stream(aggregateKinds).noneMatch(kind -> kind >= 10 && kind <= 12)
+        && tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion() == 1)
+      Native.bindOverEventPollingTimers(stateHandle);
   }
 
   public NativeOverAggregateOperator withConstantArguments(RowType type, byte[] values) {

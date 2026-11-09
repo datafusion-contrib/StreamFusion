@@ -2,7 +2,7 @@ use super::*;
 use jni::objects::JObject;
 
 const CHUNK_ROWS: usize = 1024;
-const STAMP: &str = "__over_retention_stamp";
+pub(super) const STAMP: &str = "__over_retention_stamp";
 
 mod distinct;
 mod event;
@@ -515,6 +515,8 @@ impl crate::state::canonical_memory::CanonicalMemoryState for OverWindowAggregat
         target.late_drops = self.late_drops;
         target.cleanup_state = self.cleanup_state.clone();
         target.range_timers = self.range_timers.clone();
+        target.event_polling = self.event_polling;
+        target.polling_bound = self.polling_bound;
         target.proc_rows = self.proc_rows.clone();
         target.event_cleanup_unarmed = self.event_cleanup_unarmed.clone();
         target.last_write_ms = self.last_write_ms.clone();

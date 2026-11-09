@@ -629,13 +629,21 @@ This is a CI scheduling optimization, not a SQL throughput result. See the
 
 For local canonical iteration, `-Dstreamfusion.test.canonicalSmoke=true` selects deterministic
 representatives from the largest positive operator matrices, including typed grouped-state
-lifecycles and numeric/string/temporal extrema. Every individual parameter value and
+lifecycles, numeric/string/temporal extrema and unbounded event-time OVER state/planner
+matrices. Every individual parameter value and
 every pair of values present in the original provider remains represented. Existing release
 assumptions still apply; a skipped case does not qualify a native path. Named corruption and
 regression providers remain exhaustive. This is an iteration check, not full matrix qualification;
 omitting the flag retains every invocation in its original order. CI does not set this flag and
 continues to run the complete matrices. Batch operators and release lines in these short checks,
 then use the complete matrix for the final qualification.
+
+The canonical unbounded event-time OVER state, planner and full-job fixtures are shared between
+released Flink 1.18 and 2.2. The release adapters choose the actual V1 polling or V2 timestamp
+owner; V1-specific callback cases run on 1.18 and are explicitly skipped on 2.2. Existing full-job
+providers remain exhaustive by default; `sf.canonical.eventOver.job.smoke=true` keeps the established
+local ROWS-cleanup/RANGE selection for fast complete-job iteration. This selection is not the
+full 1.18 job-matrix qualification.
 
 Canonical workers also use class-data sharing through `SF_CANONICAL_CDS_DIR`, set only for
 their test step. The first successful worker on each classpath records loaded classes, then

@@ -38,7 +38,6 @@ import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.planner.delegation.PlannerBase;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeGraph;
-import org.apache.flink.table.planner.plan.nodes.exec.serde.CompiledPlanSerdeUtil;
 import org.apache.flink.table.planner.plan.nodes.exec.spec.OverSpec;
 import org.apache.flink.table.planner.plan.utils.AggregateUtil;
 import org.apache.flink.table.planner.utils.JavaScalaConversionUtil;
@@ -53,6 +52,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import tech.streamfusion.Native;
 import tech.streamfusion.NativePlannerTestEnvironment;
 import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.compat.FlinkPlanCompat;
 import tech.streamfusion.state.CanonicalStateBackend;
 import tech.streamfusion.state.CanonicalStateBackendFactory;
 import tech.streamfusion.state.RocksDBNativeStateBackendFactory;
@@ -131,6 +131,10 @@ class CanonicalEventUnboundedOverInteropTest {
   }
 
   static Stream<Arguments> constantModes() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allConstantModes());
+  }
+
+  private static Stream<Arguments> allConstantModes() {
     return Stream.of(false, true)
         .flatMap(
             rows ->
@@ -184,6 +188,135 @@ class CanonicalEventUnboundedOverInteropTest {
       boolean rows, boolean global, long ttl, boolean stockStore, boolean nativeStore)
       throws Exception {
     verifyCheckpoint(new Plan("BIGINT", rows, global, ttl, false, true), stockStore, nativeStore);
+  }
+
+  static Stream<Arguments> pollingCases() {
+    return Stream.of(false, true)
+        .flatMap(
+            rows ->
+                Stream.of(false, true)
+                    .flatMap(
+                        stock ->
+                            Stream.of(false, true)
+                                .flatMap(
+                                    nativeStore ->
+                                        Stream.of(0L, 1000L)
+                                            .map(
+                                                ttl ->
+                                                    Arguments.of(rows, stock, nativeStore, ttl)))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("pollingCases")
+  void pollingCallbacksRetainTheirPhysicalTimersAcrossTheFirstRestoredWatermark(
+      boolean rows, boolean stockStore, boolean nativeStore, long ttl) throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(FlinkPlanCompat.unboundedOverVersion() == 1);
+    var plan = new Plan("BIGINT", rows, false, ttl);
+    OperatorSubtaskState state;
+    try (var stock = plan.stock(stockStore);
+        var nativeOp = plan.nativeHarness(nativeStore)) {
+      stock.open();
+      nativeOp.open();
+      time(stock, 100);
+      time(nativeOp, 100);
+      var negative = List.of(plan.row(1L, 2L, -10));
+      plan.stockInput(stock, negative);
+      plan.nativeInput(nativeOp, negative);
+      stock.processWatermark(new Watermark(-1));
+      nativeOp.processWatermark(new Watermark(-1));
+      assertTrue(plan.stockOutput(stock).isEmpty());
+      assertTrue(plan.nativeOutput(nativeOp).isEmpty());
+      stock.processWatermark(new Watermark(0));
+      nativeOp.processWatermark(new Watermark(0));
+      assertEquals(plan.stockOutput(stock), plan.nativeOutput(nativeOp));
+      var future = List.of(plan.row(1L, 3L, 100), plan.row(2L, 4L, 200));
+      plan.stockInput(stock, future);
+      plan.nativeInput(nativeOp, future);
+      time(stock, 800);
+      time(nativeOp, 800);
+      stock.processWatermark(new Watermark(10));
+      nativeOp.processWatermark(new Watermark(10));
+      assertTrue(plan.stockOutput(stock).isEmpty());
+      assertTrue(plan.nativeOutput(nativeOp).isEmpty());
+      state = snapshot(stock);
+      try (var returned = plan.stock(stockStore)) {
+        returned.initializeState(snapshot(nativeOp));
+        returned.open();
+        assertEquals(raw(stock), raw(returned), "future-only callbacks create neutral folds");
+      }
+    }
+    try (var stock = plan.stock(stockStore);
+        var nativeOp = plan.nativeHarness(nativeStore)) {
+      stock.initializeState(state);
+      nativeOp.initializeState(state);
+      stock.open();
+      nativeOp.open();
+      time(stock, 900);
+      time(nativeOp, 900);
+      var early = List.of(plan.row(1L, 7L, 5));
+      plan.stockInput(stock, early);
+      plan.nativeInput(nativeOp, early);
+      for (long watermark : new long[] {-1, 5, 10, 11, 200}) {
+        stock.processWatermark(new Watermark(watermark));
+        nativeOp.processWatermark(new Watermark(watermark));
+        assertEquals(plan.stockOutput(stock), plan.nativeOutput(nativeOp));
+        try (var returned = plan.stock(stockStore)) {
+          returned.initializeState(snapshot(nativeOp));
+          returned.open();
+          assertEquals(raw(stock), raw(returned), "physical polling timers at " + watermark);
+        }
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @MethodSource("pollingCases")
+  void orphanPollingCallbacksPreserveCleanupWithoutInventingInputOrFolds(
+      boolean rows, boolean stockStore, boolean nativeStore, long ttl) throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(FlinkPlanCompat.unboundedOverVersion() == 1);
+    var plan = new Plan("BIGINT", rows, false, ttl);
+    OperatorSubtaskState state;
+    try (var stock = plan.stock(stockStore)) {
+      stock.open();
+      time(stock, 100);
+      plan.stockInput(stock, List.of(plan.row(1L, 3L, 10)));
+      state = snapshot(stock);
+    }
+    try (var view = plan.view(stockStore)) {
+      view.initializeState(state);
+      view.open();
+      var backend =
+          (CheckpointableKeyedStateBackend<RowData>)
+              view.getOperator().<RowData>getKeyedStateBackend();
+      var timers =
+          new TimerSerializer<>(
+              plan.selector.getProducedType().toSerializer(), VoidNamespaceSerializer.INSTANCE);
+      backend
+          .create("_timer_state/event_user-timers", timers)
+          .add(
+              new TimerHeapInternalTimer<>(
+                  42, plan.selector.getKey(plan.row(99L, 0L, 0)), VoidNamespace.INSTANCE));
+      state = snapshot(view);
+    }
+    try (var stock = plan.stock(stockStore);
+        var nativeOp = plan.nativeHarness(nativeStore)) {
+      stock.initializeState(state);
+      nativeOp.initializeState(state);
+      stock.open();
+      nativeOp.open();
+      time(stock, 900);
+      time(nativeOp, 900);
+      for (long watermark : new long[] {-1, 0, 42}) {
+        stock.processWatermark(new Watermark(watermark));
+        nativeOp.processWatermark(new Watermark(watermark));
+        assertEquals(plan.stockOutput(stock), plan.nativeOutput(nativeOp));
+        try (var returned = plan.stock(stockStore)) {
+          returned.initializeState(snapshot(nativeOp));
+          returned.open();
+          assertEquals(raw(stock), raw(returned), "orphan callback at " + watermark);
+        }
+      }
+    }
   }
 
   private void verifyCheckpoint(Plan plan, boolean stockStore, boolean nativeStore)
@@ -349,6 +482,10 @@ class CanonicalEventUnboundedOverInteropTest {
                                     "null-required",
                                     "foreign")
                                 .map(reason -> Arguments.of(rows, rocks, reason))))
+        .filter(
+            args ->
+                FlinkPlanCompat.unboundedOverVersion() != 1
+                    || !args.get()[2].equals("orphan-event"))
         .filter(
             args ->
                 !Boolean.getBoolean("sf.canonical.eventOver.smoke")
@@ -567,15 +704,16 @@ class CanonicalEventUnboundedOverInteropTest {
           (KeyedProcessOperator<?, ?, ?>)
               ((SimpleOperatorFactory<?>) transform.getOperatorFactory()).getOperator();
       var function = operator.getUserFunction();
-      assertEquals(
-          org.apache.flink.table.runtime.operators.over.RowTimeUnboundedPrecedingOverFunctionV2
-              .class,
-          function.getClass());
-      Field field = function.getClass().getDeclaredField("accTypes");
+      assertEquals(FlinkPlanCompat.eventUnboundedOver(rows), function.getClass());
+      Class<?> owner = function.getClass();
+      while (Arrays.stream(owner.getDeclaredFields())
+          .noneMatch(candidate -> candidate.getName().equals("accTypes")))
+        owner = owner.getSuperclass();
+      Field field = owner.getDeclaredField("accTypes");
       field.setAccessible(true);
       accumulator = RowType.of((LogicalType[]) field.get(function));
       selector = (RowDataKeySelector) transform.getStateKeySelector();
-      var reader = CompiledPlanSerdeUtil.createJsonObjectReader(planner.createSerdeContext());
+      var reader = FlinkPlanCompat.createJsonObjectReader(planner.createSerdeContext());
       org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JsonNode definition = null;
       for (var candidate : reader.readTree(json).path("nodes"))
         if (candidate.path("id").asInt() == node.getId()) definition = candidate;
@@ -670,7 +808,7 @@ class CanonicalEventUnboundedOverInteropTest {
 
     ExecNode<?> node() throws Exception {
       var graph =
-          CompiledPlanSerdeUtil.createJsonObjectReader(planner.createSerdeContext())
+          FlinkPlanCompat.createJsonObjectReader(planner.createSerdeContext())
               .forType(ExecNodeGraph.class)
               .<ExecNodeGraph>readValue(json);
       return CanonicalBoundedRangeInteropTest.Plan.find(graph.getRootNodes().get(0));

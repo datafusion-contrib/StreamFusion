@@ -17,6 +17,9 @@ impl OverWindowAggregator {
     }
 
     pub(super) fn snapshot_cleanup(&self) -> Vec<u8> {
+        if self.event_polling {
+            return self.snapshot_polling();
+        }
         if self.range_offset().is_some() {
             return self.snapshot_range_timers();
         }
@@ -72,10 +75,23 @@ impl OverWindowAggregator {
     }
 
     pub(super) fn restore_cleanup(&mut self, bytes: &[u8], stamps: &mut HashMap<ByteKey, i64>) {
-        if !self.deadline_cleaning() && self.range_offset().is_none() && !self.processing_rows() {
-            return;
-        }
         for batch in read_ipc_if_present(bytes) {
+            if batch
+                .column_by_name(event_polling::POLLING_TIMERS)
+                .is_some()
+            {
+                self.restore_polling(&batch);
+                stamps.extend(
+                    self.cleanup_state
+                        .iter()
+                        .map(|(key, stamp)| (key.clone(), *stamp)),
+                );
+                continue;
+            }
+            if !self.deadline_cleaning() && self.range_offset().is_none() && !self.processing_rows()
+            {
+                continue;
+            }
             let arity = self.key_columns.len();
             assert_eq!(batch.schema().field(arity).name(), CLEANUP_AT_COLUMN);
             let arrays = (0..arity)
@@ -133,6 +149,13 @@ impl OverWindowAggregator {
         &mut self,
         batch: &RecordBatch,
     ) -> Result<(), DataFusionError> {
+        if batch
+            .column_by_name(event_polling::POLLING_TIMERS)
+            .is_some()
+        {
+            self.restore_polling(batch);
+            return Ok(());
+        }
         let arity = self.key_columns.len();
         let arrays = (0..arity)
             .map(|column| batch.column(column))

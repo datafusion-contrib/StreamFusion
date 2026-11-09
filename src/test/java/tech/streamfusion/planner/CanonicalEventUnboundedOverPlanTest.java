@@ -7,6 +7,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalEventUnboundedOverPlanTest {
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     return Stream.of("event-unbounded-rows", "event-unbounded-range")
         .flatMap(
             mode ->
@@ -40,6 +44,10 @@ class CanonicalEventUnboundedOverPlanTest {
   }
 
   static Stream<Arguments> constantCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allConstantCases());
+  }
+
+  private static Stream<Arguments> allConstantCases() {
     return Stream.of("event-unbounded-rows", "event-unbounded-range")
         .flatMap(
             mode ->

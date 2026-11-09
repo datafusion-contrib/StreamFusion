@@ -192,8 +192,15 @@ public final class FlinkPlanCompat {
     return assigner::getWindowStart;
   }
 
-  public static Class<?> eventUnboundedOver() {
-    return Void.class;
+  public static int unboundedOverVersion() {
+    return 1;
+  }
+
+  public static Class<?> eventUnboundedOver(boolean rows) {
+    return rows
+        ? org.apache.flink.table.runtime.operators.over.RowTimeRowsUnboundedPrecedingFunction.class
+        : org.apache.flink.table.runtime.operators.over.RowTimeRangeUnboundedPrecedingFunction
+            .class;
   }
 
   public static org.apache.flink.table.planner.plan.nodes.physical.stream

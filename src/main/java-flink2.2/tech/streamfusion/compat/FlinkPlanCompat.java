@@ -186,7 +186,11 @@ public final class FlinkPlanCompat {
     return assigner::getWindowStart;
   }
 
-  public static Class<?> eventUnboundedOver() {
+  public static int unboundedOverVersion() {
+    return 2;
+  }
+
+  public static Class<?> eventUnboundedOver(boolean rows) {
     return org.apache.flink.table.runtime.operators.over.RowTimeUnboundedPrecedingOverFunctionV2
         .class;
   }

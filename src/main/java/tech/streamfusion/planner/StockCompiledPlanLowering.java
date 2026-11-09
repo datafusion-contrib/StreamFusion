@@ -1585,7 +1585,7 @@ final class StockCompiledPlanLowering {
             ? processing
                 ? org.apache.flink.table.runtime.operators.over.ProcTimeUnboundedPrecedingFunction
                     .class
-                : FlinkPlanCompat.eventUnboundedOver()
+                : FlinkPlanCompat.eventUnboundedOver(group.isRows())
             : processing
                 ? org.apache.flink.table.runtime.operators.over.ProcTimeRowsBoundedPrecedingFunction
                     .class

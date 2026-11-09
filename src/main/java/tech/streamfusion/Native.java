@@ -156,6 +156,8 @@ public final class Native {
 
   public static native void bindOverEventCleanupTimers(long handle);
 
+  public static native void bindOverEventPollingTimers(long handle);
+
   public static native long[] nextOverEventCleanup(long handle);
 
   public static native void fireOverEventCleanup(long handle, long timestamp, long currentTime);

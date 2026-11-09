@@ -79,8 +79,10 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
                                 org.apache.flink.configuration.ConfigOptions.key(
                                         "table.exec.unbounded-over.version")
                                     .intType()
-                                    .defaultValue(2))
-                        != 2)
+                                    .defaultValue(
+                                        tech.streamfusion.compat.FlinkPlanCompat
+                                            .unboundedOverVersion()))
+                        != tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion())
         || bounded && proctime && frameKind == 2
         || keyColumns.length > 1
         || java.util.Arrays.stream(aggregateKinds)

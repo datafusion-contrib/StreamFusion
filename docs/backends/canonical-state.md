@@ -27,7 +27,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Sessions](../operators/window-aggregate.md) | Automatic partitioned-session binding, operator recovery and selected complete-job handoffs | Native unpartitioned session assignment and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
 | [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
-| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded V2 scalar contracts with automatic binding | Legacy event-time V1, wider keys/types, DISTINCT/views and bounded event-ROWS cleanup |
+| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts (1.18 V1 / 2.2 V2) with automatic binding | Explicit legacy V1 on 2.2, wider keys/types, DISTINCT/views and bounded event-ROWS cleanup |
 | [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs | Legacy proctime variant, wider schemas and commit-failure matrix |
@@ -38,11 +38,14 @@ pages. Historical cohorts are not silently requalified against each newer librar
 The established complete-job qualification is on released Flink 2.2.1. Flink 1.18.1 now shares the
 planner, metadata projection, state contracts and canonical backend. Complete-job controls cover
 First-N, grouped arithmetic, regular joins, normalization, eager deduplication and qualified fixed
-windows (including two-phase and DISTINCT controls) on both native stores. Component controls additionally cover typed/grouped state, ranks, fixed TUMBLE/HOP/CUMULATE
+windows (including two-phase and DISTINCT controls) and selected unbounded event-time OVER
+ROWS/RANGE jobs on both native stores. Component controls additionally cover typed/grouped state, ranks, fixed TUMBLE/HOP/CUMULATE
 windows, interval joins, temporal state and processing-time OVER. Shared-window binding preserves
 1.18's uninitialized timer-service watermark until the first post-restore watermark; it uses the
 same stock state and timer serializers as 2.2. Session TVFs are unavailable in 1.18, buffered dedup
-uses the older eager owner, and event-time unbounded OVER V1 remains unqualified. These same-line controls do not qualify the whole
+uses the older eager owner, and explicit legacy V1 mode on 2.2 remains unqualified. The shared
+unbounded event-time scalar binding preserves 1.18 polling callbacks separately from pending
+timestamps; its captured RocksDB reader leaves metadata on disk. These same-line controls do not qualify the whole
 1.18 operator inventory or cross-line upgrades. Custom stock source/committer fixtures retain their
 state and external effects in the qualified jobs. Native connector protocols have separate
 qualification: the [Kafka handoff matrices](../connectors/kafka.md#canonical-sink-handoffs-partial)
@@ -134,25 +137,15 @@ checks and 408 planner checks, with 54 SESSION TVF capability skips. Released 2.
 six stock and six native invocations across First-N, append/update/retract ranks and eager dedup,
 with positive native canonical-import and subsequent-input evidence. Representative checks do not
 replace the exhaustive CI matrix or expand the partial stock-layout inventory above.
-The metadata streaming cohort passes 614 integration checks on 2.2 and 430 on 1.18, plus 1,449
-native tests and a memory-only native build. Cold-reader controls retain empty metadata maps while
-checking original frame/counter/timer values after live writes; cleanup controls cross batch
-boundaries, fail/retry receivers and cancel reads.
-The retained-frame chunk cohort passes 585 selected bridge/interchange checks on each released
-line, including six 2,051-row single-partition continuations through stock heap/RocksDB and native
-RocksDB restore. Native row/byte boundary, receiver retry and cancellation controls pass alongside
-all 1,450 native tests and the memory-only build.
-The shared-visitor cohort passes 1,451 native tests and the memory-only build, with 498 selected
-interchange checks on 2.2 and 450 on 1.18. Window-rank controls cancel inside a single wide stored
-bucket and verify bounded decoded batches and receiver retry.
-Temporal-join cold-reader controls cover 2,052 metadata/deadline keys, live updates, receiver
-failure/retry and cancellation with empty reader caches. The change passes 1,452 native tests, the
-memory-only build and 26 selected temporal interchange checks on each release.
-The companion-bound cohort passes 1,454 native tests, the memory-only build, 105 selected grouped
-checks on 2.2 and 102 on 1.18 (excluding unavailable CHAR extrema), and 19 OVER membership bridge
-checks on each line. Released scalar/DISTINCT group-restore programs additionally pass two stock
-and two native invocations; their audit confirms positive native import/continued input without
-fallback. These controls preserve existing layout coverage rather than expanding admission.
+Cold-reader controls preserve empty metadata maps while checking original frames, counters,
+physical timers and cleanup deadlines after live writes. The wide-state cases include 2,051-row
+hot OVER partitions, 2,052 temporal metadata/deadline keys, 2 MiB companion entries and a single
+large rank bucket. They check row/byte boundaries, receiver failure/retry and cancellation inside
+a partition. The latest native suite passes 1,459 tests with two existing ignores; the memory-only
+build also passes. Selected operator/planner matrices and isolated jobs run on both releases.
+Released scalar/DISTINCT group restore programs additionally pass two stock and two native
+invocations with positive canonical import/continued input and no fallback; their assertions
+remain unchanged. These controls preserve existing layout coverage rather than expanding admission.
 Conversion cost, barrier duration and temporary I/O have not been benchmarked.
 
 Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending
@@ -1800,8 +1793,16 @@ checkpoint recovery and actual SQL/compiled transpose-schema controls. The merge
 2,086 checks, all nine unchanged released aggregate programs per engine and all 192 event-time
 OVER full jobs on the same source/library. The latter retain both native stores, ROWS/RANGE,
 keyed/global state, cleanup on/off, custom connectors and transpose boundaries, no-input returns,
-ordinary native recovery and selected 1→3→2 keyed rescaling. The separate 212-check Flink 1.18 run
-is shared-code regression coverage, not canonical qualification. See [exact OVER coverage](../operators/over.md#released-v2-event-time-unbounded-scalar-binding-partial).
+ordinary native recovery and selected 1→3→2 keyed rescaling. The older 212-check Flink 1.18 run
+established shared-code regression coverage. See [exact OVER coverage](../operators/over.md#released-v2-event-time-unbounded-scalar-binding-partial).
+The same scalar layouts now bind Flink 1.18's released V1 ROWS/RANGE owners through a narrow
+polling-timer policy. Physical callbacks survive independently of timestamp buckets, including
+negative-watermark behavior, future-only neutral folds and overlapping restored timers. Polling
+ledger updates persist during processing, and captured readers stream that pinned metadata
+without hydrating per-key maps. The existing private checkpoint footer carries polling metadata;
+older private checkpoints re-arm pending keys whose writers did not retain a ledger. Four
+selected 1.18 full-job handoffs pass, including native-checkpoint recovery. See the
+[V1 lifecycle and remaining limits](../operators/over.md#flink-118-unbounded-event-time-polling-timers).
 Every operator family remains partial and benchmarking remains deferred under #569.
 
 
