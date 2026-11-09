@@ -973,7 +973,15 @@ row through the released Flink serializer. The comparison uses ordinary test log
 no JFR and no phase timers, while retaining encoded sizes and individual outcomes.
 Separate round trips on released Flink 1.18.1 and 2.2.1 under Java 11 passed all three
 codec cases: nested wide binary values, nulls, multiset counts, every changelog kind and
-corrupt-input rejection. End-to-end timing and full qualification remain required.
+corrupt-input rejection.
+The [complete transport comparison](benchmarks/ci-deeper-profile-20261108.json) passed all
+four full-class trials with identical individual outcomes (216 invocations, 112 existing
+skips). The wide 831-row result fell from 165,299,820 bytes to approximately 1.6 MB while
+retaining every row. Median elapsed changed from 84.75 to 83.75 seconds (1.18%) and child
+CPU from 107.95 to 104.17 seconds (3.50%). Elapsed ranges overlap; this establishes a
+large transport-size reduction, not a material execution speedup. Point-in-time heap
+messages are not peak memory measurements, and complete required CI must still qualify
+the change before enabling it by default.
 Any failed trial remains a failed diagnostic; its verified counts and condensed failure
 evidence are retained. Raw recordings and bulky successful reports are removed after analysis.
 

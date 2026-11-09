@@ -1164,5 +1164,219 @@
       "limits": "Java execution samples and native-method stack samples are separate. Native samples include blocking I/O and are not CPU attribution. Inclusive counts overlap. Neither sample count is exact CPU time. Native samples do not resolve Rust internals. Compilation durations are activity intervals, not compiler CPU seconds. Allocation weights are sampled estimates. Wait durations exclude unrecorded short waits, overlap across threads and are not CPU time. GC activity is not total stop-the-world pause time; heap summaries are maxima at recorded GC boundaries, not peak RSS. Instrumented elapsed times are not speedup evidence."
     },
     "limits": "Elapsed and child CPU include the complete current Maven reactor; child CPU excludes external broker containers. The 29-case instrumented pass is attribution, not speedup evidence. Every test closes two independent catalogs sequentially in the baseline."
+  },
+  "recovery_transport": {
+    "run": 42533378477,
+    "source_sha": "ec72bb4f053828c6d74932e7af93eca5daa08b08",
+    "jdk": 17,
+    "flink": "1.18",
+    "method": "Two alternating pairs, fresh JVMs, fixed 2 GiB heap, first-tier compilation, ordinary NOP logging, no JFR or phase timers. All original class assertions and individual outcomes retained. Encoded-size and point-in-time heap messages retained in both modes.",
+    "trials": [
+      {
+        "suite": "recovery",
+        "line": "1.18",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": false,
+        "elapsed_seconds": 85.723894527,
+        "cpu_seconds": 108.572779,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 28
+        },
+        "classes": {
+          "tech.streamfusion.FlinkBinaryCollectionSqlHarnessTest": {
+            "tests": 54,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 28,
+            "seconds": 81.428
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [
+          "[recovery-capture] task=GroupAggregate[92] -> ConstraintEnforcer[93] -> Sink: *anonymous_recovery-results$18*[93] (1/1)#0 rows=831 bytes=165299820 heapUsed=685793528 maxHeap=2147483648",
+          "[recovery-result] job=163ae68a95c8ac675bcddc2c492267e9 keys=[streamfusion-recovery-results] rows=831 heapUsed=1354972840 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[103] -> ArrowToRowDataExecNode[104] -> ConstraintEnforcer[105] -> Sink: *anonymous_recovery-results$20*[105] (1/1)#2 rows=831 bytes=165299820 heapUsed=1457340208 maxHeap=2147483648",
+          "[recovery-result] job=46ef234e10667395a8a759bf7d694f34 keys=[streamfusion-recovery-results] rows=831 heapUsed=1948153064 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[113] -> ConstraintEnforcer[114] -> Sink: *anonymous_recovery-results$22*[114] (1/1)#0 rows=831 bytes=457692 heapUsed=1999292656 maxHeap=2147483648",
+          "[recovery-result] job=3ef47ccae4ad1f88fd9eca2bfd0a9179 keys=[streamfusion-recovery-results] rows=831 heapUsed=1938469312 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[124] -> ArrowToRowDataExecNode[125] -> ConstraintEnforcer[126] -> Sink: *anonymous_recovery-results$24*[126] (1/1)#2 rows=831 bytes=457692 heapUsed=1870447272 maxHeap=2147483648",
+          "[recovery-result] job=76c019c90f1e5a0f0d3903d7c508b3db keys=[streamfusion-recovery-results] rows=831 heapUsed=1878700512 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[134] -> ConstraintEnforcer[135] -> Sink: *anonymous_recovery-results$26*[135] (1/1)#0 rows=831 bytes=26040948 heapUsed=1407777816 maxHeap=2147483648",
+          "[recovery-result] job=a7063e65f2141d33d0209b4a5668b4fe keys=[streamfusion-recovery-results] rows=831 heapUsed=1466134328 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[145] -> ArrowToRowDataExecNode[146] -> ConstraintEnforcer[147] -> Sink: *anonymous_recovery-results$28*[147] (1/1)#2 rows=831 bytes=26040948 heapUsed=1664468368 maxHeap=2147483648",
+          "[recovery-result] job=45d7d1d0dc9256ed1e977fbb1c7776b4 keys=[streamfusion-recovery-results] rows=831 heapUsed=1128309592 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[155] -> ConstraintEnforcer[156] -> Sink: *anonymous_recovery-results$30*[156] (1/1)#0 rows=831 bytes=112644 heapUsed=1031922264 maxHeap=2147483648",
+          "[recovery-result] job=eff5ba654fb348ce59ab510a761d425a keys=[streamfusion-recovery-results] rows=831 heapUsed=1036273664 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[166] -> ArrowToRowDataExecNode[167] -> ConstraintEnforcer[168] -> Sink: *anonymous_recovery-results$32*[168] (1/1)#2 rows=831 bytes=112644 heapUsed=968764192 maxHeap=2147483648",
+          "[recovery-result] job=b94a6acc2e7e073e35c7ccc4fd75984d keys=[streamfusion-recovery-results] rows=831 heapUsed=975294072 maxHeap=2147483648"
+        ],
+        "fixture_timings": []
+      },
+      {
+        "suite": "recovery",
+        "line": "1.18",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": true,
+        "elapsed_seconds": 84.15676712800001,
+        "cpu_seconds": 104.710275,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 28
+        },
+        "classes": {
+          "tech.streamfusion.FlinkBinaryCollectionSqlHarnessTest": {
+            "tests": 54,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 28,
+            "seconds": 80.061
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [
+          "[recovery-capture] task=GroupAggregate[92] -> ConstraintEnforcer[93] -> Sink: *anonymous_recovery-results$18*[93] (1/1)#0 rows=831 bytes=1594945 heapUsed=713152904 maxHeap=2147483648",
+          "[recovery-result] job=ba8837d6b7638061b56ba07c8bc9b068 keys=[streamfusion-recovery-results] rows=831 heapUsed=511734920 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[103] -> ArrowToRowDataExecNode[104] -> ConstraintEnforcer[105] -> Sink: *anonymous_recovery-results$20*[105] (1/1)#2 rows=831 bytes=1698140 heapUsed=1058946768 maxHeap=2147483648",
+          "[recovery-result] job=c30d46f7d6929f78b02e6a4c89ce15b0 keys=[streamfusion-recovery-results] rows=831 heapUsed=865512904 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[113] -> ConstraintEnforcer[114] -> Sink: *anonymous_recovery-results$22*[114] (1/1)#0 rows=831 bytes=139186 heapUsed=1252198752 maxHeap=2147483648",
+          "[recovery-result] job=368e18b7f0fa37d6c72f61a0582d82e1 keys=[streamfusion-recovery-results] rows=831 heapUsed=1028629904 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[124] -> ArrowToRowDataExecNode[125] -> ConstraintEnforcer[126] -> Sink: *anonymous_recovery-results$24*[126] (1/1)#2 rows=831 bytes=140098 heapUsed=1098884496 maxHeap=2147483648",
+          "[recovery-result] job=b70ecb5a4d08986521a31ffe9bf037a5 keys=[streamfusion-recovery-results] rows=831 heapUsed=1104127376 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[134] -> ConstraintEnforcer[135] -> Sink: *anonymous_recovery-results$26*[135] (1/1)#0 rows=831 bytes=416710 heapUsed=1194310512 maxHeap=2147483648",
+          "[recovery-result] job=b5b57476ea52ae83deea5e9bee2bc347 keys=[streamfusion-recovery-results] rows=831 heapUsed=1245846648 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[145] -> ArrowToRowDataExecNode[146] -> ConstraintEnforcer[147] -> Sink: *anonymous_recovery-results$28*[147] (1/1)#2 rows=831 bytes=416041 heapUsed=1244090552 maxHeap=2147483648",
+          "[recovery-result] job=d0358c4c53827a5173dabe2a0522ee5b keys=[streamfusion-recovery-results] rows=831 heapUsed=1194587136 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[155] -> ConstraintEnforcer[156] -> Sink: *anonymous_recovery-results$30*[156] (1/1)#0 rows=831 bytes=56828 heapUsed=1255344984 maxHeap=2147483648",
+          "[recovery-result] job=17bafa1445add7d4399f909a1ad9fd71 keys=[streamfusion-recovery-results] rows=831 heapUsed=1260242344 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[166] -> ArrowToRowDataExecNode[167] -> ConstraintEnforcer[168] -> Sink: *anonymous_recovery-results$32*[168] (1/1)#2 rows=831 bytes=56799 heapUsed=1230829056 maxHeap=2147483648",
+          "[recovery-result] job=b4ee49e1249f2d960774021103232b17 keys=[streamfusion-recovery-results] rows=831 heapUsed=1235144704 maxHeap=2147483648"
+        ],
+        "fixture_timings": []
+      },
+      {
+        "suite": "recovery",
+        "line": "1.18",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": true,
+        "elapsed_seconds": 83.347266988,
+        "cpu_seconds": 103.63436999999999,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 28
+        },
+        "classes": {
+          "tech.streamfusion.FlinkBinaryCollectionSqlHarnessTest": {
+            "tests": 54,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 28,
+            "seconds": 79.293
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [
+          "[recovery-capture] task=GroupAggregate[92] -> ConstraintEnforcer[93] -> Sink: *anonymous_recovery-results$18*[93] (1/1)#0 rows=831 bytes=1616366 heapUsed=598433344 maxHeap=2147483648",
+          "[recovery-result] job=128e6ae722994026e9630bd1aa7b2c47 keys=[streamfusion-recovery-results] rows=831 heapUsed=559000056 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[103] -> ArrowToRowDataExecNode[104] -> ConstraintEnforcer[105] -> Sink: *anonymous_recovery-results$20*[105] (1/1)#2 rows=831 bytes=1633181 heapUsed=768862648 maxHeap=2147483648",
+          "[recovery-result] job=5ecb8268cedd7d0384d9dd45b638c6c4 keys=[streamfusion-recovery-results] rows=831 heapUsed=971020144 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[113] -> ConstraintEnforcer[114] -> Sink: *anonymous_recovery-results$22*[114] (1/1)#0 rows=831 bytes=139720 heapUsed=1084951816 maxHeap=2147483648",
+          "[recovery-result] job=458ba800d134c4b611320b76df27b7da keys=[streamfusion-recovery-results] rows=831 heapUsed=1089739840 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[124] -> ArrowToRowDataExecNode[125] -> ConstraintEnforcer[126] -> Sink: *anonymous_recovery-results$24*[126] (1/1)#2 rows=831 bytes=139901 heapUsed=1103074256 maxHeap=2147483648",
+          "[recovery-result] job=659dd39d574c766d4ea4c99a7db14874 keys=[streamfusion-recovery-results] rows=831 heapUsed=1060625024 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[134] -> ConstraintEnforcer[135] -> Sink: *anonymous_recovery-results$26*[135] (1/1)#0 rows=831 bytes=417017 heapUsed=607275520 maxHeap=2147483648",
+          "[recovery-result] job=9353c52814b4528feebbf539f43008ee keys=[streamfusion-recovery-results] rows=831 heapUsed=659704320 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[145] -> ArrowToRowDataExecNode[146] -> ConstraintEnforcer[147] -> Sink: *anonymous_recovery-results$28*[147] (1/1)#2 rows=831 bytes=417726 heapUsed=903901040 maxHeap=2147483648",
+          "[recovery-result] job=4438a854ef90814c424c6eb18992bef3 keys=[streamfusion-recovery-results] rows=831 heapUsed=729651704 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[155] -> ConstraintEnforcer[156] -> Sink: *anonymous_recovery-results$30*[156] (1/1)#0 rows=831 bytes=56828 heapUsed=780141448 maxHeap=2147483648",
+          "[recovery-result] job=8297965af2c716cbfc46331c2232653e keys=[streamfusion-recovery-results] rows=831 heapUsed=784627704 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[166] -> ArrowToRowDataExecNode[167] -> ConstraintEnforcer[168] -> Sink: *anonymous_recovery-results$32*[168] (1/1)#2 rows=831 bytes=56854 heapUsed=844774744 maxHeap=2147483648",
+          "[recovery-result] job=d0e86239141b62409b7a7b55e88a1eb3 keys=[streamfusion-recovery-results] rows=831 heapUsed=848968440 maxHeap=2147483648"
+        ],
+        "fixture_timings": []
+      },
+      {
+        "suite": "recovery",
+        "line": "1.18",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": false,
+        "elapsed_seconds": 83.77909613100002,
+        "cpu_seconds": 107.33278000000001,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 28
+        },
+        "classes": {
+          "tech.streamfusion.FlinkBinaryCollectionSqlHarnessTest": {
+            "tests": 54,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 28,
+            "seconds": 79.688
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [
+          "[recovery-capture] task=GroupAggregate[92] -> ConstraintEnforcer[93] -> Sink: *anonymous_recovery-results$18*[93] (1/1)#0 rows=831 bytes=165299820 heapUsed=670982376 maxHeap=2147483648",
+          "[recovery-result] job=4a141ade808d9b0ead3ba43c29aa368a keys=[streamfusion-recovery-results] rows=831 heapUsed=1488510488 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[103] -> ArrowToRowDataExecNode[104] -> ConstraintEnforcer[105] -> Sink: *anonymous_recovery-results$20*[105] (1/1)#2 rows=831 bytes=165299820 heapUsed=1462066192 maxHeap=2147483648",
+          "[recovery-result] job=5cab342ae204ae2a0590f64f923fac77 keys=[streamfusion-recovery-results] rows=831 heapUsed=1951197880 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[113] -> ConstraintEnforcer[114] -> Sink: *anonymous_recovery-results$22*[114] (1/1)#0 rows=831 bytes=457692 heapUsed=2013849768 maxHeap=2147483648",
+          "[recovery-result] job=becb2730d3734dad6e211328a4ece658 keys=[streamfusion-recovery-results] rows=831 heapUsed=1952746912 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[124] -> ArrowToRowDataExecNode[125] -> ConstraintEnforcer[126] -> Sink: *anonymous_recovery-results$24*[126] (1/1)#2 rows=831 bytes=457692 heapUsed=2019237128 maxHeap=2147483648",
+          "[recovery-result] job=c261159564b33cdf821b0130152826fe keys=[streamfusion-recovery-results] rows=831 heapUsed=1966511472 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[134] -> ConstraintEnforcer[135] -> Sink: *anonymous_recovery-results$26*[135] (1/1)#0 rows=831 bytes=26040948 heapUsed=1879775576 maxHeap=2147483648",
+          "[recovery-result] job=b4ba520c334db66f48eab45ad4f72f85 keys=[streamfusion-recovery-results] rows=831 heapUsed=1631304392 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[145] -> ArrowToRowDataExecNode[146] -> ConstraintEnforcer[147] -> Sink: *anonymous_recovery-results$28*[147] (1/1)#2 rows=831 bytes=26040948 heapUsed=1658259152 maxHeap=2147483648",
+          "[recovery-result] job=5d519b9fafe860f1484c605ced2c1516 keys=[streamfusion-recovery-results] rows=831 heapUsed=1100239288 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[155] -> ConstraintEnforcer[156] -> Sink: *anonymous_recovery-results$30*[156] (1/1)#0 rows=831 bytes=112644 heapUsed=963408240 maxHeap=2147483648",
+          "[recovery-result] job=bd72ba1a326e2796adbb27485d3ed160 keys=[streamfusion-recovery-results] rows=831 heapUsed=970748304 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[166] -> ArrowToRowDataExecNode[167] -> ConstraintEnforcer[168] -> Sink: *anonymous_recovery-results$32*[168] (1/1)#2 rows=831 bytes=112644 heapUsed=1048342896 maxHeap=2147483648",
+          "[recovery-result] job=cd823e11b2d343f6275f99f4affda9b1 keys=[streamfusion-recovery-results] rows=831 heapUsed=1056207336 maxHeap=2147483648"
+        ],
+        "fixture_timings": []
+      }
+    ],
+    "medians": {
+      "elapsed_seconds": {
+        "reference_median": 84.75149532900001,
+        "compressed_median": 83.752017058,
+        "reduction_percent": 1.1793045858602127
+      },
+      "cpu_seconds": {
+        "reference_median": 107.9527795,
+        "compressed_median": 104.17232249999999,
+        "reduction_percent": 3.501954296600591
+      }
+    },
+    "limits": "Elapsed ranges overlap and median reduction is only 1.18%; this does not establish a material timing improvement. Encoded result size is reduced from 165,299,820 bytes to about 1.6 MB without dropping rows. Reported heap usages are sampled at capture/decode, not peaks. The original missing-accumulator failure did not reproduce and its cause remains unconfirmed."
   }
 }
