@@ -2,7 +2,6 @@ package tech.streamfusion.state;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
@@ -138,22 +137,6 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
   private StockValueState<Long> bound(CheckpointableKeyedStateBackend<RowData> backend)
       throws Exception {
     return new StockValueState<>(backend, "rankEnd", LongSerializer.INSTANCE, ttl);
-  }
-
-  private List<RowData> owners(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var owners = new LinkedHashSet<RowData>();
-    var serializer = new RowDataSerializer(keyType);
-    for (String descriptor : stateDescriptors().keySet()) {
-      try (var stream = backend.getKeys(descriptor, VoidNamespace.INSTANCE)) {
-        var iterator = stream.iterator();
-        while (iterator.hasNext()) {
-          var key = iterator.next();
-          validateKey(key, keyType);
-          owners.add(serializer.toBinaryRow(key).copy());
-        }
-      }
-    }
-    return new ArrayList<>(owners);
   }
 
   private static void validateKey(RowData key, RowType type) {
@@ -330,74 +313,92 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
     var sorts = new StockKeyProjection(sortType);
     var rows = new RowDataSerializer(rowType);
     var pending = new ArrayList<RowData>(CHUNK_ROWS);
-    for (var key : owners(backend)) {
-      backend.setCurrentKey(key);
-      byte[] encoded = bytes(binary.toBinaryRow(key));
-      var countMap = counts.value();
-      if (countMap != null) {
-        if (countMap.getUserValue() == null)
-          throw new IllegalStateException("NULL retracting count map");
-        enqueue(
-            handle,
-            persistent,
-            pending,
-            transfer(encoded, null, null, COUNTS, 0, countMap.getLastAccessTimestamp()),
-            validating);
-        var seen = new java.util.HashSet<RowData>();
-        for (var entry : countMap.getUserValue().entrySet()) {
-          validateKey(entry.getKey(), sortType);
-          var sort = sorts.project(entry.getKey());
-          if (entry.getValue() == null || !seen.add(sort))
-            throw new IllegalStateException("Invalid retracting counter");
-          enqueue(
-              handle,
-              persistent,
-              pending,
-              transfer(
-                  encoded, sort, null, COUNT, entry.getValue(), countMap.getLastAccessTimestamp()),
-              validating);
-        }
-      }
-      if (bound != null && bound.value() != null) {
-        var value = bound.value();
-        if (value.getUserValue() == null) throw new IllegalStateException("NULL retracting bound");
-        enqueue(
-            handle,
-            persistent,
-            pending,
-            transfer(
-                encoded, null, null, BOUND, value.getUserValue(), value.getLastAccessTimestamp()),
-            validating);
-      }
-      var seen = new java.util.HashSet<RowData>();
-      for (var entry : data.entries()) {
-        validateKey(entry.getKey(), sortType);
-        var sort = sorts.project(entry.getKey());
-        if (entry.getValue() == null || !seen.add(sort))
-          throw new IllegalStateException("Invalid retracting data list");
-        var value = list(entry.getValue());
-        if (value.getUserValue() == null)
-          throw new IllegalStateException("NULL retracting retained rows");
-        enqueue(
-            handle,
-            persistent,
-            pending,
-            transfer(encoded, sort, null, LIST, 0, value.getLastAccessTimestamp()),
-            validating);
-        for (var row : value.getUserValue()) {
-          validatePayload(key, sort, row);
-          enqueue(
-              handle,
-              persistent,
-              pending,
-              transfer(
-                  encoded,
-                  sort,
-                  rows.copy(row),
-                  row.getRowKind().toByteValue(),
-                  0,
-                  value.getLastAccessTimestamp()),
-              validating);
+    try (var inventory = new StockRestoreInventory(new RowDataSerializer(keyType))) {
+      inventory.collectOwners(backend, stateDescriptors().keySet());
+      try (var owners = inventory.owners()) {
+        while (owners.hasNext()) {
+          var key = owners.next();
+          validateKey(key, keyType);
+          backend.setCurrentKey(key);
+          byte[] encoded = bytes(binary.toBinaryRow(key));
+          var countMap = counts.value();
+          if (countMap != null) {
+            if (countMap.getUserValue() == null)
+              throw new IllegalStateException("NULL retracting count map");
+            enqueue(
+                handle,
+                persistent,
+                pending,
+                transfer(encoded, null, null, COUNTS, 0, countMap.getLastAccessTimestamp()),
+                validating);
+            var seen = new java.util.HashSet<RowData>();
+            for (var entry : countMap.getUserValue().entrySet()) {
+              validateKey(entry.getKey(), sortType);
+              var sort = sorts.project(entry.getKey());
+              if (entry.getValue() == null || !seen.add(sort))
+                throw new IllegalStateException("Invalid retracting counter");
+              enqueue(
+                  handle,
+                  persistent,
+                  pending,
+                  transfer(
+                      encoded,
+                      sort,
+                      null,
+                      COUNT,
+                      entry.getValue(),
+                      countMap.getLastAccessTimestamp()),
+                  validating);
+            }
+          }
+          if (bound != null && bound.value() != null) {
+            var value = bound.value();
+            if (value.getUserValue() == null)
+              throw new IllegalStateException("NULL retracting bound");
+            enqueue(
+                handle,
+                persistent,
+                pending,
+                transfer(
+                    encoded,
+                    null,
+                    null,
+                    BOUND,
+                    value.getUserValue(),
+                    value.getLastAccessTimestamp()),
+                validating);
+          }
+          var seen = new java.util.HashSet<RowData>();
+          for (var entry : data.entries()) {
+            validateKey(entry.getKey(), sortType);
+            var sort = sorts.project(entry.getKey());
+            if (entry.getValue() == null || !seen.add(sort))
+              throw new IllegalStateException("Invalid retracting data list");
+            var value = list(entry.getValue());
+            if (value.getUserValue() == null)
+              throw new IllegalStateException("NULL retracting retained rows");
+            enqueue(
+                handle,
+                persistent,
+                pending,
+                transfer(encoded, sort, null, LIST, 0, value.getLastAccessTimestamp()),
+                validating);
+            for (var row : value.getUserValue()) {
+              validatePayload(key, sort, row);
+              enqueue(
+                  handle,
+                  persistent,
+                  pending,
+                  transfer(
+                      encoded,
+                      sort,
+                      rows.copy(row),
+                      row.getRowKind().toByteValue(),
+                      0,
+                      value.getLastAccessTimestamp()),
+                  validating);
+            }
+          }
         }
       }
     }

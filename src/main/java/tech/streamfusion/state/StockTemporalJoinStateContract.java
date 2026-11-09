@@ -27,6 +27,7 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
   private static final String EVENTS = "_timer_state/event_timers";
   private static final String PROCESSING = "_timer_state/processing_timers";
   private static final int CHUNK = 1024;
+  private static final int EVENT_CALLBACKS = 1, PROCESSING_CALLBACKS = 2;
   private final TypeSerializer<RowData> keys;
   private final RowType keyType;
   private final RowType[] inputs, transfers;
@@ -198,40 +199,27 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
         : row.getTimestamp(column, 3).getMillisecond();
   }
 
-  private Map<BinaryRowData, NavigableSet<Long>> callbacks(
-      CheckpointableKeyedStateBackend<RowData> backend, String queue, StockKeyProjection projection)
+  private void callbacks(
+      CheckpointableKeyedStateBackend<RowData> backend,
+      String queue,
+      StockKeyProjection projection,
+      StockRestoreInventory retained,
+      int section)
       throws Exception {
-    var result = new LinkedHashMap<BinaryRowData, NavigableSet<Long>>();
     try (var iterator = StockTimerSnapshot.<RowData, VoidNamespace>iterator(backend, queue)) {
       while (iterator.hasNext()) {
         var timer = iterator.next();
         var key = key(timer.getKey(), projection);
-        if (!result.computeIfAbsent(key, ignored -> new TreeSet<>()).add(timer.getTimestamp()))
+        retained.addOwner(key);
+        if (!retained.add(section, key, timer.getTimestamp()))
           throw new IllegalStateException("Duplicate temporal callback");
       }
     }
-    return result;
   }
 
-  private static final class Retained {
-    final Set<BinaryRowData> keys;
-    final Map<BinaryRowData, NavigableSet<Long>> callbacks;
-
-    Retained(Set<BinaryRowData> keys, Map<BinaryRowData, NavigableSet<Long>> callbacks) {
-      this.keys = keys;
-      this.callbacks = callbacks;
-    }
-
-    Set<BinaryRowData> keys() {
-      return keys;
-    }
-
-    Map<BinaryRowData, NavigableSet<Long>> callbacks() {
-      return callbacks;
-    }
-  }
-
-  private Retained preflight(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
+  private void preflight(
+      CheckpointableKeyedStateBackend<RowData> backend, StockRestoreInventory retained)
+      throws Exception {
     var expected = new HashMap<String, StockStateInventory.State>();
     stateDescriptors()
         .forEach(
@@ -241,15 +229,12 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
     StockStateInventory.validate(backend, expected, timerSchema(), keys);
     queues(backend);
     var projection = new StockKeyProjection(keyType);
-    var eventCallbacks = callbacks(backend, EVENTS, projection);
-    var processingCallbacks = callbacks(backend, PROCESSING, projection);
-    var retained = new LinkedHashSet<BinaryRowData>();
-    retained.addAll(eventCallbacks.keySet());
-    retained.addAll(processingCallbacks.keySet());
+    callbacks(backend, EVENTS, projection, retained, EVENT_CALLBACKS);
+    callbacks(backend, PROCESSING, projection, retained, PROCESSING_CALLBACKS);
     for (String name : stateDescriptors().keySet()) {
       try (var stream = backend.getKeys(name, VoidNamespace.INSTANCE)) {
         var iterator = stream.iterator();
-        while (iterator.hasNext()) retained.add(key(iterator.next(), projection));
+        while (iterator.hasNext()) retained.addOwner(key(iterator.next(), projection));
       }
     }
     var left = cache(backend, 0);
@@ -257,33 +242,38 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
     var cursor = value(backend, "next-index");
     var registered = value(backend, "timer");
     ValueState<Long> cleanup = cleaning ? value(backend, "cleanup-timestamp") : null;
-    for (var key : retained) {
-      backend.setCurrentKey(key);
-      cursor.value();
-      Long timer = registered.value();
-      var callbacks = eventCallbacks.getOrDefault(key, Collections.emptyNavigableSet());
-      if (timer != null && !callbacks.contains(timer))
-        throw new IllegalStateException("Registered temporal value has no physical callback");
-      Long deadline = cleaning ? cleanup.value() : null;
-      var scheduled = processingCallbacks.getOrDefault(key, Collections.emptyNavigableSet());
-      if (deadline == null
-          ? !scheduled.isEmpty()
-          : scheduled.size() != 1 || !scheduled.contains(deadline))
-        throw new IllegalStateException("Temporal cleanup value and physical callback disagree");
-      for (int side = 0; side < 2; side++) {
-        for (var entry : (side == 0 ? left : right).entries()) {
-          var row = entry.getValue();
-          if (entry.getKey() == null
-              || row == null
-              || !projected(row, side, projection).equals(key)
-              || side == 1 && entry.getKey() != millis(row, side))
+    try (var owners = retained.owners()) {
+      while (owners.hasNext()) {
+        var key = owners.next();
+        backend.setCurrentKey(key);
+        cursor.value();
+        Long timer = registered.value();
+        if (timer != null && !retained.contains(EVENT_CALLBACKS, key, timer))
+          throw new IllegalStateException("Registered temporal value has no physical callback");
+        Long deadline = cleaning ? cleanup.value() : null;
+        try (var scheduled = retained.times(PROCESSING_CALLBACKS, key)) {
+          if (deadline == null
+              ? scheduled.hasNext()
+              : !scheduled.hasNext()
+                  || scheduled.next().longValue() != deadline
+                  || scheduled.hasNext())
             throw new IllegalStateException(
-                "Temporal row disagrees with its state key or build timestamp");
-          millis(row, side);
+                "Temporal cleanup value and physical callback disagree");
+        }
+        for (int side = 0; side < 2; side++) {
+          for (var entry : (side == 0 ? left : right).entries()) {
+            var row = entry.getValue();
+            if (entry.getKey() == null
+                || row == null
+                || !projected(row, side, projection).equals(key)
+                || side == 1 && entry.getKey() != millis(row, side))
+              throw new IllegalStateException(
+                  "Temporal row disagrees with its state key or build timestamp");
+            millis(row, side);
+          }
         }
       }
     }
-    return new Retained(retained, eventCallbacks);
   }
 
   @Override
@@ -381,60 +371,72 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
   public void importState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
-    var retained = preflight(backend);
-    for (int side = 0; side < 2; side++) {
+    try (var retained = new StockRestoreInventory(new RowDataSerializer(keyType))) {
+      preflight(backend, retained);
+      for (int side = 0; side < 2; side++) {
+        var rows = new ArrayList<RowData>(CHUNK);
+        var values = cache(backend, side);
+        var serializer = new RowDataSerializer(inputs[side]);
+        try (var owners = retained.owners()) {
+          while (owners.hasNext()) {
+            var key = owners.next();
+            backend.setCurrentKey(key);
+            for (var entry : values.entries()) {
+              var payload = serializer.copy(entry.getValue());
+              int arity = inputs[side].getFieldCount();
+              var row = new GenericRowData(arity + 2);
+              for (int field = 0; field < arity; field++)
+                row.setField(
+                    field,
+                    RowData.createFieldGetter(inputs[side].getTypeAt(field).copy(true), field)
+                        .getFieldOrNull(payload));
+              row.setField(arity, entry.getKey());
+              row.setField(arity + 1, payload.getRowKind().toByteValue());
+              rows.add(row);
+              if (rows.size() == CHUNK) {
+                send(handle, side, rows);
+                rows.clear();
+              }
+            }
+          }
+        }
+        if (!rows.isEmpty()) send(handle, side, rows);
+      }
+      int count = keyType.getFieldCount();
       var rows = new ArrayList<RowData>(CHUNK);
-      var values = cache(backend, side);
-      var serializer = new RowDataSerializer(inputs[side]);
-      for (var key : retained.keys()) {
-        backend.setCurrentKey(key);
-        for (var entry : values.entries()) {
-          var payload = serializer.copy(entry.getValue());
-          int arity = inputs[side].getFieldCount();
-          var row = new GenericRowData(arity + 2);
-          for (int field = 0; field < arity; field++)
+      try (var owners = retained.owners()) {
+        while (owners.hasNext()) {
+          var key = owners.next();
+          backend.setCurrentKey(key);
+          Long cursor = value(backend, "next-index").value(),
+              timer = value(backend, "timer").value(),
+              cleanup = cleaning ? value(backend, "cleanup-timestamp").value() : null;
+          var callbacks = new ArrayList<Long>();
+          try (var times = retained.times(EVENT_CALLBACKS, key)) {
+            while (times.hasNext()) callbacks.add(times.next());
+          }
+          if (cursor == null && timer == null && cleanup == null && callbacks.isEmpty()) continue;
+          var row = new GenericRowData(count + 4);
+          for (int field = 0; field < count; field++)
             row.setField(
                 field,
-                RowData.createFieldGetter(inputs[side].getTypeAt(field).copy(true), field)
-                    .getFieldOrNull(payload));
-          row.setField(arity, entry.getKey());
-          row.setField(arity + 1, payload.getRowKind().toByteValue());
+                RowData.createFieldGetter(keyType.getTypeAt(field).copy(true), field)
+                    .getFieldOrNull(key));
+          row.setField(count, cursor);
+          row.setField(count + 1, timer);
+          row.setField(count + 2, cleanup);
+          row.setField(
+              count + 3,
+              new GenericArrayData(callbacks.stream().mapToLong(Long::longValue).toArray()));
           rows.add(row);
           if (rows.size() == CHUNK) {
-            send(handle, side, rows);
+            send(handle, -1, rows);
             rows.clear();
           }
         }
       }
-      if (!rows.isEmpty()) send(handle, side, rows);
+      if (!rows.isEmpty()) send(handle, -1, rows);
     }
-    int count = keyType.getFieldCount();
-    var rows = new ArrayList<RowData>(CHUNK);
-    for (var key : retained.keys()) {
-      backend.setCurrentKey(key);
-      Long cursor = value(backend, "next-index").value(),
-          timer = value(backend, "timer").value(),
-          cleanup = cleaning ? value(backend, "cleanup-timestamp").value() : null;
-      var callbacks = retained.callbacks().getOrDefault(key, Collections.emptyNavigableSet());
-      if (cursor == null && timer == null && cleanup == null && callbacks.isEmpty()) continue;
-      var row = new GenericRowData(count + 4);
-      for (int field = 0; field < count; field++)
-        row.setField(
-            field,
-            RowData.createFieldGetter(keyType.getTypeAt(field).copy(true), field)
-                .getFieldOrNull(key));
-      row.setField(count, cursor);
-      row.setField(count + 1, timer);
-      row.setField(count + 2, cleanup);
-      row.setField(
-          count + 3, new GenericArrayData(callbacks.stream().mapToLong(Long::longValue).toArray()));
-      rows.add(row);
-      if (rows.size() == CHUNK) {
-        send(handle, -1, rows);
-        rows.clear();
-      }
-    }
-    if (!rows.isEmpty()) send(handle, -1, rows);
   }
 
   private void send(long handle, int side, List<RowData> rows) throws Exception {

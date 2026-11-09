@@ -25,6 +25,13 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
     environment.setStateBackend(backend);
   }
 
+  public static int keyGroupPrefixBytes(CheckpointableKeyedStateBackend<?> backend) {
+    return org.apache.flink.runtime.state.CompositeKeySerializationUtils
+        .computeRequiredBytesInKeyGroupPrefix(
+            ((org.apache.flink.runtime.state.heap.InternalKeyContext<?>) backend)
+                .getNumberOfKeyGroups());
+  }
+
   protected final StateBackend delegate;
 
   public static org.apache.flink.configuration.Configuration configuration(ReadableConfig config) {

@@ -623,7 +623,10 @@ clocks. Transient decoded state and Arrow batches reserve the task's memory budg
 
 Import checks the full descriptor inventory, an empty target, declared non-null fields, partition
 and sort selectors, retained values and all metadata before copying state. Source owner keys are
-the union of all three descriptors. A full validation pass precedes insertion; native frames also
+the union of all three descriptors, streamed repeatedly from the shared temporary disk inventory.
+The index closes and deletes on failure without adding descriptors to stock source state.
+Per-owner sort maps and individual retained lists remain conversion working sets.
+A full validation pass precedes insertion; native frames also
 check existing earlier chunks. Successful import consumes the projected source. A denied target
 must be closed; source state remains available for a fresh target. Receiver failure preserves the
 original Java exception and leaves native state available for another export.
@@ -655,9 +658,10 @@ classes denied. The complete native suite passes 1,261 tests with two existing i
 
 Another 56 cases exercise actual operator initialization and two successive stock/native switches
 in both orders, retaining exact continued changes under OFFSET, TTL and variable bounds. All 484
-shared ranking regressions pass on the same library. Shared Flink 1.18 compilation and 25 native
-operator regressions pass; this does not establish Flink 1.18 canonical interchange. The native
-library also checks successfully without RocksDB.
+shared ranking regressions pass on the same library. The disk-inventory cohort additionally
+passes all 84 direct state/continuation scenarios, 56 initialization checks and 16 malformed-state
+checks on Flink 1.18. This qualifies the exercised component layouts, rather than the wider typed,
+complete-job and rescaling matrices below. The native library also checks without RocksDB.
 
 Another 576 typed direct/lifecycle scenarios pass over INT/BIGINT/VARCHAR fields, Unicode, NULLs,
 composite/non-leading partition keys, colliding and reserved field names, ascending/descending

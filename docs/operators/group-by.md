@@ -3402,7 +3402,10 @@ remain outside this structured binding.
 Each cached selection and map-size counter remains independent of the retained value-to-signed-
 count map. Negative and zero counts, independently written map entries, a cached selection hidden
 by a zero map size, and orphan views whose accumulator expired are preserved directly. Import does
-not derive one piece from another or replay input. The generated RAW placeholder retains its
+not derive one piece from another or replay input. Grouped extrema imports spool the union of
+accumulator and orphan-view owners into the shared temporary disk index, then stream that union
+for complete validation and apply passes. Scratch state closes and deletes on failure; individual
+stock values remain working-set limits. The generated RAW placeholder retains its
 non-null one-byte NullSerializer payload.
 
 Both native memory and raw keyed RocksDB use the existing bounded header/entry transfer. An
@@ -3434,8 +3437,10 @@ output projection to BIGINT only serves the unchanged custom sink fixture. The f
 SQL/compiled submission, both stores and engine orders, no-input returns, ordinary native
 checkpoint recovery and 64-key rescaling through 1 → 3 → 2 tasks at maximum parallelism 128.
 These results use the independently built typed-extrema library; later string-library builds do
-not automatically requalify this cohort. These scenarios overlap the initial smoke cases and are not added cumulatively. Thirty-four shared Flink 1.18 processing/accounting/ownership checks
-pass; they do not establish canonical interchange there.
+not automatically requalify this cohort. These scenarios overlap the initial smoke cases and are
+not added cumulatively. The shared disk-inventory cohort passes 24 selected lifecycle/recovery
+checks, 96 initialization checks and 320 malformed-state checks on Flink 1.18. It exercises the
+same stock accumulator/view contracts on that line, without qualifying the full 196-job matrix.
 
 The preceding typed-extrema baseline passed all nine released stock GROUP BY controls but
 failed all nine native execution audits because the aggregates stayed stock-owned. The unchanged

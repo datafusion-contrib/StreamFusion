@@ -1840,3 +1840,12 @@ reserved watermark/sequence batch at capture, followed by live updates and uncha
 Polling metadata is tagged within the native table namespace so multiple DISTINCT memberships and
 floating-key normalization remain independent. Earlier scalar polling ledgers migrate in bounded
 batches; this does not extend automatic stock DISTINCT admission. Benchmarking stays deferred.
+
+
+Restore validation uses the shared temporary disk inventory for owner unions, physical callbacks
+and pending timestamp membership on both Flink lines. Event OVER checks timer relationships by
+point reads and scans, then rereads source buckets for separate native validation and apply passes.
+Bounded OVER validates every owner before importing, retaining one partition at a time instead of
+all retained rows across the job. Its per-partition frame buffers and large individual stock list
+values still require further bounded-memory work. Scratch indexes close and delete on failure;
+stock source state remains intact until successful conversion.

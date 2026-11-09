@@ -6,7 +6,6 @@ import java.util.NoSuchElementException;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.core.memory.DataInputDeserializer;
 import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
-import org.apache.flink.runtime.state.CompositeKeySerializationUtils;
 import org.apache.flink.runtime.state.metainfo.StateMetaInfoSnapshot;
 import org.apache.flink.streaming.api.operators.TimerHeapInternalTimer;
 import org.apache.flink.util.CloseableIterator;
@@ -44,11 +43,8 @@ final class StockTimerSnapshot {
       }
       final int stateId = selected;
       final var timers = serializer;
+      int prefix = tech.streamfusion.compat.FlinkStateBackendCompat.keyGroupPrefixBytes(backend);
       var entries = resources.createKVStateIterator();
-      int prefix =
-          CompositeKeySerializationUtils.computeRequiredBytesInKeyGroupPrefix(
-              ((org.apache.flink.runtime.state.AbstractKeyedStateBackend<K>) backend)
-                  .getNumberOfKeyGroups());
       return new CloseableIterator<>() {
         private boolean closed;
 

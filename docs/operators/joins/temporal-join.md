@@ -116,15 +116,22 @@ key-inventory export working set; oversized individual values and import invento
 The released 2.2.1 adapter reads live native rows and bookkeeping directly into stock map/value
 states and Void timer queues, with original key/row serializers and signed probe-map indices.
 It creates no intermediate native snapshot. Preflight validates the complete stock inventory,
-serializers, row keys/timestamps and callback ownership before native mutation.
+serializers, row keys/timestamps and callback ownership before native mutation. Owner unions
+and callback membership live in the shared temporary disk inventory instead of global Java maps.
+The adapter rereads source rows after validation, with only each owner's callback array retained
+for metadata transfer. The scratch index closes and deletes on failure without changing stock
+state or registering temporary source descriptors. Large per-owner callback arrays remain open
+bounded-memory work.
 
 Eighty positive operator cases cover INNER/LEFT, both stock/native stores, the shared metadata
 trace, unchanged-state handoff, ordinary native recovery, NULL payloads, all four row kinds,
 version overwrites and continued execution in both engines. Thirty-two malformed-state controls
 verify rejection without partial native import. Serializer snapshots restore with StreamFusion
 and planner classes blocked; Arrow allocation checks remain strict. The independent clean build
-passes 1,184 native tests (two existing ignores) and 185 Java controls. Shared 1.18 runtime checks
-also pass, but do not qualify canonical temporal transfer on that version.
+passes 1,184 native tests (two existing ignores) and 185 Java controls. The shared disk-inventory
+cohort additionally passes 26 selected actual-operator interchange cases, 32 malformed-state cases
+and 18 released metadata-trace controls on Flink 1.18. These qualify the exercised BIGINT
+component layouts; the complete 2.2 job and wider-schema matrices are not qualified on 1.18.
 
 The operator fixtures use BIGINT keys/payloads and compact time fields. The compiled-plan loader
 also passes all four unchanged released 2.2.1 temporal restore programs, including scalar string

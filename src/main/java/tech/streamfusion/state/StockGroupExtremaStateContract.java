@@ -1,6 +1,5 @@
 package tech.streamfusion.state;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -14,7 +13,6 @@ import org.apache.flink.api.common.state.StateDescriptor;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.core.memory.MemorySegmentFactory;
 import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
-import org.apache.flink.runtime.state.VoidNamespace;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.binary.BinaryRawValueData;
@@ -251,21 +249,6 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
     return states;
   }
 
-  private List<RowData> sourceKeys(CheckpointableKeyedStateBackend<RowData> backend)
-      throws Exception {
-    var all = new LinkedHashMap<ByteBuffer, RowData>();
-    for (String name : stateDescriptors().keySet()) {
-      try (var stream = backend.getKeys(name, VoidNamespace.INSTANCE)) {
-        var iterator = stream.iterator();
-        while (iterator.hasNext()) {
-          var key = keys.copy(iterator.next());
-          all.putIfAbsent(ByteBuffer.wrap(encode(key)), key);
-        }
-      }
-    }
-    return new ArrayList<>(all.values());
-  }
-
   private BinaryRowData decode(byte[] encoded) {
     var key = new BinaryRowData(keyType.getFieldCount());
     key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
@@ -421,10 +404,12 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
     Native.exportGroupExtremaCanonical(handle, persistent, reject, reject);
     var state = state(backend);
     var maps = maps(backend);
-    var source = sourceKeys(backend);
-    for (boolean validating : new boolean[] {true, false}) {
-      visitHeaders(backend, state, source, handle, persistent, validating);
-      visitEntries(backend, maps, source, handle, persistent, validating);
+    try (var source = new StockRestoreInventory(keys)) {
+      source.collectOwners(backend, stateDescriptors().keySet());
+      for (boolean validating : new boolean[] {true, false}) {
+        visitHeaders(backend, state, source, handle, persistent, validating);
+        visitEntries(backend, maps, source, handle, persistent, validating);
+      }
     }
     clear(backend);
   }
@@ -432,51 +417,56 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
   private void visitHeaders(
       CheckpointableKeyedStateBackend<RowData> backend,
       StockValueState<RowData> state,
-      List<RowData> source,
+      StockRestoreInventory source,
       long handle,
       boolean persistent,
       boolean validating)
       throws Exception {
     var rows = new ArrayList<RowData>(CHUNK_ROWS);
-    for (var key : source) {
-      backend.setCurrentKey(key);
-      var wrapped = state.value();
-      RowData accumulator = wrapped == null ? null : wrapped.getUserValue();
-      if (wrapped != null) validateAccumulator(accumulator);
-      var row = new GenericRowData(headerType.getFieldCount());
-      row.setField(0, encode(key));
-      row.setField(1, accumulator == null ? 0L : accumulator.getLong(recordCountField));
-      row.setField(2, accumulator == null ? 0L : wrapped.getLastAccessTimestamp());
-      for (int i = 0; i < kinds.length; i++) {
-        if (accumulator == null) {
-          row.setField(3 + 2 * i, kinds[i] == 0 || mapped(kinds[i]) ? null : Long.valueOf(0));
-          row.setField(4 + 2 * i, 0L);
-        } else if (mapped(kinds[i])) {
-          var nested = accumulator.getRow(scalarFields[i], 3);
-          row.setField(
-              3 + 2 * i,
-              nested.isNullAt(0)
-                  ? null
-                  : toCarrier(
-                      RowData.createFieldGetter(valueTypes[i], 0).getFieldOrNull(nested),
-                      valueTypes[i]));
-          row.setField(4 + 2 * i, nested.getLong(1));
-        } else {
-          row.setField(
-              3 + 2 * i,
-              accumulator.isNullAt(scalarFields[i]) ? null : accumulator.getLong(scalarFields[i]));
-          row.setField(
-              4 + 2 * i,
-              countFields[i] >= 0
-                  ? accumulator.getLong(countFields[i])
-                  : kinds[i] == 3 ? accumulator.getLong(scalarFields[i]) : 0L);
+    try (var owners = source.owners()) {
+      while (owners.hasNext()) {
+        var key = owners.next();
+        backend.setCurrentKey(key);
+        var wrapped = state.value();
+        RowData accumulator = wrapped == null ? null : wrapped.getUserValue();
+        if (wrapped != null) validateAccumulator(accumulator);
+        var row = new GenericRowData(headerType.getFieldCount());
+        row.setField(0, encode(key));
+        row.setField(1, accumulator == null ? 0L : accumulator.getLong(recordCountField));
+        row.setField(2, accumulator == null ? 0L : wrapped.getLastAccessTimestamp());
+        for (int i = 0; i < kinds.length; i++) {
+          if (accumulator == null) {
+            row.setField(3 + 2 * i, kinds[i] == 0 || mapped(kinds[i]) ? null : Long.valueOf(0));
+            row.setField(4 + 2 * i, 0L);
+          } else if (mapped(kinds[i])) {
+            var nested = accumulator.getRow(scalarFields[i], 3);
+            row.setField(
+                3 + 2 * i,
+                nested.isNullAt(0)
+                    ? null
+                    : toCarrier(
+                        RowData.createFieldGetter(valueTypes[i], 0).getFieldOrNull(nested),
+                        valueTypes[i]));
+            row.setField(4 + 2 * i, nested.getLong(1));
+          } else {
+            row.setField(
+                3 + 2 * i,
+                accumulator.isNullAt(scalarFields[i])
+                    ? null
+                    : accumulator.getLong(scalarFields[i]));
+            row.setField(
+                4 + 2 * i,
+                countFields[i] >= 0
+                    ? accumulator.getLong(countFields[i])
+                    : kinds[i] == 3 ? accumulator.getLong(scalarFields[i]) : 0L);
+          }
         }
-      }
-      row.setField(headerType.getFieldCount() - 1, accumulator != null);
-      rows.add(row);
-      if (rows.size() == CHUNK_ROWS) {
-        batch(handle, persistent, false, rows, validating);
-        rows.clear();
+        row.setField(headerType.getFieldCount() - 1, accumulator != null);
+        rows.add(row);
+        if (rows.size() == CHUNK_ROWS) {
+          batch(handle, persistent, false, rows, validating);
+          rows.clear();
+        }
       }
     }
     if (!rows.isEmpty()) batch(handle, persistent, false, rows, validating);
@@ -485,35 +475,38 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
   private void visitEntries(
       CheckpointableKeyedStateBackend<RowData> backend,
       StockMapState<Object, Long>[] maps,
-      List<RowData> source,
+      StockRestoreInventory source,
       long handle,
       boolean persistent,
       boolean validating)
       throws Exception {
     var rows = new ArrayList<RowData>(CHUNK_ROWS);
-    for (var key : source) {
-      backend.setCurrentKey(key);
-      byte[] encoded = encode(key);
-      for (int i = 0; i < maps.length; i++)
-        if (maps[i] != null) {
-          for (var entry : maps[i].entries()) {
-            if (entry.getKey() == null
-                || entry.getValue() == null
-                || entry.getValue().getUserValue() == null)
-              throw new IllegalStateException("NULL extrema map entry");
-            rows.add(
-                GenericRowData.of(
-                    encoded,
-                    (long) i,
-                    toCarrier(entry.getKey(), valueTypes[i]),
-                    entry.getValue().getUserValue(),
-                    entry.getValue().getLastAccessTimestamp()));
-            if (rows.size() == CHUNK_ROWS) {
-              batch(handle, persistent, true, rows, validating);
-              rows.clear();
+    try (var owners = source.owners()) {
+      while (owners.hasNext()) {
+        var key = owners.next();
+        backend.setCurrentKey(key);
+        byte[] encoded = encode(key);
+        for (int i = 0; i < maps.length; i++)
+          if (maps[i] != null) {
+            for (var entry : maps[i].entries()) {
+              if (entry.getKey() == null
+                  || entry.getValue() == null
+                  || entry.getValue().getUserValue() == null)
+                throw new IllegalStateException("NULL extrema map entry");
+              rows.add(
+                  GenericRowData.of(
+                      encoded,
+                      (long) i,
+                      toCarrier(entry.getKey(), valueTypes[i]),
+                      entry.getValue().getUserValue(),
+                      entry.getValue().getLastAccessTimestamp()));
+              if (rows.size() == CHUNK_ROWS) {
+                batch(handle, persistent, true, rows, validating);
+                rows.clear();
+              }
             }
           }
-        }
+      }
     }
     if (!rows.isEmpty()) batch(handle, persistent, true, rows, validating);
   }

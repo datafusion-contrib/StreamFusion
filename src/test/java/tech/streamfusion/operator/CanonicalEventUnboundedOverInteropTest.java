@@ -206,6 +206,47 @@ class CanonicalEventUnboundedOverInteropTest {
                                                     Arguments.of(rows, stock, nativeStore, ttl)))));
   }
 
+  static Stream<Arguments> inventoryStores() {
+    return Stream.of(false, true)
+        .flatMap(
+            stock -> Stream.of(false, true).map(nativeStore -> Arguments.of(stock, nativeStore)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("inventoryStores")
+  void manyRestoredOwnersPreservePendingTimersAndContinueAfterImport(
+      boolean stockStore, boolean nativeStore) throws Exception {
+    var plan = new Plan("BIGINT", true, false, 1000);
+    OperatorSubtaskState saved;
+    Map<String, String> expected;
+    try (var stock = plan.stock(stockStore)) {
+      stock.open();
+      time(stock, 100);
+      var rows = new ArrayList<RowData>();
+      for (long owner = 0; owner < 2051; owner++) rows.add(plan.row(owner, 7L, 10));
+      assertTrue(plan.stockInput(stock, rows).isEmpty());
+      expected = raw(stock);
+      saved = snapshot(stock);
+    }
+    try (var reference = plan.stock(stockStore);
+        var restored = plan.nativeHarness(nativeStore)) {
+      reference.initializeState(saved);
+      reference.open();
+      restored.initializeState(saved);
+      restored.open();
+      try (var returned = plan.stock(stockStore)) {
+        returned.initializeState(snapshot(restored));
+        returned.open();
+        assertEquals(expected, raw(returned));
+      }
+      reference.processWatermark(new Watermark(20));
+      restored.processWatermark(new Watermark(20));
+      var expectedOutput = plan.stockOutput(reference);
+      assertEquals(2051, expectedOutput.size());
+      assertEquals(expectedOutput, plan.nativeOutput(restored));
+    }
+  }
+
   @ParameterizedTest
   @MethodSource("pollingCases")
   void pollingCallbacksRetainTheirPhysicalTimersAcrossTheFirstRestoredWatermark(

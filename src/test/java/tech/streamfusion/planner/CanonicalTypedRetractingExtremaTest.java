@@ -88,8 +88,8 @@ class CanonicalTypedRetractingExtremaTest {
   }
 
   static Stream<Arguments> recoveryCases() {
-    if (Boolean.getBoolean("sf.canonical.group.retracting.typed.smoke")) return Stream.empty();
-    return types().flatMap(type -> Stream.of(false, true).map(rocks -> Arguments.of(type, rocks)));
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        types().flatMap(type -> Stream.of(false, true).map(rocks -> Arguments.of(type, rocks))));
   }
 
   @ParameterizedTest(name = "native-checkpoint:{0},rocks={1}")

@@ -127,8 +127,17 @@ across chunks, and the stock accumulator and hidden counts are installed only fr
 RANGE export does not build a timestamp inventory or reinsert the projection's inputs: the stock
 RocksDB map and canonical writer already iterate encoded keys in order. Heap-backed component
 transfers retain their separate map-order reconstruction. The general adapters still retain other
-per-key and import-inventory working sets, and oversized individual stock map/list values remain
-open bounded-memory work. Asynchronous capture is not a claim that every conversion path has a
+per-key working sets, and oversized individual stock map/list values remain open bounded-memory
+work. Restore validation for event OVER, buffered deduplication, temporal join, grouped extrema
+and retracting rank now stores owner unions and callback membership in one scoped disk index,
+using the released RocksDB library on both Flink lines. Its write buffers and open-file count are
+bounded and its block cache is disabled. The configured two-MiB write-buffer budget is reserved
+from task off-heap memory before scratch creation and released after close, including failed open.
+Complete validation precedes applying native state;
+subsequent passes reread the unchanged source. Failed conversion closes cursors and deletes the
+index without registering scratch descriptors in source state. Bounded OVER validates one owner
+at a time instead of copying retained rows for the entire job. Its individual partition/frame
+buffers, per-owner callback arrays and other adapters' import inventories remain open work. Asynchronous capture is not a claim that every conversion path has a
 fixed working set. OVER cleanup, counter and both event-timer policies now share incremental
 metadata persistence during normal processing. The journal deduplicates changed keys and writes
 bounded row/byte batches, retaining updates if a flush fails. Normal capture does not rebuild
@@ -158,6 +167,15 @@ with 32 V1-only skips, including scalar TTL, processing ROWS and task memory own
 Released scalar/DISTINCT group restore programs additionally pass two stock and two native
 invocations with positive canonical import/continued input and no fallback; their assertions
 remain unchanged. These controls preserve existing layout coverage rather than expanding admission.
+The restore-inventory cohort passes 1,086 checks on Flink 1.18, including selected grouped-extrema,
+retracting-rank and temporal-join canonical fixtures as well as OVER. Four 2,051-owner event-OVER
+handoffs per release preserve exact canonical state and continued execution across both stores.
+The index controls cover 4,099 owners, signed timer ordering, duplicate/prefix isolation, failed
+receivers, denied task memory and failed open, with scratch deletion and reservation release.
+Flink 2.2 passes a 114-check resource/recovery follow-up and a 63-check clean-build cleanup cohort;
+these overlap the broader per-contract controls and are not cumulative totals. The complete CI
+matrix remains required. These controls do not expand operator admission or qualify every
+complete-job matrix on 1.18.
 Conversion cost, barrier duration and temporary I/O have not been benchmarked.
 
 Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending
@@ -723,10 +741,12 @@ empty. Exported serializer snapshots restore with StreamFusion and planner class
 Strict Arrow ownership checks remain enabled across every handoff and teardown.
 
 The independent build passes 1,184 native tests (two existing ignores) and 185 Java checks on
-2.2.1, including the controls above and 73 overlapping stock/runtime/SQL regressions. Shared
-runtime checks on 1.18.1 pass 54 cases with one existing unsupported SESSION table-function skip;
-those checks do not qualify the temporal canonical adapter on 1.18. Finish retains final native
-cleanup clocks without trying to schedule on an already stopped processing-time service.
+2.2.1, including the controls above and 73 overlapping stock/runtime/SQL regressions. Earlier
+shared runtime checks on 1.18.1 pass 54 cases with one SESSION capability skip. The later shared
+disk-inventory cohort passes 26 selected actual-operator interchange cases, all 32 malformed-state
+checks and 18 metadata-trace controls on 1.18, qualifying those exercised BIGINT component layouts.
+It does not qualify the full 2.2 temporal job or wider-schema matrices on that line. Finish retains
+final native cleanup clocks without scheduling on a stopped processing-time service.
 
 This qualifies representative operator conversion using BIGINT keys/payloads and compact time
 fixtures. Automatic temporal compiled-plan binding and released upstream restore programs are

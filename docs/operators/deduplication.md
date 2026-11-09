@@ -150,7 +150,9 @@ Ordinary SQL and stock compiled plans bind Flink 2.2.1 waiting rows, emitted Boo
 per-key event timers directly. Pending rows remain exempt from TTL; markers keep their original
 write ages. Memory/RocksDB conversion uses live state, without a native snapshot or input replay.
 Whole-view validation rejects inconsistent timers, keys, values and overlapping states before
-insertion; imported stock entries clear only after success. Arrow transport companions are
+insertion; imported stock entries clear only after success. Timer membership and visited-owner
+checks use the shared scoped disk index rather than global Java maps/sets. Both validation and
+apply passes close and delete scratch state, including on failure. Arrow transport companions are
 validated and removed before buffering, and keyless markers survive native checkpoint recovery.
 
 Buffered qualification includes 30 continued-state/recovery cases, 25 direct corruption/age
