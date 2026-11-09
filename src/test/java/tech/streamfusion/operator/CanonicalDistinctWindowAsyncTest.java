@@ -87,8 +87,7 @@ class CanonicalDistinctWindowAsyncTest {
     }
   }
 
-  private static OperatorSubtaskState finishOnWriter(OperatorSnapshotFutures futures)
-      throws Exception {
+  static OperatorSubtaskState finishOnWriter(OperatorSnapshotFutures futures) throws Exception {
     assertFalse(futures.getKeyedStateManagedFuture().isDone());
     return CompletableFuture.supplyAsync(
             () -> {
@@ -101,7 +100,7 @@ class CanonicalDistinctWindowAsyncTest {
         .get(30, TimeUnit.SECONDS);
   }
 
-  private static OperatorSnapshotFutures capture(
+  static OperatorSnapshotFutures capture(
       KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> source, long id)
       throws Exception {
     source.prepareSnapshotPreBarrier(id);

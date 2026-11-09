@@ -791,13 +791,8 @@ impl SessionAggregator {
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
         use crate::state::rocks_store::window_memberships::WindowMembershipState;
-        if let Some(mut reader) = self.store.as_ref().unwrap().legacy_snapshot_reader()? {
-            while let Some((group, partition)) = reader.next_partition()? {
-                self.import_partitions(&[partition], reader.timer_deadline)?;
-                reader.applied(group)?;
-            }
-            self.import_partitions(&[], reader.timer_deadline)?;
-            reader.finish()?;
+        if let Some(reader) = self.store.as_ref().unwrap().legacy_snapshot_reader()? {
+            reader.migrate(|partitions, timer| self.import_partitions(partitions, timer))?;
         }
         Ok(())
     }

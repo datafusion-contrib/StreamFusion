@@ -743,6 +743,15 @@ full version/failure/delivery matrix remain open in
 
 ## Window rank canonical interchange (partial)
 
+Existing window rank/dedup canonical bindings now retain ROW/ARRAY/MAP payloads in direct native
+RocksDB. The shared retained-row codec preserves declared nested fields, NULL/empty containers
+and map entry order; sorting still uses the existing qualified sort keys. Canonical savepoints
+pin the store and convert bounded rows asynchronously. Scalar checkpoint bytes remain compatible,
+and previous snapshot-backed checkpoints migrate one key-group blob at a time, preserving their
+processing deadline through aligned or clipped restore. This changes storage for existing
+contracts, without qualifying additional sort/key layouts.
+
+
 Normal SQL and portable stock compiled plans bind the released Flink 2.2.1 event-time
 window-rank processor for constant ROW_NUMBER ranges starting at one. TUMBLE, HOP and CUMULATE
 retain attached local start/end columns, including SQL offsets. Capture uses the actual stock key

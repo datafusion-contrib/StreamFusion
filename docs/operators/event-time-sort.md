@@ -54,6 +54,14 @@ additional complete Java list. Bucket order and timer membership are compared in
 transfers use at most 1,024 rows and a four-MiB payload estimate, plus one oversized row. Flink's
 largest encoded KV and the heap source backend's resident state remain intrinsic working sets.
 
+Nested ROW/ARRAY/MAP payloads now use direct native RocksDB rows as well as scalar payloads.
+Canonical captures pin the same database and convert bounded frames on the asynchronous writer;
+live writes and concurrent captures keep independent read views. The shared retained-row codec
+uses Arrow's existing row format and restores the declared nested field metadata. Map payloads
+retain entry order and duplicate entries through their physical list/struct representation.
+Scalar checkpoint bytes stay unchanged. Old snapshot-backed checkpoints migrate one key-group
+blob at a time when opened; that legacy conversion retains a one-partition memory floor.
+
 Import validates descriptor ownership, the empty key, row/time/INSERT consistency and exact timer
 membership before installing native state. Nullable and nested payloads retain their full original
 values, and equal-time peers retain their arrival order. User column names that resemble internal

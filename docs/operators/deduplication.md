@@ -170,9 +170,12 @@ Benchmarking remains deferred.
 Forty-eight actual-operator controls additionally retain nested payloads across twelve scalar,
 ROW, ARRAY and composite key layouts, including non-leading root key columns. Both TTL settings
 preserve an original pending winner through both switches and reject newer replacements.
-Continued serialized output matches stock byte for byte. These schemas test memory and
-RocksDB's snapshot-backed native state; they do not claim direct typed RocksDB coverage for
-nested payloads. Canonical conversion is guarded against intermediate native snapshots.
+Continued serialized output matches stock byte for byte. Buffered winners with ROW/ARRAY/MAP
+payloads now use direct native RocksDB records. Canonical capture pins those records and converts
+bounded frames on the asynchronous writer; it no longer copies the entire winner map at the
+barrier. The retained-row codec preserves original nested fields, entry order, NULLs and array
+offsets. Old snapshot-backed checkpoints migrate one key-group blob at a time through aligned
+or clipped restore. Canonical conversion is guarded against intermediate native snapshots.
 
 
 ## Window deduplication canonical interchange (partial)

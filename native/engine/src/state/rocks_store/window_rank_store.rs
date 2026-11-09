@@ -1,8 +1,10 @@
+use super::retained_rows::RetainedRows;
 use super::{
     checkpoint_files, copy_checkpoint_db, merged_timer_deadline, multi_get_pinned, open_shared_db,
     re, stored_timer_deadline, write_timer_deadline, FlinkWriteBatch, OpenedDb, TIMER_DEADLINE_KEY,
 };
 use crate::*;
+#[cfg(test)]
 use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, Direction, IteratorMode, Options, DB};
 #[cfg(test)]
@@ -48,7 +50,7 @@ pub(crate) struct RocksWindowRankStore {
     _cache: Option<Cache>,
     max_parallelism: usize,
     key_groups: std::ops::RangeInclusive<i32>,
-    row_converter: RowConverter,
+    row_converter: RetainedRows,
     row_types: Vec<DataType>,
     watermark: i64,
     next_exclusive_end: Option<i64>,
@@ -58,12 +60,18 @@ pub(crate) struct RocksWindowRankStore {
 }
 
 impl RocksWindowRankStore {
+    pub(crate) fn legacy_snapshot_reader(
+        &self,
+    ) -> Result<Option<super::legacy_snapshot::LegacySnapshotReader>, DataFusionError> {
+        super::legacy_snapshot::LegacySnapshotReader::open(&self.db)
+    }
+
     pub(crate) fn create(
         config: RocksStoreConfig,
         row_types: &[DataType],
         key_groups: std::ops::RangeInclusive<i32>,
     ) -> Result<Self, DataFusionError> {
-        if !rocks_row_supported(row_types) {
+        if !RetainedRows::supported(row_types) {
             return Err(DataFusionError::Plan(
                 "window-rank row shape not supported by RocksDB".into(),
             ));
@@ -109,7 +117,9 @@ impl RocksWindowRankStore {
                             .watermark
                             .max(i64::from_be_bytes(value[..8].try_into().unwrap()));
                     }
-                } else if key.as_ref() == TIMER_DEADLINE_KEY {
+                } else if key.as_ref() == TIMER_DEADLINE_KEY
+                    || key.as_ref() == super::SNAPSHOT_TIMER_KEY
+                {
                     store.timer_deadline = merged_timer_deadline(store.timer_deadline, &value);
                 } else if key.len() >= 4 {
                     let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
@@ -130,13 +140,7 @@ impl RocksWindowRankStore {
         row_types: &[DataType],
         key_groups: std::ops::RangeInclusive<i32>,
     ) -> Result<Self, DataFusionError> {
-        let row_converter = RowConverter::new(
-            row_types
-                .iter()
-                .map(|data_type| SortField::new(data_type.clone()))
-                .collect(),
-        )
-        .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let row_converter = RetainedRows::new(row_types)?;
         Ok(Self {
             db: opened.db,
             _cache: opened.cache,
@@ -238,10 +242,7 @@ impl RocksWindowRankStore {
                 )
             })
             .collect();
-        let rows = self
-            .row_converter
-            .convert_columns(&columns)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let rows = self.row_converter.encode(&columns)?;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         let mut next = 0;
         for (db_key, buffer) in &entries {
@@ -410,11 +411,7 @@ impl RocksWindowRankStore {
         if rows.is_empty() {
             return Ok(Vec::new());
         }
-        let parser = self.row_converter.parser();
-        let columns = self
-            .row_converter
-            .convert_rows(rows.iter().map(|bytes| parser.parse(bytes)))
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let columns = self.row_converter.decode(rows.iter().copied())?;
         let timestamps = columns
             .iter()
             .map(|column| {

@@ -4511,6 +4511,15 @@ impl WindowRanker {
             .timer_deadline()
     }
 
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        let reader = self.store.as_ref().unwrap().legacy_snapshot_reader()?;
+        if let Some(reader) = reader {
+            reader.migrate(|partitions, timer| self.import_partitions(partitions, timer))?;
+        }
+        Ok(())
+    }
+
     /// Decodes restored blob key groups once at open and replays them through the store-backed
     /// push, so a canonical or raw restore continues on the direct persistent path. The blob rows
     /// re-rank stably in blob order (the memory restore's own replay), the leading watermark rides

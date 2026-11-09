@@ -91,7 +91,19 @@ The existing canonical COUNT DISTINCT fixed/session bindings now use the same pi
 RocksDB capture. Scalar headers and separate value/count records stream into the stock projection
 on the asynchronous writer thread; conversion does not reconstruct the native execution sets.
 This covers admitted TUMBLE/HOP/CUMULATE contracts on both releases and admitted SESSION TVFs on
-2.2. It does not qualify additional state layouts. Retained grouped DISTINCT with per-entry TTL
+2.2. Buffered event-time deduplication, event-time sort and window rank/deduplication additionally
+use a shared retained-row codec for nested ROW/ARRAY/MAP payloads. These already-canonical
+payloads now stay in native RocksDB during capture. Scalar checkpoint bytes remain unchanged;
+previous snapshot-backed databases migrate one key-group blob at a time at open. Keys and sort
+semantics keep their independent admission rules. This does not qualify additional state layouts.
+The nested-row cohort passes 1,533 native tests (two existing ignores), memory-only compilation
+and the JNI library build. Selected component/async checks pass 324 cases on a clean 1.18 build
+and 433 on 2.2, with no skips. Both releases include nine writer-thread captures for ARRAY/ROW/MAP
+sort and window rank/dedup, completed after live updates and native-owner closure. The 2.2
+selection also includes six buffered-winner captures across nested keys and TTL settings and
+48 existing typed-key continuation controls that now require direct native RocksDB. These local
+parameter/pair selections do not establish exhaustive or cross-release upgrade qualification.
+Retained grouped DISTINCT with per-entry TTL
 is outside current canonical admission and remains later coverage expansion.
 OVER and temporal-join metadata export share a flat key/kind/long-value bridge. OVER uses it for
 RANGE cutoffs, cleanup values, processing callbacks and V1 physical event callbacks. Temporal joins

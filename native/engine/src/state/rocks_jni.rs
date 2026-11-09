@@ -1,7 +1,7 @@
 //! JNI lifecycle for Rust-owned RocksDB state. Java controls Flink lifecycle and file upload;
 //! every state read, write, flush, and compaction stays inside Rust/RocksDB.
 
-use super::rocks_store::window_memberships::WindowStateCodec;
+use super::rocks_store::{retained_rows::RetainedRows, window_memberships::WindowStateCodec};
 use crate::*;
 use jni::objects::{
     JByteArray, JClass, JDoubleArray, JIntArray, JLongArray, JObject, JObjectArray, JString,
@@ -956,7 +956,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbKeepFirstDeduplicato
             .iter()
             .map(|field| field.data_type().clone())
             .collect();
-        rocks_row_supported(&row_types) as jboolean
+        RetainedRows::supported(&row_types) as jboolean
     })
 }
 
@@ -1050,6 +1050,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBKeepFirstDedup
                 .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
                 .with_state_ttl(state_ttl_millis)
                 .with_store(store);
+            dedup.migrate_legacy_snapshot_store()?;
             dedup.import_partitions(&restored)?;
             if !crate::state::rocks_store::in_frozen_scope() {
                 dedup.adopt_store_ttl(now_millis)?;
@@ -2350,7 +2351,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbTemporalSorterSuppor
             .iter()
             .map(|field| field.data_type().clone())
             .collect();
-        rocks_row_supported(&row_types) as jboolean
+        RetainedRows::supported(&row_types) as jboolean
     })
 }
 
@@ -2434,6 +2435,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalSorter
                 .with_store(store)
                 .with_read_through_budget(memory_budget_bytes)?;
             let restored = read_restored_partitions(&mut env, &restored_partitions);
+            sorter.migrate_legacy_snapshot_store()?;
             sorter.import_snapshots(&restored)?;
             Ok(sorter)
         });
@@ -3733,7 +3735,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbWindowRankerSupporte
             .iter()
             .map(|field| field.data_type().clone())
             .collect();
-        rocks_row_supported(&row_types) as jboolean
+        RetainedRows::supported(&row_types) as jboolean
     })
 }
 
@@ -3845,6 +3847,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowRanker<'
         });
         let ranker = ranker.and_then(|mut ranker| {
             let restored = read_restored_partitions(&mut env, &restored_partitions);
+            ranker.migrate_legacy_snapshot_store()?;
             ranker.import_partitions(&restored, restored_timer_deadline)?;
             Ok(ranker)
         });

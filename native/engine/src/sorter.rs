@@ -68,6 +68,15 @@ impl TemporalSorter {
         self.store.as_mut().expect("temporal-sort rocksdb store")
     }
 
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        let reader = self.store.as_ref().unwrap().legacy_snapshot_reader()?;
+        if let Some(reader) = reader {
+            reader.migrate(|partitions, _timer| self.import_snapshots(partitions))?;
+        }
+        Ok(())
+    }
+
     /// Writes restored blob snapshots through the persistent buffer once at open, so a canonical
     /// or raw restore continues on the direct persistent path. Restores the late-row cutoff and
     /// appends pending rows under fresh sequences to keep arrival order.

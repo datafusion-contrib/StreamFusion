@@ -76,6 +76,8 @@ class CanonicalTemporalSortInteropTest {
     try (var target = p.nativeHarness(nativeStore)) {
       target.initializeState(original);
       target.open();
+      if (nativeStore)
+        assertTrue(((AbstractNativeStatefulOperator<?>) target.getOperator()).directRocksDBState());
       exported = snapshot(target);
       assertEquals(
           p.digest(original), p.digest(exported), "Untouched stock/native/stock projection");

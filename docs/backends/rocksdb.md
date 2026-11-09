@@ -270,6 +270,17 @@ layouts remain unchanged. See [OVER checkpoint semantics](../operators/over.md#p
 for the limit on reconstructing arithmetic history discarded by old writers.
 
 
+### Retained nested rows
+
+Buffered event-time deduplication, event-time sort and window rank/deduplication share a retained-row
+codec for scalar, ROW, ARRAY and MAP payloads. It reuses Arrow's row encoding, treating map payloads
+as their equivalent list/struct buffers without copying the columns or changing entry order.
+Decode restores the declared child fields and metadata. Scalar row bytes remain unchanged.
+These layouts use pinned native RocksDB canonical capture instead of the former memory capture
+with snapshot-backed checkpoints. Legacy databases migrate one opaque key-group partition at a
+time; this compatibility path retains a partition-sized memory floor. Keys and sort semantics
+retain their existing independent admission rules.
+
 ### Scalar window keys
 
 Direct fixed-window and session stores decode newly admitted TINYINT/SMALLINT, TIME,

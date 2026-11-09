@@ -755,6 +755,14 @@ impl KeepFirstDeduplicator {
 /// (`[watermark][framed pending ipc][emitted ipc]`), for backend-independent canonical savepoints.
 #[cfg(feature = "rocksdb-state")]
 impl KeepFirstDeduplicator {
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        let reader = self.store.as_ref().unwrap().legacy_snapshot_reader()?;
+        if let Some(reader) = reader {
+            reader.migrate(|partitions, _timer| self.import_partitions(partitions))?;
+        }
+        Ok(())
+    }
+
     /// Decodes restored blob key groups once at open and writes them through the typed store, so
     /// a canonical or raw restore continues on the direct persistent path. Candidates append in
     /// blob order (fresh sequences reproduce the memory path's emission order), fired markers keep

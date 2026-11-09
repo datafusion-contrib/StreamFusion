@@ -11,19 +11,21 @@ pub(crate) struct LegacySnapshotReader {
 
 impl LegacySnapshotReader {
     pub(crate) fn open(db: &StateDb) -> Result<Option<Self>, DataFusionError> {
-        let first = db
-            .iterator(IteratorMode::Start)
-            .next()
-            .transpose()
-            .map_err(re)?;
-        let raw = first.as_ref().is_some_and(|(key, _)| {
+        let mut reader = db.raw_iterator();
+        reader.seek_to_first();
+        reader.status().map_err(re)?;
+        let first = reader.key();
+        let raw = first.is_some_and(|key| {
             key.len() == 4 && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0
         });
-        let has_typed_rows = first.as_ref().is_some_and(|(key, _)| {
-            key.len() >= 4 && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0 && key.len() > 4
-        });
+        if first.is_some_and(|key| {
+            key.len() > 4 && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0
+        }) {
+            return Ok(None);
+        }
+        drop(reader);
         let legacy_timer = db.get(SNAPSHOT_TIMER_KEY).map_err(re)?;
-        if has_typed_rows || !raw && legacy_timer.is_none() {
+        if !raw && legacy_timer.is_none() {
             return Ok(None);
         }
         let timer = db.get(TIMER_DEADLINE_KEY).map_err(re)?.or(legacy_timer);
@@ -42,6 +44,18 @@ impl LegacySnapshotReader {
             snapshot: RocksReadSnapshot::new(db),
             timer_deadline,
         }))
+    }
+
+    pub(crate) fn migrate(
+        mut self,
+        mut apply: impl FnMut(&[Vec<u8>], i64) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        while let Some((group, partition)) = self.next_partition()? {
+            apply(&[partition], self.timer_deadline)?;
+            self.applied(group)?;
+        }
+        apply(&[], self.timer_deadline)?;
+        self.finish()
     }
 
     pub(crate) fn next_partition(&mut self) -> Result<Option<(i32, Vec<u8>)>, DataFusionError> {

@@ -424,6 +424,18 @@ class CanonicalWindowRankInteropTest {
         boolean outputRank,
         boolean deduplicate)
         throws Exception {
+      this(shape, zone, keyless, descending, outputRank, deduplicate, "BIGINT");
+    }
+
+    StockPlan(
+        String shape,
+        String zone,
+        boolean keyless,
+        boolean descending,
+        boolean outputRank,
+        boolean deduplicate,
+        String payload)
+        throws Exception {
       this.outputRank = outputRank;
       this.deduplicate = deduplicate;
       this.keepLast = deduplicate && descending;
@@ -434,10 +446,14 @@ class CanonicalWindowRankInteropTest {
       var table = NativePlannerTestEnvironment.create(config);
       table.getConfig().setLocalTimeZone(ZoneId.of(zone));
       table.executeSql(
-          "CREATE TABLE rank_input (k BIGINT, score BIGINT, tag BIGINT, rt TIMESTAMP_LTZ(3),"
+          "CREATE TABLE rank_input (k BIGINT, score BIGINT, tag "
+              + payload
+              + ", rt TIMESTAMP_LTZ(3),"
               + " WATERMARK FOR rt AS rt) WITH ('connector'='datagen')");
       table.executeSql(
-          "CREATE TABLE rank_output (k BIGINT, score BIGINT, tag BIGINT, ws TIMESTAMP(3), we"
+          "CREATE TABLE rank_output (k BIGINT, score BIGINT, tag "
+              + payload
+              + ", ws TIMESTAMP(3), we"
               + " TIMESTAMP(3)"
               + (outputRank ? ", rn BIGINT" : "")
               + ") WITH ('connector'='blackhole')");
@@ -658,6 +674,10 @@ class CanonicalWindowRankInteropTest {
     }
 
     RowData row(Long key, Long score, long tag, long windowEnd) {
+      return rowWithPayload(key, score, tag, windowEnd);
+    }
+
+    RowData rowWithPayload(Long key, Long score, Object tag, long windowEnd) {
       var row = new GenericRowData(input.getFieldCount());
       for (int i = 0; i < row.getArity(); i++) {
         String name = input.getFieldNames().get(i);

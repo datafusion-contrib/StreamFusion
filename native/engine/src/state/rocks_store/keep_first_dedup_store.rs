@@ -1,3 +1,4 @@
+use super::retained_rows::RetainedRows;
 use super::{
     checkpoint_files, copy_checkpoint_db, multi_get_pinned, open_shared_db, re, FlinkWriteBatch,
     OpenedDb, PAIR_FIRST_TABLE, PAIR_SECOND_TABLE,
@@ -46,7 +47,7 @@ pub(crate) struct RocksKeepFirstDedupStore {
     max_parallelism: usize,
     key_types: Vec<DataType>,
     key_converter: RowConverter,
-    payload_converter: RowConverter,
+    payload_converter: RetainedRows,
     schema: SchemaRef,
     watermark: i64,
     next_seq: u64,
@@ -55,6 +56,12 @@ pub(crate) struct RocksKeepFirstDedupStore {
 }
 
 impl RocksKeepFirstDedupStore {
+    pub(crate) fn legacy_snapshot_reader(
+        &self,
+    ) -> Result<Option<super::legacy_snapshot::LegacySnapshotReader>, DataFusionError> {
+        super::legacy_snapshot::LegacySnapshotReader::open(&self.db)
+    }
+
     pub(crate) fn create(
         config: RocksStoreConfig,
         schema: SchemaRef,
@@ -65,7 +72,7 @@ impl RocksKeepFirstDedupStore {
             .iter()
             .map(|field| field.data_type().clone())
             .collect();
-        if !rocks_row_supported(&row_types) {
+        if !RetainedRows::supported(&row_types) {
             return Err(DataFusionError::Plan(
                 "keep-first dedup row shape not supported by RocksDB".into(),
             ));
@@ -132,7 +139,7 @@ impl RocksKeepFirstDedupStore {
                             .watermark
                             .max(i64::from_be_bytes(value[..8].try_into().unwrap()));
                     }
-                } else if key.len() >= KEY_PREFIX_LEN {
+                } else if key.len() >= 4 {
                     let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
                     if key_groups.contains(&kg) {
                         writes.put(key, value)?;
@@ -169,7 +176,7 @@ impl RocksKeepFirstDedupStore {
                 converter(&key_types)?
             },
             key_types,
-            payload_converter: converter(&row_types)?,
+            payload_converter: RetainedRows::new(&row_types)?,
             schema,
             watermark: i64::MIN,
             next_seq: 0,
@@ -281,10 +288,7 @@ impl RocksKeepFirstDedupStore {
         batch: &RecordBatch,
         winners: &[(usize, ByteKey, i64)],
     ) -> Result<(), DataFusionError> {
-        let rows = self
-            .payload_converter
-            .convert_columns(batch.columns())
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let rows = self.payload_converter.encode(batch.columns())?;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (row, key, rowtime) in winners {
             let seq = self.next_seq;
@@ -464,12 +468,7 @@ impl RocksKeepFirstDedupStore {
         &self,
         rows: impl Iterator<Item = &'a [u8]>,
     ) -> Result<RecordBatch, DataFusionError> {
-        let parser = self.payload_converter.parser();
-        let parsed: Vec<_> = rows.map(|bytes| parser.parse(bytes)).collect();
-        let columns = self
-            .payload_converter
-            .convert_rows(parsed)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let columns = self.payload_converter.decode(rows)?;
         Ok(RecordBatch::try_new(self.schema.clone(), columns)?)
     }
 

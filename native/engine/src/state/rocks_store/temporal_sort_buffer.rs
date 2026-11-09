@@ -1,6 +1,6 @@
+use super::retained_rows::RetainedRows;
 use super::{checkpoint_files, copy_checkpoint_db, open_shared_db, re, FlinkWriteBatch, OpenedDb};
 use crate::*;
-use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, IteratorMode, Options, DB};
 #[cfg(test)]
 use std::sync::Arc;
@@ -26,7 +26,7 @@ const LAST_EMITTED_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-temporal-sort-las
 pub(crate) struct RocksTemporalSortBuffer {
     db: StateDb,
     _cache: Option<Cache>,
-    converter: RowConverter,
+    converter: RetainedRows,
     schema: SchemaRef,
     next_seq: u64,
     last_emitted: Option<i64>,
@@ -35,6 +35,12 @@ pub(crate) struct RocksTemporalSortBuffer {
 }
 
 impl RocksTemporalSortBuffer {
+    pub(crate) fn legacy_snapshot_reader(
+        &self,
+    ) -> Result<Option<super::legacy_snapshot::LegacySnapshotReader>, DataFusionError> {
+        super::legacy_snapshot::LegacySnapshotReader::open(&self.db)
+    }
+
     pub(crate) fn create(
         config: RocksStoreConfig,
         schema: SchemaRef,
@@ -44,7 +50,7 @@ impl RocksTemporalSortBuffer {
             .iter()
             .map(|field| field.data_type().clone())
             .collect();
-        if !rocks_row_supported(&row_types) {
+        if !RetainedRows::supported(&row_types) {
             return Err(DataFusionError::Plan(
                 "temporal-sort row shape not supported by RocksDB".into(),
             ));
@@ -93,7 +99,7 @@ impl RocksTemporalSortBuffer {
                     let timestamp =
                         i64::from_le_bytes(value[..8].try_into().expect("last emitted"));
                     buffer.last_emitted = buffer.last_emitted.max(Some(timestamp));
-                } else if key.len() == KEY_LEN {
+                } else if key.len() == KEY_LEN || key.len() == 4 {
                     let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
                     if key_groups.contains(&kg) {
                         writes.put(key, value)?;
@@ -110,13 +116,7 @@ impl RocksTemporalSortBuffer {
         schema: SchemaRef,
         row_types: Vec<DataType>,
     ) -> Result<Self, DataFusionError> {
-        let converter = RowConverter::new(
-            row_types
-                .iter()
-                .map(|data_type| SortField::new(data_type.clone()))
-                .collect(),
-        )
-        .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let converter = RetainedRows::new(&row_types)?;
         let last_emitted = opened
             .db
             .get(LAST_EMITTED_KEY)
@@ -153,10 +153,7 @@ impl RocksTemporalSortBuffer {
         batch: &RecordBatch,
         rowtimes: &Int64Array,
     ) -> Result<(), DataFusionError> {
-        let rows = self
-            .converter
-            .convert_columns(batch.columns())
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let rows = self.converter.encode(batch.columns())?;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (index, row) in rows.iter().enumerate() {
             let seq = self.next_seq;
@@ -241,12 +238,7 @@ impl RocksTemporalSortBuffer {
         &self,
         rows: impl Iterator<Item = &'a [u8]>,
     ) -> Result<RecordBatch, DataFusionError> {
-        let parser = self.converter.parser();
-        let parsed: Vec<_> = rows.map(|bytes| parser.parse(bytes)).collect();
-        let columns = self
-            .converter
-            .convert_rows(parsed)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let columns = self.converter.decode(rows)?;
         Ok(RecordBatch::try_new(self.schema.clone(), columns)?)
     }
 

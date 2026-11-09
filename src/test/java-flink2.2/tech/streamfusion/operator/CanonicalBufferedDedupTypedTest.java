@@ -92,7 +92,7 @@ class CanonicalBufferedDedupTypedTest {
       nativeHarness.initializeState(snapshot(stock));
       nativeHarness.open();
       assertEquals(
-          rocks ? "rocksdb-snapshot" : "memory",
+          rocks ? "rocksdb" : "memory",
           ((CanonicalBuffered) nativeHarness.getOperator()).storage());
       var continued =
           List.of(row(shape, 1L, 98, 150), row(shape, 2L, 21, 200), row(shape, null, 31, 450));
@@ -128,6 +128,76 @@ class CanonicalBufferedDedupTypedTest {
         assertEquals(bytes(type, stock.extractOutputValues()), bytes(type, output));
         assertEquals(
             bytes(type, stock.extractOutputValues()), bytes(type, restored.extractOutputValues()));
+      }
+    }
+  }
+
+  static Stream<Arguments> capturedKeys() {
+    return Stream.of("row", "array", "composite")
+        .flatMap(shape -> Stream.of(false, true).map(ttl -> Arguments.of(shape, ttl)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("capturedKeys")
+  void nestedRocksViewsFinishAfterLiveWinnerReplacementAndNativeOwnerClose(
+      String shape, boolean ttl) throws Exception {
+    CanonicalTemporalSortInteropTest.memory();
+    RowType type =
+        RowType.of(keyType(shape), new BigIntType(), new TimestampType(false, 3), PAYLOAD);
+    int[] keys = {0};
+    var selector =
+        KeySelectorUtil.getRowDataSelector(
+            getClass().getClassLoader(), keys, InternalTypeInfo.of(type));
+    var keyType = (RowType) selector.getProducedType().toLogicalType();
+    long retention = ttl ? 1000 : 0;
+    var contract =
+        new StockBufferedDedupStateContract(
+            new RowDataSerializer(keyType), selector, keyType, type, keys, 2, retention);
+    var captured = new org.apache.flink.streaming.api.operators.OperatorSnapshotFutures[2];
+    var expected = new org.apache.flink.runtime.checkpoint.OperatorSubtaskState[2];
+    try (var stock = harness(type, keys, retention, true);
+        var source = nativeHarness(type, keys, retention, true, contract)) {
+      try {
+        stock.open();
+        source.open();
+        var owner = (AbstractNativeStatefulOperator<?>) source.getOperator();
+        assertTrue(owner.directRocksDBState());
+        for (int stage = 0; stage < 3; stage++) {
+          var rows =
+              List.of(
+                  row(shape, 1L, stage + 1, 500 - stage * 100),
+                  row(shape, 2L, stage + 10, 600 - stage * 100),
+                  row(shape, null, stage + 20, 700 - stage * 100));
+          time(stock, 1500 + stage * 100);
+          feed(stock, type, rows);
+          push(source, type, rows, 1500 + stage * 100);
+          if (stage < 2) {
+            expected[stage] = snapshot(stock);
+            captured[stage] = CanonicalDistinctWindowAsyncTest.capture(source, 10 + stage);
+          }
+        }
+        source.prepareSnapshotPreBarrier(12);
+        owner.closeHandle();
+        owner.handle = 0;
+        for (int stage = 1; stage >= 0; stage--) {
+          var saved = CanonicalDistinctWindowAsyncTest.finishOnWriter(captured[stage]);
+          try (var reference = harness(type, keys, retention, true);
+              var returned = harness(type, keys, retention, true)) {
+            reference.initializeState(expected[stage]);
+            returned.initializeState(saved);
+            reference.open();
+            returned.open();
+            time(reference, 1800);
+            time(returned, 1800);
+            reference.processWatermark(new Watermark(1000));
+            returned.processWatermark(new Watermark(1000));
+            var expectedRows = bytes(type, reference.extractOutputValues());
+            assertFalse(expectedRows.isEmpty());
+            assertEquals(expectedRows, bytes(type, returned.extractOutputValues()));
+          }
+        }
+      } finally {
+        for (var future : captured) if (future != null) future.cancel();
       }
     }
   }
@@ -387,7 +457,7 @@ class CanonicalBufferedDedupTypedTest {
 
     @Override
     protected String[] checkpointRocksDBHandle(String directory) {
-      if (canonical)
+      if (canonical && !directory.isEmpty())
         throw new AssertionError("Canonical buffered export created a native checkpoint");
       return super.checkpointRocksDBHandle(directory);
     }

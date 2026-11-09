@@ -4584,12 +4584,8 @@ impl GroupAggregator<RocksGroupStore> {
         now_ms: i64,
     ) -> Result<(), DataFusionError> {
         if self.kinds.iter().any(|kind| matches!(kind, 38 | 39)) {
-            if let Some(mut reader) = self.store.legacy_snapshot_reader()? {
-                while let Some((group, partition)) = reader.next_partition()? {
-                    self.import_partitions(&[partition], now_ms)?;
-                    reader.applied(group)?;
-                }
-                reader.finish()?;
+            if let Some(reader) = self.store.legacy_snapshot_reader()? {
+                reader.migrate(|partitions, _timer| self.import_partitions(partitions, now_ms))?;
             }
         }
         Ok(())
