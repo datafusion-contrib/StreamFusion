@@ -129,7 +129,9 @@ RocksDB map and canonical writer already iterate encoded keys in order. Heap-bac
 transfers retain their separate map-order reconstruction. The general adapters still retain other
 per-key and import-inventory working sets, and oversized individual stock map/list values remain
 open bounded-memory work. Asynchronous capture is not a claim that every conversion path has a
-fixed working set. Shared capture and timer controls pass
+fixed working set. Existing checkpoint metadata flushes also still collect cleanup, counter or
+RANGE-timer inventories before pinning; those flush working sets remain part of the memory audit.
+The new V1 polling ledger updates incrementally during processing. Shared capture and timer controls pass
 on both releases, with representative operator matrices and isolated First-N, grouped arithmetic,
 regular-join, normalization and eager-deduplication jobs on 1.18. The earlier 1.18 cohort passed 861
 checks with 138 window exclusions; shared windows are now separately qualified by 295 runtime
@@ -141,7 +143,7 @@ Cold-reader controls preserve empty metadata maps while checking original frames
 physical timers and cleanup deadlines after live writes. The wide-state cases include 2,051-row
 hot OVER partitions, 2,052 temporal metadata/deadline keys, 2 MiB companion entries and a single
 large rank bucket. They check row/byte boundaries, receiver failure/retry and cancellation inside
-a partition. The latest native suite passes 1,459 tests with two existing ignores; the memory-only
+a partition. The synced native suite passes 1,473 tests with two existing ignores; the memory-only
 build also passes. Selected operator/planner matrices and isolated jobs run on both releases.
 Released scalar/DISTINCT group restore programs additionally pass two stock and two native
 invocations with positive canonical import/continued input and no fallback; their assertions
