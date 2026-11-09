@@ -18,6 +18,7 @@ import tech.streamfusion.compat.SinkFunctionProvider;
 public final class BatchReplaySinkFactory implements DynamicTableSinkFactory {
   static final AtomicBoolean FAILED = new AtomicBoolean();
   static final String RESULTS = "batch-replay-results";
+  static final String DETAILS = "batch-replay-fields";
 
   @Override
   public String factoryIdentifier() {
@@ -36,10 +37,18 @@ public final class BatchReplaySinkFactory implements DynamicTableSinkFactory {
 
   @Override
   public DynamicTableSink createDynamicTableSink(Context context) {
-    return new Sink();
+    return new Sink(
+        (org.apache.flink.table.types.logical.RowType)
+            context.getCatalogTable().getResolvedSchema().toPhysicalRowDataType().getLogicalType());
   }
 
   private static final class Sink implements DynamicTableSink {
+    private final org.apache.flink.table.types.logical.RowType type;
+
+    Sink(org.apache.flink.table.types.logical.RowType type) {
+      this.type = type;
+    }
+
     @Override
     public ChangelogMode getChangelogMode(ChangelogMode requested) {
       return requested;
@@ -47,12 +56,12 @@ public final class BatchReplaySinkFactory implements DynamicTableSinkFactory {
 
     @Override
     public SinkRuntimeProvider getSinkRuntimeProvider(Context context) {
-      return SinkFunctionProvider.of(new Capture());
+      return SinkFunctionProvider.of(new Capture(type));
     }
 
     @Override
     public DynamicTableSink copy() {
-      return new Sink();
+      return new Sink(type);
     }
 
     @Override
@@ -63,6 +72,12 @@ public final class BatchReplaySinkFactory implements DynamicTableSinkFactory {
 
   private static final class Capture extends RichSinkFunction<RowData> {
     private final ListAccumulator<Long> rows = new ListAccumulator<>();
+    private final ListAccumulator<String> details = new ListAccumulator<>();
+    private final org.apache.flink.table.types.logical.RowType type;
+
+    Capture(org.apache.flink.table.types.logical.RowType type) {
+      this.type = type;
+    }
 
     @Override
     public void invoke(RowData row, Context context) {
@@ -70,11 +85,18 @@ public final class BatchReplaySinkFactory implements DynamicTableSinkFactory {
       if (value == 1000 && FAILED.compareAndSet(false, true))
         throw new IllegalStateException("bounded shuffle replay witness");
       rows.add(value);
+      var fields = new java.util.ArrayList<String>();
+      for (int index = 0; index < type.getFieldCount(); index++) {
+        Object field = RowData.createFieldGetter(type.getTypeAt(index), index).getFieldOrNull(row);
+        fields.add(String.valueOf(field));
+      }
+      details.add(String.join(":", fields));
     }
 
     @Override
     public void finish() {
       getRuntimeContext().addAccumulator(RESULTS, rows);
+      getRuntimeContext().addAccumulator(DETAILS, details);
     }
   }
 }

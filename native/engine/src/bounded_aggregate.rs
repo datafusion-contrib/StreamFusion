@@ -1,6 +1,7 @@
 use crate::bounded_exec::BoundedInput;
 use crate::bounded_task::{copyable, BoundedTask};
 use crate::*;
+use arrow::datatypes::TimeUnit;
 use datafusion::common::config::ConfigOptions;
 use datafusion::logical_expr::ScalarUDF;
 use datafusion::physical_expr::expressions::{cast, BinaryExpr, CaseExpr, IsNullExpr};
@@ -68,11 +69,28 @@ impl AggregatePlan {
                 input_column(&schema, column as usize)?
             };
             let value_type = value.data_type(&schema)?;
-            if kind != 1 && !signed_integer(&value_type) {
-                return datafusion::common::exec_err!(
-                    "bounded aggregate requires signed integer values"
-                );
+            if kind != 1
+                && !(if kind == 2 || kind == 3 {
+                    fixed_extremum(&value_type)
+                } else {
+                    signed_integer(&value_type)
+                })
+            {
+                return datafusion::common::exec_err!("unverified bounded aggregate value type");
             }
+            let value = if matches!(kind, 2 | 3)
+                && matches!(value_type, DataType::Time32(_) | DataType::Time64(_))
+                && value_type != DataType::Time32(TimeUnit::Millisecond)
+            {
+                Arc::new(ScalarFunctionExpr::try_new(
+                    Arc::new(ScalarUDF::new_from_impl(MillisecondTime::new())),
+                    vec![value],
+                    &schema,
+                    Arc::new(ConfigOptions::default()),
+                )?) as Arc<dyn PhysicalExpr>
+            } else {
+                value
+            };
             let predicate = if merge || filter < 0 {
                 None
             } else {
@@ -288,6 +306,81 @@ fn signed_integer(data_type: &DataType) -> bool {
         data_type,
         DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
     )
+}
+
+fn fixed_extremum(data_type: &DataType) -> bool {
+    signed_integer(data_type)
+        || matches!(
+            data_type,
+            DataType::Boolean
+                | DataType::Decimal128(1..=38, _)
+                | DataType::Date32
+                | DataType::Time32(TimeUnit::Second | TimeUnit::Millisecond)
+                | DataType::Time64(TimeUnit::Microsecond | TimeUnit::Nanosecond)
+        )
+}
+
+/// Match ArrowTimeColumnVector's millisecond read, including Java's wrapping int narrowing.
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct MillisecondTime {
+    signature: datafusion::logical_expr::Signature,
+}
+
+impl MillisecondTime {
+    fn new() -> Self {
+        Self {
+            signature: datafusion::logical_expr::Signature::any(
+                1,
+                datafusion::logical_expr::Volatility::Immutable,
+            ),
+        }
+    }
+}
+
+impl datafusion::logical_expr::ScalarUDFImpl for MillisecondTime {
+    fn name(&self) -> &str {
+        "flink_millisecond_time"
+    }
+    fn signature(&self) -> &datafusion::logical_expr::Signature {
+        &self.signature
+    }
+    fn return_type(&self, _: &[DataType]) -> Result<DataType, DataFusionError> {
+        Ok(DataType::Time32(TimeUnit::Millisecond))
+    }
+    fn invoke_with_args(
+        &self,
+        args: datafusion::logical_expr::ScalarFunctionArgs,
+    ) -> Result<datafusion::logical_expr::ColumnarValue, DataFusionError> {
+        use arrow::datatypes::Time32MillisecondType;
+        use datafusion::logical_expr::ColumnarValue;
+        let arrays = ColumnarValue::values_to_arrays(&args.args)?;
+        let values = &arrays[0];
+        let result: ArrayRef = match values.data_type() {
+            DataType::Time32(TimeUnit::Second) => Arc::new(
+                values
+                    .as_any()
+                    .downcast_ref::<arrow::array::Time32SecondArray>()
+                    .unwrap()
+                    .unary::<_, Time32MillisecondType>(|v| v.wrapping_mul(1000)),
+            ),
+            DataType::Time64(TimeUnit::Microsecond) => Arc::new(
+                values
+                    .as_any()
+                    .downcast_ref::<arrow::array::Time64MicrosecondArray>()
+                    .unwrap()
+                    .unary::<_, Time32MillisecondType>(|v| (v / 1000) as i32),
+            ),
+            DataType::Time64(TimeUnit::Nanosecond) => Arc::new(
+                values
+                    .as_any()
+                    .downcast_ref::<arrow::array::Time64NanosecondArray>()
+                    .unwrap()
+                    .unary::<_, Time32MillisecondType>(|v| (v / 1_000_000) as i32),
+            ),
+            _ => return datafusion::common::exec_err!("unverified extrema TIME representation"),
+        };
+        Ok(ColumnarValue::Array(result))
+    }
 }
 
 fn input_column(schema: &Schema, index: usize) -> Result<Arc<dyn PhysicalExpr>, DataFusionError> {
@@ -553,6 +646,206 @@ mod tests {
         drop(task);
         assert_eq!(pool.reserved(), 0);
         values
+    }
+
+    #[test]
+    fn bounded_fixed_extrema_keep_nulls_filters_and_partial_schema() {
+        runtime().block_on(async {
+            for (low, high, middle) in [
+                (
+                    ScalarValue::Boolean(Some(false)),
+                    ScalarValue::Boolean(Some(true)),
+                    ScalarValue::Boolean(Some(false)),
+                ),
+                (
+                    ScalarValue::Decimal128(Some(-9999999999), 10, 2),
+                    ScalarValue::Decimal128(Some(9999999999), 10, 2),
+                    ScalarValue::Decimal128(Some(0), 10, 2),
+                ),
+                (
+                    ScalarValue::Decimal128(Some(-(10_i128.pow(38) - 1)), 38, 18),
+                    ScalarValue::Decimal128(Some(10_i128.pow(38) - 1), 38, 18),
+                    ScalarValue::Decimal128(Some(0), 38, 18),
+                ),
+                (
+                    ScalarValue::Date32(Some(-719528)),
+                    ScalarValue::Date32(Some(2932896)),
+                    ScalarValue::Date32(Some(0)),
+                ),
+                (
+                    ScalarValue::Time32Millisecond(Some(0)),
+                    ScalarValue::Time32Millisecond(Some(86399999)),
+                    ScalarValue::Time32Millisecond(Some(12345)),
+                ),
+            ] {
+                let data_type = low.data_type();
+                let null = ScalarValue::try_from(&data_type).unwrap();
+                let schema = Arc::new(Schema::new(vec![
+                    Field::new("value", data_type.clone(), true),
+                    Field::new("keep", DataType::Boolean, true),
+                ]));
+                let output = Arc::new(Schema::new(vec![
+                    Field::new("min", data_type.clone(), true),
+                    Field::new("max", data_type.clone(), true),
+                    Field::new("filtered_min", data_type.clone(), true),
+                    Field::new("filtered_max", data_type, true),
+                    Field::new("count", DataType::Int64, true),
+                ]));
+                for scenario in 0..4 {
+                    let empty = scenario == 1;
+                    let no_values = scenario == 2;
+                    let rejected = scenario == 3;
+                    let batches = if empty {
+                        vec![]
+                    } else {
+                        vec![RecordBatch::try_new(
+                            schema.clone(),
+                            vec![
+                                ScalarValue::iter_to_array(if no_values {
+                                    vec![null.clone(); 4]
+                                } else {
+                                    vec![low.clone(), null.clone(), high.clone(), middle.clone()]
+                                })
+                                .unwrap(),
+                                Arc::new(BooleanArray::from(if rejected {
+                                    vec![Some(false); 4]
+                                } else {
+                                    vec![Some(false), Some(true), Some(true), None]
+                                })),
+                            ],
+                        )
+                        .unwrap()]
+                    };
+                    let expected = if empty || no_values {
+                        vec![
+                            null.clone(),
+                            null.clone(),
+                            null.clone(),
+                            null.clone(),
+                            ScalarValue::Int64(Some(0)),
+                        ]
+                    } else {
+                        vec![
+                            low.clone(),
+                            high.clone(),
+                            if rejected { null.clone() } else { high.clone() },
+                            if rejected { null.clone() } else { high.clone() },
+                            ScalarValue::Int64(Some(if rejected { 0 } else { 1 })),
+                        ]
+                    };
+                    let make = |final_output| {
+                        AggregatePlan::try_new(
+                            schema.clone(),
+                            output.clone(),
+                            &[2, 3, 2, 3, 1],
+                            &[0, 0, 0, 0, 0],
+                            &[-1, -1, 1, 1, 1],
+                            false,
+                            final_output,
+                        )
+                        .unwrap()
+                    };
+                    assert_eq!(
+                        run_plan(make(true), batches.clone()).await,
+                        vec![expected.clone()]
+                    );
+                    let partial = run_plan(make(false), batches).await;
+                    assert_eq!(partial.is_empty(), empty);
+                    let states = partial
+                        .into_iter()
+                        .map(|row| {
+                            RecordBatch::try_new(
+                                output.clone(),
+                                row.into_iter()
+                                    .map(|v| v.to_array_of_size(1).unwrap())
+                                    .collect(),
+                            )
+                            .unwrap()
+                        })
+                        .collect();
+                    let merge = AggregatePlan::try_new(
+                        output.clone(),
+                        output.clone(),
+                        &[2, 3, 2, 3, 1],
+                        &[0, 1, 2, 3, 4],
+                        &[-1; 5],
+                        true,
+                        true,
+                    )
+                    .unwrap();
+                    assert_eq!(run_plan(merge, states).await, vec![expected]);
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn bounded_time_extrema_normalize_before_ordering_with_host_wrapping() {
+        runtime().block_on(async {
+            for (data_type, values, normalized) in [
+                (
+                    DataType::Time32(TimeUnit::Second),
+                    vec![i32::MAX as i64, 1, -1],
+                    vec![i32::MAX.wrapping_mul(1000), 1000, -1000],
+                ),
+                (
+                    DataType::Time64(TimeUnit::Microsecond),
+                    vec![i64::MAX, 1_234_999, -1_234_999],
+                    vec![(i64::MAX / 1000) as i32, 1234, -1234],
+                ),
+                (
+                    DataType::Time64(TimeUnit::Nanosecond),
+                    vec![i64::MAX, 1_234_999_999, -1_234_999_999],
+                    vec![(i64::MAX / 1_000_000) as i32, 1234, -1234],
+                ),
+            ] {
+                let values = match data_type {
+                    DataType::Time32(_) => Arc::new(arrow::array::Time32SecondArray::from(vec![
+                        None,
+                        Some(values[0] as i32),
+                        Some(values[1] as i32),
+                        Some(values[2] as i32),
+                    ])) as ArrayRef,
+                    DataType::Time64(TimeUnit::Microsecond) => {
+                        Arc::new(arrow::array::Time64MicrosecondArray::from(vec![
+                            None,
+                            Some(values[0]),
+                            Some(values[1]),
+                            Some(values[2]),
+                        ]))
+                    }
+                    _ => Arc::new(arrow::array::Time64NanosecondArray::from(vec![
+                        None,
+                        Some(values[0]),
+                        Some(values[1]),
+                        Some(values[2]),
+                    ])),
+                };
+                let schema = Arc::new(Schema::new(vec![Field::new("value", data_type, true)]));
+                let output = Arc::new(Schema::new(vec![
+                    Field::new("min", DataType::Time32(TimeUnit::Millisecond), true),
+                    Field::new("max", DataType::Time32(TimeUnit::Millisecond), true),
+                ]));
+                let batch = RecordBatch::try_new(schema.clone(), vec![values]).unwrap();
+                let plan = AggregatePlan::try_new(
+                    schema,
+                    output,
+                    &[2, 3],
+                    &[0, 0],
+                    &[-1, -1],
+                    false,
+                    true,
+                )
+                .unwrap();
+                assert_eq!(
+                    run_plan(plan, vec![batch]).await,
+                    vec![vec![
+                        ScalarValue::Time32Millisecond(normalized.iter().copied().min()),
+                        ScalarValue::Time32Millisecond(normalized.iter().copied().max())
+                    ]]
+                );
+            }
+        });
     }
 
     #[test]

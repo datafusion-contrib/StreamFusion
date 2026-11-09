@@ -219,6 +219,41 @@ class NativeBatchAggregateOperatorTest {
   }
 
   @Test
+  void extremaNormalizeForeignTimeUnitsBeforeComparing() throws Exception {
+    RowType input = RowType.of(new TimeType(0));
+    RowType resultType = RowType.of(new TimeType(0), new TimeType(0));
+    try (var harness =
+        harness(
+            input,
+            resultType,
+            new int[] {2, 3},
+            new int[] {0, 0},
+            new int[] {-1, -1},
+            false,
+            true)) {
+      var values = new org.apache.arrow.vector.TimeMicroVector("f0", NativeAllocator.SHARED);
+      values.allocateNew(4);
+      values.setNull(0);
+      values.setSafe(1, -1_234_999L);
+      values.setSafe(2, 1_234_999L);
+      values.setSafe(3, Long.MAX_VALUE);
+      values.setValueCount(4);
+      var root = org.apache.arrow.vector.VectorSchemaRoot.of(values);
+      root.setRowCount(4);
+      int low = Math.min(-1234, (int) (Long.MAX_VALUE / 1000));
+      int high = Math.max(1234, (int) (Long.MAX_VALUE / 1000));
+      harness.processElement(new StreamRecord<>(new ArrowBatch(root)));
+      assertEquals(0, NativeAllocator.SHARED.getAllocatedMemory());
+      harness.endInput();
+      var record = (StreamRecord<?>) harness.getOutput().poll();
+      try (var result = ((ArrowBatch) record.getValue()).root()) {
+        assertEquals(low, ((org.apache.arrow.vector.TimeMilliVector) result.getVector(0)).get(0));
+        assertEquals(high, ((org.apache.arrow.vector.TimeMilliVector) result.getVector(1)).get(0));
+      }
+    }
+  }
+
+  @Test
   void countStarCarriesZeroColumnBatchRowCounts() throws Exception {
     var empty = RowType.of(new LogicalType[0]);
     var count = RowType.of(new BigIntType(false));

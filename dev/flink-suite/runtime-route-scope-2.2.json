@@ -1147,6 +1147,18 @@
       "display_name": "testCountStar()",
       "count": 1,
       "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testAggregationTypes",
+      "display_name": "testAggregationTypes()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testWorkingAggregationDataTypes",
+      "display_name": "testWorkingAggregationDataTypes()",
+      "count": 1,
+      "route": "batch_host_only"
     }
   ]
 }

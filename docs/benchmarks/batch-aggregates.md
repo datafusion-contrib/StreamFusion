@@ -51,6 +51,36 @@ contention. Raw trials, net runtimes and the measured library hash remain in the
 [validation witnesses](results/batch-aggregate-validation-20261109.json) retain
 both-line upstream routes, positive admitted SQL work and cleanup/recovery controls.
 
+## Fixed-width extrema compositions
+
+Global MIN/MAX now also admit BOOLEAN, DECIMAL (precision 1–38), DATE and TIME
+inside otherwise qualifying pipelines. The query below uses all four types:
+
+```sql
+SELECT MIN(b), MAX(b), MIN(d), MAX(d), MIN(dt), MAX(dt), MIN(tm), MAX(tm), COUNT(*)
+FROM extrema WHERE SHA2(CAST(id AS STRING),256) <> ''
+```
+
+Both engines use the same bounded, rowwise Flink sequence source and deterministic
+map. Every seventeenth row has NULL values; other rows include alternating Boolean
+and decimal signs, full-width DECIMAL(38,18), dates across years 1–9999 and
+millisecond times. Cardinality controls the derived value sequence, not grouping.
+The source/map, both perimeter transposes, blocking Arrow IPC partial states and
+completed job result remain inside the timer. Resources and 3/7 alternating
+warmup/trial method match the integer cohorts above. Prior StreamFusion kept these
+queries entirely stock, so stock is also the previous-behavior baseline.
+
+| Rows / value cardinality | Stock and previous | Native | Stock/native |
+|---|---:|---:|---:|
+| 1,000,000 / 2,147,483,647 | 305.66 [286.49–324.85] | 188.72 [183.51–218.02] | 1.62× |
+| 2,000,000 / 64 | 451.21 [445.28–470.56] | 280.41 [277.57–288.07] | 1.61× |
+
+These are complete SHA2/extrema pipeline gains. They establish neither an isolated
+extrema-kernel ratio nor remote-network throughput. Standalone extrema retain the
+existing stock default. [Raw trials and configuration](results/batch-extrema-20261109.json)
+and [both-line native/replay witnesses](results/batch-extrema-validation-20261109.json)
+retain the evidence.
+
 ## Rejected standalone candidates
 
 The same six-function query without its SHA2 predicate was measured before
@@ -88,9 +118,10 @@ Build a release DSO and use `SF_BENCHMARK=true`, Maven's `bench` profile and
 `-Dtest=BatchAggregateJobBenchmark`. Supply that same release directory through
 `native.resource.directory` and `java.library.path` in `sf.extraJvmArgs`.
 Parameters are `sf.batch.aggregate.rows`, `.type`, `.cardinality`, `.warmups`,
-`.trials`, `.batchRows` and `.sha2` (defaults: 1,000,000, BIGINT,
+`.trials`, `.batchRows`, `.sha2` and `.fixedExtrema` (defaults: 1,000,000, BIGINT,
 2,147,483,647, 2, 5, 1,024 and true). The reported cohorts override warmups/trials
-to 3/7. Use task-scoped runtime temporary directories and clean them afterwards.
+to 3/7. Set `.fixedExtrema=true` for the typed source/query above (default false);
+`.type` then does not change its four fixed types. Use task-scoped runtime temporary directories and clean them afterwards.
 
 Reproducing rejected candidates requires a temporary source-only change making
 `BatchPhysicalGroupAggregateBase` qualify `amortizesRowBoundaries`, followed by

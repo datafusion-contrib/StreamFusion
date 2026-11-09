@@ -87,6 +87,53 @@ class BatchAggregateContractTest {
     }
   }
 
+  @Test
+  void fixedExtremaKeepExactLogicalBufferTypes() throws Exception {
+    for (String disabled : List.of("", "HashAgg")) {
+      for (String phase : List.of("ONE_PHASE", "TWO_PHASE")) {
+        Configuration config = new Configuration();
+        config.setString("table.optimizer.agg-phase-strategy", phase);
+        config.setString("table.exec.disabled-operators", disabled);
+        var table = BatchSortSqlTest.environment(false, 3, config);
+        BatchExtremaSqlTest.values(table);
+        List<BatchPhysicalGroupAggregateBase> seen = new ArrayList<>();
+        var program = FlinkBatchProgram.buildProgram(table.getConfig());
+        program.addLast(
+            "fixed_extrema_contract",
+            (root, context) -> {
+              inspect(root, seen);
+              return root;
+            });
+        table
+            .getConfig()
+            .setPlannerConfig(
+                CalciteConfig$.MODULE$
+                    .createBuilder(CalciteConfig$.MODULE$.DEFAULT())
+                    .replaceBatchProgram(program)
+                    .build());
+        table.explainSql(
+            "SELECT MIN(b),MAX(b),MIN(d),MAX(d),MIN(dt),MAX(dt),MIN(tm),MAX(tm) FROM extrema");
+        assertEquals(phase.equals("ONE_PHASE") ? 1 : 2, seen.size());
+        for (var aggregate : seen) {
+          var output = FlinkTypeFactory$.MODULE$.toLogicalRowType(aggregate.getRowType());
+          var calls = aggregate.getAggCallToAggFunction();
+          assertEquals(8, calls.size());
+          for (int index = 0; index < calls.size(); index++) {
+            var call = calls.apply(index);
+            assertInstanceOf(DeclarativeAggregateFunction.class, call._2());
+            var buffers = ((DeclarativeAggregateFunction) call._2()).getAggBufferTypes();
+            assertEquals(1, buffers.length);
+            assertEquals(
+                FlinkTypeFactory$.MODULE$.toLogicalType(call._1().getType()).copy(true),
+                buffers[0].getLogicalType().copy(true));
+            assertEquals(
+                buffers[0].getLogicalType().copy(true), output.getTypeAt(index).copy(true));
+          }
+        }
+      }
+    }
+  }
+
   private static void inspect(RelNode node, List<BatchPhysicalGroupAggregateBase> seen) {
     if (node instanceof BatchPhysicalGroupAggregateBase)
       seen.add((BatchPhysicalGroupAggregateBase) node);

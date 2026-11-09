@@ -22,6 +22,7 @@ class BatchAggregateJobBenchmark {
     int warmups = Integer.getInteger("sf.batch.aggregate.warmups", 2);
     int trials = Integer.getInteger("sf.batch.aggregate.trials", 5);
     boolean sha2 = Boolean.parseBoolean(System.getProperty("sf.batch.aggregate.sha2", "true"));
+    boolean fixedExtrema = Boolean.getBoolean("sf.batch.aggregate.fixedExtrema");
     int batchRows = Integer.getInteger("sf.batch.aggregate.batchRows", 1024);
     Configuration config = new Configuration();
     config.setString("streamfusion.transpose.batchRows", Integer.toString(batchRows));
@@ -29,30 +30,44 @@ class BatchAggregateJobBenchmark {
     config.setString("table.optimizer.agg-phase-strategy", "TWO_PHASE");
     try (var metrics = new RecoveryExecutionMetrics()) {
       metrics.setAsContext(config, 2, 128L << 20);
-      var stock = BatchSortSqlTest.environment(false, rows, config);
-      var nativeEnv = BatchSortSqlTest.environment(true, rows, config);
+      var stock =
+          fixedExtrema
+              ? BatchExtremaSqlTest.environment(false, rows, config, 3)
+              : BatchSortSqlTest.environment(false, rows, config);
+      var nativeEnv =
+          fixedExtrema
+              ? BatchExtremaSqlTest.environment(true, rows, config, 3)
+              : BatchSortSqlTest.environment(true, rows, config);
       for (var env : List.of(stock, nativeEnv))
         env.executeSql(
-            "CREATE TABLE output(total "
-                + type
-                + ", nonnull BIGINT, row_count BIGINT, minimum "
-                + type
-                + ", maximum "
-                + type
-                + ", average_value "
-                + type
-                + ") WITH ('connector'='blackhole')");
+            fixedExtrema
+                ? "CREATE TABLE output(min_b BOOLEAN,max_b BOOLEAN,min_d DECIMAL(38,18),"
+                    + " max_d DECIMAL(38,18),min_dt DATE,max_dt DATE,min_tm TIME(3),max_tm TIME(3),"
+                    + " n BIGINT) WITH ('connector'='blackhole')"
+                : "CREATE TABLE output(total "
+                    + type
+                    + ", nonnull BIGINT, row_count BIGINT, minimum "
+                    + type
+                    + ", maximum "
+                    + type
+                    + ", average_value "
+                    + type
+                    + ") WITH ('connector'='blackhole')");
       String statement =
-          "INSERT INTO output SELECT SUM(v), COUNT(v), COUNT(*), MIN(v), MAX(v), AVG(v)"
-              + " FROM (SELECT CASE WHEN MOD(id,17)=0 THEN CAST(NULL AS "
-              + type
-              + ") ELSE CAST(MOD(id * 48271, "
-              + cardinality
-              + ") AS "
-              + type
-              + ") END AS v FROM input"
-              + (sha2 ? " WHERE SHA2(CAST(id AS STRING),256) <> ''" : "")
-              + ") AS values_input";
+          fixedExtrema
+              ? "INSERT INTO output SELECT MIN(b),MAX(b),MIN(d),MAX(d),"
+                  + " MIN(dt),MAX(dt),MIN(tm),MAX(tm),COUNT(*) FROM extrema"
+                  + (sha2 ? " WHERE SHA2(CAST(id AS STRING),256) <> ''" : "")
+              : "INSERT INTO output SELECT SUM(v), COUNT(v), COUNT(*), MIN(v), MAX(v), AVG(v)"
+                  + " FROM (SELECT CASE WHEN MOD(id,17)=0 THEN CAST(NULL AS "
+                  + type
+                  + ") ELSE CAST(MOD(id * 48271, "
+                  + cardinality
+                  + ") AS "
+                  + type
+                  + ") END AS v FROM input"
+                  + (sha2 ? " WHERE SHA2(CAST(id AS STRING),256) <> ''" : "")
+                  + ") AS values_input";
       String plan = nativeEnv.explainSql(statement);
       assertTrue(
           plan.contains("NativeAggregate")
@@ -83,13 +98,14 @@ class BatchAggregateJobBenchmark {
         }
       }
       System.out.printf(
-          "[batch-aggregate-job] rows=%d cardinality=%d type=%s sha2=%s batchRows=%d parallelism=2"
-              + " capBytes=%d warmups=%d trials=%d stockNanos=%s nativeNanos=%s stockRuntimeMs=%s"
-              + " nativeRuntimeMs=%s%n",
+          "[batch-aggregate-job] rows=%d cardinality=%d type=%s sha2=%s fixedExtrema=%s"
+              + " batchRows=%d parallelism=2 capBytes=%d warmups=%d trials=%d stockNanos=%s"
+              + " nativeNanos=%s stockRuntimeMs=%s nativeRuntimeMs=%s%n",
           rows,
           cardinality,
           type,
           sha2,
+          fixedExtrema,
           batchRows,
           128L << 20,
           warmups,

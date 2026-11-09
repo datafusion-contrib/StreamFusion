@@ -168,3 +168,7 @@ org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testCountStar
 org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggWithoutGroups	*	!batch aggregate: standalone pipeline has no verified speedup
 org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggregationWithoutGroupby	*	!batch aggregate: standalone pipeline has no verified speedup
 org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testCountStar	*	!batch aggregate: standalone pipeline has no verified speedup
+
+# Released Table API aggregate type controls retain explicit host admission.
+org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testAggregationTypes	*	!batch aggregate: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testWorkingAggregationDataTypes	*	!batch aggregate: SUM/AVG require signed integers; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME

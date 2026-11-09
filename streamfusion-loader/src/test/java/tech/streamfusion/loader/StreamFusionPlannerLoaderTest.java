@@ -155,15 +155,7 @@ class StreamFusionPlannerLoaderTest {
 
   @Test
   void aggregatesBlockingPartialStatesFromThePackagedPayload() throws Exception {
-    TableEnvironment table = TableEnvironment.create(EnvironmentSettings.inBatchMode());
-    table.getConfig().set("parallelism.default", "2");
-    table.getConfig().set("pipeline.operator-chaining.enabled", "false");
-    table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
-    table.getConfig().set("taskmanager.memory.task.off-heap.size", "128m");
-    table.executeSql(
-        "CREATE TABLE batch_aggregate_input(id BIGINT) WITH ('connector'='datagen',"
-            + " 'number-of-rows'='2051', 'fields.id.kind'='sequence',"
-            + " 'fields.id.start'='0', 'fields.id.end'='2050')");
+    TableEnvironment table = packagedAggregateEnvironment();
     for (String predicate : List.of("", " AND id < 0")) {
       String sql =
           "SELECT SUM(id),COUNT(*),AVG(id) FROM batch_aggregate_input"
@@ -182,6 +174,47 @@ class StreamFusionPlannerLoaderTest {
     }
   }
 
+  @Test
+  void aggregatesTypedPartialStatesFromThePackagedPayload() throws Exception {
+    TableEnvironment table = packagedAggregateEnvironment();
+    for (String predicate : List.of("", " AND id < 0")) {
+      String sql =
+          "SELECT MIN(MOD(id,2)=0),MAX(MOD(id,2)=0),"
+              + "MIN(CAST(id AS DECIMAL(38,18))),MAX(CAST(id AS DECIMAL(38,18))),COUNT(*)"
+              + " FROM batch_aggregate_input WHERE SHA2(CAST(id AS STRING),256) <> ''"
+              + predicate;
+      String plan = table.explainSql(sql);
+      assertTrue(plan.contains("NativeAggregate") && plan.contains("NativeExchange"), plan);
+      try (CloseableIterator<Row> rows = table.executeSql(sql).collect()) {
+        assertTrue(rows.hasNext());
+        Row expected =
+            predicate.isEmpty()
+                ? Row.of(
+                    false,
+                    true,
+                    new java.math.BigDecimal("0.000000000000000000"),
+                    new java.math.BigDecimal("2050.000000000000000000"),
+                    2051L)
+                : Row.of(null, null, null, null, 0L);
+        assertEquals(expected, rows.next());
+        assertFalse(rows.hasNext());
+      }
+    }
+  }
+
+  private static TableEnvironment packagedAggregateEnvironment() throws Exception {
+    TableEnvironment table = TableEnvironment.create(EnvironmentSettings.inBatchMode());
+    table.getConfig().set("parallelism.default", "2");
+    table.getConfig().set("pipeline.operator-chaining.enabled", "false");
+    table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
+    table.getConfig().set("taskmanager.memory.task.off-heap.size", "128m");
+    table.executeSql(
+        "CREATE TABLE batch_aggregate_input(id BIGINT) WITH ('connector'='datagen',"
+            + " 'number-of-rows'='2051', 'fields.id.kind'='sequence',"
+            + " 'fields.id.start'='0', 'fields.id.end'='2050')");
+    return table;
+  }
+
   private static void assertPackagedSort(long offset, long fetch) throws Exception {
     TableEnvironment table = TableEnvironment.create(EnvironmentSettings.inBatchMode());
     table.getConfig().set("parallelism.default", "2");
@@ -192,8 +225,10 @@ class StreamFusionPlannerLoaderTest {
         "CREATE TABLE batch_sort_input (id BIGINT) WITH ('connector'='datagen',"
             + " 'number-of-rows'='2051', 'fields.id.kind'='sequence',"
             + " 'fields.id.start'='0', 'fields.id.end'='2050')");
-    String sql = "SELECT id FROM batch_sort_input"
-        + (fetch < 0 ? "" : " WHERE SHA2(CAST(id AS STRING), 256) <> ''") + " ORDER BY id DESC";
+    String sql =
+        "SELECT id FROM batch_sort_input"
+            + (fetch < 0 ? "" : " WHERE SHA2(CAST(id AS STRING), 256) <> ''")
+            + " ORDER BY id DESC";
     if (fetch >= 0) sql += " OFFSET " + offset + " ROWS FETCH NEXT " + fetch + " ROWS ONLY";
     String plan = table.explainSql(sql);
     assertTrue(plan.contains("NativeSort"), plan);
@@ -218,8 +253,7 @@ class StreamFusionPlannerLoaderTest {
             PlannerModule.getInstance().getSubmoduleClassLoader()));
     org.apache.flink.configuration.Configuration configuration =
         new org.apache.flink.configuration.Configuration();
-    configuration.set(
-        org.apache.flink.configuration.StateBackendOptions.STATE_BACKEND, backend);
+    configuration.set(org.apache.flink.configuration.StateBackendOptions.STATE_BACKEND, backend);
     TableEnvironment table =
         TableEnvironment.create(
             EnvironmentSettings.newInstance()

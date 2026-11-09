@@ -8,6 +8,8 @@ planner test JAR can be scanned directly with the runtime module's `batch-upstre
 Maven profile, avoiding another source checkout or Maven repository for focused
 batch iterations. The profile uses released test bytecode with its original SQL,
 fixtures and assertions; the ordinary source-suite runner remains available.
+The profile also includes the released `flink-table-common` test JAR: the Table
+API aggregate fixture uses its `LegacyRowExtension`. This remains test-only.
 Flink 1.18 additionally needs its released Scala Table bridge on the test classpath.
 
 The batch Calc contracts require stock fallback for `testManySelectWithFilter` and
@@ -45,6 +47,15 @@ from current admission. The agent instruments the declaring aggregate base, then
 resolves each witness to the concrete JUnit fixture identity, so inherited methods
 cannot silently escape the contract or attach to the wrong class. Empty SUM/AVG
 fixtures are parity controls without fabricated positive-input credit.
+
+The unchanged batch Table API `AggregationITCase.testAggregationTypes` requires
+`batch aggregate: standalone pipeline has no verified speedup` on both lines.
+`testWorkingAggregationDataTypes` includes unsupported floating-point AVG and requires
+`batch aggregate: SUM/AVG require signed integers; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME`.
+Both are `batch_host_only` controls. Separate local SQL/operator controls establish
+positive native work for admitted fixed-width extrema and typed blocking-shuffle
+replay; upstream stock parity alone is not credited as native coverage.
+
 
 The bounded operator observer attaches to the shared bounded lifecycle and records
 the actual concrete operator after successful Arrow consumption. Runtime route

@@ -35,11 +35,12 @@ Temporary overlap covers actual handoff allocations rather than charging every
 retained sort run through both allocators. Spillable sort state leaves headroom
 within the same process cap for the next input/copy/output; other consumers may use
 that headroom. See the [bounded runtime](batch-execution-runtime.md) for the lifetime
-and exhaustion controls. Global integer batch aggregates instead consume the
+and exhaustion controls. Verified fixed-width global batch aggregates consume
 imported input directly and retain only scalar accumulator values. The original
 Arrow allocation remains charged until consumption releases its C Data reference;
-an explicit expression workspace covers cast, literal and FILTER temporaries before
-evaluation, without a retained-sort ownership copy. Output uses the same compact, acknowledged
+an explicit expression workspace covers cast, literal, fixed decimal, TIME
+normalization and FILTER temporaries before evaluation, without a retained-sort
+ownership copy. Output uses the same compact, acknowledged
 handoff even when its aggregate schema differs from the input.
 Mini-batch cleanup skips native flushes when initialization has not acquired a state handle or
 completed bundle setup. This also applies after the handle is closed: cleanup must preserve the

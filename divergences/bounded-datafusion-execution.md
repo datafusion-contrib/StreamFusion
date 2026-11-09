@@ -84,3 +84,13 @@ copying and is released at EOF. This keeps borrowing compatible with the existin
 shared authority; it does not add a custom accumulator or another memory cap.
 The comparison also consulted Comet's `memory_pools/plan_pool.rs` reservation
 lifetime, alongside DataFusion 54's `aggregates/no_grouping.rs` allocation boundary.
+
+
+The fixed-width MIN/MAX extension also consults the released Flink declarative
+min/max buffer types and the Arrow TIME reader. DataFusion's existing Boolean,
+Decimal128 and Date32/Time32 accumulators keep scalar state, so they share the
+borrowing policy and expression reservation. A noncanonical TIME expression first
+matches the host's millisecond read, including Java integer wrapping, before
+DataFusion compares values. Casting only the chosen result could select a different
+extremum. Timestamp structs and variable-width values are not admitted by this
+extension: their retained-buffer ownership and semantics require separate proof.

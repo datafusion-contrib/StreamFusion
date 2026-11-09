@@ -5,6 +5,7 @@ import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.flink.table.functions.DeclarativeAggregateFunction;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalGroupAggregateBase;
@@ -12,6 +13,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalHas
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalLocalHashAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalLocalSortAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSortAggregate;
+import org.apache.flink.table.types.logical.BigIntType;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 
@@ -74,22 +76,19 @@ final class BatchAggregateSpec {
       if (call.getArgList().size() > 1 || kind != 1 && call.getArgList().size() != 1)
         return "unverified aggregate arity";
       var result = call.getType().getSqlTypeName();
-      if (kind == 1 ? result != SqlTypeName.BIGINT : !signed(result))
-        return "only signed integer SUM/MIN/MAX/AVG results are verified";
+      if (kind == 1
+          ? result != SqlTypeName.BIGINT
+          : (kind == 2 || kind == 3) ? !extremum(result) : !signed(result))
+        return "SUM/AVG require signed integers; MIN/MAX require signed integers, BOOLEAN, DECIMAL,"
+            + " DATE or TIME";
       if (!aggregate.isMerge()) {
         if (!call.getArgList().isEmpty()) {
           int column = call.getArgList().get(0);
           if (column < 0 || column >= aggregate.getInput().getRowType().getFieldCount())
             return "invalid aggregate argument";
-          var input =
-              aggregate
-                  .getInput()
-                  .getRowType()
-                  .getFieldList()
-                  .get(column)
-                  .getType()
-                  .getSqlTypeName();
-          if (kind != 1 && input != result) return "unverified aggregate input/result types";
+          var input = aggregate.getInput().getRowType().getFieldList().get(column).getType();
+          if (kind != 1 && !SqlTypeUtil.equalSansNullability(input, call.getType()))
+            return "unverified aggregate input/result types";
         }
         if (call.filterArg >= 0
             && (call.filterArg >= aggregate.getInput().getRowType().getFieldCount()
@@ -105,21 +104,21 @@ final class BatchAggregateSpec {
       var buffers = ((DeclarativeAggregateFunction) function).getAggBufferTypes();
       if (buffers.length != (kind == 4 ? 2 : 1)) return "unverified aggregate buffer width";
       int stateField = states;
+      var expected =
+          kind == 4 || kind == 1
+              ? new BigIntType()
+              : FlinkTypeFactory$.MODULE$.toLogicalType(call.getType());
       for (var buffer : buffers) {
-        String expected = kind == 4 || kind == 1 ? "BIGINT" : result.name();
-        if (!buffer.getLogicalType().getTypeRoot().name().equals(expected))
+        if (!buffer.getLogicalType().copy(true).equals(expected.copy(true)))
           return "unverified aggregate buffer type";
         if (aggregate.isMerge()
             && (stateField >= aggregate.getInput().getRowType().getFieldCount()
-                || !aggregate
-                    .getInput()
-                    .getRowType()
-                    .getFieldList()
-                    .get(stateField)
-                    .getType()
-                    .getSqlTypeName()
-                    .name()
-                    .equals(expected))) return "unverified aggregate merge field type";
+                || !FlinkTypeFactory$.MODULE$
+                    .toLogicalType(
+                        aggregate.getInput().getRowType().getFieldList().get(stateField).getType())
+                    .copy(true)
+                    .equals(buffer.getLogicalType().copy(true))))
+          return "unverified aggregate merge field type";
         stateField++;
       }
       states += buffers.length;
@@ -178,6 +177,14 @@ final class BatchAggregateSpec {
       default:
         return -1;
     }
+  }
+
+  private static boolean extremum(SqlTypeName type) {
+    return signed(type)
+        || type == SqlTypeName.BOOLEAN
+        || type == SqlTypeName.DECIMAL
+        || type == SqlTypeName.DATE
+        || type == SqlTypeName.TIME;
   }
 
   private static boolean signed(SqlTypeName type) {

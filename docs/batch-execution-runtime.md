@@ -1,6 +1,6 @@
 # Bounded execution runtime
 
-This runtime executes the [admitted batch SQL sorts and global integer aggregates](operators/batch.md). It also
+This runtime executes the [admitted batch SQL sorts and global aggregates](operators/batch.md). It also
 provides native controls for future bounded operators; those controls alone do not
 admit additional SQL operators. Whole-query admission remains mandatory.
 
@@ -41,7 +41,11 @@ then projects into the host's output schema. This uses DataFusion's existing
 accumulators without exposing its private partial-state schema on the network.
 Local/final stages and the blocking exchange remain Flink's. Ordinary SUM stores
 one nullable value at the declared integer width; COUNT stores BIGINT; MIN/MAX
-store one value. AVG partials contain BIGINT sum and count. Final AVG divides only
+store one fixed-width value, including Boolean, Decimal128, Date32 and Time32
+milliseconds. Decimal precision/scale and the host's logical TIME precision survive
+both stages. Noncanonical TIME units use a small expression adapter matching the
+host reader before DataFusion chooses its extremum; no custom accumulator is added.
+AVG partials contain BIGINT sum and count. Final AVG divides only
 when count is nonzero, then narrows to the declared signed integer type. Widened
 integer SUM followed by a wrapping narrowing cast preserves Flink's modular
 arithmetic through local and merge stages. SUM0 and merged COUNT coalesce NULL to
@@ -76,14 +80,15 @@ DataFusion charges its retained sort state separately. This avoids charging all
 retained input through both Java and DataFusion. A transient overlap during copying
 covers the actual source and destination allocations.
 
-The admitted global integer reductions consume the imported Arrow batch directly:
+The admitted fixed-width global reductions consume the imported Arrow batch directly:
 DataFusion's SUM/COUNT/MIN/MAX accumulators retain only scalar values. The original
 Arrow allocation remains charged until its C Data reference drops. The next input
 demand is returned after consumption, without retained Java Arrow input or an
 ownership copy. An explicit reusable workspace reserves expression temporaries
 before evaluation: 32 bytes per row per underlying function plus fixed padding,
 with the input's compact-copy budget additionally covering filtered payloads.
-This includes widening casts, literal arrays, validity and selection buffers;
+This includes widening casts, literal arrays, 16-byte decimal arguments,
+TIME normalization, validity and selection buffers;
 DataFusion's global aggregate reservation alone accounts for accumulator growth
 after evaluation. The workspace is freed after EOF/output copying. This borrowing
 policy is explicit and is not used for sorts
@@ -160,3 +165,10 @@ final consumer failure, with producers remaining on their first attempt. The
 packaged payload executes both populated and empty aggregate results. The
 [aggregate comparisons](benchmarks/batch-aggregates.md) record rejected standalone
 candidates and admitted compositions; only the latter qualify current SQL islands.
+
+Fixed-width extrema controls additionally compare every typed replay result to
+stock Flink after consumer failure. The producer attempt remains zero while the
+consumer reaches attempt one. Native time controls exercise second/microsecond/
+nanosecond inputs whose millisecond conversion truncates or wraps before comparison.
+Variable-width and timestamp-struct extrema remain outside the borrowed scalar
+accumulator policy.

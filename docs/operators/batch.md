@@ -1,9 +1,8 @@
 # Batch SQL
 
 **Status: partial.** Flink 2.2.1 and 1.18.1 batch Table environments can use native
-Calc/filter pipelines, `UNION ALL`, signed-integer `ORDER BY` and global integer
-aggregates, with the admission
-restrictions below.
+Calc/filter pipelines, `UNION ALL`, signed-integer `ORDER BY`, global integer
+reductions and fixed-width MIN/MAX, with the admission restrictions below.
 Flink retains SQL optimization, catalogs, source/sink providers, distributed
 scheduling and batch recovery. This does not accelerate arbitrary DataStream code.
 
@@ -46,15 +45,19 @@ Sorted limits can compose with another qualifying operation, such as SHA2 or an
 accepted user function. Other key types and range sorting remain outside admission.
 For example, a STRING key reports `batch sort: only signed integer keys are verified`.
 
-Global aggregates without grouping keys support signed integer SUM, MIN, MAX and
-AVG, scalar COUNT/COUNT(*) and boolean FILTER inputs. The optimizer's integer
+Global aggregates without grouping keys support signed integer SUM/AVG,
+MIN/MAX over signed integers, BOOLEAN, DECIMAL (precision 1–38), DATE and TIME,
+scalar COUNT/COUNT(*) and boolean FILTER inputs. The optimizer's integer
 SUM0 rewrite is supported too. ONE_PHASE and TWO_PHASE HashAgg/SortAgg plans use
 DataFusion aggregates, with projections preserving Flink's declared widths and
 accumulator columns. Narrow integer SUM wraps at its declared width; integer AVG
 uses BIGINT sum/count states and truncates its final division. Empty local input
 emits no partial row, while empty final input emits COUNT/SUM0 zero and NULL for
 the other functions. A nonempty input whose FILTER rejects every row still emits
-a local neutral state.
+a local neutral state. MIN/MAX preserve the complete logical buffer type, including
+decimal precision/scale and TIME precision. Foreign Arrow TIME units are normalized
+to Flink's millisecond integer representation before comparison, including its
+wrapping narrowing; TIME(0) does not discard milliseconds present in runtime input.
 
 An aggregate alone does not qualify an island: representative complete jobs did
 not establish a reliable standalone gain after profiling, removing an unnecessary
@@ -112,10 +115,12 @@ constraints. Native Parquet/ORC codecs do not imply a native filesystem batch sc
 
 ## Remaining gaps
 
-- Grouped/DISTINCT aggregation, noninteger SUM/MIN/MAX/AVG, aggregate user
-  functions, zero-function/intermediate merge-only stages and unverified accumulator
-  layouts. Global signed integer states are
-  supported only inside otherwise qualifying pipelines.
+- Grouped/DISTINCT aggregation, noninteger SUM/AVG, FLOAT/DOUBLE, STRING/BINARY
+  and TIMESTAMP extrema, aggregate user functions, zero-function/intermediate
+  merge-only stages and unverified accumulator layouts. Timestamp input remains
+  a two-field Arrow struct to preserve the full Flink range and fractions; scalar
+  timestamp aggregation is not inferred from DataFusion's timestamp kernels.
+  Verified global states are supported only inside otherwise qualifying pipelines.
 - ORDER BY with keys other than signed integers, standalone sorted limits without a
   qualifying operation, OFFSET without finite FETCH, unsorted LIMIT/OFFSET, range sorting,
   OVER/rank and other batch sort operators.
@@ -131,7 +136,7 @@ operator is not sufficient to admit its Flink SQL counterpart.
 
 The [bounded execution adapter](../batch-execution-runtime.md) supplies persistent
 DataFusion execution, EOF, spill, streamed output and cancellation for admitted
-sorts and admitted global integer aggregates.
+sorts and admitted global aggregates.
 
 ## Validation
 
@@ -190,3 +195,15 @@ observations separately. The consolidated local selection passes 51 Java/upstrea
 cases per host line, plus 46 bounded native controls. Aggregate operator controls
 include scalar COUNT validity, FILTER payloads, schema/input cleanup, cancellation,
 output surviving producer close and expression-workspace denial under 2 MiB.
+
+The fixed-width extrema extension adds stock/native checks on both lines for
+Boolean, DECIMAL(10,2)/DECIMAL(38,18), DATE and TIME across both phases and forced
+HashAgg/SortAgg plans. Tests include empty/all-NULL/all-filtered input, canonical
+and foreign Arrow time units, TIME(0) runtime milliseconds, and typed partial-state
+replay with every output field compared. The packaged planner checks populated
+and empty Boolean/decimal states. Unchanged released Table API
+`AggregationITCase.testAggregationTypes` and `testWorkingAggregationDataTypes`
+retain exact standalone-cost and unsupported-result fallback contracts respectively;
+they are host parity controls, not positive native extrema coverage.
+[Extrema witnesses](../benchmarks/results/batch-extrema-validation-20261109.json)
+record 38 focused Java/upstream cases per host line and 48 bounded Rust controls.

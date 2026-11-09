@@ -201,6 +201,13 @@
             <dependencies>
                 <dependency>
                     <groupId>org.apache.flink</groupId>
+                    <artifactId>flink-table-common</artifactId>
+                    <version>${flink.version}</version>
+                    <type>test-jar</type>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.flink</groupId>
                     <artifactId>flink-table-planner_${scala.binary.version}</artifactId>
                     <version>${flink.version}</version>
                     <type>test-jar</type>
