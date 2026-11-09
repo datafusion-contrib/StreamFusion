@@ -245,9 +245,24 @@ across the initial run and a 66-check typed rerun after correcting stale guards:
 native flush creates no checkpoint files and is required before pinning. The final released fixture
 run also passes 202 execution-audit controls. These selections overlap earlier cohorts and do not
 replace complete-job/full-variant qualification.
-Heap stock component backends receive normal owned collections. Native rank stores can still
-decode one complete encoded partition, so an oversized native or stock KV remains a memory
-floor; this does not establish fixed memory below that entry size or expand operator admission.
+Heap stock component backends receive normal owned collections. Append, updating and retracting
+rank export share one bounded Arrow emitter for resident and RocksDB state. The RocksDB reader
+borrows encoded keys and values from a pinned raw iterator, without copying a complete value or
+rebuilding its execution vectors, count maps or retained lists. Checked cursors preserve legacy
+row layouts, optional bound/kind trailers, independent signed counts, empty-state headers and
+original TTL ages. Updating peer ordinals continue across frame boundaries. Frames use both
+1,024-row and four-MiB work estimates, allowing one oversized record; their work is reserved
+before Arrow decoding, with cancellation checks inside a hot owner. Retracting checkpoint
+encoding also appends directly into the destination buffer and computes its size without
+serializing a second copy. Native checkpoint bytes retain their existing format.
+The underlying RocksDB iterator and stock serializers can still expose one complete encoded KV,
+so an oversized native or stock KV remains a memory floor. This does not establish fixed memory
+below that entry size or expand operator admission.
+The borrowed-rank cohort passes 1,510 native checks with two existing ignores and the memory-only
+build. Eight new controls cover legacy and optional-trailer bytes, 2,051-row peer groups,
+independent signed/empty retract state, original ages, wide/oversized rows, cancellation,
+memory denial before decoding and an immutable raw view across live writes and compaction.
+The raw-store control deliberately fails if execution-state decoding is invoked.
 For bounded OVER, unbounded event-time OVER and temporal sort, restore stages those opaque map
 values on disk and decodes one row at a time with the released row serializer. The shared reader
 checks the captured map/list and namespace serializers and parses composite keys through Flink's

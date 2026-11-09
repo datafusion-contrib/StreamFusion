@@ -1,6 +1,80 @@
 use super::*;
 use crate::state::{KeyedStateStore, RocksStateCodec};
 
+struct RawOnlyCodec;
+
+impl RocksStateCodec for RawOnlyCodec {
+    type Value = Vec<u8>;
+    fn supported(&self) -> bool {
+        true
+    }
+    fn value_fields(&self) -> Vec<(String, DataType)> {
+        vec![("value".into(), DataType::Binary)]
+    }
+    fn value_bytes(&self, value: &Self::Value) -> usize {
+        value.len()
+    }
+    fn raw(&self) -> bool {
+        true
+    }
+    fn write_ms(&self, _: &Self::Value) -> i64 {
+        123
+    }
+    fn raw_write(&self, value: &Self::Value, out: &mut Vec<u8>) {
+        out.extend_from_slice(value);
+    }
+    fn from_raw(&self, _: &[u8]) -> Self::Value {
+        panic!("canonical raw readers must not hydrate execution state")
+    }
+}
+
+#[test]
+fn raw_canonical_visits_frozen_bytes_without_execution_decode_or_ttl_prefix() {
+    let directory = tempfile::tempdir().unwrap();
+    for ttl in [0, 1000] {
+        let config = RocksStoreConfig {
+            table_dir: directory
+                .path()
+                .join(format!("state-{ttl}"))
+                .to_string_lossy()
+                .into_owned(),
+            max_parallelism: 128,
+            options_json: include_str!("../../../benches/fixtures/rocks-options.json").into(),
+            ttl_ms: ttl,
+            shared_resources: 0,
+        };
+        let key = [0u8; 8];
+        let mut live = RocksStore::create(config.clone(), RawOnlyCodec).unwrap();
+        live.insert(ByteKey::from(key.as_slice()), b"before".to_vec());
+        live.checkpoint("").unwrap();
+        let snapshot = database::FrozenDatabases::capture(directory.path()).unwrap();
+        live.insert(ByteKey::from(key.as_slice()), b"after".to_vec());
+        live.checkpoint("").unwrap();
+        snapshot.with(|| {
+            let mut frozen = RocksStore::create(config, RawOnlyCodec).unwrap();
+            let mut calls = 0;
+            frozen
+                .for_each_canonical_raw(None, |owner, value| {
+                    assert_eq!(owner, key);
+                    assert_eq!(value, b"before");
+                    calls += 1;
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(calls, 1);
+        });
+        let mut calls = 0;
+        live.for_each_canonical_raw(None, |owner, value| {
+            assert_eq!(owner, key);
+            assert_eq!(value, b"after");
+            calls += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(calls, 1);
+    }
+}
+
 #[test]
 fn canonical_hydration_preserves_raw_ages_and_normal_input_still_expires_them() {
     let directory = tempfile::tempdir().unwrap();

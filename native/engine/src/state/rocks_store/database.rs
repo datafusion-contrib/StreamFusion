@@ -214,6 +214,33 @@ impl StateDb {
         }
     }
 
+    pub(crate) fn visit_snapshot_raw(
+        &self,
+        mut work: Option<MemoryReservation>,
+        accept: impl Fn(&[u8]) -> bool,
+        mut consume: impl FnMut(&[u8], &[u8]) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        let view = self.pin();
+        let mut reader = view.snapshot.raw_iterator();
+        reader.seek_to_first();
+        while reader.valid() {
+            check_cancelled()?;
+            let key = reader.key().unwrap();
+            if accept(key) {
+                let value = reader.value().unwrap();
+                if let Some(work) = &mut work {
+                    work.try_resize(key.len().saturating_add(value.len()))?;
+                }
+                consume(key, value)?;
+                if let Some(work) = &mut work {
+                    work.try_resize(0)?;
+                }
+            }
+            reader.next();
+        }
+        reader.status().map_err(re)
+    }
+
     fn options(&self) -> ReadOptions {
         let mut options = ReadOptions::default();
         if let Some(view) = &self.view {
@@ -451,6 +478,56 @@ mod tests {
         assert!(!clock.pinned());
         assert_eq!(live.get(b"key-2000").unwrap().unwrap(), b"after");
         assert!(live.get(b"key-2001").unwrap().is_none());
+    }
+
+    #[test]
+    fn borrowed_raw_snapshot_keeps_version_and_releases_memory_on_failure() {
+        let (_directory, live, clock) = test_database();
+        for value in 0..2051 {
+            live.put(format!("key-{value:04}"), b"before").unwrap();
+        }
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(128));
+        let mut count = 0;
+        live.visit_snapshot_raw(
+            Some(MemoryConsumer::new("raw canonical").register(&pool)),
+            |_| true,
+            |key, value| {
+                assert!(pool.reserved() >= key.len() + value.len());
+                if count == 0 {
+                    live.put(b"key-2000", b"after").unwrap();
+                    live.delete(b"key-2001").unwrap();
+                    live.flush().unwrap();
+                    live.compact_range(None::<&[u8]>, None::<&[u8]>);
+                }
+                assert_eq!(value, b"before");
+                count += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(count, 2051);
+        assert!(!clock.pinned());
+        assert_eq!(pool.reserved(), 0);
+        let result = live.visit_snapshot_raw(
+            Some(MemoryConsumer::new("failed canonical").register(&pool)),
+            |_| true,
+            |_, _| Err(DataFusionError::Execution("failed consumer".into())),
+        );
+        assert!(result.unwrap_err().to_string().contains("failed consumer"));
+        assert!(!clock.pinned());
+        assert_eq!(pool.reserved(), 0);
+        let tiny: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1));
+        let result = live.visit_snapshot_raw(
+            Some(MemoryConsumer::new("denied raw").register(&tiny)),
+            |_| true,
+            |_, _| panic!("denied before conversion"),
+        );
+        assert!(matches!(
+            result,
+            Err(DataFusionError::ResourcesExhausted(_))
+        ));
+        assert!(!clock.pinned());
+        assert_eq!(tiny.reserved(), 0);
     }
 
     #[test]

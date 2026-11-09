@@ -50,6 +50,35 @@ impl<C: RocksStateCodec> RocksStore<C> {
         )
     }
 
+    /// Visits raw persisted values without reconstructing their execution containers.
+    pub(crate) fn for_each_canonical_raw(
+        &mut self,
+        work: Option<datafusion::execution::memory_pool::MemoryReservation>,
+        mut consume: impl FnMut(&[u8], &[u8]) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if !self.codec.raw() {
+            return Err(invalid("raw canonical scan requires a raw codec"));
+        }
+        self.checkpoint("")?;
+        let prefix = self.key_prefix_len();
+        let value_prefix = self.value_prefix_len();
+        self.db.visit_snapshot_raw(
+            work,
+            |key| {
+                key.len() >= prefix
+                    && !self.table.is_some_and(|table| key[4] != table)
+                    && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0
+            },
+            |key, value| {
+                let bytes = value
+                    .get(value_prefix..)
+                    .ok_or_else(|| invalid("truncated raw value prefix"))?;
+                consume(&key[prefix..], bytes)?;
+                Ok(())
+            },
+        )
+    }
+
     /// Streams one companion table by its main-row keys, retaining bounded decoded frames.
     pub(crate) fn for_each_canonical_multiset_batch(
         &mut self,

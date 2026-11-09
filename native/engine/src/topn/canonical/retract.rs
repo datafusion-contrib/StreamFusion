@@ -1,10 +1,10 @@
 use super::*;
 use crate::topn::retract_state::{RetainedCounts, RetainedList, RetainedRow};
 
-const COUNTS: i8 = -1;
-const COUNT: i8 = -2;
-const LIST: i8 = -3;
-const BOUND: i8 = -4;
+pub(super) const COUNTS: i8 = -1;
+pub(super) const COUNT: i8 = -2;
+pub(super) const LIST: i8 = -3;
+pub(super) const BOUND: i8 = -4;
 
 struct Columns<'a> {
     keys: &'a BinaryArray,
@@ -331,197 +331,6 @@ impl<S: KeyedStateStore<TopNPartition>> RetractableTopNRanker<S> {
     }
 }
 
-struct Entry<'a> {
-    key: &'a ByteKey,
-    sort: Option<&'a OwnedRow>,
-    payload: Option<&'a RetainedRow>,
-    number: i64,
-    stamp: i64,
-    tag: i8,
-}
-
-fn decoded(
-    converter: &RowConverter,
-    values: &[Option<&OwnedRow>],
-    types: &[DataType],
-) -> Result<Vec<ArrayRef>, DataFusionError> {
-    let mut next = 0;
-    let indices = UInt32Array::from(
-        values
-            .iter()
-            .map(|value| {
-                value.map(|_| {
-                    let index = next;
-                    next += 1;
-                    index
-                })
-            })
-            .collect::<Vec<_>>(),
-    );
-    if next == 0 {
-        return Ok(types
-            .iter()
-            .map(|ty| arrow::array::new_null_array(ty, values.len()))
-            .collect());
-    }
-    converter
-        .convert_rows(values.iter().filter_map(|value| value.map(|v| v.row())))?
-        .iter()
-        .zip(types)
-        .map(|(array, ty)| {
-            let array = streamfusion_bridge::timestamp::cast_array(array, ty)?;
-            Ok(arrow::compute::take(array.as_ref(), &indices, None)?)
-        })
-        .collect()
-}
-
-fn emit(
-    env: &mut JNIEnv,
-    receiver: &JObject,
-    schema: &SchemaRef,
-    converters: &TopNConverters,
-    sort_columns: &[SortColumn],
-    rows: &[Entry<'_>],
-    memory: &mut Option<MemoryReservation>,
-) -> Result<(), DataFusionError> {
-    let types = schema
-        .fields()
-        .iter()
-        .map(|f| f.data_type().clone())
-        .collect::<Vec<_>>();
-    let mut columns = decoded(
-        &converters.payload,
-        &rows
-            .iter()
-            .map(|row| row.payload.map(|r| r.payload.as_ref()))
-            .collect::<Vec<_>>(),
-        &types,
-    )?;
-    columns.extend([
-        Arc::new(BinaryArray::from_iter_values(
-            rows.iter().map(|row| row.key.0.as_ref()),
-        )) as ArrayRef,
-        Arc::new(Int64Array::from_iter_values(
-            rows.iter().map(|row| row.number),
-        )),
-        Arc::new(Int64Array::from_iter_values(
-            rows.iter().map(|row| row.stamp),
-        )),
-        Arc::new(Int8Array::from_iter_values(rows.iter().map(|row| row.tag))),
-    ]);
-    columns.extend(decoded(
-        &converters.sort,
-        &rows.iter().map(|row| row.sort).collect::<Vec<_>>(),
-        &sort_columns
-            .iter()
-            .map(|sort| types[sort.index].clone())
-            .collect::<Vec<_>>(),
-    )?);
-    let mut fields = schema
-        .fields()
-        .iter()
-        .map(|f| f.as_ref().clone().with_nullable(true))
-        .collect::<Vec<_>>();
-    for column in &columns[schema.fields().len()..] {
-        let mut name = format!("$stock_meta_{}", fields.len());
-        while fields.iter().any(|field| field.name() == &name) {
-            name = format!("${name}");
-        }
-        fields.push(Field::new(name, column.data_type().clone(), true));
-    }
-    let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)?;
-    if let Some(memory) = memory {
-        memory.try_resize(batch.get_array_memory_size())?;
-    }
-    let result = crate::bridge::emit_record_batch(env, receiver, batch);
-    let released = memory
-        .as_mut()
-        .map_or(Ok(()), |memory| memory.try_resize(0));
-    result.and(released)
-}
-
-fn visit<'a>(
-    ttl: bool,
-    partitions: impl Iterator<Item = (&'a ByteKey, &'a TopNPartition)>,
-    mut accept: impl FnMut(&[Entry<'_>]) -> Result<(), DataFusionError>,
-) -> Result<(), DataFusionError> {
-    let mut rows = Vec::with_capacity(CHUNK_ROWS);
-    let mut send = |entry| -> Result<(), DataFusionError> {
-        rows.push(entry);
-        if rows.len() == CHUNK_ROWS {
-            accept(&rows)?;
-            rows.clear();
-        }
-        Ok(())
-    };
-    let stamp = |age| if ttl { age } else { 0 };
-    for (key, partition) in partitions {
-        if !partition.rows.is_empty() || partition.first_rank_end.is_some() {
-            return Err(invalid(
-                "cannot export a legacy retract buffer as independent stock state",
-            ));
-        }
-        let Some(state) = &partition.retract else {
-            continue;
-        };
-        if let Some(counts) = &state.counts {
-            send(Entry {
-                key,
-                sort: None,
-                payload: None,
-                number: 0,
-                stamp: stamp(counts.written_at),
-                tag: COUNTS,
-            })?;
-            for (sort, count) in &counts.entries {
-                send(Entry {
-                    key,
-                    sort: Some(sort),
-                    payload: None,
-                    number: *count,
-                    stamp: stamp(counts.written_at),
-                    tag: COUNT,
-                })?;
-            }
-        }
-        if let Some(bound) = state.bound {
-            send(Entry {
-                key,
-                sort: None,
-                payload: None,
-                number: bound.value,
-                stamp: stamp(bound.written_at),
-                tag: BOUND,
-            })?;
-        }
-        for (sort, list) in &state.lists {
-            send(Entry {
-                key,
-                sort: Some(sort),
-                payload: None,
-                number: 0,
-                stamp: stamp(list.written_at),
-                tag: LIST,
-            })?;
-            for row in &list.rows {
-                send(Entry {
-                    key,
-                    sort: Some(sort),
-                    payload: Some(row),
-                    number: 0,
-                    stamp: stamp(list.written_at),
-                    tag: row.kind(),
-                })?;
-            }
-        }
-    }
-    drop(send);
-    if !rows.is_empty() {
-        accept(&rows)?;
-    }
-    Ok(())
-}
-
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_exportRetractingTopNCanonical<'local>(
     env: JNIEnv<'local>,
@@ -540,20 +349,15 @@ pub extern "system" fn Java_tech_streamfusion_Native_exportRetractingTopNCanonic
                     return Err(invalid("requires retract handle"));
                 };
                 ranker.retract_schema(schema)?;
-                let mut memory = ranker.memory.temporary_reservation();
-                let converters = ranker.converters.as_ref().unwrap();
-                let schema = ranker.schema.as_ref().unwrap();
-                visit(ranker.ttl_ms > 0, ranker.groups.iter(), |rows| {
-                    emit(
-                        &mut env,
-                        &receiver,
-                        schema,
-                        converters,
-                        &ranker.sort_columns,
-                        rows,
-                        &mut memory,
-                    )
-                })
+                encoded::Emitter::new(
+                    ranker.schema.as_ref().unwrap(),
+                    ranker.converters.as_ref().unwrap(),
+                    &ranker.sort_columns,
+                    encoded::Layout::Retract,
+                    ranker.memory.temporary_reservation(),
+                    |batch| crate::bridge::emit_record_batch(&mut env, &receiver, batch),
+                )
+                .retract(ranker.ttl_ms > 0, ranker.groups.iter())
             } else {
                 #[cfg(feature = "rocksdb-state")]
                 {
@@ -563,46 +367,20 @@ pub extern "system" fn Java_tech_streamfusion_Native_exportRetractingTopNCanonic
                         return Err(invalid("requires retract RocksDB handle"));
                     };
                     ranker.retract_schema(schema)?;
-                    let mut decoded_memory = ranker.memory.temporary_reservation();
-                    let mut memory = ranker.memory.temporary_reservation();
-                    let schema = ranker.schema.as_ref().unwrap();
-                    let converters = ranker.converters.as_ref().unwrap();
-                    ranker.groups.for_each_canonical_batch(1, |partitions| {
-                        if let Some(memory) = &mut decoded_memory {
-                            memory.try_resize(
-                                partitions
-                                    .iter()
-                                    .map(|(key, state)| {
-                                        byte_key_bytes(&key.0)
-                                            + std::mem::size_of::<TopNPartition>()
-                                            + state
-                                                .retract
-                                                .as_ref()
-                                                .map_or(0, |s| s.resident_bytes())
-                                    })
-                                    .sum(),
-                            )?;
-                        }
-                        let result = visit(
-                            ranker.ttl_ms > 0,
-                            partitions.iter().map(|(key, state)| (key, state)),
-                            |rows| {
-                                emit(
-                                    &mut env,
-                                    &receiver,
-                                    schema,
-                                    converters,
-                                    &ranker.sort_columns,
-                                    rows,
-                                    &mut memory,
-                                )
-                            },
-                        );
-                        let released = decoded_memory
-                            .as_mut()
-                            .map_or(Ok(()), |memory| memory.try_resize(0));
-                        result.and(released)
-                    })
+                    let raw_memory = ranker.memory.temporary_reservation();
+                    let mut emitter = encoded::Emitter::new(
+                        ranker.schema.as_ref().unwrap(),
+                        ranker.converters.as_ref().unwrap(),
+                        &ranker.sort_columns,
+                        encoded::Layout::Retract,
+                        ranker.memory.temporary_reservation(),
+                        |batch| crate::bridge::emit_record_batch(&mut env, &receiver, batch),
+                    );
+                    ranker
+                        .groups
+                        .for_each_canonical_raw(raw_memory, |key, bytes| {
+                            emitter.encoded(key, bytes, ranker.ttl_ms > 0)
+                        })
                 }
                 #[cfg(not(feature = "rocksdb-state"))]
                 Err(invalid("native RocksDB is unavailable"))

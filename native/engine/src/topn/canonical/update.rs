@@ -226,91 +226,6 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
     }
 }
 
-fn emit<'a>(
-    env: &mut JNIEnv,
-    receiver: &JObject,
-    schema: &SchemaRef,
-    converter: &RowConverter,
-    partitions: impl Iterator<Item = (&'a ByteKey, &'a UpdatableTopNPartition)>,
-) -> Result<(), DataFusionError> {
-    let mut pending = Vec::with_capacity(CHUNK_ROWS);
-    for (key, partition) in partitions {
-        if partition.first_rank_end.is_some() {
-            return Err(invalid("unexpected update rank bound"));
-        }
-        let mut inner = 0i32;
-        for (index, row) in partition.iter().enumerate() {
-            if !matches!(row.stored_kind, 0..=3) {
-                return Err(invalid("unsupported update row kind"));
-            }
-            inner = if index == 0 || partition[index - 1].sort != row.sort {
-                1
-            } else {
-                inner
-                    .checked_add(1)
-                    .ok_or_else(|| invalid("update inner rank overflow"))?
-            };
-            pending.push((key, row, inner));
-            if pending.len() == CHUNK_ROWS {
-                emit_rows(env, receiver, schema, converter, &pending)?;
-                pending.clear();
-            }
-        }
-    }
-    if !pending.is_empty() {
-        emit_rows(env, receiver, schema, converter, &pending)?;
-    }
-    Ok(())
-}
-
-fn emit_rows(
-    env: &mut JNIEnv,
-    receiver: &JObject,
-    schema: &SchemaRef,
-    converter: &RowConverter,
-    rows: &[(&ByteKey, &UpdatableRow, i32)],
-) -> Result<(), DataFusionError> {
-    let mut columns = converter
-        .convert_rows(rows.iter().map(|(_, row, _)| row.payload.row()))?
-        .iter()
-        .zip(schema.fields())
-        .map(|(array, field)| streamfusion_bridge::timestamp::cast_array(array, field.data_type()))
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut fields = schema
-        .fields()
-        .iter()
-        .map(|field| field.as_ref().clone())
-        .collect::<Vec<_>>();
-    fields.extend([
-        Field::new("binary_key", DataType::Binary, false),
-        Field::new("row_key", DataType::Binary, false),
-        Field::new("inner_rank", DataType::Int32, false),
-        Field::new("__ttl_ts__", DataType::Int64, false),
-        Field::new("__stored_kind__", DataType::Int8, false),
-    ]);
-    columns.extend([
-        Arc::new(BinaryArray::from_iter_values(
-            rows.iter().map(|(key, _, _)| key.0.as_ref()),
-        )) as ArrayRef,
-        Arc::new(BinaryArray::from_iter_values(
-            rows.iter().map(|(_, row, _)| row.row_key.0.as_ref()),
-        )),
-        Arc::new(Int32Array::from_iter_values(
-            rows.iter().map(|(_, _, rank)| *rank),
-        )),
-        // Raw restore may install a migration clock; this TTL-disabled contract has no age.
-        Arc::new(Int64Array::from(vec![0; rows.len()])),
-        Arc::new(Int8Array::from_iter_values(
-            rows.iter().map(|(_, row, _)| row.stored_kind),
-        )),
-    ]);
-    crate::bridge::emit_record_batch(
-        env,
-        receiver,
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)?,
-    )
-}
-
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_exportUpdatingTopNCanonical<'local>(
     env: JNIEnv<'local>,
@@ -331,13 +246,15 @@ pub extern "system" fn Java_tech_streamfusion_Native_exportUpdatingTopNCanonical
                     return Err(invalid("requires update handle"));
                 };
                 ranker.canonical_schema(schema)?;
-                emit(
-                    &mut env,
-                    &receiver,
+                encoded::Emitter::new(
                     ranker.schema.as_ref().unwrap(),
-                    &ranker.converters.as_ref().unwrap().payload,
-                    ranker.groups.iter(),
+                    ranker.converters.as_ref().unwrap(),
+                    &ranker.sort_columns,
+                    encoded::Layout::Update,
+                    ranker.memory.temporary_reservation(),
+                    |batch| crate::bridge::emit_record_batch(&mut env, &receiver, batch),
                 )
+                .update(ranker.groups.iter())
             } else {
                 #[cfg(feature = "rocksdb-state")]
                 {
@@ -347,17 +264,20 @@ pub extern "system" fn Java_tech_streamfusion_Native_exportUpdatingTopNCanonical
                         return Err(invalid("requires update RocksDB handle"));
                     };
                     ranker.canonical_schema(schema)?;
-                    let schema = ranker.schema.as_ref().unwrap();
-                    let converter = &ranker.converters.as_ref().unwrap().payload;
-                    ranker.groups.for_each_canonical_batch(1, |partitions| {
-                        emit(
-                            &mut env,
-                            &receiver,
-                            schema,
-                            converter,
-                            partitions.iter().map(|(key, value)| (key, value)),
-                        )
-                    })
+                    let raw_memory = ranker.memory.temporary_reservation();
+                    let mut emitter = encoded::Emitter::new(
+                        ranker.schema.as_ref().unwrap(),
+                        ranker.converters.as_ref().unwrap(),
+                        &ranker.sort_columns,
+                        encoded::Layout::Update,
+                        ranker.memory.temporary_reservation(),
+                        |batch| crate::bridge::emit_record_batch(&mut env, &receiver, batch),
+                    );
+                    ranker
+                        .groups
+                        .for_each_canonical_raw(raw_memory, |key, bytes| {
+                            emitter.encoded(key, bytes, false)
+                        })
                 }
                 #[cfg(not(feature = "rocksdb-state"))]
                 Err(invalid("native RocksDB is unavailable"))

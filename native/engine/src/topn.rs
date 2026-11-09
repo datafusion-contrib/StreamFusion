@@ -544,7 +544,7 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
     }
     fn value_bytes(&self, value: &TopNPartition) -> usize {
         if let Some(state) = &value.retract {
-            return state.encode().expect("valid retracting state").len();
+            return state.encoded_bytes();
         }
         4 + if value.first_rank_end.is_some() {
             24
@@ -580,7 +580,7 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
     fn raw_write(&self, value: &TopNPartition, out: &mut Vec<u8>) {
         if let Some(state) = &value.retract {
             assert!(value.rows.is_empty() && value.first_rank_end.is_none());
-            out.extend_from_slice(&state.encode().expect("valid retracting state"));
+            state.write_encoded(out).expect("valid retracting state");
             return;
         }
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
