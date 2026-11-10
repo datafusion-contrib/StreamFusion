@@ -1185,6 +1185,13 @@ original rewriter is closed once. Task counters `nativeRewriteGroups`, `stockRew
 `nativeRewriteRows`, `nativeRewriteFiles`, `nativeRewriteBytes` and `nativeRewriteErrors` distinguish
 successful payload work from worker adaptation. Counters are shared across buckets and refreshes.
 Files and bytes count selected inputs; rows count written winners.
+
+An interrupted primary-key compaction worker stops before rewrite preflight or a metadata
+upgrade, even if its owner has already closed the rewriter. Paimon's cancelled future can
+outlive that close; such attempts report `InterruptedIOException` without clearing the
+interrupt flag, opening output, or retrying in Java. Work on a closed rewriter without an
+interruption remains an error.
+
 Append buffer spilling and primary-key level-0 buffering retain their existing native paths.
 
 Append rewrites likewise delegate before output for unavailable writer factories/codecs, unsupported

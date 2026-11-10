@@ -34,6 +34,45 @@ class PaimonCompactionFailureTest {
   @TempDir java.nio.file.Path directory;
 
   @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void cancelledRewriteAndUpgradeDoNotStartWork(boolean closed) throws Exception {
+    var stock = new Stock();
+    var rewriter =
+        new NativePaimonCompactRewriter(
+            null, BinaryRow.EMPTY_ROW, 0, stock, new UnregisteredMetricsGroup());
+    try {
+      if (closed) rewriter.close();
+      Thread.currentThread().interrupt();
+      assertThrows(InterruptedIOException.class, () -> rewriter.rewrite(1, false, List.of()));
+      assertTrue(Thread.currentThread().isInterrupted());
+      assertThrows(InterruptedIOException.class, () -> rewriter.upgrade(1, null));
+      assertTrue(Thread.currentThread().isInterrupted());
+      assertEquals(0, stock.rewrites);
+      assertEquals(0, stock.upgrades);
+      assertEquals(0, rewriter.nativeGroups.getCount());
+      assertEquals(0, rewriter.errors.getCount());
+    } finally {
+      Thread.interrupted();
+      rewriter.close();
+    }
+    assertEquals(1, stock.closes);
+  }
+
+  @org.junit.jupiter.api.Test
+  void closedRewriterRejectsWorkWithoutCancellation() throws Exception {
+    var stock = new Stock();
+    var rewriter =
+        new NativePaimonCompactRewriter(
+            null, BinaryRow.EMPTY_ROW, 0, stock, new UnregisteredMetricsGroup());
+    rewriter.close();
+    assertThrows(IllegalStateException.class, () -> rewriter.rewrite(1, false, List.of()));
+    assertThrows(IllegalStateException.class, () -> rewriter.upgrade(1, null));
+    assertEquals(0, stock.rewrites);
+    assertEquals(0, stock.upgrades);
+    assertEquals(1, stock.closes);
+  }
+
+  @ParameterizedTest
   @org.junit.jupiter.params.provider.CsvSource({
     "budget,projected-row-group-budget",
     "deletions,deletion-vectors",
