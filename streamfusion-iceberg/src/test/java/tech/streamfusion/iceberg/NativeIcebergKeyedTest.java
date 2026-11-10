@@ -41,6 +41,7 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 
 class NativeIcebergKeyedTest {
   private static final int INITIAL_ROWS = 3;
+  private static final Map<Integer, Integer> EXPECTED_ROWS = Map.of(1, 11, 3, 30, 5, 50);
 
   @TempDir(cleanup = org.junit.jupiter.api.io.CleanupMode.ON_SUCCESS)
   Path temp;
@@ -95,6 +96,18 @@ class NativeIcebergKeyedTest {
     return snapshot != null
         && Integer.toString(records)
             .equals(snapshot.summary().get(SnapshotSummary.TOTAL_RECORDS_PROP));
+  }
+
+  private static boolean updatesCommitted(Table table) throws java.io.IOException {
+    if (!recordsCommitted(table, INITIAL_ROWS + 3)) return false;
+    var remaining = new java.util.HashMap<>(EXPECTED_ROWS);
+    try (var rows = IcebergGenerics.read(table).build()) {
+      for (var row : rows) {
+        Integer expected = remaining.remove((Integer) row.getField("id"));
+        if (expected == null || !expected.equals(row.getField("value"))) return false;
+      }
+    }
+    return remaining.isEmpty();
   }
 
   @Test
@@ -323,7 +336,7 @@ class NativeIcebergKeyedTest {
             () -> "Duplicate row " + row + "; " + recoveryDiagnostics(table));
       }
     }
-    assertEquals(Map.of(1, 11, 3, 30, 5, 50), actual, () -> recoveryDiagnostics(table));
+    assertEquals(EXPECTED_ROWS, actual, () -> recoveryDiagnostics(table));
     assertTrue(
         java.util.stream.StreamSupport.stream(table.snapshots().spliterator(), false).count() >= 2);
     var deleteKinds = java.util.EnumSet.noneOf(org.apache.iceberg.FileContent.class);
@@ -468,7 +481,7 @@ class NativeIcebergKeyedTest {
         Thread.sleep(5);
       }
       var committed = new HadoopTables(new org.apache.hadoop.conf.Configuration()).load(location);
-      while (running && !recordsCommitted(committed, INITIAL_ROWS + 3)) {
+      while (running && !updatesCommitted(committed)) {
         if (System.nanoTime() > deadline)
           throw new IllegalStateException(
               "update files were not committed before source completion; " + EVENTS);
