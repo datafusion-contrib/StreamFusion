@@ -88,11 +88,12 @@ public final class NativeHudiAppendSink {
     org.apache.hudi.configuration.OptionsInference.setupSinkTasks(planning, 1);
     org.apache.hudi.configuration.OptionsInference.setupIndexConfigs(planning);
     var effective = org.apache.hudi.util.FlinkWriteClients.getHoodieClientConfig(planning);
-    if (!java.util.Set.of("SNAPPY", "UNCOMPRESSED", "GZIP", "ZSTD")
+    if (effective.isMetadataTableEnabled()
+        || !java.util.Set.of("SNAPPY", "UNCOMPRESSED", "GZIP", "ZSTD")
             .contains(effective.getParquetCompressionCodec().toUpperCase(java.util.Locale.ROOT))
         || effective.getParquetBlockSize() <= 0
         || effective.getParquetPageSize() <= 0)
-      throw new IllegalArgumentException("Hudi effective Parquet settings are not admitted");
+      throw new IllegalArgumentException("Hudi effective write settings are not admitted");
     for (var entry : hadoop)
       if (entry.getKey().startsWith("parquet."))
         throw new IllegalArgumentException(

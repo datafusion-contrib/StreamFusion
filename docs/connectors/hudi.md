@@ -76,6 +76,9 @@ payload types as the source. Updating, overwrite, partitioned, buffered and
 metadata-bearing writes retain stock Hudi. Bloom metadata, ignored write failures,
 unknown Parquet overrides and unverified constraint policies also retain stock.
 
+Admission checks Hudi's effective metadata-table setting as well as the Flink
+option. A raw `hoodie.metadata.enable=true` override retains the stock sink.
+
 The pinned released sink builds its normal graph first. Following the Iceberg
 adapter, StreamFusion replaces only its append operator factory, preserving Hudi's
 coordinator, operator identities, markers, write statuses and commit/checkpoint

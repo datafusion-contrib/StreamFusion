@@ -745,6 +745,7 @@ class NativeHudiSourceTest {
     for (var setting :
         List.of(
             Map.entry("hoodie.populate.meta.fields", "true"),
+            Map.entry("hoodie.metadata.enable", "true"),
             Map.entry("write.ignore.failed", "true"),
             Map.entry("hoodie.table.base.file.format", "ORC"),
             Map.entry("hoodie.parquet.compression.codec", "LZO"),
