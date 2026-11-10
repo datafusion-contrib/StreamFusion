@@ -6,6 +6,7 @@ import org.apache.arrow.memory.AllocationOutcome;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
+import tech.streamfusion.arrow.ArrowRuntime;
 
 /**
  * One Arrow allocator shared by every native operator in this JVM for the buffers that cross the
@@ -26,6 +27,10 @@ import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
  * their reference-counted lifetime visible to the same authority as native state and connector queues.
  */
 public final class NativeAllocator {
+
+  static {
+    ArrowRuntime.initialize();
+  }
 
   public static final BufferAllocator SHARED =
       new RootAllocator(new TaskBudgetListener(), Long.MAX_VALUE);

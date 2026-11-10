@@ -241,12 +241,25 @@ the previous export gating already let the linker discard unused engine code.
 
 ## Deployment JVM flags
 
-Run the TaskManager JVM with Arrow's safety checks off, as Comet/Spark do — profiling showed
-roughly a third of the transpose CPU was per-accessor bounds/refcount checks:
+StreamFusion sets Arrow Java's optimized access defaults before its first Arrow use, following
+Comet's initialization pattern. Normal deployments no longer need to add these options manually:
 
 ```
 -Darrow.enable_unsafe_memory_access=true -Darrow.enable_null_check_for_get=false
 ```
+
+The first option skips per-access buffer bounds/liveness checks; the second skips redundant NULL
+checks in primitive getters. Validity bitmaps, allocation accounting, retain/release and `setSafe`
+capacity growth remain active. Callers must check nullable values and preserve buffer ownership.
+
+Explicit JVM properties, Arrow environment variables and the legacy
+`drill.enable_unsafe_memory_access` property retain Arrow's normal precedence. For debugging, start
+the TaskManager with `-Darrow.enable_unsafe_memory_access=false` and
+`-Darrow.enable_null_check_for_get=true` to restore both checks. These are JVM-wide defaults and
+also affect other components using Arrow in that process. Arrow fixes each setting at class
+initialization: SQL `SET` and later property changes cannot change it. If another component has
+already initialized Arrow, StreamFusion logs the effective state and warns when it differs from
+the requested configuration; startup JVM options remain the reliable override in that case.
 
 See [Configuration](configuration.md) for the full `-Dstreamfusion.*` runtime flag surface,
 including off-heap sizing for Arrow batches and native operator state.

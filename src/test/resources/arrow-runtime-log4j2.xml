@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+  <Appenders>
+    <Console name="Console" target="SYSTEM_OUT">
+      <PatternLayout pattern="%level %msg%n"/>
+    </Console>
+  </Appenders>
+  <Loggers>
+    <Logger name="tech.streamfusion.arrow.ArrowRuntime" level="info"/>
+    <Root level="error"><AppenderRef ref="Console"/></Root>
+  </Loggers>
+</Configuration>
