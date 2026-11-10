@@ -66,6 +66,7 @@ public final class StreamFusionSuiteAgent {
   private static final Set<Object> INSTALLED_CONFIGS =
       Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
   private static final ThreadLocal<Boolean> UNMODIFIED_PLAN_SETUP = new ThreadLocal<>();
+  private static final ThreadLocal<Object> UNMODIFIED_PLAN_TEST = new ThreadLocal<>();
   private static final String JSON_PLAN_TEST_PACKAGE =
       "org.apache.flink.table.planner.runtime.stream.jsonplan.";
 
@@ -203,8 +204,16 @@ public final class StreamFusionSuiteAgent {
             (builder, type, classLoader, module, protectionDomain) ->
                 builder
                     .visit(Advice.to(RecordFallback.class).on(named("recordFallback")))
-                    .visit(Advice.to(RecordSqlPlan.class).on(named("optimizeConfigured")
-                        .or(named("optimizeRoots").and(isDeclaredBy(named("tech.streamfusion.planner.BatchPlanScan")))))))
+                    .visit(
+                        Advice.to(RecordSqlPlan.class)
+                            .on(
+                                named("optimizeConfigured")
+                                    .or(
+                                        named("optimizeRoots")
+                                            .and(
+                                                isDeclaredBy(
+                                                    named(
+                                                        "tech.streamfusion.planner.BatchPlanScan")))))))
         .type(
             namedOneOf(
                 "tech.streamfusion.state.StockGroupTypedStateContract",
@@ -538,6 +547,7 @@ public final class StreamFusionSuiteAgent {
   public static final class StartSqlInventory {
     @Advice.OnMethodExit
     static void exit(@Advice.Argument(0) Object identifier) throws Exception {
+      StreamFusionSuiteAgent.beginUnmodifiedPlanTest(identifier);
       SqlInventory.started(identifier);
     }
   }
@@ -546,7 +556,11 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodEnter
     static void enter(@Advice.Argument(0) Object identifier, @Advice.Argument(1) Object result)
         throws Exception {
-      SqlInventory.finished(identifier, result);
+      try {
+        SqlInventory.finished(identifier, result);
+      } finally {
+        StreamFusionSuiteAgent.endUnmodifiedPlanTest(identifier);
+      }
     }
   }
 
@@ -1054,6 +1068,27 @@ public final class StreamFusionSuiteAgent {
     return INSTALLED_CONFIGS.contains(tableConfig);
   }
 
+  public static void beginUnmodifiedPlanTest(Object identifier)
+      throws ReflectiveOperationException {
+    Object source =
+        ((java.util.Optional<?>) identifier.getClass().getMethod("getSource").invoke(identifier))
+            .orElse(null);
+    if (source == null
+        || !source
+            .getClass()
+            .getName()
+            .equals("org.junit.platform.engine.support.descriptor.MethodSource")) return;
+    Object owner = source.getClass().getMethod("getClassName").invoke(source);
+    Object method = source.getClass().getMethod("getMethodName").invoke(source);
+    // This fixture asserts the contents of Flink's generated operator, not SQL result parity.
+    if ("org.apache.flink.table.planner.runtime.batch.sql.join.JoinITCase".equals(owner)
+        && "testLongHashJoinGenerator".equals(method)) UNMODIFIED_PLAN_TEST.set(identifier);
+  }
+
+  public static void endUnmodifiedPlanTest(Object identifier) {
+    if (identifier.equals(UNMODIFIED_PLAN_TEST.get())) UNMODIFIED_PLAN_TEST.remove();
+  }
+
   public static void enterUnmodifiedPlanSetup() {
     UNMODIFIED_PLAN_SETUP.set(Boolean.TRUE);
   }
@@ -1072,7 +1107,8 @@ public final class StreamFusionSuiteAgent {
         @Advice.Return(readOnly = false, typing = Assigner.Typing.DYNAMIC) Object planner) {
       String plannerName = planner.getClass().getName();
       boolean batch = plannerName.equals("org.apache.flink.table.planner.delegation.BatchPlanner");
-      if (!batch && !plannerName.equals("org.apache.flink.table.planner.delegation.StreamPlanner")) {
+      if (!batch
+          && !plannerName.equals("org.apache.flink.table.planner.delegation.StreamPlanner")) {
         SqlInventory.plannerCreated(context, planner);
         return;
       }
@@ -1147,7 +1183,7 @@ public final class StreamFusionSuiteAgent {
 
     public static boolean requiresUnmodifiedFlinkPlan() {
       if (PaimonCompactionFixtures.mode().equals("stock")) return true;
-      if (Boolean.TRUE.equals(UNMODIFIED_PLAN_SETUP.get())) {
+      if (UNMODIFIED_PLAN_TEST.get() != null || Boolean.TRUE.equals(UNMODIFIED_PLAN_SETUP.get())) {
         return true;
       }
       for (StackTraceElement frame : Thread.currentThread().getStackTrace()) {
