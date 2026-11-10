@@ -207,7 +207,7 @@ jobs:
           mvn -B -ntp ${{ matrix.profile }} test -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
             "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/runtime-test-includes.txt" \
             -DskipTests=${{ matrix.shard != 1 }} -Dsf.runtime.tests.skip=false \
-            -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx2g"
+            -Dsf.testForks=4 -Dsf.testReuseForks=false -Dsurefire.timeout=1800 "-Dsf.extraJvmArgs=-Xmx2g"
 
       - name: Verify JVM boundary defaults and optional cache on the freshly built native library
         if: matrix.jdk == '17' && matrix.shard == 1

@@ -135,6 +135,9 @@ shared rowtime-first dedup fixture checks the released eager 1.18 winner/retract
 from 2.2's buffered watermark rules, retaining independent per-cut winners and exact signed output
 against a clean stock job.
 
+Isolated worker timeouts include both the worker log and thread dump in the retained test report,
+so a failed handoff can be diagnosed without preserving the whole temporary job directory.
+
 Canonical conversion runs only when Flink requests a canonical savepoint. Ordinary checkpoints and
 native-format savepoints retain their existing native recovery path. Both supported Flink lines
 use the released `SavepointSnapshotStrategy` and `FullSnapshotAsyncWriter`; StreamFusion supplies

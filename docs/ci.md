@@ -1256,3 +1256,8 @@ Recent failure diagnoses:
 - [Paimon compatibility 41951091666](https://github.com/jordepic/StreamFusion-contrib/actions/runs/41951091666):
   generated legacy sources referenced coordinator APIs absent from released Paimon 1.0.
   Subsequent compatibility runs, including the latest completed branch run, passed.
+
+The runtime Java CI command bounds each Surefire fork at 30 minutes. A fork that hangs after
+reporting its test results fails the gate instead of occupying a runner until the full job timeout;
+the test selection and assertions remain the same. Canonical child-worker timeouts embed their
+logs and thread dumps in the failure report for diagnosis.

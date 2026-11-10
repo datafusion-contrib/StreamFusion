@@ -146,7 +146,10 @@ class CanonicalJobRunner {
                   .start();
           if (!diagnostic.waitFor(10, TimeUnit.SECONDS)) diagnostic.destroyForcibly();
         }
-        assertTrue(completed, () -> "worker did not finish; log: " + log);
+        assertTrue(
+            completed,
+            () ->
+                "worker did not finish; " + diagnostics(log, root.resolve(stage + "-threads.txt")));
         assertEquals(
             expectedExitCode,
             process.exitValue(),
@@ -165,6 +168,19 @@ class CanonicalJobRunner {
         }
       }
     }
+  }
+
+  private static String diagnostics(Path... files) {
+    StringBuilder result = new StringBuilder();
+    for (Path file : files) {
+      result.append("\n").append(file).append(":\n");
+      try {
+        result.append(Files.readString(file));
+      } catch (Exception failure) {
+        result.append(failure);
+      }
+    }
+    return result.toString();
   }
 
   void verifyJoinSwitch(
