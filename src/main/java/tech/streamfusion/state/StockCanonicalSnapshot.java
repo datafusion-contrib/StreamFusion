@@ -42,19 +42,6 @@ public final class StockCanonicalSnapshot {
       CheckpointOptions options,
       CloseableRegistry cancelables)
       throws Exception {
-    return capture(keyed, operator, checkpointId, timestamp, streams, options, cancelables, null);
-  }
-
-  public static OperatorSnapshotFutures capture(
-      SupplierWithException<SavepointResources<?>, Exception> keyed,
-      OperatorStateBackend operator,
-      long checkpointId,
-      long timestamp,
-      CheckpointStreamFactory streams,
-      CheckpointOptions options,
-      CloseableRegistry cancelables,
-      SupplierWithException<AutoCloseable, Exception> retain)
-      throws Exception {
     if (!options.getCheckpointType().isSavepoint()
         || ((SavepointType) options.getCheckpointType()).getFormatType()
             != SavepointFormatType.CANONICAL)
@@ -63,13 +50,9 @@ public final class StockCanonicalSnapshot {
     SavepointResources<?> resources = null;
     boolean started = false;
     try {
-      if (operator != null) {
+      if (operator != null)
         result.setOperatorStateManagedFuture(
             operator.snapshot(checkpointId, timestamp, streams, options));
-        if (retain != null)
-          result.setOperatorStateManagedFuture(
-              retainOperatorSnapshot(result.getOperatorStateManagedFuture(), retain, cancelables));
-      }
       resources = keyed.get();
       var runner =
           new SnapshotStrategyRunner<>(
@@ -97,7 +80,7 @@ public final class StockCanonicalSnapshot {
     }
   }
 
-  private static java.util.concurrent.RunnableFuture<SnapshotResult<OperatorStateHandle>>
+  static java.util.concurrent.RunnableFuture<SnapshotResult<OperatorStateHandle>>
       retainOperatorSnapshot(
           java.util.concurrent.RunnableFuture<SnapshotResult<OperatorStateHandle>> future,
           SupplierWithException<AutoCloseable, Exception> retain,

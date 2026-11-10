@@ -238,6 +238,11 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
     return backend;
   }
 
+  protected OperatorStateBackend wrapOperatorStateBackend(
+      OperatorStateBackend backend, String operatorIdentifier) throws Exception {
+    return backend;
+  }
+
   @Override
   public final OperatorStateBackend createOperatorStateBackend(
       Environment env,
@@ -245,7 +250,9 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
       Collection<OperatorStateHandle> stateHandles,
       CloseableRegistry cancelStreamRegistry)
       throws Exception {
-    return delegate.createOperatorStateBackend(
-        env, operatorIdentifier, stateHandles, cancelStreamRegistry);
+    return wrapOperatorStateBackend(
+        delegate.createOperatorStateBackend(
+            env, operatorIdentifier, stateHandles, cancelStreamRegistry),
+        operatorIdentifier);
   }
 }

@@ -231,6 +231,15 @@ public abstract class AbstractNativeStatefulOperator<OUT>
       ((CanonicalKeyedStateBackend<?>) backend)
           .configureSnapshots(this::prepareStockCanonicalSnapshot, this::snapshotNativeState);
     }
+    if (stockStateContract != null) {
+      tech.streamfusion.state.CanonicalStateBackend.configureOperatorSnapshots(
+          getOperatorStateBackend(),
+          getContainingTask().getCancelables(),
+          () ->
+              rocksdbSupport != null
+                  ? rocksdbSupport.retainCanonicalReader()
+                  : canonicalBackend.retainCanonicalReader());
+    }
     super.initializeState(context);
     if (stockStateContract != null) {
       stockStateContract.initializeOperatorState(
@@ -532,10 +541,7 @@ public abstract class AbstractNativeStatefulOperator<OUT>
         timestamp,
         streamFactory,
         options,
-        getContainingTask().getCancelables(),
-        rocksdbSupport != null
-            ? rocksdbSupport::retainCanonicalReader
-            : canonicalBackend::retainCanonicalReader);
+        getContainingTask().getCancelables());
   }
 
   @Override

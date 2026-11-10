@@ -117,15 +117,7 @@ public final class CanonicalStateBackend extends FlinkStateBackendCompat {
   @Override
   protected <K> CheckpointableKeyedStateBackend<K> createNativeKeyedBackend(
       KeyedBackendContext<K> context) throws Exception {
-    StockStateContract contract = null;
-    for (Map.Entry<String, BoundContract> entry : contracts.entrySet()) {
-      if (context
-          .operatorIdentifier()
-          .startsWith(entry.getValue().operatorClass + "_" + entry.getKey() + "_(")) {
-        contract = entry.getValue().contract;
-        break;
-      }
-    }
+    var contract = contractForOperator(context.operatorIdentifier());
     if (contract == null) return context.delegateFactory().apply(context.stateHandles());
     List<KeyedStateHandle> stockHandles = new ArrayList<>();
     for (KeyedStateHandle handle : context.stateHandles()) {
@@ -165,6 +157,31 @@ public final class CanonicalStateBackend extends FlinkStateBackendCompat {
       }
       throw failure;
     }
+  }
+
+  @Override
+  protected org.apache.flink.runtime.state.OperatorStateBackend wrapOperatorStateBackend(
+      org.apache.flink.runtime.state.OperatorStateBackend backend, String operatorIdentifier) {
+    return contractForOperator(operatorIdentifier) == null
+        ? backend
+        : new CanonicalOperatorStateBackend(backend);
+  }
+
+  public static void configureOperatorSnapshots(
+      org.apache.flink.runtime.state.OperatorStateBackend backend,
+      org.apache.flink.core.fs.CloseableRegistry cancelables,
+      org.apache.flink.util.function.SupplierWithException<AutoCloseable, Exception> retain) {
+    if (!(backend instanceof CanonicalOperatorStateBackend))
+      throw new IllegalStateException("stock canonical operator state backend was not installed");
+    ((CanonicalOperatorStateBackend) backend).configureSnapshots(cancelables, retain);
+  }
+
+  private StockStateContract contractForOperator(String identifier) {
+    for (var entry : contracts.entrySet()) {
+      if (identifier.startsWith(entry.getValue().operatorClass + "_" + entry.getKey() + "_("))
+        return entry.getValue().contract;
+    }
+    return null;
   }
 
   static final class BoundContract implements java.io.Serializable {

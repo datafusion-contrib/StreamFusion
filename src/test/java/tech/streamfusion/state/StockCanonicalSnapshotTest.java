@@ -62,39 +62,62 @@ class StockCanonicalSnapshotTest {
   @ParameterizedTest
   @ValueSource(strings = {"complete", "cancel", "task-cancel", "closed-registry"})
   void operatorStateRetainsItsBackendAfterKeyedStateFinishes(String mode) throws Exception {
-    var guard = new org.apache.flink.util.ResourceGuard();
-    try (var source = harness();
-        var cancelables = new CloseableRegistry()) {
+    var source = harness(true);
+    var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+    OperatorSnapshotFutures captured = null;
+    try {
       source.open();
-      var keyed = backend(source);
       var operator = (Fixture) source.getOperator();
+      var operatorBackend = operator.getOperatorStateBackend();
+      assertInstanceOf(CanonicalOperatorStateBackend.class, operatorBackend);
       operator.store.getUnionListState(WATERMARK).update(List.of(123L));
-      org.apache.flink.util.function.SupplierWithException<OperatorSnapshotFutures, Exception>
-          capture =
-              () ->
-                  StockCanonicalSnapshot.capture(
-                      keyed::savepoint,
-                      operator.getOperatorStateBackend(),
-                      1,
-                      0,
-                      new MemCheckpointStreamFactory(1 << 20),
-                      OPTIONS,
-                      cancelables,
-                      guard::acquireResource);
       if (mode.equals("closed-registry")) {
-        cancelables.close();
-        assertThrows(IOException.class, capture::get);
+        operator.cancelables().close();
+        assertThrows(
+            IOException.class,
+            () -> operatorBackend.snapshot(1, 0, new MemCheckpointStreamFactory(1 << 20), OPTIONS));
       } else {
-        var captured = capture.get();
+        captured = operator.snapshotState(1, 0, OPTIONS, new MemCheckpointStreamFactory(1 << 20));
         org.apache.flink.util.concurrent.FutureUtils.runIfNotDoneAndGet(
             captured.getKeyedStateManagedFuture());
-        assertEquals(1, guard.getLeaseCount());
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var closing =
+            executor.submit(
+                () -> {
+                  entered.countDown();
+                  operator.close();
+                  return null;
+                });
+        assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
+        assertThrows(
+            java.util.concurrent.TimeoutException.class,
+            () -> closing.get(100, java.util.concurrent.TimeUnit.MILLISECONDS));
         if (mode.equals("cancel")) captured.cancel();
-        else if (mode.equals("task-cancel")) cancelables.close();
-        else finish(captured);
+        else if (mode.equals("task-cancel")) operator.cancelables().close();
+        else {
+          var saved = finish(captured);
+          try (var restored = harness()) {
+            restored.initializeState(saved);
+            restored.open();
+            assertEquals(
+                List.of(123L),
+                values(
+                    ((Fixture) restored.getOperator()).store.getUnionListState(WATERMARK).get()));
+          }
+        }
+        closing.get(5, java.util.concurrent.TimeUnit.SECONDS);
       }
-      assertEquals(0, guard.getLeaseCount());
-      guard.close();
+    } finally {
+      try {
+        if (captured != null) captured.cancel();
+      } finally {
+        executor.shutdownNow();
+        try {
+          assertTrue(executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+        } finally {
+          source.close();
+        }
+      }
     }
   }
 
@@ -456,6 +479,11 @@ class StockCanonicalSnapshotTest {
 
   private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness()
       throws Exception {
+    return harness(false);
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
+      boolean canonical) throws Exception {
     var selector =
         KeySelectorUtil.getRowDataSelector(
             StockCanonicalSnapshotTest.class.getClassLoader(),
@@ -464,7 +492,16 @@ class StockCanonicalSnapshotTest {
     var harness =
         new KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData>(
             new Fixture(), selector, selector.getProducedType(), 128, 1, 0);
-    harness.setStateBackend(new HashMapStateBackend());
+    harness.setStateBackend(
+        canonical
+            ? new CanonicalStateBackend(
+                new HashMapStateBackend(),
+                java.util.Map.of(
+                    harness.getStreamConfig().getOperatorID().toHexString(),
+                    new CanonicalStateBackend.BoundContract(
+                        Fixture.class.getSimpleName(),
+                        new StockFirstNStateContract(new RowDataSerializer(KEY), KEY, false))))
+            : new HashMapStateBackend());
     harness.setup(new RowDataSerializer(KEY));
     return harness;
   }
@@ -480,9 +517,26 @@ class StockCanonicalSnapshotTest {
       implements OneInputStreamOperator<RowData, RowData> {
     transient OperatorStateStore store;
 
+    CloseableRegistry cancelables() {
+      return getContainingTask().getCancelables();
+    }
+
     @Override
     public void initializeState(StateInitializationContext context) {
       store = context.getOperatorStateStore();
+      if (getKeyedStateBackend() instanceof CanonicalKeyedStateBackend) {
+        CanonicalStateBackend.configureOperatorSnapshots(
+            getOperatorStateBackend(),
+            cancelables(),
+            ((CanonicalKeyedStateBackend<?>) getKeyedStateBackend())::retainCanonicalReader);
+      }
+    }
+
+    @Override
+    public void close() throws Exception {
+      if (getKeyedStateBackend() instanceof CanonicalKeyedStateBackend)
+        ((CanonicalKeyedStateBackend<?>) getKeyedStateBackend()).closeCanonicalReaders();
+      super.close();
     }
 
     @Override

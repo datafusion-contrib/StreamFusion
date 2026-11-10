@@ -116,9 +116,15 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
     return backend;
   }
 
+  protected OperatorStateBackend wrapOperatorStateBackend(
+      OperatorStateBackend backend, String operatorIdentifier) throws Exception {
+    return backend;
+  }
+
   @Override
   public final OperatorStateBackend createOperatorStateBackend(
       OperatorStateBackendParameters parameters) throws Exception {
-    return delegate.createOperatorStateBackend(parameters);
+    return wrapOperatorStateBackend(
+        delegate.createOperatorStateBackend(parameters), parameters.getOperatorIdentifier());
   }
 }

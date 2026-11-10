@@ -121,8 +121,13 @@ Backend ownership covers both the keyed canonical reader and the managed operato
 Flink finalizes keyed state first; releasing that reader alone must not let concurrent operator
 closure cancel a still-pending watermark or operator-state write. The managed future retains its
 own lease through Flink's asynchronous callable lifecycle, including cancellation before execution
-and task cancellation. Disposal controls finish keyed state first and require closure to remain
-blocked until operator-state capture finishes or cancels.
+and task cancellation. The operator-state backend factory installs the ownership wrapper, and
+operator initialization binds it to the native reader guard and the task's live cancellation
+registry; the factory's restore-only registry has already closed by the first snapshot. This gives
+Flink 1.18's final snapshot entry point the same lifetime rules as 2.2's operator hook. Framework controls use each released operator snapshot entry point and verify
+that the configured backend is installed, rather than calling only the conversion helper.
+Disposal controls finish keyed state first and require closure to remain blocked until
+operator-state capture finishes or cancels.
 
 Canonical conversion runs only when Flink requests a canonical savepoint. Ordinary checkpoints and
 native-format savepoints retain their existing native recovery path. Both supported Flink lines
