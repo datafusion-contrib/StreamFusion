@@ -1001,7 +1001,7 @@ see [release measurements](../benchmarks/scalar-functions.md#runtime-sha2-widths
 
 A final native Calc immediately above a row-to-Arrow transpose can carry STRING inputs as Arrow
 Binary when every character input consumer has a verified byte contract: `CONCAT` / `||`,
-`CONCAT_WS`, `MD5`, or `SHA1`.
+`CONCAT_WS`, `MD5`, `SHA1`, or `SHA224`.
 Nested concatenations, runtime separators, character constants and simple
 independent numeric projections/filters are supported. These hashes consume the original bytes and return
 valid ASCII hex, so their results can also feed text predicates or another expression within the Calc.

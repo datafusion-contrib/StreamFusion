@@ -74,6 +74,7 @@ final class ByteStringInputs {
       case 94: // CONCAT_WS
       case 95: // MD5
       case 143: // SHA1
+      case 96: // SHA224
         return true;
       default:
         return false;

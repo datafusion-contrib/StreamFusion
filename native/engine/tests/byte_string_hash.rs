@@ -98,3 +98,8 @@ fn md5_hashes_binary_and_utf8_with_identical_null_and_slice_rules() {
 fn sha1_hashes_binary_and_utf8_with_identical_null_and_slice_rules() {
     check_hash::<sha1::Sha1>(143);
 }
+
+#[test]
+fn sha224_hashes_binary_and_utf8_with_identical_null_and_slice_rules() {
+    check_hash::<sha2::Sha224>(96);
+}
