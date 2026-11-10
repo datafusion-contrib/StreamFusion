@@ -80,7 +80,7 @@ class FlinkByteStringConcatSqlHarnessTest {
     }
   }
 
-  private static List<String> run(String sql, boolean nativeRun) throws Exception {
+  static List<String> run(String sql, boolean nativeRun) throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var table = source(metrics);
       var scan = nativeRun ? NativePlanner.install(table) : null;
@@ -107,9 +107,9 @@ class FlinkByteStringConcatSqlHarnessTest {
       }
       if (nativeRun) {
         assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
+        assertFalse(scan.functionExecutions().isEmpty());
         assertTrue(
-            scan.functionExecutions().stream()
-                .anyMatch(route -> route.contains("CONCAT") && route.contains("jvm=[]")),
+            scan.functionExecutions().stream().allMatch(route -> route.contains("jvm=[]")),
             scan.functionExecutions().toString());
         RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
       }

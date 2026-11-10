@@ -1000,15 +1000,17 @@ see [release measurements](../benchmarks/scalar-functions.md#runtime-sha2-widths
 ### Byte-preserving string input
 
 A final native Calc immediately above a row-to-Arrow transpose can carry STRING inputs as Arrow
-Binary when every character input is consumed exclusively by `CONCAT` / `||` or `CONCAT_WS`, including
-nested concatenations and runtime separators. Character constants and simple independent numeric
-projections/filters are supported.
+Binary when every character input consumer has a verified byte contract: `CONCAT` / `||`,
+`CONCAT_WS`, or `MD5`. Nested concatenations, runtime separators, character constants and simple
+independent numeric projections/filters are supported. MD5 hashes the original bytes and returns
+valid ASCII hex, so that result can also feed text predicates or another expression within the Calc.
+Raw concatenation output still requires a byte-capable parent or the final row exit.
 The planner selects this representation before execution; the schema does not change between
 batches. `EXPLAIN` identifies the input columns with `byteStrings=[...]`. There is no new setting.
 
 The SQL type remains STRING. The transpose copies the original `StringData` bytes into a Binary
-vector marked `streamfusion.logical_string=1`; the native kernel concatenates bytes directly,
-propagates NULLs, and returns Binary to the final row exit. No UTF-8 validation, replacement decode,
+vector marked `streamfusion.logical_string=1`; the native concatenation kernels consume bytes directly,
+preserve their NULL rules, and return Binary to the final row exit. No UTF-8 validation, replacement decode,
 or JVM callback is needed. The exit can borrow Binary-backed string bytes for synchronous consumers,
 with the same ownership rule as Utf8. CONCAT output is byte-backed without a Java string cache,
 matching Flink's concatenation helpers. `CONCAT_WS` returns NULL only when its separator is NULL;

@@ -45,6 +45,14 @@ public final class ByteStringConcatBenchmarkFunctions {
       case "concat_ws_separator":
         expression = "CONCAT_WS(s, 'x', '!')";
         break;
+      case "md5":
+      case "sha1":
+      case "sha224":
+      case "sha256":
+      case "sha384":
+      case "sha512":
+        expression = function.toUpperCase(java.util.Locale.ROOT) + "(s)";
+        break;
       default:
         throw new IllegalArgumentException("Unknown byte-string benchmark: " + function);
     }

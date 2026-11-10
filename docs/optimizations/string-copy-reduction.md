@@ -218,3 +218,8 @@ reserving space for potentially masked payloads. The existing Utf8 kernel remain
 
 Admission is limited to [verified final concatenation consumers](../operators/calc-filter.md#byte-preserving-string-input).
 Text functions, key/state consumers and native sinks require their own representation contracts.
+
+MD5 can consume the same Binary storage. It hashes the existing byte slices and writes ASCII hex
+directly into the final Utf8 buffer, without converting input bytes to text. The planner distinguishes
+raw-string producers from byte-consuming functions with a valid-text result, so MD5 output can feed
+other expressions without allowing a text kernel to consume arbitrary concatenation bytes.

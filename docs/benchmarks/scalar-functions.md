@@ -11297,3 +11297,26 @@ remains `concat`. For example, with the released Flink test classpath configured
 ```sh
 cargo run -p streamfusion --release --no-default-features --example byte_string_concat -- 16 false true 0 concat_ws
 ```
+
+### Byte-preserving digest functions
+
+Digest measurements use the same prepared-input methodology, release build, host and JDK 17 /
+released Flink 2.2.1 baseline. The Utf8 control uses the shared digest implementation in the same
+library; it is a physical-input control, not a separately rebuilt historical native library.
+Only Binary carries malformed inputs. Both native paths hash slices directly and write ASCII hex;
+the Binary change does not require a faster digest algorithm or add a text decode. Times are
+median milliseconds (min-max), with 12 warmups and nine retained trials over 1,048,576 rows.
+These measurements exclude perimeter conversions and are not complete-job throughput claims.
+
+| Function / input | Stock Flink | Utf8 control | Binary |
+|---|---:|---:|---:|
+| MD5 / 16-byte ASCII | 142.125 (140.288-144.328) | 100.219 (99.414-102.289) | 99.744 (98.823-102.406) |
+| MD5 / 64-byte ASCII | 214.757 (213.239-218.880) | 158.851 (157.379-160.303) | 158.983 (157.764-163.708) |
+| MD5 / 16 three-byte characters, every seventh row NULL | 124.280 (122.569-139.306) | 80.385 (79.720-83.036) | 80.928 (79.789-87.255) |
+| MD5 / 16 bytes, first byte FF every 1000 rows | 140.061 (138.178-140.446) | not applicable | 99.184 (98.692-100.480) |
+
+Select the function using the example's optional fifth argument, for example:
+
+```sh
+cargo run -p streamfusion --release --no-default-features --example byte_string_concat -- 16 false false 0 md5
+```

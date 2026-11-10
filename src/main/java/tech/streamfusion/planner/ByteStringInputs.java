@@ -40,18 +40,18 @@ final class ByteStringInputs {
       int condition,
       RelDataType input,
       RelDataType output) {
-    boolean concat = false;
+    boolean[] consumedBytes = {false};
     for (int i = 0; i < projections.length; i++) {
       int root = projections[i];
       boolean bytes =
-          kinds[root] == 6
-              && (payload[root] == 93 || payload[root] == 94)
+          isByteStringProducer(kinds[root], payload[root])
               && SqlTypeFamily.CHARACTER.contains(output.getFieldList().get(i).getType());
-      if (visit(root, bytes, kinds, payload, children, input) < 0) return new int[0];
-      concat |= bytes;
+      if (visit(root, bytes, kinds, payload, children, input, consumedBytes) < 0) return new int[0];
     }
-    if (!concat || condition >= 0 && visit(condition, false, kinds, payload, children, input) < 0)
+    if (condition >= 0
+        && visit(condition, false, kinds, payload, children, input, consumedBytes) < 0)
       return new int[0];
+    if (!consumedBytes[0]) return new int[0];
     // Nested strings retain their existing representation until all their consumers are qualified.
     if (input.getFieldList().stream()
         .anyMatch(
@@ -64,21 +64,30 @@ final class ByteStringInputs {
         .toArray();
   }
 
+  private static boolean isByteStringProducer(int kind, int operation) {
+    return kind == 6 && (operation == 93 || operation == 94);
+  }
+
+  private static boolean acceptsByteStringInput(int operation) {
+    return operation == 93 || operation == 94 || operation == 95;
+  }
+
   private static int visit(
       int node,
       boolean acceptsBytes,
       int[] kinds,
       int[] payload,
       int[] children,
-      RelDataType input) {
+      RelDataType input,
+      boolean[] consumedBytes) {
     if (kinds[node] == 0) {
-      return !acceptsBytes
-              && SqlTypeFamily.CHARACTER.contains(input.getFieldList().get(payload[node]).getType())
-          ? -1
-          : node + 1;
+      if (SqlTypeFamily.CHARACTER.contains(input.getFieldList().get(payload[node]).getType())) {
+        if (!acceptsBytes) return -1;
+        consumedBytes[0] = true;
+      }
+      return node + 1;
     }
-    boolean concat = kinds[node] == 6 && (payload[node] == 93 || payload[node] == 94);
-    if (concat && !acceptsBytes) return -1;
+    if (isByteStringProducer(kinds[node], payload[node]) && !acceptsBytes) return -1;
     switch (kinds[node]) {
       case 1:
       case 2:
@@ -97,7 +106,15 @@ final class ByteStringInputs {
       case 6:
         int next = node + 1;
         for (int i = 0; i < children[node]; i++) {
-          next = visit(next, concat, kinds, payload, children, input);
+          next =
+              visit(
+                  next,
+                  acceptsByteStringInput(payload[node]),
+                  kinds,
+                  payload,
+                  children,
+                  input,
+                  consumedBytes);
           if (next < 0) return -1;
         }
         return next;

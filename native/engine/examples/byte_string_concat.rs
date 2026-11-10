@@ -117,6 +117,12 @@ fn main() {
                     vec![3, 0, 0, 0],
                     vec![Some("x".into()), Some("!".into())],
                 ),
+                "md5" => (vec![6, 0], vec![95, 0], vec![1, 0], vec![]),
+                "sha1" => (vec![6, 0], vec![143, 0], vec![1, 0], vec![]),
+                "sha224" => (vec![6, 0], vec![96, 0], vec![1, 0], vec![]),
+                "sha256" => (vec![6, 0], vec![97, 0], vec![1, 0], vec![]),
+                "sha384" => (vec![6, 0], vec![98, 0], vec![1, 0], vec![]),
+                "sha512" => (vec![6, 0], vec![99, 0], vec![1, 0], vec![]),
                 _ => panic!("Unknown byte-string benchmark: {function}"),
             };
             CalcProgram::new(kinds, payload, children, vec![], vec![], strings)
