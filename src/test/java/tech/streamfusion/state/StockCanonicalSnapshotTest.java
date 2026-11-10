@@ -59,6 +59,45 @@ class StockCanonicalSnapshotTest {
           SavepointType.savepoint(SavepointFormatType.CANONICAL),
           CheckpointStorageLocationReference.getDefault());
 
+  @ParameterizedTest
+  @ValueSource(strings = {"complete", "cancel", "task-cancel", "closed-registry"})
+  void operatorStateRetainsItsBackendAfterKeyedStateFinishes(String mode) throws Exception {
+    var guard = new org.apache.flink.util.ResourceGuard();
+    try (var source = harness();
+        var cancelables = new CloseableRegistry()) {
+      source.open();
+      var keyed = backend(source);
+      var operator = (Fixture) source.getOperator();
+      operator.store.getUnionListState(WATERMARK).update(List.of(123L));
+      org.apache.flink.util.function.SupplierWithException<OperatorSnapshotFutures, Exception>
+          capture =
+              () ->
+                  StockCanonicalSnapshot.capture(
+                      keyed::savepoint,
+                      operator.getOperatorStateBackend(),
+                      1,
+                      0,
+                      new MemCheckpointStreamFactory(1 << 20),
+                      OPTIONS,
+                      cancelables,
+                      guard::acquireResource);
+      if (mode.equals("closed-registry")) {
+        cancelables.close();
+        assertThrows(IOException.class, capture::get);
+      } else {
+        var captured = capture.get();
+        org.apache.flink.util.concurrent.FutureUtils.runIfNotDoneAndGet(
+            captured.getKeyedStateManagedFuture());
+        assertEquals(1, guard.getLeaseCount());
+        if (mode.equals("cancel")) captured.cancel();
+        else if (mode.equals("task-cancel")) cancelables.close();
+        else finish(captured);
+      }
+      assertEquals(0, guard.getLeaseCount());
+      guard.close();
+    }
+  }
+
   @Test
   void keyedAccumulatorsAndUnionWatermarkBelongToTheSameImmutableCapture() throws Exception {
     try (var source = harness();

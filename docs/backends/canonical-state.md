@@ -117,6 +117,13 @@ tests were reused. Benchmarking remains deferred; exact-head hosted checks still
 
 ## Streaming stock-state capture
 
+Backend ownership covers both the keyed canonical reader and the managed operator-state future.
+Flink finalizes keyed state first; releasing that reader alone must not let concurrent operator
+closure cancel a still-pending watermark or operator-state write. The managed future retains its
+own lease through Flink's asynchronous callable lifecycle, including cancellation before execution
+and task cancellation. Disposal controls finish keyed state first and require closure to remain
+blocked until operator-state capture finishes or cancels.
+
 Canonical conversion runs only when Flink requests a canonical savepoint. Ordinary checkpoints and
 native-format savepoints retain their existing native recovery path. Both supported Flink lines
 use the released `SavepointSnapshotStrategy` and `FullSnapshotAsyncWriter`; StreamFusion supplies

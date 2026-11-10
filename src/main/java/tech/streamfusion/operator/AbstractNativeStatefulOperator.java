@@ -532,7 +532,10 @@ public abstract class AbstractNativeStatefulOperator<OUT>
         timestamp,
         streamFactory,
         options,
-        getContainingTask().getCancelables());
+        getContainingTask().getCancelables(),
+        rocksdbSupport != null
+            ? rocksdbSupport::retainCanonicalReader
+            : canonicalBackend::retainCanonicalReader);
   }
 
   @Override

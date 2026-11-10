@@ -116,6 +116,11 @@ class CanonicalFirstNOperatorSnapshotTest {
       assertThrows(
           java.util.concurrent.TimeoutException.class,
           () -> closing.get(100, java.util.concurrent.TimeUnit.MILLISECONDS));
+      org.apache.flink.util.concurrent.FutureUtils.runIfNotDoneAndGet(
+          futures.getKeyedStateManagedFuture());
+      assertThrows(
+          java.util.concurrent.TimeoutException.class,
+          () -> closing.get(100, java.util.concurrent.TimeUnit.MILLISECONDS));
       var saved = tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(futures);
       closing.get(5, java.util.concurrent.TimeUnit.SECONDS);
       try (var stock = harness(true, false, true, 0)) {
