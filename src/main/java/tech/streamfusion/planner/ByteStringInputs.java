@@ -76,6 +76,7 @@ final class ByteStringInputs {
       case 143: // SHA1
       case 96: // SHA224
       case 97: // SHA256
+      case 98: // SHA384
         return true;
       default:
         return false;
