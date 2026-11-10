@@ -88,13 +88,17 @@ public final class NativeHudiSource
           "Hudi tables without a completed snapshot retain the stock source");
     var conf = source.getConf();
     var table = meta.getTableConfig();
-    if (conf.get(FlinkOptions.READ_AS_STREAMING)
-        || !conf.get(FlinkOptions.READ_SOURCE_V2_ENABLED)
-        || !FlinkOptions.QUERY_TYPE_SNAPSHOT.equals(conf.get(FlinkOptions.QUERY_TYPE))
+    boolean streaming = conf.get(FlinkOptions.READ_AS_STREAMING);
+    if (!conf.get(FlinkOptions.READ_SOURCE_V2_ENABLED)
+        || !(FlinkOptions.QUERY_TYPE_SNAPSHOT.equals(conf.get(FlinkOptions.QUERY_TYPE))
+            || streaming
+                && FlinkOptions.QUERY_TYPE_INCREMENTAL.equals(conf.get(FlinkOptions.QUERY_TYPE)))
         || table.getTableType() != HoodieTableType.COPY_ON_WRITE
         || table.getBaseFileFormat() != HoodieFileFormat.PARQUET)
+      throw new IllegalArgumentException("Only COW Parquet snapshot Source V2 reads are admitted");
+    if (streaming && (!table.populateMetaFields() || table.getTableVersion().versionCode() != 9))
       throw new IllegalArgumentException(
-          "Only bounded COW Parquet snapshot Source V2 reads are admitted");
+          "Continuous Hudi COW reads require version-9 commit metadata");
     if (conf.get(FlinkOptions.CDC_ENABLED)
         || conf.get(FlinkOptions.CHANGELOG_ENABLED)
         || !conf.get(FlinkOptions.READ_UTC_TIMEZONE)
@@ -104,7 +108,7 @@ public final class NativeHudiSource
             .map(fields -> java.util.Arrays.stream(fields).anyMatch(s -> !s.isEmpty()))
             .orElse(false)
         || !source.getPredicates().isEmpty()
-        || conf.get(FlinkOptions.READ_START_COMMIT) != null
+        || !streaming && conf.get(FlinkOptions.READ_START_COMMIT) != null
         || conf.get(FlinkOptions.READ_END_COMMIT) != null
         || Boolean.parseBoolean(conf.toMap().getOrDefault("hoodie.schema.on.read.enable", "false")))
       throw new IllegalArgumentException(
@@ -121,7 +125,13 @@ public final class NativeHudiSource
     }
     var allowed =
         java.util.Set.of(
-            "read.source-v2.enabled", "read.tasks", "read.streaming.enabled", "read.utc-timezone");
+            "read.source-v2.enabled",
+            "read.tasks",
+            "read.streaming.enabled",
+            "read.utc-timezone",
+            "read.streaming.check-interval",
+            "read.start-commit",
+            "read.commits.limit");
     for (String key : conf.toMap().keySet())
       if ((key.startsWith("read.") && !allowed.contains(key))
           || key.startsWith("hoodie.datasource.read.")
@@ -141,6 +151,14 @@ public final class NativeHudiSource
           org.apache.hudi.util.HoodieSchemaConverter.convertToRowType(
               format.readSchema(storage, path));
       validateProjection(stored, output);
+      if (streaming) {
+        int commit = stored.getFieldNames().indexOf("_hoodie_commit_time");
+        if (commit < 0
+            || stored.getTypeAt(commit).getTypeRoot()
+                != org.apache.flink.table.types.logical.LogicalTypeRoot.VARCHAR)
+          throw new IllegalArgumentException(
+              "Continuous Hudi COW reads require stored commit strings");
+      }
     }
     if (!NativeParquet.isLoaded())
       throw new IllegalArgumentException("Native Parquet module is unavailable");
@@ -174,9 +192,7 @@ public final class NativeHudiSource
       RowType output,
       String tableName,
       int batchRows) {
-    if (delegate.getBoundedness() != Boundedness.BOUNDED || batchRows <= 0)
-      throw new IllegalArgumentException(
-          "Hudi native snapshot requires bounded input and a positive batch size");
+    if (batchRows <= 0) throw new IllegalArgumentException("Hudi requires a positive batch size");
     this.delegate = delegate;
     this.configuration = new Configuration(configuration);
     this.output = output;

@@ -146,14 +146,273 @@ class NativeHudiSourceTest {
   @Test
   void declinesUnverifiedSourceContracts() throws Exception {
     var table = fixture(2);
-    table.getConf().set(FlinkOptions.READ_AS_STREAMING, true);
+    table.getConf().set(FlinkOptions.READ_START_COMMIT, "earliest");
     assertThrows(IllegalArgumentException.class, () -> NativeHudiSource.validate(table, OUTPUT));
+    table.getConf().removeConfig(FlinkOptions.READ_START_COMMIT);
+    table.getConf().set(FlinkOptions.READ_AS_STREAMING, true);
+    assertDoesNotThrow(() -> NativeHudiSource.validate(table, OUTPUT));
+    table.getConf().set(FlinkOptions.READ_END_COMMIT, "99999999999999999");
+    assertThrows(IllegalArgumentException.class, () -> NativeHudiSource.validate(table, OUTPUT));
+    table.getConf().removeConfig(FlinkOptions.READ_END_COMMIT);
     table.getConf().set(FlinkOptions.READ_AS_STREAMING, false);
     table.applyLimit(1);
     assertThrows(IllegalArgumentException.class, () -> NativeHudiSource.validate(table, OUTPUT));
     table.applyLimit(-1);
     table.getConf().set(FlinkOptions.CDC_ENABLED, true);
     assertThrows(IllegalArgumentException.class, () -> NativeHudiSource.validate(table, OUTPUT));
+  }
+
+  @Test
+  void continuousCowRetainsJavaDiscoveryAndResumesFilteredRowsAfterCheckpoint() throws Exception {
+    var table = fixture(37);
+    table.getConf().set(FlinkOptions.READ_AS_STREAMING, true);
+    table.getConf().set(FlinkOptions.READ_START_COMMIT, "earliest");
+    var source = NativeHudiSource.from(table, OUTPUT, 7, 1);
+    assertEquals(
+        org.apache.flink.api.connector.source.Boundedness.CONTINUOUS_UNBOUNDED,
+        source.getBoundedness());
+    org.apache.hudi.source.enumerator.HoodieSplitEnumeratorState state;
+    List<HoodieSourceSplit> initial;
+    try (var discovery = new ContinuousDiscovery(source, null)) {
+      initial = discovery.discover();
+      assertFalse(initial.isEmpty());
+      state = discovery.enumerator.snapshotState(1);
+    }
+    var actual = new ArrayList<String>();
+    readSplits(source, initial, actual);
+    assertEquals(37, actual.size());
+    sql.executeSql(
+            "INSERT INTO h /*+ OPTIONS('write.operation'='upsert') */ VALUES"
+                + " (1,'updated'),(100,'new')")
+        .await();
+    var stateCodec = source.getEnumeratorCheckpointSerializer();
+    state = stateCodec.deserialize(stateCodec.getVersion(), stateCodec.serialize(state));
+    List<HoodieSourceSplit> updates;
+    try (var restoredDiscovery = new ContinuousDiscovery(source, state)) {
+      updates = restoredDiscovery.discover();
+      assertFalse(updates.isEmpty());
+      assertTrue(updates.stream().allMatch(split -> split.getInstantRange().isPresent()));
+    }
+    var changed = new ArrayList<String>();
+    List<HoodieSourceSplit> pending;
+    try (var reader = source.createReader(context())) {
+      reader.addSplits(updates);
+      reader.start();
+      while (changed.isEmpty()) {
+        reader.isAvailable().get(10, TimeUnit.SECONDS);
+        reader.pollNext(output(changed));
+      }
+      pending = reader.snapshotState(2);
+    }
+    var splitCodec = source.getSplitSerializer();
+    var saved = new ArrayList<HoodieSourceSplit>();
+    for (var split : pending)
+      saved.add(splitCodec.deserialize(splitCodec.getVersion(), splitCodec.serialize(split)));
+    readSplits(NativeHudiSource.from(table, OUTPUT, 1, 1), saved, changed);
+    java.util.Collections.sort(changed);
+    assertEquals(List.of("new:100", "updated:1"), changed);
+  }
+
+  private static void readSplits(
+      NativeHudiSource source, List<HoodieSourceSplit> splits, List<String> output)
+      throws Exception {
+    try (var reader = source.createReader(context())) {
+      reader.addSplits(splits);
+      reader.notifyNoMoreSplits();
+      reader.start();
+      InputStatus status;
+      do {
+        reader.isAvailable().get(10, TimeUnit.SECONDS);
+        status = reader.pollNext(output(output));
+      } while (status != InputStatus.END_OF_INPUT);
+    }
+  }
+
+  @Test
+  void continuousSqlMatchesStockAcrossANewCommit() throws Exception {
+    fixture(37);
+    sql.executeSql(
+        "ALTER TABLE h SET ('read.streaming.enabled'='true',"
+            + "'read.start-commit'='earliest','read.streaming.check-interval'='1')");
+    tech.streamfusion.planner.NativePlanner.install(sql);
+    var config = sql.getConfig().getConfiguration();
+    String query = "SELECT name,id+1 FROM h";
+    for (boolean nativeRead : List.of(false, true)) {
+      config.setString("streamfusion.native.enabled", Boolean.toString(nativeRead));
+      assertEquals(
+          nativeRead,
+          sql.explainSql(query).contains("native Parquet"),
+          tech.streamfusion.planner.NativePlanner.explain(sql, query));
+      var actual = new ArrayList<String>();
+      var running = sql.executeSql(query);
+      try (var rows = running.collect()) {
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+          var initial =
+              executor.submit(
+                  () -> {
+                    for (int i = 0; i < 37; i++) actual.add(rows.next().toString());
+                  });
+          initial.get(30, TimeUnit.SECONDS);
+          String changed = nativeRead ? "native-update" : "stock-update";
+          sql.executeSql(
+                  "INSERT INTO h /*+ OPTIONS('write.operation'='upsert') */ VALUES (1,'"
+                      + changed
+                      + "')")
+              .await();
+          assertEquals(
+              "+I[" + changed + ", 2]",
+              executor.submit(() -> rows.next().toString()).get(30, TimeUnit.SECONDS));
+        } finally {
+          executor.shutdownNow();
+        }
+      }
+      awaitStopped(running);
+      assertEquals(37, actual.size());
+    }
+  }
+
+  @Test
+  @EnabledIfSystemProperty(named = "sf.hudi.benchmark", matches = "true")
+  void benchmarkContinuousAggregatePipeline() throws Exception {
+    assertTrue(System.getProperty("java.library.path").contains("/release"), "Use -Pbench");
+    int count = Integer.getInteger("sf.hudi.benchmark.rows", 200000);
+    fixture(count);
+    sql.executeSql(
+        "ALTER TABLE h SET ('read.streaming.enabled'='true',"
+            + "'read.streaming.check-interval'='1')");
+    tech.streamfusion.planner.NativePlanner.install(sql);
+    var config = sql.getConfig().getConfiguration();
+    config.setString("table.exec.mini-batch.enabled", "true");
+    config.setString("table.exec.mini-batch.allow-latency", "50 ms");
+    config.setString("table.exec.mini-batch.size", "4096");
+    String query = "SELECT SUM(id), COUNT(name), COUNT(*) FROM h";
+    var times = List.of(new ArrayList<Double>(), new ArrayList<Double>(), new ArrayList<Double>());
+    for (int iteration = -2; iteration < 5; iteration++) {
+      for (int side = 0; side < 3; side++) {
+        int engine = Math.floorMod(iteration + side, 3);
+        config.setString("streamfusion.native.enabled", Boolean.toString(engine > 0));
+        config.setString("streamfusion.operator.hudiSource.enabled", Boolean.toString(engine == 2));
+        String plan = sql.explainSql(query);
+        assertEquals(engine == 2, plan.contains("native Parquet"), plan);
+        if (engine > 0) assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
+        long start = System.nanoTime();
+        double millis;
+        var running = sql.executeSql(query);
+        try (var rows = running.collect()) {
+          var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+          try {
+            var finalRow =
+                executor
+                    .submit(
+                        () -> {
+                          while (rows.hasNext()) {
+                            var row = rows.next();
+                            if ((row.getKind() == org.apache.flink.types.RowKind.INSERT
+                                    || row.getKind() == org.apache.flink.types.RowKind.UPDATE_AFTER)
+                                && Long.valueOf(count).equals(row.getField(2))) return row;
+                          }
+                          throw new AssertionError(
+                              "Continuous Hudi did not reach the expected count");
+                        })
+                    .get(45, TimeUnit.SECONDS);
+            millis = (System.nanoTime() - start) / 1_000_000.0;
+            assertEquals((long) count * (count - 1) / 2, finalRow.getField(0));
+            assertEquals((long) count - (count + 6) / 7, finalRow.getField(1));
+          } finally {
+            executor.shutdownNow();
+          }
+        }
+        awaitStopped(running);
+        if (iteration >= 0) times.get(engine).add(millis);
+      }
+    }
+    System.out.println(
+        "HUDI_CONTINUOUS_AGGREGATE_BENCH rows="
+            + count
+            + " stock_ms="
+            + times.get(0)
+            + " previous_sf_ms="
+            + times.get(1)
+            + " native_ms="
+            + times.get(2));
+  }
+
+  private static void awaitStopped(org.apache.flink.table.api.TableResult running)
+      throws Exception {
+    running
+        .getJobClient()
+        .orElseThrow()
+        .getJobExecutionResult()
+        .handle((result, failure) -> null)
+        .get(30, TimeUnit.SECONDS);
+  }
+
+  private static final class ContinuousDiscovery implements AutoCloseable {
+    final org.apache.flink.api.connector.source.SplitEnumerator<
+            HoodieSourceSplit, org.apache.hudi.source.enumerator.HoodieSplitEnumeratorState>
+        enumerator;
+    final List<HoodieSourceSplit> assigned = new ArrayList<>();
+    Runnable discovery;
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    ContinuousDiscovery(
+        NativeHudiSource source, org.apache.hudi.source.enumerator.HoodieSplitEnumeratorState state)
+        throws Exception {
+      var context =
+          (SplitEnumeratorContext<HoodieSourceSplit>)
+              Proxy.newProxyInstance(
+                  NativeHudiSourceTest.class.getClassLoader(),
+                  new Class<?>[] {SplitEnumeratorContext.class},
+                  (proxy, method, args) -> {
+                    switch (method.getName()) {
+                      case "currentParallelism":
+                        return 1;
+                      case "registeredReaders":
+                        return Map.of(0, new ReaderInfo(0, "localhost"));
+                      case "assignSplit":
+                        assigned.add((HoodieSourceSplit) args[0]);
+                        return null;
+                      case "callAsync":
+                        discovery =
+                            () -> {
+                              Object result = null;
+                              Throwable failure = null;
+                              try {
+                                result = ((java.util.concurrent.Callable) args[0]).call();
+                              } catch (Throwable caught) {
+                                failure = caught;
+                              }
+                              ((java.util.function.BiConsumer) args[1]).accept(result, failure);
+                            };
+                        return null;
+                      case "metricGroup":
+                        return UnregisteredMetricsGroup.createSplitEnumeratorMetricGroup();
+                      default:
+                        return null;
+                    }
+                  });
+      enumerator =
+          state == null
+              ? source.createEnumerator(context)
+              : source.restoreEnumerator(context, state);
+      enumerator.start();
+    }
+
+    List<HoodieSourceSplit> discover() {
+      discovery.run();
+      int previous;
+      do {
+        previous = assigned.size();
+        enumerator.handleSplitRequest(0, "localhost");
+      } while (assigned.size() > previous);
+      return new ArrayList<>(assigned);
+    }
+
+    @Override
+    public void close() throws Exception {
+      enumerator.close();
+    }
   }
 
   @ParameterizedTest

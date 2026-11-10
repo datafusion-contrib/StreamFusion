@@ -43,6 +43,29 @@ The public `NativeHudiSource.from` entry point applies the same source admission
 policy for direct DataStream use. Ordinary SQL retains its normal stock fallback
 when the optional module, native Parquet module or verified source contract is absent.
 
+## Continuous COW source
+
+The same columnar reader also admits continuous COW reads on version-9 tables
+with stored Hudi metadata. Java's original continuous enumerator selects completed
+commits, handles the requested start commit and owns discovery/checkpoint state.
+`read.streaming.enabled=true`, `read.streaming.check-interval`, `read.start-commit`
+and `read.commits.limit` are admitted. An absent start retains Hudi's latest-commit
+behavior; `earliest` includes the initial snapshot. An end-commit bound stays stock.
+
+For each changed file Java supplies its exact set of selected requested instants.
+The reader adds `_hoodie_commit_time` to its physical projection and translates
+that set into the existing Rust Calc filter. The hidden column is removed before
+emission. This prevents a rewritten COW file from re-emitting its unchanged rows;
+payloads remain Arrow throughout. Checkpoint offsets count rows after this filter,
+so recovery can change decode batch size without changing the resumed row sequence.
+The public adapter also accepts Hudi's inferred incremental query type in streaming
+mode. It retains the stock insert-only post-image behavior; delete/change emission
+is outside this admission.
+
+Tables without metadata, other table versions, CDC/changelog mode, bounded
+incremental queries, end-commit windows and other unverified discovery options
+retain the stock source. The same source schema/projection restrictions apply.
+
 ## Immutable COW append sink
 
 The first native sink admits `write.operation=insert` on unpartitioned COW tables
@@ -75,12 +98,13 @@ those files unchanged.
 
 The following retain the stock connector:
 
-- Unbounded reads, incremental and read-optimized queries, MOR tables and changelog/CDC.
+- Read-optimized and bounded incremental queries, MOR tables and changelog/CDC.
+- Continuous reads without version-9 metadata, end-commit windows and unverified discovery options.
 - Legacy sources, partitioned or bootstrap tables, source watermarks and metadata columns.
 - Tables without an initialized, completed snapshot.
 - Pushed filters and limits, nested or zero-column projections, and other payload types.
 - Requested schema-on-read evolution, mismatched physical file schemas, non-UTC read
-  conversion, commit-range options, and unverified read/Parquet reader options.
+  conversion, bounded commit-range options, and unverified read/Parquet reader options.
 - Batch-runtime SQL scans and portable compiled-plan source lowering.
 - Updating/metadata-bearing and other unverified sinks, every index operation,
   compaction and clustering worker.
@@ -99,7 +123,9 @@ It does not expose private sink buffers or add missing changelog delete emission
 `NativeHudiSourceTest` uses stock Hudi SQL writes, compares stock/native SQL results,
 and requires the native source plan. It checks projection/NULLs, restored logical
 row offsets with changed batch sizes, stock fallback admission, and Arrow validity
-after reader close, and the fixed admitted snapshot across later commits. The
+after reader close, and the fixed admitted snapshot across later commits. Continuous tests restore the
+original Java enumerator and reader state, check a rewritten COW file against
+unchanged rows, and compare SQL post-images across new commits. The
 optional CI lake-module matrix includes this Flink 1.18 module. Append tests verify all four types and NULLs, batch-boundary rolling,
 stock readback, native SQL source/sink plans without transposes, and recovery after
 a completed checkpoint with no duplicates. Other connectors' normal tests cover
@@ -171,3 +197,28 @@ and 1.29×; startup and commit costs account for much more of the job. The
 [append trial evidence](../benchmarks/hudi-append-20261109.json) retains all trials,
 configuration and earlier investigation results. Run the existing benchmark command
 with `-Dtest=NativeHudiSourceTest#benchmarkCompleteArrowReadWritePipeline`.
+
+### Continuous COW catch-up
+
+`benchmarkContinuousAggregatePipeline` runs `SELECT SUM(id),COUNT(name),COUNT(*)
+FROM h` through each continuous source and waits for the aggregate containing all
+rows from one completed commit. It retains SQL planning/admission, Java discovery
+and storage I/O, JNI, filtering and result collection. Fixture writes and plan
+assertions precede timing; cancellation and task termination follow timing. Hudi's
+absent-start default selects the latest completed commit, exercising the exact
+instant-set filter. The previous SF baseline keeps its native aggregate over the
+stock continuous source. Resources, warmups and rotating trial counts match the
+bounded benchmark; every trial verifies all three aggregate values and native plans.
+
+| Rows | Stock median ms (range) | Previous SF median ms (range) | Native median ms (range) |
+| ---: | ---: | ---: | ---: |
+| 200,000 | 650.9 (588.1–718.7) | 697.2 (607.3–813.9) | 666.0 (600.3–722.2) |
+| 1,000,000 | 876.2 (704.1–953.7) | 820.0 (715.2–980.5) | 614.0 (598.2–872.1) |
+
+At one million rows the native median is 1.43× faster than stock and 1.34× faster
+than previous SF. At 200k rows it is about 2% slower than stock and 4% faster than
+previous SF, with overlapping ranges. These are continuous-source catch-up results;
+they do not establish steady-state latency across many commits. The
+[continuous trial evidence](../benchmarks/hudi-continuous-20261110.json) retains all
+trials and boundaries. Run the benchmark command above with
+`-Dtest=NativeHudiSourceTest#benchmarkContinuousAggregatePipeline`.
