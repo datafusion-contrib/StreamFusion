@@ -9,6 +9,13 @@ public final class HudiPlannerExtension implements NativePlannerExtension {
   public void addSubstitutions(List<Substitution<?>> substitutions) {
     substitutions.add(
         Substitution.of(
+                org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink.class,
+                "hudiSink",
+                HudiSinkMatcher::substitute)
+            .matching(HudiSinkMatcher::appliesTo)
+            .changelogSafe());
+    substitutions.add(
+        Substitution.of(
                 StreamPhysicalTableSourceScan.class, "hudiSource", HudiSourceMatcher::substitute)
             .matching(HudiSourceMatcher::appliesTo)
             .changelogSafe());
