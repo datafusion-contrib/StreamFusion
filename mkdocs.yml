@@ -1,4 +1,6 @@
 site_name: StreamFusion
+hooks:
+  - dev/docs/hooks.py
 site_description: Run Apache Flink SQL faster with a native Rust + Apache Arrow/DataFusion accelerator.
 site_url: https://streamfusion.tech/
 repo_url: https://github.com/datafusion-contrib/StreamFusion

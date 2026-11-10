@@ -1,5 +1,7 @@
 target/
 .flattened-pom.xml
+/docs/sql-inventory/report.html
+/docs/sql-inventory/*.csv
 .flink-suite/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/

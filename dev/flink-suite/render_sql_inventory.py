@@ -67,7 +67,7 @@ def load_inventories(paths):
     by_line = {}
     seen_suites = set()
     for path in paths:
-        inventory = json.loads(path.read_text())
+        inventory = json.loads(gzip.decompress(path.read_bytes()) if path.suffix == '.gz' else path.read_bytes())
         tests = inventory['tests']
         if inventory.get('schema_version') != 1 or not tests or len(tests) != inventory['summary']['cases']:
             raise ValueError(f'Incomplete inventory: {path}')
@@ -123,21 +123,12 @@ def add_source_links(tests, repositories):
         test['source_url'] = f'https://github.com/{repo}/blob/{tag}/{source}' if source else ''
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--inventory', type=Path, action='append', required=True)
-    parser.add_argument('--output', type=Path, required=True)
-    for kind in ('flink', 'kafka', 'paimon', 'delta'):
-        parser.add_argument('--' + kind + '-repository', type=Path, help='Optional clone for verified source links')
-    parser.add_argument('--run-url', action='append', default=[], help='CI run containing the original reports and observations')
-    parser.add_argument('--run-note', help='Validation detail to retain with this snapshot')
-    args = parser.parse_args()
-    by_line = load_inventories(args.inventory)
-    args.output.mkdir(parents=True, exist_ok=True)
+def render_exports(by_line, output, repositories=None):
+    output.mkdir(parents=True, exist_ok=True)
     data = {'provenance': [], 'tests': []}
-    repositories = {kind: getattr(args, kind + '_repository') for kind in ('flink', 'kafka', 'paimon', 'delta')}
     for line, tests in sorted(by_line.items()):
-        add_source_links(tests, repositories)
+        if repositories is not None:
+            add_source_links(tests, repositories)
         tests.sort(key=lambda t:(t['suite'], t['test_class'], t['test_name'], t['display_name']))
         revisions = sorted({t['revision'] for t in tests})
         summary = dict(revision=revisions[0] if len(revisions) == 1 else 'multiple', revisions=revisions,
@@ -145,16 +136,17 @@ def main():
                        labels_passed=dict(Counter(t['label'] for t in tests if t['outcome'] == 'passed')))
         inventory = dict(schema_version=1, summary=summary, tests=tests)
         raw = json.dumps(inventory, separators=(',', ':')).encode()
-        (args.output / f'flink-{line}.json.gz').write_bytes(gzip.compress(raw, mtime=0))
+        if repositories is not None:
+            (output / f'flink-{line}.json.gz').write_bytes(gzip.compress(raw, mtime=0))
         filename = f'flink-{line}.csv'
         fields = [k for k in tests[0] if k not in ('sql', 'plans', 'operation_failures', 'planners', 'translations', 'query_verdicts')]
-        with (args.output / filename).open('w', newline='', encoding='utf-8', errors='backslashreplace') as stream:
+        with (output / filename).open('w', newline='', encoding='utf-8', errors='backslashreplace') as stream:
             writer = csv.DictWriter(stream, fields, extrasaction='ignore')
             writer.writeheader()
             writer.writerows(csv_row(test) for test in tests)
         query_fields = ['flink_line', 'suite', 'invocation_id', 'test_class', 'test_name', 'display_name',
                         'plan_index', 'root_index', 'fully_accelerated', 'label', 'category', 'note', 'source_url']
-        with (args.output / f'flink-{line}-queries.csv').open('w', newline='', encoding='utf-8', errors='backslashreplace') as stream:
+        with (output / f'flink-{line}-queries.csv').open('w', newline='', encoding='utf-8', errors='backslashreplace') as stream:
             writer = csv.DictWriter(stream, query_fields, extrasaction='ignore')
             writer.writeheader()
             writer.writerows(csv_row(dict(test, **query)) for test in tests for query in test.get('query_verdicts', []))
@@ -169,7 +161,27 @@ def main():
                                      native=t.get('fully_accelerated_query_plans', t['native_plans']), host=t['host_plans']))
     data['tests'].sort(key=lambda t:(t['line'],t['suite'],t['test'],t['variant']))
     serialized = json.dumps(data, separators=(',', ':')).replace('<', '\\u003c').replace('&', '\\u0026')
-    (args.output / 'report.html').write_text(HTML.replace('>DATA<', '>' + serialized + '<'))
+    (output / 'report.html').write_text(HTML.replace('>DATA<', '>' + serialized + '<'))
+    return data
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument('--inventory', type=Path, action='append', help='New validated run inventory')
+    inputs.add_argument('--snapshot', type=Path, action='append', help='Published JSON snapshot; preserve stored provenance')
+    parser.add_argument('--output', type=Path, required=True)
+    for kind in ('flink', 'kafka', 'paimon', 'delta'):
+        parser.add_argument('--' + kind + '-repository', type=Path, help='Optional clone for verified source links')
+    parser.add_argument('--run-url', action='append', default=[], help='CI run containing the original reports and observations')
+    parser.add_argument('--run-note', help='Validation detail to retain with this snapshot')
+    args = parser.parse_args()
+    by_line = load_inventories(args.snapshot or args.inventory)
+    repositories = None if args.snapshot else {kind: getattr(args, kind + '_repository')
+        for kind in ('flink', 'kafka', 'paimon', 'delta')}
+    data = render_exports(by_line, args.output, repositories)
+    if args.snapshot:
+        return
     summary = ['# Upstream SQL inventory', '', '[Open the searchable inventory](report.html). Download the per-line CSV files below.', '',
                'The primary label answers whether the actual query passes StreamFusion\'s all-or-nothing gate. Every interior operator must run natively; rowwise source/sink boundaries and their transposes are allowed. One unsupported interior operator sends the entire query to Flink. Labels require passing upstream assertions and describe admission, not speedup or per-query runtime work. All in-scope streaming SQL gaps are targets.', '',
                '| Flink | Passing cases | Accelerated | Should be accelerated | Not accelerated |', '|---|---:|---:|---:|---:|']
