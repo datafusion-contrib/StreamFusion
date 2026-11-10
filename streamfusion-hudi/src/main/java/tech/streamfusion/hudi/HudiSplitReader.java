@@ -22,6 +22,7 @@ final class HudiSplitReader implements SplitReaderFunction<ArrowBatch>, AutoClos
   private final int rows;
   private final HudiReadBatches batches;
   private transient HudiParquetReader reader;
+  private transient tech.streamfusion.planner.HudiCommitFilter filter;
   private long skip;
 
   HudiSplitReader(Configuration conf, RowType output, int rows, HudiReadBatches batches) {
@@ -35,17 +36,35 @@ final class HudiSplitReader implements SplitReaderFunction<ArrowBatch>, AutoClos
   public void open(HoodieSourceSplit split) {
     closeCurrentSplit();
     if (!split.getBasePath().isPresent()
-        || (split.getLogPaths().isPresent() && !split.getLogPaths().get().isEmpty())
-        || split.getInstantRange().isPresent())
-      throw new IllegalArgumentException("Hudi native snapshot requires a base-file-only split");
+        || (split.getLogPaths().isPresent() && !split.getLogPaths().get().isEmpty()))
+      throw new IllegalArgumentException("Hudi native COW reads require a base-file-only split");
     try {
       var meta = StreamerUtil.metaClientForReader(conf, HadoopConfigurations.getHadoopConf(conf));
+      RowType physical = output;
+      if (split.getInstantRange().isPresent()) {
+        var fields = new java.util.ArrayList<>(output.getFields());
+        fields.add(
+            new RowType.RowField(
+                "_hoodie_commit_time",
+                new org.apache.flink.table.types.logical.VarCharType(Integer.MAX_VALUE)));
+        physical = new RowType(fields);
+        filter =
+            new tech.streamfusion.planner.HudiCommitFilter(
+                split.getInstantRange().get(), output.getFieldNames());
+      }
       reader =
           new HudiParquetReader(
-              meta.getStorage(), new StoragePath(split.getBasePath().get()), output, rows);
+              meta.getStorage(), new StoragePath(split.getBasePath().get()), physical, rows);
       skip = split.getConsumed();
-    } catch (IOException failure) {
-      throw new UncheckedIOException(failure);
+    } catch (Throwable failure) {
+      try {
+        closeCurrentSplit();
+      } catch (Throwable closing) {
+        failure.addSuppressed(closing);
+      }
+      if (failure instanceof IOException) throw new UncheckedIOException((IOException) failure);
+      if (failure instanceof Error) throw (Error) failure;
+      throw (RuntimeException) failure;
     }
   }
 
@@ -59,6 +78,11 @@ final class HudiSplitReader implements SplitReaderFunction<ArrowBatch>, AutoClos
           if (skip != 0)
             throw new IOException("Invalid restored Hudi row offset " + split.getConsumed());
           return null;
+        }
+        if (filter != null) root = filter.apply(root);
+        if (root.getRowCount() == 0) {
+          root.close();
+          continue;
         }
         if (skip >= root.getRowCount()) {
           skip -= root.getRowCount();
@@ -83,13 +107,16 @@ final class HudiSplitReader implements SplitReaderFunction<ArrowBatch>, AutoClos
 
   @Override
   public void closeCurrentSplit() {
-    if (reader == null) return;
     try {
-      reader.close();
+      if (reader != null) reader.close();
     } catch (IOException failure) {
       throw new UncheckedIOException(failure);
     } finally {
       reader = null;
+      if (filter != null) {
+        filter.close();
+        filter = null;
+      }
     }
   }
 

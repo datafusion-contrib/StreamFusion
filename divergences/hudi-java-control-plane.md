@@ -32,3 +32,10 @@ row views for keys/counters. A whole batch reaches the shared Parquet encoder on
 Java retains authenticated output I/O, markers, file handles and commit metadata.
 File rolling is deferred until the current Arrow batch has been counted completely.
 This avoids duplicating Hudi's write/commit protocol or transposing payload rows.
+
+Continuous COW discovery stays in the released Java enumerator. Its exact selected
+instant set becomes a predicate in the existing native Calc engine, with a hidden
+commit-time input projected away before emission. No custom native file reader or
+commit filtering kernel is introduced. End-commit windows remain stock because
+they can produce a different range contract; only the verified version-9 exact
+instant-set path is admitted.
