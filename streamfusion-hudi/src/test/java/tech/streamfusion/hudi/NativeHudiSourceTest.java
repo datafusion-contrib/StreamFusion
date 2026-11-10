@@ -55,6 +55,31 @@ class NativeHudiSourceTest {
     TaskOffHeapMemory.initialize(memoryConfiguration());
   }
 
+  @Test
+  void tablesWithoutACompletedSnapshotRetainTheStockSource() throws Exception {
+    String path = temporary.resolve("missing-table").toUri().toString();
+    var conf = Configuration.fromMap(Map.of("path", path, "read.source-v2.enabled", "true"));
+    var schema =
+        ResolvedSchema.of(
+            Column.physical("name", DataTypes.STRING()), Column.physical("id", DataTypes.BIGINT()));
+    conf.set(FlinkOptions.TABLE_NAME, "empty");
+    conf.set(FlinkOptions.RECORD_KEY_FIELD, "id");
+    conf.set(FlinkOptions.PARTITION_PATH_FIELD, "");
+    conf.set(FlinkOptions.METADATA_ENABLED, false);
+    conf.set(
+        FlinkOptions.SOURCE_AVRO_SCHEMA,
+        org.apache.hudi.util.HoodieSchemaConverter.convertToSchema(OUTPUT).toString());
+    org.apache.hudi.util.StreamerUtil.initTableIfNotExists(conf);
+    var table =
+        new HoodieTableSource(
+            SerializableSchema.create(schema),
+            new StoragePath(path),
+            List.of(),
+            "__HIVE_DEFAULT_PARTITION__",
+            conf);
+    assertThrows(IllegalArgumentException.class, () -> NativeHudiSource.validate(table, OUTPUT));
+  }
+
   @AfterEach
   void releasesNativeReadersAndReservations() {
     assertTrue(NativeParquet.liveNativeHandles().isBlank());

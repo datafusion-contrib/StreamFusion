@@ -49,6 +49,7 @@ The following retain the stock connector:
 
 - Unbounded reads, incremental and read-optimized queries, MOR tables and changelog/CDC.
 - Legacy sources, partitioned or bootstrap tables, source watermarks and metadata columns.
+- Tables without an initialized, completed snapshot.
 - Pushed filters and limits, nested or zero-column projections, and other payload types.
 - Requested schema-on-read evolution, mismatched physical file schemas, non-UTC read
   conversion, commit-range options, and unverified read/Parquet reader options.

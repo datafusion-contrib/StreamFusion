@@ -79,11 +79,15 @@ public final class NativeHudiSource
   }
 
   public static void validate(HoodieTableSource source, RowType output) {
-    var conf = source.getConf();
-    var table = source.getMetaClient().getTableConfig();
     if (source.getClass() != HoodieTableSource.class
         || !"1.2.1".equals(HoodieTableSource.class.getPackage().getImplementationVersion()))
       throw new IllegalArgumentException("Hudi source requires the released 1.2.1 implementation");
+    var meta = source.getMetaClient();
+    if (meta == null || meta.getCommitsTimeline().filterCompletedInstants().empty())
+      throw new IllegalArgumentException(
+          "Hudi tables without a completed snapshot retain the stock source");
+    var conf = source.getConf();
+    var table = meta.getTableConfig();
     if (conf.get(FlinkOptions.READ_AS_STREAMING)
         || !conf.get(FlinkOptions.READ_SOURCE_V2_ENABLED)
         || !FlinkOptions.QUERY_TYPE_SNAPSHOT.equals(conf.get(FlinkOptions.QUERY_TYPE))
