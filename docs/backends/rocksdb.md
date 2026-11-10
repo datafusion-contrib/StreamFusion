@@ -391,3 +391,9 @@ The all-operator backend-transition controls require supported window DISTINCT s
 native RocksDB, including ordinary checkpoint and memory/disk transitions. Their original
 continued-output assertions remain in place; the former snapshot-backed route expectation is
 obsolete for these already-admitted layouts.
+
+Optimized Linux builds resolve native database paths into a caller-owned `realpath` buffer before
+copying the result into the DSO's allocator. The snapshot registry still uses resolved filesystem
+identities, including symlinks. This avoids returning a host library's allocated path to a different
+allocator during ordinary RocksDB initialization or asynchronous snapshot lookup. The release
+image SQL smoke exercises this path with the production allocator enabled.
