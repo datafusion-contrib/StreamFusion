@@ -538,3 +538,36 @@ The same mimalloc release libraries also pass fresh all-22 exact/native-source/
 zero-entry controls at SF0.01 on [Flink 2.2](results/tpch-native-parquet-mimalloc-validation-22-20261110.json)
 and [Flink 1.18](results/tpch-native-parquet-mimalloc-validation-118-20261110.json),
 including source queue/restore/memory tests and option/metadata/retry controls.
+
+## Validation after batch boundary fixes (November 10)
+
+The complete SF1 native-Parquet comparison was repeated on source equivalent to `996e2d65f` after preserving zero-column Calc cardinality and keeping host multiple-input fusion outside all Arrow batch tasks. The same unchanged 22 queries, stock-written SNAPPY files, parallelism 2, one TaskManager with eight slots, 8 GiB heap, 1 GiB managed memory, 512 MiB native authority, 8,192-row batches, three warmups and seven alternating retained trials were used. The production native libraries use mimalloc and retain default RocksDB support.
+
+All **22/22** queries passed exact declared-type and result comparisons, with **22/22 median wins** and a **2.768× geometric-mean speedup**. All 440 observations were retained. Every native run recorded source Arrow rows and zero direct entry-transpose rows; stock runs recorded zero native work. Sums of individual query medians were 65,151.125 ms for stock and 14,138.005 ms for StreamFusion (4.608×); these sums are not a timed serial-suite measurement.
+
+The [complete report](results/tpch-native-parquet-post-ci-20261110.json) includes every observation, result/schema checks, plans, input hashes and native library identities. This is a new complete cohort; the earlier 2.814× cohort remains attached to its measured build.
+
+| Query | Stock median ms | StreamFusion median ms | Speedup |
+|---|---:|---:|---:|
+| Q1 | 4505.665 | 778.667 | 5.786× |
+| Q2 | 3105.616 | 391.684 | 7.929× |
+| Q3 | 1132.748 | 462.062 | 2.452× |
+| Q4 | 910.487 | 350.072 | 2.601× |
+| Q5 | 2002.892 | 800.211 | 2.503× |
+| Q6 | 671.468 | 336.954 | 1.993× |
+| Q7 | 1894.468 | 1010.596 | 1.875× |
+| Q8 | 6223.237 | 923.943 | 6.736× |
+| Q9 | 27849.047 | 1355.310 | 20.548× |
+| Q10 | 1119.608 | 459.200 | 2.438× |
+| Q11 | 602.135 | 356.450 | 1.689× |
+| Q12 | 790.352 | 345.881 | 2.285× |
+| Q13 | 798.139 | 346.646 | 2.302× |
+| Q14 | 567.835 | 338.781 | 1.676× |
+| Q15 | 583.124 | 344.870 | 1.691× |
+| Q16 | 492.787 | 246.628 | 1.998× |
+| Q17 | 1574.815 | 1198.477 | 1.314× |
+| Q18 | 3604.844 | 1548.761 | 2.328× |
+| Q19 | 1210.187 | 550.678 | 2.198× |
+| Q20 | 1138.039 | 556.070 | 2.047× |
+| Q21 | 3735.138 | 1197.102 | 3.120× |
+| Q22 | 638.492 | 238.961 | 2.672× |
