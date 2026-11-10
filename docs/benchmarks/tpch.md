@@ -1,7 +1,7 @@
 # TPC-H batch workload
 
 All 22 queries execute through native compute and the native Parquet source with
-exact stock-Flink results and types. The full SF1 release comparison has a **3.028×
+exact stock-Flink results and types. The full SF1 release comparison has a **2.814×
 geometric-mean speedup**, with all 22 query medians faster than stock. Both supported
 Flink lines pass all-22 source/result validation at SF0.01. The new comparison uses
 the same files, SQL and resources and retains complete-job timing. Earlier cohorts,
@@ -484,3 +484,57 @@ profile. Its [completed query trials](results/tpch-native-parquet-system-allocat
 remain a separate partial diagnostic and contribute no complete-workload aggregate.
 The production-profile follow-up explicitly builds both core and Parquet with
 `--release --features mimalloc` and records both library hashes.
+
+## Review-head production-profile comparison
+
+The final comparison uses the rebased source at `9d25c8047` with **both core and
+Parquet built using `--release --features mimalloc`**, matching Maven's `bench`
+profile. All 22 queries pass exact stock values/types and positive native compute
+and source work on every warmup and retained trial. A direct, job-specific
+`RowDataToArrow.numInputRows` observer additionally requires **zero entry-transpose
+rows**. Its stock-reader sensitivity control observes all 2,051 converted rows,
+so zero is not inferred from the native-only operator list.
+
+The geometric mean of per-query median speedups is **2.8137×**, with **22/22 median
+wins**. Summed query medians are **64,430.12 ms stock / 13,820.95 ms native**,
+a **4.6618×** ratio. This is a sum of medians, not a separately timed serial suite.
+
+| Query | Stock median ms | Native median ms | Stock/native |
+| --- | ---: | ---: | ---: |
+| Q1 | 3,986.68 | 688.34 | 5.792× |
+| Q2 | 3,244.40 | 392.36 | 8.269× |
+| Q3 | 1,153.21 | 466.48 | 2.472× |
+| Q4 | 929.01 | 352.83 | 2.633× |
+| Q5 | 2,018.87 | 803.98 | 2.511× |
+| Q6 | 666.60 | 337.58 | 1.975× |
+| Q7 | 2,054.21 | 1,028.37 | 1.998× |
+| Q8 | 5,163.44 | 915.98 | 5.637× |
+| Q9 | 28,433.32 | 1,216.67 | 23.370× |
+| Q10 | 1,117.23 | 448.45 | 2.491× |
+| Q11 | 591.32 | 352.03 | 1.680× |
+| Q12 | 879.34 | 332.37 | 2.646× |
+| Q13 | 881.93 | 337.69 | 2.612× |
+| Q14 | 559.21 | 327.98 | 1.705× |
+| Q15 | 571.88 | 336.87 | 1.698× |
+| Q16 | 586.95 | 246.51 | 2.381× |
+| Q17 | 1,622.90 | 1,176.36 | 1.380× |
+| Q18 | 2,997.45 | 1,390.20 | 2.156× |
+| Q19 | 1,207.95 | 545.67 | 2.214× |
+| Q20 | 1,020.39 | 558.73 | 1.826× |
+| Q21 | 4,135.64 | 1,323.53 | 3.125× |
+| Q22 | 608.20 | 241.96 | 2.514× |
+
+[Full production-profile trials, source/transpose witnesses and library identities](results/tpch-native-parquet-mimalloc-final-20261110.json)
+retain all variability. The earlier 3.0278× complete cohort predates the upstream
+rebase and has its own identities; it is not combined with this result. Neither
+cohort supports attributing a difference between them solely to the allocator.
+Both are local, warm-cache, shared-host jobs with the same SF1 files, unchanged
+SQL, parallelism two, 8 GiB heap, 1 GiB managed memory, 512 MiB native authority,
+three warmups and seven alternating trials per engine. All I/O/decoding, intrinsic
+conversions/JNI, blocking transport, result collection and completed-job retrieval
+remain timed. These are not isolated cold/remote-storage or official TPC-H results.
+
+The same mimalloc release libraries also pass fresh all-22 exact/native-source/
+zero-entry controls at SF0.01 on [Flink 2.2](results/tpch-native-parquet-mimalloc-validation-22-20261110.json)
+and [Flink 1.18](results/tpch-native-parquet-mimalloc-validation-118-20261110.json),
+including source queue/restore/memory tests and option/metadata/retry controls.

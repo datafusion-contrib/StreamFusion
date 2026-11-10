@@ -26,3 +26,10 @@ A fresh complete SF1 cohort after projected workspace accounting measured a
 faster. Summed query medians were 69,827.69 ms stock and 14,744.03 ms native
 (4.7360×); this is not a separately timed serial suite. The full cohort, including
 outliers and shared-host limitations, is retained in the linked benchmark page.
+
+After syncing upstream and rebuilding both libraries with the exact benchmark
+profile's mimalloc feature, the review-head cohort measured **2.8137×** geometric
+mean, again **22/22** median wins. Summed query medians were 64,430.12 ms stock
+and 13,820.95 ms native (4.6618×). Direct entry-transpose counters are zero for
+every native trial, with a positive stock-reader sensitivity control. The two
+complete cohorts remain separate; their difference is not an allocator-only A/B.
