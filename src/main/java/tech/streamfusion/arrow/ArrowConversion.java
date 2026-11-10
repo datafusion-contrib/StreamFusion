@@ -134,6 +134,10 @@ import tech.streamfusion.arrow.writers.VarCharWriter;
  * value.
  */
 public final class ArrowConversion {
+  static {
+    ArrowRuntime.initialize();
+  }
+
   private ArrowConversion() {}
 
   /** The Arrow schema for a row type, with the two-component timestamp convention above. */
