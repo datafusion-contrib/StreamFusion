@@ -182,8 +182,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
 
   @Override
   protected boolean usesDirectRocksDBState() {
-    return withRowSchema(
-            nativeRowType(),
+    return withInputSchema(
             schemaAddress ->
                 Native.rocksdbOverAggregatorSupported(
                         valueTypes, aggregateKinds, frameKind, proctime, schemaAddress)
@@ -196,8 +195,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   protected long createRocksDBHandle(
       RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     long now = getProcessingTimeService().getCurrentProcessingTime();
-    return withRowSchema(
-        nativeRowType(),
+    return withInputSchema(
         schemaAddress ->
             Native.createRocksDBOverAggregator(
                 valueTypes,
@@ -223,6 +221,12 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
                 rocksdb.keyGroupEnd(),
                 rocksdb.aligned(),
                 restoredPartitions));
+  }
+
+  private long withInputSchema(java.util.function.LongUnaryOperator call) {
+    return mapListInput
+        ? withMapListSchema(nativeRowType(), call)
+        : withRowSchema(nativeRowType(), call);
   }
 
   @Override

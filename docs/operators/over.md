@@ -1810,6 +1810,17 @@ Flink 1.18 component controls cover the processing-time fold and the V1 event-ti
 below. The wider historical complete-job matrices above qualify Flink 2.2 only.
 Benchmarking is deferred.
 
+Compiled-plan admission controls require the released 1.18 V1 ROWS/RANGE owners to carry the
+shared stock event-fold contract, while explicit V1 mode on 2.2 retains stock execution. The
+remaining unsupported type/key/view and async/unaligned cases still require stock owners. These
+are release-aware expectations for existing bindings, not additional admission.
+
+Native RocksDB OVER construction uses the same nullable-key entry-list schema as its actual
+COUNT input batches. This reuses the existing map-list schema helper; retaining the raw Java MAP
+schema would incorrectly reject NULL MULTISET elements during persistent payload encoding.
+Existing repeated-recovery SQL controls cover all frames and both native stores without changing
+logical types, input values or the stock oracle.
+
 ### Flink 1.18 unbounded event-time polling timers
 
 The same BIGINT/FLOAT/DOUBLE scalar layouts and BIGINT/global keys bind the released Flink 1.18

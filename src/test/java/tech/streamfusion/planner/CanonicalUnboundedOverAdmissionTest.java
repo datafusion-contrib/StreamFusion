@@ -34,8 +34,7 @@ class CanonicalUnboundedOverAdmissionTest {
 
   @ParameterizedTest
   @MethodSource("cases")
-  void unqualifiedCompiledContractsKeepTheReleasedStateOwner(String mode, String uids)
-      throws Exception {
+  void compiledContractsSelectTheQualifiedReleaseOwner(String mode, String uids) throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("table.exec.uid.generation", uids);
@@ -83,17 +82,24 @@ class CanonicalUnboundedOverAdmissionTest {
     var transforms =
         planner.translatePlan(planner.loadPlan(PlanReference.fromJsonString(portable)));
     var graph = CanonicalRegularJoinPlanTest.graph(planner, table, transforms);
-    assertFalse(
+    var nativeOwners =
         graph.getStreamNodes().stream()
-            .anyMatch(
-                node ->
-                    node.getOperatorFactory() instanceof SimpleOperatorFactory
-                        && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
-                            instanceof NativeOverAggregateOperator),
-        graph.getStreamingPlanAsJSON());
+            .filter(node -> node.getOperatorFactory() instanceof SimpleOperatorFactory)
+            .map(node -> ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator())
+            .filter(NativeOverAggregateOperator.class::isInstance)
+            .collect(java.util.stream.Collectors.toList());
+    boolean admitted =
+        mode.startsWith("legacy-event-") && !tech.streamfusion.compat.CanonicalTestCompat.flink22();
+    if (admitted) {
+      assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
+      assertInstanceOf(
+          tech.streamfusion.state.StockOverEventFoldStateContract.class,
+          GroupAggregateStockTestFixture.field(nativeOwners.get(0), "stockStateContract"));
+    } else assertTrue(nativeOwners.isEmpty(), graph.getStreamingPlanAsJSON());
     assertEquals(portable, plan.asJsonString());
     assertFalse(portable.contains("tech.streamfusion"));
-    assertTrue(
+    assertEquals(
+        !admitted,
         graph.getStreamNodes().stream()
             .anyMatch(
                 node -> {

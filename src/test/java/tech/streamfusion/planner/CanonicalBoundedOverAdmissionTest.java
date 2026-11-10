@@ -82,8 +82,7 @@ class CanonicalBoundedOverAdmissionTest {
             .map(node -> ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator())
             .filter(NativeOverAggregateOperator.class::isInstance)
             .collect(java.util.stream.Collectors.toList());
-    boolean admitted =
-        mode.equals("unbounded") && tech.streamfusion.compat.CanonicalTestCompat.flink22();
+    boolean admitted = mode.equals("unbounded");
     if (admitted) {
       assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
       assertInstanceOf(

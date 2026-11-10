@@ -386,3 +386,8 @@ checks and 168 full-job handoffs, including selected heap/RocksDB changes, no-in
 native checkpoint recovery and 1→3→2 key redistribution. Original nested binary-row key payloads
 survive the managed Arrow boundaries. See the [exact key scope and remaining requirements](../operators/group-by.md#captured-managed-udf-key-layouts-partial).
 Benchmarking remains deferred.
+
+The all-operator backend-transition controls require supported window DISTINCT sets to use direct
+native RocksDB, including ordinary checkpoint and memory/disk transitions. Their original
+continued-output assertions remain in place; the former snapshot-backed route expectation is
+obsolete for these already-admitted layouts.
