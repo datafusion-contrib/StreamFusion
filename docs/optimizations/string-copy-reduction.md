@@ -223,3 +223,7 @@ The admitted digest functions consume the same Binary storage. They hash the exi
 directly into the final Utf8 buffer, without converting input bytes to text. The planner distinguishes
 raw-string producers from byte-consuming functions with a valid-text result, so hash output can feed
 other expressions without allowing a text kernel to consume arbitrary concatenation bytes.
+
+TO_BASE64 reuses the existing binary encoding kernel when a logical STRING arrives as Binary.
+Its SIMD encoder writes directly to the final Utf8 buffer because Base64 output is ASCII. The
+representation change adds neither an input payload copy nor a decode/re-encode round trip.

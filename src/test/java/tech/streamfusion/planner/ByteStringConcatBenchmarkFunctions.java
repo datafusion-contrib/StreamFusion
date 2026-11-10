@@ -51,6 +51,7 @@ public final class ByteStringConcatBenchmarkFunctions {
       case "sha256":
       case "sha384":
       case "sha512":
+      case "to_base64":
         expression = function.toUpperCase(java.util.Locale.ROOT) + "(s)";
         break;
       default:

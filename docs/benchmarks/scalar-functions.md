@@ -11340,3 +11340,22 @@ Select the function using the example's optional fifth argument, for example:
 ```sh
 cargo run -p streamfusion --release --no-default-features --example byte_string_concat -- 16 false false 0 md5
 ```
+
+### Byte-preserving TO_BASE64
+
+The same release prepared-input fixture uses Flink 2.2.1 and JDK 17, prebuilt RowData versus
+Arrow, 4096 rows per batch, 256 iterations, 12 warmups and nine measured trials. Engine order
+rotates and every trial checks matching output consumption. Times are median milliseconds
+(min-max); no perimeter transposes are timed. These are not complete-job throughput claims.
+
+| Input | Stock Flink | Existing Utf8 | Binary |
+|---|---:|---:|---:|
+| 16-byte ASCII | 57.639 (57.301-63.955) | 5.933 (5.885-6.279) | 5.902 (5.847-6.453) |
+| 64-byte ASCII | 80.099 (79.674-80.862) | 10.592 (10.411-10.686) | 10.623 (10.318-10.712) |
+| 16 three-byte characters, every seventh row NULL | 59.131 (58.780-60.191) | 8.668 (8.622-8.784) | 8.677 (8.560-8.745) |
+| 16 bytes, first byte FF every 1000 rows | 57.025 (56.669-57.436) | not applicable | 5.921 (5.765-5.956) |
+| Empty strings, every seventh row NULL | 30.259 (30.032-30.680) | 4.498 (4.469-4.697) | 4.471 (4.386-4.519) |
+
+Both physical input paths reuse the existing SIMD Base64 encoder. Their measured times are
+effectively tied; admitting arbitrary STRING bytes requires no new encoding algorithm.
+Select `to_base64` as the example's fifth argument.

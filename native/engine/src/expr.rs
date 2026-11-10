@@ -635,13 +635,18 @@ fn build_typed_call(
     args: Vec<datafusion::prelude::Expr>,
 ) -> datafusion::prelude::Expr {
     use datafusion::logical_expr::ExprSchemable;
-    if op == 94 {
-        let schema = DFSchema::try_from(Arc::clone(schema)).expect("CONCAT_WS input schema");
+    if op == 94 || op == 107 {
+        let schema = DFSchema::try_from(Arc::clone(schema)).expect("byte-string input schema");
         if args
             .iter()
             .any(|arg| arg.get_type(&schema).expect("operand type") == DataType::Binary)
         {
-            return crate::flink_functions::byte_concat_ws::function().call(args);
+            let function = if op == 94 {
+                crate::flink_functions::byte_concat_ws::function()
+            } else {
+                crate::flink_functions::function(151, args.len()).expect("binary TO_BASE64")
+            };
+            return function.call(args);
         }
     }
     if op == 3 || (10..=15).contains(&op) {

@@ -123,6 +123,7 @@ fn main() {
                 "sha256" => (vec![6, 0], vec![97, 0], vec![1, 0], vec![]),
                 "sha384" => (vec![6, 0], vec![98, 0], vec![1, 0], vec![]),
                 "sha512" => (vec![6, 0], vec![99, 0], vec![1, 0], vec![]),
+                "to_base64" => (vec![6, 0], vec![107, 0], vec![1, 0], vec![]),
                 _ => panic!("Unknown byte-string benchmark: {function}"),
             };
             CalcProgram::new(kinds, payload, children, vec![], vec![], strings)
