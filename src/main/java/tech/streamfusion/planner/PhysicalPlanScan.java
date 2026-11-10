@@ -119,7 +119,10 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     try (NativeConfig.Scope ignored =
         NativeConfig.usePlannerConfig(
             ShortcutUtils.unwrapTableConfig(roots.get(0)).getConfiguration())) {
-      return optimizeConfigured(roots, finalOutput);
+      List<RelNode> optimized = optimizeConfigured(roots, finalOutput);
+      PlannerDiagnostics.logOccurrences(LOG, "StreamFusion falls back to host: ", fallbackReasons);
+      PlannerDiagnostics.logOccurrences(LOG, "", functionExecutions);
+      return optimized;
     }
   }
 
@@ -156,15 +159,6 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       optimized.add(substitute(root, repeatedSources, finalOutput));
     }
     optimized = shareIdenticalSources(optimized);
-    for (String execution : functionExecutions) {
-      if (NativeConfig.logFallbackReasons()) {
-        LOG.info("{}", execution);
-      } else {
-        LOG.debug("{}", execution);
-      }
-    }
-    // The one always-on plan-time summary; -Dstreamfusion.logFallbackReasons=true itemizes the
-    // reasons and explainSummary() carries them into explain output.
     LOG.info(
         "StreamFusion substituted {} of {} plan operators natively ({} operator fallback reason(s)"
             + " recorded; {} Calc/filter node(s) use JVM functions)",
@@ -1028,22 +1022,11 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
 
   void recordFallback(String reason) {
     fallbackReasons.add(reason);
-    if (NativeConfig.logFallbackReasons()) {
-      LOG.info("falls back to host — {}", reason);
-    } else {
-      LOG.debug("falls back to host — {}", reason);
-    }
   }
 
   void recordFunctionExecution(String operator, RexExpression expression) {
-    List<String> nativeCalls = expression.nativeFunctionCalls();
-    List<String> jvmCalls = expression.jvmFunctionCalls();
-    String execution = operator + " functions: native=" + nativeCalls + ", jvm=" + jvmCalls;
-    if (!jvmCalls.isEmpty()) {
-      jvmFunctionOperators++;
-      execution += ", reason=" + expression.jvmExecutionReason();
-    }
-    functionExecutions.add(execution);
+    if (!expression.jvmFunctionCalls().isEmpty()) jvmFunctionOperators++;
+    functionExecutions.add(PlannerDiagnostics.functionExecution(operator, expression));
   }
 
   private void rollbackFunctionExecutions(int previousSize, int previousJvmCount) {

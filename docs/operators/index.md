@@ -18,8 +18,12 @@ A query accelerates only if it forms **one fully-columnar island**: every operat
 source/sink runs natively, exchanging Arrow batches, with the row↔Arrow transpose paid once at
 each host edge and never between native operators. **One unsupported interior operator drags the
 whole query back to Flink** — there's no partial acceleration of a single query. Use
-`NativePlanner.explain(...)` or `-Dstreamfusion.logFallbackReasons=true` to see the recorded
-reason(s) for a given plan.
+`NativePlanner.explain(...)` to see the recorded reasons for a given plan. Completed planning
+passes also log concrete fallback reasons at INFO by default, including the Flink 2.2 stock
+compiled-plan lowering path. Identical reasons within a pass are combined with their occurrence
+count; programmatic and EXPLAIN diagnostics retain individual entries. Standard logger levels
+control verbosity; no StreamFusion diagnostic switch is required. The former
+`streamfusion.logFallbackReasons` setting is no longer read.
 
 **What counts as a fallback.** A fallback is something *Flink executes that StreamFusion doesn't
 accelerate* — a real gap that could be closed. It is **not** a fallback when Flink itself rejects

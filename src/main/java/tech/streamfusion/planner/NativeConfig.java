@@ -202,10 +202,4 @@ public final class NativeConfig {
   public static boolean shareSources() {
     return booleanValue("streamfusion.plan.shareSources", true);
   }
-
-  /** Whether planner fallback reasons should be logged individually. */
-  static boolean logFallbackReasons() {
-    return booleanValue("streamfusion.logFallbackReasons", false);
-  }
-
 }

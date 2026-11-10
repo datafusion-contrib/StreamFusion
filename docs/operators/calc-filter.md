@@ -32,10 +32,12 @@ batches and batches carrying a row-kind column; Calc caches each schema separate
 those row kinds through projections and filters. Row-to-Arrow boundaries also retain actual
 retractions received from a source that advertised insert-only output.
 
-With `streamfusion.logFallbackReasons=true`, planning also logs the final function-engine assignment
-for each admitted Calc/filter. Distinct SQL function, UDF and cast calls appear under `native` or
-`jvm`; casts are retained because they can select JVM evaluation, while arithmetic, comparison and
-boolean operators are omitted. A mixed node can list functions in both groups; a whole-Calc
+Planning logs the final function-engine assignments for admitted Calc/filter operators at INFO
+by default, including Calcs admitted while lowering a stock compiled plan. Repeated identical
+assignments within a pass are combined with their occurrence count. Distinct SQL function, UDF
+and cast calls appear under `native` or `jvm`; casts are retained because they can select JVM
+evaluation, while arithmetic, comparison and boolean operators are omitted. A mixed node can
+list functions in both groups; a whole-Calc
 generated evaluator lists every function under `jvm` and retains the reason that selected
 row-at-a-time Flink evaluation. Ordinary `EXPLAIN` and submitted Calc/filter names also retain
 Flink's original `select` and `where` expressions and show these final assignments as

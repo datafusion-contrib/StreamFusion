@@ -68,6 +68,8 @@ import tech.streamfusion.state.StockStateContract;
 final class StockCompiledPlanLowering {
   private static final org.slf4j.Logger LOG =
       org.slf4j.LoggerFactory.getLogger(StockCompiledPlanLowering.class);
+  private final List<String> fallbackReasons = new ArrayList<>();
+  private final Map<ExecNode<?>, String> functionExecutions = new LinkedHashMap<>();
   private final PlannerBase planner;
   private final Map<Integer, Integer> resolvedStockMaximums = new HashMap<>();
   private final boolean nativeKeyedState;
@@ -124,6 +126,12 @@ final class StockCompiledPlanLowering {
   }
 
   ExecNodeGraph lower(ExecNodeGraph original) {
+    var result = lowerGraph(original);
+    logDiagnostics(result);
+    return result;
+  }
+
+  private ExecNodeGraph lowerGraph(ExecNodeGraph original) {
     try {
       String json =
           CompiledPlanSerdeUtil.createJsonObjectWriter(planner.createSerdeContext())
@@ -515,6 +523,12 @@ final class StockCompiledPlanLowering {
   }
 
   ExecNodeGraph bindOrdinary(SqlPlanOrigins.RuntimeGraph graph) {
+    var result = bindOrdinaryGraph(graph);
+    logDiagnostics(result);
+    return result;
+  }
+
+  private ExecNodeGraph bindOrdinaryGraph(SqlPlanOrigins.RuntimeGraph graph) {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
     collectUids(graph.stock.getRootNodes());
@@ -3701,6 +3715,7 @@ final class StockCompiledPlanLowering {
             encoded.udfBinding());
     connect(entry, nativeCalc);
     bindings.put(nativeCalc, new StockBinding(stock.getId(), stockUids.get(stock.getId()), null));
+    functionExecutions.put(nativeCalc, PlannerDiagnostics.functionExecution("NativeCalc", encoded));
     columnar.add(nativeCalc);
     var exit =
         new ArrowToRowDataExecNode(config, InputProperty.DEFAULT, outputType, "ArrowToRowData");
@@ -4204,7 +4219,20 @@ final class StockCompiledPlanLowering {
   }
 
   private void recordFallback(String reason) {
-    LOG.debug("Stock compiled plan fallback: {}", reason);
+    fallbackReasons.add(reason);
+  }
+
+  private void logDiagnostics(ExecNodeGraph result) {
+    PlannerDiagnostics.logOccurrences(LOG, "Stock compiled plan fallback: ", fallbackReasons);
+    if (result == null) return;
+    Set<ExecNode<?>> reachable = Collections.newSetFromMap(new IdentityHashMap<>());
+    collectOrdinaryNodes(result.getRootNodes(), reachable);
+    var executions = new ArrayList<String>();
+    functionExecutions.forEach(
+        (node, execution) -> {
+          if (reachable.contains(node)) executions.add(execution);
+        });
+    PlannerDiagnostics.logOccurrences(LOG, "Stock compiled plan ", executions);
   }
 
   private static void connect(ExecNode<?> source, ExecNode<?> target) {

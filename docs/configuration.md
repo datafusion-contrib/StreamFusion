@@ -154,13 +154,16 @@ remain separate evidence, including retained slower wide-overlap jobs.
 
 ## Diagnostics
 
-- **`-Dstreamfusion.logFallbackReasons=true`** — substitution is silent by default; this logs each
-  plan node that stayed on Flink and why, plus the final function-engine assignment for every
-  admitted Calc/filter. The assignment lists distinct SQL function and UDF calls under `native` and
-  `jvm`; casts are retained because their type and failure semantics can select JVM evaluation,
-  while arithmetic, comparison and boolean operators are omitted. A JVM assignment also records why
-  a host-exact upcall or whole-Calc generated evaluator was selected. The always-on summary counts
-  both operator fallbacks and Calc/filter nodes containing JVM functions.
+Completed planning passes log recorded fallback reasons and final function-engine assignments
+at **INFO** by default, including stock compiled-plan lowering. Repeated messages within a pass
+include an occurrence count. The former `streamfusion.logFallbackReasons` flag is no longer read;
+use the normal logger configuration to control verbosity.
+
+Assignments list distinct SQL function and UDF calls under `native` and `jvm`; casts are retained
+because their type and failure semantics can select JVM evaluation, while arithmetic, comparison
+and boolean operators are omitted. A JVM assignment also records why a host-exact upcall or
+whole-Calc generated evaluator was selected. The planning summary counts both operator fallbacks
+and Calc/filter nodes containing JVM functions. Logging does not change execution admission.
 
 Ordinary SQL `EXPLAIN` and submitted operator descriptions retain the original Flink details:
 native sources and sinks keep table identifiers, fields and source/sink abilities; Calc/filter
