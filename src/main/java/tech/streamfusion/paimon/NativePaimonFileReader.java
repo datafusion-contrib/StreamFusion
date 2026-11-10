@@ -3,7 +3,6 @@ package tech.streamfusion.paimon;
 import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.vector.VectorSchemaRoot;
@@ -84,39 +83,7 @@ public final class NativePaimonFileReader implements AutoCloseable {
   }
 
   static VectorSchemaRoot importBatch(BatchExporter exporter) {
-    try (ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED);
-        ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      try {
-        if (!exporter.next(array.memoryAddress(), schema.memoryAddress())) {
-          return null;
-        }
-        VectorSchemaRoot root =
-            VectorSchemaRoot.create(
-                Data.importSchema(
-                    NativeAllocator.SHARED,
-                    ArrowSchema.wrap(schema.memoryAddress()),
-                    NativeAllocator.DICTIONARIES),
-                NativeAllocator.SHARED);
-        try {
-          Data.importIntoVectorSchemaRoot(
-              NativeAllocator.SHARED,
-              ArrowArray.wrap(array.memoryAddress()),
-              root,
-              NativeAllocator.DICTIONARIES);
-          return root;
-        } catch (Throwable failure) {
-          root.close();
-          throw failure;
-        }
-      } finally {
-        if (array.snapshot().release != 0) {
-          array.release();
-        }
-        if (schema.snapshot().release != 0) {
-          schema.release();
-        }
-      }
-    }
+    return ColumnarFileCodec.importBatch(exporter::next);
   }
 
   @Override

@@ -6,4 +6,9 @@ package tech.streamfusion.planner;
  * transition pass uses this (with {@link ColumnarInput}) to decide whether an edge needs a
  * row↔columnar transpose.
  */
-public interface ColumnarOutput {}
+public interface ColumnarOutput {
+  /** Whether this producer is admitted only when its immediate consumer keeps the Arrow carrier. */
+  default boolean requiresColumnarConsumer() {
+    return false;
+  }
+}
