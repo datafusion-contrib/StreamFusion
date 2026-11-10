@@ -1,0 +1,34 @@
+{
+  "sourceCommit": "0238f2855bd2d8884fe14fa82bc2939ecc19dcdb",
+  "nativeProfile": "release; default rocksdb-state feature",
+  "nativeLibrariesSha256": {
+    "libstreamfusion_parquet.dylib": "9f7a3115204ebdbd706ff7f3808d10be12c5cefe40a2cbd1791c4e84b155b6fa",
+    "libstreamfusion.dylib": "a793f506f3fca6bdcfcd9928ed6f79141299d4fd5d3c70d61cbdd1077e7036f3"
+  },
+  "nativeBoundedTests": {
+    "passed": 73,
+    "failed": 0,
+    "profile": "release"
+  },
+  "bothLineSqlSourceControls": {
+    "flink2.2": "22 TPC-H queries, five source controls, two source SQL fallback/retry controls, one blocking-join replay",
+    "flink1.18": "same controls; exact all22 and positive native source/compute"
+  },
+  "bothLinePackagedLoader": {
+    "flink2.2": {
+      "groupsAndJoins": 2,
+      "payloadIdentity": 5
+    },
+    "flink1.18": {
+      "groupsAndJoins": 2,
+      "payloadIdentity": 5
+    }
+  },
+  "otherChecks": [
+    "Native package/JNI boundaries",
+    "cargo fmt --all --check",
+    "git diff --check",
+    "new documentation links and TPC JSON syntax"
+  ],
+  "note": "Review-head release source with upstream expression changes rebuilt; independent complete-job benchmark retained separately."
+}

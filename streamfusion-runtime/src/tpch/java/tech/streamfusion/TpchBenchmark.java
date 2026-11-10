@@ -173,6 +173,10 @@ class TpchBenchmark {
                 long sourceRows =
                     metrics.counterValue(client.getJobID().toString(), "sourceArrowRows");
                 observation.put("sourceArrowRows", sourceRows);
+                long entryRows =
+                    metrics.counterValue(
+                        client.getJobID().toString(), "numInputRows", "RowDataToArrow");
+                observation.put("entryTransposeRows", entryRows);
                 if (nativeRun
                     && Boolean.parseBoolean(
                         System.getProperty(
@@ -180,9 +184,11 @@ class TpchBenchmark {
                             Boolean.toString(
                                 format.equals("parquet")
                                     && Boolean.parseBoolean(
-                                        System.getProperty("sf.tpch.fileSource", "true"))))))
+                                        System.getProperty("sf.tpch.fileSource", "true")))))) {
                   assertTrue(
                       sourceRows > 0, "Q" + number + " native Parquet source did not execute");
+                  assertEquals(0, entryRows, "Q" + number + " retained a row-to-Arrow entry");
+                }
                 observation.put(
                     "nativeWork",
                     metrics.nativeOperators().stream()

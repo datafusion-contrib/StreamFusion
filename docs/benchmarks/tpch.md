@@ -477,3 +477,10 @@ storage caches were not isolated. Q19–Q22 stock timings vary more than earlier
 queries. File count bounds native source parallelism because its splits currently
 cover whole files. This comparison establishes a local complete-job gain for this
 cohort; it is not a remote-storage, cold-cache or official TPC-H QphH claim.
+
+A later post-rebase system-allocator diagnostic was interrupted after finding that
+its manual release build omitted the mimalloc feature selected by Maven's `bench`
+profile. Its [completed query trials](results/tpch-native-parquet-system-allocator-diagnostic-20261110.json)
+remain a separate partial diagnostic and contribute no complete-workload aggregate.
+The production-profile follow-up explicitly builds both core and Parquet with
+`--release --features mimalloc` and records both library hashes.

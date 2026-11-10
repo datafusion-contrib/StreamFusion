@@ -50,6 +50,10 @@ class BatchParquetSourceSqlTest {
         assertEquals(expected, BatchSortSqlTest.collect(result), mode);
         assertTrue(metrics.recordsIn(job, "NativeAggregate") > 0, mode);
         assertEquals(
+            mode.equals("native") ? 0 : ROWS,
+            metrics.counterValue(job, "numInputRows", "RowDataToArrow"),
+            mode);
+        assertEquals(
             mode.equals("native") ? ROWS : 0, metrics.counterValue(job, "sourceArrowRows"), mode);
       }
     } finally {
