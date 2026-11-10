@@ -1,5 +1,5 @@
-use arrow::array::{Array, ArrayRef, BinaryArray, StringArray};
-use arrow::datatypes::{Field, Schema};
+use arrow::array::{Array, ArrayRef, BinaryArray, NullArray, StringArray};
+use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use sha2::Digest;
 use std::sync::Arc;
@@ -87,6 +87,24 @@ fn check_hash<D: Digest>(operation: i64) {
         );
         assert_eq!(calc.run(input).column(0).as_ref(), &expected);
     }
+
+    let nulls = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![Field::new("s", DataType::Null, true)])),
+        vec![Arc::new(NullArray::new(3))],
+    )
+    .unwrap();
+    let mut calc = CalcProgram::new(
+        vec![6, 0],
+        vec![operation, 0],
+        vec![1, 0],
+        vec![],
+        vec![],
+        vec![],
+    );
+    let result = calc.run(nulls.clone());
+    assert_eq!(result.column(0).data_type(), &DataType::Utf8);
+    assert_eq!(result.column(0).null_count(), 3);
+    assert_eq!(calc.run(nulls.slice(0, 0)).schema(), result.schema());
 }
 
 #[test]

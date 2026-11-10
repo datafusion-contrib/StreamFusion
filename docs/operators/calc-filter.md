@@ -1004,7 +1004,8 @@ Binary when every character input consumer has a verified byte contract: `CONCAT
 `CONCAT_WS`, `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `TO_BASE64`, or `ASCII`.
 Nested concatenations, runtime separators, character constants and simple
 independent numeric projections/filters are supported. These hashes consume the original bytes and return
-valid ASCII hex. TO_BASE64 also consumes the original bytes and returns valid ASCII. These results
+valid ASCII hex. Untyped NULL arrays and literals also produce typed STRING NULL results, including
+empty batches. TO_BASE64 also consumes the original bytes and returns valid ASCII. These results
 can feed text predicates or another expression within the Calc.
 ASCII reads only the first byte and sign-extends it like Flink's Java byte; empty strings yield zero
 and NULL remains NULL. Its integer output can also be used in a native filter over malformed input.

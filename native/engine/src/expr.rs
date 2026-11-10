@@ -1089,6 +1089,9 @@ fn hash_string<D: sha2::Digest>(
             let hex = String::from_utf8(hex).map_err(|e| exec_datafusion_err!("{e}"))?;
             Ok(ColumnarValue::Scalar(ScalarValue::Utf8(Some(hex))))
         }
+        ColumnarValue::Array(array) if array.data_type() == &DataType::Null => Ok(
+            ColumnarValue::Array(arrow::array::new_null_array(&DataType::Utf8, array.len())),
+        ),
         ColumnarValue::Array(array) => {
             let binary;
             let strings = if let Some(strings) = array.as_any().downcast_ref::<StringArray>() {
