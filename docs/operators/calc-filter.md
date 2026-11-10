@@ -4601,3 +4601,7 @@ Generated collection values may also enter a columnar sink that explicitly accep
 canonicalizes their representation for its wire format. This preserves the existing Doris
 Arrow writer and sink-materializer contract; ordinary native sinks retain their row-sink
 guard. Native DISTINCT-array groups retain their separately verified input contract.
+
+Batch projections with no output columns preserve the filtered row count, including existential and scalar-subquery intermediates.
+
+Flink multiple-input fusion stays outside native batch regions because its internal serializers require `RowData`. Arrow boundaries are preserved for every native batch task, including plans without joins.

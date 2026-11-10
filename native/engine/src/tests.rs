@@ -8336,6 +8336,25 @@ fn ab_batch() -> RecordBatch {
     .unwrap()
 }
 
+#[test]
+fn calc_empty_projection_preserves_filtered_row_count() {
+    let mut calc = CalcExpression {
+        kinds: vec![6, 0, 1],
+        payload: vec![10, 0, 0],
+        child_counts: vec![2, 0, 0],
+        longs: vec![2],
+        doubles: vec![],
+        strings: vec![],
+        projection_roots: vec![],
+        condition_root: 0,
+        output_names: vec![],
+        compiled: None,
+    };
+    let out = calc.evaluate(ab_batch());
+    assert_eq!(out.num_columns(), 0);
+    assert_eq!(out.num_rows(), 1);
+}
+
 // A Calc with no condition projects computed columns: [a + b, a].
 #[test]
 fn calc_projects_computed_columns() {

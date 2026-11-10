@@ -37,16 +37,16 @@ final class NativeBatchPlanner extends BatchPlanner {
     for (var processor : processors) {
       result.add(
           (graph, context) -> {
-            boolean arrowJoins = hasNativeJoin(graph);
+            boolean arrowTasks = hasNativeTasks(graph);
             // Host multiple-input fusion hardcodes RowData serializers and cannot contain Arrow
             // tasks.
-            if (arrowJoins
+            if (arrowTasks
                 && processor
                     instanceof
                     org.apache.flink.table.planner.plan.nodes.exec.processor
                         .MultipleInputNodeCreationProcessor) return graph;
             var processed = processor.process(graph, context);
-            return arrowJoins
+            return arrowTasks
                 ? BatchArrowGraphBoundaries.preserve(processed, getTableConfig())
                 : processed;
           });
@@ -55,7 +55,7 @@ final class NativeBatchPlanner extends BatchPlanner {
     return JavaScalaConversionUtil.toScala(result);
   }
 
-  private static boolean hasNativeJoin(
+  private static boolean hasNativeTasks(
       org.apache.flink.table.planner.plan.nodes.exec.ExecNodeGraph graph) {
     var pending =
         new java.util.ArrayDeque<org.apache.flink.table.planner.plan.nodes.exec.ExecNode<?>>(
@@ -67,7 +67,7 @@ final class NativeBatchPlanner extends BatchPlanner {
     while (!pending.isEmpty()) {
       var node = pending.removeFirst();
       if (!visited.add(node)) continue;
-      if (node instanceof BatchJoinExecNode) return true;
+      if (node instanceof BatchColumnarExecNode) return true;
       for (var edge : node.getInputEdges()) pending.add(edge.getSource());
     }
     return false;

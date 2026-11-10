@@ -8,6 +8,32 @@ import org.junit.jupiter.api.Test;
 
 class BatchGroupedAggregateSqlTest {
   @Test
+  void unionOfNativeGroupsKeepsArrowOutsideHostMultipleInputFusion() throws Exception {
+    var config = new Configuration();
+    config.setString("execution.batch.adaptive.auto-parallelism.enabled", "false");
+    config.setString("table.exec.resource.default-parallelism", "2");
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      metrics.setAsContext(config, 2, 128L << 20);
+      var stock = BatchSortSqlTest.environment(false, 1037, config);
+      var nativeEnv = BatchSortSqlTest.environment(true, 1037, config);
+      String grouped = "SELECT MOD(id,7) AS k,SUM(id) AS n FROM input GROUP BY MOD(id,7)";
+      String query = grouped + " UNION ALL " + grouped;
+      String plan = nativeEnv.explainSql(query);
+      assertTrue(plan.contains("NativeUnion") && plan.contains("NativeAggregate"), plan);
+      var result = nativeEnv.executeSql(query);
+      String job = result.getJobClient().orElseThrow().getJobID().toString();
+      var actual = BatchSortSqlTest.collect(result);
+      var expected = BatchSortSqlTest.collect(stock.executeSql(query));
+      actual.sort(String::compareTo);
+      expected.sort(String::compareTo);
+      assertEquals(expected, actual);
+      assertTrue(metrics.recordsIn(job, "NativeAggregate") > 0);
+    } finally {
+      tech.streamfusion.compat.FlinkTestContexts.clearForRemoteSubmission();
+    }
+  }
+
+  @Test
   void hashGroupsKeepHostStatesAcrossBlockingArrowPartitions() throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
       metrics.setAsContext(new Configuration(), 2, 128L << 20);
