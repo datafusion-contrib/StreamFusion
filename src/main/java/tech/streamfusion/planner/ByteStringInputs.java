@@ -69,7 +69,15 @@ final class ByteStringInputs {
   }
 
   private static boolean acceptsByteStringInput(int operation) {
-    return operation == 93 || operation == 94 || operation == 95;
+    switch (operation) {
+      case 93: // CONCAT
+      case 94: // CONCAT_WS
+      case 95: // MD5
+      case 143: // SHA1
+        return true;
+      default:
+        return false;
+    }
   }
 
   private static int visit(

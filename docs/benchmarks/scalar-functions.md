@@ -11314,6 +11314,10 @@ These measurements exclude perimeter conversions and are not complete-job throug
 | MD5 / 64-byte ASCII | 214.757 (213.239-218.880) | 158.851 (157.379-160.303) | 158.983 (157.764-163.708) |
 | MD5 / 16 three-byte characters, every seventh row NULL | 124.280 (122.569-139.306) | 80.385 (79.720-83.036) | 80.928 (79.789-87.255) |
 | MD5 / 16 bytes, first byte FF every 1000 rows | 140.061 (138.178-140.446) | not applicable | 99.184 (98.692-100.480) |
+| SHA1 / 16-byte ASCII | 227.107 (217.566-232.026) | 51.824 (51.021-57.554) | 51.780 (50.584-58.086) |
+| SHA1 / 64-byte ASCII | 402.564 (399.945-403.784) | 66.687 (65.993-67.618) | 66.897 (66.328-67.864) |
+| SHA1 / 16 three-byte characters, every seventh row NULL | 226.049 (224.862-226.681) | 43.298 (42.891-43.784) | 43.310 (43.020-43.898) |
+| SHA1 / 16 bytes, first byte FF every 1000 rows | 216.588 (215.762-222.181) | not applicable | 51.453 (50.733-55.020) |
 
 Select the function using the example's optional fifth argument, for example:
 

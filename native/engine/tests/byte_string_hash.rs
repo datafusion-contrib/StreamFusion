@@ -93,3 +93,8 @@ fn check_hash<D: Digest>(operation: i64) {
 fn md5_hashes_binary_and_utf8_with_identical_null_and_slice_rules() {
     check_hash::<md5::Md5>(95);
 }
+
+#[test]
+fn sha1_hashes_binary_and_utf8_with_identical_null_and_slice_rules() {
+    check_hash::<sha1::Sha1>(143);
+}

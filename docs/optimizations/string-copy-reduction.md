@@ -216,10 +216,10 @@ CONCAT_WS uses the same physical contract, writing its byte separators and non-N
 one final Binary buffer. Non-null inputs preallocate the exact output size; nullable inputs avoid
 reserving space for potentially masked payloads. The existing Utf8 kernel remains unchanged.
 
-Admission is limited to [verified final concatenation consumers](../operators/calc-filter.md#byte-preserving-string-input).
+Admission is limited to [verified final byte consumers](../operators/calc-filter.md#byte-preserving-string-input).
 Text functions, key/state consumers and native sinks require their own representation contracts.
 
-MD5 can consume the same Binary storage. It hashes the existing byte slices and writes ASCII hex
+The admitted digest functions consume the same Binary storage. They hash the existing byte slices and write ASCII hex
 directly into the final Utf8 buffer, without converting input bytes to text. The planner distinguishes
-raw-string producers from byte-consuming functions with a valid-text result, so MD5 output can feed
+raw-string producers from byte-consuming functions with a valid-text result, so hash output can feed
 other expressions without allowing a text kernel to consume arbitrary concatenation bytes.
