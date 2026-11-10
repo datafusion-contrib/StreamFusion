@@ -148,6 +148,14 @@ class CanonicalBufferedDedupJobTest {
     var actual = committed(switched);
     assertEquals(expected(switched, variant, Integer.MAX_VALUE), actual);
     assertEquals(committed(baseline), actual);
+    var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
+    assertEquals(
+        CanonicalFixtureFactory.committedRows(baseline.resolve("committed"), type).stream()
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()),
+        CanonicalFixtureFactory.committedRows(switched.resolve("committed"), type).stream()
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
     for (String stage : List.of("prefix", "middle")) {
       Path savepoint =
           Path.of(
@@ -250,6 +258,8 @@ class CanonicalBufferedDedupJobTest {
   }
 
   private static Map<String, Long> expected(Path root, String variant, int limit) throws Exception {
+    if (tech.streamfusion.compat.FlinkCompat.EAGER_ROWTIME_KEEP_FIRST)
+      return eagerExpected(root, variant, limit);
     var pending = new HashMap<String, String[]>();
     var emitted = new HashSet<String>();
     var result = new HashMap<String, Long>();
@@ -283,14 +293,41 @@ class CanonicalBufferedDedupJobTest {
     return result;
   }
 
+  private static Map<String, Long> eagerExpected(Path root, String variant, int limit)
+      throws Exception {
+    var winners = new HashMap<String, String[]>();
+    var lines = Files.readAllLines(root.resolve("input.csv"));
+    for (int i = 0; i < Math.min(limit, lines.size()); i++) {
+      String[] fields = lines.get(i).split(",");
+      if (fields[0].equals("WATERMARK")) continue;
+      String key = variant.startsWith("keyless") ? "*" : fields[1];
+      var old = winners.get(key);
+      if (old == null || Long.parseLong(fields[3]) < Long.parseLong(old[3]))
+        winners.put(key, fields);
+    }
+    var result = new HashMap<String, Long>();
+    for (var row : winners.values())
+      result.merge(
+          row[1] + "|" + row[2] + "|" + (row[1].equals("null") ? "-1" : row[1]), 1L, Long::sum);
+    return result;
+  }
+
   private static Map<String, Long> committed(Path root) throws Exception {
     if (!Files.exists(root.resolve("committed"))) return Map.of();
     var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
     var result = new HashMap<String, Long>();
     for (String row : CanonicalFixtureFactory.committedRows(root.resolve("committed"), type)) {
-      assertTrue(row.startsWith("+I|"), row);
-      result.merge(row.substring(3), 1L, Long::sum);
+      if (tech.streamfusion.compat.FlinkCompat.EAGER_ROWTIME_KEEP_FIRST) {
+        String kind = row.substring(0, 3);
+        assertTrue(List.of("+I|", "+U|", "-U|", "-D|").contains(kind), row);
+        result.merge(row.substring(3), kind.charAt(0) == '+' ? 1L : -1L, Long::sum);
+      } else {
+        assertTrue(row.startsWith("+I|"), row);
+        result.merge(row.substring(3), 1L, Long::sum);
+      }
     }
+    result.values().removeIf(count -> count == 0);
+    assertTrue(result.values().stream().allMatch(count -> count > 0), result.toString());
     return result;
   }
 }

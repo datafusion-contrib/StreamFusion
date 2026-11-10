@@ -143,17 +143,17 @@ class CanonicalWindowJoinJobTest {
         shape.equals("TUMBLE") ? "INTERVAL '3' SECOND" : "INTERVAL '1' SECOND, INTERVAL '3' SECOND";
     Files.writeString(
         root.resolve("query.sql"),
-        "INSERT INTO output_table SELECT l.k,l.v,r.v FROM TABLE("
+        "INSERT INTO output_table SELECT l.k,l.v,r.v FROM (SELECT * FROM TABLE("
             + shape
             + "(TABLE input_table, DESCRIPTOR(rt), "
             + window
-            + ")) l "
+            + "))) l "
             + kind
-            + " JOIN TABLE("
+            + " JOIN (SELECT * FROM TABLE("
             + shape
             + "(TABLE right_input_table, DESCRIPTOR(rt), "
             + window
-            + ")) r ON l.window_start=r.window_start AND l.window_end=r.window_end"
+            + "))) r ON l.window_start=r.window_start AND l.window_end=r.window_end"
             + (keyless ? "" : " AND l.k=r.k"));
     Files.writeString(root.resolve("required-plan-node"), "stream-exec-window-join");
     Files.writeString(

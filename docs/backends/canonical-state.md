@@ -129,6 +129,12 @@ that the configured backend is installed, rather than calling only the conversio
 Disposal controls finish keyed state first and require closure to remain blocked until
 operator-state capture finishes or cancels.
 
+The ordinary SQL window-join fixture scopes each window table function in its own derived table,
+matching upstream Flink's queries so 1.18 resolves both rowtime descriptors unambiguously. The
+shared rowtime-first dedup fixture checks the released eager 1.18 winner/retraction rules separately
+from 2.2's buffered watermark rules, retaining independent per-cut winners and exact signed output
+against a clean stock job.
+
 Canonical conversion runs only when Flink requests a canonical savepoint. Ordinary checkpoints and
 native-format savepoints retain their existing native recovery path. Both supported Flink lines
 use the released `SavepointSnapshotStrategy` and `FullSnapshotAsyncWriter`; StreamFusion supplies

@@ -155,6 +155,13 @@ checks use the shared scoped disk index rather than global Java maps/sets. Both 
 apply passes close and delete scratch state, including on failure. Arrow transport companions are
 validated and removed before buffering, and keyless markers survive native checkpoint recovery.
 
+The shared complete-job fixture follows each release's stock owner: 1.18 keeps its eager rowtime
+winner and retracting changelog, while 2.2 uses buffered candidates, markers and timers. The 1.18
+oracle chooses the minimum timestamp from every consumed row, including rows behind the watermark;
+the 2.2 oracle retains its watermark-bound emission rules. Every handoff checks the winner bag at
+each cut and the complete signed changelog against a clean stock job. This does not introduce the
+newer buffered owner into 1.18.
+
 Buffered qualification includes 30 continued-state/recovery cases, 25 direct corruption/age
 controls, 12 ordinary/compiled binding checks and 96 complete jobs across partitioned cohorts.
 Both submission forms/stores/orders cover continued input, long TTL, nullable/NOT NULL/keyless
