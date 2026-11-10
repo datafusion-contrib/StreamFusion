@@ -294,7 +294,7 @@ jobs:
           path: native/target/debug
       - name: Resolve Java dependencies before tests
         run: |
-          python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profiles }}" --projects streamfusion-runtime
+          python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profiles }}" --projects streamfusion-runtime --also-make
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 --artifact com.google.protobuf:protobuf-java:2.5.0
       - name: Compile and partition complete canonical jobs
         run: |

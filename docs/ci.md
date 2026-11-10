@@ -13,6 +13,10 @@ Image smoke failures include current TaskManager/JobManager container state, log
 containers close. Failed smoke reports are retained for three days, so heartbeat timeouts can be
 distinguished from JVM/native crashes or container OOM without weakening the submission assertion.
 
+Canonical-job dependency preparation includes the selected runtime module's reactor dependencies.
+The Kafka canonical profile references the matching JSON module; a cold runner must resolve that
+module inside the reactor rather than depend on an installed copy of an unpublished project JAR.
+
 ## Contributing from a personal fork
 
 1. Fork `datafusion-contrib/StreamFusion` into your personal account. If that name is already
