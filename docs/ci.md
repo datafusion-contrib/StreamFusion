@@ -17,6 +17,12 @@ Canonical-job dependency preparation includes the selected runtime module's reac
 The Kafka canonical profile references the matching JSON module; a cold runner must resolve that
 module inside the reactor rather than depend on an installed copy of an unpublished project JAR.
 
+Prefer focused local tests and reused build caches during development. Combine related work into
+a coherent, locally validated change before pushing for the full CI matrix; intermediate commits
+do not each need a CI push. Cancel superseded or redundant runs you started, including unnecessary
+duplicate post-merge runs, and leave other contributors' runs alone. The final change still needs
+the required successful checks on its exact PR head before merging.
+
 ## Contributing from a personal fork
 
 1. Fork `datafusion-contrib/StreamFusion` into your personal account. If that name is already

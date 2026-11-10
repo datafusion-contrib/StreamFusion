@@ -11,6 +11,9 @@ both aggregate checks for the exact PR head before merging; see [docs/ci.md](doc
 result mirroring, and existing-PR migration. Direct changes to canonical `main` require explicit
 maintainer authorization.
 
+Conserve runner capacity by testing changed functionality locally and reusing compatible build
+caches while iterating.
+
 Use hosted CI for the final merge candidate. Batch changes locally and push when the commit is
 ready for the required checks. Before dispatching or retrying a workflow, verify its commit is
 still the current PR head or, before a PR exists, the current branch tip. Reuse queued, running,
