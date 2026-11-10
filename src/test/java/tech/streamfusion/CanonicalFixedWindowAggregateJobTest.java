@@ -85,6 +85,10 @@ class CanonicalFixedWindowAggregateJobTest {
     return false;
   }
 
+  boolean legacySession() {
+    return session() && !tech.streamfusion.compat.CanonicalTestCompat.flink22();
+  }
+
   String family() {
     return session() ? "SessionWindowAgg" : twoPhase() ? "GlobalWindowAgg" : "WindowAgg";
   }
@@ -94,6 +98,7 @@ class CanonicalFixedWindowAggregateJobTest {
     var root = directory.resolve(name);
     Files.createDirectories(root);
     if (ordinary) Files.createFile(root.resolve("ordinary-sql"));
+    if (legacySession()) Files.createFile(root.resolve("same-cut-stock-reference"));
     Files.createFile(root.resolve("insert-only"));
     Files.createFile(root.resolve("source-watermarks"));
     if (mode.equals("rescale")) Files.createFile(root.resolve("disable-chaining"));
@@ -102,15 +107,19 @@ class CanonicalFixedWindowAggregateJobTest {
         "k BIGINT,v BIGINT,t BIGINT,rt TIMESTAMP(3),WATERMARK FOR rt AS SOURCE_WATERMARK()");
     Files.write(root.resolve("input.csv"), input(mode));
     if (twoPhase()) Files.createFile(root.resolve("window-two-phase"));
+    String aggregates = "k,COUNT(" + (distinct() ? "DISTINCT v" : "v") + "),SUM(v)";
     Files.writeString(
         root.resolve("query.sql"),
-        "INSERT INTO output_table SELECT k,COUNT("
-            + (distinct() ? "DISTINCT v" : "v")
-            + "),SUM(v) FROM TABLE("
-            + (session()
-                ? "SESSION(TABLE input_table PARTITION BY k,DESCRIPTOR(rt),INTERVAL '1' SECOND)"
-                : "TUMBLE(TABLE input_table,DESCRIPTOR(rt),INTERVAL '3' SECOND)")
-            + ") GROUP BY k,window_start,window_end");
+        "INSERT INTO output_table SELECT "
+            + aggregates
+            + (legacySession()
+                ? " FROM input_table GROUP BY k,SESSION(rt,INTERVAL '1' SECOND)"
+                : " FROM TABLE("
+                    + (session()
+                        ? "SESSION(TABLE input_table PARTITION BY k,DESCRIPTOR(rt),INTERVAL '1'"
+                            + " SECOND)"
+                        : "TUMBLE(TABLE input_table,DESCRIPTOR(rt),INTERVAL '3' SECOND)")
+                    + ") GROUP BY k,window_start,window_end"));
     String expectedOperator =
         twoPhase()
             ? "NativeColumnarLocalWindowAggregate,NativeColumnarGlobalWindowAggregate"
@@ -126,14 +135,18 @@ class CanonicalFixedWindowAggregateJobTest {
         twoPhase() ? "LocalWindowAgg,GlobalWindowAgg" : family());
     Files.writeString(
         root.resolve("required-plan-node"),
-        twoPhase() ? "stream-exec-global-window-aggregate" : "stream-exec-window-aggregate");
+        twoPhase()
+            ? "stream-exec-global-window-aggregate"
+            : legacySession()
+                ? "stream-exec-group-window-aggregate"
+                : "stream-exec-window-aggregate");
     if (backend.equals("rocksdb") && distinct()) {
       int[] kinds = {7, 0}, types = {0, 0}, keys = {0};
       boolean direct =
           session()
               ? tech.streamfusion.Native.rocksdbSessionAggregatorSupported(types, kinds, keys)
               : tech.streamfusion.Native.rocksdbWindowAggregatorSupported(types, kinds, keys);
-      if (!direct) Files.writeString(root.resolve("native-storage"), "rocksdb-snapshot");
+      assertTrue(direct, "Canonical DISTINCT windows must execute on native RocksDB");
     }
     Files.writeString(root.resolve("uid-generation"), "DISABLED");
     return root;
@@ -177,7 +190,13 @@ class CanonicalFixedWindowAggregateJobTest {
   private List<String> expected(String mode) {
     var groups = new java.util.HashMap<String, List<Long>>();
     long watermark = Long.MIN_VALUE;
+    int offset = 0;
     for (String line : input(mode)) {
+      int firstCut = mode.equals("rescale") ? 128 : 4;
+      int secondCut = mode.equals("rescale") ? 256 : 8;
+      if (legacySession() && (offset == firstCut || offset == secondCut))
+        watermark = Long.MIN_VALUE;
+      offset++;
       var cells = line.split(",");
       if (cells[0].equals("WATERMARK")) {
         watermark = Long.parseLong(cells[1]);

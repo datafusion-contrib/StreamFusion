@@ -1942,6 +1942,17 @@ Processing-time controls avoid the older stock operator's overflow/stalled-buffe
 extreme future watermarks. These controls do not qualify every aggregate layout or cross-line
 upgrades; the broader complete-job matrices above remain separate qualification.
 
+The shared SESSION complete-job fixture uses the legacy group-window SQL on 1.18 and the TVF
+on 2.2. Explicit legacy scalar and COUNT DISTINCT job fixtures also run on both lines. Ten selected
+legacy round trips per release cover ordinary SQL and compiled plans, both initial engine orders
+and both native stores. Two additional SESSION round trips exercise the release-default SQL form.
+Stock and native legs restore at the same source offsets; the independent oracle models the
+legacy owner's watermark reset at each cut. This matters for a row that becomes admissible again
+after recovery. Stock workers run without StreamFusion, and native legs require consumed input,
+original identities and the requested backend. Canonical DISTINCT jobs require direct native
+RocksDB rather than accepting snapshot-backed heap execution. These checks extend qualification
+of existing contracts; operator and type admission are unchanged.
+
 ## Canonical transfer working memory
 
 Slicing-window restore validates timer/namespace and shared-key ownership in the shared scoped
