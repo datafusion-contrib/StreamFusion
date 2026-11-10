@@ -60,6 +60,7 @@ public final class HudiAppendIOFactory extends HoodieFlinkIOFactory {
   static final class Batch {
     final VectorSchemaRoot data;
     final Cursor cursor;
+    final VectorizedColumnBatch vectors;
     boolean finished;
 
     Batch(VectorSchemaRoot root, RowType type) {
@@ -69,29 +70,31 @@ public final class HudiAppendIOFactory extends HoodieFlinkIOFactory {
               ArrowConversion.toArrowSchema(type),
               root.getFieldVectors().subList(0, type.getFieldCount()),
               root.getRowCount());
-      cursor =
-          new Cursor(
-              this,
-              new VectorizedColumnBatch(
-                  ArrowConversion.createArrowReader(data, type).getColumnVectors()));
+      vectors =
+          new VectorizedColumnBatch(
+              ArrowConversion.createArrowReader(data, type).getColumnVectors());
+      cursor = new Cursor(this, vectors);
     }
   }
 
   static final class Cursor extends org.apache.flink.table.data.utils.JoinedRowData {
+    private static final RowData EMPTY = new org.apache.flink.table.data.GenericRowData(0);
     final Batch batch;
     final ColumnarRowData view;
+    int rowId;
 
     Cursor(Batch batch, VectorizedColumnBatch vectors) {
       this(batch, new ColumnarRowData(vectors));
     }
 
     private Cursor(Batch batch, ColumnarRowData view) {
-      super(new org.apache.flink.table.data.GenericRowData(0), view);
+      super(EMPTY, view);
       this.batch = batch;
       this.view = view;
     }
 
     void setRowId(int index) {
+      rowId = index;
       view.setRowId(index);
     }
   }

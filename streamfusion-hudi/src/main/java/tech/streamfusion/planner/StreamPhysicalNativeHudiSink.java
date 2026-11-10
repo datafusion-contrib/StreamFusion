@@ -9,21 +9,26 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
-import tech.streamfusion.hudi.NativeHudiAppendSink;
+import tech.streamfusion.hudi.HudiSinkPlan;
 
 public final class StreamPhysicalNativeHudiSink extends StreamPhysicalNativeSingleRel
     implements ColumnarInput {
-  private final NativeHudiAppendSink.Plan plan;
+  private final HudiSinkPlan plan;
 
   StreamPhysicalNativeHudiSink(
       RelOptCluster cluster,
       RelTraitSet traits,
       RelNode input,
       RelDataType output,
-      NativeHudiAppendSink.Plan plan,
+      HudiSinkPlan plan,
       NativePlanDetails details) {
     super(cluster, traits, input, output, details);
     this.plan = plan;
+  }
+
+  @Override
+  public org.apache.calcite.rel.RelWriter explainTerms(org.apache.calcite.rel.RelWriter writer) {
+    return super.explainTerms(writer).item("writeMode", plan.writeMode());
   }
 
   @Override

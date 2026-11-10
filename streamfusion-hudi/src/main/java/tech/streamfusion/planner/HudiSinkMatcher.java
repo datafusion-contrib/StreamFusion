@@ -5,8 +5,11 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
+import org.apache.hudi.configuration.OptionsResolver;
 import org.apache.hudi.table.HoodieTableSink;
+import tech.streamfusion.hudi.HudiSinkPlan;
 import tech.streamfusion.hudi.NativeHudiAppendSink;
+import tech.streamfusion.hudi.NativeHudiMorSink;
 
 final class HudiSinkMatcher {
   static boolean appliesTo(StreamPhysicalSink sink) {
@@ -15,8 +18,8 @@ final class HudiSinkMatcher {
 
   static RelNode substitute(StreamPhysicalSink sink, PlanContext context) {
     if (sink.upsertMaterialize()
-        || !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) sink.getInput())) {
-      context.decline("Hudi native append requires insert-only input without materialization");
+        || ChangelogPlanUtils.generateUpdateBefore((StreamPhysicalRel) sink.getInput())) {
+      context.decline("Hudi native writes require post-images without sink materialization");
       return null;
     }
     String constraint = SinkConstraintGate.fallbackReason(sink, true);
@@ -26,9 +29,17 @@ final class HudiSinkMatcher {
     }
     var table = (HoodieTableSink) sink.tableSink();
     var type = FlinkTypeFactory$.MODULE$.toLogicalRowType(sink.getInput().getRowType());
-    NativeHudiAppendSink.Plan plan;
+    HudiSinkPlan plan;
     try {
-      plan = NativeHudiAppendSink.plan(table, type);
+      if (OptionsResolver.isAppendMode(table.getConf())) {
+        if (!ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) sink.getInput())) {
+          context.decline("Hudi native append requires insert-only input");
+          return null;
+        }
+        plan = NativeHudiAppendSink.plan(table, type);
+      } else {
+        plan = NativeHudiMorSink.plan(table, type);
+      }
     } catch (IllegalArgumentException | LinkageError failure) {
       context.decline("Hudi sink: " + failure.getMessage());
       return null;

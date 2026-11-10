@@ -12,19 +12,19 @@ import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTranslator;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.types.logical.RowType;
-import tech.streamfusion.hudi.NativeHudiAppendSink;
+import tech.streamfusion.hudi.HudiSinkPlan;
 import tech.streamfusion.operator.ArrowBatch;
 
 final class NativeHudiSinkExecNode extends ExecNodeBase<Object>
     implements StreamExecNode<Object>, SingleTransformationTranslator<Object> {
-  private final NativeHudiAppendSink.Plan plan;
+  private final HudiSinkPlan plan;
 
   NativeHudiSinkExecNode(
       ReadableConfig config,
       InputProperty input,
       RowType output,
       String description,
-      NativeHudiAppendSink.Plan plan) {
+      HudiSinkPlan plan) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-hudi-sink_1"),

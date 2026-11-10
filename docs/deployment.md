@@ -151,7 +151,9 @@ Hudi on Flink 1.18 uses `hudi-flink1.18-bundle-1.2.1`,
 `streamfusion-hudi-flink1.18` and `streamfusion-parquet-flink1.18`. The connector
 reuses the Parquet native library and adds no separate native payload. It is
 included only in Flink 1.18 release archives. Both snapshot reads and admitted
-immutable append writes reuse the separate Parquet module. See [Hudi](connectors/hudi.md).
+immutable append and admitted MOR upsert writes reuse the separate Parquet module.
+The MOR writer does not require the separate Rust MOR reader or a Hudi native DSO.
+See [Hudi](connectors/hudi.md).
 
 ## Bare metal
 

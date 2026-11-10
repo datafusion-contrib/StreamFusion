@@ -39,3 +39,13 @@ commit-time input projected away before emission. No custom native file reader o
 commit filtering kernel is introduced. End-commit windows remain stock because
 they can produce a different range contract; only the verified version-9 exact
 instant-set path is admitted.
+
+The MOR sink also keeps the released Java bucket index, row conversion control,
+log framing, key-delete blocks and coordinator. Existing Rust routing and append
+buffers retain payloads; the Java log serializer borrows those vectors and adds
+only generated metadata before Rust Parquet encoding. Hudi's real buffer pool
+and Flink's paged serializer still determine flush/preemption boundaries. A
+version-pinned serializer hook skips payload writes while reserving identical
+control pages. Original cross-bucket input order is preserved because changing
+flush boundaries changes delete/reinsert semantics. No custom index, memory-pool,
+spill or winner-selection algorithm is introduced.
