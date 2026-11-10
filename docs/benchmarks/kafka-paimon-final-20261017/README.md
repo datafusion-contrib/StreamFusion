@@ -73,9 +73,9 @@ q4 RocksDB witnesses, and 3,114 Parquet footers. All 109 nonempty native trials
 contain Rust Parquet files. Stock trials contain no Rust-written files. Paimon's
 normal Java compaction rewrites remain permitted. Native Kafka decode, SQL and
 routing keep payloads in Arrow until native Parquet encoding. The
-[evidence archive](evidence.tar.gz) retains every plan, DDL, check summary, footer
+[evidence archive](https://streamfusion.tech/benchmarks/kafka-paimon-final-20261017/evidence.tar.gz) retains every plan, DDL, check summary, footer
 inventory, table schema and snapshot; large payloads remain local. Sanitized
-[run](run.log.gz) and [Cargo](cargo.log.gz) logs accompany it. No measured trial is
+[run](https://streamfusion.tech/benchmarks/kafka-paimon-final-20261017/run.log.gz) and [Cargo](https://streamfusion.tech/benchmarks/kafka-paimon-final-20261017/cargo.log.gz) logs accompany it. No measured trial is
 profiled; one thread dump inspected q0's warmup, outside the reported samples.
 
 ## Regressions and the Iceberg comparison

@@ -77,6 +77,50 @@ repository's `.claude/wontdos/` directory.
 
 ## Maintaining the evidence
 
+### Source repository and archived run outputs
+
+Keep maintained inputs in Git: benchmark SQL and harnesses, reproduction settings,
+reports, structured trial observations, compatibility fixtures and design decisions.
+Historical execution logs, full plan/report archives and profiler dumps belong in
+durable public artifact storage. A `.gz` suffix alone does not distinguish a test
+fixture or canonical data source from a disposable generated export.
+
+The [artifact manifest](artifacts.json) records the original paths, source revision,
+byte sizes and SHA-256 hashes of 1,426 historical files migrated from `87d6edbf0`.
+Their exact bytes are retained in the
+[versioned evidence release](https://github.com/datafusion-contrib/StreamFusion/releases/tag/benchmark-evidence-2026-11-10-87d6edbf0),
+including superseded runs and failed experiments. This is an evidence archive,
+not a runtime release or a measurement of current main.
+
+From the repository root, restore a particular report's evidence before inspecting it:
+
+```sh
+python3 dev/benchmark_artifacts.py docs/benchmarks/kafka-paimon-final-20261017
+```
+
+With no path argument, the command restores all manifest entries. Downloads are
+cached under `target/benchmark-artifacts`; restored run outputs are ignored by Git.
+The tool checks the bundle and individual file hashes, rejects unsafe archive paths,
+and refuses to replace conflicting local evidence. Historical verifiers and log
+summarizers retrieve their required evidence automatically. The first retrieval
+downloads the shared archive (about 147 MiB); subsequent retrievals reuse its verified
+cache, including offline. It never executes the archived SQL or contacts its sources.
+
+MkDocs retrieves the same evidence into `target/docs-generated/evidence` and publishes
+the original download paths. Report links use the published downloads so they also
+work when reading Markdown on GitHub. It also generates the SQL inventory HTML/CSV from the
+retained compressed snapshots. A documentation build fails if required evidence is
+unavailable or corrupt; it does not publish an incomplete report. Ordinary source
+builds and runtime tests do not download historical benchmark evidence.
+
+For future migrations, publish a new versioned archive and a complete path/hash
+manifest, independently download and verify it, then update the checked-in manifest
+and retrieval consumers before removing source-tree copies. Do not overwrite an
+existing evidence release's assets. Preserve the human-readable conclusion and
+structured observations, including regressions and rejected approaches.
+
+### Recording and moving evidence
+
 - Link a new report from its topic page or this index, and link each cohort's
   human-readable result from its parent report. Global navigation contains the
   topic entry points rather than every repetition.

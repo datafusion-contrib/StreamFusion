@@ -1909,7 +1909,7 @@ the released source. Queries, per-row checks, final assertions, and timeout rema
 
 The [portable proof artifact](../benchmarks/results/paimon-terminal-coverage.json) records schema,
 configuration, snapshot IDs, all counters, replay boundary and limitations; its
-[sanitized stock trace](../benchmarks/results/paimon-terminal-coverage-stock-replay.log) includes
+[sanitized stock trace](https://streamfusion.tech/benchmarks/results/paimon-terminal-coverage-stock-replay.log) includes
 the cutoff assertion and representative duplicate terminal images. The finite replay starts at
 snapshot 1 and does not reconstruct live scheduling. Warehouse capture is diagnostic evidence,
 not an atomic backup. This proof does not establish the cause of every separate legacy timeout.

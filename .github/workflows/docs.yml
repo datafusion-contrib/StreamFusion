@@ -6,6 +6,8 @@ on:
     paths:
       - "docs/**"
       - "dev/docs/**"
+      - "dev/benchmark_artifacts.py"
+      - "dev/test_benchmark_artifacts.py"
       - "dev/flink-suite/render_sql_inventory.py"
       - "dev/flink-suite/sql_inventory.py"
       - "dev/flink-suite/test_render_sql_inventory.py"
@@ -31,6 +33,7 @@ jobs:
           python-version: "3.12"
       - run: pip install 'mkdocs>=1.6,<2' mkdocs-material
       - run: python3 -m unittest discover -s dev/flink-suite -p test_render_sql_inventory.py
+      - run: python3 -m unittest discover -s dev -p test_benchmark_artifacts.py
       - run: mkdocs build --strict
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

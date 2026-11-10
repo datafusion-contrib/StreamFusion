@@ -30,7 +30,7 @@ line, including mixed built-in and string DISTINCT shared-window SQL. In the sam
 fallback: 1.04× stock and 1.06× previous. Two warmups and three measured trials rotate the engines;
 all unfavorable earlier revisions remain in the trial artifact.
 
-See the [calendar trial artifact](../benchmarks/results/calendar-windows-2026-10-14.json) for all revisions and raw trials.
+See the [calendar trial artifact](https://streamfusion.tech/benchmarks/results/calendar-windows-2026-10-14.json) for all revisions and raw trials.
 
 ## Persistent timer writes
 
