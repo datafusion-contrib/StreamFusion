@@ -571,3 +571,5 @@ The [complete report](results/tpch-native-parquet-post-ci-20261110.json) include
 | Q20 | 1138.039 | 556.070 | 2.047× |
 | Q21 | 3735.138 | 1197.102 | 3.120× |
 | Q22 | 638.492 | 238.961 | 2.672× |
+
+The [Flink 1.18 control](results/tpch-native-parquet-post-ci-validation118-20261110.json) reran all 22 queries at SF0.01 against the same native binaries: 44 paired observations passed declared-type/result equality, positive native source work, zero native entry transposes and zero stock native work. The two source SQL option/metadata/retry tests and the native union/aggregate boundary regression also passed on Flink 1.18. These are correctness controls, not a second performance cohort.
