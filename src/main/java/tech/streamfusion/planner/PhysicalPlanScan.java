@@ -253,7 +253,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // Pass 2 inserts a row↔columnar transpose at each perimeter edge (rowwise source/sink ↔
     // island).
     // Source sharing follows over every admitted root, after per-root fallbacks are settled.
-    return insertTransitions(substituted);
+    return ByteStringInputs.prepare(insertTransitions(substituted), finalOutput);
   }
 
   private static Set<String> repeatedSourceKeys(List<RelNode> roots) {

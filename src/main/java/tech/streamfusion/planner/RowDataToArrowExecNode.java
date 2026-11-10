@@ -36,7 +36,7 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
   private final RowType rowType;
   private final boolean carryRowKind;
   private final RowType sourceType;
-  private final byte[] arrowSchema;
+  private byte[] arrowSchema;
   private final boolean preserveStringCaches;
   private boolean binaryRowKeys;
 
@@ -137,6 +137,15 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
 
   public RowDataToArrowExecNode withBinaryRowKeys() {
     binaryRowKeys = true;
+    return this;
+  }
+
+  RowDataToArrowExecNode withByteStringColumns(int[] columns) {
+    if (columns.length > 0) {
+      var schema = Schema.deserializeMessage(java.nio.ByteBuffer.wrap(arrowSchema));
+      arrowSchema = tech.streamfusion.arrow.ByteStringTransport.inputSchema(schema, columns)
+          .serializeAsMessage();
+    }
     return this;
   }
 

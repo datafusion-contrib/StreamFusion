@@ -133,6 +133,12 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
     return sourceProgram;
   }
 
+  int[] byteStringInputColumns() {
+    if (udfBinding != null && !udfBinding.isEmpty()) return new int[0];
+    return ByteStringInputs.columns(kinds, payload, childCounts, projectionRoots, conditionRoot,
+        getInput().getRowType(), getRowType());
+  }
+
   boolean preservesCollections() {
     return preserveCollections
         || (udfBinding == null || udfBinding.isEmpty())

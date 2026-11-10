@@ -197,3 +197,20 @@ keep their original slice path. Accumulator ownership, ordering and persisted st
 Criterion fixture halves time and reduces allocation request bytes by 84%; these are allocation
 requests, not copied bytes or RSS. It retains all trial data, CPU profiles and low/unique-key
 controls. The gain does not imply that a complete row-source job avoids its perimeter costs.
+
+## Carry byte-only CONCAT as Binary
+
+Verified final CONCAT projections carry Flink string bytes through Arrow Binary and append them
+directly to the final offsets/data/null buffers. This removes the requirement to decode or validate
+arbitrary bytes as UTF-8. A synchronous row exit can borrow the resulting Binary buffer using the
+existing string ownership discipline. Input segment copying and cached Java-string encoding are
+shared with the existing transpose writer; selecting this representation adds no payload copy.
+
+The [release measurements](../benchmarks/scalar-functions.md#byte-preserving-concat) show a 16-byte
+ASCII prepared Calc at 6.549 ms versus 8.972 ms for the existing Utf8 path and 33.640 ms for Flink.
+Nullable input is effectively tied with the existing native path. Complete row-source jobs are
+also effectively tied with the prior boundary control (0.279 versus 0.283 seconds); the prepared
+gain must not be presented as an equivalent whole-job improvement.
+
+Admission is limited to [verified final CONCAT consumers](../operators/calc-filter.md#byte-preserving-concat-input).
+Text functions, key/state consumers and native sinks require their own representation contracts.
