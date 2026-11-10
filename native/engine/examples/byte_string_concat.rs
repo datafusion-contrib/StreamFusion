@@ -24,7 +24,9 @@ fn checksum(batch: &RecordBatch) -> i64 {
         .iter()
         .map(|value| {
             value.map_or(-1, |v| {
-                (v.len() + v[0] as usize + v[v.len() - 1] as usize) as i64
+                (v.len()
+                    + v.first().copied().unwrap_or(0) as usize
+                    + v.last().copied().unwrap_or(0) as usize) as i64
             })
         })
         .sum()
@@ -36,6 +38,7 @@ fn main() {
     let unicode = args.get(2).is_some_and(|s| s == "true");
     let nullable = args.get(3).is_some_and(|s| s == "true");
     let invalid_every: usize = args.get(4).map_or(0, |s| s.parse().unwrap());
+    let function = args.get(5).map_or("concat", String::as_str);
     let rows = 4096;
     let loops = 256;
     let warmups = 12;
@@ -55,16 +58,18 @@ fn main() {
     streamfusion_bridge::capture_jvm_raw(vm.get_java_vm_pointer());
     let mut env = vm.attach_current_thread().unwrap();
     let class = "tech/streamfusion/planner/ByteStringConcatBenchmarkFunctions";
+    let java_function = env.new_string(function).unwrap();
     env.call_static_method(
         class,
         "prepare",
-        "(IZZII)V",
+        "(IZZIILjava/lang/String;)V",
         &[
             JValue::Int(width as i32),
             JValue::Bool(unicode.into()),
             JValue::Bool(nullable.into()),
             JValue::Int(invalid_every as i32),
             JValue::Int(rows as i32),
+            JValue::Object(&java_function),
         ],
     )
     .unwrap_or_else(|error| {
@@ -93,14 +98,28 @@ fn main() {
     let mut calcs: Vec<_> = inputs
         .iter()
         .map(|_| {
-            CalcProgram::new(
-                vec![6, 0, 3],
-                vec![93, 0, 0],
-                vec![2, 0, 0],
-                vec![],
-                vec![],
-                vec![Some("!".into())],
-            )
+            let (kinds, payload, children, strings) = match function {
+                "concat" => (
+                    vec![6, 0, 3],
+                    vec![93, 0, 0],
+                    vec![2, 0, 0],
+                    vec![Some("!".into())],
+                ),
+                "concat_ws" => (
+                    vec![6, 3, 0, 3],
+                    vec![94, 0, 0, 1],
+                    vec![3, 0, 0, 0],
+                    vec![Some(",".into()), Some("!".into())],
+                ),
+                "concat_ws_separator" => (
+                    vec![6, 0, 3, 3],
+                    vec![94, 0, 0, 1],
+                    vec![3, 0, 0, 0],
+                    vec![Some("x".into()), Some("!".into())],
+                ),
+                _ => panic!("Unknown byte-string benchmark: {function}"),
+            };
+            CalcProgram::new(kinds, payload, children, vec![], vec![], strings)
         })
         .collect();
     let batches: Vec<_> = inputs
@@ -150,7 +169,7 @@ fn main() {
                 )
             };
             assert_eq!(digest, expected);
-            println!("byte_concat,{width},{unicode},{nullable},{invalid_every},{trial},{},{name},{nanos}", trial < warmups);
+            println!("byte_{function},{width},{unicode},{nullable},{invalid_every},{trial},{},{name},{nanos}", trial < warmups);
         }
     }
     env.call_static_method(class, "close", "()V", &[]).unwrap();

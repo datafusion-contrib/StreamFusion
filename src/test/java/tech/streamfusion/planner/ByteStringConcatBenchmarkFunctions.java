@@ -24,12 +24,32 @@ public final class ByteStringConcatBenchmarkFunctions {
 
   public static void prepare(
       int width, boolean unicode, boolean nullable, int invalidEvery, int count) throws Exception {
+    prepare(width, unicode, nullable, invalidEvery, count, "concat");
+  }
+
+  public static void prepare(
+      int width, boolean unicode, boolean nullable, int invalidEvery, int count, String function)
+      throws Exception {
     var loader = ByteStringConcatBenchmarkFunctions.class.getClassLoader();
     Thread.currentThread().setContextClassLoader(loader);
     var table = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
     table.executeSql("CREATE TABLE src(s STRING) WITH ('connector'='datagen')");
+    String expression;
+    switch (function) {
+      case "concat":
+        expression = "CONCAT(s, '!')";
+        break;
+      case "concat_ws":
+        expression = "CONCAT_WS(',', s, '!')";
+        break;
+      case "concat_ws_separator":
+        expression = "CONCAT_WS(s, 'x', '!')";
+        break;
+      default:
+        throw new IllegalArgumentException("Unknown byte-string benchmark: " + function);
+    }
     var operation =
-        ((TableImpl) table.sqlQuery("SELECT CONCAT(s, '!') FROM src")).getQueryOperation();
+        ((TableImpl) table.sqlQuery("SELECT " + expression + " FROM src")).getQueryOperation();
     var project = (Project) ((PlannerQueryOperation) operation).getCalciteTree();
     var type = new VarCharType(VarCharType.MAX_LENGTH);
     stock =
@@ -69,7 +89,8 @@ public final class ByteStringConcatBenchmarkFunctions {
         else {
           var value = (BinaryStringData) result.getString(0);
           int length = value.getSizeInBytes();
-          sum += length + (value.byteAt(0) & 255) + (value.byteAt(length - 1) & 255);
+          sum += length;
+          if (length > 0) sum += (value.byteAt(0) & 255) + (value.byteAt(length - 1) & 255);
         }
       }
     }

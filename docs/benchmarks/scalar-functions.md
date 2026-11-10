@@ -11269,6 +11269,31 @@ SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
   -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
-The [coverage contract](../operators/calc-filter.md#byte-preserving-concat-input) lists the limited
+The [coverage contract](../operators/calc-filter.md#byte-preserving-string-input) lists the limited
 plan shape admitted by these measurements; broader representation work remains in
 [#622](https://github.com/datafusion-contrib/StreamFusion/issues/622).
+
+### Byte-preserving CONCAT_WS
+
+The same prepared-input fixture also compares `CONCAT_WS(',', s, '!')` and a runtime separator
+`CONCAT_WS(s, 'x', '!')`. Measurements on the same host/toolchain use 4096 rows, 256 iterations,
+12 warmups and nine retained trials, with rotating engine order and matching output checksums.
+The existing Utf8 implementation is unchanged and runs in the same release binary. Times are
+median milliseconds (min-max); these exclude perimeter transposes and do not establish whole-job
+throughput. Both released Flink lines also pass raw-byte SQL and native-execution regression cases.
+
+| CONCAT_WS input | Stock Flink | Existing Utf8 | Binary |
+|---|---:|---:|---:|
+| 16-byte ASCII | 37.161 (36.942-37.867) | 16.486 (15.355-16.839) | 12.068 (11.869-13.077) |
+| 16 three-byte characters | 42.157 (40.786-47.199) | 40.005 (39.559-41.089) | 13.520 (13.028-14.259) |
+| 16-byte ASCII, every seventh value NULL | 39.416 (38.966-40.679) | 15.658 (15.194-16.146) | 12.960 (12.747-14.049) |
+| 16 bytes, first byte FF in every row | 37.272 (36.668-37.702) | not applicable | 12.118 (12.085-12.965) |
+| 16-byte runtime separator, every seventh separator NULL | 35.641 (35.034-37.462) | 15.376 (15.195-16.228) | 13.728 (13.313-13.972) |
+| 64-byte ASCII | 42.808 (42.203-48.289) | 16.163 (15.575-16.937) | 12.156 (11.759-13.153) |
+
+Append `concat_ws` or `concat_ws_separator` as the example's optional fifth argument; the default
+remains `concat`. For example, with the released Flink test classpath configured as above:
+
+```sh
+cargo run -p streamfusion --release --no-default-features --example byte_string_concat -- 16 false true 0 concat_ws
+```

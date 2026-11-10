@@ -51,6 +51,21 @@ class FlinkByteStringConcatSqlHarnessTest {
   @ParameterizedTest
   @ValueSource(
       strings = {
+        "SELECT CONCAT_WS(',', s, t) AS v FROM src",
+        "SELECT CONCAT_WS(s, t, '', CAST(NULL AS STRING), '!') AS v FROM src",
+        "SELECT CONCAT_WS(s) AS v FROM src",
+        "SELECT CONCAT_WS(s, CAST(NULL AS STRING), CAST(NULL AS STRING)) AS v FROM src",
+        "SELECT CONCAT(CONCAT_WS(s, t, ''), '!') AS v FROM src WHERE id >= 2",
+        "SELECT CONCAT_WS(CONCAT(s, '?'), CONCAT_WS('!', t, s), '') AS v FROM src",
+        "SELECT CONCAT_WS(s, t) AS v FROM src WHERE id = -1"
+      })
+  void concatWsPreservesSeparatorsAndSkipsOnlyNullValues(String sql) throws Exception {
+    assertEquals(run(sql, false), run(sql, true));
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
         "SELECT CONCAT(s, '!') FROM src WHERE s = 'a'",
         "SELECT s, CONCAT(s, '!') FROM src",
         "SELECT LOWER(CONCAT(s, '!')) FROM src",

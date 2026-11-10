@@ -58,6 +58,7 @@ mod binary_boundary;
 mod binary_strings;
 mod boolean_string;
 pub(crate) mod byte_concat;
+pub(crate) mod byte_concat_ws;
 mod cardinality;
 mod charset;
 mod chr;

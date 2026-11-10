@@ -45,7 +45,7 @@ final class ByteStringInputs {
       int root = projections[i];
       boolean bytes =
           kinds[root] == 6
-              && payload[root] == 93
+              && (payload[root] == 93 || payload[root] == 94)
               && SqlTypeFamily.CHARACTER.contains(output.getFieldList().get(i).getType());
       if (visit(root, bytes, kinds, payload, children, input) < 0) return new int[0];
       concat |= bytes;
@@ -77,7 +77,7 @@ final class ByteStringInputs {
           ? -1
           : node + 1;
     }
-    boolean concat = kinds[node] == 6 && payload[node] == 93;
+    boolean concat = kinds[node] == 6 && (payload[node] == 93 || payload[node] == 94);
     if (concat && !acceptsBytes) return -1;
     switch (kinds[node]) {
       case 1:

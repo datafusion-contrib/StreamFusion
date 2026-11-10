@@ -212,5 +212,9 @@ Nullable input is effectively tied with the existing native path. Complete row-s
 also effectively tied with the prior boundary control (0.279 versus 0.283 seconds); the prepared
 gain must not be presented as an equivalent whole-job improvement.
 
-Admission is limited to [verified final CONCAT consumers](../operators/calc-filter.md#byte-preserving-concat-input).
+CONCAT_WS uses the same physical contract, writing its byte separators and non-NULL values into
+one final Binary buffer. Non-null inputs preallocate the exact output size; nullable inputs avoid
+reserving space for potentially masked payloads. The existing Utf8 kernel remains unchanged.
+
+Admission is limited to [verified final concatenation consumers](../operators/calc-filter.md#byte-preserving-string-input).
 Text functions, key/state consumers and native sinks require their own representation contracts.
