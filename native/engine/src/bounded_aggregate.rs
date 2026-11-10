@@ -1,5 +1,5 @@
 use crate::bounded_exec::BoundedInput;
-use crate::bounded_task::{copyable, BoundedTask};
+use crate::bounded_task::{copyable, BoundedTask, ExpressionWorkspace};
 use crate::*;
 use arrow::datatypes::TimeUnit;
 use datafusion::common::config::ConfigOptions;
@@ -20,12 +20,35 @@ pub(crate) struct AggregatePlan {
     aggregate: Plan,
     scratch_per_row: usize,
     filtered: bool,
+    grouped: bool,
 }
 
 impl AggregatePlan {
     pub(crate) fn try_new(
         schema: SchemaRef,
         declared: SchemaRef,
+        kinds: &[i32],
+        columns: &[i32],
+        filters: &[i32],
+        merge: bool,
+        final_output: bool,
+    ) -> Result<Self, DataFusionError> {
+        Self::try_new_grouped(
+            schema,
+            declared,
+            &[],
+            kinds,
+            columns,
+            filters,
+            merge,
+            final_output,
+        )
+    }
+
+    pub(crate) fn try_new_grouped(
+        schema: SchemaRef,
+        declared: SchemaRef,
+        keys: &[usize],
         kinds: &[i32],
         columns: &[i32],
         filters: &[i32],
@@ -53,7 +76,25 @@ impl AggregatePlan {
         let mut aggregates = Vec::new();
         let mut predicates = Vec::new();
         let mut outputs: Vec<(Arc<dyn PhysicalExpr>, String)> = Vec::new();
-        let mut cursor = 0;
+        let mut groups = Vec::with_capacity(keys.len());
+        let mut cursor = keys.len();
+        for (index, &column) in keys.iter().enumerate() {
+            let key = input_column(&schema, column)?;
+            let data_type = key.data_type(&schema)?;
+            if !grouping_key(&data_type)
+                || declared
+                    .fields()
+                    .get(index)
+                    .is_none_or(|field| *field.data_type() != data_type)
+            {
+                return datafusion::common::exec_err!("unverified bounded grouping key");
+            }
+            groups.push((key, format!("group{index}")));
+            outputs.push((
+                Arc::new(Column::new(&format!("group{index}"), index)),
+                String::new(),
+            ));
+        }
         // Each output projection records the source aggregate indices and its host result type.
         let mut results = Vec::new();
         for ((&kind, &column), &filter) in kinds.iter().zip(columns).zip(filters) {
@@ -70,10 +111,13 @@ impl AggregatePlan {
             };
             let value_type = value.data_type(&schema)?;
             if kind != 1
+                && kind != 6
                 && !(if kind == 2 || kind == 3 {
                     fixed_extremum(&value_type)
                 } else {
                     signed_integer(&value_type)
+                        || matches!(kind, 0 | 4 | 5)
+                            && matches!(value_type, DataType::Decimal128(1..=38, _))
                 })
             {
                 return datafusion::common::exec_err!("unverified bounded aggregate value type");
@@ -102,6 +146,22 @@ impl AggregatePlan {
             };
             let first = aggregates.len();
             match kind {
+                0 if matches!(value_type, DataType::Decimal128(_, _)) => append(
+                    &mut aggregates,
+                    &mut predicates,
+                    decimal_sum(value_type.clone()),
+                    value,
+                    &schema,
+                    predicate,
+                )?,
+                5 if matches!(value_type, DataType::Decimal128(_, _)) => append(
+                    &mut aggregates,
+                    &mut predicates,
+                    decimal_sum_zero(value_type.clone(), merge),
+                    value,
+                    &schema,
+                    predicate,
+                )?,
                 0 | 5 => append(
                     &mut aggregates,
                     &mut predicates,
@@ -142,6 +202,26 @@ impl AggregatePlan {
                     &schema,
                     predicate,
                 )?,
+                4 if matches!(value_type, DataType::Decimal128(_, _)) => {
+                    let mut values = vec![value];
+                    if merge {
+                        let count = input_column(&schema, column as usize + 1)?;
+                        if count.data_type(&schema)? != DataType::Int64 {
+                            return datafusion::common::exec_err!(
+                                "decimal AVG count state is not BIGINT"
+                            );
+                        }
+                        values.push(count);
+                    }
+                    append_values(
+                        &mut aggregates,
+                        &mut predicates,
+                        decimal_average(value_type.clone(), merge, !final_output),
+                        values,
+                        &schema,
+                        predicate,
+                    )?;
+                }
                 4 => {
                     append(
                         &mut aggregates,
@@ -179,15 +259,28 @@ impl AggregatePlan {
                         )?;
                     }
                 }
+                6 if final_output && !merge && keys.is_empty() => append(
+                    &mut aggregates,
+                    &mut predicates,
+                    datafusion::functions_aggregate::first_last::first_value_udaf(),
+                    value,
+                    &schema,
+                    predicate,
+                )?,
                 _ => return datafusion::common::exec_err!("unverified bounded aggregate kind"),
             }
-            results.push((kind, first, field.data_type().clone()));
+            results.push((
+                kind,
+                first + keys.len(),
+                field.data_type().clone(),
+                kind == 4 && matches!(value_type, DataType::Decimal128(_, _)),
+            ));
             cursor += if kind == 4 && !final_output { 2 } else { 1 };
         }
         if cursor != declared.fields().len() {
             return datafusion::common::exec_err!("bounded aggregate output width mismatch");
         }
-        let has_input = if final_output {
+        let has_input = if final_output || !keys.is_empty() {
             None
         } else {
             let index = aggregates.len();
@@ -215,29 +308,54 @@ impl AggregatePlan {
         // evaluated cast/literal arrays or per-call FILTER copies. Reserve their bounded workspace
         // before polling; primitive arguments need at most two eight-byte arrays plus validity and
         // selection buffers per function. Filtered variable-width payloads are budgeted separately.
-        let scratch_per_row = (aggregates.len() + 1).checked_mul(32).ok_or_else(|| {
-            DataFusionError::ResourcesExhausted("aggregate workspace size overflow".into())
-        })?;
-        let filtered = predicates.iter().any(Option::is_some);
+        let scratch_per_row = (aggregates.len() + keys.len() + 1)
+            .checked_mul(32)
+            .ok_or_else(|| {
+                DataFusionError::ResourcesExhausted("aggregate workspace size overflow".into())
+            })?;
+        let filtered = predicates.iter().any(Option::is_some)
+            || keys
+                .iter()
+                .any(|&key| matches!(schema.field(key).data_type(), DataType::Utf8));
         let aggregate: Plan = Arc::new(AggregateExec::try_new(
             AggregateMode::Single,
-            PhysicalGroupBy::new_single(vec![]),
+            PhysicalGroupBy::new_single(groups),
             aggregates,
             predicates,
             input.execution_plan()?,
             schema,
         )?);
         let aggregate_schema = aggregate.schema();
-        for (kind, index, target) in results {
+        for (kind, index, target, decimal_avg) in results {
             let value = input_column(&aggregate_schema, index)?;
             match kind {
                 0 => outputs.push((narrow(value, &aggregate_schema, target)?, String::new())),
+                5 if matches!(target, DataType::Decimal128(_, _)) => {
+                    outputs.push((value, String::new()))
+                }
                 5 => outputs.push((
                     narrow(zero_if_null(value)?, &aggregate_schema, target)?,
                     String::new(),
                 )),
                 1 => outputs.push((zero_if_null(value)?, String::new())),
-                2 | 3 => outputs.push((value, String::new())),
+                2 | 3 | 6 => outputs.push((value, String::new())),
+                4 if decimal_avg => {
+                    if final_output {
+                        outputs.push((value, String::new()));
+                    } else {
+                        for name in ["sum", "count"] {
+                            outputs.push((
+                                Arc::new(ScalarFunctionExpr::try_new(
+                                    datafusion::functions::core::get_field(),
+                                    vec![value.clone(), lit(ScalarValue::Utf8(Some(name.into())))],
+                                    &aggregate_schema,
+                                    Arc::new(ConfigOptions::default()),
+                                )?),
+                                String::new(),
+                            ));
+                        }
+                    }
+                }
                 4 => {
                     let count = zero_if_null(input_column(&aggregate_schema, index + 1)?)?;
                     if final_output {
@@ -286,18 +404,204 @@ impl AggregatePlan {
             aggregate,
             scratch_per_row,
             filtered,
+            grouped: !keys.is_empty(),
         })
     }
 
     pub(crate) fn execute(self, context: Arc<TaskContext>) -> Result<BoundedTask, DataFusionError> {
-        // The admitted global SUM/COUNT/MIN/MAX accumulators retain only scalar values.
+        // DataFusion grouping keys and primitive accumulators own their values rather than retaining
+        // borrowed Arrow inputs. Output expression workspace also covers every grouped result batch.
+        let output_rows = if self.grouped {
+            context.session_config().batch_size()
+        } else {
+            1
+        };
         BoundedTask::try_new(
             self.input,
             self.output,
             self.aggregate,
             context,
-            Some((self.scratch_per_row, self.filtered)),
+            Some(ExpressionWorkspace {
+                bytes_per_row: self.scratch_per_row,
+                variable_input: self.filtered,
+                output_rows,
+            }),
         )
+    }
+}
+
+fn decimal_sum(input_type: DataType) -> Arc<AggregateUDF> {
+    let DataType::Decimal128(_, scale) = input_type else {
+        unreachable!()
+    };
+    let result_type = DataType::Decimal128(38, scale);
+    Arc::new(datafusion::logical_expr::create_udaf(
+        "flink_decimal_sum",
+        vec![input_type],
+        Arc::new(result_type.clone()),
+        datafusion::logical_expr::Volatility::Immutable,
+        Arc::new(move |_| {
+            Ok(crate::aggregates::WindowAggregate::DecimalSum { scale }.create_accumulator())
+        }),
+        Arc::new(vec![result_type]),
+    ))
+}
+
+fn grouping_key(data_type: &DataType) -> bool {
+    signed_integer(data_type)
+        || matches!(
+            data_type,
+            DataType::Utf8 | DataType::Boolean | DataType::Decimal128(1..=38, _) | DataType::Date32
+        )
+}
+
+fn decimal_average(input_type: DataType, merge_inputs: bool, partial: bool) -> Arc<AggregateUDF> {
+    let DataType::Decimal128(_, scale) = input_type else {
+        unreachable!()
+    };
+    let states = vec![DataType::Decimal128(38, scale), DataType::Int64];
+    let fields: arrow::datatypes::Fields = vec![
+        Field::new("sum", states[0].clone(), true),
+        Field::new("count", states[1].clone(), true),
+    ]
+    .into();
+    let result = if partial {
+        DataType::Struct(fields.clone())
+    } else {
+        DataType::Decimal128(38, scale.max(6))
+    };
+    let inputs = if merge_inputs {
+        states.clone()
+    } else {
+        vec![input_type]
+    };
+    Arc::new(datafusion::logical_expr::create_udaf(
+        "flink_decimal_average",
+        inputs,
+        Arc::new(result),
+        datafusion::logical_expr::Volatility::Immutable,
+        Arc::new(move |_| {
+            Ok(Box::new(DecimalAverage {
+                inner: crate::aggregates::WindowAggregate::DecimalAvg {
+                    scale,
+                    retracting: false,
+                }
+                .create_accumulator(),
+                merge_inputs,
+                partial,
+                fields: fields.clone(),
+            }))
+        }),
+        Arc::new(states),
+    ))
+}
+
+/// Only the evaluation shape changes: the existing host-compatible accumulator owns all arithmetic.
+#[derive(Debug)]
+struct DecimalAverage {
+    inner: Box<dyn datafusion::logical_expr::Accumulator>,
+    merge_inputs: bool,
+    partial: bool,
+    fields: arrow::datatypes::Fields,
+}
+
+impl datafusion::logical_expr::Accumulator for DecimalAverage {
+    fn update_batch(&mut self, values: &[ArrayRef]) -> Result<(), DataFusionError> {
+        if self.merge_inputs {
+            self.inner.merge_batch(values)
+        } else {
+            self.inner.update_batch(values)
+        }
+    }
+    fn merge_batch(&mut self, states: &[ArrayRef]) -> Result<(), DataFusionError> {
+        self.inner.merge_batch(states)
+    }
+    fn state(&mut self) -> Result<Vec<ScalarValue>, DataFusionError> {
+        self.inner.state()
+    }
+    fn evaluate(&mut self) -> Result<ScalarValue, DataFusionError> {
+        if !self.partial {
+            return self.inner.evaluate();
+        }
+        let mut states = self.inner.state()?;
+        // Flink's local AVG buffer starts at numeric zero even for an all-NULL group.
+        if matches!(states[1], ScalarValue::Int64(Some(0))) {
+            if let ScalarValue::Decimal128(None, precision, scale) = states[0] {
+                states[0] = ScalarValue::Decimal128(Some(0), precision, scale);
+            }
+        }
+        let arrays = states
+            .into_iter()
+            .map(|value| value.to_array())
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(ScalarValue::Struct(Arc::new(
+            arrow::array::StructArray::try_new(self.fields.clone(), arrays, None)?,
+        )))
+    }
+    fn size(&self) -> usize {
+        std::mem::size_of::<Self>() + self.inner.size()
+    }
+}
+
+fn decimal_sum_zero(input_type: DataType, merge_inputs: bool) -> Arc<AggregateUDF> {
+    let DataType::Decimal128(_, scale) = input_type else {
+        unreachable!()
+    };
+    let result = DataType::Decimal128(38, scale);
+    Arc::new(datafusion::logical_expr::create_udaf(
+        "flink_decimal_sum_zero",
+        vec![input_type],
+        Arc::new(result.clone()),
+        datafusion::logical_expr::Volatility::Immutable,
+        Arc::new(move |_| {
+            Ok(Box::new(DecimalSumZero {
+                inner: crate::aggregates::WindowAggregate::DecimalAvg {
+                    scale,
+                    retracting: false,
+                }
+                .create_accumulator(),
+                merge_inputs,
+            }))
+        }),
+        Arc::new(vec![result, DataType::Int64]),
+    ))
+}
+
+/// SUM0 shares AVG's zero initial value and sticky overflow; its host merge also propagates NULL.
+#[derive(Debug)]
+struct DecimalSumZero {
+    inner: Box<dyn datafusion::logical_expr::Accumulator>,
+    merge_inputs: bool,
+}
+
+impl datafusion::logical_expr::Accumulator for DecimalSumZero {
+    fn update_batch(&mut self, values: &[ArrayRef]) -> Result<(), DataFusionError> {
+        if self.merge_inputs {
+            self.inner.merge_batch(&[
+                values[0].clone(),
+                Arc::new(Int64Array::from_value(1, values[0].len())),
+            ])
+        } else {
+            self.inner.update_batch(values)
+        }
+    }
+    fn merge_batch(&mut self, states: &[ArrayRef]) -> Result<(), DataFusionError> {
+        self.inner.merge_batch(states)
+    }
+    fn state(&mut self) -> Result<Vec<ScalarValue>, DataFusionError> {
+        self.inner.state()
+    }
+    fn evaluate(&mut self) -> Result<ScalarValue, DataFusionError> {
+        let states = self.inner.state()?;
+        Ok(match (&states[0], &states[1]) {
+            (ScalarValue::Decimal128(None, precision, scale), ScalarValue::Int64(Some(0))) => {
+                ScalarValue::Decimal128(Some(0), *precision, *scale)
+            }
+            _ => states[0].clone(),
+        })
+    }
+    fn size(&self) -> usize {
+        std::mem::size_of::<Self>() + self.inner.size()
     }
 }
 
@@ -399,7 +703,25 @@ fn append(
     schema: &SchemaRef,
     predicate: Option<Arc<dyn PhysicalExpr>>,
 ) -> Result<(), DataFusionError> {
-    let aggregate = AggregateExprBuilder::new(function, vec![value])
+    append_values(
+        aggregates,
+        predicates,
+        function,
+        vec![value],
+        schema,
+        predicate,
+    )
+}
+
+fn append_values(
+    aggregates: &mut Vec<Arc<AggregateFunctionExpr>>,
+    predicates: &mut Vec<Option<Arc<dyn PhysicalExpr>>>,
+    function: Arc<AggregateUDF>,
+    values: Vec<Arc<dyn PhysicalExpr>>,
+    schema: &SchemaRef,
+    predicate: Option<Arc<dyn PhysicalExpr>>,
+) -> Result<(), DataFusionError> {
+    let aggregate = AggregateExprBuilder::new(function, values)
         .schema(schema.clone())
         .alias(format!("aggregate{}", aggregates.len()))
         .build()?;
@@ -453,20 +775,17 @@ pub extern "system" fn Java_tech_streamfusion_Native_supportsBoundedAggregate<'l
     final_output: jboolean,
 ) -> jboolean {
     jni_guard(env, move |env| {
-        let schema = import_schema(schema_address);
-        let output = import_schema(output_address);
-        let kinds = read_i32_array(env, &kinds);
-        let columns = read_i32_array(env, &columns);
-        let filters = read_i32_array(env, &filters);
         u8::from(
-            AggregatePlan::try_new(
-                schema,
-                output,
-                &kinds,
-                &columns,
-                &filters,
-                merge != 0,
-                final_output != 0,
+            read_aggregate_plan(
+                env,
+                schema_address,
+                output_address,
+                None,
+                kinds,
+                columns,
+                filters,
+                merge,
+                final_output,
             )
             .is_ok(),
         )
@@ -489,48 +808,171 @@ pub extern "system" fn Java_tech_streamfusion_Native_createBoundedAggregate<'loc
     task_name: JString<'local>,
 ) -> jlong {
     jni_guard(env, move |env| {
-        let schema = import_schema(schema_address);
-        let output = import_schema(output_address);
-        let kinds = read_i32_array(env, &kinds);
-        let columns = read_i32_array(env, &columns);
-        let filters = read_i32_array(env, &filters);
-        let directories = read_string_array(env, &directories);
-        let task_name: String = env
-            .get_string(&task_name)
-            .expect("aggregate task name")
-            .into();
-        let result = (|| {
-            if directories.is_empty() || batch_rows <= 0 {
-                return datafusion::common::exec_err!(
-                    "bounded aggregate needs host spill directories and a positive batch size"
-                );
-            }
-            let context = crate::bounded_task::bounded_context(
-                directories,
-                &task_name,
-                batch_rows as usize,
-                64 * 1024,
-            )?;
-            let _runtime = runtime().enter();
-            AggregatePlan::try_new(
-                schema,
-                output,
-                &kinds,
-                &columns,
-                &filters,
-                merge != 0,
-                final_output != 0,
-            )?
-            .execute(context)
-        })();
-        match result {
-            Ok(task) => into_handle(task),
-            Err(error) => {
-                crate::bounded_task::throw_error(env, error);
-                0
-            }
-        }
+        create_aggregate(
+            env,
+            schema_address,
+            output_address,
+            None,
+            kinds,
+            columns,
+            filters,
+            merge,
+            final_output,
+            directories,
+            batch_rows,
+            task_name,
+        )
     })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_supportsBoundedGroupedAggregate<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    schema_address: jlong,
+    output_address: jlong,
+    keys: JIntArray<'local>,
+    kinds: JIntArray<'local>,
+    columns: JIntArray<'local>,
+    filters: JIntArray<'local>,
+    merge: jboolean,
+    final_output: jboolean,
+) -> jboolean {
+    jni_guard(env, move |env| {
+        u8::from(
+            read_aggregate_plan(
+                env,
+                schema_address,
+                output_address,
+                Some(keys),
+                kinds,
+                columns,
+                filters,
+                merge,
+                final_output,
+            )
+            .is_ok(),
+        )
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_createBoundedGroupedAggregate<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    schema_address: jlong,
+    output_address: jlong,
+    keys: JIntArray<'local>,
+    kinds: JIntArray<'local>,
+    columns: JIntArray<'local>,
+    filters: JIntArray<'local>,
+    merge: jboolean,
+    final_output: jboolean,
+    directories: JObjectArray<'local>,
+    batch_rows: jint,
+    task_name: JString<'local>,
+) -> jlong {
+    jni_guard(env, move |env| {
+        create_aggregate(
+            env,
+            schema_address,
+            output_address,
+            Some(keys),
+            kinds,
+            columns,
+            filters,
+            merge,
+            final_output,
+            directories,
+            batch_rows,
+            task_name,
+        )
+    })
+}
+
+fn read_aggregate_plan<'local>(
+    env: &mut JNIEnv<'local>,
+    schema_address: jlong,
+    output_address: jlong,
+    keys: Option<JIntArray<'local>>,
+    kinds: JIntArray<'local>,
+    columns: JIntArray<'local>,
+    filters: JIntArray<'local>,
+    merge: jboolean,
+    final_output: jboolean,
+) -> Result<AggregatePlan, DataFusionError> {
+    let schema = import_schema(schema_address);
+    let output = import_schema(output_address);
+    let keys = keys
+        .map(|keys| read_columns(env, &keys))
+        .unwrap_or_default();
+    let kinds = read_i32_array(env, &kinds);
+    let columns = read_i32_array(env, &columns);
+    let filters = read_i32_array(env, &filters);
+    AggregatePlan::try_new_grouped(
+        schema,
+        output,
+        &keys,
+        &kinds,
+        &columns,
+        &filters,
+        merge != 0,
+        final_output != 0,
+    )
+}
+
+fn create_aggregate<'local>(
+    env: &mut JNIEnv<'local>,
+    schema_address: jlong,
+    output_address: jlong,
+    keys: Option<JIntArray<'local>>,
+    kinds: JIntArray<'local>,
+    columns: JIntArray<'local>,
+    filters: JIntArray<'local>,
+    merge: jboolean,
+    final_output: jboolean,
+    directories: JObjectArray<'local>,
+    batch_rows: jint,
+    task_name: JString<'local>,
+) -> jlong {
+    let directories = read_string_array(env, &directories);
+    let task_name: String = env
+        .get_string(&task_name)
+        .expect("aggregate task name")
+        .into();
+    let result = (|| {
+        let plan = read_aggregate_plan(
+            env,
+            schema_address,
+            output_address,
+            keys,
+            kinds,
+            columns,
+            filters,
+            merge,
+            final_output,
+        )?;
+        if directories.is_empty() || batch_rows <= 0 {
+            return datafusion::common::exec_err!(
+                "bounded aggregate needs host spill directories and a positive batch size"
+            );
+        }
+        let context = crate::bounded_task::bounded_context(
+            directories,
+            &task_name,
+            batch_rows as usize,
+            64 * 1024,
+        )?;
+        let _runtime = runtime().enter();
+        plan.execute(context)
+    })();
+    match result {
+        Ok(task) => into_handle(task),
+        Err(error) => {
+            crate::bounded_task::throw_error(env, error);
+            0
+        }
+    }
 }
 
 #[cfg(test)]
@@ -601,14 +1043,31 @@ mod tests {
     }
 
     async fn run_plan(plan: AggregatePlan, batches: Vec<RecordBatch>) -> Vec<Vec<ScalarValue>> {
-        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(2 * 1024 * 1024));
+        run_plan_with_limit(plan, batches, 2 * 1024 * 1024, 8192).await
+    }
+
+    async fn run_plan_with_limit(
+        plan: AggregatePlan,
+        batches: Vec<RecordBatch>,
+        limit: usize,
+        batch_rows: usize,
+    ) -> Vec<Vec<ScalarValue>> {
+        use datafusion::execution::config::SessionConfig;
+        use datafusion::execution::disk_manager::{DiskManagerBuilder, DiskManagerMode};
+        let directory = tempfile::tempdir().unwrap();
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(limit));
         let context = Arc::new(
-            TaskContext::default().with_runtime(
-                RuntimeEnvBuilder::new()
-                    .with_memory_pool(pool.clone())
-                    .build_arc()
-                    .unwrap(),
-            ),
+            TaskContext::default()
+                .with_runtime(
+                    RuntimeEnvBuilder::new()
+                        .with_memory_pool(pool.clone())
+                        .with_disk_manager_builder(DiskManagerBuilder::default().with_mode(
+                            DiskManagerMode::Directories(vec![directory.path().to_owned()]),
+                        ))
+                        .build_arc()
+                        .unwrap(),
+                )
+                .with_session_config(SessionConfig::new().with_batch_size(batch_rows)),
         );
         let mut task = plan.execute(context).unwrap();
         for batch in batches {
@@ -646,6 +1105,288 @@ mod tests {
         drop(task);
         assert_eq!(pool.reserved(), 0);
         values
+    }
+
+    #[test]
+    fn bounded_decimal_average_preserves_local_states_rounding_and_sticky_overflow() {
+        runtime().block_on(async {
+            let input = Arc::new(Schema::new(vec![Field::new(
+                "v",
+                DataType::Decimal128(38, 2),
+                true,
+            )]));
+            let partial = Arc::new(Schema::new(vec![
+                Field::new("sum", DataType::Decimal128(38, 2), true),
+                Field::new("count", DataType::Int64, true),
+            ]));
+            let output = Arc::new(Schema::new(vec![Field::new(
+                "avg",
+                DataType::Decimal128(38, 6),
+                true,
+            )]));
+            for (values, expected) in [
+                (vec![None, None], None),
+                (vec![Some(100), None, Some(101), Some(101)], Some(1_006_667)),
+                (vec![Some(-100), Some(-101), Some(-101)], Some(-1_006_667)),
+                (vec![Some(10_i128.pow(38) - 1), Some(1), Some(2)], None),
+            ] {
+                let batch = RecordBatch::try_new(
+                    input.clone(),
+                    vec![Arc::new(
+                        Decimal128Array::from(values)
+                            .with_precision_and_scale(38, 2)
+                            .unwrap(),
+                    )],
+                )
+                .unwrap();
+                let single = AggregatePlan::try_new(
+                    input.clone(),
+                    output.clone(),
+                    &[4],
+                    &[0],
+                    &[-1],
+                    false,
+                    true,
+                )
+                .unwrap();
+                let expected = vec![vec![ScalarValue::Decimal128(expected, 38, 6)]];
+                assert_eq!(run_plan(single, vec![batch.clone()]).await, expected);
+                let local = AggregatePlan::try_new(
+                    input.clone(),
+                    partial.clone(),
+                    &[4],
+                    &[0],
+                    &[-1],
+                    false,
+                    false,
+                )
+                .unwrap();
+                let states = run_plan(local, vec![batch]).await;
+                let state = &states[0];
+                let batch = RecordBatch::try_new(
+                    partial.clone(),
+                    state.iter().map(|s| s.to_array().unwrap()).collect(),
+                )
+                .unwrap();
+                let final_plan = AggregatePlan::try_new(
+                    partial.clone(),
+                    output.clone(),
+                    &[4],
+                    &[0],
+                    &[-1],
+                    true,
+                    true,
+                )
+                .unwrap();
+                assert_eq!(run_plan(final_plan, vec![batch]).await, expected);
+            }
+            let final_plan =
+                AggregatePlan::try_new(partial, output, &[4], &[0], &[-1], true, true).unwrap();
+            assert_eq!(
+                run_plan(final_plan, vec![]).await,
+                vec![vec![ScalarValue::Decimal128(None, 38, 6)]]
+            );
+        });
+    }
+
+    #[test]
+    fn bounded_decimal_sum_reuses_host_overflow_and_partial_state_contract() {
+        runtime().block_on(async {
+            let input = Arc::new(Schema::new(vec![Field::new(
+                "value",
+                DataType::Decimal128(38, 2),
+                true,
+            )]));
+            for values in [
+                vec![],
+                vec![None],
+                vec![Some(1), None, Some(2)],
+                vec![Some(10_i128.pow(38) - 1), Some(1), Some(2)],
+            ] {
+                let expected = match values.len() {
+                    0 | 1 => None,
+                    3 if values[0] == Some(1) => Some(3),
+                    _ => Some(2),
+                };
+                let batches = if values.is_empty() {
+                    vec![]
+                } else {
+                    vec![RecordBatch::try_new(
+                        input.clone(),
+                        vec![Arc::new(
+                            arrow::array::Decimal128Array::from(values)
+                                .with_precision_and_scale(38, 2)
+                                .unwrap(),
+                        )],
+                    )
+                    .unwrap()]
+                };
+                let make = |merge, final_output| {
+                    AggregatePlan::try_new(
+                        input.clone(),
+                        input.clone(),
+                        &[0],
+                        &[0],
+                        &[-1],
+                        merge,
+                        final_output,
+                    )
+                    .unwrap()
+                };
+                assert_eq!(
+                    run_plan(make(false, true), batches.clone()).await,
+                    vec![vec![ScalarValue::Decimal128(expected, 38, 2)]]
+                );
+                let states = run_plan(make(false, false), batches)
+                    .await
+                    .into_iter()
+                    .map(|row| {
+                        RecordBatch::try_new(
+                            input.clone(),
+                            vec![row[0].to_array_of_size(1).unwrap()],
+                        )
+                        .unwrap()
+                    })
+                    .collect();
+                assert_eq!(
+                    run_plan(make(true, true), states).await,
+                    vec![vec![ScalarValue::Decimal128(expected, 38, 2)]]
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn bounded_grouped_reductions_spill_and_replay_under_the_same_pool() {
+        runtime().block_on(async {
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("key", DataType::Int64, true),
+                Field::new("value", DataType::Int8, true),
+            ]));
+            let output = Arc::new(Schema::new(vec![
+                Field::new("key", DataType::Int64, true),
+                Field::new("sum", DataType::Int8, true),
+                Field::new("count", DataType::Int64, true),
+                Field::new("avg", DataType::Int8, true),
+            ]));
+            let batches: Vec<_> = (0..160)
+                .map(|batch| {
+                    let keys: Vec<_> = (0..128)
+                        .map(|row| ((batch * 128 + row) % 10000) as i64)
+                        .collect();
+                    RecordBatch::try_new(
+                        schema.clone(),
+                        vec![
+                            Arc::new(Int64Array::from(keys.clone())),
+                            Arc::new(Int8Array::from(
+                                keys.iter()
+                                    .map(|key| (*key % 127) as i8)
+                                    .collect::<Vec<_>>(),
+                            )),
+                        ],
+                    )
+                    .unwrap()
+                })
+                .collect();
+            let plan = AggregatePlan::try_new_grouped(
+                schema,
+                output,
+                &[0],
+                &[0, 1, 4],
+                &[1, 1, 1],
+                &[-1; 3],
+                false,
+                true,
+            )
+            .unwrap();
+            let observed = plan.aggregate.clone();
+            let result = run_plan_with_limit(plan, batches, 256 * 1024, 128).await;
+            assert_eq!(result.len(), 10000);
+            let mut seen = std::collections::HashSet::new();
+            for row in result {
+                let ScalarValue::Int64(Some(key)) = row[0] else {
+                    panic!("missing key")
+                };
+                assert!(seen.insert(key));
+                let count = if key < 480 { 3 } else { 2 };
+                assert_eq!(row[1], ScalarValue::Int8(Some(((key % 127) * count) as i8)));
+                assert_eq!(row[2], ScalarValue::Int64(Some(count)));
+                assert_eq!(row[3], ScalarValue::Int8(Some((key % 127) as i8)));
+            }
+            let metrics = observed.metrics().unwrap();
+            assert!(metrics.spill_count().unwrap() > 0);
+            assert!(metrics.spilled_bytes().unwrap() > 0);
+        });
+    }
+
+    #[test]
+    fn bounded_grouping_handles_null_keys_empty_input_and_distinct() {
+        runtime().block_on(async {
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("key", DataType::Int64, true),
+                Field::new("value", DataType::Int64, true),
+            ]));
+            let output = Arc::new(Schema::new(vec![
+                Field::new("key", DataType::Int64, true),
+                Field::new("sum", DataType::Int64, true),
+                Field::new("count", DataType::Int64, true),
+            ]));
+            let make = || {
+                AggregatePlan::try_new_grouped(
+                    schema.clone(),
+                    output.clone(),
+                    &[0],
+                    &[0, 1],
+                    &[1, 1],
+                    &[-1; 2],
+                    false,
+                    true,
+                )
+                .unwrap()
+            };
+            assert!(run_plan(make(), vec![]).await.is_empty());
+            let batch = RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    Arc::new(Int64Array::from(vec![None, Some(1), None, Some(2)])),
+                    Arc::new(Int64Array::from(vec![Some(3), None, Some(4), Some(5)])),
+                ],
+            )
+            .unwrap();
+            let mut actual = run_plan(make(), vec![batch.clone()]).await;
+            actual.sort_by_key(|row| format!("{:?}", row[0]));
+            let mut expected = vec![
+                vec![
+                    ScalarValue::Int64(None),
+                    ScalarValue::Int64(Some(7)),
+                    ScalarValue::Int64(Some(2)),
+                ],
+                vec![
+                    ScalarValue::Int64(Some(1)),
+                    ScalarValue::Int64(None),
+                    ScalarValue::Int64(Some(0)),
+                ],
+                vec![
+                    ScalarValue::Int64(Some(2)),
+                    ScalarValue::Int64(Some(5)),
+                    ScalarValue::Int64(Some(1)),
+                ],
+            ];
+            expected.sort_by_key(|row| format!("{:?}", row[0]));
+            assert_eq!(actual, expected);
+            let distinct = AggregatePlan::try_new_grouped(
+                schema.clone(),
+                Arc::new(Schema::new(vec![schema.field(0).clone()])),
+                &[0],
+                &[],
+                &[],
+                &[],
+                false,
+                true,
+            )
+            .unwrap();
+            assert_eq!(run_plan(distinct, vec![batch]).await.len(), 3);
+        });
     }
 
     #[test]

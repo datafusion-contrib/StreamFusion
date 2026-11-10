@@ -199,6 +199,7 @@ final class RexExpression {
   private boolean skipMapKeyCaches;
   private boolean javaStringInputs;
   private String jvmExecutionReason;
+  private final Set<String> jvmExpressionDetails = new LinkedHashSet<>();
   private final java.util.Set<String> statefulUdfEvaluations = new java.util.HashSet<>();
   private ClassLoader expressionClassLoader = RexExpression.class.getClassLoader();
 
@@ -206,6 +207,14 @@ final class RexExpression {
 
   boolean requiresWholeStructInputs() {
     return rowFusion;
+  }
+
+  int jvmExpressionCount() {
+    return udfs.size();
+  }
+
+  List<String> jvmExpressionDetails() {
+    return List.copyOf(jvmExpressionDetails);
   }
 
   boolean requiresCollectionRepresentation() {
@@ -4601,6 +4610,7 @@ final class RexExpression {
       case LESS_THAN_OR_EQUAL:
       case GREATER_THAN:
       case GREATER_THAN_OR_EQUAL:
+        return temporalOperand && !nativeDateComparison(call);
       case IS_DISTINCT_FROM:
       case IS_NOT_DISTINCT_FROM:
         return temporalOperand;
@@ -4614,6 +4624,13 @@ final class RexExpression {
       default:
         return "DATETIME_PLUS".equals(name) || "-".equals(name) && temporalOperand;
     }
+  }
+
+  private static boolean nativeDateComparison(RexCall call) {
+    return call.getOperands().size() == 2
+        && call.getOperands().stream().allMatch(operand ->
+            operand.getType().getSqlTypeName() == SqlTypeName.DATE
+                && (operand instanceof RexInputRef || operand instanceof RexLiteral));
   }
 
   private static boolean nativeMixedExactExtremum(RexCall call) {
@@ -6065,6 +6082,7 @@ final class RexExpression {
                 function, eval, codes.stream().mapToInt(Integer::intValue).toArray(), returnCode));
     RexCall decimalRound =
         call == projectionRoot ? FlinkExpressionGenerator.decimalRoundingTextCall(expression) : null;
+    jvmExpressionDetails.add(call + " -> " + call.getType());
     boolean numericCast =
         Boolean.TRUE.equals(legacyCastBehaviour)
             && expression instanceof RexCall

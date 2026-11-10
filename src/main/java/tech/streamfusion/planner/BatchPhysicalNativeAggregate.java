@@ -34,6 +34,8 @@ final class BatchPhysicalNativeAggregate extends BatchPhysicalNativeSingleRel
 
   @Override
   public ExecNode<?> translateToExecNode() {
+    // HASH here would make Flink's graph processor insert a RowData exchange. Keyed routing is
+    // already enforced by the explicit Arrow exchange; retain its physical relational trait.
     return new BatchAggregateExecNode(
         ShortcutUtils.unwrapTableConfig(this),
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getInput().getRowType()),
@@ -42,7 +44,10 @@ final class BatchPhysicalNativeAggregate extends BatchPhysicalNativeSingleRel
         specification,
         specification.finalOutput
             ? InputProperty.builder()
-                .requiredDistribution(InputProperty.SINGLETON_DISTRIBUTION)
+                .requiredDistribution(
+                    specification.keys.length == 0
+                        ? InputProperty.SINGLETON_DISTRIBUTION
+                        : InputProperty.ANY_DISTRIBUTION)
                 .damBehavior(InputProperty.DamBehavior.END_INPUT)
                 .build()
             : inputProperty(InputProperty.DamBehavior.END_INPUT));

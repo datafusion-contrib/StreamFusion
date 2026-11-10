@@ -77,9 +77,10 @@ serialized operator configuration rather than process-global state before a stab
   [Operators](operators/index.md) for exactly which functions this affects and how they can diverge.
 - **`-Dstreamfusion.plan.shareSources=false`** — disable the substitution pass's own source-sharing
   (two branches scanning the same native source normally collapse into one read); restores one
-  source per branch. Flink's `table.optimizer.reuse-source-enabled=false` and
+  source per branch. It also disables retained-view sharing of unary batch aggregate
+  subplans. Flink's `table.optimizer.reuse-source-enabled=false` and
   `table.optimizer.reuse-sub-plan-enabled=false` also disable native source sharing.
-- **`streamfusion.transpose.batchRows`** (default 1024; proctime complex COUNT input islands prefer 4096) — maximum rows buffered by each
+- **`streamfusion.transpose.batchRows`** (streaming default 1024; bounded batch pipelines prefer 8192; proctime complex COUNT input islands prefer 4096) — maximum rows buffered by each
   row-to-Arrow boundary. Must be positive. Read from the job's Flink configuration at planning
   time and serialized into the operator; the same-named JVM property is a fallback. Explicit
   table/JVM settings override the preferred batch size. Watermarks,
@@ -194,3 +195,8 @@ Legacy variable-length cast guards and nested scalar admission rules are unchang
 Default admission follows the Rust/Arrow versus Java/RowData functionality gate. The
 [historical binary measurements](operators/calc-filter.md#binary-casts-and-fixed-width-generated-expressions)
 retain slower conversion-inclusive standalone results; they are separate from this gate.
+
+The optional bounded native Parquet source honors
+`streamfusion.operator.fileSource.enabled` (default true for admitted paths).
+It requires fixed batch parallelism and its documented [source admission](connectors/parquet.md#source);
+unsupported tables retain Flink's reader and the ordinary transpose.

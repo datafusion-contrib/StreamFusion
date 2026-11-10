@@ -11,12 +11,16 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
 final class BatchPhysicalRowDataToArrow extends BatchPhysicalNativeSingleRel
     implements ColumnarOutput {
   BatchPhysicalRowDataToArrow(RelNode input) {
-    super(input, input, NativePlanDetails.EMPTY);
+    this(input, input);
+  }
+
+  private BatchPhysicalRowDataToArrow(RelNode original, RelNode input) {
+    super(original, input, NativePlanDetails.EMPTY);
   }
 
   @Override
   public RelNode copy(RelTraitSet traits, List<RelNode> inputs) {
-    var copy = new BatchPhysicalRowDataToArrow(inputs.get(0));
+    var copy = new BatchPhysicalRowDataToArrow(this, inputs.get(0));
     copy.traitSet = traits;
     return copy;
   }
@@ -31,6 +35,8 @@ final class BatchPhysicalRowDataToArrow extends BatchPhysicalNativeSingleRel
             FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
             getRelDetailedDescription(),
             false,
-            null));
+            null,
+            false,
+            8192));
   }
 }

@@ -12,7 +12,8 @@ import org.apache.flink.table.planner.plan.trait.FlinkRelDistributionTraitDef;
 /** Batch nodes retain logical types and single-consumer Arrow ownership through subplan reuse. */
 abstract class BatchPhysicalNativeSingleRel extends SingleRel implements BatchPhysicalRel {
   private final RelDataType outputType;
-  private final long reuseBarrier = NativeRelDigests.nextId();
+  private final long reuseBarrier;
+  private boolean shared;
   protected final NativePlanDetails details;
 
   protected final InputProperty inputProperty(InputProperty.DamBehavior dam) {
@@ -28,6 +29,19 @@ abstract class BatchPhysicalNativeSingleRel extends SingleRel implements BatchPh
     super(original.getCluster(), original.getTraitSet(), input);
     outputType = original.getRowType();
     this.details = details;
+    shared =
+        original instanceof BatchPhysicalNativeSingleRel
+            && ((BatchPhysicalNativeSingleRel) original).shared;
+    reuseBarrier =
+        shared ? ((BatchPhysicalNativeSingleRel) original).reuseBarrier : NativeRelDigests.nextId();
+  }
+
+  final boolean allowSharedCopies() {
+    if (getInput() instanceof BatchPhysicalNativeSingleRel) {
+      if (!((BatchPhysicalNativeSingleRel) getInput()).allowSharedCopies()) return false;
+    } else if (!getInput().getInputs().isEmpty()) return false;
+    shared = true;
+    return true;
   }
 
   @Override

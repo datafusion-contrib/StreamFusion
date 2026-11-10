@@ -197,6 +197,23 @@
             </dependencies>
         </profile>
         <profile>
+            <id>tpch</id>
+            <dependencies>
+                <dependency>
+                    <groupId>io.airlift.tpch</groupId><artifactId>tpch</artifactId>
+                    <version>0.10</version><scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build><plugins><plugin>
+                <groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId>
+                <executions><execution><id>tpch-test-source</id><phase>generate-test-sources</phase>
+                    <goals><goal>add-test-source</goal></goals><configuration><sources>
+                        <source>${project.basedir}/src/tpch/java</source>
+                    </sources></configuration>
+                </execution></executions>
+            </plugin></plugins></build>
+        </profile>
+        <profile>
             <id>batch-upstream</id>
             <dependencies>
                 <dependency>

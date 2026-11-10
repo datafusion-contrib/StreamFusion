@@ -46,39 +46,7 @@ impl BoundedSorter {
                 .collect::<Vec<_>>(),
             schema.metadata().clone(),
         ));
-        if columns.is_empty()
-            || columns.len() != flags.len()
-            || !schema
-                .fields()
-                .iter()
-                .all(|field| copyable(field.data_type()))
-        {
-            return Err(DataFusionError::Execution(
-                "invalid bounded sort keys".into(),
-            ));
-        }
-        let mut ordering = Vec::with_capacity(columns.len());
-        for (&index, &flags) in columns.iter().zip(flags) {
-            let field = schema.fields().get(index).ok_or_else(|| {
-                DataFusionError::Execution("bounded sort key is outside its input schema".into())
-            })?;
-            if !matches!(
-                field.data_type(),
-                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
-            ) || flags & !3 != 0
-            {
-                return Err(DataFusionError::Execution(
-                    "unverified bounded sort key type or options".into(),
-                ));
-            }
-            ordering.push(PhysicalSortExpr {
-                expr: Arc::new(Column::new(field.name(), index)),
-                options: SortOptions {
-                    descending: flags & 1 != 0,
-                    nulls_first: flags & 2 != 0,
-                },
-            });
-        }
+        let ordering = sort_ordering(&schema, columns, flags)?;
         let input = BoundedInput::new(schema);
         let plan = Arc::new(
             SortExec::new(LexOrdering::new(ordering).unwrap(), input.execution_plan()?)
@@ -91,6 +59,70 @@ impl BoundedSorter {
         };
         BoundedTask::try_new(input, output, plan, context, None)
     }
+}
+
+fn sort_ordering(
+    schema: &Schema,
+    columns: &[usize],
+    flags: &[i32],
+) -> Result<Vec<PhysicalSortExpr>, DataFusionError> {
+    if columns.is_empty()
+        || columns.len() != flags.len()
+        || !schema
+            .fields()
+            .iter()
+            .all(|field| copyable(field.data_type()))
+    {
+        return Err(DataFusionError::Execution(
+            "invalid bounded sort keys".into(),
+        ));
+    }
+    let mut ordering = Vec::with_capacity(columns.len());
+    for (&index, &flags) in columns.iter().zip(flags) {
+        let field = schema.fields().get(index).ok_or_else(|| {
+            DataFusionError::Execution("bounded sort key is outside its input schema".into())
+        })?;
+        if !matches!(
+            field.data_type(),
+            DataType::Int8
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::Utf8
+                | DataType::Boolean
+                | DataType::Decimal128(1..=38, _)
+                | DataType::Date32
+        ) || flags & !3 != 0
+        {
+            return Err(DataFusionError::Execution(
+                "unverified bounded sort key type or options".into(),
+            ));
+        }
+        ordering.push(PhysicalSortExpr {
+            expr: Arc::new(Column::new(field.name(), index)),
+            options: SortOptions {
+                descending: flags & 1 != 0,
+                nulls_first: flags & 2 != 0,
+            },
+        });
+    }
+    Ok(ordering)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_supportsBoundedSorterKeys<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    schema_address: jlong,
+    columns: JIntArray<'local>,
+    flags: JIntArray<'local>,
+) -> jboolean {
+    jni_guard(env, move |env| {
+        let schema = import_schema(schema_address);
+        let columns = read_columns(env, &columns);
+        let flags = read_i32_array(env, &flags);
+        sort_ordering(&schema, &columns, &flags).is_ok() as jboolean
+    })
 }
 
 #[no_mangle]

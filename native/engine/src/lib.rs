@@ -33,6 +33,7 @@ mod aggregates;
 mod append_buffer;
 mod bounded_aggregate;
 mod bounded_exec;
+mod bounded_join;
 mod bounded_sort;
 mod bounded_task;
 mod bridge;

@@ -1,0 +1,3708 @@
+{
+  "mode": "compare",
+  "format": "parquet",
+  "resultOrderValidation": "Exact rows and multiplicities, preserving ORDER BY key order; row order within equal-key groups is immaterial",
+  "profile": false,
+  "scale": 1.0,
+  "javaVersion": "17.0.17",
+  "javaVm": "OpenJDK 64-Bit Server VM",
+  "os": "Mac OS X aarch64",
+  "maxHeapBytes": 8589934592,
+  "generator": "io.airlift.tpch:tpch:0.10",
+  "schema": "TPC-H identifiers BIGINT, integer INT, numeric DECIMAL(15,2), date DATE, text STRING",
+  "parallelism": 2,
+  "nativeBytes": 536870912,
+  "nativeBatchRows": 8192,
+  "warmups": 3,
+  "trials": 7,
+  "tables": {
+    "customer": {
+      "bytes": 24196144,
+      "sha256": "a035a33a703d3a043ecf97746b4e3a7988316c1c04923fda63231a59d5e46092",
+      "rows": 150000
+    },
+    "orders": {
+      "bytes": 170452161,
+      "sha256": "3f111871419ea6f319fcc51c235d199b3edf16754c5e100be92927527e5f6c97",
+      "rows": 1500000
+    },
+    "lineitem": {
+      "bytes": 753862072,
+      "sha256": "4feb529dfa255799bbf0243d2f2c5028375dfb684e592eb94775345602aa2728",
+      "rows": 6001215
+    },
+    "part": {
+      "bytes": 23935125,
+      "sha256": "cecd01146ae002aebe47e6b58bd81644df1d51d9c14da3425aea2b4976e02d60",
+      "rows": 200000
+    },
+    "partsupp": {
+      "bytes": 118184616,
+      "sha256": "3a68b7b7757cd3aacccb39c4bc092dc3edf3b7e0e7609a259c39238cae0be41e",
+      "rows": 800000
+    },
+    "supplier": {
+      "bytes": 1399184,
+      "sha256": "f5699b5df22724f41bee9b8521798d8fc0cecd5beb0bd3bca96547ac58095547",
+      "rows": 10000
+    },
+    "nation": {
+      "bytes": 2199,
+      "sha256": "7d47bc9397da331054fa92b8fb92e4c074004bad72dcbb893012093218dccf6c",
+      "rows": 25
+    },
+    "region": {
+      "bytes": 384,
+      "sha256": "5a7c2fe9718db00ff5e5bc82a9ebfa8abc492cc75260d3c0ffb411974f235ab0",
+      "rows": 5
+    }
+  },
+  "parquet": {
+    "writer": "stock Flink filesystem/Parquet, SNAPPY, outside query timing",
+    "writerParallelism": 2,
+    "sourceCsvManifestSha256": "16e94dd4fce1906f108d6a0b56bbcace8d84248d4e64c661a0d118125e2c72a8",
+    "writerJobIds": [
+      "af8463e57c9ff056860f66cf51a0c68e",
+      "0d62115f6f4fd494e0cc12f826abd8f4",
+      "308dcdfb4c732300dd731add4d65bdd8",
+      "8cff436bdb4621cc11dc47e8a82b7e7e",
+      "4a016f1d56a49ebb770d34f2ce648a5b",
+      "82331dd1cd9e9bf66e5ec7ca4cb95b35",
+      "b082e17830399ca351f1c724b77a1c00",
+      "72f3732d9d21c837d1ad31ab19e7300a"
+    ],
+    "files": [
+      {
+        "path": "customer/part-5a9f8698-69f1-4688-9b9e-847d3344984b-task-0-file-0",
+        "bytes": 12443660,
+        "sha256": "c7f3f7fe2192d98f32ea5b43809e6a6b5c2ef55f0ffd470db2d375bf0bb72e63"
+      },
+      {
+        "path": "lineitem/part-1bb14d04-1376-4ac3-a9b5-8f14b70118cd-task-0-file-0",
+        "bytes": 228153614,
+        "sha256": "aa95d444d34fc6031e6a8de1f49d76a60692876cb3b6e572c1125c517fe93691"
+      },
+      {
+        "path": "nation/part-d374492a-1852-4603-8936-885809df8af8-task-0-file-0",
+        "bytes": 2793,
+        "sha256": "a7b0a4ddd2d67b6f2bf432eb1c098eaa52c98346a4fa95309445b9e6e68b4676"
+      },
+      {
+        "path": "orders/part-1c44d96d-0077-4adf-a294-f67fc22e936a-task-0-file-0",
+        "bytes": 56372199,
+        "sha256": "4df886a7db6687745b95c9b0c81b944947929282dddb559e7cb3153d2caef970"
+      },
+      {
+        "path": "part/part-21aa7ead-39d2-4deb-bff0-474a4cd9aa16-task-0-file-0",
+        "bytes": 6232371,
+        "sha256": "ac5474f0fa3faeaf9f4ac0fe753148656b845b3910b7a705efc33cf859cf7fee"
+      },
+      {
+        "path": "partsupp/part-b6c04884-1c99-4cbd-ad6f-58039082ff68-task-1-file-0",
+        "bytes": 42491907,
+        "sha256": "094fe50675f13e597d60613c56f2860b04eb2f7deec0ff797d1c4d72b1b4c971"
+      },
+      {
+        "path": "region/part-53e3ebd4-941d-4677-97a0-501b8c582b4b-task-0-file-0",
+        "bytes": 1300,
+        "sha256": "bdfe0271626a3580480267e985880f60262c62ef678c1eef960b00a7ddc11568"
+      },
+      {
+        "path": "supplier/part-dba60e28-6215-4fc0-9f71-ad47b0355e03-task-0-file-0",
+        "bytes": 797572,
+        "sha256": "0eb4fdb8d39610f248ae0b558629947994694f6ebbf696beafe78e16d081f944"
+      }
+    ]
+  },
+  "completeWorkload": true,
+  "status": "incomplete_cohort_Q9_runtime_failure_no_complete_workload_ratio",
+  "build": {
+    "librarySha256": "c1420f1eae458fc4f87f90a8083d6916e08b8ef61dd0bd96c241154b6dd95c4f",
+    "nativeSourceSha256": {
+      "native/engine/src/bounded_join.rs": "c615b62fd95f2b406f1246ae718ec420c9be870123f0f0c272df3baf6f85ea66",
+      "native/engine/src/bounded_task.rs": "2b04b35bfd2f8eb994a9a02a5215b7198f61f10b0ff1118a3862ff309bf8490b",
+      "native/engine/src/bounded_aggregate.rs": "d5ca6cb0c81249fa0ff8825c0c18306787b8544a160678fbe2f4dc853b086fae",
+      "native/engine/src/bounded_sort.rs": "a3512183b0aa8337c911b4674749278d683a6da68e7f4d0625846a736556198e"
+    }
+  },
+  "queries": [
+    {
+      "query": 1,
+      "sqlSha256": "864a088f29bb394a6397b71c28a5bdb1dbd74e667f690917feff0d9e293df4e6",
+      "nativePlanned": true,
+      "resultType": "ROW<`l_returnflag` STRING, `l_linestatus` STRING, `sum_qty` DECIMAL(38, 2), `sum_base_price` DECIMAL(38, 2), `sum_disc_price` DECIMAL(38, 4), `sum_charge` DECIMAL(38, 6), `avg_qty` DECIMAL(38, 6), `avg_price` DECIMAL(38, 6), `avg_disc` DECIMAL(38, 6), `count_order` BIGINT NOT NULL> NOT NULL",
+      "rows": 4,
+      "resultSha256": "25510cc27944ade10f79659078255e62b67a443db84d89357894740eb0b9c28a",
+      "stockNanos": [
+        4049374834,
+        4161560792,
+        4084160542,
+        4075954000,
+        4071836167,
+        4230666291,
+        4087293333
+      ],
+      "nativeNanos": [
+        1639411209,
+        1648238792,
+        1629223750,
+        1563816958,
+        1548348166,
+        1638086917,
+        1561988042
+      ],
+      "stockRuntimeMs": [
+        3930,
+        3963,
+        3908,
+        3897,
+        3913,
+        4054,
+        3977
+      ],
+      "nativeRuntimeMs": [
+        1502,
+        1560,
+        1499,
+        1492,
+        1488,
+        1544,
+        1490
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "e23daf230e82f72f5219a378da9c39d2",
+          "nativeRows": 11917814
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "b41c836d541c2604b71671f97b7ade22",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "896d4e48a0e69a0764efa15f5cfb7449",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "f9eb4259eca407e93704b6fa88237871",
+          "nativeRows": 11917814
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "40c26e0b29d552fb450feb2fdd911c8b",
+          "nativeRows": 11917814
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "24b5ab6b3872b4d18326b3c979ba7e06",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "6e4c6c7f2e9b53129f9bc724e950b565",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "e8f721c4170747923b37f036e82bf270",
+          "nativeRows": 11917814
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "94f60b7b71682c9a1506aaa62591d562",
+          "nativeRows": 11917814
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "b7ce24e5b89a43bfee1b8b84da3bc2df",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "f49da0db6934cc6b0e05afb3e91ff31f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "8e6104d898e3e6ba67de5078bc09b055",
+          "nativeRows": 11917814
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "24fdadb446cf64cad7d321b3feb4a09c",
+          "nativeRows": 11917814
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "25b7583bf2e253553cea127c3ff8537f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "dbf104b655715847f93e4edd6dc9a328",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "36c69ed32f7bfa561e6884439447d81d",
+          "nativeRows": 11917814
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "1e12f3094668edeaf714ef99c9591299",
+          "nativeRows": 11917814
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "6251f3802b0ff6a5a145fe10497d520f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "52ca796d5b0c2267abb86929f712a7a7",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "8dd964a0af29bc7aa58d05801bb9df31",
+          "nativeRows": 11917814
+        }
+      ],
+      "stockMedianMs": 4084.160542,
+      "nativeMedianMs": 1629.22375,
+      "medianSpeedup": 2.5068137768062857
+    },
+    {
+      "query": 2,
+      "sqlSha256": "f42e396d36f43602ff020b8f4d37f44a3734aaf0cfb5ce468f674f07555cb79d",
+      "nativePlanned": true,
+      "resultType": "ROW<`s_acctbal` DECIMAL(15, 2), `s_name` STRING, `n_name` STRING, `p_partkey` BIGINT, `p_mfgr` STRING, `s_address` STRING, `s_phone` STRING, `s_comment` STRING> NOT NULL",
+      "rows": 100,
+      "resultSha256": "25c55a4b1ecf33008cd261ff70abbc7c751aa953919f0abc1b02c639e03a4c4f",
+      "stockNanos": [
+        3273342666,
+        3252289375,
+        3254034000,
+        3354674708,
+        3134159625,
+        3352881542,
+        3375918542
+      ],
+      "nativeNanos": [
+        3981291333,
+        3874622958,
+        3826639833,
+        3972127833,
+        3825466292,
+        4122387458,
+        3867709125
+      ],
+      "stockRuntimeMs": [
+        3093,
+        3053,
+        3077,
+        3170,
+        2980,
+        3131,
+        3190
+      ],
+      "nativeRuntimeMs": [
+        3796,
+        3712,
+        3720,
+        3818,
+        3640,
+        3933,
+        3767
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "9531bf58c7b61a3b3ecf829e7dafe6d4",
+          "nativeRows": 13985792
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "09edf43a7fdefa08a7231288aa92083d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "2ea07d5fb923ab8371b20ae0f0d5fa80",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "c4c055dc96308a9c8126984ae850cde8",
+          "nativeRows": 13985792
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "3dfe0de9d0e2e5d5c9534f293bbaafca",
+          "nativeRows": 13985792
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "ec5513446a49e123cffe3f61d7cb1581",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "10f97b890ebdabba7ae13ffabf90acc3",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "271bcb3cb93627b1c78f41e4cb7733bb",
+          "nativeRows": 13985792
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "f2aea8bf806f0e62f1c2040b8ebd7b65",
+          "nativeRows": 13985792
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "3a8b9f1c0d5319b5aa032abe5c7ccdc5",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "fe5506ff26b74111908889aa8f046e5c",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "ac9a7f5d6e69100c512338024467c1b1",
+          "nativeRows": 13985792
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "29f21d471b26c5a3f4d27ec05b1d8590",
+          "nativeRows": 13985792
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "a9764cc5501cd38c64bbf1a2240108b3",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "d56bfef37c927a882f56550f63013785",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "7d02ac73865b2980888e4e7598425410",
+          "nativeRows": 13985792
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "d0937d7f926420dbf3628a54f78a1a1e",
+          "nativeRows": 13985792
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "199c5bfdfcf963b5dfa907a15119f8dd",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "5d3db2b786457863b8b065e4a1567c18",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "7da9cc7f41236e0060b44b91958e35ef",
+          "nativeRows": 13985792
+        }
+      ],
+      "stockMedianMs": 3273.342666,
+      "nativeMedianMs": 3874.622958,
+      "medianSpeedup": 0.8448157927835207
+    },
+    {
+      "query": 3,
+      "sqlSha256": "d8d2f7579eac245cd2609e49f572025a6efa1725dc30e3ccc3c6887f4c4f0bbf",
+      "nativePlanned": true,
+      "resultType": "ROW<`l_orderkey` BIGINT, `revenue` DECIMAL(38, 4), `o_orderdate` DATE, `o_shippriority` INT> NOT NULL",
+      "rows": 10,
+      "resultSha256": "11250d327145e05d6d369b3ba6e4b81ef64758d0ce307a052f8526a32e24c396",
+      "stockNanos": [
+        1041005291,
+        1124538542,
+        1017337291,
+        1160435000,
+        1271377500,
+        1148694083,
+        1153991334
+      ],
+      "nativeNanos": [
+        1012513042,
+        1010364792,
+        1118173125,
+        1123277958,
+        1125729417,
+        1122111709,
+        995533291
+      ],
+      "stockRuntimeMs": [
+        984,
+        1044,
+        962,
+        1053,
+        1184,
+        1018,
+        1048
+      ],
+      "nativeRuntimeMs": [
+        895,
+        906,
+        1017,
+        970,
+        997,
+        1027,
+        908
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "0970e5441afb32fcff402ba993a31265",
+          "nativeRows": 12047520
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "a5abcc3c827b4b32333068d10f4c2d1d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "8d017af561bf3944104307e3b43e012f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "a8755ac12e248305d9f54d2e7315f745",
+          "nativeRows": 12047520
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "f29363e729e4b205a3e0178c0a42c46b",
+          "nativeRows": 12047520
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "b0d00fde6449f27a28b1e00b438a0860",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "57897b8beef1e9572e0b5653d7ca26c2",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "a71c582eaa8fd8bd2970e79936b19e13",
+          "nativeRows": 12047520
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "229b3779e2f78731487dfd104fb9d961",
+          "nativeRows": 12047520
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "2f97f1788192e041446e95aecb7ce682",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "c21ffbb750d3f8b6a2d2606832d573d5",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "08be1a381e4776f9491d149fa566238d",
+          "nativeRows": 12047520
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "f9703d671bb55079fa436dd5bc31a49b",
+          "nativeRows": 12047520
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "92df21a189a36ccca8cd6198d4b3b0d2",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "b4d9febe564bb533366fd22b05bcee60",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "69e598a2be6192856e4da6e6c3f73dbd",
+          "nativeRows": 12047520
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "c51541b3ec1b3577c8346371ade1316b",
+          "nativeRows": 12047520
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "08bd23c255df44912953fbd7a8527695",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "0ba3736a8c3b1a776bdeb20b2234d867",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "e5de4a230790c91908c65449f266a040",
+          "nativeRows": 12047520
+        }
+      ],
+      "stockMedianMs": 1148.694083,
+      "nativeMedianMs": 1118.173125,
+      "medianSpeedup": 1.0272953778959766
+    },
+    {
+      "query": 4,
+      "sqlSha256": "04297c2ddbbcc2bd3999494f3f531235e8bf5d723e678796ee485c0309711594",
+      "nativePlanned": true,
+      "resultType": "ROW<`o_orderpriority` STRING, `order_count` BIGINT NOT NULL> NOT NULL",
+      "rows": 5,
+      "resultSha256": "d14e778383aebcc943b65d6f9829a6021c1e57378445162013227039db753f88",
+      "stockNanos": [
+        895456083,
+        927626834,
+        1027279958,
+        930227083,
+        1020786875,
+        796937417,
+        790417250
+      ],
+      "nativeNanos": [
+        726067125,
+        787818291,
+        682180083,
+        792448625,
+        694256750,
+        679476458,
+        688587375
+      ],
+      "stockRuntimeMs": [
+        823,
+        813,
+        897,
+        781,
+        916,
+        746,
+        746
+      ],
+      "nativeRuntimeMs": [
+        623,
+        724,
+        605,
+        717,
+        593,
+        615,
+        590
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "b2ca97ff2aa1ed1016ff8470ed34ab8e",
+          "nativeRows": 11456790
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "9eb2b5c59c10d73a11197769181f6f5b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "4753ec7b24e82b2f64430dbd6530784c",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "e54d4d81edeb8e565133e1e48882348e",
+          "nativeRows": 11456790
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "e883d6f5ef8fce189771705678907885",
+          "nativeRows": 11456790
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "b197d5a44eb5912ffc4b224d62b00490",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "1372abca40e17498cd70f47ae2f8b475",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "f298b83d64e82f0297adabe2fc944aa8",
+          "nativeRows": 11456790
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "e387599fc5cf45f35f4b53f696456bf4",
+          "nativeRows": 11456790
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "1b8ec8281875f4e4d9c173617445f08a",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "075f75aa4e75586a1404e2bbcc03c68e",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "d348d7ca26c302070209166b4156dfd7",
+          "nativeRows": 11456790
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "249326b32158e4731590bc65287730bb",
+          "nativeRows": 11456790
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "1b00a75ea97460202009590e86748193",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "336c7547b36cc9de1e23ff59fb0bf737",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "227b0a690c6b4f4c310471666d2c6727",
+          "nativeRows": 11456790
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "b8b0dd25a8227192224fb7f272fc93f7",
+          "nativeRows": 11456790
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "5aa9a611c530c4ae70861aa7ebecd76b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "19d29390b171c87d92ed9c6113d53f37",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "7511249f694bf01235a5910a4924135d",
+          "nativeRows": 11456790
+        }
+      ],
+      "stockMedianMs": 927.626834,
+      "nativeMedianMs": 694.25675,
+      "medianSpeedup": 1.3361437738992095
+    },
+    {
+      "query": 5,
+      "sqlSha256": "c4fe1313161ee7e67d0c554a54126ac20560c0df04b86e33aa5ec251f908c315",
+      "nativePlanned": true,
+      "resultType": "ROW<`n_name` STRING, `revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 5,
+      "resultSha256": "1d80d5590613c932e8a7d1a87ac10920ab49fd6bf04e4fabf72d744a98a9c1e0",
+      "stockNanos": [
+        1916437542,
+        1902453500,
+        1897424750,
+        1890390292,
+        1893901167,
+        1915093500,
+        1931121500
+      ],
+      "nativeNanos": [
+        1260197750,
+        1370590417,
+        1328118167,
+        1351406500,
+        1343836042,
+        1378872708,
+        1340995084
+      ],
+      "stockRuntimeMs": [
+        1747,
+        1772,
+        1764,
+        1816,
+        1763,
+        1757,
+        1778
+      ],
+      "nativeRuntimeMs": [
+        1175,
+        1209,
+        1214,
+        1194,
+        1196,
+        1194,
+        1195
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "99015f9f827866dbb0785708aeadc057",
+          "nativeRows": 10334546
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "009348bcc236641cc2c50b51e75c4aaf",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "acf23b6daed20d497415f3076de0e6fd",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "3f07670f36e72a8863c1b77512bf52ba",
+          "nativeRows": 10334546
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "8851300890648012de194030bd572e33",
+          "nativeRows": 10334546
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "9f3a6b8942fc63df93e6d8ae87f69e00",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "b9caaa0c1343cfa416131e31a37bac61",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "60af73be74b1f6f6e45d9d9f46fb8913",
+          "nativeRows": 10334546
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "a471601b5a11e11d613400e1b4bbb9f4",
+          "nativeRows": 10334546
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "355620031f16e729cedb67618e3abe88",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "48f4ec7f86be0329f86d59c54e6c4a18",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "0feb90167b6f6119de724db88d27bd14",
+          "nativeRows": 10334546
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "0840bfc4de0377e4d550a477fa08a1fa",
+          "nativeRows": 10334546
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "209a435814ba2d2847f1f6278e9b338c",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "ae38ec53534dee2c72aefeb389c9af0e",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "b0d2e31f0ad4193a5d01eb1f2d4b9abc",
+          "nativeRows": 10334546
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "360a83889c4599def84496d98968d10c",
+          "nativeRows": 10334546
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "bd2ecb116ccd61fd75700420c10fbbb9",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "baef6a46343d40da523fa7cf16d768ee",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "a5b41f9b8b5c1ed4f828d45b569abcbd",
+          "nativeRows": 10334546
+        }
+      ],
+      "stockMedianMs": 1902.4535,
+      "nativeMedianMs": 1343.836042,
+      "medianSpeedup": 1.4156887005118741
+    },
+    {
+      "query": 6,
+      "sqlSha256": "9a0f373ae3a61ce5596f4b77647988f09b3f8261661853a11db1930708771c21",
+      "nativePlanned": true,
+      "resultType": "ROW<`revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "3b7d6014c113dcbe7abf123c80dfb895bfa79c896008fedd40cd7660be86ddec",
+      "stockNanos": [
+        564191667,
+        574729167,
+        683204416,
+        687153250,
+        671928541,
+        780934500,
+        896775958
+      ],
+      "nativeNanos": [
+        771494167,
+        871626833,
+        804543125,
+        782142375,
+        777743750,
+        777676333,
+        1314882416
+      ],
+      "stockRuntimeMs": [
+        493,
+        516,
+        555,
+        570,
+        545,
+        668,
+        823
+      ],
+      "nativeRuntimeMs": [
+        746,
+        811,
+        751,
+        750,
+        741,
+        697,
+        1253
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "b4c91378b5112bd3b41b1829fab0fd27",
+          "nativeRows": 6115376
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "c6d9efe407cd326f7a260653d8d2780f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "9b0b7298f20b2b4b5e7b8465e433174d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "5e80a80cb243f8807744c016d7073235",
+          "nativeRows": 6115376
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "c4b9eb57c7c1ff5f89f9eb376ae66dcc",
+          "nativeRows": 6115376
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "554ff7ebbd98add03704c0054257f856",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "b3bf38eec59d6fb19468a55a9818dd65",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "c9a760791d0d3e1db4f80b8df8d246aa",
+          "nativeRows": 6115376
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "1b2463308b54fbc22e9a2141a7d22be9",
+          "nativeRows": 6115376
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "3d5b32f6113270c74e99a65e27207864",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "4de0097d5792ac7f10864ddaaf79bcbf",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "0b08cf234d62ddd953c3cf8fda3c896e",
+          "nativeRows": 6115376
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "406bc02b08bba1c2913e0ff46b41cbdc",
+          "nativeRows": 6115376
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "08da9ac60aa73fd580f67c489aee7138",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "e3cc69f95f0083d4aec1b78c2acd6531",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "38773c24ee90fd18ba7ae8378f669ddc",
+          "nativeRows": 6115376
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "24dbf346becf808384121dc57e68b045",
+          "nativeRows": 6115376
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "405ebccfb3bec32e0f0fd013c797442c",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "d99a31d09367af60820f70ee729e5830",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "0251534454a64e4541bc24012c63b51d",
+          "nativeRows": 6115376
+        }
+      ],
+      "stockMedianMs": 683.204416,
+      "nativeMedianMs": 782.142375,
+      "medianSpeedup": 0.8735039013836835
+    },
+    {
+      "query": 7,
+      "sqlSha256": "ae45f801e45c97c4a69a9156b2709b29a7373b5a3a82741bf1a4fb1415fa100b",
+      "nativePlanned": true,
+      "resultType": "ROW<`supp_nation` STRING, `cust_nation` STRING, `l_year` BIGINT, `revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 4,
+      "resultSha256": "a2d4b7be4e7dbb1aea2ebd6ddc590b150616eeeb3c76478bbfe055380221ef4a",
+      "stockNanos": [
+        1814480208,
+        2002194250,
+        1892832125,
+        2010528333,
+        1930978542,
+        2372114000,
+        1911672416
+      ],
+      "nativeNanos": [
+        1754336166,
+        1733285292,
+        1567572166,
+        1819604375,
+        1563313125,
+        1560079167,
+        1567766375
+      ],
+      "stockRuntimeMs": [
+        1690,
+        1808,
+        1760,
+        1891,
+        1757,
+        120510,
+        1728
+      ],
+      "nativeRuntimeMs": [
+        1514,
+        1563,
+        1483,
+        1671,
+        1473,
+        1466,
+        1439
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "4ccdb6121027acc27487ead44165b0f1",
+          "nativeRows": 20773689
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "647b7f5f0aa2bb7095b935a3b0d3d90d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "3e222690ff976a1415b39e211321b80c",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "1857696f61a7a81c0da90d0e64b5ee62",
+          "nativeRows": 20773689
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "16efd0042329d10f2daca407a7f58057",
+          "nativeRows": 20773689
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "9c9e008778d7b7ca7ba8d7a6ebab8d99",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "b8804bb2772f6da4cdcfc0193ca1b8b7",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "231d2013d24f45b102d32fd3ae61fec5",
+          "nativeRows": 20773689
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "ab378ad9857971044238486b70fd85c2",
+          "nativeRows": 20773689
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "e8d8ee8414f66038eaba69ac4b7c39e9",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "2ab49d9cdae34781eec47995b1d77a81",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "687ac27cc656e26bb7a0598037bb9c7e",
+          "nativeRows": 20773689
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "07fa2efb7bd4b7dbdf4c61bc672dc266",
+          "nativeRows": 20773689
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "42f12e729e1caf2b4caadb09bdf67ba0",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "26b18c4c0c446bd6682dce83c751eda9",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "623c9a7086d99fc1e432f3f9a29a1097",
+          "nativeRows": 20773689
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "706cb0691426f812f25251bea8c54d30",
+          "nativeRows": 20773689
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "6276f4e64fe3992394976434d79a46c5",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "80737a227feec30add630cdc454cfe49",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "89245c979e9fce9675746083a02fc904",
+          "nativeRows": 20773689
+        }
+      ],
+      "stockMedianMs": 1930.978542,
+      "nativeMedianMs": 1567.766375,
+      "medianSpeedup": 1.2316749311580306
+    },
+    {
+      "query": 8,
+      "sqlSha256": "32f7a9d5fa9a84fecdc2c25f2acf33491d1cf8e176eaca5c2d48bcf5a8c41c31",
+      "nativePlanned": true,
+      "resultType": "ROW<`o_year` BIGINT, `mkt_share` DECIMAL(38, 6)> NOT NULL",
+      "rows": 2,
+      "resultSha256": "4558a064de7ba5f6a8060c6615404d1a15c94e534df78bb232c4bdbc754e856f",
+      "stockNanos": [
+        5649842250,
+        5587474125,
+        6085974250,
+        5201169000,
+        5160912375,
+        5229452625,
+        5235890416
+      ],
+      "nativeNanos": [
+        2202250209,
+        2024779875,
+        2594641125,
+        2112883666,
+        1797109292,
+        1783440792,
+        1823142333
+      ],
+      "stockRuntimeMs": [
+        5491,
+        5429,
+        5913,
+        5050,
+        4993,
+        5039,
+        5087
+      ],
+      "nativeRuntimeMs": [
+        2092,
+        1859,
+        329514,
+        1944,
+        1654,
+        1659,
+        1684
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "d4ca1b165d2f1fcf26b41b288bfc3728",
+          "nativeRows": 23039748
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "35a3eb5c099f24b932c822ccc49571d9",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "6c0b161cdb458053c925df24a25aa4c2",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "4a369d104a4acf7d961d2703fab74f9a",
+          "nativeRows": 23039748
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "b31c4e183d2ce935834c9884fdacd1c2",
+          "nativeRows": 23039748
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "6fb6a55b9609e05c2c3f63395d1b91e8",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "e259cb9f12771ab94291bf49f0a54fa5",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "2f2a7abf3a39507cb5e06bff46040ee3",
+          "nativeRows": 23039748
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "e8cab5ca1d9cc905bb180c5b57d5a10f",
+          "nativeRows": 23039748
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "4bc9ac63b0540ebaf86df9f9e9191e75",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "eda4ba410af38eb4464682748c711aaf",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "88fe196cba904e47e76a6c50d42fffd9",
+          "nativeRows": 23039748
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "2e420fe82dd4286970e82afc350d4d78",
+          "nativeRows": 23039748
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "b57e409a161eb38c23111a6485399b71",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "49f723d1cfd9888501774bfa9a8e30c6",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "b7ba003d61c1e958d445d2c8ea9d771c",
+          "nativeRows": 23039748
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "05ab2e5268a8b44973354fb71c3b0719",
+          "nativeRows": 23039748
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "b5c79aafb02d606b1a7fe641f4fb787f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "4721ff74cce598b6a6955e67f60166be",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "1746e92957e051e07557efb44a89d67c",
+          "nativeRows": 23039748
+        }
+      ],
+      "stockMedianMs": 5235.890416,
+      "nativeMedianMs": 2024.779875,
+      "medianSpeedup": 2.585905994349139
+    },
+    {
+      "query": 9,
+      "sqlSha256": "0adb679bcda7561efec2c45c9bbc3de42549f21c3aee299cf6ef47f9e58662f0",
+      "nativePlanned": true,
+      "status": "failed",
+      "error": "java.lang.RuntimeException: Failed to fetch next result",
+      "runs": []
+    },
+    {
+      "query": 10,
+      "sqlSha256": "2c82e9ab8c67d6423ed357ef3c945f60cc140f50d489a1a098cbb290fd1f191e",
+      "nativePlanned": true,
+      "resultType": "ROW<`c_custkey` BIGINT, `c_name` STRING, `revenue` DECIMAL(38, 4), `c_acctbal` DECIMAL(15, 2), `n_name` STRING, `c_address` STRING, `c_phone` STRING, `c_comment` STRING> NOT NULL",
+      "rows": 20,
+      "resultSha256": "d33237de35924341b25c8d32dd4807847cff8ab9b2e9b4c80f5dad5221ff9cee",
+      "stockNanos": [
+        1033007750,
+        1150092292,
+        1048349750,
+        1188166833,
+        1190640750,
+        1031425416,
+        1048302083
+      ],
+      "nativeNanos": [
+        1014700709,
+        1202434625,
+        1159709917,
+        1103102417,
+        1133915209,
+        1159477292,
+        1134413541
+      ],
+      "stockRuntimeMs": [
+        934,
+        987,
+        927,
+        981,
+        982,
+        937,
+        930
+      ],
+      "nativeRuntimeMs": [
+        964,
+        5180,
+        1040,
+        1011,
+        1007,
+        1021,
+        1006
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "d60a37a54a790872cafaf80986ffb8d3",
+          "nativeRows": 9841215
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "8b79df7e563ea74858a45ad84f25d14f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "c25a3e64b81ff6035c20ea645eebe7e7",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "2b015d2efa27b4ae1c6c925324106a00",
+          "nativeRows": 9841215
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "82b15fa09c71dc3aa8f5bfb0838d7de7",
+          "nativeRows": 9841215
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "d97bb4403d2924ca1a53f2db135ed07f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "05f01f510a91ea0679dcec1aa66035fc",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "11dca92fece1a006e098e168f723d0d6",
+          "nativeRows": 9841215
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "159f7a678ee2dde1eebc5d488e04f1fe",
+          "nativeRows": 9841215
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "4882ca4cfdf4d5a32f90f67274185515",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "be0372b32fa229ac85cc5baafea4211d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "df840ac635aa0b7b86e44d0fe3c17cfc",
+          "nativeRows": 9841215
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "6d6c0489c8e2a679fb2989db8d14c57f",
+          "nativeRows": 9841215
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "bbe727c324f146b2293d179341668c4b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "e1814b322db68a832a393f1289797516",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "420c4e75442c9edaac5ca34f5dfe1abc",
+          "nativeRows": 9841215
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "81b5060bfa6b76c15c5cf40f6f2712a7",
+          "nativeRows": 9841215
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "a3b55b3450974e02dc72e77eb66a20e1",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "261519ee3bf82ca6fb6267c07669aabf",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "ca6c0362ec9b41f99263bd6f7f3e092e",
+          "nativeRows": 9841215
+        }
+      ],
+      "stockMedianMs": 1048.34975,
+      "nativeMedianMs": 1134.413541,
+      "medianSpeedup": 0.9241336709326182
+    },
+    {
+      "query": 11,
+      "sqlSha256": "6c13dffd3aa87a4bb45ccb379ff54b834d12b87d070ee3dafd63906c8c6ce8ce",
+      "nativePlanned": true,
+      "resultType": "ROW<`ps_partkey` BIGINT, `value` DECIMAL(38, 2)> NOT NULL",
+      "rows": 1048,
+      "resultSha256": "853ca5f63a7c5b722a92d14f481a76bbc12cfab5ee27ca85682eeaf209346c1b",
+      "stockNanos": [
+        613488083,
+        618063375,
+        611815250,
+        761206500,
+        602557542,
+        600090667,
+        641052583
+      ],
+      "nativeNanos": [
+        471943583,
+        534851541,
+        506387125,
+        481638750,
+        503528583,
+        490816500,
+        474602625
+      ],
+      "stockRuntimeMs": [
+        470,
+        460,
+        513,
+        555,
+        524,
+        462,
+        492
+      ],
+      "nativeRuntimeMs": [
+        347,
+        353,
+        381,
+        356,
+        380,
+        351,
+        348
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "ffbb1a444d036564b88ef3657046a75e",
+          "nativeRows": 5028515
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "2e46ac18d48d001519732c21c09cfce4",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "3e47cf0e8c47d67bb7e4d6624ca71d8c",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "00917ba81b6ecc0d10597fadac51c33c",
+          "nativeRows": 5028515
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "4f16fa573cb939d85e8178f314cf1c7b",
+          "nativeRows": 5028515
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "1afdd43574476e7b63f45827b01c17f1",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "1b57651146900925545aa9f38d751254",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "541ec8bb47d04ddede715e585337caff",
+          "nativeRows": 5028515
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "7ce9839993fff6ac9f96cf9124f40a24",
+          "nativeRows": 5028515
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "3570ffa8c66fb2304f9e2578b7158512",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "15b523cba76fa4b2203973a092e1b55f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "0313bc4ab274740fd0f99856bc51bd20",
+          "nativeRows": 5028515
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "6bed24a1094837e3a80276b5b85354ce",
+          "nativeRows": 5028515
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "907ffc5e065ec402fea4fa1ea5606596",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "b45ea4de39bda9265540e7f140b1e64a",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "08489cb13bca16a1a07ed0ef6edd1f0e",
+          "nativeRows": 5028515
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "5ecd7b9667ab34346ad5fcd48bb21056",
+          "nativeRows": 5028515
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "fd7190285d7c087ae226e538b5b47776",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "3e9db1754190016429f63fa9a868f4f5",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "682e8109393755f0e5780b0b7064a09c",
+          "nativeRows": 5028515
+        }
+      ],
+      "stockMedianMs": 613.488083,
+      "nativeMedianMs": 490.8165,
+      "medianSpeedup": 1.2499336982354912
+    },
+    {
+      "query": 12,
+      "sqlSha256": "8622e45700f76a2b08b67c19a124013fc4e021623a8bd2c0d65845b1a1a3e9b0",
+      "nativePlanned": true,
+      "resultType": "ROW<`l_shipmode` STRING, `high_line_count` INT NOT NULL, `low_line_count` INT NOT NULL> NOT NULL",
+      "rows": 2,
+      "resultSha256": "c9f74d5ef6d51ff0a6e8c49a733e7f652c03a15b41c92dd14557a51ef47a826c",
+      "stockNanos": [
+        873502667,
+        905847625,
+        966926083,
+        787473625,
+        808697709,
+        798649417,
+        891971583
+      ],
+      "nativeNanos": [
+        990706291,
+        993978500,
+        989191750,
+        1000714542,
+        1087346417,
+        980833959,
+        1090399833
+      ],
+      "stockRuntimeMs": [
+        699,
+        766,
+        768,
+        708,
+        727,
+        711,
+        837
+      ],
+      "nativeRuntimeMs": [
+        887,
+        894,
+        958,
+        888,
+        956,
+        890,
+        962
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "1f07abe312f2dba917b7c524d98b604c",
+          "nativeRows": 7625171
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "962c95e2fb84067f7ad0a3549b79e93b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "a0b68771ed630545054077ddbfcae0d7",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "0cd08cff2df034c5884d3e865bdb6340",
+          "nativeRows": 7625171
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "271a102fe37a18b5e8062ea2330a8188",
+          "nativeRows": 7625171
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "f886371f83a4c2d9a7e579f5478d23a2",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "f8e3584fd95bb454beb85a8e1e80f319",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "7e35c320d34dc1a534b612f15890e455",
+          "nativeRows": 7625171
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "ea2d993110b609405f09256d3ffd98e1",
+          "nativeRows": 7625171
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "c5377cd6b842b3bbe4d226258b4e4f0b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "290429f6a8cf71397708d44d5fceb7ea",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "61de8dc47a4a56293674803be273ce8c",
+          "nativeRows": 7625171
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "9efc0f3dfe726423813a07c283bd99fe",
+          "nativeRows": 7625171
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "980f54a26d203c518af06e3dfb725994",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "cc30a9fc09e835153835aa1ef1565ea9",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "f8f09f0f255504ec25da7a2206512e12",
+          "nativeRows": 7625171
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "541d3358e56ad7ef9338e7fc420b1863",
+          "nativeRows": 7625171
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "873bedf7ac425395312a9dbf885165ad",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "7bc3d2ab80c014dd7f89053afd6eeef3",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "ae2dc4238eb24744fc779805a82d8557",
+          "nativeRows": 7625171
+        }
+      ],
+      "stockMedianMs": 873.502667,
+      "nativeMedianMs": 993.9785,
+      "medianSpeedup": 0.8787943270402729
+    },
+    {
+      "query": 13,
+      "sqlSha256": "38b57cf5cb9b9f964337c1abfada5989add38d7c3bad9d339d49ee812ef387a9",
+      "nativePlanned": true,
+      "resultType": "ROW<`c_count` BIGINT NOT NULL, `custdist` BIGINT NOT NULL> NOT NULL",
+      "rows": 42,
+      "resultSha256": "b2d37ad2258ace6a923aa9b63fdba5daeb4524ac1bb4c41c03916070e32606e8",
+      "stockNanos": [
+        908068541,
+        908270125,
+        883161042,
+        959561667,
+        880084584,
+        962656916,
+        902442667
+      ],
+      "nativeNanos": [
+        561443541,
+        599072959,
+        567978041,
+        553887833,
+        625162292,
+        563380375,
+        635820083
+      ],
+      "stockRuntimeMs": [
+        787,
+        818,
+        777,
+        831,
+        770,
+        837,
+        776
+      ],
+      "nativeRuntimeMs": [
+        432,
+        469,
+        471,
+        438,
+        499,
+        439,
+        503
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "9c0f421acca92f7eab68925e39c206a3",
+          "nativeRows": 6501889
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "cbec7cfea69c0e2ed1b92fae46770818",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "1929dc6f3629e2f24954b3f89311b995",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "ab0850ea620f05643846a5df7d0f7b97",
+          "nativeRows": 6501889
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "d2c0c8117b61b12e31ca3bb0768feb00",
+          "nativeRows": 6501889
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "2147deaa3f8a07bc2c309894f7aa1629",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "b6e565c782f414e7f5c690844389a7df",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "62918edbdb3f685f0b4a04aa7d9b8c3e",
+          "nativeRows": 6501889
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "6da9cda19be66de5d007c764fe90038b",
+          "nativeRows": 6501889
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "3d48e9a9754cafd41d7d43e2fa7d24ba",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "5f61887cb6d224aa8358d868a7330d1b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "2c83111857eb95d2177afc8b373ea774",
+          "nativeRows": 6501889
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "c632bcd67bba774757f41cc450b8f9c6",
+          "nativeRows": 6501889
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "10212457670c6bb417bd7559e9e44261",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "bf7e649a83b687b47967a499d316be55",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "9f84a8cf1d9b58e0024405e2cbbd75c7",
+          "nativeRows": 6501889
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "69de571a3e2f58ec5051f3e3d88b95dc",
+          "nativeRows": 6501889
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "a87e4fa2f4b1f894dee84d1c88caa65b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "d857a61f5271850a30882c15952a50ac",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "02d2a2c04f1d5a68076211b5c2e5dffd",
+          "nativeRows": 6501889
+        }
+      ],
+      "stockMedianMs": 908.068541,
+      "nativeMedianMs": 567.978041,
+      "medianSpeedup": 1.5987740290121535
+    },
+    {
+      "query": 14,
+      "sqlSha256": "a8b179c98ec22511cd9e4333d9ee3000eb89ca2cc83291824e76d71fabe88b2c",
+      "nativePlanned": true,
+      "resultType": "ROW<`promo_revenue` DECIMAL(38, 6)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "54d5c64f51c2ed70f8a3b2db110a81f77cd36ebcacf5878bd65058d2e7e7fb1b",
+      "stockNanos": [
+        564503209,
+        615841000,
+        468713583,
+        565425667,
+        579595375,
+        634314125,
+        565464333
+      ],
+      "nativeNanos": [
+        882082666,
+        780536042,
+        778957334,
+        766420667,
+        935468042,
+        874437916,
+        777004167
+      ],
+      "stockRuntimeMs": [
+        490,
+        460,
+        425,
+        436,
+        436,
+        505,
+        433
+      ],
+      "nativeRuntimeMs": [
+        780,
+        727,
+        736,
+        726,
+        793,
+        799,
+        746
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "fdd8d67a1e81b264d3ab8514338080dd",
+          "nativeRows": 6429167
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "d9c029669afc349ae21507d637a45bac",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "a5edd384d19c70e7f8b2d18c01f813f2",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "d4bde847c3ba889435381d8daa4016a7",
+          "nativeRows": 6429167
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "47bd7a9afb37e41974a5a82a4c74b24a",
+          "nativeRows": 6429167
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "ea5ce0d50f71d92a0f0a2211db676c9c",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "bdd189cb6e391758a44b7caa7f3db68f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "26798891210e0157f52c5ad242c08c55",
+          "nativeRows": 6429167
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "bbbb1a8072dc1d468cdd9bb33c765716",
+          "nativeRows": 6429167
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "3ec14b131733731cef95c14cb2ce6cea",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "029e940673ae360f5d95f953e0435c21",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "1f307ca1c47ef917de69432dbb8e886d",
+          "nativeRows": 6429167
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "5d0b949eb8b3b223cec34c796578ee47",
+          "nativeRows": 6429167
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "79274da9c6ad93ac503ed5dba1188b09",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "d5f22c94950fd8b94cfbb390a6790165",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "7af7be3b8c97f6e258a0587915a2a7e9",
+          "nativeRows": 6429167
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "710138042e03dbe8b536d696ff7e1990",
+          "nativeRows": 6429167
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "e6107331c34399bfeb71668460fed8bd",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "e02917d2b2aeca03e79fdc701af1fd85",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "057ccf1c73009cea2a9e1a569c77042c",
+          "nativeRows": 6429167
+        }
+      ],
+      "stockMedianMs": 565.464333,
+      "nativeMedianMs": 780.536042,
+      "medianSpeedup": 0.7244564024885862
+    },
+    {
+      "query": 15,
+      "sqlSha256": "24ffeb12ad93550c3241dbea68868484c9ad6fe71d3185aeb49b844539b0ec27",
+      "nativePlanned": true,
+      "resultType": "ROW<`s_suppkey` BIGINT, `s_name` STRING, `s_address` STRING, `s_phone` STRING, `total_revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "448d06e546087f558f8cdf7b4d6d62301dc29e2ffed3da6a0d32d2851607a5af",
+      "stockNanos": [
+        582735625,
+        610826834,
+        727387500,
+        587244625,
+        587133083,
+        578485500,
+        672320625
+      ],
+      "nativeNanos": [
+        1208802500,
+        1393732292,
+        1451937625,
+        1554064084,
+        1375805958,
+        1217852083,
+        1494151084
+      ],
+      "stockRuntimeMs": [
+        515,
+        508,
+        562,
+        477,
+        525,
+        473,
+        533
+      ],
+      "nativeRuntimeMs": [
+        1158,
+        1274,
+        1398,
+        1420,
+        1232,
+        1154,
+        205148
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "fcbcc53f15a0eaf17f570fed7fcbd15a",
+          "nativeRows": 12534346
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "f8218a7d6ee0935029b754dd6d704401",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "0b3ed9139a91db4854bacd9f4904111d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "c637b0c5c8093a61c9f4cb3a89fa0683",
+          "nativeRows": 12534346
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "1632c6d72f08cbbc73b5e2ea835e2dfb",
+          "nativeRows": 12534346
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "a1e35b87041338b69032b1648a3228bc",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "48e8fbb78186d89ccda77d3207bf695b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "b120b66d6f2d3f26e2cfe4160676388d",
+          "nativeRows": 12534346
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "085e973b5d8d59eff21bd402375b2aea",
+          "nativeRows": 12534346
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "029cb53857e4fb92d382380e8f016c0f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "c7c415933034312f7616efd00200dc4a",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "796dc4364cbc13b211949b56c548a98d",
+          "nativeRows": 12534346
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "ada070f2f09fd22d7a69bfc94ed664ea",
+          "nativeRows": 12534346
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "c58fece7f26b253fb0bc9af03dae9b39",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "d95ec80895dc536ee8854d7022853b2e",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "9f4d607b7e921c8d1720c6caa6a44358",
+          "nativeRows": 12534346
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "d8cc61122a050433abafa6f4feb00da3",
+          "nativeRows": 12534346
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "797aa3511bdc672c45a562a489768a22",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "a61d41f472d28bd310c2ab506737017d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "5e8ca09f584dd84f00cd284ec4adbca4",
+          "nativeRows": 12534346
+        }
+      ],
+      "stockMedianMs": 587.244625,
+      "nativeMedianMs": 1393.732292,
+      "medianSpeedup": 0.4213467883113381
+    },
+    {
+      "query": 16,
+      "sqlSha256": "71a2bdd941e0fe9929daed3b93b988e6d666625b7ed7c70faa9678d3d5ce6079",
+      "nativePlanned": true,
+      "resultType": "ROW<`p_brand` STRING, `p_type` STRING, `p_size` INT, `supplier_cnt` BIGINT NOT NULL> NOT NULL",
+      "rows": 18314,
+      "resultSha256": "e0c209d341738c18fecfe5819198f08ba7c037b7611a2ba0f42e41d49bba4077",
+      "stockNanos": [
+        682659250,
+        763481500,
+        737296667,
+        611822959,
+        630277417,
+        536286500,
+        501822834
+      ],
+      "nativeNanos": [
+        379478250,
+        405912875,
+        411711750,
+        266624584,
+        375425167,
+        413879792,
+        409966125
+      ],
+      "stockRuntimeMs": [
+        486,
+        582,
+        554,
+        496,
+        513,
+        414,
+        430
+      ],
+      "nativeRuntimeMs": [
+        223,
+        264,
+        259,
+        219,
+        248,
+        253,
+        248
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "5d72a15eb1f46b85a0e4e4dfd8b6e2b6",
+          "nativeRows": 1684612
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "ff6574a265d427450a046119806c1252",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "37a67ccf4b89660e52d71614eb41355c",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "6455c3e432dfd5b6a4a82a3b61e403df",
+          "nativeRows": 1684612
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "ef3f3a50ad5a3b1117b23f0d82782225",
+          "nativeRows": 1684612
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "a522fef442d22a768e393bcd6c8ee368",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "739e39179fd4b93a785ada431b7aeeeb",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "750e9cdaf1540de14bcec9cdeb7408f8",
+          "nativeRows": 1684612
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "2126be1b6afa7874011308d29da4c5a9",
+          "nativeRows": 1684612
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "107d2f76baa7837e20fc277734c16a48",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "63d9e272551a3ee4863452807f96381d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "54f848323facfc6424beef44d2a43d74",
+          "nativeRows": 1684612
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "3e4cae292e6f1c28c1f332157da663f5",
+          "nativeRows": 1684612
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "faed9062ee7a65c6c6a606c2b5ae45b1",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "c1b31d1373f1e08fa67f845e8e930d73",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "459bfe9a89a3e954c1855a83c8ffb715",
+          "nativeRows": 1684612
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "29eb4d783f73adff3e83e18a32cf3214",
+          "nativeRows": 1684612
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "a25d3fa7ee03a6ceed830dea894852e1",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "8f1ca05e9c5f1795de83dbc2b8e4bc14",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "1031887081ff9cb33e2eb95139b29635",
+          "nativeRows": 1684612
+        }
+      ],
+      "stockMedianMs": 630.277417,
+      "nativeMedianMs": 405.912875,
+      "medianSpeedup": 1.5527406392320027
+    },
+    {
+      "query": 17,
+      "sqlSha256": "3bf63af45d8c0120013a1dc302df5a4d7923b12522ed10ce0d251922b118cd4b",
+      "nativePlanned": true,
+      "resultType": "ROW<`avg_yearly` DECIMAL(38, 6)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "5dbfa0d0ab5e784baa6c87e36b44b519565752ffe24c0b91d347ebdf34376e94",
+      "stockNanos": [
+        1527921333,
+        1602086875,
+        1563895042,
+        1547697125,
+        1610342250,
+        1666986416,
+        1745928333
+      ],
+      "nativeNanos": [
+        1561188125,
+        1442656041,
+        1518738375,
+        1518666375,
+        1615428125,
+        1603461833,
+        1588475125
+      ],
+      "stockRuntimeMs": [
+        1464,
+        1466,
+        1454,
+        1486,
+        1540,
+        1518,
+        1531
+      ],
+      "nativeRuntimeMs": [
+        1424,
+        1388,
+        1405,
+        1467,
+        1479,
+        1488,
+        1448
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "f4e23f840a014dec7143fb8593e8dd25",
+          "nativeRows": 18617406
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "7dd131480176d87d15eba2d1254785f0",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "22fa4fd761c801edf054fcafc0b9e1dc",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "1c8e534cfa905175b1a939504b424a30",
+          "nativeRows": 18617406
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "758e786a6e1df62234712f061bff41ff",
+          "nativeRows": 18617406
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "d1b82f86b720c5e7ebc1ee19706077be",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "d0ebe12f6dd6f2bd1561f15e8176b382",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "3910fdb6a5960103640099aecabb7306",
+          "nativeRows": 18617406
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "14a44ce3d8d1ef5c4e0a91dbe7d848df",
+          "nativeRows": 18617406
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "ff4514e160cc30b9fb748e9640997e5b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "2cde13304d4fc2273b374114e532e383",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "ff002690eca1af12638827a133dd5b2e",
+          "nativeRows": 18617406
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "2167ff2f4c26ab56bd05b9ea7a2457c9",
+          "nativeRows": 18617406
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "e42f6700d346bdbc4f86cd5004f7ad7a",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "2698cf4008980b75c5d2abe02abcf5a9",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "32e996952a2ededcb865eec6918b4948",
+          "nativeRows": 18617406
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "37fa2a039f34511211f6beb8bbffaa51",
+          "nativeRows": 18617406
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "f049a1bf5b10755b2583356759ea1abc",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "03678829a21bdf7e70d46586abcb1acb",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "a04c5b43a7cf0613ce11c8a9c7fa1ff3",
+          "nativeRows": 18617406
+        }
+      ],
+      "stockMedianMs": 1602.086875,
+      "nativeMedianMs": 1561.188125,
+      "medianSpeedup": 1.0261971951650606
+    },
+    {
+      "query": 18,
+      "sqlSha256": "99f8f2933f20acf8a17b3886cfd40418749d8a33cb33d126b11cf9e465f393d4",
+      "nativePlanned": true,
+      "resultType": "ROW<`c_name` STRING, `c_custkey` BIGINT, `o_orderkey` BIGINT, `o_orderdate` DATE, `o_totalprice` DECIMAL(15, 2), `EXPR$5` DECIMAL(38, 2)> NOT NULL",
+      "rows": 57,
+      "resultSha256": "6c892b0ff9f06e41237ceb0e9ca40161fe35678031b5840140eebc82a3a92e39",
+      "stockNanos": [
+        3430946792,
+        3490194000,
+        3504355500,
+        3614821125,
+        3731402875,
+        3830624042,
+        4012560458
+      ],
+      "nativeNanos": [
+        2277505333,
+        2164285750,
+        2366494792,
+        2324089542,
+        2252388375,
+        2479667417,
+        2294569792
+      ],
+      "stockRuntimeMs": [
+        3297,
+        3327,
+        3322,
+        3513,
+        3562,
+        3744,
+        3775
+      ],
+      "nativeRuntimeMs": [
+        2109,
+        2046,
+        2233,
+        2210,
+        2123,
+        2272,
+        2241
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "317364d6c1378ad65dfe19c65a81815b",
+          "nativeRows": 19653513
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "0b0699916879d398bd669e2aa1305470",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "bc00b50bff8f0dce689f6775d6cff166",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "22557ddae3f819c1541023985a18e7e6",
+          "nativeRows": 19653513
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "f3c0c65b8bc884a1ea84522fcb7221fc",
+          "nativeRows": 19653513
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "3b8c4be636119d77e8805f1e525c0063",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "0b46cd0e5fae4ccd89783b4415821ceb",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "e119b44810932a6073ac200f1d00c99d",
+          "nativeRows": 19653513
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "d348e778c116e7a2983c9c4bd3f1b9d4",
+          "nativeRows": 19653513
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "9593ec32b9e736e964f2f08357d96cab",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "7bf801552e71b29e6dea434f1576c3d2",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "6b853ec062c04fcd9b8d2b2d81e39de3",
+          "nativeRows": 19653513
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "8ad33e8409659b3e2f9c3f1194c13cf4",
+          "nativeRows": 19653513
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "c9ff95facc8315f17d95f7947127dab6",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "3b0a2fdbe9a1eec501ccda014ae54ecf",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "f0dee0bb96e6ab84e77c55196ccdd488",
+          "nativeRows": 19653513
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "31cf9964462795ae9de21e4ad5f629b7",
+          "nativeRows": 19653513
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "e1f9bbfe70ce1651c5c23829c0a1cbb7",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "76d1bdcaa05ae3b228d5e0c5bdef9ef8",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "5362d41c16fe8207995fb5c398206179",
+          "nativeRows": 19653513
+        }
+      ],
+      "stockMedianMs": 3614.821125,
+      "nativeMedianMs": 2294.569792,
+      "medianSpeedup": 1.5753807696776303
+    },
+    {
+      "query": 19,
+      "sqlSha256": "8428fa6c46796c312c1eb99ff458dbd4587c201a5ebb7ed31208e68e34f42e5b",
+      "nativePlanned": true,
+      "resultType": "ROW<`revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "ee4a62a09da773543a05a1732f5973552565485870f61b8751f4c862c0bb29dc",
+      "stockNanos": [
+        1856460833,
+        1809037834,
+        1677831959,
+        1719616959,
+        1472237250,
+        1338097166,
+        1436072416
+      ],
+      "nativeNanos": [
+        1553589417,
+        1555649042,
+        1588954333,
+        1711202084,
+        1626878750,
+        1540203000,
+        1344431792
+      ],
+      "stockRuntimeMs": [
+        1574,
+        1524,
+        1388,
+        1422,
+        1308,
+        1177,
+        1345
+      ],
+      "nativeRuntimeMs": [
+        1380,
+        1437,
+        1328,
+        1444,
+        1370,
+        1395,
+        1278
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "2a5c83f8154a93f3d48a0cca16dd0edd",
+          "nativeRows": 6330799
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "4630484137f64529519c44fb6d6d6f4e",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "6d5202f0392ab09af404963b94fa250f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "3a5bbe9f30d72355561a6b88ecf88d73",
+          "nativeRows": 6330799
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "a29493413894baa017f91adb3e205b5e",
+          "nativeRows": 6330799
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "573735e479743499380c8c3c88728a5f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "3124c3256e9f680e29f0009f096b2b05",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "e7d4a702e2597762cc1d309cf03efceb",
+          "nativeRows": 6330799
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "4e1c271e9688fa3f714d9dd1135567a2",
+          "nativeRows": 6330799
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "6ee5446cfd349aa8c5ea49b976bc3b33",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "f793fa73659e535bf146412094f32e03",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "84cde92b9950c0a1dd768828e64c9d3a",
+          "nativeRows": 6330799
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "5f3f2def5d6efb4cd204efc328129eb2",
+          "nativeRows": 6330799
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "87670082ae2b5c2dd40328695c3d8af2",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "4225a9219716424fc8686567bcdd90b1",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "9f3a7bcc58e76641775c430b22bc1e5d",
+          "nativeRows": 6330799
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "b210ec8b139570e84ff346fa54850d85",
+          "nativeRows": 6330799
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "8234dd611c9a98474fbba4518d457ee7",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "abdf258b605234d9bf04d298f2304fde",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "a7ae15dbe05f0aa6bcdefa8565808775",
+          "nativeRows": 6330799
+        }
+      ],
+      "stockMedianMs": 1677.831959,
+      "nativeMedianMs": 1555.649042,
+      "medianSpeedup": 1.078541440711407
+    },
+    {
+      "query": 20,
+      "sqlSha256": "4187d0ff2534a26399db48983cd9f4e1c5eb0283c4a43f791d38dfed85007e8d",
+      "nativePlanned": true,
+      "resultType": "ROW<`s_name` STRING, `s_address` STRING> NOT NULL",
+      "rows": 186,
+      "resultSha256": "03a78da0e1ad70e4845e11f0780c2b572e5342806c6f4fd2f0a799f2fdfd9a8e",
+      "stockNanos": [
+        1530612375,
+        1501402333,
+        1713120625,
+        1515623583,
+        1377900500,
+        1296930833,
+        1258664875
+      ],
+      "nativeNanos": [
+        1407103916,
+        1508019292,
+        1453749917,
+        1357393500,
+        1511194500,
+        1466210958,
+        1460375542
+      ],
+      "stockRuntimeMs": [
+        1305,
+        1265,
+        1404,
+        1266,
+        1257,
+        1013,
+        1099
+      ],
+      "nativeRuntimeMs": [
+        1182,
+        1279,
+        1317,
+        1257,
+        1261,
+        1301,
+        1307
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "5dec6c959e769a617d54379284f4bd61",
+          "nativeRows": 9046546
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "6e013b078b2e870ac7a682349f451005",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "fa6bec4abe09b165209440812d6f9a3d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "4d5cc4b1c06ff6af8e9018af236ba7c6",
+          "nativeRows": 9046546
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "2f50811d00a49cb8313431f511b9ff5e",
+          "nativeRows": 9046546
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "0c6e6ac0b888905145487aa9889cd44b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "0d006dccc089daa149bcc2cdbd76b740",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "4aaaef7800c42dc512b54188357bafdc",
+          "nativeRows": 9046546
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "dc248e0f933b6f55be22722a04e33f3c",
+          "nativeRows": 9046546
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "ac7ee745c7a0f794933a4142fb7b8d5c",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "8663e93f01e176d8e27050b352e6e4c9",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "c9d993c72189c0dd288b359d4dc8f350",
+          "nativeRows": 9046546
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "8a65a4d43bca103e591f2d539e3c2153",
+          "nativeRows": 9046546
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "38b0474f77eba0765d252e17193247be",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "fea97d3f2fd79840c6bf04933853b6b1",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "dae827ab06d68ee9e9a0027972239c3e",
+          "nativeRows": 9046546
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "532e52a35bfb5034b99f39384c8b50a4",
+          "nativeRows": 9046546
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "bbfddcc474ccf5edceac0e88a505fa46",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "22204b8e6af3b333a13977d266608307",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "e7fbe9846b4f27b149aa09d306f7dccb",
+          "nativeRows": 9046546
+        }
+      ],
+      "stockMedianMs": 1501.402333,
+      "nativeMedianMs": 1460.375542,
+      "medianSpeedup": 1.028093315602789
+    },
+    {
+      "query": 21,
+      "sqlSha256": "07ae101f42fa177606cf17744335782723f50c4149ea0dcb02c528b9732b0c7a",
+      "nativePlanned": true,
+      "resultType": "ROW<`s_name` STRING, `numwait` BIGINT NOT NULL> NOT NULL",
+      "rows": 100,
+      "resultSha256": "04634a6fed04cfc2d2ac87a8571a9ebe6e309514259b1c6f956051d2bf7bf632",
+      "stockNanos": [
+        5490346583,
+        5139766958,
+        5485526125,
+        5598715417,
+        5833109291,
+        5593992625,
+        5620934750
+      ],
+      "nativeNanos": [
+        3006317958,
+        2978459291,
+        3171078167,
+        2970679042,
+        3243991291,
+        3011801917,
+        3059832375
+      ],
+      "stockRuntimeMs": [
+        5148,
+        5010,
+        5264,
+        5381,
+        5659,
+        5402,
+        5376
+      ],
+      "nativeRuntimeMs": [
+        2802,
+        2826,
+        2981,
+        2826,
+        3051,
+        2823,
+        2877
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "a47b7697682d0d516072a6cd4fe84df4",
+          "nativeRows": 39318629
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "39b515a3db63e9b6d72858bf71138a53",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "c4aeb2d43624f4320a12738806945304",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "20075fddda6360b4b6f32488e3edd3b2",
+          "nativeRows": 39318629
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "e62883bf3c86da22f18e51785694a1ed",
+          "nativeRows": 39318629
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "85968945577f8da8d31b6c65b62a8817",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "e806d14c8358858540604b00c5b0b5f1",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "a738dd00c0a0922345c7aee070085fa1",
+          "nativeRows": 39318629
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "94fff91f1c585a45b300fcf1d980393a",
+          "nativeRows": 39318629
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "0cebac8e9c7acfe5b25401fdb91384dc",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "5dfc7d75b65ada22897d7923488f0a0e",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "93f4806b3549323ed5a490a247521d9e",
+          "nativeRows": 39318629
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "5e1d0c307de4aefee0179e0580d11e19",
+          "nativeRows": 39318629
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "c371f057f987534ba85fa1949397b6d9",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "dc157f6a8ab920cf0b8aa89e22e7f44e",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "202c3c75528e1ed86f4d7175fcf82f44",
+          "nativeRows": 39318629
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "542cd84e9fd408034739c368602671bc",
+          "nativeRows": 39318629
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "7e8fbf52c16af2c54a3c78ec34cee858",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "9a9665aee3559be2741218498821cbd6",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "1d384c84c86bc2c250b6e678d01b4344",
+          "nativeRows": 39318629
+        }
+      ],
+      "stockMedianMs": 5593.992625,
+      "nativeMedianMs": 3011.801917,
+      "medianSpeedup": 1.8573574156470665
+    },
+    {
+      "query": 22,
+      "sqlSha256": "21b5e9cedbbb4bb9ee5a987ce9a901f9aaeb8736e96d7daf0ad3fbfea7632100",
+      "nativePlanned": true,
+      "resultType": "ROW<`cntrycode` STRING, `numcust` BIGINT NOT NULL, `totacctbal` DECIMAL(38, 2)> NOT NULL",
+      "rows": 7,
+      "resultSha256": "ce1290501d5b6d2dc8537b2c492affd4dbe325084664ea89421bcab62106a8f1",
+      "stockNanos": [
+        738842625,
+        2127914333,
+        2140616041,
+        2768180292,
+        2538302333,
+        2345582292,
+        2516296958
+      ],
+      "nativeNanos": [
+        1026929167,
+        1250982916,
+        1246162500,
+        1253067083,
+        1090497250,
+        1356682833,
+        1601549708
+      ],
+      "stockRuntimeMs": [
+        652,
+        1733,
+        1628,
+        2438,
+        2010,
+        1684,
+        2180
+      ],
+      "nativeRuntimeMs": [
+        833,
+        818,
+        872,
+        1041,
+        796,
+        806,
+        1192
+      ],
+      "status": "passed",
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "28c87cf448aef50eda27711adb76bedb",
+          "nativeRows": 1915002
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "67b8c7f94098eed5ca2bee3c37e60b6f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "ff2e82980abb92accf9fb00aafd83218",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "7b11e947c8129d8dd597e239623632df",
+          "nativeRows": 1915002
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "530c945fc8a919f608450591404488ca",
+          "nativeRows": 1915002
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "ce859cd1a153a183468769b890dfb701",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "94f43981f89916359bc2dc928370d789",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "ec20d9a86804b48acd83fd6d0faf1934",
+          "nativeRows": 1915002
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "7dc61e007a44fe54f6ed20aff48dacd7",
+          "nativeRows": 1915002
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "71184655c96e310263d5991204fc4dc8",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "9c5ac12c0d150707bfe5279e68ca69af",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "f95972940b34dafe89762a73221eb917",
+          "nativeRows": 1915002
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "98d032adae3f7f359ac7a80c4260d4d8",
+          "nativeRows": 1915002
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "acf7d4020c396e27196e5bd3d707dd04",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "658f5fab6f0776f0f8065b58d3369f44",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "d4bafbab0ad6017432beabb6b4987f70",
+          "nativeRows": 1915002
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "80f39cc1608c90eee2994ba625cbec45",
+          "nativeRows": 1915002
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "afedc31f170159d4da55b1a4400b315d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "4f9c39b2a702b141dbc0f803590c987f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "85dd9aa91587ca914428a1fe94822ec1",
+          "nativeRows": 1915002
+        }
+      ],
+      "stockMedianMs": 2345.582292,
+      "nativeMedianMs": 1250.982916,
+      "medianSpeedup": 1.8749914663103202
+    }
+  ]
+}

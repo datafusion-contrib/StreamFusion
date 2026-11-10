@@ -59,12 +59,13 @@ DataFusion partial/final/single stages and normalizes merge schemas. Bounded Fli
 instead supplies its own released physical local/global contracts and EOF.
 
 Each host stage runs DataFusion single aggregation and a projection into Flink's
-exact accumulator columns. Flink local AVG uses BIGINT sum/count, narrow SUM keeps
+exact accumulator columns. Flink local integer AVG uses BIGINT sum/count, narrow SUM keeps
 its input width, and local empty input emits no row. These differ from DataFusion's
 private partial schema/default global output. A local auxiliary COUNT suppresses
 only truly empty input; it is independent of aggregate FILTERs. Widening SUM to
 BIGINT then using the existing wrapping cast preserves modular narrow arithmetic;
-AVG uses separate SUM/COUNT with guarded signed division. No custom accumulator or
+Integer AVG uses separate SUM/COUNT with guarded signed division. Decimal stages
+wrap the existing host-compatible accumulators. No new arithmetic algorithm or
 streaming retraction machinery is added. The host's partial-state Arrow schema
 remains the wire contract.
 
@@ -94,3 +95,83 @@ matches the host's millisecond read, including Java integer wrapping, before
 DataFusion compares values. Casting only the chosen result could select a different
 extremum. Timestamp structs and variable-width values are not admitted by this
 extension: their retained-buffer ownership and semantics require separate proof.
+
+
+## Bounded keyed aggregation and Arrow hash routing
+
+The grouped extension follows Comet's `execution/planner/aggregate.rs`: group
+expressions and DataFusion accumulators form the physical aggregate, while a
+projection restores the host state layout. Arroyo's aggregate extension similarly
+separates key fields, partial schema and finish projection. Flink supplies the
+local/final stages; DataFusion 54 single-mode grouped hashing supplies spill and
+sorted replay. Signed keys and fixed-width accumulators copy scalar state and do
+not retain the imported Arrow batch.
+
+The comparison includes Comet's `memory_pools/plan_pool.rs`, `task_shared.rs`,
+`fair_pool.rs`, `unified_pool.rs` and `spill_replay.rs`, alongside the existing
+StreamFusion task pool. Comet's current replay exception targets DataFusion 55
+stream/consumer names and permits overcommit. StreamFusion keeps its released
+DataFusion 54 and existing hard reservation authority. Projection workspace is
+retained across grouped output and transferred with `MemoryReservation.split`
+into the copied-output handoff, then replenished after acknowledgement. No new
+pool or overcommit exception is introduced. DataFusion reports hash-state growth
+after processing a batch; pool reservations follow that established estimate-based
+contract rather than tracking every native allocation or process RSS.
+
+Batch HASH reuses the Arrow projected-key splitter and key-group partitioner, but
+binds their routing count to the deployed writer. Streaming key-group recovery
+checks remain unchanged. Flink's batch graph processor may leave consumer
+parallelism unresolved and configure the runtime partitioner using its writer's
+target groups. Native groups use explicit Arrow distributions and ANY exec input
+properties to avoid insertion of stock RowData hash exchanges. Every final native
+group establishes a compatible route even if a stock source trait elided hashing;
+stock batch generated field hashing and streaming BinaryRow hashing are not assumed
+interchangeable. Frames remain Arrow IPC on Flink's blocking shuffle and stage replay.
+
+Typed batch reductions reuse DataFusion grouping storage for integer, UTF-8,
+boolean, date and decimal keys. Decimal SUM/AVG/SUM0 reuse StreamFusion's existing
+Flink-compatible decimal accumulators through thin DataFusion UDAFs. The AVG
+adapter exposes Flink's two local columns through a temporary struct projection;
+it does not substitute DataFusion's decimal rounding or overflow semantics. SUM0
+uses the same sticky-overflow arithmetic as AVG and preserves NULL propagation
+when merging host partials. This is a host-state/schema adaptation, not a second
+aggregation store or memory pool. Comet's aggregate and sort planners and Arroyo's
+UDAF aggregate construction remain the structural references.
+
+Bounded hash joins follow Comet's `HashJoinExec` construction and build-side swap,
+and Arroyo's persistent two-input DataFusion execution structure. Flink's mailbox
+and input selection supply the two pending Arrow streams; we do not use Arroyo's
+window/reset lifecycle for bounded SQL. Flink's optional RowData-only multiple-input
+fusion is skipped for graphs containing native joins. Its deadlock resolver still
+runs, and inserted forwarding boundaries after Arrow producers retain Arrow IPC.
+The released DataFusion hash table is reservation-bounded but does not spill; this
+is an explicit limitation of the current candidate, not another memory pool or
+permission to exceed the shared authority.
+
+Cartesian elimination follows DataFusion 54's `eliminate_cross_join` linked-input
+reconstruction, applied to a narrow verified host physical pattern instead of
+running a second logical optimizer. A projection and optional blocking exchange
+restore Flink's column order and distribution. Explicit strategy hints, residual
+conditions and NULL-safe equality are excluded from reassociation.
+
+Computed batch sharing uses the existing streaming share operator and Arrow
+retained-view ownership. Flink expands an intermediate table to a shared RelNode
+before its SameRelObjectShuttle/SubplanReuser cycle; we preserve only explicitly
+counted unary aggregate subtrees through that cycle. Arbitrary native nodes keep
+their per-instance digest barriers. This follows Flink's subplan reuse and Comet's
+exchange reuse rather than adding a cache or independent memory manager.
+
+## Bounded native filesystem Parquet source
+
+Comet supplies native Arrow readers per host partition; Arroyo's filesystem source
+uses parquet-rs record batches and restores a logical record offset. StreamFusion
+uses the existing optional Parquet decoder over Flink-owned seekable streams, under
+Flink's stock bounded file enumerator and SourceReader. It restores logical row
+counts and transfers owned Arrow buffers through the established C Data bridge.
+The initial decoder API is whole-file, so the source deliberately enumerates one
+split per file rather than interpreting Flink's stock Parquet byte splits as whole
+files. File count limits source parallelism; stock source savepoint compatibility
+is not claimed. Splitting individual row groups is follow-up work, not a reason to
+change Flink's coordinator or add another memory pool. Shared scans use the existing
+retained-view share operator. Source-reader teardown additionally releases queued
+Arrow records because Flink's heap-oriented close path only shuts down fetchers.

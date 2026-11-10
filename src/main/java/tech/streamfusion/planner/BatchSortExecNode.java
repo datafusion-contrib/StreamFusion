@@ -17,7 +17,7 @@ import tech.streamfusion.operator.ArrowBatchTypeInformation;
 import tech.streamfusion.operator.NativeBatchSortOperator;
 
 final class BatchSortExecNode extends ExecNodeBase<ArrowBatch>
-    implements BatchExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
+    implements BatchExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch>, BatchColumnarExecNode {
   private final int[] columns;
   private final int[] flags;
   private final long offset;
@@ -55,7 +55,7 @@ final class BatchSortExecNode extends ExecNodeBase<ArrowBatch>
         input,
         createTransformationMeta("native-batch-sort", getDescription(), getDescription(), config),
         new NativeBatchSortOperator(
-            columns, flags, NativeConfig.transposeBatchRows(config, 1024), offset, end),
+            columns, flags, NativeConfig.boundedBatchRows(config), offset, end),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

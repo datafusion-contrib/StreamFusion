@@ -12,6 +12,7 @@ class BatchSortSqlTest {
   @Test
   void failedConsumerReplaysTheCompletedBlockingArrowShuffle() throws Exception {
     Configuration config = new Configuration();
+    config.setString("streamfusion.transpose.batchRows", "1024");
     config.setString("restart-strategy.type", "fixed-delay");
     config.setString("restart-strategy.fixed-delay.attempts", "1");
     config.setString("restart-strategy.fixed-delay.delay", "1 ms");
@@ -59,6 +60,7 @@ class BatchSortSqlTest {
   @Test
   void nullableIntegerSortPreservesOrderAcrossBlockingArrowShuffle() throws Exception {
     Configuration config = new Configuration();
+    config.setString("streamfusion.transpose.batchRows", "1024");
     config.setString("pipeline.operator-chaining.enabled", "false");
     try (var metrics = new RecoveryExecutionMetrics()) {
       metrics.setAsContext(config, 2, 128L << 20);

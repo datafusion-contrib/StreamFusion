@@ -100,8 +100,8 @@ A JFR diagnostic found source/dispatch work dominant, with rowwise Arrow writing
 Calc/JNI work and stock generated aggregation visible in samples. Java stacks do
 not establish individual Rust subroutine costs. The remaining work is to reduce
 perimeter and per-batch costs and establish a representative standalone gain.
-Future keyed aggregates also need a verified hash exchange and bounded state/spill
-contract; they are not covered by this result.
+[Keyed reductions](batch-grouped-aggregates.md) have separate hash-exchange,
+spill/replay and complete-job evidence; they are not covered by these global results.
 
 Those early borrowed-input diagnostics predate the final explicit expression
 workspace reservation for DataFusion casts/literals/FILTER copies. The admitted

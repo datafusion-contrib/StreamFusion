@@ -17,7 +17,9 @@ import tech.streamfusion.operator.ArrowBatchTypeInformation;
 import tech.streamfusion.operator.NativeBatchAggregateOperator;
 
 final class BatchAggregateExecNode extends ExecNodeBase<ArrowBatch>
-    implements BatchExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
+    implements BatchExecNode<ArrowBatch>,
+        SingleTransformationTranslator<ArrowBatch>,
+        BatchColumnarExecNode {
   private final RowType inputType;
   private final BatchAggregateSpec specification;
 
@@ -44,21 +46,37 @@ final class BatchAggregateExecNode extends ExecNodeBase<ArrowBatch>
   protected Transformation<ArrowBatch> translateToPlanInternal(
       PlannerBase planner, ExecNodeConfig config) {
     var input = (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
+    Transformation<ArrowBatch> aggregate =
+        ExecNodeUtil.createOneInputTransformation(
+            input,
+            createTransformationMeta(
+                "native-batch-aggregate", getDescription(), getDescription(), config),
+            new NativeBatchAggregateOperator(
+                inputType,
+                (RowType) getOutputType(),
+                specification.keys,
+                specification.kinds,
+                specification.columns,
+                specification.filters,
+                specification.merge,
+                specification.finalOutput,
+                NativeConfig.boundedBatchRows(config)),
+            ArrowBatchTypeInformation.INSTANCE,
+            input.getParallelism(),
+            false);
+    if (!specification.sortGroups) return aggregate;
+    // Like Comet's SortAggregate adapter, preserve the host's ordered group output after hashing.
+    int[] columns = java.util.stream.IntStream.range(0, specification.keys.length).toArray();
+    int[] flags = new int[columns.length];
+    java.util.Arrays.fill(flags, 2);
     return ExecNodeUtil.createOneInputTransformation(
-        input,
+        aggregate,
         createTransformationMeta(
-            "native-batch-aggregate", getDescription(), getDescription(), config),
-        new NativeBatchAggregateOperator(
-            inputType,
-            (RowType) getOutputType(),
-            specification.kinds,
-            specification.columns,
-            specification.filters,
-            specification.merge,
-            specification.finalOutput,
-            NativeConfig.transposeBatchRows(config)),
+            "native-batch-group-order", getDescription(), getDescription(), config),
+        new tech.streamfusion.operator.NativeBatchSortOperator(
+            columns, flags, NativeConfig.boundedBatchRows(config)),
         ArrowBatchTypeInformation.INSTANCE,
-        input.getParallelism(),
+        aggregate.getParallelism(),
         false);
   }
 }

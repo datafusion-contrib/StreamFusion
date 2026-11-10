@@ -64,7 +64,7 @@ SINK_OPERATORS = {
 }
 NATIVE_OPERATORS = {
     'tech.streamfusion.operator.' + name for name in (
-        'NativeBatchSortOperator', 'NativeBatchAggregateOperator',
+        'NativeBatchSortOperator', 'NativeBatchAggregateOperator', 'NativeBatchJoinOperator',
         'NativeCalcOperator', 'NativeLookupJoinOperator', 'NativeAsyncLookupJoinOperator',
         'NativeFilterOperator', 'NativeColumnarGroupAggregateOperator',
         'NativeColumnarLocalGroupAggregateOperator',
@@ -77,7 +77,7 @@ NATIVE_OPERATORS = {
 BATCH_NATIVE_OPERATORS = {
     'tech.streamfusion.operator.' + name for name in (
         'NativeCalcOperator', 'NativeFilterOperator', 'NativeBatchSortOperator',
-        'NativeBatchAggregateOperator')
+        'NativeBatchAggregateOperator', 'NativeBatchJoinOperator')
 }
 BOUNDARY_OPERATORS = SOURCE_OPERATORS | SINK_OPERATORS | {
     'tech.streamfusion.operator.RowDataToArrowOperator',

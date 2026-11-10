@@ -15,7 +15,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.batch.BatchExecNode;
  * processors.
  */
 final class BatchNativeExecNode<T> extends ExecNodeBase<T>
-    implements BatchExecNode<T>, SingleTransformationTranslator<T> {
+    implements BatchExecNode<T>, SingleTransformationTranslator<T>, BatchColumnarExecNode {
   private final ExecNode<T> delegate;
 
   BatchNativeExecNode(ReadableConfig config, ExecNode<T> transformation) {
@@ -27,6 +27,20 @@ final class BatchNativeExecNode<T> extends ExecNodeBase<T>
         transformation.getOutputType(),
         transformation.getDescription());
     this.delegate = transformation;
+  }
+
+  @Override
+  public boolean outputsArrow() {
+    return !(delegate instanceof ArrowToRowDataExecNode);
+  }
+
+  boolean acceptsNativeFileSource() {
+    return delegate instanceof RowDataToArrowExecNode
+        && ((RowDataToArrowExecNode) delegate).acceptsNativeFileSource();
+  }
+
+  void allowNativeFileSource(RowDataToArrowExecNode.FileSourceGroup group) {
+    ((RowDataToArrowExecNode) delegate).allowNativeFileSource(group);
   }
 
   @Override

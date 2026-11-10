@@ -21,9 +21,32 @@ public final class Native {
       boolean merge,
       boolean finalOutput);
 
+  public static native boolean supportsBoundedGroupedAggregate(
+      long inputSchemaAddress,
+      long outputSchemaAddress,
+      int[] keys,
+      int[] kinds,
+      int[] columns,
+      int[] filters,
+      boolean merge,
+      boolean finalOutput);
+
   public static native long createBoundedAggregate(
       long inputSchemaAddress,
       long outputSchemaAddress,
+      int[] kinds,
+      int[] columns,
+      int[] filters,
+      boolean merge,
+      boolean finalOutput,
+      String[] spillDirectories,
+      int batchRows,
+      String taskName);
+
+  public static native long createBoundedGroupedAggregate(
+      long inputSchemaAddress,
+      long outputSchemaAddress,
+      int[] keys,
       int[] kinds,
       int[] columns,
       int[] filters,
@@ -56,6 +79,37 @@ public final class Native {
       long offset,
       long end);
 
+  public static native boolean supportsBoundedHashJoin(
+      long leftSchema, long rightSchema, long outputSchema, int[] leftKeys, int[] rightKeys,
+      int kind, boolean buildLeft, boolean nullEquals);
+
+  public static native long createBoundedHashJoin(
+      long leftSchema, long rightSchema, long outputSchema, int[] leftKeys, int[] rightKeys,
+      int kind, boolean buildLeft, boolean nullEquals, String[] spillDirectories, int batchRows,
+      String taskName);
+
+  public static native boolean supportsBoundedJoinPlan(
+      long leftSchema, long rightSchema, long outputSchema, int[] leftKeys, int[] rightKeys,
+      int kind, boolean buildLeft, boolean nullEquals, boolean nestedLoop, long predicateHandle);
+
+  public static native long createBoundedJoinPlan(
+      long leftSchema, long rightSchema, long outputSchema, int[] leftKeys, int[] rightKeys,
+      int kind, boolean buildLeft, boolean nullEquals, boolean nestedLoop, long predicateHandle,
+      String[] spillDirectories, int batchRows, String taskName);
+
+  public static native boolean supportsBoundedMergeJoin(
+      long leftSchema, long rightSchema, long outputSchema, int[] leftKeys, int[] rightKeys,
+      int kind, boolean nullEquals, long predicateHandle);
+
+  public static native long createBoundedMergeJoin(
+      long leftSchema, long rightSchema, long outputSchema, int[] leftKeys, int[] rightKeys,
+      int kind, boolean nullEquals, long predicateHandle, String[] spillDirectories, int batchRows,
+      String taskName);
+
+  public static native void pushBoundedTaskInput(long handle, int port, long arrayAddress);
+  public static native void finishBoundedTaskInput(long handle, int port);
+  public static native int boundedTaskNeededInputs(long handle);
+
   // The original sorter data ABI also drives bounded aggregates; factories select the plan.
   public static native void pushBoundedSorter(long handle, long arrayAddress);
 
@@ -72,6 +126,9 @@ public final class Native {
   public static native void releaseBoundedSorterOutput(long handle);
 
   public static native boolean supportsBoundedSorterSchema(long schemaAddress);
+
+  public static native boolean supportsBoundedSorterKeys(
+      long schemaAddress, int[] columns, int[] flags);
 
   /** Task-thread snapshot: spill count, spilled bytes and native reserved bytes. */
   public static native long[] boundedSorterExecutionStats(long handle);

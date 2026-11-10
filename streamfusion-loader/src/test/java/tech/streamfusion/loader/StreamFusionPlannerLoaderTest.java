@@ -202,6 +202,44 @@ class StreamFusionPlannerLoaderTest {
     }
   }
 
+  @Test
+  void groupsBlockingArrowPartitionsFromThePackagedPayload() throws Exception {
+    TableEnvironment table = packagedAggregateEnvironment();
+    table.getConfig().set("execution.batch.adaptive.auto-parallelism.enabled", "false");
+    table.getConfig().set("table.exec.resource.default-parallelism", "2");
+    String sql = "SELECT MOD(id,3),SUM(id),COUNT(*) FROM batch_aggregate_input GROUP BY MOD(id,3)";
+    String plan = table.explainSql(sql);
+    assertTrue(plan.contains("NativeAggregate") && plan.contains("NativeExchange"), plan);
+    List<String> actual = new java.util.ArrayList<>();
+    try (CloseableIterator<Row> rows = table.executeSql(sql).collect()) {
+      while (rows.hasNext()) actual.add(rows.next().toString());
+    }
+    actual.sort(String::compareTo);
+    assertEquals(
+        List.of(
+            Row.of(0L, 700758L, 684L).toString(),
+            Row.of(1L, 701442L, 684L).toString(),
+            Row.of(2L, 700075L, 683L).toString()),
+        actual);
+  }
+
+  @Test
+  void joinsBlockingArrowInputsFromThePackagedPayload() throws Exception {
+    TableEnvironment table = packagedAggregateEnvironment();
+    table.getConfig().set("execution.batch.adaptive.auto-parallelism.enabled", "false");
+    table.getConfig().set("table.exec.resource.default-parallelism", "2");
+    table.getConfig().set("table.optimizer.join.broadcast-threshold", "-1");
+    String sql =
+        "SELECT COUNT(*),COUNT(b.id),SUM(b.id) FROM batch_aggregate_input a"
+            + " LEFT JOIN batch_aggregate_input b ON a.id=b.id AND b.id<1031";
+    String plan = table.explainSql(sql);
+    assertTrue(plan.contains("NativeJoin") && plan.contains("NativeExchange"), plan);
+    try (CloseableIterator<Row> rows = table.executeSql(sql).collect()) {
+      assertEquals(Row.of(2051L, 1031L, 530965L), rows.next());
+      assertFalse(rows.hasNext());
+    }
+  }
+
   private static TableEnvironment packagedAggregateEnvironment() throws Exception {
     TableEnvironment table = TableEnvironment.create(EnvironmentSettings.inBatchMode());
     table.getConfig().set("parallelism.default", "2");

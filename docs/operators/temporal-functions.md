@@ -4,6 +4,24 @@
 Timestamp results retain Flink's complete range. Pattern time functions still require the
 unsupported `MATCH_RECOGNIZE` operator.
 
+## DATE comparisons
+
+`=`, `<>`, `<`, `<=`, `>` and `>=` between direct DATE columns and/or DATE literals
+use the existing DataFusion comparison expressions over Arrow Date32 days. This
+avoids generated JVM evaluators for simple date-range predicates in admitted
+columnar pipelines. NULLs preserve SQL three-valued logic; no timezone conversion
+or calendar arithmetic is introduced. Computed/cast temporal operands, mixed
+temporal types, timestamp/time comparisons and null-safe distinctness retain
+their existing generated-evaluation rules. This does not independently qualify
+a cheap batch Calc pipeline for native admission.
+
+The batch SQL control covers NULL pairs, reversed literals, pre-epoch dates,
+leap days and calendar boundaries. A separate internal-DATE source exercises
+signed-day extremes without passing through a text parser. The [TPC-H focused
+comparison](../benchmarks/results/tpch-date-comparison-20261110.json) retains
+remaining complete-job regressions rather than claiming that removal of callbacks
+alone makes every query faster.
+
 ## Function inventory
 
 | Functions | Execution and admission |

@@ -25,7 +25,8 @@ closes inputs and drops the execution stream; DataFusion owns cancellation of an
 workers spawned by its operators. A consumed input cannot be replayed: Flink task
 retry must construct a fresh execution and replay its source/shuffle input.
 
-The native sorter accepts signed integer keys, explicit ascending/
+The native sorter accepts signed integer, UTF-8 string, BOOLEAN, DECIMAL and
+DATE keys, explicit ascending/
 descending direction and NULL placement. Its Arrow input and output remain columnar. Sorted LIMIT/FETCH uses the same driver with DataFusion's
 TopK sort and a subsequent offset stream, preserving Flink's local/global stages.
 TopK retains candidates under the shared memory authority; unlike the unrestricted
@@ -34,7 +35,7 @@ it cannot fit. No per-task cap is silently raised. Unrestricted sort uses
 DataFusion's external sorter, the existing shared Tokio runtime, Flink task spill directories, and the TaskManager off-heap authority.
 It does not add a distributed scheduler or change Arrow IPC serialization.
 
-## Global aggregate plans
+## Aggregate plans
 
 Each Flink aggregate stage builds one DataFusion `AggregateExec` in single mode,
 then projects into the host's output schema. This uses DataFusion's existing
@@ -45,11 +46,15 @@ store one fixed-width value, including Boolean, Decimal128, Date32 and Time32
 milliseconds. Decimal precision/scale and the host's logical TIME precision survive
 both stages. Noncanonical TIME units use a small expression adapter matching the
 host reader before DataFusion chooses its extremum; no custom accumulator is added.
-AVG partials contain BIGINT sum and count. Final AVG divides only
+Integer AVG partials contain BIGINT sum and count. Final integer AVG divides only
 when count is nonzero, then narrows to the declared signed integer type. Widened
 integer SUM followed by a wrapping narrowing cast preserves Flink's modular
-arithmetic through local and merge stages. SUM0 and merged COUNT coalesce NULL to
-zero. Each call retains its own FILTER; merge consumes already filtered states.
+arithmetic through local and merge stages. Integer SUM0 and merged COUNT coalesce NULL to
+zero. Decimal SUM/SUM0/AVG wrap the existing Flink-compatible decimal accumulators,
+including reset-on-overflow SUM, sticky-overflow AVG/SUM0, zero initial SUM0 and
+exact `(DECIMAL(38,s), BIGINT)` AVG host states. Only local AVG evaluation exposes
+a temporary struct that is projected back to the two host columns before output;
+DataFusion spill state remains internal. Each call retains its own FILTER; merge consumes already filtered states.
 
 A local unfiltered COUNT also records whether any input existed, independently
 of aggregate filters. It suppresses the local row on truly empty input, preserving
@@ -59,6 +64,16 @@ input/output schemas permit that initialization and the output schema can differ
 from the input. Sort uses the same lifecycle with an unchanged output schema.
 Existing sorter-named JNI data methods remain shared ABI entry points; separate
 aggregate factory/capability methods keep an older DSO a planning-time fallback.
+
+Verified integer/string/boolean/date/decimal grouping keys prefix the same host accumulator schema. Each grouped
+HashAgg stage uses DataFusion's existing single-mode grouped hash stream, which
+spills sorted private state and replays it internally when its memory reservation
+is denied. Only the projected Flink state crosses task boundaries. Key-only stages
+use the same grouping machinery for DISTINCT and emit no row for empty input.
+DataFusion copies grouping values into its key storage and accumulators own their
+values after consumption. Variable-width key-encoding workspace is charged before
+evaluation;
+borrowed Arrow input is released before requesting another batch.
 
 ## Memory lifetime
 
@@ -90,7 +105,13 @@ with the input's compact-copy budget additionally covering filtered payloads.
 This includes widening casts, literal arrays, 16-byte decimal arguments,
 TIME normalization, validity and selection buffers;
 DataFusion's global aggregate reservation alone accounts for accumulator growth
-after evaluation. The workspace is freed after EOF/output copying. This borrowing
+after evaluation. Grouped plans reserve projection space for the maximum output
+batch and retain it across every spill-replay/output batch. Once projection
+temporaries retire, `MemoryReservation.split` transfers their charged budget to the
+compact result/copy handoff; the next poll replenishes projection space after the
+output acknowledgement. This avoids a second charge for the same working budget
+while keeping the existing strict reservation authority. The workspace is freed
+on completion or cancellation. This borrowing
 policy is explicit and is not used for sorts
 or future aggregates that retain input buffers.
 
@@ -115,19 +136,30 @@ A batch that cannot fit still fails with the existing memory-limit exception.
 
 ## Shuffle and recovery
 
-The admitted exchange is Flink's blocking SINGLETON partition transformation over
+Admitted SINGLETON and verified-key HASH exchanges use Flink's blocking partition transformations over
 `ArrowBatch`, using ordinary Arrow IPC serialization. It introduces no process-local
 handles. Flink owns persistence, transfer and replay. Required singleton distribution
 is preserved through native Calc and transpose nodes, and final consumers remain at
 parallelism/max-parallelism one. This preserves both global order and keyless final
 aggregation. Partial aggregate states use the same serializer as ordinary batches.
 
+HASH routing reuses the existing Arrow key splitter and partitioner with
+ordinary IPC, including when streaming local zero-copy is enabled. Batch routing
+binds to the deployed writer's subpartitions/target groups; the streaming path
+continues to require its exact recoverable key-group namespace. Grouped native
+exec nodes advertise ANY input to Flink's exchange graph processor because their
+explicit Arrow partition transformation already enforces distribution. Advertising
+HASH there would insert a stock RowData hash partitioner after the Arrow splitter.
+The physical relational hash trait remains intact, and a final native group forces
+a compatible Arrow exchange when the stock optimizer had elided one.
+
 The runtime gauges `batchSortSpillCount`, `batchSortSpilledBytes` and
 `batchSortReservedBytes` snapshot DataFusion metrics on the task thread. Metric
 reporters read the snapshot without racing JNI teardown. The reserved-byte gauge
 covers the sort's native pool, not all process Arrow allocations. Aggregates expose
 the corresponding `batchAggregateSpillCount`, `batchAggregateSpilledBytes` and
-`batchAggregateReservedBytes` snapshots; admitted global scalar state does not spill.
+`batchAggregateReservedBytes` snapshots. Global scalar state does not spill; grouped state uses DataFusion's
+spill/replay path through the same host-owned task spill directories.
 
 ## Validation and performance
 
@@ -152,8 +184,9 @@ keys, beyond-end offsets, empty input and zero-row limits. A downstream
 sink fails once, then recovers all 2,051 sorted rows from the completed blocking
 Arrow shuffle: native sort/exit reach attempt 1 while producers stay on attempt 0.
 The packaged loader executes the same multi-batch sort through its isolated payload.
-Unchanged upstream signed-integer fixtures require positive native work; the STRING
-key fixture requires an explicit fallback. Both supported Flink lines are covered.
+Unchanged upstream integer and STRING-key fixtures require positive native work
+on both supported Flink lines. Standalone sorted-limit fixtures retain their
+explicit performance fallback.
 
 The [sort benchmarks](benchmarks/batch-sort-groundwork.md) report separate prepared
 operation and complete-job measurements. Complete jobs retain scans, both transposes,
@@ -172,3 +205,62 @@ consumer reaches attempt one. Native time controls exercise second/microsecond/
 nanosecond inputs whose millisecond conversion truncates or wraps before comparison.
 Variable-width and timestamp-struct extrema remain outside the borrowed scalar
 accumulator policy.
+
+
+The decimal SUM adapter uses the existing Flink-compatible `DecimalSumAccumulator`
+through DataFusion's UDAF interface. DataFusion still owns input consumption,
+grouping and task lifetime; no streaming state store or window operator is reused.
+The one-field DECIMAL(38,s) host state preserves overflow-to-NULL/reset semantics
+that differ from DataFusion's builtin decimal SUM. TPC-H Q6 verification covers
+the raw/local/final SQL path; the native control also covers empty/all-NULL and
+explicit overflow/merge states. Complete CSV Q6 performance remains neutral.
+
+## Bounded hash joins
+
+The same bounded task driver now supports two input ports, a per-port EOF and an
+explicit input-demand mask. It uses one staged handoff at a time and the same
+compact input/output reservations as sort. DataFusion's `HashJoinExec` retains
+the build state under the shared pool; the host scheduler supplies only the input
+currently requested. The initial hash table does not spill. Reservation denial
+remains a task failure within the existing authority, rather than an automatic
+limit increase or a runtime fallback.
+
+The planner keeps Flink's build-side choice and restores its logical output order
+when swapping DataFusion's build/probe inputs. Blocking hash/broadcast frames remain
+Arrow IPC. Flink's deadlock-breakup processor may insert another task boundary for
+a shared source; a graph adapter preserves that boundary with Arrow forwarding
+when its producer is columnar. The optional host multiple-input fusion cannot
+wrap Arrow nodes because it hardcodes RowData types, so a graph containing native
+joins skips that processor. This is required only in the deployed batch planner;
+the stock-planner optimizer-hook installation retains whole-query join fallback.
+
+Nested-loop and sort-merge joins share the same two-input lifecycle. Residual
+predicates use the existing encoded expression compiler and DataFusion JoinFilter
+with explicit logical left/right column mapping when the build side is swapped.
+The initial predicate whitelist excludes JVM callbacks and unverified collection
+or original-string representations. Merge joins sort both native inputs with the
+existing spillable external sorter, then use DataFusion's merge operator.
+
+A scalar SINGLE_VALUE over a planner-proven singleton uses DataFusion's first-value
+aggregate. The proof accepts only Calc/singleton exchange over a final global
+aggregate; other cardinalities retain the host guard and its multiple-row error.
+
+Shared unary aggregate subplans use the existing native retained-view share
+operator. The planner first invokes Flink's own subplan reuser, counts actual
+aggregate consumers, and preserves only that explicitly shared unary subtree's
+digests through the host clone/reuse cycle. Each branch takes its own Arrow view;
+there is no additional native result cache or memory pool. Disabling native source
+sharing or either Flink reuse option restores independent subplans.
+
+### Native Parquet input
+
+A final graph pass can replace an admitted file-source/entry-transpose boundary
+with the optional Parquet decoder's Arrow-producing source, after Flink has
+resolved source reuse. The optional module owns source admission and file decoding;
+core only supplies the extension hook and retained-view sharing. A shared source is
+converted only if every direct consumer accepts the same Arrow representation.
+Flink retains file discovery, assignment, seekable filesystem access and source
+checkpoint serialization. Native checkpoints count emitted logical rows in a
+whole-file split; restoration replays/skips those rows. This does not claim stock
+Parquet byte-split checkpoint interchange. Source queues and decoder workspace
+share the existing process-wide task-off-heap authority.

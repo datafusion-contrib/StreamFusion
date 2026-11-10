@@ -45,6 +45,12 @@ generated evaluator lists every function under `jvm` and retains the reason that
 row-at-a-time Flink evaluation. Ordinary `EXPLAIN` and submitted Calc/filter names also retain
 Flink's original `select` and `where` expressions and show these final assignments as
 `nativeFunctions=[...]` and `jvmFunctions=[...]`, even with simplified operator names enabled.
+When evaluators are registered, batch EXPLAIN also shows `jvmExpressions` (the
+registration count), `jvmEvaluation` (scalar bridges or whole-Calc evaluation),
+and `jvmExpressionDetails` for generated scalar expressions. Arithmetic and
+comparison bridges can exist even when the named `jvmFunctions` list is empty.
+These fields describe available evaluators, not measured callback invocations;
+certified native paths may retain a JVM evaluator for exceptional inputs.
 No diagnostic flag is required for these plan attributes. The acceleration summary returned by
 `PhysicalPlanScan.explainSummary()` includes the function assignments and JVM selection reasons;
 the always-on planning log also counts Calc/filter nodes containing JVM functions.

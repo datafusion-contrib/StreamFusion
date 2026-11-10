@@ -172,6 +172,11 @@ public final class NativeConfig {
     return transposeBatchRows(config, 1024);
   }
 
+  /** Bounded pipelines favor throughput; explicit table/JVM settings still take precedence. */
+  static int boundedBatchRows(ReadableConfig config) {
+    return transposeBatchRows(config, 8192);
+  }
+
   static int transposeBatchRows(ReadableConfig config, int preferredRows) {
     String key = "streamfusion.transpose.batchRows";
     int rows =

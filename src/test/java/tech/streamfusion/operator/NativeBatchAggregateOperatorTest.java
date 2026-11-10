@@ -271,6 +271,74 @@ class NativeBatchAggregateOperatorTest {
     }
   }
 
+  @Test
+  void groupedHashStateSpillsAndReplaysWithinTheExistingAuthority() throws Exception {
+    var input = RowType.of(new BigIntType(), new BigIntType());
+    var outputType = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
+    var operator =
+        new NativeBatchAggregateOperator(
+            input,
+            outputType,
+            new int[] {0},
+            new int[] {0, 1},
+            new int[] {1, 1},
+            new int[] {-1, -1},
+            false,
+            true,
+            128);
+    var seen = new java.util.BitSet();
+    try (var harness =
+        new OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch>(
+            operator, new ArrowBatchSerializer())) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      var outputField =
+          org.apache.flink.streaming.api.operators.AbstractStreamOperator.class.getDeclaredField(
+              "output");
+      outputField.setAccessible(true);
+      outputField.set(
+          operator,
+          new tech.streamfusion.compat.FlinkOutput<ArrowBatch>(null) {
+            @Override
+            public void collect(StreamRecord<ArrowBatch> record) {
+              try (var root = record.getValue().root()) {
+                assertTrue(root.getRowCount() <= 128);
+                var key = (org.apache.arrow.vector.BigIntVector) root.getVector(0);
+                var sum = (org.apache.arrow.vector.BigIntVector) root.getVector(1);
+                var count = (org.apache.arrow.vector.BigIntVector) root.getVector(2);
+                for (int row = 0; row < root.getRowCount(); row++) {
+                  int value = (int) key.get(row);
+                  assertFalse(seen.get(value));
+                  seen.set(value);
+                  assertEquals(4L * value, sum.get(row));
+                  assertEquals(4L, count.get(row));
+                }
+              }
+            }
+          });
+      for (int start = 0; start < 262144; start += 128) {
+        List<RowData> rows = new ArrayList<>();
+        for (int row = start; row < start + 128; row++)
+          rows.add(GenericRowData.of((long) (row % 65536), (long) (row % 65536)));
+        var root = RowDataArrowConverter.write(rows, input, NativeAllocator.SHARED, false);
+        harness.processElement(new StreamRecord<>(new ArrowBatch(root)));
+        assertEquals(0, NativeAllocator.SHARED.getAllocatedMemory());
+        assertTrue(TaskOffHeapMemory.reservedBytes() <= 2L << 20);
+      }
+      var statsField = NativeBoundedBatchOperator.class.getDeclaredField("executionStats");
+      statsField.setAccessible(true);
+      long[] stats = (long[]) statsField.get(operator);
+      assertTrue(stats[0] > 0 && stats[1] > 0, "Native grouped spill must occur before EOF");
+      harness.endInput();
+      assertEquals(65536, seen.cardinality());
+      for (var directory : harness.getEnvironment().getIOManager().getSpillingDirectories()) {
+        try (var files = java.nio.file.Files.walk(directory.toPath())) {
+          assertEquals(0, files.filter(java.nio.file.Files::isRegularFile).count());
+        }
+      }
+    }
+  }
+
   private static OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness(
       RowType input,
       RowType output,

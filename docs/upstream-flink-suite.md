@@ -23,16 +23,16 @@ without those native/fallback witnesses is not acceleration evidence.
 The unchanged released batch SQL `MiscITCase` adds two positive sort contracts:
 `testNullOrdering` consumes 18 native rows across six queries and
 `testGlobalSorting` consumes 24 across four mixed-direction queries.
-`testNullOrderingOnMultiColumn` includes a STRING key and requires the exact
-`batch sort: only signed integer keys are verified` fallback. Both host lines
-retain these native/host routes. The observer records native sort input after
+`testNullOrderingOnMultiColumn` includes a STRING key and now requires positive
+native sort work (56 rows). Both host lines retain these native routes. The observer records native sort input after
 successful processing; merely constructing a native plan is insufficient.
 [Sort validation evidence](benchmarks/results/batch-sort-sql-20261109.json) retains
 per-job success, batch graph types and positive native work from the focused runs.
 
 The released `SortLimitITCase` runs unchanged on both lines. Four signed-integer
-methods require the standalone sorted-limit performance fallback; two STRING-key
-methods require the signed-integer-key fallback. Candidate runs before the cost
+methods and the STRING-key `testOrderByLimitBehindField` require the standalone
+sorted-limit performance fallback. `testOrderBehindField` requires positive native
+sort work (21 rows) on both host lines. Candidate runs before the cost
 gate passed all assertions with positive bounded-sort work; those witnesses are
 labelled candidate-only, not current admission. Local composed SHA2/sorted-limit
 controls exercise the admitted native path. Private helper overloads of test method
@@ -51,10 +51,20 @@ fixtures are parity controls without fabricated positive-input credit.
 The unchanged batch Table API `AggregationITCase.testAggregationTypes` requires
 `batch aggregate: standalone pipeline has no verified speedup` on both lines.
 `testWorkingAggregationDataTypes` includes unsupported floating-point AVG and requires
-`batch aggregate: SUM/AVG require signed integers; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME`.
+`batch aggregate: SUM/SUM0/AVG require signed integers or DECIMAL; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME`.
 Both are `batch_host_only` controls. Separate local SQL/operator controls establish
 positive native work for admitted fixed-width extrema and typed blocking-shuffle
-replay; upstream stock parity alone is not credited as native coverage.
+replay against the stock result.
+
+Released HashAgg `testTwoPhasesAggregation`, `testNullGroupKeyAggregation` and
+`testGroupByOnly` require positive `NativeBatchAggregateOperator` work on both
+lines. They cover ordinary grouped reductions, NULL keys and key-only DISTINCT
+without rewriting upstream SQL or assertions. The same unchanged SortAgg methods
+now require positive native aggregate work; the native stage restores the host's
+ordered group output through DataFusion sorting. Empty grouped input remains a
+parity control and receives no fabricated
+positive-input requirement. Native local SQL adds signed composite keys, both
+phases, filters, typed partial-state replay and optimizer DISTINCT rewrites.
 
 
 The bounded operator observer attaches to the shared bounded lifecycle and records
@@ -589,7 +599,7 @@ fixtures require `native` for `changelog=false` and `full_fallback` for `changel
 exact witness is independently checked against the existing execution contract. No upstream test
 configuration is changed to force a preferred route.
 
-The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require 116 and 96
+The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require 199 and 172
 verified runtime variants respectively. Run them with:
 
 ```sh
@@ -1952,3 +1962,17 @@ released execution-node metadata declares the graph nonserializable. Canonical s
 binding must not force these programs through JSON serialization. Unchanged upstream aggregate,
 nested-table Calc and OVER assertions still run with their original native-execution contracts;
 this boundary does not add DataStream-bridge canonical interchange coverage.
+
+Bounded join coverage adds the unchanged
+`OuterJoinITCase#testLeftUpperAndLowerWithAgg` fixture on both lines. Its four
+original `expectedJoinType` variants (broadcast hash, hash, sort merge and nested
+loop) require positive `NativeBatchJoinOperator` work. Both route scopes enumerate
+these exact display names. The observer instruments both batch join input methods;
+result parity or unrelated native Calc work cannot satisfy the join contract.
+
+The unchanged batch date fixtures `CalcITCase#testDateCompareWithDateString` and
+`#testDateEqualsWithDateString` retain explicit standalone-Calc performance
+fallback contracts on both supported lines. Their exact runtime-route cases are
+`batch_host_only`; these passing oracle fixtures receive no native-work credit.
+Separate admitted-pipeline DATE controls verify native work and absence of
+registered Java predicate evaluators.

@@ -115,21 +115,8 @@ public abstract class NativeBoundedBatchOperator extends FlinkStreamOperator<Arr
           if (endOfInput) throw new IllegalStateException("bounded task requested input after EOF");
           return;
         }
-        VectorSchemaRoot result = null;
-        try {
-          result = VectorSchemaRoot.create(resultSchema, NativeAllocator.SHARED);
-          Data.importIntoVectorSchemaRoot(
-              NativeAllocator.SHARED, array, result, NativeAllocator.DICTIONARIES);
-        } catch (Throwable failure) {
-          if (result != null) result.close();
-          throw failure;
-        } finally {
-          // The Arrow importer closes the C struct on entry. Failures before that transfer still
-          // leave its release callback with this operator.
-          org.apache.arrow.c.StreamFusionArrayAccess.releaseIfOpen(array);
-          Native.releaseBoundedSorterOutput(handle);
-        }
-        ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(result));
+        ColumnarRecordMetrics.emit(
+            output, getMetricGroup(), BoundedArrowOutput.importBatch(handle, array, resultSchema));
       }
     }
   }

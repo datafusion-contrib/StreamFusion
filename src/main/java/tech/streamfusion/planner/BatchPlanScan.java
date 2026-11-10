@@ -14,9 +14,13 @@ import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalExchange;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalGroupAggregateBase;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalHashJoin;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalJoinBase;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalNestedLoopJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSink;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSort;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSortLimit;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSortMergeJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalUnion;
 import org.apache.flink.table.planner.plan.optimize.program.BatchOptimizeContext;
 import org.apache.flink.table.planner.plan.optimize.program.FlinkOptimizeProgram;
@@ -41,6 +45,9 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
   private final List<String> operators = new ArrayList<>();
   private int substitutions;
   private boolean completePlan;
+  private boolean nativeJoinTasks;
+  private final Map<RelNode, Integer> sharedConsumers = new IdentityHashMap<>();
+  private final Map<RelNode, RelNode> sharedRewrites = new IdentityHashMap<>();
 
   @Override
   public RelNode optimize(RelNode root, BatchOptimizeContext context) {
@@ -49,6 +56,10 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
         NativeConfig.usePlannerConfig(ShortcutUtils.unwrapTableConfig(root).getConfiguration())) {
       return optimizeRoots(List.of(root)).get(0);
     }
+  }
+
+  void allowNativeJoinTasks() {
+    nativeJoinTasks = true;
   }
 
   void deferToCompletePlan() {
@@ -62,15 +73,28 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
     if (!NativeConfig.nativeEnabled()) return roots;
     List<RelNode> result = new ArrayList<>();
     for (RelNode root : roots) {
+      RelNode candidate = root;
       Map<RelNode, RexExpression> expressions = new IdentityHashMap<>();
       Map<RelNode, int[][]> sorts = new IdentityHashMap<>();
       Map<RelNode, BatchAggregateSpec> aggregates = new IdentityHashMap<>();
       boolean admitted;
       try {
-        admitted = admit(root, true, expressions, sorts, aggregates, false);
+        candidate = BatchCrossJoinRewrite.apply(root);
+        if (PhysicalPlanScan.sourceSharingEnabled(candidate)) {
+          candidate =
+              org.apache.flink.table.planner.plan.reuse.SubplanReuser$.MODULE$
+                  .reuseDuplicatedSubplan(
+                      org.apache.flink.table.planner.utils.JavaScalaConversionUtil.toScala(
+                          List.of(candidate)),
+                      ShortcutUtils.unwrapTableConfig(candidate),
+                      ShortcutUtils.unwrapContext(candidate),
+                      ShortcutUtils.unwrapTypeFactory(candidate))
+                  .head();
+        }
+        admitted = admit(candidate, true, expressions, sorts, aggregates, false);
         if (admitted
             && (!expressions.isEmpty() || !sorts.isEmpty() || !aggregates.isEmpty())
-            && !amortizesRowBoundaries(root, expressions, false, false))
+            && !amortizesRowBoundaries(candidate, expressions, false, false, false))
           admitted =
               decline(
                   sorts.keySet().stream().anyMatch(node -> node instanceof BatchPhysicalSortLimit)
@@ -83,9 +107,13 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
           | UnsatisfiedLinkError failure) {
         admitted = decline(NativeProbeFailure.reason(failure));
       }
+      sharedConsumers.clear();
+      sharedRewrites.clear();
+      if (admitted && PhysicalPlanScan.sourceSharingEnabled(candidate))
+        countSharedAggregates(candidate, new IdentityHashMap<>());
       result.add(
           admitted && (!expressions.isEmpty() || !sorts.isEmpty() || !aggregates.isEmpty())
-              ? rewrite(root, expressions, sorts, aggregates)
+              ? rewrite(candidate, expressions, sorts, aggregates)
               : root);
     }
     for (String reason : reasons) LOG.info("StreamFusion batch fallback: {}", reason);
@@ -96,9 +124,24 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
       RelNode node,
       Map<RelNode, RexExpression> expressions,
       boolean qualified,
-      boolean userFunction) {
-    // Work on the single aggregate result cannot amortize the input's row/Arrow boundary.
-    if (node instanceof BatchPhysicalGroupAggregateBase) qualified = false;
+      boolean userFunction,
+      boolean joined) {
+    if (node instanceof BatchPhysicalJoinBase) {
+      joined = true;
+      qualified = true;
+    }
+    // Work above a global reduction cannot amortize its input boundary. Verified keyed reductions
+    // qualify independently; each UNION branch must still contain a qualifying operation.
+    if (node instanceof BatchPhysicalGroupAggregateBase) {
+      var aggregate = (BatchPhysicalGroupAggregateBase) node;
+      qualified = joined || aggregate.grouping().length != 0;
+      var calls = aggregate.getAggCallList();
+      for (int index = 0; index < calls.size(); index++)
+        qualified |=
+            calls.apply(index).getAggregation().getKind() == org.apache.calcite.sql.SqlKind.SUM
+                && calls.apply(index).getType().getSqlTypeName()
+                    == org.apache.calcite.sql.type.SqlTypeName.DECIMAL;
+    }
     RexExpression expression = expressions.get(node);
     qualified |= node instanceof BatchPhysicalSort;
     if (expression != null) {
@@ -107,7 +150,8 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
     }
     if (node.getInputs().isEmpty()) return qualified || userFunction;
     for (RelNode input : node.getInputs()) {
-      if (!amortizesRowBoundaries(input, expressions, qualified, userFunction)) return false;
+      if (!amortizesRowBoundaries(input, expressions, qualified, userFunction, joined))
+        return false;
     }
     return true;
   }
@@ -176,6 +220,18 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
           return decline("batch aggregate: native state/schema mapping is unsupported");
         aggregates.put(node, specification);
         retained = true;
+      } else if ((node instanceof BatchPhysicalHashJoin
+          || node instanceof BatchPhysicalNestedLoopJoin
+          || node instanceof BatchPhysicalSortMergeJoin)) {
+        if (!nativeJoinTasks)
+          return decline("batch join: deployed planner required for Arrow input scheduling");
+        if (!NativeConfig.operatorEnabled("join")) return decline("batch join: disabled");
+        var join = (BatchPhysicalJoinBase) node;
+        String reason = BatchJoinSpec.unsupportedReason(join);
+        if (reason != null) return decline("batch join: " + reason);
+        if (!new BatchJoinSpec(join).nativeSupported(join))
+          return decline("batch join: native schema/key mapping is unsupported");
+        retained = true;
       } else if (isSort(node)) {
         if (!NativeConfig.operatorEnabled("sort")) return decline("batch sort: disabled");
         if (!BatchSortTypeCheck.supported(node.getRowType()))
@@ -205,9 +261,14 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
             case SMALLINT:
             case INTEGER:
             case BIGINT:
+            case VARCHAR:
+            case CHAR:
+            case BOOLEAN:
+            case DECIMAL:
+            case DATE:
               break;
             default:
-              return decline("batch sort: only signed integer keys are verified");
+              return decline("batch sort: unverified ordering key type");
           }
           if (field.nullDirection == RelFieldCollation.NullDirection.UNSPECIFIED)
             return decline("batch sort: unspecified NULL order");
@@ -221,11 +282,33 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
               (field.getDirection().isDescending() ? 1 : 0)
                   | (field.nullDirection == RelFieldCollation.NullDirection.FIRST ? 2 : 0);
         }
+        if (!BatchSortTypeCheck.keysSupported(sort.getInput().getRowType(), columns, flags))
+          return decline("batch sort: native key mapping is unsupported");
         sorts.put(node, new int[][] {columns, flags});
       } else if (node instanceof BatchPhysicalExchange) {
-        if (((BatchPhysicalExchange) node).getDistribution().getType()
-            != RelDistribution.Type.SINGLETON)
-          return decline("batch exchange: only blocking SINGLETON distribution is verified");
+        var distribution = ((BatchPhysicalExchange) node).getDistribution();
+        if (distribution.getType() == RelDistribution.Type.HASH_DISTRIBUTED) {
+          for (int key : distribution.getKeys()) {
+            switch (node.getRowType().getFieldList().get(key).getType().getSqlTypeName()) {
+              case TINYINT:
+              case SMALLINT:
+              case INTEGER:
+              case BIGINT:
+              case VARCHAR:
+              case CHAR:
+              case BOOLEAN:
+              case DECIMAL:
+              case DATE:
+                break;
+              default:
+                return decline("batch exchange: unverified hash key type");
+            }
+          }
+        } else if (distribution.getType() != RelDistribution.Type.SINGLETON
+            && distribution.getType() != RelDistribution.Type.BROADCAST_DISTRIBUTED)
+          return decline(
+              "batch exchange: only blocking SINGLETON and signed integer HASH distributions are"
+                  + " verified");
       } else {
         return decline("batch: unsupported interior operator " + node.getRelTypeName());
       }
@@ -241,6 +324,36 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
       Map<RelNode, RexExpression> expressions,
       Map<RelNode, int[][]> sorts,
       Map<RelNode, BatchAggregateSpec> aggregates) {
+    RelNode cached = sharedRewrites.get(node);
+    if (cached != null) return cached;
+    RelNode result = rewriteNode(node, expressions, sorts, aggregates);
+    int consumers = sharedConsumers.getOrDefault(node, 0);
+    if (consumers > 1
+        && result instanceof BatchPhysicalNativeAggregate
+        && ((BatchPhysicalNativeSingleRel) result).allowSharedCopies()) {
+      result = new BatchPhysicalNativeShare(result, consumers, NativeRelDigests.nextId());
+      sharedRewrites.put(node, result);
+    }
+    return result;
+  }
+
+  private void countSharedAggregates(RelNode node, Map<RelNode, Boolean> visited) {
+    if (visited.put(node, true) != null) return;
+    var local = new IdentityHashMap<RelNode, Boolean>();
+    for (RelNode input : node.getInputs()) {
+      if (local.put(input, true) != null) {
+        sharedConsumers.put(input, Integer.MIN_VALUE);
+      } else if (input instanceof BatchPhysicalGroupAggregateBase)
+        sharedConsumers.merge(input, 1, Integer::sum);
+      countSharedAggregates(input, visited);
+    }
+  }
+
+  private RelNode rewriteNode(
+      RelNode node,
+      Map<RelNode, RexExpression> expressions,
+      Map<RelNode, int[][]> sorts,
+      Map<RelNode, BatchAggregateSpec> aggregates) {
     if (node.getInputs().isEmpty()) return node;
     List<RelNode> inputs = new ArrayList<>();
     boolean columnar =
@@ -248,7 +361,10 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
             || node instanceof BatchPhysicalUnion
             || node instanceof BatchPhysicalGroupAggregateBase
             || isSort(node)
-            || node instanceof BatchPhysicalExchange;
+            || node instanceof BatchPhysicalExchange
+            || (node instanceof BatchPhysicalHashJoin
+                || node instanceof BatchPhysicalNestedLoopJoin
+                || node instanceof BatchPhysicalSortMergeJoin);
     for (RelNode input : node.getInputs()) {
       RelNode rewritten = rewrite(input, expressions, sorts, aggregates);
       if (columnar && !(rewritten instanceof ColumnarOutput))
@@ -268,7 +384,31 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
     }
     if (node instanceof BatchPhysicalGroupAggregateBase) {
       substitutions++;
-      return new BatchPhysicalNativeAggregate(node, inputs.get(0), aggregates.get(node));
+      var specification = aggregates.get(node);
+      RelNode input = inputs.get(0);
+      // Stock HASH traits can elide an exchange, but do not establish our Arrow hash routing.
+      if (specification.finalOutput
+          && specification.keys.length != 0
+          && (!(input instanceof BatchPhysicalNativeExchange)
+              || !((BatchPhysicalNativeExchange) input).partitions(specification.keys)))
+        input = new BatchPhysicalNativeExchange(input, input, specification.keys);
+      return new BatchPhysicalNativeAggregate(node, input, specification);
+    }
+    if ((node instanceof BatchPhysicalHashJoin
+        || node instanceof BatchPhysicalNestedLoopJoin
+        || node instanceof BatchPhysicalSortMergeJoin)) {
+      substitutions++;
+      var spec = new BatchJoinSpec((BatchPhysicalJoinBase) node);
+      if (!spec.broadcast && !spec.nestedLoop) {
+        for (int port = 0; port < 2; port++) {
+          var input = inputs.get(port);
+          int[] keys = port == 0 ? spec.leftKeys : spec.rightKeys;
+          if (!(input instanceof BatchPhysicalNativeExchange)
+              || !((BatchPhysicalNativeExchange) input).partitions(keys))
+            inputs.set(port, new BatchPhysicalNativeExchange(input, input, keys));
+        }
+      }
+      return new BatchPhysicalNativeJoin(node, inputs.get(0), inputs.get(1), spec);
     }
     if (isSort(node)) {
       substitutions++;

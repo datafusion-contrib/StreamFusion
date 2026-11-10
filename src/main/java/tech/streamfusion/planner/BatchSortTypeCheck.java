@@ -19,6 +19,21 @@ final class BatchSortTypeCheck {
             FlinkTypeFactory$.MODULE$.toLogicalRowType(rowType), false));
   }
 
+  static boolean keysSupported(RelDataType rowType, int[] columns, int[] flags) {
+    var schema =
+        ArrowConversion.toArrowInputSchema(
+            FlinkTypeFactory$.MODULE$.toLogicalRowType(rowType), false);
+    try (var allocator = new RootAllocator();
+        var exported = ArrowSchema.allocateNew(allocator)) {
+      Data.exportSchema(allocator, schema, null, exported);
+      try {
+        return Native.supportsBoundedSorterKeys(exported.memoryAddress(), columns, flags);
+      } finally {
+        exported.release();
+      }
+    }
+  }
+
   static boolean supported(Schema schema) {
     try (var allocator = new RootAllocator();
         var exported = ArrowSchema.allocateNew(allocator)) {

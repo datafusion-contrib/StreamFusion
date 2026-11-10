@@ -11,6 +11,7 @@ import tech.streamfusion.arrow.ArrowConversion;
 public final class NativeBatchAggregateOperator extends NativeBoundedBatchOperator {
   private final String inputSchemaJson;
   private final String outputSchemaJson;
+  private final int[] keys;
   private final int[] kinds;
   private final int[] columns;
   private final int[] filters;
@@ -27,6 +28,20 @@ public final class NativeBatchAggregateOperator extends NativeBoundedBatchOperat
       boolean merge,
       boolean finalOutput,
       int batchRows) {
+    this(input, output, new int[0], kinds, columns, filters, merge, finalOutput, batchRows);
+  }
+
+  public NativeBatchAggregateOperator(
+      RowType input,
+      RowType output,
+      int[] keys,
+      int[] kinds,
+      int[] columns,
+      int[] filters,
+      boolean merge,
+      boolean finalOutput,
+      int batchRows) {
+    this.keys = keys.clone();
     inputSchemaJson = ArrowConversion.toArrowInputSchema(input, false).toJson();
     outputSchemaJson = ArrowConversion.toArrowInputSchema(output, false).toJson();
     this.kinds = kinds.clone();
@@ -66,6 +81,20 @@ public final class NativeBatchAggregateOperator extends NativeBoundedBatchOperat
       Data.exportSchema(
           NativeAllocator.SHARED, schema(outputSchemaJson), NativeAllocator.DICTIONARIES, output);
       try {
+        if (keys.length != 0) {
+          return Native.createBoundedGroupedAggregate(
+              inputSchemaAddress,
+              output.memoryAddress(),
+              keys,
+              kinds,
+              columns,
+              filters,
+              merge,
+              finalOutput,
+              getContainingTask().getEnvironment().getIOManager().getSpillingDirectoriesPaths(),
+              batchRows,
+              tech.streamfusion.compat.RuntimeCompat.taskName(getRuntimeContext()));
+        }
         return Native.createBoundedAggregate(
             inputSchemaAddress,
             output.memoryAddress(),

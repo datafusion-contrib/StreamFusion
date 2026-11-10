@@ -95,8 +95,10 @@ class BatchAggregateSqlTest {
     for (String sql :
         List.of(
             "SELECT SUM(CAST(id AS DOUBLE)) FROM input" + predicate,
-            "SELECT COUNT(DISTINCT id) FROM input" + predicate,
-            "SELECT MOD(id,7),SUM(id) FROM input" + predicate + " GROUP BY MOD(id,7)")) {
+            "SELECT COUNT(DISTINCT CAST(id AS DOUBLE)) FROM input" + predicate,
+            "SELECT CAST(id AS DOUBLE),SUM(id) FROM input"
+                + predicate
+                + " GROUP BY CAST(id AS DOUBLE)")) {
       String plan = env.explainSql(sql);
       assertFalse(plan.contains("NativeAggregate") || plan.contains("NativeCalc"), plan);
     }

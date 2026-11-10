@@ -1242,7 +1242,7 @@
       "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrderingOnMultiColumn",
       "display_name": "testNullOrderingOnMultiColumn()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByWithOffsetAndFetch",
@@ -1278,7 +1278,7 @@
       "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderBehindField",
       "display_name": "testOrderBehindField()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggWithoutGroups",
@@ -1325,6 +1325,78 @@
     {
       "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testWorkingAggregationDataTypes",
       "display_name": "testWorkingAggregationDataTypes()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testTwoPhasesAggregation",
+      "display_name": "testTwoPhasesAggregation()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testNullGroupKeyAggregation",
+      "display_name": "testNullGroupKeyAggregation()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testGroupByOnly",
+      "display_name": "testGroupByOnly()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testTwoPhasesAggregation",
+      "display_name": "testTwoPhasesAggregation()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testNullGroupKeyAggregation",
+      "display_name": "testNullGroupKeyAggregation()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testGroupByOnly",
+      "display_name": "testGroupByOnly()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+      "display_name": "expectedJoinType=BroadcastHashJoin",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+      "display_name": "expectedJoinType=HashJoin",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+      "display_name": "expectedJoinType=SortMergeJoin",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+      "display_name": "expectedJoinType=NestedLoopJoin",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString",
+      "display_name": "testDateCompareWithDateString()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString",
+      "display_name": "testDateEqualsWithDateString()",
       "count": 1,
       "route": "batch_host_only"
     }

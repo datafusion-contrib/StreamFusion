@@ -113,6 +113,16 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
     return total[0];
   }
 
+  long counterValue(String jobId, String name) {
+    long[] total = {0};
+    reporter.getMetricsByGroup().forEach((group, metrics) -> {
+      if (jobId.equals(group.getAllVariables().get("<job_id>"))
+          && metrics.get(name) instanceof Counter)
+        total[0] += ((Counter) metrics.get(name)).getCount();
+    });
+    return total[0];
+  }
+
   long completedCheckpoints(String jobId) {
     long[] completed = {0};
     reporter

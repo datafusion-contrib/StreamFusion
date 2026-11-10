@@ -10,6 +10,7 @@ class BatchSortedLimitSqlTest {
   @Test
   void localAndGlobalLimitsRetainOffsetNullsAndMultipleBatches() throws Exception {
     Configuration config = new Configuration();
+    config.setString("streamfusion.transpose.batchRows", "1024");
     config.setString("pipeline.operator-chaining.enabled", "false");
     try (var metrics = new RecoveryExecutionMetrics()) {
       metrics.setAsContext(config, 2, 128L << 20);

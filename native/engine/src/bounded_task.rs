@@ -4,12 +4,31 @@ use datafusion::execution::config::SessionConfig;
 use datafusion::execution::disk_manager::{DiskManagerBuilder, DiskManagerMode};
 use datafusion::physical_plan::ExecutionPlan;
 
+#[derive(Clone, Copy)]
+pub(crate) struct ExpressionWorkspace {
+    pub(crate) bytes_per_row: usize,
+    pub(crate) variable_input: bool,
+    pub(crate) output_rows: usize,
+}
+
+impl ExpressionWorkspace {
+    fn output_budget(self) -> Result<usize, DataFusionError> {
+        self.output_rows
+            .checked_add(32)
+            .and_then(|rows| rows.checked_mul(self.bytes_per_row))
+            .ok_or_else(|| {
+                DataFusionError::ResourcesExhausted("bounded expression workspace overflow".into())
+            })
+    }
+}
+
 pub(crate) struct BoundedTask {
-    input: BoundedInput,
+    inputs: Vec<BoundedInput>,
     execution: BoundedExecution,
-    staged: Option<RecordBatch>,
-    input_ended: bool,
-    borrowed_scratch: Option<(usize, bool)>,
+    staged: Option<(usize, RecordBatch)>,
+    input_ended: Vec<bool>,
+    needed_inputs: u32,
+    borrowed_scratch: Option<ExpressionWorkspace>,
     pub(crate) input_memory: MemoryReservation,
     pub(crate) output_memory: MemoryReservation,
     pool: Arc<dyn MemoryPool>,
@@ -24,23 +43,35 @@ impl BoundedTask {
         output: Arc<dyn ExecutionPlan>,
         plan: Arc<dyn ExecutionPlan>,
         context: Arc<TaskContext>,
-        borrowed_scratch: Option<(usize, bool)>,
+        borrowed_scratch: Option<ExpressionWorkspace>,
     ) -> Result<Self, DataFusionError> {
+        Self::try_new_inputs(vec![input], output, plan, context, borrowed_scratch)
+    }
+
+    pub(crate) fn try_new_inputs(
+        inputs: Vec<BoundedInput>,
+        output: Arc<dyn ExecutionPlan>,
+        plan: Arc<dyn ExecutionPlan>,
+        context: Arc<TaskContext>,
+        borrowed_scratch: Option<ExpressionWorkspace>,
+    ) -> Result<Self, DataFusionError> {
+        if inputs.is_empty() || inputs.len() > 2 {
+            return datafusion::common::exec_err!("bounded task requires one or two inputs");
+        }
         let pool = context.runtime_env().memory_pool.clone();
         let output_rows = context.session_config().batch_size();
         let input_memory = MemoryConsumer::new("BoundedArrowInput").register(&pool);
         let output_memory = MemoryConsumer::new("BoundedArrowOutput").register(&pool);
-        if let Some((bytes_per_row, _)) = borrowed_scratch {
-            input_memory.try_resize(bytes_per_row.checked_mul(32).ok_or_else(|| {
-                DataFusionError::ResourcesExhausted("bounded expression workspace overflow".into())
-            })?)?;
+        if let Some(workspace) = borrowed_scratch {
+            input_memory.try_resize(workspace.output_budget()?)?;
         }
-        let execution = BoundedExecution::try_new(output, vec![input.clone()], context)?;
+        let execution = BoundedExecution::try_new(output, inputs.clone(), context)?;
         Ok(Self {
-            input,
+            input_ended: vec![false; inputs.len()],
+            inputs,
             execution,
             staged: None,
-            input_ended: false,
+            needed_inputs: 0,
             borrowed_scratch,
             input_memory,
             output_memory,
@@ -52,21 +83,46 @@ impl BoundedTask {
     }
 
     pub(crate) fn push(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
-        if self.input_ended || self.staged.is_some() || self.ingesting {
-            return Err(DataFusionError::Execution(
-                "bounded task input is closed or backpressured".into(),
-            ));
+        self.push_input(0, batch)
+    }
+
+    pub(crate) fn push_input(
+        &mut self,
+        port: usize,
+        batch: RecordBatch,
+    ) -> Result<(), DataFusionError> {
+        if self.input_ended.get(port).copied().unwrap_or(true)
+            || self.staged.is_some()
+            || self.ingesting
+        {
+            return datafusion::common::exec_err!("bounded task input is closed or backpressured");
         }
-        self.staged = Some(batch.with_schema(self.input.schema().clone())?);
+        self.staged = Some((port, batch.with_schema(self.inputs[port].schema().clone())?));
         Ok(())
     }
 
     pub(crate) fn finish(&mut self) -> Result<(), DataFusionError> {
-        self.input_ended = true;
-        if self.staged.is_none() {
-            self.input.finish()?;
+        self.finish_input(0)
+    }
+
+    pub(crate) fn finish_input(&mut self, port: usize) -> Result<(), DataFusionError> {
+        let ended = self
+            .input_ended
+            .get_mut(port)
+            .ok_or_else(|| DataFusionError::Execution("invalid bounded input port".into()))?;
+        *ended = true;
+        if self
+            .staged
+            .as_ref()
+            .is_none_or(|(staged, _)| *staged != port)
+        {
+            self.inputs[port].finish()?;
         }
         Ok(())
+    }
+
+    fn all_inputs_ended(&self) -> bool {
+        self.input_ended.iter().all(|ended| *ended)
     }
 
     pub(crate) async fn next_event(&mut self) -> Result<Option<ExecutionEvent>, DataFusionError> {
@@ -75,21 +131,27 @@ impl BoundedTask {
                 "release the exported bounded output before polling again".into(),
             ));
         }
-        if let Some(batch) = self.staged.take() {
-            let offered = if let Some((bytes_per_row, filtered)) = self.borrowed_scratch {
+        if let Some(workspace) = self.borrowed_scratch {
+            let budget = workspace.output_budget()?;
+            if self.input_memory.size() < budget {
+                self.input_memory.try_resize(budget)?;
+            }
+        }
+        if let Some((port, batch)) = self.staged.take() {
+            let offered = if let Some(workspace) = self.borrowed_scratch {
                 let mut budget = batch
                     .num_rows()
                     .checked_add(32)
-                    .and_then(|rows| rows.checked_mul(bytes_per_row))
+                    .and_then(|rows| rows.checked_mul(workspace.bytes_per_row))
                     .ok_or_else(|| {
                         DataFusionError::ResourcesExhausted(
                             "bounded expression workspace overflow".into(),
                         )
                     })?;
-                if filtered {
+                if workspace.variable_input {
                     budget = budget.checked_add(copy_budget(&batch)?).ok_or_else(|| {
                         DataFusionError::ResourcesExhausted(
-                            "bounded filter workspace overflow".into(),
+                            "bounded variable expression workspace overflow".into(),
                         )
                     })?;
                 }
@@ -101,7 +163,7 @@ impl BoundedTask {
                 if let Some(pool) = self.pool.downcast_ref::<FlinkTaskOffHeapPool>() {
                     let output_frame = batch.slice(0, batch.num_rows().min(self.output_rows));
                     let mut headroom = copy_budget(&output_frame)?.saturating_mul(2).max(64 * 1024);
-                    if !self.input_ended {
+                    if !self.all_inputs_ended() {
                         headroom = headroom.max(copy_budget(&batch)?);
                     }
                     pool.preserve_spill_headroom(headroom);
@@ -112,12 +174,12 @@ impl BoundedTask {
                 drop(batch);
                 copied
             };
-            if let Err(error) = offered.and_then(|batch| self.input.push(batch)) {
+            if let Err(error) = offered.and_then(|batch| self.inputs[port].push(batch)) {
                 self.input_memory.free();
                 return Err(error);
             }
-            if self.input_ended {
-                self.input.finish()?;
+            if self.input_ended[port] {
+                self.inputs[port].finish()?;
             }
             self.ingesting = true;
         }
@@ -131,18 +193,30 @@ impl BoundedTask {
             Err(_) => return Ok(None),
         };
         self.ingesting = false;
+        if let Ok(ExecutionEvent::InputNeeded(ports)) = &event {
+            self.needed_inputs = ports.iter().fold(0, |mask, port| mask | 1 << port);
+        }
         // Reuse one workspace while reading input. A reduction keeps it through final projection
-        // and output copying, then drops it after releasing the original result buffers.
-        if (self.input_ended || event.is_err())
-            && !(self.borrowed_scratch.is_some() && matches!(&event, Ok(ExecutionEvent::Output(_))))
+        // and every output projection/copy, including multiple batches during grouped spill replay.
+        if event.is_err()
+            || matches!(&event, Ok(ExecutionEvent::Finished))
+            || self.all_inputs_ended() && self.borrowed_scratch.is_none()
         {
             self.input_memory.free();
         }
         match event? {
             ExecutionEvent::Output(batch) => {
+                if self.borrowed_scratch.is_some() {
+                    // Projection temporaries have retired. Transfer their already charged workspace
+                    // to the result/copy handoff instead of reserving the same buffers twice.
+                    let budget = copy_budget(&batch)?;
+                    if self.input_memory.size() >= budget {
+                        self.output_memory = self.input_memory.split(budget);
+                    }
+                }
                 let copied = compact_copy(&batch, &self.output_memory);
                 drop(batch);
-                if self.input_ended {
+                if self.all_inputs_ended() && self.borrowed_scratch.is_none() {
                     self.input_memory.free();
                 }
                 match copied {
@@ -303,7 +377,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_pushBoundedSorter<'local>(
     jni_guard(env, move |mut env| {
         let sorter = unsafe { &mut *(handle as *mut BoundedTask) };
         // Stage borrowed input; the next poll copies it after the Java view has been closed.
-        let batch = import_record_batch_with_schema(array_address, sorter.input.schema());
+        let batch = import_record_batch_with_schema(array_address, sorter.inputs[0].schema());
         if let Err(error) = sorter.push(batch) {
             throw_error(&mut env, error);
         }
@@ -321,6 +395,56 @@ pub extern "system" fn Java_tech_streamfusion_Native_finishBoundedSorter<'local>
         if let Err(error) = sorter.finish() {
             throw_error(&mut env, error);
         }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushBoundedTaskInput<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    port: jint,
+    array_address: jlong,
+) {
+    jni_guard(env, move |mut env| {
+        let task = unsafe { &mut *(handle as *mut BoundedTask) };
+        let Some(input) = task.inputs.get(port as usize) else {
+            throw_error(
+                &mut env,
+                DataFusionError::Execution("invalid bounded input port".into()),
+            );
+            return;
+        };
+        let batch = import_record_batch_with_schema(array_address, input.schema());
+        if let Err(error) = task.push_input(port as usize, batch) {
+            throw_error(&mut env, error);
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_finishBoundedTaskInput<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    port: jint,
+) {
+    jni_guard(env, move |mut env| {
+        let task = unsafe { &mut *(handle as *mut BoundedTask) };
+        if let Err(error) = task.finish_input(port as usize) {
+            throw_error(&mut env, error);
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_boundedTaskNeededInputs<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jint {
+    jni_guard(env, move |_env| unsafe {
+        (*(handle as *mut BoundedTask)).needed_inputs as jint
     })
 }
 

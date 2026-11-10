@@ -20,13 +20,13 @@ import tech.streamfusion.operator.ArrowBatch;
  * Flink owns the blocking shuffle and its replay; buffers use the ordinary Arrow IPC serializer.
  */
 final class BatchSingletonExchangeExecNode extends ExecNodeBase<ArrowBatch>
-    implements BatchExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
+    implements BatchExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch>, BatchColumnarExecNode {
   BatchSingletonExchangeExecNode(ReadableConfig config, RowType outputType, String description) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("batch-exec-native-singleton-exchange_1"),
         config,
-        List.of(InputProperty.DEFAULT),
+        List.of(InputProperty.builder().damBehavior(InputProperty.DamBehavior.BLOCKING).build()),
         outputType,
         description);
   }

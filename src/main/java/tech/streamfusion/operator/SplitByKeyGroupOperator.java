@@ -25,9 +25,10 @@ public class SplitByKeyGroupOperator extends FlinkStreamOperator<ArrowBatch>
   private final int[] keyColumns;
   private final int[] timestampPrecisions;
   private final int[] compactTimestampColumns;
-  private final int maxParallelism;
+  private int maxParallelism;
   private final boolean recoverable;
   private final boolean projectedKeys;
+  private final boolean batch;
 
   private transient int parallelism;
   private transient BufferAllocator allocator;
@@ -73,6 +74,26 @@ public class SplitByKeyGroupOperator extends FlinkStreamOperator<ArrowBatch>
       boolean recoverable,
       int[] compactTimestampColumns,
       boolean projectedKeys) {
+    this(
+        keyColumns,
+        timestampPrecisions,
+        maxParallelism,
+        recoverable,
+        compactTimestampColumns,
+        projectedKeys,
+        false);
+  }
+
+  public SplitByKeyGroupOperator(
+      int[] keyColumns,
+      int[] timestampPrecisions,
+      int maxParallelism,
+      boolean recoverable,
+      int[] compactTimestampColumns,
+      boolean projectedKeys,
+      boolean batch) {
+    if (batch && recoverable) throw new IllegalArgumentException("Batch shuffle uses stage replay");
+    this.batch = batch;
     this.keyColumns = keyColumns;
     this.timestampPrecisions = timestampPrecisions;
     this.compactTimestampColumns = compactTimestampColumns;
@@ -84,9 +105,11 @@ public class SplitByKeyGroupOperator extends FlinkStreamOperator<ArrowBatch>
   @Override
   public void open() throws Exception {
     super.open();
-    parallelism =
-        ColumnarShuffleOutput.parallelism(
-            this, maxParallelism, recoverable, keyColumns.length == 0);
+    int[] layout =
+        ColumnarShuffleOutput.layout(
+            this, maxParallelism, recoverable, keyColumns.length == 0, batch);
+    parallelism = layout[0];
+    maxParallelism = layout[1];
     NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
