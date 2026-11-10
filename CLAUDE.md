@@ -21,6 +21,13 @@ and successful checks for that commit. When a push supersedes it, cancel queued 
 for the older commits on that PR. Retry only the failed jobs needed for the current head and
 merge after its required checks pass.
 
+Feature-branch pushes do not automatically run the test matrices or release diagnostics.
+When the combined change is ready, explicitly dispatch CI and the full upstream Flink suite
+on its fork branch, plus applicable docs/compatibility checks. Intermediate local commits
+and pushes do not need their own CI. Main retains automatic checks; deliberately
+named `ci/**` submission branches run the two merge-gate suites and docs. Optional
+compatibility and release diagnostics on feature/submission branches require dispatch.
+
 This personal-fork workflow applies only to StreamFusion contributions. Do not depend on fork-hosted,
 locally published, snapshot, Git, or filesystem builds of third-party code; use released artifacts from
 its canonical registry. Do not modify a sibling or other external repository unless the user explicitly

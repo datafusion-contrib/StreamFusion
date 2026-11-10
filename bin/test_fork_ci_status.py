@@ -114,10 +114,39 @@ class ForkCiStatusTest(unittest.TestCase):
         self.assertEqual('failure', result['conclusion'])
 
     def test_upstream_inventory_dispatch_cannot_satisfy_full_suite(self):
-        result, _ = self.result([{**RUN, 'event': 'workflow_dispatch'}], 'flink-suite.yml')
-        self.assertEqual('action_required', result['conclusion'])
+        for title in (None, 'Upstream Flink suite', 'SQL admission inventory (runtime)',
+                      'SQL admission inventory (all)'):
+            with self.subTest(title=title):
+                result, _ = self.result([{**RUN, 'event': 'workflow_dispatch',
+                                          'display_title': title}], 'flink-suite.yml')
+                self.assertEqual('action_required', result['conclusion'])
         result, _ = self.result([{**RUN, 'event': 'workflow_dispatch'}])
         self.assertEqual('success', result['conclusion'])
+
+    def test_full_manual_upstream_suite_is_required_on_the_exact_head(self):
+        manual = {**RUN, 'event': 'workflow_dispatch',
+                  'display_title': 'Full upstream Flink suite (merge gate)'}
+        result, _ = self.result([manual], 'flink-suite.yml')
+        self.assertEqual('success', result['conclusion'])
+        for change in ({'head_sha': 'old'}, {'head_branch': 'other'},
+                       {'conclusion': 'cancelled'}, {'conclusion': 'failure'}):
+            with self.subTest(change=change):
+                result, _ = self.result([{**manual, **change}], 'flink-suite.yml')
+                self.assertNotEqual('success', result['conclusion'])
+        result, _ = self.result([{**manual, 'status': 'queued', 'conclusion': None}],
+                                'flink-suite.yml')
+        self.assertEqual('queued', result['status'])
+        self.assertNotIn('conclusion', result)
+
+    def test_inventory_does_not_hide_a_full_suite_or_a_newer_failed_full_rerun(self):
+        full = {**RUN, 'event': 'workflow_dispatch',
+                'display_title': 'Full upstream Flink suite (merge gate)'}
+        inventory = {**full, 'display_title': 'SQL admission inventory (all)'}
+        result, _ = self.result([inventory, full], 'flink-suite.yml')
+        self.assertEqual('success', result['conclusion'])
+        result, _ = self.result([inventory, {**full, 'conclusion': 'failure'}, full],
+                                'flink-suite.yml')
+        self.assertEqual('failure', result['conclusion'])
 
     def test_deleted_forks_and_same_repository_prs_need_migration(self):
         for fork in (None, {'fork': False, 'full_name': 'contributor/StreamFusion'},

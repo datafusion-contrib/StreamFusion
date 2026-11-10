@@ -2,7 +2,7 @@ name: JVM aggregate release diagnostics
 
 on:
   push:
-    branches: ['**']
+    branches: ['main']
     paths:
       - '.github/workflows/jvm-aggregates.yml'
       - 'bin/bench-jvm-aggregates.py'

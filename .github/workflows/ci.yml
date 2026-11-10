@@ -2,12 +2,12 @@ name: CI
 
 on:
   push:
-    branches: ['**']
+    branches: ['main', 'ci/**']
   workflow_dispatch: {}
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
