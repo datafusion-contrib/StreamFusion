@@ -113,3 +113,8 @@ fn sha256_hashes_binary_and_utf8_with_identical_null_and_slice_rules() {
 fn sha384_hashes_binary_and_utf8_with_identical_null_and_slice_rules() {
     check_hash::<sha2::Sha384>(98);
 }
+
+#[test]
+fn sha512_hashes_binary_and_utf8_with_identical_null_and_slice_rules() {
+    check_hash::<sha2::Sha512>(99);
+}

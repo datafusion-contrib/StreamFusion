@@ -11330,6 +11330,10 @@ These measurements exclude perimeter conversions and are not complete-job throug
 | SHA384 / 64-byte ASCII | 349.841 (345.483-355.210) | 137.260 (135.284-141.566) | 137.031 (135.481-139.822) |
 | SHA384 / 16 three-byte characters, every seventh row NULL | 301.758 (298.975-339.238) | 112.866 (111.615-113.385) | 113.615 (111.772-120.467) |
 | SHA384 / 16 bytes, first byte FF every 1000 rows | 344.420 (335.709-352.626) | not applicable | 130.765 (126.323-133.883) |
+| SHA512 / 16-byte ASCII | 359.354 (356.755-366.973) | 144.464 (143.812-147.107) | 144.679 (143.481-147.590) |
+| SHA512 / 64-byte ASCII | 363.800 (360.321-368.657) | 147.665 (147.099-153.321) | 148.605 (146.798-154.250) |
+| SHA512 / 16 three-byte characters, every seventh row NULL | 330.875 (327.549-340.789) | 126.535 (124.588-138.229) | 126.188 (124.534-139.890) |
+| SHA512 / 16 bytes, first byte FF every 1000 rows | 363.619 (360.899-383.855) | not applicable | 146.437 (143.182-147.750) |
 
 Select the function using the example's optional fifth argument, for example:
 
