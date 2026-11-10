@@ -252,12 +252,20 @@ forwards only the control-event APIs present on the host and preserves the suppl
 Native state bytes, key-group partitioning and checkpoint ownership are shared across lines.
 Columnar partitioner copies preserve their configured channel count because the 1.18 recovery
 filter copies after setup. Losing that setting would misroute captured records during rescaling.
-On 1.18, the native RocksDB backend uses a temporary heap-backed canonical savepoint projection
-because that release's RocksDB backend cannot set a serialized key and an independent key group
-through its public API. This projection is used only for native canonical state. Ordinary host
-operators retain the RocksDB delegate, and native incremental checkpoints retain their Rust-owned
-RocksDB path. The projection's snapshot owns its copied state before live entries are cleared.
-It temporarily consumes JVM heap proportional to the canonical serialized state.
+For bound stock-canonical contracts, both releases use a disk-backed stock projection and the
+released full-snapshot writer. Direct native RocksDB operators pin independent snapshots at the
+barrier; bounded conversion runs asynchronously. Map/list/timer layouts reuse the shared disk
+spool, rather than copying whole operator state into a heap backend. Ordinary host operators
+retain their delegate, and native incremental checkpoints retain their Rust-owned RocksDB path.
+The largest encoded native or stock KV remains a working-memory floor. Release-specific
+synthetic-key handling for private native state is separate from this stock-contract path.
+
+The [frozen canonical scope](backends/canonical-state.md#release-parity-and-frozen-scope) is shared
+between 1.18 and 2.2. Adapters use each host's real stock layout: legacy SESSION on 1.18, V1 versus
+V2 event-time OVER, and LEGACY versus newer materializer strategies where available. This is
+same-line stock/native portability, not a promise that every newer stock state format can downgrade
+to 1.18. Automatic sink-materializer planner binding remains unimplemented on both releases;
+its explicit state contract is shared.
 
 For 1.18 native stateful jobs, stock RocksDB selections are transparently replaced by StreamFusion's
 native RocksDB backend during native planning. Programmatic embedded and legacy instances retain

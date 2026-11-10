@@ -159,9 +159,10 @@ use Flink's full-snapshot writer, producing `KeyGroupsSavepointStateHandle` stat
 onto either this backend or the memory backend. A direct store scans and decodes its logical rows
 for this operation, so canonical savepoints are intentionally full and more expensive than ordinary
 incremental checkpoints. Qualified stock-interchange adapters instead project live state into
-Flink's original descriptors and serializers; see [canonical state](canonical-state.md). Retracting
-MIN/MAX currently use the raw snapshot fallback for their mapped state, including independent
-view-entry TTL ages, rather than the direct per-key aggregate store.
+Flink's original descriptors and serializers; see [canonical state](canonical-state.md). The frozen
+stock-canonical retracting MIN/MAX subset (integral/date/time/boolean values) uses direct native
+RocksDB records, including independent view-entry TTL ages. Wider accelerated aggregate shapes
+without a stock-canonical contract may still use snapshot-backed execution.
 
 Restoring a canonical savepoint (or legacy raw keyed state) onto this backend decodes the blob key
 groups once at open and bulk-writes them — rows, TTL stamps, watermarks, sequence high-water marks,
@@ -178,14 +179,22 @@ version. Older snapshots fail with a format-version error; see the
 
 ## Flink 1.18 canonical projection
 
-The 1.18 development profile keeps native incremental checkpoints and ordinary host operators on
-RocksDB. Native canonical savepoints use a temporary heap backend to preserve independent
-synthetic keys and key-group IDs through the released host API. The snapshot takes ownership
-before live projection entries are cleared; temporary heap use scales with serialized canonical
-state. The native snapshot layout is unchanged. Use the StreamFusion native backend for this
-path, selected automatically for stock RocksDB configurations as described above. Unverified custom
-backends still decline keyed native operators during planning; stateless operators remain eligible. See
-[Flink line compatibility](../flink-compatibility.md) for outstanding recovery validation.
+Flink 1.18 and 2.2 use the same disk-backed stock projection for bound canonical contracts.
+At a canonical-savepoint barrier, direct native RocksDB operators flush pending bundles and pin an
+independent read view. Flink's async writer converts bounded records with the released stock
+serializers. Complex map/list/timer layouts reuse the shared disk spool and a temporary stock
+RocksDB backend; direct scalar layouts stream without that intermediate projection. Neither path
+loads the whole operator into heap. The largest encoded native or stock value remains a
+working-memory floor. Overlapping captures retain independent views through completion,
+cancellation and live-operator closure. Ordinary native checkpoints keep the incremental SST path.
+
+The synthetic-key projection used for private native-format compatibility is distinct from a
+bound stock contract. Release adapters retain independent serialized keys/key groups where that
+format needs them. Use the StreamFusion native backend, selected automatically for supported
+stock RocksDB configurations on 1.18 as described above; 2.2 requires the explicit factory.
+Unverified custom backends still decline keyed native operators during planning. See
+[canonical state](canonical-state.md#release-parity-and-frozen-scope) for the frozen operator scope
+and [Flink line compatibility](../flink-compatibility.md) for release-specific behavior.
 
 ## Failed and aborted checkpoints
 

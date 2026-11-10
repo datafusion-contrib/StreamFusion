@@ -69,6 +69,12 @@ final class StockMapListSpool<K, V> implements AutoCloseable {
     return true;
   }
 
+  int size(RowData owner, K mapKey) throws Exception {
+    byte[] value = spool.get(COUNTS, bucket(owner, mapKey), 0);
+    if (value == null) throw new IllegalArgumentException("Canonical list header is missing");
+    return ByteBuffer.wrap(value).getInt();
+  }
+
   Long metadata(RowData owner, K mapKey) throws Exception {
     byte[] value = spool.get(METADATA, bucket(owner, mapKey), 0);
     return value == null ? null : ByteBuffer.wrap(value).getLong();

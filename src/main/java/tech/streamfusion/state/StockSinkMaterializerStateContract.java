@@ -1,7 +1,6 @@
 package tech.streamfusion.state;
 
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -14,7 +13,6 @@ import org.apache.flink.api.common.typeutils.base.LongSerializer;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.runtime.NullableSerializer;
 import org.apache.flink.api.java.typeutils.runtime.TupleSerializer;
-import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.memory.DataInputDeserializer;
 import org.apache.flink.core.memory.DataOutputSerializer;
 import org.apache.flink.core.memory.MemorySegmentFactory;
@@ -23,17 +21,14 @@ import org.apache.flink.runtime.state.VoidNamespace;
 import org.apache.flink.runtime.state.VoidNamespaceSerializer;
 import org.apache.flink.table.data.*;
 import org.apache.flink.table.data.binary.BinaryRowData;
-import org.apache.flink.table.planner.codegen.CodeGeneratorContext;
-import org.apache.flink.table.planner.codegen.EqualiserCodeGenerator;
-import org.apache.flink.table.planner.codegen.HashCodeGenerator;
 import org.apache.flink.table.runtime.generated.GeneratedHashFunction;
 import org.apache.flink.table.runtime.generated.GeneratedRecordEqualiser;
-import org.apache.flink.table.runtime.sequencedmultisetstate.linked.*;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.*;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.MapListRepresentation;
+import tech.streamfusion.compat.MaterializerStateCompat;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
@@ -43,7 +38,6 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 @SuppressWarnings({"unchecked", "rawtypes"})
 public final class StockSinkMaterializerStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
-  private static final int CHUNK = 1024;
 
   public enum Strategy {
     LEGACY,
@@ -67,6 +61,9 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
       int[] inputUpsertKeys,
       Strategy strategy,
       long ttl) {
+    if (strategy != Strategy.LEGACY && !MaterializerStateCompat.supportsV2())
+      throw new IllegalArgumentException(
+          "Materializer strategy is unavailable in this Flink release");
     if (ttl > 0 && strategy != Strategy.LEGACY)
       throw new IllegalArgumentException("Released V2 materializers disable TTL");
     this.keys = keys.duplicate();
@@ -86,16 +83,8 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
     }
     matches = new RowType(matchFields);
     if (strategy == Strategy.MAP || strategy == Strategy.ADAPTIVE) {
-      var loader = StockSinkMaterializerStateContract.class.getClassLoader();
-      keyEqualiser =
-          new EqualiserCodeGenerator(matches, loader)
-              .generateRecordEqualiser("CanonicalMaterializerKeyEq");
-      keyHash =
-          HashCodeGenerator.generateRowHash(
-              new CodeGeneratorContext(new Configuration(), loader),
-              matches,
-              "CanonicalMaterializerKeyHash",
-              IntStream.range(0, matches.getFieldCount()).toArray());
+      keyEqualiser = MaterializerStateCompat.equaliser(matches);
+      keyHash = MaterializerStateCompat.hash(matches);
     } else {
       keyEqualiser = null;
       keyHash = null;
@@ -160,9 +149,7 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
     MapState<Object, Object> matching;
     ValueState<Object> highest;
     TypeSerializer<Object> keyObjects;
-    final CompositeSerializer nodeObjects = new NodeSerializer(inputSerializer);
-    final CompositeSerializer indexObjects = new RowSqnInfoSerializer();
-    final CompositeSerializer highestObjects = new MetaSqnInfoSerializer();
+    CompositeSerializer nodeObjects, indexObjects, highestObjects;
     final TypeSerializer<Long> nullableLongs =
         NullableSerializer.wrap(LongSerializer.INSTANCE, true);
 
@@ -181,28 +168,14 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
         list = value(backend, "list", new ListSerializer<>(tuples));
       }
       if (strategy == Strategy.VALUE) return;
-      var loader = StockSinkMaterializerStateContract.class.getClassLoader();
+      nodeObjects = MaterializerStateCompat.nodes(inputSerializer);
+      indexObjects = MaterializerStateCompat.indexes();
+      highestObjects = MaterializerStateCompat.highest();
       keyObjects =
-          (TypeSerializer)
-              new RowDataKeySerializer(
-                  matchSerializer,
-                  keyEqualiser.newInstance(loader),
-                  keyHash.newInstance(loader),
-                  keyEqualiser,
-                  keyHash);
+          (TypeSerializer) MaterializerStateCompat.key(matchSerializer, keyEqualiser, keyHash);
       nodes = map(backend, "sqnToNodeState", LongSerializer.INSTANCE, nodeObjects);
       matching = map(backend, "rowToSqnState", keyObjects, indexObjects);
       highest = value(backend, "highestSqnState", highestObjects);
-    }
-
-    void clearCurrent() throws Exception {
-      if (legacy != null) legacy.clear();
-      if (list != null) list.clear();
-      if (nodes != null) {
-        nodes.clear();
-        matching.clear();
-        highest.clear();
-      }
     }
   }
 
@@ -225,19 +198,6 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
         VoidNamespace.INSTANCE,
         VoidNamespaceSerializer.INSTANCE,
         new MapStateDescriptor<>(name, keys, values));
-  }
-
-  private List<RowData> allKeys(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var unique = new LinkedHashMap<java.nio.ByteBuffer, RowData>();
-    for (String name : stateDescriptors().keySet()) {
-      try (var stream = backend.getKeys(name, VoidNamespace.INSTANCE)) {
-        for (RowData key : stream.collect(Collectors.toList())) {
-          var copy = keys.copy(key);
-          unique.putIfAbsent(java.nio.ByteBuffer.wrap(keyBytes(copy)), copy);
-        }
-      }
-    }
-    return new ArrayList<>(unique.values());
   }
 
   private void current(CheckpointableKeyedStateBackend<RowData> backend, byte[] bytes) {
@@ -283,75 +243,96 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
       throws Exception {
     clear(backend);
     var s = new States(backend);
-    receive(
-        handle,
-        0,
-        headers,
-        header -> {
-          current(backend, header.getBinary(0));
-          if (header.getBoolean(1)) {
-            if (s.highest == null || header.isNullAt(2))
-              throw new IllegalArgumentException("Linked materializer cursor missing");
-            s.highest.update(s.highestObjects.createInstance(header.getLong(2), header.getLong(3)));
-          } else if (s.legacy != null) s.legacy.update(new ArrayList<>(), header.getLong(4));
-          else {
-            if (s.list == null)
-              throw new IllegalArgumentException("Value representation in MAP materializer");
-            s.list.update(new ArrayList<>());
-          }
-        });
-    receive(
-        handle,
-        1,
-        candidates,
-        bridge -> {
-          int n = input.getFieldCount();
-          current(backend, bridge.getBinary(n));
-          var payload = payload(bridge, input);
-          if (s.legacy != null) {
-            var stored = s.legacy.value();
-            var values = new ArrayList<>(stored.getUserValue());
-            if (bridge.getLong(n + 1) != values.size())
-              throw new IllegalArgumentException("Candidate position changed");
-            values.add(payload);
-            s.legacy.update(values, stored.getLastAccessTimestamp());
-          } else if (s.highest != null && s.highest.value() != null) {
-            s.nodes.put(
-                bridge.getLong(n + 1),
-                s.nodeObjects.createInstance(
-                    payload,
-                    bridge.getLong(n + 1),
-                    optional(bridge, n + 2),
-                    optional(bridge, n + 3),
-                    optional(bridge, n + 4),
-                    bridge.getLong(n + 5)));
-          } else {
-            if (s.list == null || bridge.isNullAt(n + 5))
-              throw new IllegalArgumentException("Candidate timestamp/representation missing");
-            var values = s.list.value();
-            values = values == null ? new ArrayList<>() : new ArrayList<>(values);
-            if (bridge.getLong(n + 1) != values.size())
-              throw new IllegalArgumentException("Candidate position changed");
-            values.add(Tuple2.of(payload, bridge.getLong(n + 5)));
-            s.list.update(values);
-          }
-        });
-    receive(
-        handle,
-        2,
-        indexes,
-        bridge -> {
-          int n = matches.getFieldCount();
-          current(backend, bridge.getBinary(n));
-          if (s.matching == null || s.highest.value() == null)
-            throw new IllegalArgumentException("Matching index without linked group");
-          var input = encoded(matchSerializer, payload(bridge, matches));
-          Object key = s.keyObjects.deserialize(input);
-          if (s.matching.contains(key))
-            throw new IllegalArgumentException("Duplicate stock matching index");
-          s.matching.put(
-              key, s.indexObjects.createInstance(bridge.getLong(n + 1), bridge.getLong(n + 2)));
-        });
+    try (var lists =
+        new StockMapListSpool<VoidNamespace, Object>(
+            keys, VoidNamespaceSerializer.INSTANCE, (TypeSerializer) listElements())) {
+      receive(
+          handle,
+          0,
+          headers,
+          header -> {
+            current(backend, header.getBinary(0));
+            if (header.getBoolean(1)) {
+              if (s.highest == null || header.isNullAt(2))
+                throw new IllegalArgumentException("Linked materializer cursor missing");
+              s.highest.update(
+                  s.highestObjects.createInstance(header.getLong(2), header.getLong(3)));
+            } else {
+              if (s.legacy == null && s.list == null)
+                throw new IllegalArgumentException("Value representation in MAP materializer");
+              if (!lists.start(backend.getCurrentKey(), VoidNamespace.INSTANCE, header.getLong(4)))
+                throw new IllegalArgumentException("Duplicate materializer list header");
+            }
+          });
+      receive(
+          handle,
+          1,
+          candidates,
+          bridge -> {
+            int n = input.getFieldCount();
+            current(backend, bridge.getBinary(n));
+            var payload = payload(bridge, input);
+            if (s.legacy != null) {
+              append(lists, backend.getCurrentKey(), bridge.getLong(n + 1), payload);
+            } else if (s.highest != null && s.highest.value() != null) {
+              s.nodes.put(
+                  bridge.getLong(n + 1),
+                  s.nodeObjects.createInstance(
+                      payload,
+                      bridge.getLong(n + 1),
+                      optional(bridge, n + 2),
+                      optional(bridge, n + 3),
+                      optional(bridge, n + 4),
+                      bridge.getLong(n + 5)));
+            } else {
+              if (s.list == null || bridge.isNullAt(n + 5))
+                throw new IllegalArgumentException("Candidate timestamp/representation missing");
+              append(
+                  lists,
+                  backend.getCurrentKey(),
+                  bridge.getLong(n + 1),
+                  Tuple2.of(payload, bridge.getLong(n + 5)));
+            }
+          });
+      receive(
+          handle,
+          2,
+          indexes,
+          bridge -> {
+            int n = matches.getFieldCount();
+            current(backend, bridge.getBinary(n));
+            if (s.matching == null || s.highest.value() == null)
+              throw new IllegalArgumentException("Matching index without linked group");
+            var input = encoded(matchSerializer, payload(bridge, matches));
+            Object key = s.keyObjects.deserialize(input);
+            if (s.matching.contains(key))
+              throw new IllegalArgumentException("Duplicate stock matching index");
+            s.matching.put(
+                key, s.indexObjects.createInstance(bridge.getLong(n + 1), bridge.getLong(n + 2)));
+          });
+      lists.visitWithMetadata(
+          backend,
+          (owner, ignored, rows, written) -> {
+            backend.setCurrentKey(owner);
+            if (s.legacy != null) s.legacy.update((List) rows, written);
+            else s.list.update((List) rows);
+          });
+    }
+  }
+
+  private TypeSerializer<?> listElements() {
+    return strategy == Strategy.LEGACY
+        ? inputSerializer
+        : new TupleSerializer<>(
+            Tuple2.class, new TypeSerializer[] {inputSerializer, LongSerializer.INSTANCE});
+  }
+
+  private static void append(
+      StockMapListSpool<VoidNamespace, Object> lists, RowData key, long position, Object value)
+      throws Exception {
+    if (lists.size(key, VoidNamespace.INSTANCE) != position)
+      throw new IllegalArgumentException("Candidate position changed");
+    lists.append(key, VoidNamespace.INSTANCE, value);
   }
 
   @FunctionalInterface
@@ -400,119 +381,160 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
     StockStateInventory.validate(backend, stateDescriptors(), Set.of(), keys);
+    if (strategy == Strategy.LEGACY || strategy == Strategy.VALUE) {
+      importListState(backend, handle);
+      clear(backend);
+      return;
+    }
     var s = new States(backend);
-    var owned = allKeys(backend);
-    send(handle, -1, List.of(), input);
-    for (RowData key : owned) {
-      backend.setCurrentKey(key);
-      byte[] bytes = keyBytes(key);
-      List<RowData> values = null;
-      List<Tuple2<RowData, Long>> tuples = null;
-      long written = 0;
-      Long high = null;
-      long size;
-      boolean linked = false;
-      long nodeCount = 0, indexCount = 0;
-      if (s.legacy != null) {
-        var stored = s.legacy.value();
-        if (stored == null || stored.getUserValue() == null)
-          throw new IllegalArgumentException("Materializer list missing");
-        values = stored.getUserValue();
-        written = stored.getLastAccessTimestamp();
-        size = values.size();
-        nodeCount = size;
-      } else {
-        tuples = s.list == null ? null : s.list.value();
-        Object meta = s.highest == null ? null : s.highest.value();
-        if (meta != null) {
-          if (tuples != null && !tuples.isEmpty())
-            throw new IllegalArgumentException("Both adaptive representations contain rows");
-          linked = true;
-          var encoded = encoded(s.highestObjects, meta);
-          high = encoded.readLong();
-          size = encoded.readLong();
+    try (var inventory = new StockStateSpool(keys)) {
+      inventory.collectOwners(backend, stateDescriptors().keySet());
+      send(handle, -1, List.of(), input);
+      if (strategy == Strategy.ADAPTIVE)
+        visitLists(
+            backend,
+            (owner, encoded) -> {
+              backend.setCurrentKey(owner);
+              if (s.highest.value() != null) {
+                var source = new DataInputDeserializer(encoded);
+                if (source.readInt() != 0 || source.available() != 0)
+                  throw new IllegalArgumentException("Both adaptive representations contain rows");
+              } else {
+                if (entries(s.nodes).iterator().hasNext()
+                    || entries(s.matching).iterator().hasNext())
+                  throw new IllegalArgumentException("Linked materializer metadata missing");
+                importListGroup(handle, owner, encoded);
+                inventory.add(1, owner, 0);
+              }
+            });
+      try (var owned = inventory.owners()) {
+        while (owned.hasNext()) {
+          RowData key = owned.next();
+          backend.setCurrentKey(key);
+          byte[] bytes = keyBytes(key);
+          if (inventory.contains(1, key, 0)) continue;
+          Object meta = s.highest.value();
+          if (meta == null)
+            throw new IllegalArgumentException("Linked materializer metadata missing");
+          var cursor = encoded(s.highestObjects, meta);
+          long high = cursor.readLong(), size = cursor.readLong();
+          long nodeCount = 0, indexCount = 0;
           for (var ignored : entries(s.nodes)) nodeCount++;
           for (var ignored : entries(s.matching)) indexCount++;
-        } else {
-          if (s.nodes != null
-              && (entries(s.nodes).iterator().hasNext()
-                  || entries(s.matching).iterator().hasNext()))
-            throw new IllegalArgumentException("Linked materializer metadata missing");
-          if (tuples == null)
-            throw new IllegalArgumentException("Materializer representation missing");
-          size = tuples.size();
-          nodeCount = size;
+          send(
+              handle,
+              0,
+              List.of(GenericRowData.of(bytes, true, high, size, 0L, nodeCount, indexCount)),
+              headers);
+          var chunk =
+              new StockRowBatch(
+                  candidates,
+                  true,
+                  (array, schema) ->
+                      Native.importSinkMaterializerCanonical(handle, 1, array, schema));
+          for (var entry : entries(s.nodes)) {
+            var encoded = encoded(s.nodeObjects, entry.getValue());
+            var value = inputSerializer.deserialize(encoded);
+            long seq = encoded.readLong();
+            if (seq != entry.getKey())
+              throw new IllegalArgumentException("Sequence key/node changed");
+            var bridge = row(value, input, 6);
+            int n = input.getFieldCount();
+            bridge.setField(n, bytes);
+            bridge.setField(n + 1, seq);
+            bridge.setField(n + 2, s.nullableLongs.deserialize(encoded));
+            bridge.setField(n + 3, s.nullableLongs.deserialize(encoded));
+            bridge.setField(n + 4, s.nullableLongs.deserialize(encoded));
+            bridge.setField(n + 5, encoded.readLong());
+            chunk.append(bridge);
+          }
+          chunk.flush();
+          var indexRows =
+              new StockRowBatch(
+                  indexes,
+                  true,
+                  (array, schema) ->
+                      Native.importSinkMaterializerCanonical(handle, 2, array, schema));
+          for (var entry : entries(s.matching)) {
+            var match = matchSerializer.deserialize(encoded(s.keyObjects, entry.getKey()));
+            var seqs = encoded(s.indexObjects, entry.getValue());
+            var bridge = row(match, matches, 3);
+            int n = matches.getFieldCount();
+            bridge.setField(n, bytes);
+            bridge.setField(n + 1, seqs.readLong());
+            bridge.setField(n + 2, seqs.readLong());
+            indexRows.append(bridge);
+          }
+          indexRows.flush();
+          Native.finishSinkMaterializerCanonicalGroup(handle);
         }
       }
-      send(
-          handle,
-          0,
-          List.of(GenericRowData.of(bytes, linked, high, size, written, nodeCount, indexCount)),
-          headers);
-      var chunk = new ArrayList<RowData>(CHUNK);
-      if (!linked) {
-        int count = values != null ? values.size() : tuples.size();
-        for (int i = 0; i < count; i++) {
-          RowData value = values != null ? values.get(i) : tuples.get(i).f0;
-          Long sample = values != null ? null : tuples.get(i).f1;
-          if (value == null || values == null && sample == null)
-            throw new IllegalArgumentException("NULL candidate payload/timestamp");
-          var bridge = row(value, input, 6);
-          int n = input.getFieldCount();
-          bridge.setField(n, bytes);
-          bridge.setField(n + 1, (long) i);
-          bridge.setField(n + 5, sample);
-          chunk.add(bridge);
-          if (chunk.size() == CHUNK) {
-            send(handle, 1, chunk, candidates);
-            chunk.clear();
-          }
-        }
-      } else {
-        for (var entry : entries(s.nodes)) {
-          var encoded = encoded(s.nodeObjects, entry.getValue());
-          var value = inputSerializer.deserialize(encoded);
-          long seq = encoded.readLong();
-          if (seq != entry.getKey())
-            throw new IllegalArgumentException("Sequence key/node changed");
-          var bridge = row(value, input, 6);
-          int n = input.getFieldCount();
-          bridge.setField(n, bytes);
-          bridge.setField(n + 1, seq);
-          bridge.setField(n + 2, s.nullableLongs.deserialize(encoded));
-          bridge.setField(n + 3, s.nullableLongs.deserialize(encoded));
-          bridge.setField(n + 4, s.nullableLongs.deserialize(encoded));
-          bridge.setField(n + 5, encoded.readLong());
-          chunk.add(bridge);
-          if (chunk.size() == CHUNK) {
-            send(handle, 1, chunk, candidates);
-            chunk.clear();
-          }
-        }
-      }
-      if (!chunk.isEmpty()) {
-        send(handle, 1, chunk, candidates);
-        chunk.clear();
-      }
-      if (linked)
-        for (var entry : entries(s.matching)) {
-          var match = matchSerializer.deserialize(encoded(s.keyObjects, entry.getKey()));
-          var seqs = encoded(s.indexObjects, entry.getValue());
-          var bridge = row(match, matches, 3);
-          int n = matches.getFieldCount();
-          bridge.setField(n, bytes);
-          bridge.setField(n + 1, seqs.readLong());
-          bridge.setField(n + 2, seqs.readLong());
-          chunk.add(bridge);
-          if (chunk.size() == CHUNK) {
-            send(handle, 2, chunk, indexes);
-            chunk.clear();
-          }
-        }
-      if (!chunk.isEmpty()) send(handle, 2, chunk, indexes);
-      Native.finishSinkMaterializerCanonicalGroup(handle);
     }
     clear(backend);
+  }
+
+  private void importListState(CheckpointableKeyedStateBackend<RowData> backend, long handle)
+      throws Exception {
+    send(handle, -1, List.of(), input);
+    visitLists(backend, (owner, encoded) -> importListGroup(handle, owner, encoded));
+  }
+
+  @FunctionalInterface
+  private interface ListReceiver {
+    void accept(RowData owner, byte[] encoded) throws Exception;
+  }
+
+  private void visitLists(CheckpointableKeyedStateBackend<RowData> backend, ListReceiver receiver)
+      throws Exception {
+    TypeSerializer values = new ListSerializer(listElements());
+    if (ttl > 0)
+      values =
+          new org.apache.flink.runtime.state.ttl.TtlStateFactory.TtlSerializer<>(
+              LongSerializer.INSTANCE, values);
+    StockMapListSnapshot.visitRaw(
+        backend,
+        strategy == Strategy.LEGACY ? "values" : "list",
+        keys,
+        VoidNamespaceSerializer.INSTANCE,
+        null,
+        values,
+        (owner, namespace, ignored, encoded) -> receiver.accept(owner, encoded));
+  }
+
+  private void importListGroup(long handle, RowData owner, byte[] encoded) throws Exception {
+    boolean legacy = strategy == Strategy.LEGACY;
+    TypeSerializer elements = listElements();
+    var source = new DataInputDeserializer(encoded);
+    long written = ttl > 0 ? source.readLong() : 0;
+    int count = source.readInt();
+    if (count < 0) throw new IllegalArgumentException("Negative materializer list size");
+    byte[] key = keyBytes(owner);
+    send(
+        handle,
+        0,
+        List.of(GenericRowData.of(key, false, null, (long) count, written, (long) count, 0L)),
+        headers);
+    var batch =
+        new StockRowBatch(
+            candidates,
+            true,
+            (array, schema) -> Native.importSinkMaterializerCanonical(handle, 1, array, schema));
+    for (int position = 0; position < count; position++) {
+      Object stored = elements.deserialize(source);
+      RowData payload = legacy ? (RowData) stored : (RowData) ((Tuple2) stored).f0;
+      Long sample = legacy ? null : (Long) ((Tuple2) stored).f1;
+      if (payload == null || !legacy && sample == null)
+        throw new IllegalArgumentException("NULL materializer payload/timestamp");
+      var bridge = row(payload, input, 6);
+      int n = input.getFieldCount();
+      bridge.setField(n, key);
+      bridge.setField(n + 1, (long) position);
+      bridge.setField(n + 5, sample);
+      batch.append(bridge);
+    }
+    if (source.available() != 0) throw new IllegalArgumentException("Trailing materializer bytes");
+    batch.flush();
+    Native.finishSinkMaterializerCanonicalGroup(handle);
   }
 
   private static <K, V> Iterable<Map.Entry<K, V>> entries(MapState<K, V> state) throws Exception {

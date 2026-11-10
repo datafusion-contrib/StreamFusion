@@ -6,7 +6,7 @@ schema. Their qualified scope is documented below. Unbound operators retain rese
 state containing StreamFusion's logical representation, which still requires StreamFusion on restore.
 Flink owns state metadata, key-group indexes, stream handles, redistribution and integrity checks.
 
-Automatic representative canonical conversion paths now exist in all **15 operator families**.
+Representative canonical conversion paths exist in all **15 operator families**.
 Every family remains partial; this count excludes connector protocols and is not a percentage of
 overall completion or individual state variants.
 
@@ -32,11 +32,35 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs | Legacy proctime variant, wider schemas and commit-failure matrix |
 | [Event-time sort](../operators/event-time-sort.md#stock-compatible-canonical-interchange) | Automatic single ascending-rowtime contract and complete-job handoffs | Secondary sorting and wider schema/connector/failure/version matrices |
-| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | All five stock layouts; qualified BIGINT compiled-plan jobs | Ordinary SQL, accelerated connector binding, wider types and writer rescaling |
+| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | Explicit LEGACY contract on both releases; 2.2 VALUE/MAP/ADAPTIVE layouts | Automatic planner/connector binding, complete jobs, wider types and writer rescaling |
 | [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs | Wider schemas/residuals and additional exchange/rescale combinations |
 
-The established complete-job qualification is on released Flink 2.2.1. Flink 1.18.1 now shares the
-planner, metadata projection, state contracts and canonical backend. Complete-job controls cover
+## Release parity and frozen scope
+
+The current scope freezes the admitted logical operator contracts above. It adds no operator,
+type, algorithm or canonical-state layout. Flink 1.18.1 and 2.2.1 compile the same planner and
+conversion contracts; narrow release adapters select actual stock serializers and runtime owners.
+For SESSION, 1.18 uses the legacy group-window owner because it has no SESSION TVF. Event-time
+unbounded OVER uses V1 on 1.18 and V2 on 2.2. Sink materialization uses LEGACY on 1.18; VALUE,
+MAP and ADAPTIVE exist only in 2.2. Parity means the same admitted logical operations can hand
+state to their own released stock runtime, including async native RocksDB capture. It does not
+claim a downgrade from a newer stock state format into an older release.
+
+Sink-materializer contracts require explicit attachment on both lines. An unused 2.2 runtime-node
+prototype was never called by the planner; earlier automatic-binding and complete-job claims on
+its operator page were stale. Automatic sink binding remains outside this frozen scope.
+Captured JVM aggregate handlers already store their accumulators/views in released Flink managed
+state. Their bounded bundles/caches drain at the barrier, then Flink's own RocksDB snapshot and
+canonical writer handle that state; no native-state projection is needed.
+
+A corresponding complete-job selection passes 24 cases per release: twelve scalar/DISTINCT
+SESSION round trips, six bounded OVER round trips, and two each for window rank, window
+deduplication and temporal sort. These compare committed output and independent oracles after
+stock/native continuation. The SESSION selection includes ordinary SQL and compiled plans with
+both engine orders. Existing selected Kafka, join, group, deduplication and restore cohorts below
+remain separate evidence; these counts do not imply exhaustive configuration testing.
+
+Flink 1.18.1 and 2.2.1 share the planner, metadata projection, state contracts and canonical backend. Complete-job controls cover
 First-N, grouped arithmetic, regular joins, normalization, eager deduplication and qualified fixed
 windows (including two-phase and DISTINCT controls) and selected unbounded event-time OVER
 ROWS/RANGE jobs on both native stores. Component controls additionally cover typed/grouped state, ranks, fixed TUMBLE/HOP/CUMULATE
@@ -58,9 +82,8 @@ multiple of its slide. These legacy owners also reset their watermark and write 
 Buffered dedup
 uses the older eager owner, and explicit legacy V1 mode on 2.2 remains unqualified. The shared
 unbounded event-time scalar binding preserves 1.18 polling callbacks separately from pending
-timestamps; its captured RocksDB reader leaves metadata on disk. These same-line controls do not qualify the whole
-1.18 operator inventory or cross-line upgrades. Both lines now compile the same 118 canonical
-job fixture classes, including all twelve Kafka sink/pipeline families. Their release adapters
+timestamps; its captured RocksDB reader leaves metadata on disk. These same-line controls do not qualify every variant or cross-line upgrades. Both lines
+compile the shared canonical job fixtures, including all twelve Kafka sink/pipeline families. Their release adapters
 inspect the host connector's own writer/committer recovery format and retain exact transaction,
 identity and external-effect assertions; compilation parity is separate from job qualification.
 Selected 1.18 qualification now includes 24 real-broker Kafka scenarios spanning all twelve
@@ -77,6 +100,20 @@ ownership and selected process/commit-failure cases. Combining partition discove
 and broker/coordinator/publication failures remains open; those historical cohorts are not
 implicitly requalified by newer operator libraries. Benchmarking stays deferred under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+The frozen-contract audit follows the shared planner admission into direct native RocksDB
+capability checks and the common snapshot lifecycle. Arithmetic/typed groups, ranks, normalization,
+deduplication, windows/sessions, OVER, joins, temporal sort and the explicit materializer adapter
+all retain direct RocksDB state for their admitted stock-canonical shapes. Wider accelerated
+shapes that use `rocksdb-snapshot` remain outside these stock contracts. Component-only heap
+projection branches do not run in the disk-backed canonical writer. Captured managed JVM handlers
+use Flink's stock RocksDB writer directly after flushing bounded caches.
+
+The final Java-only conversion cohort passes 65 checks on 1.18, with four expected SESSION TVF
+skips, and 225 checks on a clean 2.2 build without skips. It includes all materializer layouts
+available on the host, shared spool/routing controls, nested retained payloads and overlapping
+DISTINCT captures. Rust did not change in this cohort, so its already-qualified native build and
+tests were reused. Benchmarking remains deferred; exact-head hosted checks still gate any merge.
 
 ## Streaming stock-state capture
 
@@ -2203,7 +2240,8 @@ preserve arbitrary subclass fields; such factories are not admitted to portable-
 Ordinary SQL that requires a stock sink-materialization helper retains its complete physical
 execution and native-checkpoint route. These ordinary helper identities are not yet qualified
 for canonical interchange; fresh planner display IDs must not make a working job fail during
-topology binding. Qualified stock compiled-plan materializer lowering retains its existing path.
+topology binding. Compiled-plan lowering also has no automatic materializer contract binding;
+explicit adapters have their own component qualification.
 
 The shared two-phase JVM aggregate node also rebuilds its local/global state owners from the
 stock template. This keeps canonical identities, maximum parallelism and serializer contracts

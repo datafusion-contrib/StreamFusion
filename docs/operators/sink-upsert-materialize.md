@@ -98,29 +98,32 @@ key under a 16 KiB operator budget and recovers them from native database files.
 
 ## Canonical interchange qualification
 
-The released Flink 2.2.1 adapter imports and exports stock LEGACY, VALUE, MAP and ADAPTIVE state.
-The unmerged stock compiled-plan path now attaches that contract automatically for BIGINT fields
-and aligned exchanges. It replaces the inner materializer while retaining Flink's source/sink
-implementations, constraints, rowtime handling, original materializer UID and maximum parallelism.
-The stock compiled plan remains unchanged; no separate state conversion or manual ID mapping is
-required on this qualified path. Broader types, ordinary SQL submission and accelerated Doris
-submission still need binding and qualification in
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Native-format portable
-snapshots remain separate from stock-compatible canonical savepoints.
+The shared adapter imports and exports the released stock LEGACY candidate list on Flink 1.18.1
+and 2.2.1. Flink 2.2 additionally has VALUE, MAP and both ADAPTIVE representations; their released
+serializers stay behind a narrow version adapter. Flink 1.18 has no V2 materializer runtime.
 
-Seventy complete-job cases cover both engine orders and native stores across all five layouts:
-20 continued-input round trips, 20 repeated handoffs without new input, 10 ordinary native
-checkpoint recoveries followed by canonical export, and 20 rescale cases. The rescale matrix uses
-64 actual sink keys and a distinct inferred input key through 1 → 3 → 2 tasks with maximum
-parallelism fixed at 128. Every requested native materializer task must process input. Source
-splits/coordinator state also rescale; the transactional sink retains one writer, so these cases do
-not claim sink-writer rescaling. Per-key committed changelogs match stock without requiring a
-cross-key output order. Independent custom sources and transactional
-sinks retain their stock implementations. Clean stock workers reject StreamFusion on their
-classpath, native legs require materializer input/backend witnesses, and external committed
-changelogs match an uninterrupted stock baseline. Partial, full and empty transpose input cases
-are exercised. Fifteen planner controls additionally check strategy selection, unchanged portable
-JSON, stock loading, typed/operator-disabled fallback and insert-only runtime elision.
+Canonical materialization currently requires explicitly attaching this stock contract. The unused
+2.2 runtime-node prototype was never installed by the compiled-plan lowering path. Earlier claims
+of automatic BIGINT compiled-plan binding and seventy qualified full jobs were stale and are
+removed. Automatic ordinary-SQL/compiled-plan binding, accelerated Doris binding and full sink jobs
+remain outside the frozen operator-contract scope. Component/harness continuation evidence below
+must not be read as complete-job qualification. Native-format portable snapshots remain separate
+from stock-compatible canonical savepoints.
+
+For native RocksDB, the barrier flushes pending writes and pins an independent MVCC view. Conversion
+starts on Flink's async writer thread and reads native candidate/index records in bounded frames.
+List rows stage once in the shared disk spool; the released stock serializer consumes each lazy
+list once into a temporary stock RocksDB backend. It does not repeatedly deserialize and rewrite a
+candidate list or collect every owner key in heap. Stock list import also decodes one row at a time;
+ADAPTIVE shares that path and inventories linked owners on disk. The encoded bytes of the largest
+stock list value remain a working-memory floor of Flink's full-snapshot API. No whole-operator heap
+copy is required. Normal native checkpoints keep their existing database-file path.
+
+Shared async controls cover original LEGACY TTL ages, optional input keys, both native stores,
+two overlapping captures, live writes, native-owner closure and reverse writer completion. A
+2,051-candidate hot key crosses native transport frames. Separate 2.2 controls exercise VALUE,
+MAP and both ADAPTIVE representations with optional input keys and both native stores, including
+sampled timestamps and nonempty stock continuation after the native owner closes.
 
 Released 2.2.1 stock protocol controls cover LEGACY, VALUE, MAP and both ADAPTIVE representations
 across heap/RocksDB canonical handoffs, including a second handoff without input. They compare
@@ -139,8 +142,7 @@ Managed values and serializer snapshots use released Flink classes, including it
 serializers and generated matching-key equaliser/hash functions. Their factories are generated at
 planning time, so task restore does not require planner implementation classes. No StreamFusion serializer or
 private replacement for a stock state object is written. A serializer-reader test blocks loading
-StreamFusion and planner implementation classes. Complete-job stock workers also restore without
-StreamFusion JARs. Accelerated connector replacements and their delivery guarantees still require
+StreamFusion and planner implementation classes. Accelerated connector replacements and their delivery guarantees still require
 separate qualification.
 
 Internal candidate row kinds are normalized to INSERT. LEGACY explicitly ignores the stored flags
@@ -163,7 +165,7 @@ They require the original JVM exception, released buffers, unchanged canonical m
 on retry, and correct native and stock continuation through later retractions. Broader logical types,
 key layouts, other parallelism/version combinations, ordinary SQL and accelerated-connector
 workflows remain qualification work;
-the qualified compiled-plan path does not establish those other submission forms.
+the explicit adapter does not establish those submission forms.
 
 The controls retain a released MAP/linked-ADAPTIVE failure boundary: replacing an older input-key
 candidate moves the cursor; appending can overwrite a live sequence, and a later removal throws
