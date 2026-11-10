@@ -1976,3 +1976,5 @@ fallback contracts on both supported lines. Their exact runtime-route cases are
 `batch_host_only`; these passing oracle fixtures receive no native-work credit.
 Separate admitted-pipeline DATE controls verify native work and absence of
 registered Java predicate evaluators.
+
+The inherited batch aggregate identity check applies to contracts that include those fixtures; the Flink 1.18 RocksDB-only contract has no batch aggregate fixtures.

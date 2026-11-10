@@ -33,6 +33,12 @@ class NativeExecutionTest {
   @Test
   void inheritedBatchMethodsKeepTheirConcreteJUnitIdentity() {
     String base = "org.apache.flink.table.planner.runtime.batch.sql.agg.AggregateITCaseBase";
+    if (System.getProperty("streamfusion.flink-suite.flink-line", "2.2").equals("1.18")
+        && Boolean.getBoolean("streamfusion.flink-suite.native-rocksdb")) {
+      assertFalse(java.util.Arrays.asList(NativeExecution.testClasses()).contains(base));
+      assertEquals(0, NativeExecution.testMethods(base).length);
+      return;
+    }
     assertTrue(java.util.Arrays.asList(NativeExecution.testClasses()).contains(base));
     for (String fixture : java.util.List.of("HashAggITCase", "SortAggITCase")) {
       String concrete = "org.apache.flink.table.planner.runtime.batch.sql.agg." + fixture;
