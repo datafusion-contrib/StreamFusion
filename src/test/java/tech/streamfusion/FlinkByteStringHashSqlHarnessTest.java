@@ -15,7 +15,7 @@ class FlinkByteStringHashSqlHarnessTest {
   }
 
   static Stream<String> queries() {
-    return Stream.of("MD5", "SHA1", "SHA224")
+    return Stream.of("MD5", "SHA1", "SHA224", "SHA256")
         .flatMap(
             function ->
                 Stream.of(

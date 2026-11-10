@@ -103,3 +103,8 @@ fn sha1_hashes_binary_and_utf8_with_identical_null_and_slice_rules() {
 fn sha224_hashes_binary_and_utf8_with_identical_null_and_slice_rules() {
     check_hash::<sha2::Sha224>(96);
 }
+
+#[test]
+fn sha256_hashes_binary_and_utf8_with_identical_null_and_slice_rules() {
+    check_hash::<sha2::Sha256>(97);
+}
