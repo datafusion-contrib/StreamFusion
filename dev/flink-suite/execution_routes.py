@@ -82,6 +82,7 @@ BATCH_NATIVE_OPERATORS = {
 BOUNDARY_OPERATORS = SOURCE_OPERATORS | SINK_OPERATORS | {
     'tech.streamfusion.operator.RowDataToArrowOperator',
     'tech.streamfusion.operator.ArrowToRowDataOperator',
+    'tech.streamfusion.operator.BatchUnionSchemaOperator',
     'tech.streamfusion.operator.SplitByKeyGroupOperator',
     'tech.streamfusion.operator.OrderedKeyGroupReassembler',
     'tech.streamfusion.operator.NativeColumnarMiniBatchAssignerOperator',

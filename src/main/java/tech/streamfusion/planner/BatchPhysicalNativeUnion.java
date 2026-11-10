@@ -42,6 +42,7 @@ final class BatchPhysicalNativeUnion extends Union
             ShortcutUtils.unwrapTableConfig(this),
             getInputs().stream().map(input -> InputProperty.DEFAULT).collect(Collectors.toList()),
             FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
-            getRelDetailedDescription()));
+            getRelDetailedDescription(),
+            true));
   }
 }

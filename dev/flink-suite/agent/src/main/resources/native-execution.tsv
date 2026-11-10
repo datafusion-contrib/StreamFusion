@@ -165,3 +165,6 @@ org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testGroupByOn
 org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg	*	NativeBatchJoinOperator
 org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString	*	!batch Calc: standalone scalar pipeline has no verified speedup
 org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString	*	!batch Calc: standalone scalar pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyIns	*	!batch Calc: expression nesting exceeds the native compiler limit of 32
+org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyOrsInCondition	*	!batch Calc: expression nesting exceeds the native compiler limit of 32
+org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyAggregationsWithGroupBy	*	NativeBatchAggregateOperator

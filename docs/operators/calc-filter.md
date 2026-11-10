@@ -4605,3 +4605,5 @@ guard. Native DISTINCT-array groups retain their separately verified input contr
 Batch projections with no output columns preserve the filtered row count, including existential and scalar-subquery intermediates.
 
 Flink multiple-input fusion stays outside native batch regions because its internal serializers require `RowData`. Arrow boundaries are preserved for every native batch task, including plans without joins.
+
+The native Calc type probe admits expression trees up to 32 levels deep. Deeper trees, including large `IN` predicates expanded into nested conditions, retain Flink evaluation before crossing JNI. Wide projections and grouped reductions with shallow expressions remain eligible.

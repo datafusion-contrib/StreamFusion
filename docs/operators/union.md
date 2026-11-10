@@ -14,6 +14,11 @@ become INSERT, while missing string caches remain absent values. UPDATE_BEFORE, 
 and DELETE tags are preserved. Logical arity/type mismatches fail before Arrow concatenation.
 No row conversion is added inside the island.
 
+Batch unions give their branches the same field names and nullability before forwarding their
+batches. The header adjustment retains Arrow vectors, physical types and field metadata; it does
+not transpose rows or copy column buffers. Downstream bounded operators therefore see one schema
+when input aliases differ, including when `UNION` adds a deduplication aggregate.
+
 ## Final JSON_VALUE projections
 
 Direct character JSON_VALUE projections can feed a final UNION ALL and row sink when the JSON

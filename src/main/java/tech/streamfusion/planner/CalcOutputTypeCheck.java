@@ -27,6 +27,9 @@ import tech.streamfusion.arrow.ArrowConversion;
  */
 final class CalcOutputTypeCheck {
 
+  // The recursive native compiler runs on the Flink planner thread's JVM stack.
+  private static final int MAX_NATIVE_TREE_DEPTH = 32;
+
   private CalcOutputTypeCheck() {}
 
   /**
@@ -50,6 +53,9 @@ final class CalcOutputTypeCheck {
 
   private static String mismatch(
       RexExpression encoded, RelDataType inputType, RowType declared, boolean retained) {
+    if (encoded.exceedsTreeDepth(MAX_NATIVE_TREE_DEPTH)) {
+      return "expression nesting exceeds the native compiler limit of " + MAX_NATIVE_TREE_DEPTH;
+    }
     Schema input =
         ArrowConversion.toArrowInputSchema(
             FlinkTypeFactory$.MODULE$.toLogicalRowType(inputType),

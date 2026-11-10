@@ -503,7 +503,9 @@ final class RexExpression {
                 .anyMatch(field -> rowCalcTypeCode(field.getType(), false) < 0)
             || encoder.referencedInputs().stream().anyMatch(index -> rowCalcTypeCode(
                 calc.getInput().getRowType().getFieldList().get(index).getType(), false) < 0))) {
-      supported = encoder.reject("JSON_QUERY retains generated evaluation for unverified container boundaries");
+      supported =
+          encoder.reject(
+              "JSON_QUERY retains generated evaluation for unverified container boundaries");
     }
     if (supported && !encoder.rowFusion
         && !tech.streamfusion.compat.JsonRuntimeCompat.LEGACY_SQL_JSON
@@ -1474,6 +1476,18 @@ final class RexExpression {
     return toIntArray(payload);
   }
 
+  boolean exceedsTreeDepth(int limit) {
+    int[] pending = new int[limit];
+    int depth = 0;
+    for (int children : childCounts) {
+      while (depth > 0 && pending[depth - 1] == 0) depth--;
+      if (depth == limit) return true;
+      if (depth > 0) pending[depth - 1]--;
+      if (children > 0) pending[depth++] = children;
+    }
+    return false;
+  }
+
   int[] childCounts() {
     return toIntArray(childCounts);
   }
@@ -1795,9 +1809,21 @@ final class RexExpression {
     return tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) == null
         && !call.getOperands().isEmpty()
         && nativeStringArray(call.getOperands().get(0).getType())
-        && Set.of("ARRAY_APPEND", "ARRAY_PREPEND", "ARRAY_CONTAINS", "ARRAY_POSITION",
-                "ARRAY_REMOVE", "ARRAY_DISTINCT", "ARRAY_UNION", "ARRAY_CONCAT",
-                "ARRAY_EXCEPT", "ARRAY_INTERSECT", "ARRAY_MIN", "ARRAY_MAX", "ARRAY_SORT", "ELEMENT")
+        && Set.of(
+                "ARRAY_APPEND",
+                "ARRAY_PREPEND",
+                "ARRAY_CONTAINS",
+                "ARRAY_POSITION",
+                "ARRAY_REMOVE",
+                "ARRAY_DISTINCT",
+                "ARRAY_UNION",
+                "ARRAY_CONCAT",
+                "ARRAY_EXCEPT",
+                "ARRAY_INTERSECT",
+                "ARRAY_MIN",
+                "ARRAY_MAX",
+                "ARRAY_SORT",
+                "ELEMENT")
             .contains(call.getOperator().getName());
   }
 
@@ -2114,9 +2140,12 @@ final class RexExpression {
       }
       return true;
     }
-    if (NativeConfig.collectionExpressionsEnabled() && call.getOperator().getName().equals("OBJECT_UPDATE")) {
+    if (NativeConfig.collectionExpressionsEnabled()
+        && call.getOperator().getName().equals("OBJECT_UPDATE")) {
       if (!uniqueObjectConstruction || !nativeObjectUpdate(call))
-        return reject("OBJECT_UPDATE retains Flink mutation for shared or non-inline objects and non-atomic values");
+        return reject(
+            "OBJECT_UPDATE retains Flink mutation for shared or non-inline objects and non-atomic"
+                + " values");
       var args=call.getOperands();var original=(RexCall)args.get(0);
       java.util.Map<String,RexNode> fields=new java.util.LinkedHashMap<>();
       for(int i=1;i<original.getOperands().size();i+=2)
@@ -2134,7 +2163,8 @@ final class RexExpression {
       }
       return true;
     }
-    if (NativeConfig.collectionExpressionsEnabled() && call.getOperator().getName().equals("OBJECT_OF")) {
+    if (NativeConfig.collectionExpressionsEnabled()
+        && call.getOperator().getName().equals("OBJECT_OF")) {
       if (!nativeObjectOf(call) || call.getOperands().stream().anyMatch(this::requiresRowShortCircuit))
         return reject("OBJECT_OF uses Flink evaluation outside total basic fields");
       boolean represented = call.getType().getFieldList().stream()
@@ -2815,7 +2845,8 @@ final class RexExpression {
           || args.get(0).getType().getComponentType().getSqlTypeName() == SqlTypeName.BOOLEAN
           || args.stream().anyMatch(this::requiresRowShortCircuit)
           || args.stream().skip(1).anyMatch(arg -> arg.getType().getSqlTypeName() != SqlTypeName.BOOLEAN)) {
-        return reject("ARRAY_SORT requires nullable integer/DECIMAL elements and total Boolean options");
+        return reject(
+            "ARRAY_SORT requires nullable integer/DECIMAL elements and total Boolean options");
       }
       if (verifiedSortInput(args.get(0))) {
         if (args.stream()
@@ -3652,7 +3683,8 @@ final class RexExpression {
         || args.size() != 5 || !isCharacter(args.get(0))
         || !(args.get(0) instanceof RexInputRef || args.get(0) instanceof RexLiteral)
         || !(args.get(1) instanceof RexLiteral) || ((RexLiteral) args.get(1)).isNull()) {
-      return reject("JSON_QUERY requires a final VARCHAR projection over a direct document and literal path");
+      return reject(
+          "JSON_QUERY requires a final VARCHAR projection over a direct document and literal path");
     }
     String path = JsonPathSpec.normalizeDefinite(((RexLiteral) args.get(1)).getValueAs(String.class));
     String wrapper = jsonSymbol(args.get(2));
@@ -3663,7 +3695,8 @@ final class RexExpression {
         || !List.of("WITHOUT_ARRAY", "CONDITIONAL_ARRAY", "UNCONDITIONAL_ARRAY").contains(wrapper)
         || !List.of("NULL", "EMPTY_ARRAY", "EMPTY_OBJECT").contains(empty)
         || !List.of("NULL", "EMPTY_ARRAY", "EMPTY_OBJECT").contains(error)) {
-      return reject("JSON_QUERY retains generated evaluation for branching paths or ERROR policies");
+      return reject(
+          "JSON_QUERY retains generated evaluation for branching paths or ERROR policies");
     }
     preserveCollections = true;
     add(KIND_CALL, 254, 6);
