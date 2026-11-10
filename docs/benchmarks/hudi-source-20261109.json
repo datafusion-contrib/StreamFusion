@@ -1,0 +1,556 @@
+{
+  "date": "2026-11-09",
+  "machine": {
+    "cpu": "Apple M4, 10 cores",
+    "os": "macOS 15.3.1",
+    "jdk": "Temurin 17",
+    "heap": "8 GiB",
+    "task_off_heap": "1 GiB"
+  },
+  "versions": {
+    "hudi": "1.2.1",
+    "flink": "1.18",
+    "native": "release, mimalloc"
+  },
+  "method": {
+    "parallelism": 1,
+    "batch_rows": 4096,
+    "warmups": 2,
+    "measured_trials": 5,
+    "order": "alternating/rotating engines",
+    "fixtures": "stock Hudi SQL writes; id BIGINT, name STRING; every seventh name is NULL",
+    "aggregate_query": "SELECT SUM(id), COUNT(name) FROM h",
+    "aggregate_mini_batch": "4096 rows / 50 ms",
+    "previous_sf": "native planner/aggregate enabled; only hudiSource disabled",
+    "reader_boundary": "SourceReader creation, Java storage I/O, decoding, fetch queues, JNI/C Data import, equivalent checksum; excludes planning/admission",
+    "sql_boundary": "executeSql, planning/admission, Java I/O, JNI, pipeline and external Row result collection; excludes fixture writes"
+  },
+  "final_trials": [
+    {
+      "benchmark": "aggregate",
+      "rows": 200000,
+      "row_result_query": null,
+      "trials_ms": {
+        "stock": [
+          573.3065,
+          481.416875,
+          490.945542,
+          528.991834,
+          469.132833
+        ],
+        "previous_sf": [
+          511.9815,
+          473.077417,
+          575.6335,
+          477.31675,
+          465.66075
+        ],
+        "native": [
+          535.696125,
+          580.313709,
+          483.28,
+          487.27025,
+          482.956917
+        ]
+      },
+      "median_ms": {
+        "stock": 490.946,
+        "previous_sf": 477.317,
+        "native": 487.27
+      },
+      "range_ms": {
+        "stock": [
+          469.133,
+          573.307
+        ],
+        "previous_sf": [
+          465.661,
+          575.634
+        ],
+        "native": [
+          482.957,
+          580.314
+        ]
+      }
+    },
+    {
+      "benchmark": "sql",
+      "rows": 200000,
+      "row_result_query": "SELECT name, id + 1 FROM h",
+      "trials_ms": {
+        "stock": [
+          965.798417,
+          1063.4765,
+          938.754417,
+          1039.763417,
+          935.4815
+        ],
+        "native": [
+          971.356292,
+          1052.301334,
+          956.733333,
+          1047.868042,
+          1091.195417
+        ]
+      },
+      "median_ms": {
+        "stock": 965.798,
+        "native": 1047.868
+      },
+      "range_ms": {
+        "stock": [
+          935.481,
+          1063.476
+        ],
+        "native": [
+          956.733,
+          1091.195
+        ]
+      }
+    },
+    {
+      "benchmark": "reader",
+      "rows": 200000,
+      "row_result_query": null,
+      "trials_ms": {
+        "stock": [
+          30.640125,
+          23.488,
+          21.962625,
+          22.006166,
+          22.380167
+        ],
+        "native": [
+          8.310542,
+          9.315375,
+          8.323042,
+          8.909917,
+          8.348
+        ]
+      },
+      "median_ms": {
+        "stock": 22.38,
+        "native": 8.348
+      },
+      "range_ms": {
+        "stock": [
+          21.963,
+          30.64
+        ],
+        "native": [
+          8.311,
+          9.315
+        ]
+      }
+    },
+    {
+      "benchmark": "aggregate",
+      "rows": 1000000,
+      "row_result_query": null,
+      "trials_ms": {
+        "stock": [
+          614.94325,
+          736.835792,
+          698.696375,
+          722.677375,
+          728.713584
+        ],
+        "previous_sf": [
+          605.446625,
+          695.693709,
+          586.706125,
+          595.442416,
+          779.682167
+        ],
+        "native": [
+          497.26775,
+          528.767375,
+          643.069709,
+          568.236375,
+          513.7055
+        ]
+      },
+      "median_ms": {
+        "stock": 722.677,
+        "previous_sf": 605.447,
+        "native": 528.767
+      },
+      "range_ms": {
+        "stock": [
+          614.943,
+          736.836
+        ],
+        "previous_sf": [
+          586.706,
+          779.682
+        ],
+        "native": [
+          497.268,
+          643.07
+        ]
+      }
+    },
+    {
+      "benchmark": "sql",
+      "rows": 1000000,
+      "row_result_query": "SELECT name, id + 1 FROM h",
+      "trials_ms": {
+        "stock": [
+          2627.846583,
+          2709.076417,
+          2722.799625,
+          2654.00725,
+          2672.502458
+        ],
+        "native": [
+          2590.959,
+          2636.393583,
+          2594.721583,
+          2681.453709,
+          2652.80675
+        ]
+      },
+      "median_ms": {
+        "stock": 2672.502,
+        "native": 2636.394
+      },
+      "range_ms": {
+        "stock": [
+          2627.847,
+          2722.8
+        ],
+        "native": [
+          2590.959,
+          2681.454
+        ]
+      }
+    },
+    {
+      "benchmark": "reader",
+      "rows": 1000000,
+      "row_result_query": null,
+      "trials_ms": {
+        "stock": [
+          127.046,
+          134.488416,
+          147.065208,
+          134.430792,
+          93.696083
+        ],
+        "native": [
+          27.211917,
+          27.379583,
+          27.692166,
+          40.874417,
+          48.765042
+        ]
+      },
+      "median_ms": {
+        "stock": 134.431,
+        "native": 27.692
+      },
+      "range_ms": {
+        "stock": [
+          93.696,
+          147.065
+        ],
+        "native": [
+          27.212,
+          48.765
+        ]
+      }
+    }
+  ],
+  "investigation": {
+    "before_single_admission": [
+      {
+        "benchmark": "aggregate",
+        "rows": 200000,
+        "row_result_query": null,
+        "trials_ms": {
+          "stock": [
+            494.287791,
+            516.812875,
+            499.360084,
+            495.478458,
+            479.899709
+          ],
+          "previous_sf": [
+            496.118083,
+            515.126791,
+            481.460625,
+            537.373125,
+            486.16
+          ],
+          "native": [
+            535.026084,
+            589.684416,
+            500.105958,
+            501.824375,
+            522.992708
+          ]
+        },
+        "median_ms": {
+          "stock": 495.478,
+          "previous_sf": 496.118,
+          "native": 522.993
+        },
+        "range_ms": {
+          "stock": [
+            479.9,
+            516.813
+          ],
+          "previous_sf": [
+            481.461,
+            537.373
+          ],
+          "native": [
+            500.106,
+            589.684
+          ]
+        }
+      }
+    ],
+    "before_columnar_consumer_admission": [
+      {
+        "benchmark": "aggregate",
+        "rows": 200000,
+        "row_result_query": null,
+        "trials_ms": {
+          "stock": [
+            562.748792,
+            578.968208,
+            506.084541,
+            580.81625,
+            484.223792
+          ],
+          "previous_sf": [
+            492.232542,
+            487.53175,
+            483.103458,
+            484.913584,
+            484.039291
+          ],
+          "native": [
+            503.397959,
+            492.903625,
+            489.302458,
+            496.84525,
+            499.365
+          ]
+        },
+        "median_ms": {
+          "stock": 562.749,
+          "previous_sf": 484.914,
+          "native": 496.845
+        },
+        "range_ms": {
+          "stock": [
+            484.224,
+            580.816
+          ],
+          "previous_sf": [
+            483.103,
+            492.233
+          ],
+          "native": [
+            489.302,
+            503.398
+          ]
+        }
+      },
+      {
+        "benchmark": "sql",
+        "rows": 200000,
+        "row_result_query": "SELECT name, id FROM h",
+        "trials_ms": {
+          "stock": [
+            1062.135167,
+            965.275666,
+            967.111416,
+            976.18675,
+            961.996917
+          ],
+          "native": [
+            991.089958,
+            987.711458,
+            1006.733542,
+            1010.031292,
+            1004.342916
+          ]
+        },
+        "median_ms": {
+          "stock": 967.111,
+          "native": 1004.343
+        },
+        "range_ms": {
+          "stock": [
+            961.997,
+            1062.135
+          ],
+          "native": [
+            987.711,
+            1010.031
+          ]
+        }
+      },
+      {
+        "benchmark": "reader",
+        "rows": 200000,
+        "row_result_query": null,
+        "trials_ms": {
+          "stock": [
+            24.180875,
+            24.775917,
+            24.058959,
+            24.044917,
+            22.73225
+          ],
+          "native": [
+            9.912042,
+            9.533584,
+            9.311792,
+            16.047208,
+            9.10675
+          ]
+        },
+        "median_ms": {
+          "stock": 24.059,
+          "native": 9.534
+        },
+        "range_ms": {
+          "stock": [
+            22.732,
+            24.776
+          ],
+          "native": [
+            9.107,
+            16.047
+          ]
+        }
+      },
+      {
+        "benchmark": "aggregate",
+        "rows": 1000000,
+        "row_result_query": null,
+        "trials_ms": {
+          "stock": [
+            609.7215,
+            621.124209,
+            590.577791,
+            699.295542,
+            583.238083
+          ],
+          "previous_sf": [
+            613.260959,
+            572.145125,
+            622.003417,
+            730.378083,
+            573.836042
+          ],
+          "native": [
+            608.358917,
+            516.608125,
+            496.262916,
+            502.380584,
+            478.870666
+          ]
+        },
+        "median_ms": {
+          "stock": 609.721,
+          "previous_sf": 613.261,
+          "native": 502.381
+        },
+        "range_ms": {
+          "stock": [
+            583.238,
+            699.296
+          ],
+          "previous_sf": [
+            572.145,
+            730.378
+          ],
+          "native": [
+            478.871,
+            608.359
+          ]
+        }
+      },
+      {
+        "benchmark": "sql",
+        "rows": 1000000,
+        "row_result_query": "SELECT name, id FROM h",
+        "trials_ms": {
+          "stock": [
+            2754.389417,
+            2623.769208,
+            2642.86475,
+            2792.459958,
+            2719.96
+          ],
+          "native": [
+            2779.89725,
+            2592.175458,
+            2580.235125,
+            2606.219833,
+            2565.90275
+          ]
+        },
+        "median_ms": {
+          "stock": 2719.96,
+          "native": 2592.175
+        },
+        "range_ms": {
+          "stock": [
+            2623.769,
+            2792.46
+          ],
+          "native": [
+            2565.903,
+            2779.897
+          ]
+        }
+      },
+      {
+        "benchmark": "reader",
+        "rows": 1000000,
+        "row_result_query": null,
+        "trials_ms": {
+          "stock": [
+            96.265833,
+            106.911042,
+            95.401583,
+            96.488208,
+            95.025125
+          ],
+          "native": [
+            26.508417,
+            27.499792,
+            26.486417,
+            29.546333,
+            32.568084
+          ]
+        },
+        "median_ms": {
+          "stock": 96.266,
+          "native": 27.5
+        },
+        "range_ms": {
+          "stock": [
+            95.025,
+            106.911
+          ],
+          "native": [
+            26.486,
+            32.568
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "Planning originally repeated footer/schema validation. A validated source plan now carries admission into runtime translation.",
+      "Standalone SQL scans now retain stock Hudi; native source requires an immediate columnar consumer.",
+      "Small complete jobs remain startup/result-boundary dominated; reader-only gains are not a universal SQL speedup. Both favorable and unfavorable end-to-end results are retained."
+    ]
+  }
+}

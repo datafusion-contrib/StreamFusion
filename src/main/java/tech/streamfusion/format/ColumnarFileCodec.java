@@ -56,4 +56,40 @@ public interface ColumnarFileCodec extends Serializable {
   long readerMemory(long handle);
 
   void closeDecoder(long handle);
+
+  @FunctionalInterface
+  interface BatchExporter {
+    boolean next(long array, long schema);
+  }
+
+  /** Transfers a native file batch to Java, releasing partial exports on every failure path. */
+  static VectorSchemaRoot importBatch(BatchExporter exporter) {
+    try (var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
+        var schema = org.apache.arrow.c.ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+      try {
+        if (!exporter.next(array.memoryAddress(), schema.memoryAddress())) return null;
+        var root =
+            VectorSchemaRoot.create(
+                Data.importSchema(
+                    NativeAllocator.SHARED,
+                    org.apache.arrow.c.ArrowSchema.wrap(schema.memoryAddress()),
+                    NativeAllocator.DICTIONARIES),
+                NativeAllocator.SHARED);
+        try {
+          Data.importIntoVectorSchemaRoot(
+              NativeAllocator.SHARED,
+              ArrowArray.wrap(array.memoryAddress()),
+              root,
+              NativeAllocator.DICTIONARIES);
+          return root;
+        } catch (Throwable failure) {
+          root.close();
+          throw failure;
+        }
+      } finally {
+        if (array.snapshot().release != 0) array.release();
+        if (schema.snapshot().release != 0) schema.release();
+      }
+    }
+  }
 }

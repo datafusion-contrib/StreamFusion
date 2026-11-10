@@ -250,10 +250,26 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
           "dropUpdateBefore: standalone row-source filtering is explicitly disabled");
       return root;
     }
+    if (unconsumedColumnarOutput(substituted, false)) {
+      substitutions = previousSubstitutions;
+      rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
+      recordFallback("columnar source requires a columnar consumer");
+      return root;
+    }
     // Pass 2 inserts a row↔columnar transpose at each perimeter edge (rowwise source/sink ↔
     // island).
     // Source sharing follows over every admitted root, after per-root fallbacks are settled.
     return insertTransitions(substituted);
+  }
+
+  private static boolean unconsumedColumnarOutput(RelNode node, boolean columnarConsumer) {
+    if (node instanceof ColumnarOutput
+        && ((ColumnarOutput) node).requiresColumnarConsumer()
+        && !columnarConsumer) return true;
+    for (RelNode input : node.getInputs()) {
+      if (unconsumedColumnarOutput(input, node instanceof ColumnarInput)) return true;
+    }
+    return false;
   }
 
   private static Set<String> repeatedSourceKeys(List<RelNode> roots) {
