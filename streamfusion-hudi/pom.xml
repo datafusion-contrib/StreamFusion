@@ -42,6 +42,11 @@
     <build>
         <resources combine.self="override">
             <resource>
+                <directory>${project.basedir}/..</directory>
+                <targetPath>META-INF</targetPath>
+                <includes><include>LICENSE</include></includes>
+            </resource>
+            <resource>
                 <directory>src/main/resources</directory>
             </resource>
         </resources>

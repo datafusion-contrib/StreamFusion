@@ -9,6 +9,7 @@ StreamFusion loader/core, `streamfusion-hudi-flink1.18`,
 `streamfusion-parquet-flink1.18`, and Hudi's normal
 `hudi-flink1.18-bundle-1.2.1` JAR. The connector adds no native library or Rust
 storage client; it uses the independently deployed Parquet module.
+Its Java-only JAR includes the project license and planner service registration.
 
 ## Bounded snapshot source
 
