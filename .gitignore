@@ -2,6 +2,16 @@ target/
 .flattened-pom.xml
 /docs/sql-inventory/report.html
 /docs/sql-inventory/*.csv
+/docs/benchmarks/**/*.tar.gz
+/docs/benchmarks/**/*.collapsed.gz
+/docs/benchmarks/**/*.cpu.gz
+/docs/benchmarks/**/*.log.gz
+/docs/benchmarks/**/*.log
+/docs/benchmarks/**/*.collapsed
+/docs/benchmarks/**/*.jfr
+/docs/benchmarks/**/*.hprof
+/docs/benchmarks/results/calendar-windows-2026-10-14.json
+/docs/benchmarks/results/generated-processing-time-2026-10-14.json
 .flink-suite/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/

@@ -352,7 +352,7 @@ The [individual trials](../benchmarks/fluss-headline-2026-10-08/trials.csv),
 [all 92 cell statuses](../benchmarks/fluss-headline-2026-10-08/status.csv) and
 [environment](../benchmarks/fluss-headline-2026-10-08/environment.json) retain the
 complete configuration and variability. The
-[executed plan archive](../benchmarks/fluss-headline-2026-10-08/plans.tar.gz) contains
+[executed plan archive](https://streamfusion.tech/benchmarks/fluss-headline-2026-10-08/plans.tar.gz) contains
 stock/native plans for every query and mode, including failed q23 plans.
 Compressed logs and JUnit reports for each mode, plus the isolated q23 failure,
 live beside the CSVs. Run `python3 docs/benchmarks/fluss-headline-2026-10-08/summarize.py`
@@ -532,7 +532,7 @@ The final [100,000-row trials](../benchmarks/fluss-write-2026-10-08/100k.csv),
 [configuration](../benchmarks/fluss-write-2026-10-08/environment.json), and
 [representative executed plan](../benchmarks/fluss-write-2026-10-08/plans/500k-output_16_bucketed_statistics_write_native_1.plan.txt)
 retain all 144 final measured samples. [Every warmup/measured plan, including earlier
-sweeps](../benchmarks/fluss-write-2026-10-08/all-plans.tar.gz) is archived; representative
+sweeps](https://streamfusion.tech/benchmarks/fluss-write-2026-10-08/all-plans.tar.gz) is archived; representative
 final plans also remain directly readable. Values are median seconds [complete min–max].
 
 | Rows | Workload | Partitions / strings | Stock seconds | Previous seconds | Native seconds | vs. stock | vs. previous |

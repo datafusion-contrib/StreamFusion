@@ -87,6 +87,15 @@ configuration, architecture, deployment, or benchmark methodology/results must u
 page in the same commit. Documentation that describes removed or changed behavior must be corrected or removed;
 never knowingly leave stale documentation for a later cleanup.
 
+Version maintained project inputs, not historical run outputs. Keep source, tests and
+fixed compatibility fixtures, current documentation, design decisions, benchmark harnesses
+and structured measured observations in Git. Generate SQL inventory HTML/CSV from the
+compressed snapshots when publishing docs. Store historical logs, profiler dumps and
+plan/report archives in durable versioned public artifacts with checksums and retrieval
+instructions; see `docs/benchmarks/evidence.md`. Publish and verify the archive before
+removing repository copies. Do not delete research or rejected decisions merely because
+they are old, and do not rewrite Git history as part of ordinary repository cleanup.
+
 When reviewing code, make sure that it follows the existing principles of codebases which we will take influence from:
 - Flink (see ~/data/flink for code)
 - DataFusion (see ~/data/datafusion for code)

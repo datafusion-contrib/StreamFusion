@@ -137,6 +137,15 @@ and deploys, with Pages/OIDC permissions confined to deployment. Forks build wit
 Fork docs pushes cancel obsolete builds; canonical main deployments remain serialized. Release
 tag validation and all dependent release publishing jobs are also restricted to the canonical repo.
 
+Documentation uses MkDocs 1.6's generated-file hook to render SQL inventory downloads
+from the checked-in snapshots and retrieve hash-pinned historical benchmark artifacts.
+Both are staged under `target/`, keeping generated exports and historical run outputs
+out of the maintained source tree. Existing published paths remain unchanged; an
+unavailable or corrupt artifact fails the docs build. See the
+[evidence policy](benchmarks/evidence.md#source-repository-and-archived-run-outputs)
+for retrieval and retention. The docs workflow tests snapshot rendering and evidence
+retrieval before building; ordinary source/test jobs do not fetch these archives.
+
 The ordinary CI and upstream Flink aggregate gates run after successful or failed jobs,
 but skip canceled workflows (`always() && !cancelled()`). An unconditional `always()`
 gate can wait for another runner after the obsolete test jobs have been canceled,
