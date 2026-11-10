@@ -60,7 +60,7 @@ class StockCanonicalSnapshotTest {
           CheckpointStorageLocationReference.getDefault());
 
   @ParameterizedTest
-  @ValueSource(strings = {"complete", "cancel", "task-cancel", "closed-registry"})
+  @ValueSource(strings = {"complete", "cancel", "task-cancel", "closed-registry", "failed-keyed"})
   void operatorStateRetainsItsBackendAfterKeyedStateFinishes(String mode) throws Exception {
     var source = harness(true);
     var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
@@ -77,9 +77,38 @@ class StockCanonicalSnapshotTest {
             IOException.class,
             () -> operatorBackend.snapshot(1, 0, new MemCheckpointStreamFactory(1 << 20), OPTIONS));
       } else {
-        captured = operator.snapshotState(1, 0, OPTIONS, new MemCheckpointStreamFactory(1 << 20));
-        org.apache.flink.util.concurrent.FutureUtils.runIfNotDoneAndGet(
-            captured.getKeyedStateManagedFuture());
+        boolean failedKeyed = mode.equals("failed-keyed");
+        if (failedKeyed) {
+          var keyed = backend(source);
+          keyed.setCurrentKey(key());
+          keyed.getPartitionedState(1000L, LongSerializer.INSTANCE, ACCUMULATOR).update(7L);
+        }
+        var streams =
+            new MemCheckpointStreamFactory(1 << 20) {
+              @Override
+              public org.apache.flink.runtime.state.CheckpointStateOutputStream
+                  createCheckpointStateOutputStream(
+                      org.apache.flink.runtime.state.CheckpointedStateScope scope)
+                      throws IOException {
+                if (failedKeyed) throw new IOException("failed keyed write");
+                return super.createCheckpointStateOutputStream(scope);
+              }
+            };
+        captured = operator.snapshotState(1, 0, OPTIONS, streams);
+        if (failedKeyed) {
+          var failed = captured;
+          Exception failure =
+              assertThrows(
+                  Exception.class,
+                  () -> tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(failed));
+          Throwable cause = failure;
+          while (cause.getCause() != null) cause = cause.getCause();
+          assertEquals("failed keyed write", cause.getMessage());
+          assertFalse(captured.getOperatorStateManagedFuture().isDone());
+        } else {
+          org.apache.flink.util.concurrent.FutureUtils.runIfNotDoneAndGet(
+              captured.getKeyedStateManagedFuture());
+        }
         var entered = new java.util.concurrent.CountDownLatch(1);
         var closing =
             executor.submit(
@@ -92,7 +121,7 @@ class StockCanonicalSnapshotTest {
         assertThrows(
             java.util.concurrent.TimeoutException.class,
             () -> closing.get(100, java.util.concurrent.TimeUnit.MILLISECONDS));
-        if (mode.equals("cancel")) captured.cancel();
+        if (mode.equals("cancel") || failedKeyed) captured.cancel();
         else if (mode.equals("task-cancel")) operator.cancelables().close();
         else {
           var saved = finish(captured);

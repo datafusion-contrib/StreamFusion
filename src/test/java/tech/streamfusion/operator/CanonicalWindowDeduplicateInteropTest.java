@@ -410,8 +410,25 @@ class CanonicalWindowDeduplicateInteropTest {
       Throwable cause =
           assertThrows(
               Exception.class,
-              () ->
-                  nativeRun.snapshotWithLocalState(1, 0, CanonicalWindowRankInteropTest.CANONICAL));
+              () -> {
+                var futures =
+                    nativeRun
+                        .getOperator()
+                        .snapshotState(
+                            1,
+                            0,
+                            new org.apache.flink.runtime.checkpoint.CheckpointOptions(
+                                CanonicalWindowRankInteropTest.CANONICAL,
+                                org.apache.flink.runtime.state.CheckpointStorageLocationReference
+                                    .getDefault()),
+                            new org.apache.flink.runtime.state.memory.MemCheckpointStreamFactory(
+                                1 << 20));
+                try {
+                  tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(futures);
+                } finally {
+                  futures.cancel();
+                }
+              });
       while (cause.getCause() != null) cause = cause.getCause();
       assertTrue(
           cause.getMessage().contains("Multiple retained rows for stock window deduplication"),

@@ -138,6 +138,15 @@ against a clean stock job.
 Isolated worker timeouts include both the worker log and thread dump in the retained test report,
 so a failed handoff can be diagnosed without preserving the whole temporary job directory.
 
+Expected-failure controls own their snapshot futures explicitly and cancel them after failed
+finalization, matching Flink's asynchronous checkpoint runner. The released operator test harness
+finalizer does not perform that cancellation itself. Leaving a managed operator future pending
+would correctly keep its backend lease alive and make fixture teardown wait indefinitely. The
+window-deduplication rejection control cancels the failed capture before checking that both live
+native candidate rows survived. A released-framework control injects an asynchronous keyed
+write failure and verifies that explicit cancellation releases the remaining operator lease before
+closure can finish.
+
 Canonical conversion runs only when Flink requests a canonical savepoint. Ordinary checkpoints and
 native-format savepoints retain their existing native recovery path. Both supported Flink lines
 use the released `SavepointSnapshotStrategy` and `FullSnapshotAsyncWriter`; StreamFusion supplies
