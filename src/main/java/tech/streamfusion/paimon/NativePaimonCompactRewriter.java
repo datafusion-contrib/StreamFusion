@@ -1,6 +1,7 @@
 package tech.streamfusion.paimon;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -32,7 +33,7 @@ final class NativePaimonCompactRewriter implements CompactRewriter {
   private final int bucket;
   private final CompactRewriter stock;
   final Counter nativeGroups, stockGroups, rows, files, bytes, errors;
-  private boolean closed;
+  private volatile boolean closed;
   String fallbackReason;
 
   NativePaimonCompactRewriter(
@@ -78,7 +79,7 @@ final class NativePaimonCompactRewriter implements CompactRewriter {
   @Override
   public CompactResult rewrite(int outputLevel, boolean dropDelete, List<List<SortedRun>> sections)
       throws Exception {
-    if (closed) throw new IllegalStateException("Paimon compaction rewriter is closed");
+    ensureOpen();
     fallbackReason = unsupportedReason(outputLevel, sections);
     if (fallbackReason != null) {
       return stockRewrite(outputLevel, dropDelete, sections);
@@ -281,8 +282,15 @@ final class NativePaimonCompactRewriter implements CompactRewriter {
 
   @Override
   public CompactResult upgrade(int outputLevel, DataFileMeta file) throws Exception {
-    if (closed) throw new IllegalStateException("Paimon compaction rewriter is closed");
+    ensureOpen();
     return stock.upgrade(outputLevel, file);
+  }
+
+  private void ensureOpen() throws IOException {
+    // Paimon cancels the future before closing; its worker can still enter another rewrite.
+    if (Thread.currentThread().isInterrupted())
+      throw new InterruptedIOException("Paimon compaction cancelled");
+    if (closed) throw new IllegalStateException("Paimon compaction rewriter is closed");
   }
 
   @Override

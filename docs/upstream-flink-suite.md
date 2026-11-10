@@ -791,6 +791,9 @@ the initial failure. The final report listed 237 passed tests but had no complet
 the timed-out class. Isolation preserves the original failed test and its diagnostics while
 preventing that lost TaskManager from blocking unrelated tests. It does not fix or suppress
 the upstream cleanup failure, disable failure injection, or retry random outcomes.
+The same stock changelog-compaction exception boundary reappeared on Flink 2.2/Paimon 2.1
+in PR #624; [#629](https://github.com/datafusion-contrib/StreamFusion/issues/629) tracks the
+remaining investigation. A passing randomized rerun does not establish that this race is fixed.
 All invocations' reports contribute to the result and native execution checks; any Maven
 failure remains blocking, including a process timeout without a finished JUnit report.
 Explicit `FLINK_SUITE_TEST` selectors keep their requested grouping for diagnosis.
@@ -827,7 +830,9 @@ output rows, output level, delete retention and explicit fallback reasons. Requi
 must complete real native groups with positive input files and bytes; selection-only and metadata
 upgrade cases do not count as native coverage. The unchanged randomized restore fixture may
 interrupt an attempt; successful selected rewrites must remain native, and other failures fail
-validation. Late callbacks retain their originating invocation.
+validation. Interrupted primary-key rewrite/upgrade entry reports `InterruptedIOException`
+before preflight, including when cancellation has already closed its owner; ordinary
+closed-owner misuse still fails. Late callbacks retain their originating invocation.
 
 The expanded 2.1 local qualification passes all 152 assertions in both modes with zero skips
 and 242 native rewrite groups. Append action invocations now require native work rather than
