@@ -1216,6 +1216,21 @@ temporary fixtures, and leaves normal JVM options unchanged outside each measure
 
 Recent failure diagnoses:
 
+- [CI 42616136585](https://github.com/liuyongvs/StreamFusion/actions/runs/42616136585):
+  the JSON UNION fallback Top-N fixture sorted only by a nullable value and compared raw
+  changelog histories from independent executions. UNION input interleaving changes transient
+  updates, and tied sort values leave the selected row identities unspecified. The fixture now
+  adds the unique row ID to the sort key and checks the materialized final changelog against
+  all 17 expected IDs, NULL values and multiplicities, with and without chaining. Complete
+  fallback and absence of native execution remain required; other cases retain their existing
+  changelog comparisons, including explicit coverage of every row kind across native UNION.
+- [Upstream suite 42598514603](https://github.com/liuyongvs/StreamFusion/actions/runs/42598514603):
+  Paimon's append-only external-path refresh test returned all five expected rows but found no
+  file in the original directory. It submits INSERT asynchronously and immediately changes the
+  path, allowing the first checkpoint to refresh the writer before its first file. The suite
+  adapter waits for an actual file in the original directory before that test's ALTER statement,
+  retaining its SQL, all rows and both directory assertions. Missing files, I/O errors and
+  interruption remain failures; the wait is limited to 60 seconds and this single test invocation.
 - [CI 42308241944](https://github.com/datafusion-contrib/StreamFusion/actions/runs/42308241944):
   bounded processing-time RANGE finished before its next-millisecond timer emitted output.
   Commit `18df0c55e` keeps the finite fixture open until all expected rows are evaluated.

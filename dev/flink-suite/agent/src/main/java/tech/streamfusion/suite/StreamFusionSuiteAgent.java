@@ -88,11 +88,15 @@ public final class StreamFusionSuiteAgent {
         .type(named("org.apache.flink.table.api.internal.TableEnvironmentImpl"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
-                builder.visit(
-                    Advice.to(RecordSql.class)
-                        .on(
-                            namedOneOf("executeSql", "sqlQuery", "explainSql", "compilePlanSql")
-                                .and(takesArgument(0, String.class)))))
+                builder
+                    .visit(
+                        Advice.to(RecordSql.class)
+                            .on(
+                                namedOneOf("executeSql", "sqlQuery", "explainSql", "compilePlanSql")
+                                    .and(takesArgument(0, String.class))))
+                    .visit(
+                        Advice.to(PaimonExternalPathReadiness.BeforeSql.class)
+                            .on(named("executeSql").and(takesArguments(String.class)))))
         .type(named("org.apache.flink.table.planner.delegation.PlannerBase"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -167,6 +171,12 @@ public final class StreamFusionSuiteAgent {
                             Advice.to(PaimonChangelogCompletion.Scope.class)
                                 .on(named("checkChangelogTestResult")))
                         .visit(PaimonChangelogCompletion.adapter());
+              }
+              if (type.getName().equals("org.apache.paimon.flink.AppendOnlyTableITCase")) {
+                builder =
+                    builder.visit(
+                        Advice.to(PaimonExternalPathReadiness.Scope.class)
+                            .on(named("testTableReadWriteWithChangedExternalPath")));
               }
               return builder.visit(
                   Advice.to(WatchPaimonTest.class)
