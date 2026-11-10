@@ -5,6 +5,14 @@ quota instead of the shared `datafusion-contrib` quota. Opening or updating a PR
 the test matrix in the canonical repository. Source-changing canonical `main` pushes still run
 the complete post-merge checks, the upstream Flink weekly run remains available, and publishing stays upstream.
 
+Runtime shards finish independently after a sibling failure, preserving complete diagnostic reports
+from the cohort. Every required shard must still pass the aggregate gate. Superseded branch pushes
+retain workflow cancellation.
+
+Image smoke failures include current TaskManager/JobManager container state and logs before the
+containers close. Failed smoke reports are retained for three days, so heartbeat timeouts can be
+distinguished from JVM/native crashes or container OOM without weakening the submission assertion.
+
 ## Contributing from a personal fork
 
 1. Fork `datafusion-contrib/StreamFusion` into your personal account. If that name is already
