@@ -90,9 +90,22 @@ class FlinkImageIT {
               .inspectContainerCmd(container.getContainerId())
               .exec()
               .getState();
-      return "\n" + role + " state: " + state + "\n" + container.getLogs();
+      return "\n" + role + " state: " + state + "\n" + container.getLogs() + crashReport(container);
     } catch (RuntimeException failure) {
       return "\n" + role + " diagnostics unavailable: " + failure;
+    }
+  }
+
+  private static String crashReport(GenericContainer<?> container) {
+    try {
+      return "\nJVM crash report:\n"
+          + container.copyFileFromContainer(
+              "/opt/flink/hs_err_pid1.log",
+              stream ->
+                  new String(
+                      stream.readNBytes(1024 * 1024), java.nio.charset.StandardCharsets.UTF_8));
+    } catch (Exception unavailable) {
+      return "\nJVM crash report unavailable: " + unavailable;
     }
   }
 

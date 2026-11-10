@@ -9,7 +9,7 @@ Runtime shards finish independently after a sibling failure, preserving complete
 from the cohort. Every required shard must still pass the aggregate gate. Superseded branch pushes
 retain workflow cancellation.
 
-Image smoke failures include current TaskManager/JobManager container state and logs before the
+Image smoke failures include current TaskManager/JobManager container state, logs and any JVM fatal-error report before the
 containers close. Failed smoke reports are retained for three days, so heartbeat timeouts can be
 distinguished from JVM/native crashes or container OOM without weakening the submission assertion.
 
