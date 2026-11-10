@@ -326,6 +326,83 @@ fn persistent_fixed_windows_continue_and_fire_with_record_level_views() {
 }
 
 #[test]
+fn byte_distinct_partials_drop_null_markers_without_dropping_the_window() {
+    for (size, slice, cumulative) in [(1000, 1000, false), (2000, 1000, false), (2000, 1000, true)]
+    {
+        let temp = tempfile::tempdir().unwrap();
+        let codec = WindowStateCodec::new(&build_aggregates(&[7, 3], &[3, 0])).unwrap();
+        let store =
+            RocksWindowAggStore::create_with_codec(config(temp.path()), codec, 0..=127).unwrap();
+        let make = || TumblingAggregator::new(size, slice, cumulative, vec![3, 0], vec![7, 3]);
+        let mut memory = make();
+        let mut rocks = make()
+            .with_key_timestamp_precisions(vec![-1])
+            .with_store(store, vec![DataType::Int64]);
+        let mut local = TumblingAggregator::new(1000, 1000, false, vec![3, 0], vec![7, 3]);
+        let mut restored = None;
+        for values in [
+            vec![None, None],
+            vec![Some("a"), None, Some("a")],
+            vec![None, Some("b")],
+        ] {
+            let rows = values.len();
+            let input = RecordBatch::try_from_iter(vec![
+                (
+                    "ts",
+                    Arc::new(Int64Array::from_value(500, rows)) as ArrayRef,
+                ),
+                (
+                    "key0",
+                    Arc::new(Int64Array::from_value(7, rows)) as ArrayRef,
+                ),
+                ("value0", Arc::new(StringArray::from(values)) as ArrayRef),
+                (
+                    "value1",
+                    Arc::new(Int64Array::from_value(1, rows)) as ArrayRef,
+                ),
+            ])
+            .unwrap();
+            local.update(&input).unwrap();
+            let partial = local.drain_partial();
+            memory.update_partial(&partial).unwrap();
+            rocks.update_partial(&partial).unwrap();
+            if let Some(restored) = restored.as_mut() {
+                TumblingAggregator::update_partial(restored, &partial).unwrap();
+            } else {
+                let parts = rocks.canonical_partitions(128, &[-1]).unwrap();
+                restored = Some(TumblingAggregator::restore_partitions(
+                    size,
+                    slice,
+                    cumulative,
+                    vec![3, 0],
+                    vec![7, 3],
+                    &parts.into_values().collect::<Vec<_>>(),
+                ));
+            }
+        }
+        let expected = memory.flush(10000).unwrap();
+        assert!(expected.num_rows() > 0);
+        for name in ["result0", "result1"] {
+            let values = expected
+                .column_by_name(name)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert!(values
+                .values()
+                .iter()
+                .all(|value| *value == if name == "result0" { 2 } else { 7 }));
+        }
+        assert_eq!(rendered(&expected), rendered(&rocks.flush(10000).unwrap()));
+        assert_eq!(
+            rendered(&expected),
+            rendered(&restored.unwrap().flush(10000).unwrap())
+        );
+    }
+}
+
+#[test]
 fn persistent_sessions_bridge_and_rescale_memberships_with_their_headers() {
     let temp = tempfile::tempdir().unwrap();
     let live = temp.path().join("live");

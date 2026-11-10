@@ -67,6 +67,15 @@ The combined legacy/TVF/DISTINCT/processing-time/planner regression selection pa
 legacy cases pass on each release. Native checks pass 1,544 tests with two existing ignores;
 memory-only compilation and the JNI build pass. Java-only follow-ups do not repeat native suites.
 
+DataFusion's byte-backed COUNT DISTINCT state can include a NULL marker even though its result
+counts only non-NULL values. Record-level persistence omits that marker from both membership
+records and cached cardinality/inventory counts. An all-NULL partial still retains its window
+owner and independent scalar state; later non-NULL partials merge normally. Counted DISTINCT
+continues to reject NULL members. The regression covers TUMBLE/HOP/CUMULATE, repeated local
+partials and native restore after an all-NULL prefix. This repairs the existing two-phase RocksDB
+path exercised by the unchanged upstream window-join queries; admission and state layout do not
+change.
+
 Scalar-only checkpoint row bytes remain compatible. Old snapshot-backed checkpoints migrate one
 key-group blob at a time, preserving processing deadlines through aligned/clipped restore and
 empty timer-only checkpoints. That legacy migration retains a one-partition memory floor.

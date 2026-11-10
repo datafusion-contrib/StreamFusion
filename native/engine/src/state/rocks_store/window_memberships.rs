@@ -204,7 +204,7 @@ impl WindowStateCodec {
                     return Err(invalid("NULL membership state"));
                 }
                 let values = values.value(row);
-                if values.null_count() != 0 {
+                if table.counted && values.null_count() != 0 {
                     return Err(invalid("NULL DISTINCT value"));
                 }
                 if let Some(counts) = counts {
@@ -249,12 +249,15 @@ impl WindowStateCodec {
                                 .unwrap();
                             count.value(row)
                         } else {
-                            values.len() as i64
+                            (values.len() - values.null_count()) as i64
                         };
                         cardinalities.push(count);
                         let prefix = table_prefix(owner, field)?;
                         writes.delete_range(prefix.clone(), prefix_successor(&prefix))?;
-                        writes.put(&prefix, (values.len() as i64).to_le_bytes())?;
+                        writes.put(
+                            &prefix,
+                            ((values.len() - values.null_count()) as i64).to_le_bytes(),
+                        )?;
                         for start in (0..values.len()).step_by(CHUNK_ROWS) {
                             database::check_cancelled()?;
                             let length = CHUNK_ROWS.min(values.len() - start);
@@ -262,6 +265,10 @@ impl WindowStateCodec {
                                 crate::flink_float::canonical_array(&values.slice(start, length));
                             let rows = table.converter.convert_columns(&[array]).map_err(re)?;
                             for (offset, value) in rows.iter().enumerate() {
+                                // DataFusion's byte sets retain a NULL marker that COUNT ignores.
+                                if values.is_null(start + offset) {
+                                    continue;
+                                }
                                 let count = counts.map_or(1, |counts| counts.value(start + offset));
                                 let mut key = prefix.clone();
                                 key.extend_from_slice(value.data());
