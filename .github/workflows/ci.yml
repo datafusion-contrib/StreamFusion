@@ -358,6 +358,10 @@ jobs:
             jdk: '17'
             profile: iceberg,iceberg-upstream
             module: streamfusion-iceberg
+          - name: Hudi (Flink 1.18)
+            jdk: '17'
+            profile: hudi,flink-1.18
+            module: streamfusion-hudi
           - name: Paimon Parquet
             jdk: '17'
             profile: paimon
@@ -382,6 +386,10 @@ jobs:
             jdk: '11'
             profile: delta
             module: streamfusion-delta
+          - name: Hudi (Flink 1.18)
+            jdk: '11'
+            profile: hudi,flink-1.18
+            module: streamfusion-hudi
           - name: Paimon Parquet
             jdk: '11'
             profile: paimon

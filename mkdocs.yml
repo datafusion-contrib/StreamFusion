@@ -69,6 +69,7 @@ nav:
       - Delta Lake: connectors/delta.md
       - Apache Doris: connectors/doris.md
       - Apache Iceberg: connectors/iceberg.md
+      - Apache Hudi: connectors/hudi.md
       - Apache Paimon: connectors/paimon.md
       - Formats:
           - JSON: connectors/formats/json.md
