@@ -2,7 +2,9 @@
 
 **Status: partial.** Flink 2.2.1 and 1.18.1 batch Table environments can use native
 Calc/filter pipelines, `UNION ALL`, scalar `ORDER BY`, global and typed-key
-reductions, DISTINCT and fixed-width MIN/MAX, with the admission restrictions below.
+reductions, DISTINCT, fixed-width MIN/MAX and verified bounded joins, with the
+admission restrictions below. Admitted filesystem Parquet inputs can enter as native
+Arrow batches; other reader and sink contracts retain the host boundary.
 Flink retains SQL optimization, catalogs, source/sink providers, distributed
 scheduling and batch recovery. This does not accelerate arbitrary DataStream code.
 
@@ -23,9 +25,9 @@ admission. Their streaming producer/consumer rules are not inferred for new batc
 boundaries.
 
 Each source-to-sink path must also contain an admitted unrestricted sort,
-a verified hash reduction/DISTINCT, a natively encoded `SHA2` call or a verified
-user-defined scalar function. Sort and SHA-256 complete-job comparisons demonstrate
-a gain with both row/Arrow conversions included. User functions retain the
+a verified bounded join, keyed reduction/DISTINCT, decimal SUM, a natively encoded
+`SHA2` call or a verified user-defined scalar function. Sort and SHA-256 complete-job
+comparisons demonstrate a gain with both row/Arrow conversions included. User functions retain the
 repository's accepted performance exception and their existing type/lifecycle rules.
 Arithmetic, casts, predicates and other admitted scalar expressions may compose
 with those operations inside the same columnar island. Simple DATE comparisons
@@ -157,9 +159,12 @@ route, including when stock source traits elided an exchange. This avoids assumi
 that streaming BinaryRow hashing equals stock batch's generated field hash.
 Range exchanges and other unsupported interior nodes retain stock. Native
 batch exchanges explicitly request BATCH; hybrid scheduling remains unverified.
-Connector acceleration is separate: this milestone retains stock bounded readers
-and stock sink providers, including their final commits, overwrite policies and
-constraints. Native Parquet/ORC codecs do not imply a native filesystem batch scan.
+Connector acceleration is separate. The optional native filesystem Parquet source
+now replaces admitted fixed-parallelism scan/transpose boundaries with Arrow input;
+its [source whitelist](../connectors/parquet.md#source) covers the initial types,
+projections and options. Other bounded reader contracts and all batch sink providers
+retain Flink's code, including final commits, overwrite policies and constraints.
+An available codec alone does not admit another connector or source configuration.
 
 ## Bounded join candidate
 
@@ -189,9 +194,12 @@ Hash build state uses the existing shared native memory pool and fails on reserv
 denial; this initial DataFusion hash table does **not** spill. DataFusion nested-loop
 execution has a chunked disk-spill fallback when temporary files are available. Sort-merge input sorting
 uses the existing DataFusion external sorter. No separate pool
-or higher memory limit is introduced. Join performance remains candidate work until
-its complete-job release measurements establish the applicable gains. The Flink 2.2 TPC-H check now passes all 22 queries with exact rows/types and
-positive native work. This is coverage; full-workload performance is measured separately.
+or higher memory limit is introduced. The complete SF1 TPC-H release comparison
+now passes all 22 queries with exact rows/types, native source and compute work,
+and zero entry-transpose rows. All 22 query medians favor native; the geometric
+mean speedup is 2.8137×. This is a local shared-host, warm-cache cohort, not an
+arbitrary batch SQL or larger-data performance guarantee. See the
+[full comparison and limitations](../benchmarks/tpch.md#review-head-production-profile-comparison).
 
 ## Remaining gaps
 
@@ -208,7 +216,8 @@ positive native work. This is coverage; full-workload performance is measured se
 - Join predicates requiring unverified JVM/string/collection representations, mixed
   keyed NULL equality, preserved-side broadcasts and external hash-table spilling.
 - Expand/UNNEST/correlate, nested boundary types and set-operation plans outside UNION ALL.
-- Native bounded connector admission and native batch sink substitution.
+- Native bounded connector admission beyond the documented filesystem Parquet
+  whitelist, including batch Iceberg/Paimon substitution, and native batch sinks.
 - Native compiled batch plans. The deployed batch planner preserves stock compilation;
   Flink 1.18 keeps its own unsupported compiled-plan behavior.
 - Python, pattern matching, async/model functions and other unrecognized interior nodes.
@@ -320,3 +329,15 @@ The source is chosen after the host reuse graph is complete; fully columnar
 consumers share one read through the existing retained-view share operator.
 Unsupported source contracts retain Flink's reader and the ordinary entry
 transpose. The source does not broaden whole-query compute admission.
+
+The production-profile source validation uses the same release/mimalloc libraries
+on both host lines: all 22 TPC-H queries at SF0.01 match stock rows/types, emit
+native source rows and have zero entry-transpose rows. Each line also passes five
+source ownership/restore/memory controls and two SQL fallback/retry controls.
+The entry-counter sensitivity control observes all 2,051 rows when the stock reader
+is explicitly selected. The separate native release suite passes 73 bounded tests
+with its default RocksDB feature configuration; packaged-loader controls pass five
+payload identity checks and two grouped/join checks per line. The
+[production-profile validation reports](../benchmarks/tpch.md#review-head-production-profile-comparison)
+retain each check's scope rather than assigning the native unit suite the benchmark's
+allocator configuration.
