@@ -1,6 +1,6 @@
 # Apache Hudi
 
-**Status: experimental, partial source. All sinks retain stock Hudi.**
+**Status: experimental, partial source and immutable COW append sink.**
 
 The optional `streamfusion-hudi-flink1.18` module targets the released Hudi 1.2.1
 Flink 1.18 bundle. There is no released Hudi Flink 2.2 bundle. Build with
@@ -43,6 +43,34 @@ The public `NativeHudiSource.from` entry point applies the same source admission
 policy for direct DataStream use. Ordinary SQL retains its normal stock fallback
 when the optional module, native Parquet module or verified source contract is absent.
 
+## Immutable COW append sink
+
+The first native sink admits `write.operation=insert` on unpartitioned COW tables
+with `hoodie.populate.meta.fields=false`, `metadata.enabled=false`, and Hudi's
+unbuffered append path. It accepts insert-only input with the same four primitive
+payload types as the source. Updating, overwrite, partitioned, buffered and
+metadata-bearing writes retain stock Hudi. Bloom metadata, ignored write failures,
+unknown Parquet overrides and unverified constraint policies also retain stock.
+
+The pinned released sink builds its normal graph first. Following the Iceberg
+adapter, StreamFusion replaces only its append operator factory, preserving Hudi's
+coordinator, operator identities, markers, write statuses and commit/checkpoint
+protocol. The original append function still processes key/counter access through
+borrowed views of Arrow columns. The Parquet writer recognizes each batch once;
+payload vectors are exported to the existing Rust encoder without a row transpose.
+Hudi's Java storage creates the output stream and writes its bytes.
+
+The original Java write client resolves the effective Parquet configuration.
+Compression, row-group/page sizes and dictionary settings pass to the shared codec.
+A validated plan carries admission into translation without repeating filesystem
+checks. NOT NULL errors reuse the existing columnar constraint enforcer. File
+rolling occurs between complete batches; the configured target is approximate
+within one batch. Encoder accounting reserves twice the row-group size plus its
+1 MiB transfer buffer; this is a conservative estimate, not a strict bound on all
+transient allocations. Checkpoints close encoded files before Java acknowledges
+their write statuses. Native file footers identify `parquet-rs`; stock Hudi reads
+those files unchanged.
+
 ## Stock paths
 
 The following retain the stock connector:
@@ -54,20 +82,28 @@ The following retain the stock connector:
 - Requested schema-on-read evolution, mismatched physical file schemas, non-UTC read
   conversion, commit-range options, and unverified read/Parquet reader options.
 - Batch-runtime SQL scans and portable compiled-plan source lowering.
-- Every sink, index operation, compaction and clustering worker.
+- Updating/metadata-bearing and other unverified sinks, every index operation,
+  compaction and clustering worker.
 
 The released hudi-rs merge, buffer and spill algorithms are not duplicated here.
-MOR integration needs a supported resolved-reader API accepting Java-backed I/O
-and Java-resolved schema/visibility. Version-10 native logs and key-based changelog
-delete emission need upstream functionality beyond that API boundary.
+Direct Java I/O injection is not public. An unmodified `hudi-core 0.6.0` prototype
+has instead used Java-selected/fetched files in a temporary local view, with real
+schema/options supplied through the public table factory. Snapshot results matched
+Java Hudi on version-9 Parquet and Avro logs, including stale updates and ordered
+and stale key deletes. This probe is not enabled connector coverage: spill,
+checkpoint ordering and cache-inclusive performance remain to be established.
+It does not expose private sink buffers or add missing changelog delete emission.
 
 ## Validation
 
 `NativeHudiSourceTest` uses stock Hudi SQL writes, compares stock/native SQL results,
 and requires the native source plan. It checks projection/NULLs, restored logical
 row offsets with changed batch sizes, stock fallback admission, and Arrow validity
-after reader close, and the fixed admitted snapshot across later commits. The optional CI lake-module matrix includes this Flink 1.18
-module. Other connectors' normal tests cover the shared file-batch import helper.
+after reader close, and the fixed admitted snapshot across later commits. The
+optional CI lake-module matrix includes this Flink 1.18 module. Append tests verify all four types and NULLs, batch-boundary rolling,
+stock readback, native SQL source/sink plans without transposes, and recovery after
+a completed checkpoint with no duplicates. Other connectors' normal tests cover
+the shared file-batch import helper.
 
 The opt-in `sf.hudi.benchmark` tests compare the same Java-written files using
 release native libraries, one source task, a 4096-row decoder batch, 1 GiB task
@@ -111,3 +147,27 @@ these measurements do not establish a general SQL speedup. Standalone scans
 retain stock Hudi, and the native source's intended use is an Arrow pipeline.
 The [trial evidence](../benchmarks/hudi-source-20261109.json) includes variability,
 earlier unfavorable results, and the change that removed repeated admission I/O.
+
+### Complete read/write pipeline
+
+The append benchmark runs `INSERT INTO target SELECT name,id+1 FROM h` against
+fresh, identically configured immutable COW targets. It times SQL execution through
+Hudi's completed commit, including planning/admission, Java file I/O, JNI and all
+intrinsic conversions. Source fixture writes, target DDL, plan assertions and
+stock-Hudi aggregate readback are outside timing. The previous StreamFusion engine
+disables only `hudiSink`, retaining the native source/Calc and its row sink boundary.
+Two warmups and five rotating trials use the same release libraries/resources as
+above. The native plan must contain both source and sink and no Arrow-to-row edge.
+Readback verifies count, id sum and NULL count for every trial.
+
+| Rows | Stock median ms (range) | Previous SF median ms (range) | Native median ms (range) |
+| ---: | ---: | ---: | ---: |
+| 200,000 | 697.6 (668.3–825.3) | 831.5 (739.6–911.4) | 643.6 (562.1–668.7) |
+| 1,000,000 | 1564.7 (1500.7–1714.8) | 1481.9 (1381.8–1565.4) | 831.9 (770.8–886.7) |
+
+At one million rows this run is 1.88× faster than stock Flink and 1.78× faster than
+the previous StreamFusion sink path. At 200k rows the respective ratios are 1.08×
+and 1.29×; startup and commit costs account for much more of the job. The
+[append trial evidence](../benchmarks/hudi-append-20261109.json) retains all trials,
+configuration and earlier investigation results. Run the existing benchmark command
+with `-Dtest=NativeHudiSourceTest#benchmarkCompleteArrowReadWritePipeline`.

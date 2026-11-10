@@ -18,7 +18,17 @@ This avoids copying Hudi's file-planning implementation. Unknown versions and
 unsupported source contracts retain the stock connector at planning time.
 
 MOR merge algorithms are deliberately left upstream. The published hudi-rs reader
-does not expose caller-supplied storage and resolved schema/visibility through
-its public facade. Recreating its merge/spill machinery to bypass that boundary
-would defeat the integration's purpose. Current native coverage and validation
-are recorded on the [connector page](../docs/connectors/hudi.md).
+does not accept caller-supplied storage through its public facade. A prototype
+instead supplies a local view populated from Java-selected files and Java-loaded
+bytes, using the public table factory to resolve the schema. It matches stock
+Hudi on real version-9 MOR fixtures without copying merge logic. Cache-inclusive
+performance and checkpoint ordering still require validation before admission.
+Current native coverage and validation are recorded on the
+[connector page](../docs/connectors/hudi.md).
+
+The immutable COW append adapter follows Iceberg's released-graph decoration. It
+retains Hudi's append function and coordinator and gives Java only borrowed Arrow
+row views for keys/counters. A whole batch reaches the shared Parquet encoder once;
+Java retains authenticated output I/O, markers, file handles and commit metadata.
+File rolling is deferred until the current Arrow batch has been counted completely.
+This avoids duplicating Hudi's write/commit protocol or transposing payload rows.
