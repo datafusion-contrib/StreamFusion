@@ -11359,3 +11359,22 @@ rotates and every trial checks matching output consumption. Times are median mil
 Both physical input paths reuse the existing SIMD Base64 encoder. Their measured times are
 effectively tied; admitting arbitrary STRING bytes requires no new encoding algorithm.
 Select `to_base64` as the example's fifth argument.
+
+### Byte-preserving ASCII
+
+The same release prepared-input fixture uses Flink 2.2.1 and JDK 17, prebuilt RowData versus
+Arrow, 4096 rows per batch, 256 iterations, 12 warmups and nine measured trials. Engine order
+rotates and every trial checks matching output consumption. Times are median milliseconds
+(min-max); no perimeter transposes are timed. These are not complete-job throughput claims.
+
+| Input | Stock Flink | Existing Utf8 | Binary |
+|---|---:|---:|---:|
+| 16-byte ASCII | 15.901 (14.275-16.055) | 0.729 (0.726-0.732) | 0.739 (0.720-0.769) |
+| 64-byte ASCII | 18.799 (18.568-19.159) | 0.878 (0.865-0.890) | 0.899 (0.879-0.917) |
+| 16 three-byte characters, every seventh row NULL | 17.877 (15.132-18.371) | 1.150 (1.137-1.167) | 1.163 (1.131-1.173) |
+| 16 bytes, first byte FF every 1000 rows | 15.791 (13.240-16.667) | not applicable | 0.739 (0.725-0.800) |
+| Empty strings, every seventh row NULL | 13.917 (12.392-14.200) | 1.106 (1.089-1.127) | 1.109 (1.065-1.113) |
+
+ASCII reads the first byte as a signed Java byte and shares the input validity mask with its
+integer result. Its small difference from the existing Utf8 path is within or near observed
+variability; both outperform the measured Flink control. Select `ascii` as the fifth argument.

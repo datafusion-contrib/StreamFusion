@@ -8,6 +8,9 @@ use streamfusion::bench::CalcProgram;
 
 fn checksum(batch: &RecordBatch) -> i64 {
     let column = batch.column(0);
+    if let Some(values) = column.as_any().downcast_ref::<arrow::array::Int32Array>() {
+        return values.iter().map(|value| value.map_or(-1, i64::from)).sum();
+    }
     let bytes;
     let values = if let Some(values) = column.as_any().downcast_ref::<BinaryArray>() {
         values
@@ -124,6 +127,7 @@ fn main() {
                 "sha384" => (vec![6, 0], vec![98, 0], vec![1, 0], vec![]),
                 "sha512" => (vec![6, 0], vec![99, 0], vec![1, 0], vec![]),
                 "to_base64" => (vec![6, 0], vec![107, 0], vec![1, 0], vec![]),
+                "ascii" => (vec![6, 0], vec![67, 0], vec![1, 0], vec![]),
                 _ => panic!("Unknown byte-string benchmark: {function}"),
             };
             CalcProgram::new(kinds, payload, children, vec![], vec![], strings)

@@ -70,6 +70,7 @@ final class ByteStringInputs {
 
   private static boolean acceptsByteStringInput(int operation) {
     switch (operation) {
+      case 67: // ASCII
       case 93: // CONCAT
       case 94: // CONCAT_WS
       case 95: // MD5

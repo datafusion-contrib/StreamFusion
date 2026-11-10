@@ -81,6 +81,14 @@ class FlinkByteStringConcatSqlHarnessTest {
   }
 
   static List<String> run(String sql, boolean nativeRun) throws Exception {
+    return run(sql, nativeRun, false);
+  }
+
+  static List<String> runIntegers(String sql, boolean nativeRun) throws Exception {
+    return run(sql, nativeRun, true);
+  }
+
+  private static List<String> run(String sql, boolean nativeRun, boolean integer) throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var table = source(metrics);
       var scan = nativeRun ? NativePlanner.install(table) : null;
@@ -92,7 +100,8 @@ class FlinkByteStringConcatSqlHarnessTest {
       }
       var output =
           table.<RowData>toDataStream(
-              table.sqlQuery(sql), ROW(FIELD("v", STRING())).bridgedTo(RowData.class));
+              table.sqlQuery(sql),
+              ROW(FIELD("v", integer ? INT() : STRING())).bridgedTo(RowData.class));
       var actual = new ArrayList<String>();
       try (var results =
           output
@@ -100,7 +109,9 @@ class FlinkByteStringConcatSqlHarnessTest {
                   row ->
                       row.isNullAt(0)
                           ? "NULL"
-                          : Base64.getEncoder().encodeToString(row.getString(0).toBytes()))
+                          : integer
+                              ? Integer.toString(row.getInt(0))
+                              : Base64.getEncoder().encodeToString(row.getString(0).toBytes()))
               .returns(org.apache.flink.api.common.typeinfo.Types.STRING)
               .executeAndCollect()) {
         results.forEachRemaining(actual::add);

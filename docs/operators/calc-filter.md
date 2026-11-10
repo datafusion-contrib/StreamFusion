@@ -1001,11 +1001,13 @@ see [release measurements](../benchmarks/scalar-functions.md#runtime-sha2-widths
 
 A final native Calc immediately above a row-to-Arrow transpose can carry STRING inputs as Arrow
 Binary when every character input consumer has a verified byte contract: `CONCAT` / `||`,
-`CONCAT_WS`, `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, or `TO_BASE64`.
+`CONCAT_WS`, `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `TO_BASE64`, or `ASCII`.
 Nested concatenations, runtime separators, character constants and simple
 independent numeric projections/filters are supported. These hashes consume the original bytes and return
 valid ASCII hex. TO_BASE64 also consumes the original bytes and returns valid ASCII. These results
 can feed text predicates or another expression within the Calc.
+ASCII reads only the first byte and sign-extends it like Flink's Java byte; empty strings yield zero
+and NULL remains NULL. Its integer output can also be used in a native filter over malformed input.
 Raw concatenation output still requires a byte-capable parent or the final row exit.
 The planner selects this representation before execution; the schema does not change between
 batches. `EXPLAIN` identifies the input columns with `byteStrings=[...]`. There is no new setting.

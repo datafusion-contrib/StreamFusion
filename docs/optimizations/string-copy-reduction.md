@@ -227,3 +227,6 @@ other expressions without allowing a text kernel to consume arbitrary concatenat
 TO_BASE64 reuses the existing binary encoding kernel when a logical STRING arrives as Binary.
 Its SIMD encoder writes directly to the final Utf8 buffer because Base64 output is ASCII. The
 representation change adds neither an input payload copy nor a decode/re-encode round trip.
+
+ASCII reads the first byte directly from Binary offsets and values and produces an Int32 array
+sharing the input validity mask. It does not need to decode or scan the remaining bytes.

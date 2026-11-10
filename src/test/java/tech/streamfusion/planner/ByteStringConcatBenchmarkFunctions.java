@@ -19,6 +19,7 @@ public final class ByteStringConcatBenchmarkFunctions {
   private static FlinkExpressionFunction stock;
   private static RowData[] rows;
   private static volatile long consumed;
+  private static boolean integerOutput;
 
   private ByteStringConcatBenchmarkFunctions() {}
 
@@ -52,6 +53,7 @@ public final class ByteStringConcatBenchmarkFunctions {
       case "sha384":
       case "sha512":
       case "to_base64":
+      case "ascii":
         expression = function.toUpperCase(java.util.Locale.ROOT) + "(s)";
         break;
       default:
@@ -61,12 +63,13 @@ public final class ByteStringConcatBenchmarkFunctions {
         ((TableImpl) table.sqlQuery("SELECT " + expression + " FROM src")).getQueryOperation();
     var project = (Project) ((PlannerQueryOperation) operation).getCalciteTree();
     var type = new VarCharType(VarCharType.MAX_LENGTH);
+    integerOutput = function.equals("ascii");
     stock =
         FlinkExpressionGenerator.generate(
             project.getProjects(),
             null,
             new LogicalType[] {type},
-            RowType.of(type),
+            RowType.of(integerOutput ? new org.apache.flink.table.types.logical.IntType() : type),
             TableConfig.getDefault(),
             loader);
     stock.open(
@@ -95,6 +98,7 @@ public final class ByteStringConcatBenchmarkFunctions {
       for (RowData input : rows) {
         RowData result = (RowData) stock.evalRow(input);
         if (result.isNullAt(0)) sum--;
+        else if (integerOutput) sum += result.getInt(0);
         else {
           var value = (BinaryStringData) result.getString(0);
           int length = value.getSizeInBytes();
