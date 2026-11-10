@@ -46,6 +46,12 @@ public final class ByteStringConcatBenchmarkFunctions {
       case "concat_ws_separator":
         expression = "CONCAT_WS(s, 'x', '!')";
         break;
+      case "sha2_224":
+      case "sha2_256":
+      case "sha2_384":
+      case "sha2_512":
+        expression = "SHA2(s, " + function.substring(5) + ")";
+        break;
       case "md5":
       case "sha1":
       case "sha224":

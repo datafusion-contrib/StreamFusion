@@ -11378,3 +11378,28 @@ rotates and every trial checks matching output consumption. Times are median mil
 ASCII reads the first byte as a signed Java byte and shares the input validity mask with its
 integer result. Its small difference from the existing Utf8 path is within or near observed
 variability; both outperform the measured Flink control. Select `ascii` as the fifth argument.
+
+### Literal-width SHA2 over original bytes
+
+Legal literal SHA2 widths lower to the corresponding fixed digest kernel. The prior generic
+native SHA2 control uses its existing opcode with the same literal width and Utf8 input; this
+isolates expression execution and excludes its planner-side JVM binding and string-cache setup.
+It is not a rebuilt historical binary or a whole-job comparison. Binary and Utf8 fixed-kernel
+controls use the same release library. Methodology, host, data sizes, rotating order and warmups
+match the prepared digest measurements above. Times are median milliseconds (min-max).
+
+| Function / input | Stock Flink | Previous generic native | Fixed Utf8 | Fixed Binary |
+|---|---:|---:|---:|---:|
+| SHA2(s, 224) / 16-byte ASCII | 271.744 (268.600-293.026) | 65.465 (63.105-68.147) | 63.642 (60.904-67.334) | 62.735 (59.663-68.498) |
+| SHA2(s, 256) / 16-byte ASCII | 273.117 (269.786-274.151) | 72.315 (69.879-72.941) | 70.035 (69.422-71.931) | 70.456 (69.902-71.741) |
+| SHA2(s, 384) / 16-byte ASCII | 346.470 (344.195-355.980) | 129.831 (127.923-146.387) | 130.295 (127.954-135.686) | 128.494 (123.834-133.306) |
+| SHA2(s, 512) / 16-byte ASCII | 363.501 (362.569-380.429) | 148.684 (148.249-153.441) | 146.882 (145.765-148.326) | 148.269 (145.622-148.966) |
+| SHA2(s, 256) / 64-byte ASCII | 448.885 (443.249-474.302) | 89.023 (87.767-91.299) | 87.690 (86.314-89.025) | 88.449 (86.888-89.513) |
+| SHA2(s, 256) / 16 three-byte characters, every seventh row NULL | 240.275 (238.613-252.558) | 58.100 (57.652-61.340) | 55.630 (54.911-57.897) | 55.381 (54.787-56.131) |
+| SHA2(s, 256) / 16 bytes, first byte FF every 1000 rows | 273.397 (272.490-273.798) | not applicable | not applicable | 73.244 (70.468-74.635) |
+
+All measured Binary cases exceed the Flink control. Differences from the previous native path
+are small, with overlapping ranges in most cases; the change establishes byte preservation
+without a material measured execution regression. Select `sha2_224`, `sha2_256`, `sha2_384` or
+`sha2_512` as the example's fifth argument. Runtime, NULL and illegal widths keep their prior
+routing; SQL regressions cover both row-evaluation and initialization failures.

@@ -1008,6 +1008,9 @@ valid ASCII hex. TO_BASE64 also consumes the original bytes and returns valid AS
 can feed text predicates or another expression within the Calc.
 ASCII reads only the first byte and sign-extends it like Flink's Java byte; empty strings yield zero
 and NULL remains NULL. Its integer output can also be used in a native filter over malformed input.
+SHA2 with a literal width of 224, 256, 384 or 512 lowers to the matching digest and has the same byte
+contract. Runtime, NULL and invalid SHA2 widths retain their existing representation and error path;
+they are not included in this arbitrary-byte admission.
 Raw concatenation output still requires a byte-capable parent or the final row exit.
 The planner selects this representation before execution; the schema does not change between
 batches. `EXPLAIN` identifies the input columns with `byteStrings=[...]`. There is no new setting.

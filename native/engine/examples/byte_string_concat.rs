@@ -97,10 +97,25 @@ fn main() {
     let mut inputs: Vec<ArrayRef> = vec![Arc::new(binary.clone())];
     if invalid_every == 0 {
         inputs.push(Arc::new(StringArray::try_from_binary(binary).unwrap()));
+        if function.starts_with("sha2_") {
+            inputs.push(inputs[1].clone());
+        }
     }
     let mut calcs: Vec<_> = inputs
         .iter()
-        .map(|_| {
+        .enumerate()
+        .map(|(index, _)| {
+            if index == 2 {
+                let bits: i64 = function.strip_prefix("sha2_").unwrap().parse().unwrap();
+                return CalcProgram::new(
+                    vec![44, 0, 7],
+                    vec![0, 0, 3],
+                    vec![2, 0, 0],
+                    vec![-1, 0, 12, bits],
+                    vec![],
+                    vec![],
+                );
+            }
             let (kinds, payload, children, strings) = match function {
                 "concat" => (
                     vec![6, 0, 3],
@@ -122,10 +137,10 @@ fn main() {
                 ),
                 "md5" => (vec![6, 0], vec![95, 0], vec![1, 0], vec![]),
                 "sha1" => (vec![6, 0], vec![143, 0], vec![1, 0], vec![]),
-                "sha224" => (vec![6, 0], vec![96, 0], vec![1, 0], vec![]),
-                "sha256" => (vec![6, 0], vec![97, 0], vec![1, 0], vec![]),
-                "sha384" => (vec![6, 0], vec![98, 0], vec![1, 0], vec![]),
-                "sha512" => (vec![6, 0], vec![99, 0], vec![1, 0], vec![]),
+                "sha224" | "sha2_224" => (vec![6, 0], vec![96, 0], vec![1, 0], vec![]),
+                "sha256" | "sha2_256" => (vec![6, 0], vec![97, 0], vec![1, 0], vec![]),
+                "sha384" | "sha2_384" => (vec![6, 0], vec![98, 0], vec![1, 0], vec![]),
+                "sha512" | "sha2_512" => (vec![6, 0], vec![99, 0], vec![1, 0], vec![]),
                 "to_base64" => (vec![6, 0], vec![107, 0], vec![1, 0], vec![]),
                 "ascii" => (vec![6, 0], vec![67, 0], vec![1, 0], vec![]),
                 _ => panic!("Unknown byte-string benchmark: {function}"),
@@ -174,7 +189,12 @@ fn main() {
                     digest += checksum(&black_box(calc.run(black_box(batch.clone()))));
                 }
                 (
-                    if engine == 1 { "binary" } else { "utf8" },
+                    match engine {
+                        1 => "binary",
+                        2 => "utf8",
+                        3 => "previous",
+                        _ => unreachable!(),
+                    },
                     start.elapsed().as_nanos(),
                     black_box(digest),
                 )
