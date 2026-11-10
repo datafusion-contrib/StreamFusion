@@ -87,10 +87,38 @@ class NativeIcebergKeyedTest {
   }
 
   private static boolean initialRowsCommitted(Table table) {
+    return recordsCommitted(table, INITIAL_ROWS);
+  }
+
+  private static boolean recordsCommitted(Table table, int records) {
     var snapshot = table.currentSnapshot();
     return snapshot != null
-        && Integer.toString(INITIAL_ROWS)
+        && Integer.toString(records)
             .equals(snapshot.summary().get(SnapshotSummary.TOTAL_RECORDS_PROP));
+  }
+
+  @Test
+  void sourceCompletionRequiresAllUpdateFilesToCommit() {
+    var table =
+        new HadoopTables(new org.apache.hadoop.conf.Configuration())
+            .create(
+                new Schema(Types.NestedField.required(1, "id", Types.IntegerType.get())),
+                PartitionSpec.unpartitioned(),
+                Map.of(TableProperties.FORMAT_VERSION, "2"),
+                temp.resolve("complete-updates").toUri().toString());
+    int[] sizes = {INITIAL_ROWS, 1, 2};
+    for (int file = 0; file < sizes.length; file++) {
+      table
+          .newAppend()
+          .appendFile(
+              DataFiles.builder(table.spec())
+                  .withPath(temp.resolve("updates-" + file + ".parquet").toString())
+                  .withFileSizeInBytes(1)
+                  .withRecordCount(sizes[file])
+                  .build())
+          .commit();
+      assertEquals(file == 2, recordsCommitted(table, INITIAL_ROWS + 3));
+    }
   }
 
   @Test
@@ -438,6 +466,14 @@ class NativeIcebergKeyedTest {
       while (running && completed < 2) {
         if (System.nanoTime() > deadline) throw new IllegalStateException("checkpoint timed out");
         Thread.sleep(5);
+      }
+      var committed = new HadoopTables(new org.apache.hadoop.conf.Configuration()).load(location);
+      while (running && !recordsCommitted(committed, INITIAL_ROWS + 3)) {
+        if (System.nanoTime() > deadline)
+          throw new IllegalStateException(
+              "update files were not committed before source completion; " + EVENTS);
+        Thread.sleep(5);
+        committed.refresh();
       }
     }
 
