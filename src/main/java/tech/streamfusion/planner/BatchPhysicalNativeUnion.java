@@ -12,6 +12,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalRel;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
+import tech.streamfusion.planner.common.CommonUnionExecNode;
 
 final class BatchPhysicalNativeUnion extends Union
     implements BatchPhysicalRel, ColumnarInput, ColumnarOutput {
@@ -38,7 +39,7 @@ final class BatchPhysicalNativeUnion extends Union
   public ExecNode<?> translateToExecNode() {
     return new BatchNativeExecNode<>(
         ShortcutUtils.unwrapTableConfig(this),
-        new NativeUnionExecNode(
+        new CommonUnionExecNode(
             ShortcutUtils.unwrapTableConfig(this),
             getInputs().stream().map(input -> InputProperty.DEFAULT).collect(Collectors.toList()),
             FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),

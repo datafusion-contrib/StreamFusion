@@ -10,6 +10,7 @@ import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeGraph;
 import org.apache.flink.table.planner.plan.nodes.exec.batch.BatchExecTableSourceScan;
+import tech.streamfusion.planner.common.CommonRowDataToArrowExecNode;
 
 /** Selects source-local conversion only after the host's complete reuse graph is known. */
 final class BatchArrowSourceConversion {
@@ -47,11 +48,52 @@ final class BatchArrowSourceConversion {
                               && ((BatchNativeExecNode<?>) reader).acceptsNativeFileSource()))
             return;
           var group =
-              new RowDataToArrowExecNode.FileSourceGroup(
+              new BatchArrowSourceConversion.FileSourceGroup(
                   (BatchExecTableSourceScan) source, readers.size());
           for (var reader : readers) ((BatchNativeExecNode<?>) reader).allowNativeFileSource(group);
         });
     return graph;
+  }
+
+  static final class FileSourceGroup implements CommonRowDataToArrowExecNode.SourceConversion {
+    private final BatchExecTableSourceScan scan;
+    private final int consumers;
+    private boolean attempted;
+    private org.apache.flink.api.dag.Transformation<tech.streamfusion.operator.ArrowBatch>
+        converted;
+
+    FileSourceGroup(BatchExecTableSourceScan scan, int consumers) {
+      this.scan = scan;
+      this.consumers = consumers;
+    }
+
+    @Override
+    public org.apache.flink.api.dag.Transformation<tech.streamfusion.operator.ArrowBatch> translate(
+        org.apache.flink.table.planner.delegation.PlannerBase planner,
+        org.apache.flink.api.dag.Transformation<org.apache.flink.table.data.RowData> input,
+        org.apache.flink.table.types.logical.RowType output,
+        int rows) {
+      if (attempted) return converted;
+      attempted = true;
+      for (var extension :
+          NativePlannerExtensions.batchFileSourceProviders(
+              planner.getFlinkContext().getClassLoader())) {
+        converted =
+            extension.lowerBatchFileSource(
+                scan, input, output, rows, planner.getTableConfig().getConfiguration());
+        if (converted == null) continue;
+        if (consumers > 1)
+          converted =
+              new org.apache.flink.streaming.api.transformations.OneInputTransformation<>(
+                  converted,
+                  "NativeFileSourceShare",
+                  new tech.streamfusion.operator.NativeColumnarShareOperator(consumers),
+                  tech.streamfusion.operator.ArrowBatchTypeInformation.INSTANCE,
+                  input.getParallelism());
+        return converted;
+      }
+      return null;
+    }
   }
 
   private static boolean eligible(ExecNode<?> node) {

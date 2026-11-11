@@ -9,6 +9,8 @@ import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeConfig;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeContext;
 import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTranslator;
 import org.apache.flink.table.planner.plan.nodes.exec.batch.BatchExecNode;
+import tech.streamfusion.planner.common.CommonArrowToRowDataExecNode;
+import tech.streamfusion.planner.common.CommonRowDataToArrowExecNode;
 
 /**
  * Shares stateless transformation construction without exposing streaming nodes to batch
@@ -31,16 +33,16 @@ final class BatchNativeExecNode<T> extends ExecNodeBase<T>
 
   @Override
   public boolean outputsArrow() {
-    return !(delegate instanceof ArrowToRowDataExecNode);
+    return !(delegate instanceof CommonArrowToRowDataExecNode);
   }
 
   boolean acceptsNativeFileSource() {
-    return delegate instanceof RowDataToArrowExecNode
-        && ((RowDataToArrowExecNode) delegate).acceptsNativeFileSource();
+    return delegate instanceof CommonRowDataToArrowExecNode
+        && ((CommonRowDataToArrowExecNode) delegate).acceptsNativeFileSource();
   }
 
-  void allowNativeFileSource(RowDataToArrowExecNode.FileSourceGroup group) {
-    ((RowDataToArrowExecNode) delegate).allowNativeFileSource(group);
+  void allowNativeFileSource(BatchArrowSourceConversion.FileSourceGroup group) {
+    ((CommonRowDataToArrowExecNode) delegate).allowNativeFileSource(group);
   }
 
   @Override
