@@ -122,6 +122,16 @@ public final class CanonicalKafkaJobWorker {
       Files.writeString(root.resolve(stage + "-plan.txt"), explain);
       if (nativeRun && !explain.contains("NativeSource"))
         throw new AssertionError("Kafka source not native: " + explain);
+      var outputType =
+          org.apache.flink.table.types.logical.RowType.of(
+              new org.apache.flink.table.types.logical.BigIntType(),
+              new org.apache.flink.table.types.logical.BigIntType(),
+              new org.apache.flink.table.types.logical.BigIntType());
+      Path committed = root.resolve("committed");
+      int committedBefore =
+          checkpoint && Files.isDirectory(committed)
+              ? CanonicalFixtureFactory.committedRows(committed, outputType).size()
+              : 0;
       var result = compiled ? plan.execute() : table.executeSql(query);
       var job = result.getJobClient().orElseThrow();
       Path count = Path.of(witness + "-sink-count");
@@ -147,6 +157,9 @@ public final class CanonicalKafkaJobWorker {
       String saved;
       if (checkpoint) {
         saved = cluster.triggerCheckpoint(job.getJobID()).get(90, TimeUnit.SECONDS);
+        // Coordinator completion precedes the sink's asynchronous external commit notification.
+        awaitCommittedRows(
+            committed, outputType, committedBefore + expected, Duration.ofSeconds(30));
         job.cancel().get(30, TimeUnit.SECONDS);
         try {
           job.getJobExecutionResult().get(30, TimeUnit.SECONDS);
@@ -168,6 +181,27 @@ public final class CanonicalKafkaJobWorker {
       saveInventory(root, stage, saved);
     } finally {
       Thread.currentThread().setContextClassLoader(previous);
+    }
+  }
+
+  static void awaitCommittedRows(
+      Path directory,
+      org.apache.flink.table.types.logical.RowType type,
+      int expected,
+      Duration timeout)
+      throws Exception {
+    long deadline = System.nanoTime() + timeout.toNanos();
+    while (true) {
+      int rows =
+          Files.isDirectory(directory)
+              ? CanonicalFixtureFactory.committedRows(directory, type).size()
+              : 0;
+      if (rows > expected)
+        throw new AssertionError("Duplicate committed source rows: " + rows + " > " + expected);
+      if (rows == expected) return;
+      if (System.nanoTime() >= deadline)
+        throw new AssertionError("External sink commit not reached: " + rows + " != " + expected);
+      Thread.sleep(10);
     }
   }
 

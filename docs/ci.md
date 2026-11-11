@@ -604,6 +604,11 @@ yet available as a released CI fixture.
 
 ## Complete canonical job matrix
 
+Kafka checkpoint handoffs wait for the fixture sink's external commit before cancelling the
+completed checkpoint leg. The coordinator's checkpoint future can complete before the committer
+receives its completion notification. The boundary still requires the exact row count and the
+subsequent engine switches check for loss, duplicates and replay; a missing commit times out.
+
 Flink 2.2 canonical handoff jobs run in 16 additional required shards on each of JDK 11 and 17.
 Canonical jobs use the same duration-based balancing as runtime shards, with complete-job
 timings retained in `dev/ci/runtime-durations.json`. All 116 runnable canonical classes have
