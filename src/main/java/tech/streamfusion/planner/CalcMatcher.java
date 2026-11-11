@@ -26,7 +26,7 @@ final class CalcMatcher {
   }
 
   static boolean matches(Calc calc, boolean javaJsonInput) {
-    if (CollectionValueIdentity.unverifiedInput(calc)) return false;
+    if (CollectionExpressionSemantics.unverifiedInput(calc)) return false;
     RexProgram program = calc.getProgram();
     // A condition with an all-column-reference projection is the filter path's case; leave it
     // there.
@@ -218,7 +218,7 @@ final class CalcMatcher {
   }
 
   private static String reason(Calc calc) {
-    if (CollectionValueIdentity.unverifiedInput(calc))
+    if (CollectionExpressionSemantics.unverifiedInput(calc))
       return "collection input representation is unverified for this columnar producer";
     if (!FilterCalcMatcher.convertibleRow(
         calc.getInput().getRowType(),

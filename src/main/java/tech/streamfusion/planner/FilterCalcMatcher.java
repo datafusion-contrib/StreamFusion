@@ -22,8 +22,8 @@ final class FilterCalcMatcher {
   private FilterCalcMatcher() {}
 
   static boolean matches(Calc calc) {
-    if (CollectionValueIdentity.unverifiedInput(calc)
-        || CollectionValueIdentity.requiresStringCarrierEvaluation(calc)) return false;
+    if (CollectionExpressionSemantics.unverifiedInput(calc)
+        || CollectionExpressionSemantics.requiresStringCarrierEvaluation(calc)) return false;
     if (!hasFilterShape(calc)) {
       return false;
     }
@@ -41,7 +41,7 @@ final class FilterCalcMatcher {
    * The condition encoded for the native engine, or null if it contains an unsupported operation.
    */
   static RexExpression encodedCondition(Calc calc) {
-    if (CollectionValueIdentity.requiresGeneratedEvaluation(calc.getProgram())) return null;
+    if (CollectionExpressionSemantics.requiresGeneratedEvaluation(calc.getProgram())) return null;
     RexProgram program = calc.getProgram();
     RexNode condition = program.expandLocalRef(program.getCondition());
     // Calcite folds `col = literal`, IN, and ranges into a SEARCH/Sarg; expand it back into the

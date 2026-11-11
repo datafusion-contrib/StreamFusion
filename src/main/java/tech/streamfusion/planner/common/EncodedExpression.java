@@ -1,6 +1,7 @@
 package tech.streamfusion.planner.common;
 
 import java.util.List;
+import java.util.Set;
 import tech.streamfusion.operator.NativeUdf;
 
 /** Encoded scalar plan and representation requirements, independent of either planning mode. */
@@ -38,6 +39,12 @@ public interface EncodedExpression {
   boolean requiresCollectionRepresentation();
 
   boolean requiresOriginalStringInputs();
+
+  boolean supportsStructuredInput();
+
+  Set<Integer> referencedInputs();
+
+  EncodedExpression remapInputs(int[] map);
 
   NativeUdf.Binding udfBinding();
 

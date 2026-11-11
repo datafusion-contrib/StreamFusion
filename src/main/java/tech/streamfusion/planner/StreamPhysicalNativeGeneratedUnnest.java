@@ -67,6 +67,11 @@ public final class StreamPhysicalNativeGeneratedUnnest extends StreamPhysicalNat
   }
 
   @Override
+  public boolean carriesStringValues() {
+    return true;
+  }
+
+  @Override
   public boolean requireWatermark() {
     return false;
   }

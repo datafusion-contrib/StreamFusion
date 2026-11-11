@@ -212,8 +212,9 @@ final class JvmFunctionConversions {
   }
 
   static boolean aliasedProducer(RelNode node) {
-    if (node instanceof StreamPhysicalNativeTableFunction
-        && ((StreamPhysicalNativeTableFunction) node).returnsAliasedValues()) return true;
+    if (node instanceof tech.streamfusion.planner.common.ExpressionInput
+        && ((tech.streamfusion.planner.common.ExpressionInput) node).aliasesFunctionResults())
+      return true;
     if (node instanceof StreamPhysicalCorrelate) {
       var call = ((StreamPhysicalCorrelate) node).scan().getCall();
       if (call instanceof RexCall
@@ -222,13 +223,11 @@ final class JvmFunctionConversions {
               instanceof TableFunction
           && returnsAliasedValues((RexCall) call)) return true;
     }
-    if (node instanceof StreamPhysicalNativeCalc
-        && scalarResultsAlias(((StreamPhysicalNativeCalc) node).sourceProgram())) return true;
     if (node instanceof Calc && scalarResultsAlias(((Calc) node).getProgram())) return true;
     return node.getInputs().stream().anyMatch(JvmFunctionConversions::aliasedProducer);
   }
 
-  private static boolean scalarResultsAlias(RexProgram program) {
+  static boolean scalarResultsAlias(RexProgram program) {
     if (program == null) return false;
     boolean[] aliased = {false};
     var visitor =

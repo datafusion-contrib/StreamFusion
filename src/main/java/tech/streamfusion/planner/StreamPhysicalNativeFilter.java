@@ -107,6 +107,11 @@ public class StreamPhysicalNativeFilter extends StreamPhysicalNativeSingleRel
   }
 
   @Override
+  public boolean carriesStringValues() {
+    return CollectionExpressionSemantics.stringCarrierProducer(getInput());
+  }
+
+  @Override
   public boolean requireWatermark() {
     return false;
   }

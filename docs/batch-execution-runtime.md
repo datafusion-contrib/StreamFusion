@@ -32,6 +32,14 @@ contracts explicitly, including the Flink 1.18-only Hudi and Paimon 1.0 modules.
 The contracts remain in the connector-neutral runtime payload; they do not pull
 optional connector implementations into core.
 
+Expression admission reads producer representation and aliasing through
+`common.ExpressionInput`, rather than recognizing streaming physical-node classes.
+The streaming graph retains responsibility for proving those properties; unknown
+columnar producers keep the existing collection fallback. Shared collection and
+string expression rules remain separate from stream graph-boundary checks. Both
+modes consume `common.EncodedExpression` for input pruning and remapping, keeping
+the mutable expression encoder internal.
+
 `PlannerModeBoundaryTest` checks compiled batch/common dependencies, including
 method bodies, to reject streaming ExecNodes and reverse common-to-batch coupling.
 SQL regression checks retain positive native consumption, the existing perimeter

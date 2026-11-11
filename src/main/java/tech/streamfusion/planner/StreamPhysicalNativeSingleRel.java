@@ -21,7 +21,8 @@ import tech.streamfusion.planner.common.NativeRelDigests;
  * <p>A subclass whose output type simply follows its input (the transposes) uses the constructor
  * without a row type.
  */
-public abstract class StreamPhysicalNativeSingleRel extends SingleRel implements StreamPhysicalRel {
+public abstract class StreamPhysicalNativeSingleRel extends SingleRel
+    implements StreamPhysicalRel, tech.streamfusion.planner.common.ExpressionInput {
 
   protected final RelDataType outputRowType;
   protected final NativePlanDetails planDetails;
@@ -48,6 +49,11 @@ public abstract class StreamPhysicalNativeSingleRel extends SingleRel implements
   protected StreamPhysicalNativeSingleRel(
       RelOptCluster cluster, RelTraitSet traitSet, RelNode input) {
     this(cluster, traitSet, input, null);
+  }
+
+  @Override
+  public boolean unverifiedCollectionInput() {
+    return CollectionValueIdentity.unverifiedColumnarProducer(this);
   }
 
   @Override

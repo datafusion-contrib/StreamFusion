@@ -63,8 +63,9 @@ final class UnnestMatcher {
             && collectionType(correlate).getSqlTypeName() == SqlTypeName.ARRAY
             && collectionType(correlate).getComponentType().isNullable())) return false;
     if (correlate.condition().isDefined()
-        && CollectionValueIdentity.stringCarrierProducer(correlate.getInput())
-        && CollectionValueIdentity.readsStringValue(correlate.condition().get())) return false;
+        && CollectionExpressionSemantics.stringCarrierProducer(correlate.getInput())
+        && CollectionExpressionSemantics.readsStringValue(correlate.condition().get()))
+      return false;
     if (arrayColumn(correlate) < 0 && computedOperand(correlate) == null) return false;
     int inputArity = correlate.getInput().getRowType().getFieldCount();
     RelDataType collType = collectionType(correlate);

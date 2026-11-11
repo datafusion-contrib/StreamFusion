@@ -74,6 +74,11 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
   }
 
   @Override
+  public boolean aliasesFunctionResults() {
+    return returnsAliasedValues();
+  }
+
+  @Override
   public boolean requireWatermark() {
     return false;
   }

@@ -158,6 +158,16 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
   }
 
   @Override
+  public boolean carriesStringValues() {
+    return preservesCollections();
+  }
+
+  @Override
+  public boolean aliasesFunctionResults() {
+    return JvmFunctionConversions.scalarResultsAlias(sourceProgram);
+  }
+
+  @Override
   public RelWriter explainTerms(RelWriter writer) {
     return super.explainTerms(writer)
         .itemIf("collectionRepresentation", true, preserveCollections)

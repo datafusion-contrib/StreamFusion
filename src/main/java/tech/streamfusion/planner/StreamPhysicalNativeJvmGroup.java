@@ -43,6 +43,11 @@ public final class StreamPhysicalNativeJvmGroup extends StreamPhysicalNativeSing
   }
 
   @Override
+  public boolean carriesStringValues() {
+    return hasCollectionResults();
+  }
+
+  @Override
   public RelWriter explainTerms(RelWriter writer) {
     return super.explainTerms(writer).item("grouping", Arrays.toString(grouping));
   }

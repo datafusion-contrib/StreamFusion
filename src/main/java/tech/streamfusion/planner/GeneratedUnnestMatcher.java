@@ -73,13 +73,13 @@ final class GeneratedUnnestMatcher {
     if (node instanceof StreamPhysicalNativeCalc)
       return ((StreamPhysicalNativeCalc) node).preservesCollections()
           || node.getRowType().getFieldList().stream()
-              .noneMatch(field -> CollectionValueIdentity.sensitive(field.getType()));
+              .noneMatch(field -> CollectionExpressionSemantics.sensitive(field.getType()));
     if (node instanceof StreamPhysicalNativeDropUpdateBefore
         || node instanceof StreamPhysicalNativeMiniBatchAssigner
         || node instanceof StreamPhysicalNativeWatermarkAssigner)
       return verifiedInput(node.getInput(0));
     return node.getRowType().getFieldList().stream()
-        .noneMatch(field -> CollectionValueIdentity.sensitive(field.getType()));
+        .noneMatch(field -> CollectionExpressionSemantics.sensitive(field.getType()));
   }
 
   static String unsupportedReason(StreamPhysicalCorrelate node) {
