@@ -9,7 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** Activates optional providers only after all of their planner rules have registered. */
-final class NativePlannerExtensions {
+public final class NativePlannerExtensions {
   private static final Logger LOG = LoggerFactory.getLogger(NativePlannerExtensions.class);
 
   private final List<NativePlannerExtension> extensions;
@@ -19,6 +19,11 @@ final class NativePlannerExtensions {
       List<NativePlannerExtension> extensions, List<Substitution<?>> substitutions) {
     this.extensions = List.copyOf(extensions);
     this.substitutions = List.copyOf(substitutions);
+  }
+
+  /** Providers whose complete rule contribution passed optional-module validation. */
+  public static List<NativePlannerExtension> batchFileSourceProviders(ClassLoader loader) {
+    return load(loader).extensions();
   }
 
   static NativePlannerExtensions load(ClassLoader loader) {

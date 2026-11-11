@@ -11,6 +11,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalRel;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
+import tech.streamfusion.planner.common.CommonShareExecNode;
 
 /** Batch counterpart of the existing retained-view native share point. */
 final class BatchPhysicalNativeShare extends SingleRel
@@ -36,7 +37,7 @@ final class BatchPhysicalNativeShare extends SingleRel
     var config = ShortcutUtils.unwrapTableConfig(this);
     return new BatchNativeExecNode<>(
         config,
-        new NativeShareExecNode(
+        new CommonShareExecNode(
             config,
             InputProperty.DEFAULT,
             FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),

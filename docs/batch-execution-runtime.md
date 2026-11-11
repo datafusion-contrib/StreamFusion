@@ -6,6 +6,16 @@ admit additional SQL operators. Whole-query admission remains mandatory.
 
 ## Execution
 
+Stateless Calc, union, retained-view sharing and row/Arrow conversion build their
+transformations in `planner.common`. Streaming entry nodes retain their existing
+public names and `StreamExecNode` markers; batch nodes compose the mode-neutral
+implementation under `BatchExecNode`. The batch wrapper and transformation contexts
+retain their existing identifiers and allocation order. Historical `stream-exec-*`
+context names in the shared implementation are compatibility identities, not mode
+admission. Batch-specific file-source lowering is injected at the conversion boundary
+after the complete batch reuse graph is known. Both modes use the same source-reuse
+configuration policy, without calling the other mode's scan.
+
 One bounded DataFusion execution owns persistent input/output streams for the task.
 Each input has one pending Arrow batch, explicit EOF, producer backpressure and
 separate reader/driver wakeups. An empty input slot means pending, not completion.

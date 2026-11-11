@@ -80,7 +80,7 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
       boolean admitted;
       try {
         candidate = BatchCrossJoinRewrite.apply(root);
-        if (PhysicalPlanScan.sourceSharingEnabled(candidate)) {
+        if (tech.streamfusion.planner.common.SourceReusePolicy.enabled(candidate)) {
           candidate =
               org.apache.flink.table.planner.plan.reuse.SubplanReuser$.MODULE$
                   .reuseDuplicatedSubplan(
@@ -109,7 +109,7 @@ public final class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeCo
       }
       sharedConsumers.clear();
       sharedRewrites.clear();
-      if (admitted && PhysicalPlanScan.sourceSharingEnabled(candidate))
+      if (admitted && tech.streamfusion.planner.common.SourceReusePolicy.enabled(candidate))
         countSharedAggregates(candidate, new IdentityHashMap<>());
       result.add(
           admitted && (!expressions.isEmpty() || !sorts.isEmpty() || !aggregates.isEmpty())

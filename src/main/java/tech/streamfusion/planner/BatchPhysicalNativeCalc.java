@@ -8,6 +8,7 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
+import tech.streamfusion.planner.common.CommonCalcExecNode;
 
 final class BatchPhysicalNativeCalc extends BatchPhysicalNativeSingleRel
     implements ColumnarInput, ColumnarOutput {
@@ -34,7 +35,7 @@ final class BatchPhysicalNativeCalc extends BatchPhysicalNativeSingleRel
   public ExecNode<?> translateToExecNode() {
     return new BatchNativeExecNode<>(
         ShortcutUtils.unwrapTableConfig(this),
-        new NativeCalcExecNode(
+        new CommonCalcExecNode(
             ShortcutUtils.unwrapTableConfig(this),
             inputProperty(InputProperty.DamBehavior.PIPELINED),
             FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),

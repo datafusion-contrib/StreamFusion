@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelVisitor;
-import org.apache.flink.table.api.config.OptimizerConfigOptions;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalChangelogNormalize;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCorrelate;
@@ -811,10 +810,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   // ---------------------------------------------------------------------------- island composition
 
   static boolean sourceSharingEnabled(RelNode root) {
-    var config = ShortcutUtils.unwrapTableConfig(root);
-    return NativeConfig.shareSources()
-        && config.get(OptimizerConfigOptions.TABLE_OPTIMIZER_REUSE_SUB_PLAN_ENABLED)
-        && config.get(OptimizerConfigOptions.TABLE_OPTIMIZER_REUSE_SOURCE_ENABLED);
+    return tech.streamfusion.planner.common.SourceReusePolicy.enabled(root);
   }
 
   /**
