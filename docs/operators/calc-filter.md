@@ -959,7 +959,9 @@ sources because the planner cannot prove every runtime operand's representation 
 
 ## String concatenation and hashes
 
-These functions run entirely in Rust by default, in projections, predicates, and nested expressions:
+These functions run entirely in Rust by default, in projections, predicates, and nested expressions.
+The ordinary text path requires valid UTF-8; arbitrary Flink string bytes have the narrower
+verified transport described below ([remaining coverage](https://github.com/datafusion-contrib/StreamFusion/issues/622)).
 
 | Function | Native behavior and admission |
 |---|---|
@@ -985,8 +987,9 @@ character-string admission.
 
 `CONCAT` computes Flink's strict NULL propagation from the input validity bitmaps, without
 re-evaluating its arguments. Batches without NULL results use DataFusion's kernel directly; batches
-with NULL results append only surviving rows. Neither path revalidates the concatenated UTF-8
-payload. `CONCAT_WS` delegates to DataFusion. Hashes use the released RustCrypto libraries used by
+with NULL results append only surviving rows. The masked path builds from whole valid strings;
+the delegated path retains DataFusion's output validation. `CONCAT_WS` delegates to DataFusion.
+Hashes use the released RustCrypto libraries used by
 DataFusion and Comet, writing lowercase hex directly into presized UTF-8 Arrow buffers without intermediate
 binary or string-view columns or per-row heap allocations. See [string copy reduction](../optimizations/string-copy-reduction.md).
 SQL parity tests cover NULLs, empty strings, embedded zero bytes, Unicode, long inputs, nested
@@ -994,7 +997,44 @@ calls, filters, valid BIGINT widths, runtime/NULL widths, conditional and empty-
 and oversized bit-length fallback. The runtime kernel has a compiled-Calc no-callback witness;
 see [release measurements](../benchmarks/scalar-functions.md#runtime-sha2-widths).
 
-The corresponding throughput diagnostics compare stock Flink against native execution with a
+### Byte-preserving CONCAT input
+
+A final native Calc immediately above a row-to-Arrow transpose can carry STRING inputs as Arrow
+Binary when every character input is consumed exclusively by `CONCAT` / `||`, including nested
+concatenations. Character constants and independent numeric projections/filters are supported.
+The planner selects this representation before execution; the schema does not change between
+batches. `EXPLAIN` identifies the input columns with `byteStrings=[...]`. There is no new setting.
+
+The SQL type remains STRING. The transpose copies the original `StringData` bytes into a Binary
+vector marked `streamfusion.logical_string=1`; the native kernel concatenates bytes directly,
+propagates NULLs, and returns Binary to the final row exit. No UTF-8 validation, replacement decode,
+or JVM callback is needed. The exit can borrow Binary-backed string bytes for synchronous consumers,
+with the same ownership rule as Utf8. CONCAT output is byte-backed without a Java string cache,
+matching Flink's concatenation helper.
+
+For example, a runtime STRING containing `FF` produces `FF21` for `CONCAT(s, '!')`.
+Truncated `41E4` produces `41E421`; neither is replaced with `EFBFBD`.
+Tests compare raw bytes with released Flink and require positive NativeCalc consumption, including
+multiple batches, NULLs, embedded zeros, Unicode, nested CONCAT and all-filtered batches.
+
+This first admission requires a final row exit, a direct entry transpose, scalar input fields,
+and no JVM expressions. Character comparisons, direct character passthrough projections,
+other character consumers (including `CONCAT_WS`), nested input types, native columnar producers,
+native sinks, and downstream stateful/relational consumers retain their existing representation.
+Those paths are **not yet certified for arbitrary bytes**; this is not a claim that all STRING
+consumers safely handle malformed UTF-8. They remain tracked in
+[#622](https://github.com/datafusion-contrib/StreamFusion/issues/622) and
+[#498](https://github.com/datafusion-contrib/StreamFusion/issues/498).
+
+The implementation shares the existing string writer's direct segment copy and cached Java-string
+encoding. Ordinary Utf8 concatenation continues to use its existing kernel. Representation selection
+is deliberately limited to the qualified plan shape while broader consumers are adapted.
+See the [prepared and complete-job measurements](../benchmarks/scalar-functions.md#byte-preserving-concat)
+for its performance relative to stock Flink and the existing Utf8 path.
+
+### Utf8 concatenation and hash diagnostics
+
+The earlier Utf8-path throughput diagnostics compare stock Flink against native execution with a
 rowwise generated source, both row/Arrow transposes, and a blackhole sink. They assert those native
 plan boundaries and use one warmup followed by the best of three complete job runs at parallelism 1.
 They are function diagnostics, separate from the Nexmark headline benchmark:

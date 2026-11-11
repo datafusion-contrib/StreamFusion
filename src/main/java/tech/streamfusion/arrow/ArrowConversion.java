@@ -488,6 +488,8 @@ public final class ArrowConversion {
 
   private static ArrowFieldWriter<RowData> createArrowFieldWriterForRow(
       ValueVector vector, LogicalType fieldType) {
+    if (ByteStringTransport.isString(vector.getField()))
+      return VarCharWriter.forRow((VarBinaryVector) vector);
     if (NestedRepresentation.isString(vector.getField()))
       return tech.streamfusion.arrow.writers.NestedStringWriter.forRow((StructVector) vector);
     if (vector instanceof TinyIntVector) {
@@ -560,6 +562,8 @@ public final class ArrowConversion {
 
   private static ArrowFieldWriter<ArrayData> createArrowFieldWriterForArray(
       ValueVector vector, LogicalType fieldType) {
+    if (ByteStringTransport.isString(vector.getField()))
+      return VarCharWriter.forArray((VarBinaryVector) vector);
     if (NestedRepresentation.isElement(vector.getField()))
       return new tech.streamfusion.arrow.writers.ArrayElementWriter(
           (StructVector) vector,

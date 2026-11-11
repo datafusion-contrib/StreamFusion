@@ -33,6 +33,7 @@ public class StreamPhysicalRowDataToArrow extends StreamPhysicalNativeSingleRel
   private final int preferredBatchRows;
   private final boolean jsonDocuments;
   private final boolean preserveStringCaches;
+  private final int[] byteStringColumns;
 
   public StreamPhysicalRowDataToArrow(
       RelOptCluster cluster, RelTraitSet traitSet, RelNode input, boolean carryRowKind) {
@@ -73,6 +74,14 @@ public class StreamPhysicalRowDataToArrow extends StreamPhysicalNativeSingleRel
   private StreamPhysicalRowDataToArrow(RelOptCluster cluster, RelTraitSet traitSet, RelNode input,
       boolean carryRowKind, RelDataType prunedType, boolean preserveCollections,
       int preferredBatchRows, boolean jsonDocuments, boolean preserveStringCaches) {
+    this(cluster, traitSet, input, carryRowKind, prunedType, preserveCollections,
+        preferredBatchRows, jsonDocuments, preserveStringCaches, new int[0]);
+  }
+
+  private StreamPhysicalRowDataToArrow(RelOptCluster cluster, RelTraitSet traitSet, RelNode input,
+      boolean carryRowKind, RelDataType prunedType, boolean preserveCollections,
+      int preferredBatchRows, boolean jsonDocuments, boolean preserveStringCaches,
+      int[] byteStringColumns) {
     super(cluster, traitSet, input);
     this.preferredBatchRows = preferredBatchRows;
     this.carryRowKind = carryRowKind;
@@ -80,18 +89,25 @@ public class StreamPhysicalRowDataToArrow extends StreamPhysicalNativeSingleRel
     this.preserveCollections = preserveCollections;
     this.jsonDocuments = jsonDocuments;
     this.preserveStringCaches = preserveStringCaches;
+    this.byteStringColumns = byteStringColumns.clone();
+  }
+
+  StreamPhysicalRowDataToArrow withByteStringColumns(int[] columns) {
+    return new StreamPhysicalRowDataToArrow(getCluster(), getTraitSet(), getInput(), carryRowKind,
+        prunedType, preserveCollections, preferredBatchRows, jsonDocuments, preserveStringCaches,
+        columns);
   }
 
   StreamPhysicalRowDataToArrow withJsonDocuments() {
     return jsonDocuments ? this : new StreamPhysicalRowDataToArrow(getCluster(), getTraitSet(),
         getInput(), carryRowKind, prunedType, preserveCollections, preferredBatchRows, true,
-        preserveStringCaches);
+        preserveStringCaches, byteStringColumns);
   }
 
   StreamPhysicalRowDataToArrow withStringCaches() {
     return preserveStringCaches ? this : new StreamPhysicalRowDataToArrow(getCluster(), getTraitSet(),
         getInput(), carryRowKind, prunedType, preserveCollections, preferredBatchRows, jsonDocuments,
-        true);
+        true, byteStringColumns);
   }
 
   StreamPhysicalRowDataToArrow withPreferredBatchRows(int rows) {
@@ -106,7 +122,8 @@ public class StreamPhysicalRowDataToArrow extends StreamPhysicalNativeSingleRel
             preserveCollections,
             rows,
             jsonDocuments,
-            preserveStringCaches);
+            preserveStringCaches,
+            byteStringColumns);
   }
 
   StreamPhysicalRowDataToArrow withCollectionRepresentation() {
@@ -121,7 +138,8 @@ public class StreamPhysicalRowDataToArrow extends StreamPhysicalNativeSingleRel
             true,
             preferredBatchRows,
             jsonDocuments,
-            preserveStringCaches);
+            preserveStringCaches,
+            byteStringColumns);
   }
 
   boolean preservesCollections() {
@@ -149,7 +167,8 @@ public class StreamPhysicalRowDataToArrow extends StreamPhysicalNativeSingleRel
         preserveCollections,
         preferredBatchRows,
         jsonDocuments,
-        preserveStringCaches);
+        preserveStringCaches,
+        byteStringColumns);
   }
 
   @Override
@@ -166,7 +185,7 @@ public class StreamPhysicalRowDataToArrow extends StreamPhysicalNativeSingleRel
         preserveCollections,
         preferredBatchRows,
         jsonDocuments,
-        preserveStringCaches);
+        preserveStringCaches).withByteStringColumns(byteStringColumns);
   }
 
   @Override
@@ -177,6 +196,7 @@ public class StreamPhysicalRowDataToArrow extends StreamPhysicalNativeSingleRel
         .itemIf("collectionRepresentation", true, preserveCollections)
         .itemIf("jsonDocuments", true, jsonDocuments)
         .itemIf("stringCaches", true, preserveStringCaches)
+        .itemIf("byteStrings", java.util.Arrays.toString(byteStringColumns), byteStringColumns.length > 0)
         .itemIf("preferredBatchRows", preferredBatchRows, preferredBatchRows != 1024)
         .itemIf(
             "fields",
