@@ -39,6 +39,11 @@ upgrade and downgrade validation remain pending in
 announced as supported yet. Testcontainers selects the container runtime from its normal
 configuration, including a configured Podman endpoint, without a hard-coded socket path.
 
+The extension-library isolation probes use the same shaded core runtime payload as the image,
+plus Flink's provided SLF4J API and each extension's declared additions. A platform-only parent
+keeps the application/test classpath from hiding missing packaged dependencies. The thin core
+artifact alone is not the deployable runtime: Arrow initialization also needs its bundled classes.
+
 Release artifacts are available from Maven Central and already contain the optimized native
 libraries. Fetch the loader and the separate runtime-visible core payload directly into a Flink
 distribution; installing StreamFusion does not require a source checkout, Rust, or a local build:
