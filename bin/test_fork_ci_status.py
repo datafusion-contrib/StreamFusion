@@ -62,6 +62,32 @@ class ForkCiStatusTest(unittest.TestCase):
         self.assertEqual('in_progress', result['status'])
         self.assertNotIn('conclusion', result)
 
+    def test_large_job_table_reads_smaller_pages(self):
+        job = {'name': 'Runtime', 'status': 'completed', 'conclusion': 'success',
+               'html_url': RUN['html_url'] + '/job/1'}
+        last = {**job, 'name': 'All CI tests', 'html_url': RUN['html_url'] + '/job/21'}
+        with patch.object(STATUS, 'api', side_effect=[{'jobs': [job] * 20}, {'jobs': [last]}]) as api:
+            summary = STATUS.job_summary('contributor/StreamFusion', RUN)
+        self.assertIn('&per_page=20&page=1', api.call_args_list[0].args[1])
+        self.assertIn('&per_page=20&page=2', api.call_args_list[1].args[1])
+        self.assertIn('/job/21', summary)
+
+    def test_job_details_outage_preserves_workflow_result(self):
+        for status, conclusion in (('completed', 'success'), ('completed', 'failure'),
+                                   ('in_progress', None)):
+            with self.subTest(status=status, conclusion=conclusion):
+                def response(method, path, data=None):
+                    if '/jobs?' in path:
+                        raise HTTPError(path, 502, 'Bad Gateway', {}, None)
+                    return {'workflow_runs': [{**RUN, 'status': status, 'conclusion': conclusion}]}
+
+                with patch.object(STATUS, 'api', side_effect=response):
+                    result = STATUS.payload(PR, 'ci.yml')
+                self.assertEqual(status, result['status'])
+                self.assertEqual(conclusion, result.get('conclusion'))
+                self.assertEqual(RUN['html_url'], result['details_url'])
+                self.assertIn('job details are temporarily unavailable', result['output']['summary'])
+
     def test_exact_head_and_branch_are_required(self):
         for change in ({'head_sha': 'old'}, {'head_branch': 'other'}, {'event': 'pull_request'}):
             with self.subTest(change=change):

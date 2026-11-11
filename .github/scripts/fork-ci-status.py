@@ -35,14 +35,18 @@ def api(method, path, data=None):
         return None if response.status == 204 else json.load(response)
 
 
-def pages(path, key=None):
+def transient_error(error):
+    return not isinstance(error, HTTPError) or error.code in (429, 500, 502, 503, 504)
+
+
+def pages(path, key=None, *, page_size=100):
     page = 1
     while True:
-        values = api('GET', f'{path}{"&" if "?" in path else "?"}per_page=100&page={page}')
+        values = api('GET', f'{path}{"&" if "?" in path else "?"}per_page={page_size}&page={page}')
         if key is not None:
             values = values[key]
         yield from values
-        if len(values) < 100:
+        if len(values) < page_size:
             return
         page += 1
 
@@ -56,7 +60,8 @@ def elapsed(start, end):
 
 
 def job_summary(repository, run):
-    jobs = list(pages(f'repos/{repository}/actions/runs/{run["id"]}/jobs?filter=latest', 'jobs'))
+    jobs = list(pages(f'repos/{repository}/actions/runs/{run["id"]}/jobs?filter=latest',
+                      'jobs', page_size=20))
     now = datetime.now(timezone.utc).isoformat()
     rows = ['\n\nIndividual jobs ([full workflow](' + run['html_url'] + ')):',
             '\nStart delay includes dependency builds and runner queueing.\n',
@@ -114,7 +119,14 @@ def payload(pr, workflow):
                     'are also available. '
                     f'See {GUIDE}'),
     }
-    result['output']['summary'] += job_summary(fork['full_name'], run)
+    try:
+        result['output']['summary'] += job_summary(fork['full_name'], run)
+    except (URLError, TimeoutError) as error:
+        if not transient_error(error):
+            raise
+        print(f'Run {run["id"]}: job details unavailable: {error}', file=sys.stderr)
+        result['output']['summary'] += ('\n\nIndividual job details are temporarily unavailable. '
+                                        'See the linked workflow for jobs and logs.')
     if run['status'] == 'completed':
         # Skipped/neutral runs must never satisfy the required test gates.
         result['conclusion'] = 'success' if run['conclusion'] == 'success' else 'failure'
@@ -181,7 +193,7 @@ def watch(repository, number, deadline, branch):
             if not mirror(repository, pr, wait_for_runs=time.time() < startup_grace):
                 return
         except (URLError, TimeoutError) as error:
-            if isinstance(error, HTTPError) and error.code not in (429, 500, 502, 503, 504):
+            if not transient_error(error):
                 raise
             print(f'PR #{number}: temporary refresh failure: {error}; retrying', file=sys.stderr)
         remaining = deadline - time.time()
