@@ -15,6 +15,17 @@ ServiceLoader entries retain their established names. Positive native-consumptio
 and existing route expectations remain required after package moves.
 Path-selected compatibility and JVM aggregate workflows also cover planner mode
 subpackages, so later edits to migrated implementations still select their checks.
+
+The released Paimon 2.1.0 partition-scan fixture
+`testScanWithSpecifiedPartitionsWithLevelMaxPt` randomly chooses a batch join or
+a lookup join, but asserts a fixed sequence without `ORDER BY`. Repeated local
+controls reproduce reversed batch-join output with the same exact rows, including
+before the streaming planner/runtime reorganization. This ordering assumption is
+tracked in [#639](https://github.com/datafusion-contrib/StreamFusion/issues/639).
+The suite retains the original SQL and assertion; its failed check stays visible.
+A randomly successful rerun does not resolve that fixture limitation. Ordered
+queries and all row/type/cardinality and native-consumption checks remain required.
+
 [Batch SQL](operators/batch.md) documents its current narrow admission. The published
 planner test JAR can be scanned directly with the runtime module's `batch-upstream`
 Maven profile, avoiding another source checkout or Maven repository for focused
