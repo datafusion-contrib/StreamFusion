@@ -123,7 +123,8 @@ borrows payload vectors, materializes only Java-generated metadata columns, and
 passes selected Arrow rows to the existing Rust Parquet encoder. Hudi retains log
 framing, delete-block construction, append I/O and commits. Actual encoded footer
 metadata supplies column statistics; footer inspection borrows the in-memory
-encoded bytes. Tests cover nullable Boolean/string payloads, metadata alignment,
+encoded bytes through Hudi's existing in-memory input adapter. Tests cover nullable
+Boolean/string payloads, metadata alignment,
 selected row order, four codecs and iterator/payload failure cleanup. The released
 1.2.1 log serialization helper has no writer cleanup on iterator failure, so the
 adapter retains its small control loop with scoped encoder ownership.

@@ -1,6 +1,5 @@
 package tech.streamfusion.hudi;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -24,14 +23,12 @@ import org.apache.hudi.common.util.FileFormatUtils;
 import org.apache.hudi.common.util.ParquetUtils;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.io.storage.row.HoodieRowDataFileWriter;
+import org.apache.hudi.parquet.io.ByteBufferBackedInputFile;
 import org.apache.hudi.storage.HoodieStorage;
 import org.apache.hudi.table.format.HoodieFlinkIOFactory;
 import org.apache.hudi.util.HoodieSchemaConverter;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
-import org.apache.parquet.io.DelegatingSeekableInputStream;
-import org.apache.parquet.io.InputFile;
-import org.apache.parquet.io.SeekableInputStream;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.format.ColumnarFileCodec;
 import tech.streamfusion.operator.NativeAllocator;
@@ -85,7 +82,9 @@ public final class HudiMorIOFactory extends HoodieFlinkIOFactory {
 
   private static final class EncodedBytes extends ByteArrayOutputStream {
     ParquetMetadata footer() throws IOException {
-      return readFooter(buf, count);
+      try (var reader = ParquetFileReader.open(new ByteBufferBackedInputFile(buf, 0, count))) {
+        return reader.getFooter();
+      }
     }
   }
 
@@ -245,37 +244,6 @@ public final class HudiMorIOFactory extends HoodieFlinkIOFactory {
       } catch (IllegalAccessException failure) {
         throw new IOException("Cannot inspect Hudi's generated metadata wrapper", failure);
       }
-    }
-  }
-
-  private static ParquetMetadata readFooter(byte[] bytes, int length) throws IOException {
-    InputFile file =
-        new InputFile() {
-          @Override
-          public long getLength() {
-            return length;
-          }
-
-          @Override
-          public SeekableInputStream newStream() {
-            var input = new ByteArrayInputStream(bytes, 0, length);
-            return new DelegatingSeekableInputStream(input) {
-              @Override
-              public long getPos() {
-                return length - input.available();
-              }
-
-              @Override
-              public void seek(long offset) throws IOException {
-                if (offset < 0 || offset > length) throw new IOException("Invalid footer seek");
-                input.reset();
-                if (input.skip(offset) != offset) throw new IOException("Incomplete footer seek");
-              }
-            };
-          }
-        };
-    try (var reader = ParquetFileReader.open(file)) {
-      return reader.getFooter();
     }
   }
 }
