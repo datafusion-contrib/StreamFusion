@@ -60,7 +60,7 @@ class RuntimeResponsibilityBoundaryTest {
                                 ? field.getTypeCode()
                                 : field.getTypeString()))
                 .collect(Collectors.joining(","));
-        assertEquals(expected[2], fields, expected[0]);
+        assertEquals(expected[2].equals("-") ? "" : expected[2], fields, expected[0]);
         for (var field : type.getDeclaredFields()) {
           if (HELPERS.contains(field.getType())) {
             assertTrue(Modifier.isPrivate(field.getModifiers()), field.toString());
