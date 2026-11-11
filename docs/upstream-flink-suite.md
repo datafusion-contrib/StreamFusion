@@ -281,6 +281,16 @@ the resolved calcite-core from that module's test classpath and appends it after
 instead. `all` runs formats, Parquet, ORC,
 the planner runtime suite, Paimon, Delta, and Kafka in that order.
 
+For Paimon 2.1 on Flink 2.2, the agent adapts the single result assertion in
+`BatchFileStoreITCase.testScanWithSpecifiedPartitionsWithLevelMaxPt` to compare
+complete rows with duplicate counts in any order. Both original randomized join
+queries omit `ORDER BY`. The native batch join can return their two expected rows
+in reversed arrival order. The adapter retains both queries, expected row values,
+row kinds and native execution. It checks the two exact released SQL literals and
+the single assertion call before adapting the method. A changed fixture fails
+this check. The original 75-case class reproduced the ordering failure locally;
+the stock class passed all 75 cases.
+
 `delta` compiles the unchanged `FlinkSqlTest` and its `TestHelper` from Delta `v4.4.0`
 against published `delta-flink_2.2:4.4.0` and Delta Kernel artifacts. It does not build or
 publish Delta or Unity Catalog production code from source. The four SQL cases cover batch

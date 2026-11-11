@@ -181,6 +181,11 @@ public final class StreamFusionSuiteAgent {
                         Advice.to(PaimonExternalPathReadiness.Scope.class)
                             .on(named("testTableReadWriteWithChangedExternalPath")));
               }
+              if (type.getName().equals("org.apache.paimon.flink.BatchFileStoreITCase")
+                  && System.getProperty("streamfusion.flink-suite.flink-line", "2.2")
+                      .equals("2.2")) {
+                builder = builder.visit(PaimonUnorderedJoinAssertion.adapter());
+              }
               return builder.visit(
                   Advice.to(WatchPaimonTest.class)
                       .on(
