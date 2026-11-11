@@ -3,7 +3,7 @@ name: Paimon 1.0.0 compatibility
 on:
   workflow_dispatch:
   push:
-    branches: ['**']
+    branches: ['main']
     paths:
       - 'streamfusion-paimon1/**'
       - 'streamfusion-paimon/**'
@@ -30,7 +30,7 @@ on:
 
 concurrency:
   group: paimon1-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  cancel-in-progress: true
 
 jobs:
   parity:

@@ -17,8 +17,39 @@ the original copied source and delegates the resulting enumerator and serializer
 This avoids copying Hudi's file-planning implementation. Unknown versions and
 unsupported source contracts retain the stock connector at planning time.
 
-MOR merge algorithms are deliberately left upstream. The published hudi-rs reader
-does not expose caller-supplied storage and resolved schema/visibility through
-its public facade. Recreating its merge/spill machinery to bypass that boundary
-would defeat the integration's purpose. Current native coverage and validation
-are recorded on the [connector page](../docs/connectors/hudi.md).
+MOR sources use released Java Hudi's public file-group reader and reader context.
+The context decodes Parquet into Arrow and presents stable row-reference controls
+to the original Java merger. Its spill codec retains batch/row locations, keys,
+versions and operation tags. Final projection and winner gathering operate on
+Arrow batches. Java-generated key-delete metadata becomes nullable Arrow columns.
+Hudi's original fetcher prepares bounded Arrow batches, sharing the COW emitter
+and logical-row checkpoint offsets. Recovery repeats the Java merge and skips
+previously emitted rows using the released source's contract. Log payloads stay
+resident within the configured Arrow budget while Hudi can spill
+its controls. The earlier hudi-rs local-view prototype remains historical research.
+Coverage and measurements are recorded on the connector page.
+[Hudi connector](../docs/connectors/hudi.md)
+
+The immutable COW append adapter follows Iceberg's released-graph decoration. It
+retains Hudi's append function and coordinator and gives Java only borrowed Arrow
+row views for keys/counters. A whole batch reaches the shared Parquet encoder once;
+Java retains authenticated output I/O, markers, file handles and commit metadata.
+File rolling is deferred until the current Arrow batch has been counted completely.
+This avoids duplicating Hudi's write/commit protocol or transposing payload rows.
+
+Continuous COW discovery stays in the released Java enumerator. Its exact selected
+instant set becomes a predicate in the existing native Calc engine, with a hidden
+commit-time input projected away before emission. No custom native file reader or
+commit filtering kernel is introduced. End-commit windows remain stock because
+they can produce a different range contract; only the verified version-9 exact
+instant-set path is admitted.
+
+The MOR sink also keeps the released Java bucket index, row conversion control,
+log framing, key-delete blocks and coordinator. Java buckets retain shared Arrow
+batch references and selected-row bitsets. The log serializer borrows those vectors and adds
+only generated metadata before Rust Parquet encoding. Hudi's real buffer pool
+and Flink's paged serializer still determine flush/preemption boundaries. A
+version-pinned serializer hook skips payload writes while reserving identical
+control pages. Original cross-bucket input order is preserved because changing
+flush boundaries changes delete/reinsert semantics. No custom index, memory-pool,
+spill or winner-selection algorithm is introduced.

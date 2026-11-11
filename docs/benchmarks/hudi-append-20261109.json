@@ -1,0 +1,171 @@
+{
+  "date": "2026-11-09",
+  "base_revision": "bedc8a3462774dcb62063d20d57911f0e2d588c3",
+  "machine": "Apple M4 10-core, macOS 15.3.1, Temurin 17",
+  "runtime": "Hudi 1.2.1 / Flink 1.18 / release native libraries, mimalloc; 8 GiB JVM heap, 1 GiB task off-heap",
+  "method": {
+    "query": "INSERT INTO target SELECT name,id+1 FROM h",
+    "input": "same stock-Hudi-written COW Parquet files; BIGINT id, STRING name; NULL name every seventh row",
+    "output": "new unpartitioned COW target per trial, insert operation, metadata fields and metadata table disabled",
+    "parallelism": 1,
+    "decoder_batch_rows": 4096,
+    "warmups": 2,
+    "measured_trials": 5,
+    "trial_order": "rotating three engines",
+    "stock": "native planner disabled",
+    "previous_sf": "native source/Calc enabled, only hudiSink disabled; retains Arrow-to-row sink boundary",
+    "native": "native source, Calc and sink; no payload transpose",
+    "timer": "executeSql through completed Hudi commit; includes planning/admission, Java I/O, JNI, encoding, metadata/coordinator/checkpoint lifecycle and intrinsic conversions",
+    "outside_timer": "fixture writes, DDL registration, explain assertions, stock-Hudi aggregate readback validating count, id sum and NULL count"
+  },
+  "results": [
+    {
+      "rows": 200000,
+      "trials_ms": {
+        "stock": [
+          749.520459,
+          680.8035,
+          668.27875,
+          697.624375,
+          825.312042
+        ],
+        "previous_sf": [
+          862.170083,
+          831.52825,
+          911.433625,
+          783.1285,
+          739.553666
+        ],
+        "native": [
+          668.709083,
+          643.650375,
+          645.426667,
+          629.023125,
+          562.109625
+        ]
+      },
+      "median_ms": {
+        "stock": 697.624,
+        "previous_sf": 831.528,
+        "native": 643.65
+      },
+      "range_ms": {
+        "stock": [
+          668.279,
+          825.312
+        ],
+        "previous_sf": [
+          739.554,
+          911.434
+        ],
+        "native": [
+          562.11,
+          668.709
+        ]
+      }
+    },
+    {
+      "rows": 1000000,
+      "trials_ms": {
+        "stock": [
+          1608.622125,
+          1543.17125,
+          1714.770875,
+          1500.733791,
+          1564.653417
+        ],
+        "previous_sf": [
+          1481.891333,
+          1381.777375,
+          1503.64375,
+          1565.429541,
+          1438.4475
+        ],
+        "native": [
+          770.822667,
+          839.237917,
+          886.721834,
+          831.861458,
+          783.314083
+        ]
+      },
+      "median_ms": {
+        "stock": 1564.653,
+        "previous_sf": 1481.891,
+        "native": 831.861
+      },
+      "range_ms": {
+        "stock": [
+          1500.734,
+          1714.771
+        ],
+        "previous_sf": [
+          1381.777,
+          1565.43
+        ],
+        "native": [
+          770.823,
+          886.722
+        ]
+      }
+    }
+  ],
+  "prior_investigation_runs": [
+    {
+      "log_cohort": "append-benchmark-200k.log",
+      "rows": 200000,
+      "trials_ms": {
+        "stock": [
+          1863.094125,
+          2753.227584,
+          2890.0175,
+          2565.826583,
+          3286.976042
+        ],
+        "previous_sf": [
+          2288.240459,
+          2331.382416,
+          2666.644583,
+          2811.032875,
+          3084.003625
+        ],
+        "native": [
+          2351.114167,
+          2401.086458,
+          2722.724,
+          2347.40525,
+          2733.083833
+        ]
+      },
+      "note": "before validated-plan/effective-config admission; 200k predates rebase on upstream diagnostics changes and uses default macOS test temp root; not combined with final medians"
+    },
+    {
+      "log_cohort": "append-benchmark-1m.log",
+      "rows": 1000000,
+      "trials_ms": {
+        "stock": [
+          1395.847666,
+          1507.65075,
+          1456.279667,
+          1495.3,
+          2308.566709
+        ],
+        "previous_sf": [
+          1302.435,
+          1436.489375,
+          1474.305375,
+          1443.622542,
+          1663.348167
+        ],
+        "native": [
+          822.327083,
+          720.833375,
+          726.419,
+          1045.925833,
+          1287.181083
+        ]
+      },
+      "note": "before validated-plan/effective-config admission; 200k predates rebase on upstream diagnostics changes and uses default macOS test temp root; not combined with final medians"
+    }
+  ]
+}

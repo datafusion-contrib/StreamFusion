@@ -17,6 +17,12 @@ Canonical-job dependency preparation includes the selected runtime module's reac
 The Kafka canonical profile references the matching JSON module; a cold runner must resolve that
 module inside the reactor rather than depend on an installed copy of an unpublished project JAR.
 
+Prefer focused local tests and reused build caches during development. Combine related work into
+a coherent, locally validated change before pushing for the full CI matrix; intermediate commits
+do not each need a CI push. Cancel superseded or redundant runs you started, including unnecessary
+duplicate post-merge runs, and leave other contributors' runs alone. The final change still needs
+the required successful checks on its exact PR head before merging.
+
 ## Contributing from a personal fork
 
 1. Fork `datafusion-contrib/StreamFusion` into your personal account. If that name is already
@@ -27,8 +33,9 @@ module inside the reactor rather than depend on an installed copy of an unpublis
    as `origin`). Fetch upstream and rebase your feature branch on current `upstream/main` so it
    contains these workflow changes. Push the feature branch to your fork, then open a PR into
    `datafusion-contrib/StreamFusion:main`.
-4. Wait for **CI** and **Upstream Flink suite** on the exact branch head to pass, plus any
-   path-selected compatibility, diagnostic or documentation workflows. Include fork run links
+4. After focused local validation, explicitly dispatch **CI** and **Upstream Flink suite**
+   on the fork branch, plus applicable compatibility, diagnostic or documentation workflows.
+   Wait for the exact branch head to pass. Include fork run links
    in the PR so reviewers can inspect jobs and artifacts directly. Rebase and rerun after
    incorporating new upstream changes before merging.
 
@@ -39,7 +46,16 @@ git fetch upstream
 git rebase upstream/main
 git push -u fork HEAD
 gh pr create --repo datafusion-contrib/StreamFusion --base main --head YOUR_LOGIN:YOUR_BRANCH
+gh workflow run ci.yml --repo YOUR_LOGIN/YOUR_FORK --ref YOUR_BRANCH
+gh workflow run flink-suite.yml --repo YOUR_LOGIN/YOUR_FORK --ref YOUR_BRANCH
 ```
+
+For docs changes, also dispatch `docs.yml`. Dispatch `paimon1.yml`,
+`nested-scalars.yml` or `jvm-aggregates.yml` when the change touches their listed
+compatibility/diagnostic scope. Run these once the combined change is locally ready;
+commits and intermediate pushes do not each need a matrix. Until older feature
+branches include this configuration, `[skip ci]` can suppress their push-triggered
+workflows; it does not suppress the lightweight `pull_request_target` reporter.
 
 After syncing the fork's default branch with already-merged upstream code, the native
 dependency cache can be primed there once:
@@ -58,12 +74,26 @@ no RocksDB rebuild. Cold builds of the same native tree recorded 639 such units 
 evidence, not whole-CI latency or a same-run CPU comparison; normal tests and source
 validation still run. Cargo rebuilds changed project crates and dependencies as needed.
 
-Pushes to any branch in a fork run CI and the upstream Flink suite. Paimon and release diagnostics
-retain their path filters; docs changes build the strict MkDocs site in the fork. Branch pushes
-in the canonical repository skip those jobs unless the branch is `main`; development branches
-belong in personal forks. Tags do not trigger these branch test workflows. Manual CI dispatches
-are available for retries. For the upstream Flink merge gate, use or rerun a **push** run: a manual
-SQL-inventory dispatch may execute only part of the matrix and is never accepted as full-suite evidence.
+Feature branches use explicit workflow dispatches. Test and docs push triggers are
+limited to `main` and explicit `ci/**` submission branches. Paimon compatibility
+and the two release diagnostics run automatically only on `main`; their existing
+path filters still apply there. On other branches, dispatch these optional
+workflows only when their functionality changed. Development branches belong in
+personal forks, and tags do not trigger these branch test workflows.
+
+The upstream full-suite dispatch is identified as **Full upstream Flink suite
+(merge gate)**. Inventory dispatches have a separate title and cannot satisfy that
+gate; older unmarked manual runs are also excluded. Existing exact-head push
+evidence remains valid.
+
+A `ci/**` branch explicitly requests the two merge-gate matrices and applicable
+docs validation on push. This supports adoption while the canonical reporter still
+requires upstream push evidence. Keep ordinary work on `feature/**` (or another
+name outside `ci/**`) and update a submission branch only when ready for another
+full run. Optional compatibility/release diagnostics stay explicit on submission
+branches too: changing their trigger policy alone does not need another release
+benchmark. The PR must point at the exact tested submission head; results from
+another branch or SHA are never inherited.
 
 The lightweight **Fork CI status** workflow reads public fork runs on PR updates and watches
 unfinished runs every two minutes. Scheduled and manual refreshes remain available in the
@@ -143,13 +173,14 @@ PR's head repository. The reporter marks same-repository PRs as requiring migrat
 running their expensive jobs upstream. Runs queued before this change are not automatically moved
 or canceled; cancel obsolete PR runs in the canonical Actions tab when migrating them.
 
-CI, upstream Flink, and Paimon compatibility cancel older push runs on the same branch. The latest
+CI, upstream Flink, and Paimon compatibility cancel older runs on the same branch,
+including repeated manual dispatches. Upstream inventory runs use a separate group. The latest
 main commit receives complete checks, without waiting behind superseded main commits. Release
 publishing retains its non-canceling concurrency policy.
 
 Docs builds have read-only repository permissions. Only canonical `main` uploads a Pages artifact
 and deploys, with Pages/OIDC permissions confined to deployment. Forks build without publishing.
-Fork docs pushes cancel obsolete builds; canonical main deployments remain serialized. Release
+Fork docs dispatches cancel obsolete builds; canonical main deployments remain serialized. Release
 tag validation and all dependent release publishing jobs are also restricted to the canonical repo.
 
 Documentation uses MkDocs 1.6's generated-file hook to render SQL inventory downloads
@@ -258,9 +289,9 @@ workflow run and commit; it is not a release payload or a cache of test outcomes
 the independent debug library builds with one without changing test selection or test concurrency.
 Actual elapsed-time savings must be measured in GitHub Actions after this change runs.
 
-Personal-fork branch pushes also save their Cargo dependency caches and prepared pinned Flink
+Personal-fork workflow runs also save their Cargo dependency caches and prepared pinned Flink
 checkout/Maven caches. Restricting saves to `main` left normal fork development branches unable
-to warm their own caches for subsequent pushes. GitHub keeps those caches scoped to the branch;
+to warm their own caches for subsequent runs. GitHub keeps those caches scoped to the branch;
 canonical development branches remain read-only and canonical `main` retains its normal writes.
 Native libraries and test results still come from the exact current commit, not the dependency
 cache. The debug-library producer remains the only writer of its shared cache.

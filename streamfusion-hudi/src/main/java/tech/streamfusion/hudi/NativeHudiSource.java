@@ -33,6 +33,7 @@ public final class NativeHudiSource
   private final RowType output;
   private final String tableName;
   private final int batchRows;
+  private final String morSchema;
 
   public static NativeHudiSource from(
       HoodieTableSource table, RowType output, int batchRows, int parallelism) {
@@ -40,18 +41,24 @@ public final class NativeHudiSource
   }
 
   public static Plan plan(HoodieTableSource table, RowType output) {
-    validate(table, output);
-    return new Plan((HoodieTableSource) table.copy(), output);
+    String schema = validateOptions(table, output);
+    return new Plan((HoodieTableSource) table.copy(), output, schema);
   }
 
   /** Validated file contract, shared by planning and runtime translation without repeated I/O. */
   public static final class Plan {
     private final HoodieTableSource table;
     private final RowType output;
+    private final String morSchema;
 
-    private Plan(HoodieTableSource table, RowType output) {
+    private Plan(HoodieTableSource table, RowType output, String morSchema) {
       this.table = table;
       this.output = output;
+      this.morSchema = morSchema;
+    }
+
+    public boolean mergesFileGroups() {
+      return morSchema != null;
     }
 
     public NativeHudiSource create(int batchRows, int parallelism) {
@@ -67,7 +74,8 @@ public final class NativeHudiSource
             copy.getConf(),
             output,
             copy.getMetaClient().getTableConfig().getTableName(),
-            batchRows);
+            batchRows,
+            morSchema);
       } catch (ReflectiveOperationException failure) {
         throw new IllegalArgumentException("Unsupported Hudi source factory", failure);
       }
@@ -79,6 +87,10 @@ public final class NativeHudiSource
   }
 
   public static void validate(HoodieTableSource source, RowType output) {
+    validateOptions(source, output);
+  }
+
+  private static String validateOptions(HoodieTableSource source, RowType output) {
     if (source.getClass() != HoodieTableSource.class
         || !"1.2.1".equals(HoodieTableSource.class.getPackage().getImplementationVersion()))
       throw new IllegalArgumentException("Hudi source requires the released 1.2.1 implementation");
@@ -88,15 +100,20 @@ public final class NativeHudiSource
           "Hudi tables without a completed snapshot retain the stock source");
     var conf = source.getConf();
     var table = meta.getTableConfig();
-    if (conf.get(FlinkOptions.READ_AS_STREAMING)
-        || !conf.get(FlinkOptions.READ_SOURCE_V2_ENABLED)
-        || !FlinkOptions.QUERY_TYPE_SNAPSHOT.equals(conf.get(FlinkOptions.QUERY_TYPE))
-        || table.getTableType() != HoodieTableType.COPY_ON_WRITE
+    boolean streaming = conf.get(FlinkOptions.READ_AS_STREAMING);
+    boolean mor = table.getTableType() == HoodieTableType.MERGE_ON_READ;
+    if (!conf.get(FlinkOptions.READ_SOURCE_V2_ENABLED)
+        || !(FlinkOptions.QUERY_TYPE_SNAPSHOT.equals(conf.get(FlinkOptions.QUERY_TYPE))
+            || streaming
+                && FlinkOptions.QUERY_TYPE_INCREMENTAL.equals(conf.get(FlinkOptions.QUERY_TYPE)))
+        || !(table.getTableType() == HoodieTableType.COPY_ON_WRITE || mor)
         || table.getBaseFileFormat() != HoodieFileFormat.PARQUET)
+      throw new IllegalArgumentException("Only Hudi Parquet snapshot Source V2 reads are admitted");
+    if (streaming && (!table.populateMetaFields() || table.getTableVersion().versionCode() != 9))
       throw new IllegalArgumentException(
-          "Only bounded COW Parquet snapshot Source V2 reads are admitted");
+          "Continuous Hudi COW reads require version-9 commit metadata");
     if (conf.get(FlinkOptions.CDC_ENABLED)
-        || conf.get(FlinkOptions.CHANGELOG_ENABLED)
+        || conf.get(FlinkOptions.CHANGELOG_ENABLED) && !(mor && streaming)
         || !conf.get(FlinkOptions.READ_UTC_TIMEZONE)
         || table.getBootstrapBasePath().isPresent()
         || table
@@ -104,7 +121,7 @@ public final class NativeHudiSource
             .map(fields -> java.util.Arrays.stream(fields).anyMatch(s -> !s.isEmpty()))
             .orElse(false)
         || !source.getPredicates().isEmpty()
-        || conf.get(FlinkOptions.READ_START_COMMIT) != null
+        || !streaming && conf.get(FlinkOptions.READ_START_COMMIT) != null
         || conf.get(FlinkOptions.READ_END_COMMIT) != null
         || Boolean.parseBoolean(conf.toMap().getOrDefault("hoodie.schema.on.read.enable", "false")))
       throw new IllegalArgumentException(
@@ -121,13 +138,22 @@ public final class NativeHudiSource
     }
     var allowed =
         java.util.Set.of(
-            "read.source-v2.enabled", "read.tasks", "read.streaming.enabled", "read.utc-timezone");
+            "read.source-v2.enabled",
+            "read.tasks",
+            "read.streaming.enabled",
+            "read.utc-timezone",
+            "read.streaming.check-interval",
+            "read.start-commit",
+            "read.commits.limit");
     for (String key : conf.toMap().keySet())
       if ((key.startsWith("read.") && !allowed.contains(key))
           || key.startsWith("hoodie.datasource.read.")
           || key.startsWith("parquet.")
           || key.startsWith("hoodie.parquet.encryption."))
         throw new IllegalArgumentException("Hudi source option is not admitted: " + key);
+    if (!NativeParquet.isLoaded())
+      throw new IllegalArgumentException("Native Parquet module is unavailable");
+    if (mor) return HudiMorReadPlan.validate(source, output);
     var physical =
         org.apache.hudi.util.HoodieSchemaConverter.convertToRowType(source.getTableSchema());
     validateProjection(physical, output);
@@ -141,12 +167,19 @@ public final class NativeHudiSource
           org.apache.hudi.util.HoodieSchemaConverter.convertToRowType(
               format.readSchema(storage, path));
       validateProjection(stored, output);
+      if (streaming) {
+        int commit = stored.getFieldNames().indexOf("_hoodie_commit_time");
+        if (commit < 0
+            || stored.getTypeAt(commit).getTypeRoot()
+                != org.apache.flink.table.types.logical.LogicalTypeRoot.VARCHAR)
+          throw new IllegalArgumentException(
+              "Continuous Hudi COW reads require stored commit strings");
+      }
     }
-    if (!NativeParquet.isLoaded())
-      throw new IllegalArgumentException("Native Parquet module is unavailable");
+    return null;
   }
 
-  private static void validateProjection(RowType physical, RowType output) {
+  static void validateProjection(RowType physical, RowType output) {
     for (int i = 0; i < output.getFieldCount(); i++) {
       String name = output.getFieldNames().get(i);
       int position = physical.getFieldNames().indexOf(name);
@@ -174,14 +207,23 @@ public final class NativeHudiSource
       RowType output,
       String tableName,
       int batchRows) {
-    if (delegate.getBoundedness() != Boundedness.BOUNDED || batchRows <= 0)
-      throw new IllegalArgumentException(
-          "Hudi native snapshot requires bounded input and a positive batch size");
+    this(delegate, configuration, output, tableName, batchRows, null);
+  }
+
+  private NativeHudiSource(
+      HoodieSource<RowData> delegate,
+      Configuration configuration,
+      RowType output,
+      String tableName,
+      int batchRows,
+      String morSchema) {
+    if (batchRows <= 0) throw new IllegalArgumentException("Hudi requires a positive batch size");
     this.delegate = delegate;
     this.configuration = new Configuration(configuration);
     this.output = output;
     this.tableName = tableName;
     this.batchRows = batchRows;
+    this.morSchema = morSchema;
   }
 
   @Override
@@ -211,7 +253,9 @@ public final class NativeHudiSource
         },
         scan,
         context,
-        () -> new HudiSplitReader(configuration, output, batchRows, pending),
+        () ->
+            new HudiSplitReader(
+                configuration, output, batchRows, pending, morSchema, context.getConfiguration()),
         new HoodieSourceSplitComparator()) {
       @Override
       public void close() throws Exception {

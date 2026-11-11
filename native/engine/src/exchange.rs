@@ -454,6 +454,63 @@ pub extern "system" fn Java_tech_streamfusion_Native_concatBatches<'local>(
     })
 }
 
+/// Gathers Java-selected rows with Arrow's columnar interleave kernel.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_interleaveBatches<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    in_array_addresses: JLongArray<'local>,
+    in_schema_addresses: JLongArray<'local>,
+    batch_indices: JIntArray<'local>,
+    row_indices: JIntArray<'local>,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    crate::bridge::jni_guard(env, move |env| {
+        let arrays = read_longs(&env, &in_array_addresses);
+        let schemas = read_longs(&env, &in_schema_addresses);
+        assert_eq!(arrays.len(), schemas.len(), "one schema per input array");
+        let batches: Vec<RecordBatch> = arrays
+            .into_iter()
+            .zip(schemas)
+            .map(|(array, schema)| import_record_batch(array, schema))
+            .collect();
+        let sources = read_int_array(&env, &batch_indices);
+        let rows = read_int_array(&env, &row_indices);
+        assert_eq!(sources.len(), rows.len(), "one batch per selected row");
+        let indices: Vec<(usize, usize)> = sources
+            .into_iter()
+            .zip(rows)
+            .map(|(batch, row)| {
+                (
+                    usize::try_from(batch).expect("nonnegative batch index"),
+                    usize::try_from(row).expect("nonnegative row index"),
+                )
+            })
+            .collect();
+        let selected = (|| {
+            let schema = Arc::new(Schema::try_merge(
+                batches.iter().map(|batch| batch.schema().as_ref().clone()),
+            )?);
+            let normalized: Vec<RecordBatch> = batches
+                .iter()
+                .cloned()
+                .map(|batch| batch.with_schema(schema.clone()))
+                .collect::<Result<_, _>>()?;
+            let refs: Vec<&RecordBatch> = normalized.iter().collect();
+            arrow::compute::interleave_record_batch(&refs, &indices)
+        })();
+        drop(batches);
+        match selected {
+            Ok(selected) => export_record_batch(selected, out_array_address, out_schema_address),
+            Err(error) => {
+                env.throw_new("tech/streamfusion/NativeException", error.to_string())
+                    .expect("throw row-selection validation failure");
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

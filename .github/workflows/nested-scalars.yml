@@ -2,7 +2,7 @@ name: Nested scalar release diagnostics
 
 on:
   push:
-    branches: ['**']
+    branches: ['main']
     paths:
       - '.github/workflows/nested-scalars.yml'
       - 'bin/bench-nested-scalars.py'

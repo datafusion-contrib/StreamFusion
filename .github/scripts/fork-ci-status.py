@@ -92,7 +92,7 @@ def payload(pr, workflow):
         'conclusion': 'action_required',
         'output': {
             'title': 'Fork CI is required',
-            'summary': f'Push this PR head to a personal fork with Actions enabled. See {GUIDE}',
+            'summary': f'Dispatch the full CI and upstream workflows on this exact fork branch/head. See {GUIDE}',
         },
     }
     if not fork or not fork['fork'] or fork['full_name'] == pr['base']['repo']['full_name']:
@@ -108,7 +108,8 @@ def payload(pr, workflow):
                 if run['head_sha'] == head['sha'] and run['head_branch'] == head['ref']
                 and run['event'] in ('push', 'workflow_dispatch')
                 # An inventory-only dispatch does not execute the complete upstream suite.
-                and (workflow != 'flink-suite.yml' or run['event'] == 'push')), None)
+                and (workflow != 'flink-suite.yml' or run['event'] == 'push'
+                     or run.get('display_title') == 'Full upstream Flink suite (merge gate)')), None)
     if run is None:
         return result
     result['details_url'] = run['html_url']

@@ -54,9 +54,10 @@ public final class StreamPhysicalNativeHudiSource extends AbstractRelNode
 
   @Override
   public RelWriter explainTerms(RelWriter writer) {
-    return NativeRelDigests.withBarrier(
-        details.explain(super.explainTerms(writer)).item("fileDecode", "native Parquet"),
-        reuseBarrier);
+    var described =
+        details.explain(super.explainTerms(writer)).item("fileDecode", "native Parquet");
+    if (source.mergesFileGroups()) described.item("fileMerge", "Java Hudi");
+    return NativeRelDigests.withBarrier(described, reuseBarrier);
   }
 
   @Override

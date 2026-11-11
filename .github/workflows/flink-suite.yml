@@ -1,8 +1,11 @@
 name: Upstream Flink suite
+run-name: >-
+  ${{ inputs.sql_inventory && format('SQL admission inventory ({0})', inputs.inventory_scope)
+      || 'Full upstream Flink suite (merge gate)' }}
 
 on:
   push:
-    branches: ['**']
+    branches: ['main', 'ci/**']
   workflow_dispatch:
     inputs:
       sql_inventory:
@@ -23,7 +26,7 @@ permissions:
 
 concurrency:
   group: upstream-flink-suite-${{ github.ref }}-${{ inputs.sql_inventory && inputs.inventory_scope || 'tests' }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  cancel-in-progress: true
 
 jobs:
   plan:

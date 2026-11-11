@@ -1,6 +1,6 @@
 # Apache Hudi
 
-**Status: experimental, partial source. All sinks retain stock Hudi.**
+**Status: experimental, partial sources and Parquet append/MOR upsert sinks.**
 
 The optional `streamfusion-hudi-flink1.18` module targets the released Hudi 1.2.1
 Flink 1.18 bundle. There is no released Hudi Flink 2.2 bundle. Build with
@@ -9,6 +9,7 @@ StreamFusion loader/core, `streamfusion-hudi-flink1.18`,
 `streamfusion-parquet-flink1.18`, and Hudi's normal
 `hudi-flink1.18-bundle-1.2.1` JAR. The connector adds no native library or Rust
 storage client; it uses the independently deployed Parquet module.
+Its Java-only JAR includes the project license and planner service registration.
 
 ## Bounded snapshot source
 
@@ -43,31 +44,241 @@ The public `NativeHudiSource.from` entry point applies the same source admission
 policy for direct DataStream use. Ordinary SQL retains its normal stock fallback
 when the optional module, native Parquet module or verified source contract is absent.
 
+## Continuous COW source
+
+The same columnar reader also admits continuous COW reads on version-9 tables
+with stored Hudi metadata. Java's original continuous enumerator selects completed
+commits, handles the requested start commit and owns discovery/checkpoint state.
+`read.streaming.enabled=true`, `read.streaming.check-interval`, `read.start-commit`
+and `read.commits.limit` are admitted. An absent start retains Hudi's latest-commit
+behavior; `earliest` includes the initial snapshot. An end-commit bound stays stock.
+
+For each changed file Java supplies its exact set of selected requested instants.
+The reader adds `_hoodie_commit_time` to its physical projection and translates
+that set into the existing Rust Calc filter. The hidden column is removed before
+emission. This prevents a rewritten COW file from re-emitting its unchanged rows;
+payloads remain Arrow throughout. Checkpoint offsets count rows after this filter,
+so recovery can change decode batch size without changing the resumed row sequence.
+The public adapter also accepts Hudi's inferred incremental query type in streaming
+mode. It retains the stock insert-only post-image behavior; delete/change emission
+is outside this admission.
+
+Tables without metadata, other table versions, CDC/changelog mode, bounded
+incremental queries, end-commit windows and other unverified discovery options
+retain the stock source. The same source schema/projection restrictions apply.
+
+## MOR snapshot and continuous sources
+
+Version-9 unpartitioned MOR tables can use the same Rust Parquet decoder for
+base files and Parquet log blocks. Java Hudi's existing file-group reader owns
+log framing, completed-instant visibility, rollback blocks, update/delete winner
+selection and operation tags. Its reader context supplies stable views into Arrow
+vectors. The original Hudi merge map and spill implementation retain keys,
+ordering values and Arrow batch/row references. Payloads stay columnar throughout
+merging and projection. Terminal field projection is deferred to the Arrow batch
+gather, avoiding per-row projection wrappers. Rust's Arrow interleave kernel
+gathers the winning rows into bounded output batches.
+
+Admission covers standard full-row event-time or commit-time merging, a single
+INT/BIGINT ordering field, the existing four primitive payload types and
+`hoodie.datasource.merge.type=payload_combine`. Existing base schemas and
+Parquet-log headers are checked during planning. Avro logs, partial updates, custom payloads and
+unverified schema evolution retain the stock source. The same SQL requirement
+for an immediate columnar consumer applies. Java storage supplies all input bytes.
+
+Continuous MOR reads use Hudi's original enumerator, fetcher, split ordering and
+checkpoint serializers. With `changelog.enabled=true`, Hudi chooses the winning
+operation, including key-only deletes. Generated delete-key metadata is encoded
+into Arrow key columns, with NULLs in other projected columns. Existing payloads
+remain Arrow views. Start-commit and discovery options follow continuous COW
+admission. CDC and stored intermediate-change logs retain the stock path.
+Row kinds follow Hudi's public engine-record iterator. Updates can appear as
+`INSERT` post-images under this released source contract.
+
+Decoding and merging run on Hudi's original split fetcher and feed its bounded
+queue with Arrow batches. The shared COW/MOR emitter checkpoints logical rows
+after winner selection. Restoration replays the merger and skips those rows,
+following Hudi's original split-reader contract, and can change decoder batch
+size. This also overlaps source work with downstream Parquet encoding. Native
+MOR checkpoints require the same admitted merge and spill configuration on restore.
+
+`compaction.max_memory` reserves the file-group payload/output budget. Base batches
+are released after their selected rows are emitted. Log payload batches remain
+retained through the merge, while Hudi may spill its key/version/reference controls
+to its configured local spill implementation. The budget accounts for twice the
+retained Arrow bytes to cover output gathering. Exceeding it fails the task.
+Payload spilling is outside the current adapter. Forced-spill tests verify that
+the same Arrow batch survives control serialization and projection.
+
+## Immutable COW append sink
+
+The first native sink admits `write.operation=insert` on unpartitioned COW tables
+with `hoodie.populate.meta.fields=false`, `metadata.enabled=false`, and Hudi's
+unbuffered append path. It accepts insert-only input with the same four primitive
+payload types as the source. Updating, overwrite, partitioned, buffered and
+metadata-bearing writes retain stock Hudi. Bloom metadata, ignored write failures,
+unknown Parquet overrides and unverified constraint policies also retain stock.
+
+Admission checks Hudi's effective metadata-table setting as well as the Flink
+option. A raw `hoodie.metadata.enable=true` override retains the stock sink.
+
+The pinned released sink builds its normal graph first. Following the Iceberg
+adapter, StreamFusion replaces only its append operator factory, preserving Hudi's
+coordinator, operator identities, markers, write statuses and commit/checkpoint
+protocol. The original append function still processes key/counter access through
+borrowed views of Arrow columns. The Parquet writer recognizes each batch once;
+payload vectors are exported to the existing Rust encoder without a row transpose.
+Hudi's Java storage creates the output stream and writes its bytes.
+
+The original Java write client resolves the effective Parquet configuration.
+Compression, row-group/page sizes and dictionary settings pass to the shared codec.
+A validated plan carries admission into translation without repeating filesystem
+checks. NOT NULL errors reuse the existing columnar constraint enforcer. File
+rolling occurs between complete batches; the configured target is approximate
+within one batch. Encoder accounting reserves twice the row-group size plus its
+1 MiB transfer buffer; this is a conservative estimate, not a strict bound on all
+transient allocations. Checkpoints close encoded files before Java acknowledges
+their write statuses. Native file footers identify `parquet-rs`; stock Hudi reads
+those files unchanged.
+
+## MOR primary-key sink
+
+The MOR sink admits insert/update-after/delete SQL post-images and the public
+`NativeHudiMorSink.append` boundary. Release complete-job measurements pass the
+stock/previous-StreamFusion performance gate at 200k and one million rows.
+Admission requires version 9, an unpartitioned MOR upsert table, the SIMPLE BUCKET index, explicit `write.tasks=1`,
+Parquet log blocks, on-heap Hudi buffering and positive writer/batch budgets.
+Precombine, metadata-table writes, CDC/changelog storage, write-rate limiting,
+compaction and clustering are disabled. Standard full-row commit-time merging or
+one declared NOT NULL INT/BIGINT event-ordering field is admitted, with the same four payload types
+and four Parquet codecs as append. Existing targets must match the declared
+schema, keys, merge mode and table options. Partial/custom merges, duplicate
+insert policy, concurrent writers, sink materialization and update-before input
+retain stock Hudi. SQL NOT NULL constraints use the existing columnar enforcer.
+Admission also checks Hudi's effective settings, so raw `hoodie.*` overrides cannot
+enable metadata-table writes or an extra operation metadata column behind the Flink flags.
+Nullable event-ordering schemas stay stock: a stock-oracle delete/reinsert test
+observed Hudi writing the previous row's version for a NULL delete version, while
+the Arrow view preserves NULL. The adapter does not reproduce stale field bytes.
+
+The Parquet log boundary uses Hudi's original `HoodieFlinkParquetDataBlock`. The adapter
+borrows payload vectors, materializes only Java-generated metadata columns, and
+passes selected Arrow rows to the existing Rust Parquet encoder. Hudi retains log
+framing, delete-block construction, append I/O and commits. Actual encoded footer
+metadata supplies column statistics; footer inspection borrows the in-memory
+encoded bytes through Hudi's existing in-memory input adapter. Tests cover nullable
+Boolean/string payloads, metadata alignment,
+selected row order, four codecs and iterator/payload failure cleanup. The released
+1.2.1 log serialization helper has no writer cleanup on iterator failure, so the
+adapter retains its small control loop with scoped encoder ownership.
+
+The graph adapter retains Hudi's original SIMPLE bucket index and writer coordinator.
+Java's original routing assigns file groups using borrowed key views. Each Java
+bucket retains Arrow batch references and a bitset of its selected row positions.
+Hudi's buffer map and bucket metadata are accessed only for the pinned release.
+Original batch/checkpoint flushes drain stable borrowed row views into
+the existing Java write client, which generates metadata and ordered key-delete
+blocks. Payload encoding remains Rust Parquet. No merge, index or spill algorithm
+is copied. Hudi's actual buffer pool and Flink's paged serializer retain control
+of page allocation, fullness, preemption and retry boundaries. A version-pinned
+serializer hook skips payload writes; encoded string lengths come from Arrow
+offsets, without decoding strings. Java allocates the same control pages as stock,
+while Arrow payloads remain in their original batches until encoding. Each input
+key enters Hudi's original bucket function once in arrival order. Its flushes can
+occur midway through a batch, preserving delete/reinsert winner behavior.
+Retained Arrow buffers are additionally charged to task off-heap memory; exhausting
+that budget fails the task rather than introducing a different flush policy.
+
+The graph adapter removes only the bypassed row preprocessing roots it created;
+Flink otherwise still executes disconnected registered roots. Existing upstream
+inputs and the Java downstream lifecycle remain intact. A single upstream writer
+channel connects directly; multiple upstream channels route to the admitted one
+writer. A two-input-task regression verifies Arrow shuffle routing to that one
+writer with update/delete readback. Tests also verify stock Hudi readback across
+two commits, unchanged file-group IDs, Rust Parquet footers,
+Java key-delete blocks, early flushes under a 1 MiB buffer budget, and recovery
+after a completed checkpoint with final update/delete parity. Buffer tests compare
+stock/control occupancy and exhaustion at inline-string, UTF-8, null-bitset and
+page boundaries. SQL tests require the native sink and verified fallback plans;
+stock-oracle tests cover equal-version and commit-time delete/reinsert behavior.
+
+`HudiMorSinkBenchmarkTest` measures the complete COW Parquet source → Calc → MOR
+upsert pipeline against stock Flink and the previous native-source/Calc plus stock
+sink. It retains planning, storage I/O, routing, Java metadata, native encoding and
+commit costs, checks nine stock-reader aggregates, and verifies actual Parquet
+footers. The Java-only sink uses the existing engine and Parquet libraries; it
+has no dependency on the Rust MOR reader or its separate DSO.
+
+Two warmups and five rotating trials per engine use the documented release
+libraries, one writer, 8 GiB heap and 1 GiB task off-heap. Each input has two event
+versions per key, nullable VARCHAR/INT/BOOLEAN payloads and a BIGINT event version.
+One-second process sampling found no unrelated Maven, Surefire, Cargo or Rust
+compiler processes during either complete run.
+
+| Input rows / keys | Stock median ms (range) | Previous SF median ms (range) | Native median ms (range) |
+| ---: | ---: | ---: | ---: |
+| 200,000 / 100,000 | 983.9 (944.4–1223.4) | 990.5 (918.9–1017.3) | 812.1 (737.8–833.3) |
+| 1,000,000 / 500,000 | 2990.0 (2584.3–3363.5) | 2605.6 (2515.3–3278.1) | 1892.0 (1631.0–2283.8) |
+
+The Java-held Arrow buffer's million-row sink pipeline is 1.58× faster than stock
+and 1.38× faster than the previous native-source/Calc plus stock-sink path. At
+200k the ratios are 1.21× and 1.22×. The trial evidence retains the previous
+Rust-buffer measurements, current values, configuration and checks. Measurements
+cover complete local read/Calc/upsert jobs.
+[Trial evidence](../benchmarks/hudi-upsert-20261110.json)
+
+Earlier contended 200k/1m runs are retained but excluded from speedup claims. An
+initial million-row attempt returned no verification aggregate after 760.9 seconds;
+that empty collection has not recurred in two later full million-row comparisons,
+and its cause remains unresolved. Per-engine/trial markers identify any recurrence.
+The first Java-buffer 200k run also had a large mid-run host-load shift and is
+excluded. A fresh complete 200k comparison supplies the table above.
+
 ## Stock paths
 
 The following retain the stock connector:
 
-- Unbounded reads, incremental and read-optimized queries, MOR tables and changelog/CDC.
+- Read-optimized and bounded incremental queries, CDC and stored intermediate-change logs.
+- Continuous reads without version-9 metadata, end-commit windows and unverified discovery options.
 - Legacy sources, partitioned or bootstrap tables, source watermarks and metadata columns.
 - Tables without an initialized, completed snapshot.
 - Pushed filters and limits, nested or zero-column projections, and other payload types.
 - Requested schema-on-read evolution, mismatched physical file schemas, non-UTC read
-  conversion, commit-range options, and unverified read/Parquet reader options.
+  conversion, bounded commit-range options, and unverified read/Parquet reader options.
 - Batch-runtime SQL scans and portable compiled-plan source lowering.
-- Every sink, index operation, compaction and clustering worker.
+- COW upserts and other unverified sinks; partitioned or multiwriter MOR writes,
+  state/Bloom/consistent-hashing indexes, precombine and unverified payload policies.
+  Index operations, compaction and clustering remain Java-owned.
 
-The released hudi-rs merge, buffer and spill algorithms are not duplicated here.
-MOR integration needs a supported resolved-reader API accepting Java-backed I/O
-and Java-resolved schema/visibility. Version-10 native logs and key-based changelog
-delete emission need upstream functionality beyond that API boundary.
+Both MOR directions use released Java Hudi's merge/index/transaction machinery
+with Arrow payload references and the existing Rust Parquet codec. The earlier
+released-`hudi-core 0.6.0` local-view prototype passed snapshot/recovery checks but
+remained slower than the previous SF reader pipeline. Its continuous delete
+emission is explicitly unimplemented. The Java reader context supplies that
+operation contract through Hudi's existing merger.
 
 ## Validation
 
 `NativeHudiSourceTest` uses stock Hudi SQL writes, compares stock/native SQL results,
 and requires the native source plan. It checks projection/NULLs, restored logical
 row offsets with changed batch sizes, stock fallback admission, and Arrow validity
-after reader close, and the fixed admitted snapshot across later commits. The optional CI lake-module matrix includes this Flink 1.18
-module. Other connectors' normal tests cover the shared file-batch import helper.
+after reader close, and the fixed admitted snapshot across later commits. Continuous tests restore the
+original Java enumerator and reader state, check a rewritten COW file against
+unchanged rows, and compare SQL post-images across new commits. The
+optional CI lake-module matrix includes this Flink 1.18 module. Append tests verify all four types and NULLs, batch-boundary rolling,
+stock readback, native SQL source/sink plans without transposes, and recovery after
+a completed checkpoint with no duplicates. Other connectors' normal tests cover
+the shared file-batch import helper.
+
+`NativeHudiMorSourceTest` compares Java-written base/log and log-only groups with
+stock Hudi. It verifies stale updates, ordered/default-version deletes, ties,
+commit-time ordering, nullable primitive columns, reordered projections, key-only
+tombstones with declared NOT NULL non-key fields, SQL operation tags through a
+native Calc, ownership after reader close and forced control spilling. Recovery
+tests restore merged logical-row offsets and the original enumerator across a
+new commit, change batch sizes, and restart a real pipeline after a completed checkpoint.
+A wide fully deleted base file verifies prompt release under a 1 MiB budget.
+An actual table with stored intermediate operations verifies planning fallback.
 
 The opt-in `sf.hudi.benchmark` tests compare the same Java-written files using
 release native libraries, one source task, a 4096-row decoder batch, 1 GiB task
@@ -111,3 +322,96 @@ these measurements do not establish a general SQL speedup. Standalone scans
 retain stock Hudi, and the native source's intended use is an Arrow pipeline.
 The [trial evidence](../benchmarks/hudi-source-20261109.json) includes variability,
 earlier unfavorable results, and the change that removed repeated admission I/O.
+
+### Complete read/write pipeline
+
+The append benchmark runs `INSERT INTO target SELECT name,id+1 FROM h` against
+fresh, identically configured immutable COW targets. It times SQL execution through
+Hudi's completed commit, including planning/admission, Java file I/O, JNI and all
+intrinsic conversions. Source fixture writes, target DDL, plan assertions and
+stock-Hudi aggregate readback are outside timing. The previous StreamFusion engine
+disables only `hudiSink`, retaining the native source/Calc and its row sink boundary.
+Two warmups and five rotating trials use the same release libraries/resources as
+above. The native plan must contain both source and sink and no Arrow-to-row edge.
+Readback verifies count, id sum and NULL count for every trial.
+
+| Rows | Stock median ms (range) | Previous SF median ms (range) | Native median ms (range) |
+| ---: | ---: | ---: | ---: |
+| 200,000 | 697.6 (668.3–825.3) | 831.5 (739.6–911.4) | 643.6 (562.1–668.7) |
+| 1,000,000 | 1564.7 (1500.7–1714.8) | 1481.9 (1381.8–1565.4) | 831.9 (770.8–886.7) |
+
+At one million rows this run is 1.88× faster than stock Flink and 1.78× faster than
+the previous StreamFusion sink path. At 200k rows the respective ratios are 1.08×
+and 1.29×; startup and commit costs account for much more of the job. The
+[append trial evidence](../benchmarks/hudi-append-20261109.json) retains all trials,
+configuration and earlier investigation results. Run the existing benchmark command
+with `-Dtest=NativeHudiSourceTest#benchmarkCompleteArrowReadWritePipeline`.
+
+### Continuous COW catch-up
+
+`benchmarkContinuousAggregatePipeline` runs `SELECT SUM(id),COUNT(name),COUNT(*)
+FROM h` through each continuous source and waits for the aggregate containing all
+rows from one completed commit. It retains SQL planning/admission, Java discovery
+and storage I/O, JNI, filtering and result collection. Fixture writes and plan
+assertions precede timing; cancellation and task termination follow timing. Hudi's
+absent-start default selects the latest completed commit, exercising the exact
+instant-set filter. The previous SF baseline keeps its native aggregate over the
+stock continuous source. Resources, warmups and rotating trial counts match the
+bounded benchmark; every trial verifies all three aggregate values and native plans.
+
+| Rows | Stock median ms (range) | Previous SF median ms (range) | Native median ms (range) |
+| ---: | ---: | ---: | ---: |
+| 200,000 | 650.9 (588.1–718.7) | 697.2 (607.3–813.9) | 666.0 (600.3–722.2) |
+| 1,000,000 | 876.2 (704.1–953.7) | 820.0 (715.2–980.5) | 614.0 (598.2–872.1) |
+
+At one million rows the native median is 1.43× faster than stock and 1.34× faster
+than previous SF. At 200k rows it is about 2% slower than stock and 4% faster than
+previous SF, with overlapping ranges. These are continuous-source catch-up results;
+they do not establish steady-state latency across many commits. The
+[continuous trial evidence](../benchmarks/hudi-continuous-20261110.json) retains all
+trials and boundaries. Run the benchmark command above with
+`-Dtest=NativeHudiSourceTest#benchmarkContinuousAggregatePipeline`.
+
+### MOR read and changelog pipelines
+
+The bounded MOR benchmark runs `INSERT INTO output SELECT id,name,ts FROM h`
+through a committed immutable COW append target. Its previous SF baseline uses
+stock Hudi MOR reads and the native append sink. The continuous benchmark runs
+`SELECT id+1,name,ts FROM h` through a Calc and row collector. Its previous SF
+baseline uses the stock source, native Calc and both perimeter conversions.
+Timing includes SQL planning/admission, discovery, Java storage I/O, JNI, merging,
+and encoding or final row collection. Fixture writes, EXPLAIN, stock readback and
+continuous cancellation are outside timing.
+
+Inputs have a Parquet base plus 25% full-row event-time updates in Parquet logs,
+with nullable VARCHAR payloads and BIGINT keys/versions. Continuous inputs add
+1% key-only deletes in a third completed commit. Every bounded trial verifies
+stock-read count, key/version sums and non-null name count. Continuous trials
+verify key/version sums, name count/hash, delete count and every operation kind. Native plans require
+columnar source-to-consumer flow. Resources, warmups and trial counts match the
+other connector comparisons above.
+
+| Workload | Rows | Stock median ms (range) | Previous SF median ms (range) | Native median ms (range) |
+| --- | ---: | ---: | ---: | ---: |
+| MOR to COW append | 200,000 | 825.5 (697.9–903.0) | 649.7 (622.6–778.3) | 693.7 (563.7–776.1) |
+| MOR to COW append | 1,000,000 | 1811.8 (1631.9–1883.7) | 1137.4 (957.7–1349.5) | 1077.0 (1031.7–1121.9) |
+| Continuous MOR Calc | 200,000 | 1024.4 (993.8–1053.1) | 995.8 (978.8–1100.2) | 1066.5 (1002.5–1196.5) |
+| Continuous MOR Calc | 1,000,000 | 3333.1 (3174.4–3532.3) | 3406.8 (3098.9–3746.1) | 3200.6 (3018.9–3403.2) |
+
+The million-row bounded pipeline is 1.68× faster than stock and 1.06× faster than
+previous SF. At 200k it is 1.19× faster than stock and 6.8% slower than previous SF,
+with overlapping ranges. The million-row continuous pipeline is 1.04× faster
+than stock and 1.06× faster than previous SF. At 200k it is 4.1% slower than stock
+and 7.1% slower than previous SF, with overlapping ranges. These continuous runs
+measure initial catch-up over three completed commits, including the final row boundary.
+
+The first Java-reader implementation and the per-row projection experiments remain
+in the evidence with their unfavorable comparisons. The current reader defers
+terminal projection to Arrow gathering, reuses transient base cursors and restores
+Hudi's fetch-thread overlap with the sink. The JFR diagnostic identified per-row
+projection allocations and is excluded from uninstrumented timing claims.
+[Trial and profile evidence](../benchmarks/hudi-mor-read-20261111.json)
+
+Run the benchmark command above with
+`-Dtest=NativeHudiMorSourceTest#benchmarkCompleteMorAppendPipeline` or
+`-Dtest=NativeHudiMorSourceTest#benchmarkContinuousMorCalcPipeline`.

@@ -14,7 +14,8 @@ and postpone buckets, with Paimon's own compaction)
 also have native paths, but they have not seen the same production hardening as Kafka — treat them
 as experimental.
 
-[Apache Hudi](hudi.md) has an experimental bounded COW Parquet source on Flink 1.18,
+[Apache Hudi](hudi.md) has experimental bounded/continuous COW and MOR Parquet sources and
+immutable append/MOR primary-key sinks on Flink 1.18,
 retaining Hudi's Java file planning and storage I/O while emitting Arrow batches.
 
 [Apache Fluss](fluss.md) is an experimental Java Arrow transport for append-only and primary-key
