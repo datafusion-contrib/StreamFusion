@@ -216,8 +216,10 @@ name, and fallback controls require zero native operators. This compatibility ch
 only metric-name recognition; workloads, timing and the pinned baseline stay unchanged.
 
 Previous-runtime diagnostics copy the current benchmark fixtures together with their test-only
-timing helper. The recorded fixture hashes include that helper, so the immutable baseline can
-compile the current instrumentation without copying any production implementation from the candidate.
+timing and metrics helpers and the selected Flink line's local-context adapter. All copied files
+are hashed, including dependencies absent from the historical checkout, so the immutable baseline
+can compile the current instrumentation without copying any production implementation from the
+candidate. The fixture-copy regression checks both supported Flink lines.
 
 ## Shared debug native libraries
 
