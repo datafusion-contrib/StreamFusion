@@ -609,6 +609,12 @@ completed checkpoint leg. The coordinator's checkpoint future can complete befor
 receives its completion notification. The boundary still requires the exact row count and the
 subsequent engine switches check for loss, duplicates and replay; a missing commit times out.
 
+Floating DISTINCT local/global fixtures with processing-time mini-batch markers compare the
+materialized changelog, result types and consumed work in both native stages. Independent runs
+can flush at different boundaries and emit different valid intermediate updates. Tests with
+deterministic bundle boundaries retain their stricter raw-changelog assertions. The global
+fixture also checks every retraction against the current result and rejects a second live result.
+
 Flink 2.2 canonical handoff jobs run in 16 additional required shards on each of JDK 11 and 17.
 Canonical jobs use the same duration-based balancing as runtime shards, with complete-job
 timings retained in `dev/ci/runtime-durations.json`. All 116 runnable canonical classes have
