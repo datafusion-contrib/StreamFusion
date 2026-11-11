@@ -24,6 +24,7 @@ import tech.streamfusion.format.FormatCodes;
 import tech.streamfusion.kafka.JdkFloatSpelling;
 import tech.streamfusion.kafka.NativeKafka;
 import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.StreamPlanningContext;
 
 /** Conservative match boundary for native JSON serialization into Flink's Kafka sink. */
 final class KafkaSinkMatcher {
@@ -336,7 +337,7 @@ final class KafkaSinkMatcher {
     }
   }
 
-  static RelNode substitute(StreamPhysicalSink sink, PlanContext ctx) {
+  static RelNode substitute(StreamPhysicalSink sink, StreamPlanningContext ctx) {
     KafkaSinkMatcher.Planned planned = KafkaSinkMatcher.plan(sink);
     if (planned.fallbackReason != null) {
       ctx.decline("kafka sink: " + planned.fallbackReason);

@@ -40,6 +40,15 @@ string expression rules remain separate from stream graph-boundary checks. Both
 modes consume `common.EncodedExpression` for input pruning and remapping, keeping
 the mutable expression encoder internal.
 
+Optional connector rules contribute `common.StreamRule` definitions through the
+existing `NativePlannerExtension` service. Their callbacks receive only
+`common.StreamPlanningContext` services for admission diagnostics, source reuse
+and original-node/state eligibility. The stream scan owns rule ordering,
+changelog/configuration gates, probe-failure caching and substitution counts.
+Provider discovery still publishes a contribution atomically and excludes its
+sharing hooks when registration fails. Connector rules do not need access to the
+scan's mutable rewrite state or a shared Java package.
+
 `PlannerModeBoundaryTest` checks compiled batch/common dependencies, including
 method bodies, to reject streaming ExecNodes and reverse common-to-batch coupling.
 SQL regression checks retain positive native consumption, the existing perimeter

@@ -15,6 +15,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalS
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.StreamPlanningContext;
 
 /**
  * Recognizes a filesystem + columnar format sink and decides whether the native writer can run it
@@ -223,7 +224,7 @@ final class FileSinkMatcher {
     }
   }
 
-  static RelNode substitute(StreamPhysicalSink sink, PlanContext ctx, Format format) {
+  static RelNode substitute(StreamPhysicalSink sink, StreamPlanningContext ctx, Format format) {
     boolean changelogSink = format.changelog(options(sink));
     if (!changelogSink
         && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) sink.getInputs().get(0))) {

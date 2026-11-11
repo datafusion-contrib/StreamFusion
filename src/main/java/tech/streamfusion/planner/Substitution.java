@@ -5,6 +5,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import org.apache.calcite.rel.RelNode;
 import tech.streamfusion.planner.common.NativeProbeFailure;
+import tech.streamfusion.planner.common.StreamRule;
 
 /**
  * One host operator shape the scan can replace with a native one.
@@ -24,29 +25,20 @@ final class Substitution<T extends RelNode> {
     RelNode plan(T node, PlanContext ctx);
   }
 
-  /** What the scan does with a node whose owning entry declined it. */
-  enum OnDecline {
-    /** The entry owned the node outright: leave it on the host and try nothing else. */
-    STOP,
-    /** The entry only partly owned it, so later entries still get a turn. */
-    YIELD
-  }
-
-  private final Class<T> shape;
-  private final String operatorKey;
-  private final Planner<T> planner;
-  private Predicate<T> shapeMatching = node -> true;
-  private BiPredicate<T, PlanContext> matching = (node, ctx) -> true;
-  private Predicate<T> owns = node -> true;
-  private Function<T, String> reason;
-  private boolean changelogSafe;
-  private boolean keyedState;
-  private OnDecline onDecline = OnDecline.STOP;
+  private final StreamRule<T> rule;
 
   private Substitution(Class<T> shape, String operatorKey, Planner<T> planner) {
-    this.shape = shape;
-    this.operatorKey = operatorKey;
-    this.planner = planner;
+    this(
+        StreamRule.of(
+            shape, operatorKey, (node, context) -> planner.plan(node, (PlanContext) context)));
+  }
+
+  private Substitution(StreamRule<T> rule) {
+    this.rule = rule;
+  }
+
+  static <T extends RelNode> Substitution<T> from(StreamRule<T> rule) {
+    return new Substitution<>(rule);
   }
 
   /** An entry gated by {@code streamfusion.operator.<operatorKey>.enabled}. */
@@ -65,7 +57,7 @@ final class Substitution<T extends RelNode> {
 
   /** Structural ownership only: never initialize an optional native probe here. */
   Substitution<T> shaped(Predicate<T> shapeMatching) {
-    this.shapeMatching = shapeMatching;
+    rule.shaped(shapeMatching);
     return this;
   }
 
@@ -78,30 +70,30 @@ final class Substitution<T extends RelNode> {
   }
 
   Substitution<T> matchingWithContext(BiPredicate<T, PlanContext> matching) {
-    this.matching = matching;
+    rule.matchingWithContext((node, context) -> matching.test(node, (PlanContext) context));
     return this;
   }
 
   /** Places this entry before the insert-only guard, for an operator that carries a changelog. */
   Substitution<T> changelogSafe() {
-    this.changelogSafe = true;
+    rule.changelogSafe();
     return this;
   }
 
   Substitution<T> keyedState() {
-    this.keyedState = true;
+    rule.keyedState();
     return this;
   }
 
   /** Lets later entries see a node this one declined, for a shape two entries share unevenly. */
   Substitution<T> yieldingOnDecline() {
-    this.onDecline = OnDecline.YIELD;
+    rule.yieldingOnDecline();
     return this;
   }
 
   /** Why a node of this shape was not accelerated, for the fallback report. */
   Substitution<T> reason(Function<T, String> reason) {
-    this.reason = reason;
+    rule.reason(reason);
     return this;
   }
 
@@ -111,12 +103,12 @@ final class Substitution<T extends RelNode> {
    * reason is wanted precisely when the matcher declined.
    */
   Substitution<T> explaining(Predicate<T> owns) {
-    this.owns = owns;
+    rule.explaining(owns);
     return this;
   }
 
   boolean isChangelogSafe() {
-    return changelogSafe;
+    return rule.isChangelogSafe();
   }
 
   /**
@@ -124,12 +116,12 @@ final class Substitution<T extends RelNode> {
    * it but declined, or null when the node is not its business (or it declined and yields).
    */
   RelNode apply(RelNode node, PlanContext ctx) {
-    if (!shape.isInstance(node)) {
+    if (!rule.shape().isInstance(node)) {
       return null;
     }
-    T typed = shape.cast(node);
+    T typed = rule.shape().cast(node);
     try {
-      if (!shapeMatching.test(typed)) {
+      if (!rule.matchesShape(typed)) {
         return null;
       }
     } catch (NoClassDefFoundError
@@ -140,12 +132,12 @@ final class Substitution<T extends RelNode> {
       ctx.probeFailed(this, node, NativeProbeFailure.reason(failure));
       return null;
     }
-    if (operatorKey != null && !NativeConfig.operatorEnabled(operatorKey)) {
-      ctx.decline(disabledReason(operatorKey));
+    if (rule.operatorKey() != null && !NativeConfig.operatorEnabled(rule.operatorKey())) {
+      ctx.decline(disabledReason(rule.operatorKey()));
       return node;
     }
     try {
-      if (!matching.test(typed, ctx)) {
+      if (!rule.matches(typed, ctx)) {
         return null;
       }
     } catch (NoClassDefFoundError
@@ -156,16 +148,16 @@ final class Substitution<T extends RelNode> {
       ctx.probeFailed(this, node, NativeProbeFailure.reason(failure));
       return null;
     }
-    if (keyedState && ctx.keyedStateUnsupportedReason() != null) {
+    if (rule.requiresKeyedState() && ctx.keyedStateUnsupportedReason() != null) {
       ctx.decline(ctx.keyedStateUnsupportedReason());
       return node;
     }
-    RelNode planned = planner.plan(typed, ctx);
+    RelNode planned = rule.plan(typed, ctx);
     if (planned != null) {
       ctx.substituted();
       return planned;
     }
-    return onDecline == OnDecline.STOP ? node : null;
+    return rule.yieldsOnDecline() ? null : node;
   }
 
   /** How a matched operator kept on the host by config reports itself. */
@@ -182,18 +174,18 @@ final class Substitution<T extends RelNode> {
     if (failedProbe != null) {
       return failedProbe;
     }
-    if (!shape.isInstance(node)) {
+    if (!rule.shape().isInstance(node)) {
       return null;
     }
-    T typed = shape.cast(node);
+    T typed = rule.shape().cast(node);
     try {
-      if (!shapeMatching.test(typed)) {
+      if (!rule.matchesShape(typed)) {
         return null;
       }
-      if (operatorKey != null && !NativeConfig.operatorEnabled(operatorKey)) {
-        return disabledReason(operatorKey);
+      if (rule.operatorKey() != null && !NativeConfig.operatorEnabled(rule.operatorKey())) {
+        return disabledReason(rule.operatorKey());
       }
-      return reason != null && owns.test(typed) ? reason.apply(typed) : null;
+      return rule.reason(typed);
     } catch (NoClassDefFoundError
         | NoSuchMethodError
         | NoSuchFieldError

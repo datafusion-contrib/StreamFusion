@@ -20,6 +20,7 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 import tech.streamfusion.paimon.NativePaimonSource;
 import tech.streamfusion.paimon.PaimonCodecs;
 import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.StreamPlanningContext;
 
 /** Admission for the hybrid streaming source; all pushed predicates remain Flink residuals. */
 final class PaimonSourceMatcher {
@@ -158,7 +159,7 @@ final class PaimonSourceMatcher {
     return null;
   }
 
-  static RelNode substitute(StreamPhysicalTableSourceScan scan, PlanContext context) {
+  static RelNode substitute(StreamPhysicalTableSourceScan scan, StreamPlanningContext context) {
     String reason = fallback(scan);
     if (reason != null) {
       context.decline("Paimon source: " + reason);

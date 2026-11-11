@@ -24,6 +24,7 @@ import org.apache.fluss.metadata.LogFormat;
 import org.apache.fluss.metadata.TablePath;
 import tech.streamfusion.operator.RowDataArrowConverter;
 import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.StreamPlanningContext;
 
 /** Whitelist around the released Fluss 1.0 Java connector's internal batch-level contracts. */
 final class FlussTables {
@@ -38,7 +39,7 @@ final class FlussTables {
     return sink.tableSink() instanceof FlinkTableSink;
   }
 
-  static RelNode source(StreamPhysicalTableSourceScan scan, PlanContext context) {
+  static RelNode source(StreamPhysicalTableSourceScan scan, StreamPlanningContext context) {
     TableSourceTable table = scan.getTable().unwrap(TableSourceTable.class);
     FlinkTableSource source = (FlinkTableSource) table.tableSource();
     try {
@@ -230,7 +231,7 @@ final class FlussTables {
     return null;
   }
 
-  static RelNode sink(StreamPhysicalSink sink, PlanContext context) {
+  static RelNode sink(StreamPhysicalSink sink, StreamPlanningContext context) {
     FlinkTableSink tableSink = (FlinkTableSink) sink.tableSink();
     try {
       String fallback = sinkFallback(tableSink);

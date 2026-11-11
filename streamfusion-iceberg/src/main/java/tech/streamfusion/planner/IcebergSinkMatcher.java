@@ -7,6 +7,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalS
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.iceberg.flink.IcebergTableSink;
 import tech.streamfusion.iceberg.IcebergSinkPlan;
+import tech.streamfusion.planner.common.StreamPlanningContext;
 
 final class IcebergSinkMatcher {
   private IcebergSinkMatcher() {}
@@ -15,7 +16,7 @@ final class IcebergSinkMatcher {
     return sink.tableSink() instanceof IcebergTableSink;
   }
 
-  static RelNode substitute(StreamPhysicalSink sink, PlanContext context) {
+  static RelNode substitute(StreamPhysicalSink sink, StreamPlanningContext context) {
     if (!NativeConfig.operatorEnabled("icebergSink")) {
       context.decline(Substitution.disabledReason("icebergSink"));
       return null;

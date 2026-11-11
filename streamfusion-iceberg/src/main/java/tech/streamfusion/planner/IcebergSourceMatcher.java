@@ -7,6 +7,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalT
 import org.apache.flink.table.planner.plan.schema.TableSourceTable;
 import org.apache.iceberg.flink.source.IcebergTableSource;
 import tech.streamfusion.iceberg.IcebergSourcePlan;
+import tech.streamfusion.planner.common.StreamPlanningContext;
 
 final class IcebergSourceMatcher {
   private IcebergSourceMatcher() {}
@@ -16,7 +17,7 @@ final class IcebergSourceMatcher {
     return table != null && table.tableSource() instanceof IcebergTableSource;
   }
 
-  static RelNode substitute(StreamPhysicalTableSourceScan scan, PlanContext context) {
+  static RelNode substitute(StreamPhysicalTableSourceScan scan, StreamPlanningContext context) {
     if (!NativeConfig.operatorEnabled("icebergSource")) {
       context.decline(Substitution.disabledReason("icebergSource"));
       return null;

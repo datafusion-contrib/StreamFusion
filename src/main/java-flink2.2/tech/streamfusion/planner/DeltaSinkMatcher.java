@@ -13,6 +13,7 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.StreamPlanningContext;
 
 /** Whitelist-first admission for the path-based Delta data-file writer. */
 final class DeltaSinkMatcher {
@@ -166,7 +167,7 @@ final class DeltaSinkMatcher {
     return supported;
   }
 
-  static RelNode substitute(StreamPhysicalSink sink, PlanContext context) {
+  static RelNode substitute(StreamPhysicalSink sink, StreamPlanningContext context) {
     if (!NativeConfig.operatorEnabled("deltaSink")) {
       context.decline(Substitution.disabledReason("deltaSink"));
       return null;

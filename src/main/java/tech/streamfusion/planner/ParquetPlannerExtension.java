@@ -24,6 +24,7 @@ import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
 import tech.streamfusion.parquet.NativeParquet;
 import tech.streamfusion.parquet.NativeParquetSource;
+import tech.streamfusion.planner.common.StreamRule;
 
 /** Native Parquet sources and sink rewrites contributed only by streamfusion-parquet. */
 public final class ParquetPlannerExtension implements NativePlannerExtension {
@@ -147,9 +148,9 @@ public final class ParquetPlannerExtension implements NativePlannerExtension {
       };
 
   @Override
-  public void addSubstitutions(List<Substitution<?>> entries) {
+  public void addSubstitutions(List<StreamRule<?>> entries) {
     entries.add(
-        Substitution.of(
+        StreamRule.of(
                 StreamPhysicalSink.class,
                 (sink, ctx) -> FileSinkMatcher.substitute(sink, ctx, FORMAT))
             .matching(sink -> FileSinkMatcher.appliesTo(sink, FORMAT))

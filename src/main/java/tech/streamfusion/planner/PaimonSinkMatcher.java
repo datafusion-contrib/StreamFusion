@@ -33,6 +33,7 @@ import tech.streamfusion.paimon.PaimonKeyValueLayout;
 import tech.streamfusion.paimon.PaimonMergeOptions;
 import tech.streamfusion.paimon.PaimonWriterLifecycle;
 import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.StreamPlanningContext;
 
 /**
  * Whitelist-first admission for the columnar Paimon sink. The table is resolved the way Paimon's
@@ -291,7 +292,7 @@ final class PaimonSinkMatcher {
     return columns.stream().mapToInt(fieldNames::indexOf).toArray();
   }
 
-  static RelNode substitute(StreamPhysicalSink sink, PlanContext context) {
+  static RelNode substitute(StreamPhysicalSink sink, StreamPlanningContext context) {
     if (!NativeConfig.operatorEnabled("paimonSink")) {
       context.decline(Substitution.disabledReason("paimonSink"));
       return null;

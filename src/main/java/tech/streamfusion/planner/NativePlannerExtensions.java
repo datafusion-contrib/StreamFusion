@@ -7,16 +7,17 @@ import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tech.streamfusion.planner.common.StreamRule;
 
 /** Activates optional providers only after all of their planner rules have registered. */
 public final class NativePlannerExtensions {
   private static final Logger LOG = LoggerFactory.getLogger(NativePlannerExtensions.class);
 
   private final List<NativePlannerExtension> extensions;
-  private final List<Substitution<?>> substitutions;
+  private final List<StreamRule<?>> substitutions;
 
   private NativePlannerExtensions(
-      List<NativePlannerExtension> extensions, List<Substitution<?>> substitutions) {
+      List<NativePlannerExtension> extensions, List<StreamRule<?>> substitutions) {
     this.extensions = List.copyOf(extensions);
     this.substitutions = List.copyOf(substitutions);
   }
@@ -26,13 +27,13 @@ public final class NativePlannerExtensions {
     return load(loader).extensions();
   }
 
-  static NativePlannerExtensions load(ClassLoader loader) {
+  public static NativePlannerExtensions load(ClassLoader loader) {
     return load(ServiceLoader.load(NativePlannerExtension.class, loader).iterator());
   }
 
   static NativePlannerExtensions load(Iterator<NativePlannerExtension> providers) {
     List<NativePlannerExtension> extensions = new ArrayList<>();
-    List<Substitution<?>> substitutions = new ArrayList<>();
+    List<StreamRule<?>> substitutions = new ArrayList<>();
     while (true) {
       NativePlannerExtension extension;
       try {
@@ -45,9 +46,9 @@ public final class NativePlannerExtensions {
         LOG.warn("Ignoring a broken StreamFusion planner extension during discovery", failure);
         continue;
       }
-      List<Substitution<?>> contribution;
+      List<StreamRule<?>> contribution;
       try {
-        List<Substitution<?>> pending = new ArrayList<>();
+        List<StreamRule<?>> pending = new ArrayList<>();
         extension.addSubstitutions(pending);
         contribution = List.copyOf(pending);
       } catch (ServiceConfigurationError | LinkageError failure) {
@@ -78,11 +79,11 @@ public final class NativePlannerExtensions {
     }
   }
 
-  List<NativePlannerExtension> extensions() {
+  public List<NativePlannerExtension> extensions() {
     return extensions;
   }
 
-  List<Substitution<?>> substitutions() {
+  public List<StreamRule<?>> substitutions() {
     return substitutions;
   }
 }

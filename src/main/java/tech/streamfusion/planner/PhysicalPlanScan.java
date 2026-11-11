@@ -749,7 +749,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             .reason(GlobalWindowAggregateMatcher::unsupportedReason));
 
     FlinkPlannerCompat.addSubstitutions(entries);
-    entries.addAll(EXTENSIONS.substitutions());
+    for (var rule : EXTENSIONS.substitutions()) entries.add(Substitution.from(rule));
     return List.copyOf(entries);
   }
 

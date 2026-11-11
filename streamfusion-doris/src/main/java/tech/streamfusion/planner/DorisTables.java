@@ -26,6 +26,7 @@ import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.doris.DorisArrowSerializer;
 import tech.streamfusion.doris.DorisArrowSource;
 import tech.streamfusion.doris.DorisSchemas;
+import tech.streamfusion.planner.common.StreamPlanningContext;
 
 /** Arrow batch boundaries around the released connector's source and sink machinery. */
 final class DorisTables {
@@ -66,7 +67,7 @@ final class DorisTables {
     }
   }
 
-  private static RelNode source(StreamPhysicalTableSourceScan scan, PlanContext context) {
+  private static RelNode source(StreamPhysicalTableSourceScan scan, StreamPlanningContext context) {
     try {
       var original =
           (DorisDynamicTableSource) scan.getTable().unwrap(TableSourceTable.class).tableSource();
@@ -120,7 +121,7 @@ final class DorisTables {
     }
   }
 
-  private static RelNode sink(StreamPhysicalSink sink, PlanContext context) {
+  private static RelNode sink(StreamPhysicalSink sink, StreamPlanningContext context) {
     try {
       var originalSink = (StreamPhysicalSink) context.originalNode(sink);
       boolean materialize =

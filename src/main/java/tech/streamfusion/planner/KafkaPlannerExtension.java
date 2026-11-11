@@ -4,34 +4,35 @@ import java.util.List;
 import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
+import tech.streamfusion.planner.common.StreamRule;
 
 /** Kafka source and sink rewrites contributed only by streamfusion-kafka. */
 public final class KafkaPlannerExtension implements NativePlannerExtension {
 
   @Override
-  public void addSubstitutions(List<Substitution<?>> entries) {
+  public void addSubstitutions(List<StreamRule<?>> entries) {
     entries.add(
-        Substitution.of(StreamPhysicalSink.class, "kafkaSink", KafkaSinkMatcher::substitute)
+        StreamRule.of(StreamPhysicalSink.class, "kafkaSink", KafkaSinkMatcher::substitute)
             .matching(KafkaSinkMatcher::appliesTo)
             .changelogSafe());
     entries.add(
-        Substitution.of(StreamPhysicalTableSourceScan.class, KafkaTables::substituteDecode)
+        StreamRule.of(StreamPhysicalTableSourceScan.class, KafkaTables::substituteDecode)
             .matching(
                 scan ->
                     KafkaTables.isNativeKafkaDecode(scan)
                         && NativeConfig.operatorEnabled("kafkaDecode")));
     entries.add(
-        Substitution.of(StreamPhysicalTableSourceScan.class, KafkaTables::substituteDecode)
+        StreamRule.of(StreamPhysicalTableSourceScan.class, KafkaTables::substituteDecode)
             .matching(
                 scan ->
                     KafkaTables.isCdcDecode(scan) && NativeConfig.operatorEnabled("kafkaDecode"))
             .changelogSafe());
     entries.add(
-        Substitution.of(RelNode.class, KafkaTables::reportCdcWatermark)
+        StreamRule.of(RelNode.class, KafkaTables::reportCdcWatermark)
             .changelogSafe()
             .yieldingOnDecline());
     entries.add(
-        Substitution.of(RelNode.class, KafkaTables::reportAppendWatermark).yieldingOnDecline());
+        StreamRule.of(RelNode.class, KafkaTables::reportAppendWatermark).yieldingOnDecline());
   }
 
   @Override

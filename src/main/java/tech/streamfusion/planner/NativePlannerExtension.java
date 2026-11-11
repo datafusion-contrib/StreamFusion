@@ -2,6 +2,7 @@ package tech.streamfusion.planner;
 
 import java.util.List;
 import org.apache.calcite.rel.RelNode;
+import tech.streamfusion.planner.common.StreamRule;
 
 /** Contributes planner rewrites from an optional connector artifact. */
 public interface NativePlannerExtension {
@@ -10,7 +11,7 @@ public interface NativePlannerExtension {
    * Adds this artifact's substitutions in planner priority order to its private contribution. The
    * rules and source-sharing hook become active only if registration completes successfully.
    */
-  void addSubstitutions(List<Substitution<?>> substitutions);
+  void addSubstitutions(List<StreamRule<?>> substitutions);
 
   /** Optional columnar file source; null retains the host source and ordinary transpose. */
   default org.apache.flink.api.dag.Transformation<tech.streamfusion.operator.ArrowBatch>

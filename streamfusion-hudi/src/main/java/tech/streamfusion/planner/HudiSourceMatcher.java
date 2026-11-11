@@ -8,6 +8,7 @@ import org.apache.flink.table.planner.plan.schema.TableSourceTable;
 import org.apache.hudi.table.HoodieTableSource;
 import tech.streamfusion.hudi.NativeHudiSource;
 import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.StreamPlanningContext;
 
 final class HudiSourceMatcher {
   static boolean appliesTo(StreamPhysicalTableSourceScan scan) {
@@ -15,7 +16,7 @@ final class HudiSourceMatcher {
     return table != null && table.tableSource() instanceof HoodieTableSource;
   }
 
-  static RelNode substitute(StreamPhysicalTableSourceScan scan, PlanContext context) {
+  static RelNode substitute(StreamPhysicalTableSourceScan scan, StreamPlanningContext context) {
     var table = scan.getTable().unwrap(TableSourceTable.class);
     for (var ability : table.abilitySpecs()) {
       if (ability

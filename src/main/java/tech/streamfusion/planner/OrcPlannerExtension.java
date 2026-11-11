@@ -2,6 +2,7 @@ package tech.streamfusion.planner;
 
 import java.util.List;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
+import tech.streamfusion.planner.common.StreamRule;
 
 /** ORC contributes its codec and admission rules to the shared filesystem sink. */
 public final class OrcPlannerExtension implements NativePlannerExtension {
@@ -26,9 +27,9 @@ public final class OrcPlannerExtension implements NativePlannerExtension {
         }
       };
 
-  public void addSubstitutions(List<Substitution<?>> entries) {
+  public void addSubstitutions(List<StreamRule<?>> entries) {
     entries.add(
-        Substitution.of(
+        StreamRule.of(
                 StreamPhysicalSink.class,
                 (sink, ctx) -> FileSinkMatcher.substitute(sink, ctx, FORMAT))
             .matching(sink -> FileSinkMatcher.appliesTo(sink, FORMAT))

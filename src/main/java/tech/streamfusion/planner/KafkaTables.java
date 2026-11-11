@@ -25,6 +25,7 @@ import tech.streamfusion.format.NativeFormatProvider;
 import tech.streamfusion.format.NativeFormatProviders;
 import tech.streamfusion.kafka.KeyedKafkaBytesDeserialization;
 import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.StreamPlanningContext;
 
 /**
  * Maps a Flink Kafka SQL table to a byte-oriented Flink source followed by native format decoding.
@@ -410,7 +411,7 @@ final class KafkaTables {
     return OffsetsInitializer.offsets(byPartition);
   }
 
-  static RelNode substituteDecode(StreamPhysicalTableSourceScan scan, PlanContext ctx) {
+  static RelNode substituteDecode(StreamPhysicalTableSourceScan scan, StreamPlanningContext ctx) {
     Map<String, String> options = decodeOptions(scan);
     return new StreamPhysicalNativeKafkaDecode(
         scan.getCluster(),
@@ -438,7 +439,7 @@ final class KafkaTables {
         .optionsWithMarkers();
   }
 
-  static RelNode reportCdcWatermark(RelNode node, PlanContext ctx) {
+  static RelNode reportCdcWatermark(RelNode node, StreamPlanningContext ctx) {
     String fallback = KafkaTables.cdcWatermarkFallback(node);
     if (fallback != null) {
       ctx.decline(fallback);
@@ -446,7 +447,7 @@ final class KafkaTables {
     return null;
   }
 
-  static RelNode reportAppendWatermark(RelNode node, PlanContext ctx) {
+  static RelNode reportAppendWatermark(RelNode node, StreamPlanningContext ctx) {
     String fallback = KafkaTables.appendWatermarkFallback(node);
     if (fallback != null) {
       ctx.decline(fallback);

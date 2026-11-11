@@ -15,7 +15,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalL
  * <p>Passing these through a context rather than leaving them on the scan is what lets each
  * operator's planning live next to its matcher instead of inside the scan itself.
  */
-final class PlanContext {
+final class PlanContext implements tech.streamfusion.planner.common.StreamPlanningContext {
 
   private final PhysicalPlanScan scan;
   private final Set<String> repeatedSources;
@@ -64,11 +64,13 @@ final class PlanContext {
     originals.put(rewritten, original);
   }
 
-  RelNode originalNode(RelNode rewritten) {
+  @Override
+  public RelNode originalNode(RelNode rewritten) {
     return originals.getOrDefault(rewritten, rewritten);
   }
 
-  String keyedStateUnsupportedReason() {
+  @Override
+  public String keyedStateUnsupportedReason() {
     return scan.keyedStateUnsupportedReason();
   }
 
@@ -78,7 +80,8 @@ final class PlanContext {
   }
 
   /** Records why a node the scan recognized stays on the host. */
-  void decline(String reason) {
+  @Override
+  public void decline(String reason) {
     scan.recordFallback(reason);
   }
 
@@ -87,7 +90,8 @@ final class PlanContext {
     scan.recordFunctionExecution(operator, expression);
   }
 
-  boolean repeatedSource(String sharingKey) {
+  @Override
+  public boolean repeatedSource(String sharingKey) {
     return repeatedSources.contains(sharingKey);
   }
 
