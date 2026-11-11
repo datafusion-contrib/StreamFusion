@@ -26,6 +26,16 @@ reuse-barrier counter serve both modes. Runtime mode remains independent of sour
 boundedness; this package split does not relocate streaming mini-batch helpers,
 runtime operators, JNI entry points or serializer snapshots.
 
+Streaming scan, rewrite context, matchers and physical/exec implementations live
+in `planner.stream`, with the same mode package in both Flink compatibility source
+sets and optional connector modules. Root `PhysicalPlanScan` remains the public
+installation return type; it inherits the one `stream.StreamPlanScan` implementation.
+Historical public stateless mode-marker entries and connector service-provider
+names remain compatibility entry points. Source-sharing identity prefixes, node
+contexts and transformation names keep their previous values. Compiler and
+documentation source filters cover both compatibility entries and nested
+connector implementations, preserving deployment artifact ownership.
+
 Optional connector planner extensions also use the common explain metadata and
 reuse-barrier counter. Their module-owned source sets must import those shared
 contracts explicitly, including the Flink 1.18-only Hudi and Paimon 1.0 modules.

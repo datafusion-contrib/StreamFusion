@@ -18,6 +18,8 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.flink.configuration.Configuration;
 import org.junit.jupiter.api.Test;
 import tech.streamfusion.planner.common.ExpressionInput;
+import tech.streamfusion.planner.stream.StreamPhysicalNativeCalc;
+import tech.streamfusion.planner.stream.StreamPhysicalRowDataToArrow;
 
 class CollectionValueIdentityTest {
   @Test

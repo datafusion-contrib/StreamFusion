@@ -35,7 +35,7 @@ public final class FlinkKeyGroupUtils {
     return result.stream().mapToInt(Integer::intValue).toArray();
   }
 
-  static int[] stockKeyDescriptor(
+  public static int[] stockKeyDescriptor(
       org.apache.flink.table.types.logical.RowType inputType, int[] keys) {
     int[] precisions = timestampPrecisions(inputType, keys);
     int[] descriptor = new int[precisions.length + 1];
@@ -93,7 +93,7 @@ public final class FlinkKeyGroupUtils {
   }
 
   /** Honors Flink's program-wide key-group count, falling back to Flink's normal default. */
-  static int maxParallelism(StreamExecutionEnvironment env, int parallelism) {
+  public static int maxParallelism(StreamExecutionEnvironment env, int parallelism) {
     int configured = env.getConfig().getMaxParallelism();
     return configured > 0 ? configured : defaultMaxParallelism(parallelism);
   }
@@ -108,11 +108,11 @@ public final class FlinkKeyGroupUtils {
   }
 
   /**
-   * Establishes the Flink keyed-operator context for a native keyed transformation. Raw keyed
-   * state uses the exchange's BinaryRow key groups; the selector maps each whole, single-key-group
+   * Establishes the Flink keyed-operator context for a native keyed transformation. Raw keyed state
+   * uses the exchange's BinaryRow key groups; the selector maps each whole, single-key-group
    * columnar batch to an ordinary JVM key in that exact group — no managed keyed state reads it.
    */
-  static void applyColumnarKeying(
+  public static void applyColumnarKeying(
       OneInputTransformation<ArrowBatch, ArrowBatch> transformation, int maxParallelism) {
     transformation.setMaxParallelism(maxParallelism);
     transformation.setStateKeySelector(
@@ -120,7 +120,7 @@ public final class FlinkKeyGroupUtils {
     transformation.setStateKeyType(Types.INT);
   }
 
-  static void applyColumnarKeying(
+  public static void applyColumnarKeying(
       TwoInputTransformation<ArrowBatch, ArrowBatch, ArrowBatch> transformation,
       int maxParallelism) {
     KeySelector<ArrowBatch, Integer> stateKeySelector =

@@ -33,38 +33,38 @@
                     <excludes>
                         <exclude>tech/streamfusion/kafka/**</exclude>
                         <exclude>tech/streamfusion/fluss/**</exclude>
-                        <exclude>tech/streamfusion/planner/*Fluss*.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/*Fluss*.java</exclude>
                         <exclude>tech/streamfusion/parquet/**</exclude>
                         <exclude>tech/streamfusion/orc/**</exclude>
                         <exclude>tech/streamfusion/delta/**</exclude>
                         <exclude>tech/streamfusion/paimon/**</exclude>
-                        <exclude>tech/streamfusion/planner/Paimon*.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativePaimon*.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/Paimon*.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/NativePaimon*.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/StreamPhysicalNativePaimon*.java</exclude>
                         <exclude>tech/streamfusion/format/avro/**</exclude>
                         <exclude>tech/streamfusion/format/avroconfluent/**</exclude>
                         <exclude>tech/streamfusion/format/csv/**</exclude>
                         <exclude>tech/streamfusion/format/json/**</exclude>
                         <exclude>tech/streamfusion/format/protobuf/**</exclude>
                         <exclude>tech/streamfusion/format/raw/**</exclude>
-                        <exclude>tech/streamfusion/planner/KafkaPlannerExtension.java</exclude>
-                        <exclude>tech/streamfusion/planner/KafkaSinkMatcher.java</exclude>
-                        <exclude>tech/streamfusion/planner/KafkaSinkTranslator.java</exclude>
-                        <exclude>tech/streamfusion/planner/KafkaTables.java</exclude>
-                        <exclude>tech/streamfusion/planner/KeyedDecodeSpec.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativeKafkaDecodeExecNode.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativeKafkaSinkExecNode.java</exclude>
-                        <exclude>tech/streamfusion/planner/DeltaPlannerExtension.java</exclude>
-                        <exclude>tech/streamfusion/planner/DeltaSinkMatcher.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativeDeltaSinkExecNode.java</exclude>
-                        <exclude>tech/streamfusion/planner/ParquetPlannerExtension.java</exclude>
-                        <exclude>tech/streamfusion/planner/OrcPlannerExtension.java</exclude>
-                        <exclude>tech/streamfusion/planner/OrcSinkTranslator.java</exclude>
-                        <exclude>tech/streamfusion/planner/ParquetSinkTranslator.java</exclude>
-                        <exclude>tech/streamfusion/planner/ProtobufDescriptors.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeDeltaSink.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/KafkaPlannerExtension.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/KafkaSinkMatcher.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/KafkaSinkTranslator.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/KafkaTables.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/KeyedDecodeSpec.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/NativeKafkaDecodeExecNode.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/NativeKafkaSinkExecNode.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/DeltaPlannerExtension.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/DeltaSinkMatcher.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/NativeDeltaSinkExecNode.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/ParquetPlannerExtension.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/OrcPlannerExtension.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/OrcSinkTranslator.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/ParquetSinkTranslator.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/ProtobufDescriptors.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/StreamPhysicalNativeKafkaDecode.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/StreamPhysicalNativeKafkaSink.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/StreamPhysicalNativeDeltaSink.java</exclude>
                     </excludes>
                 </configuration>
             </plugin>

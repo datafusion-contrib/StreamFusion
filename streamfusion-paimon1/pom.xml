@@ -148,7 +148,7 @@
                                     <filtering>false</filtering>
                                     <includes>
                                         <include>tech/streamfusion/paimon/**/*.java</include>
-                                        <include>tech/streamfusion/planner/*Paimon*.java</include>
+                                        <include>tech/streamfusion/planner/**/*Paimon*.java</include>
                                     </includes>
                                     <excludes>
                                         <exclude>tech/streamfusion/paimon/PaimonVersion.java</exclude>
@@ -172,9 +172,9 @@
                                         <exclude>tech/streamfusion/paimon/PaimonMergeOptions.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonParquetFloatingStats.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonPostponeFileOrder.java</exclude>
-                                        <exclude>tech/streamfusion/planner/NativePaimonSinkExecNode.java</exclude>
-                                        <exclude>tech/streamfusion/planner/PaimonSinkMatcher.java</exclude>
-                                        <exclude>tech/streamfusion/planner/PaimonSourceMatcher.java</exclude>
+                                        <exclude>tech/streamfusion/planner/**/NativePaimonSinkExecNode.java</exclude>
+                                        <exclude>tech/streamfusion/planner/**/PaimonSinkMatcher.java</exclude>
+                                        <exclude>tech/streamfusion/planner/**/PaimonSourceMatcher.java</exclude>
                                     </excludes>
                                 </resource>
                                 <resource>
@@ -276,9 +276,9 @@
                 <configuration>
                     <includes>
                         <include>tech/streamfusion/paimon/**/*.java</include>
-                        <include>tech/streamfusion/planner/Paimon*.java</include>
-                        <include>tech/streamfusion/planner/NativePaimon*.java</include>
-                        <include>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</include>
+                        <include>tech/streamfusion/planner/**/Paimon*.java</include>
+                        <include>tech/streamfusion/planner/**/NativePaimon*.java</include>
+                        <include>tech/streamfusion/planner/**/StreamPhysicalNativePaimon*.java</include>
                     </includes>
                 </configuration>
             </plugin>

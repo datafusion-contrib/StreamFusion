@@ -38,7 +38,7 @@ public class RowDataToArrowExecNode extends CommonRowDataToArrowExecNode
         preserveCollections);
   }
 
-  RowDataToArrowExecNode(
+  public RowDataToArrowExecNode(
       ReadableConfig tableConfig,
       InputProperty inputProperty,
       RowType rowType,
@@ -58,7 +58,7 @@ public class RowDataToArrowExecNode extends CommonRowDataToArrowExecNode
         preferredBatchRows);
   }
 
-  RowDataToArrowExecNode(
+  public RowDataToArrowExecNode(
       ReadableConfig tableConfig,
       InputProperty inputProperty,
       RowType rowType,

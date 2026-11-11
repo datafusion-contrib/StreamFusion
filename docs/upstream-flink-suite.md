@@ -7,6 +7,14 @@ The observer instruments `tech.streamfusion.planner.batch.BatchPlanScan`, where
 `optimizeRoots` is declared. The root-package compatibility facade is not observed
 separately, so one completed rewrite produces one inventory event. Historical
 inventory records with the earlier planner package remain readable.
+Streaming observation similarly targets `planner.stream.StreamPlanScan` and the
+mode-specific `planner.stream.StockCompiledPlanLowering`; it does not instrument
+the inherited root `PhysicalPlanScan` facade as another scan. Both Flink source
+sets use `planner.stream.NativeStreamPlanner`, while public installation and
+ServiceLoader entries retain their established names. Positive native-consumption
+and existing route expectations remain required after package moves.
+Path-selected compatibility and JVM aggregate workflows also cover planner mode
+subpackages, so later edits to migrated implementations still select their checks.
 [Batch SQL](operators/batch.md) documents its current narrow admission. The published
 planner test JAR can be scanned directly with the runtime module's `batch-upstream`
 Maven profile, avoiding another source checkout or Maven repository for focused

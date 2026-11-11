@@ -202,9 +202,9 @@ public final class StreamFusionSuiteAgent {
                         .on(named("createPipeline").and(takesArguments(4)))))
         .type(
             namedOneOf(
-                "tech.streamfusion.planner.PhysicalPlanScan",
+                "tech.streamfusion.planner.stream.StreamPlanScan",
                 "tech.streamfusion.planner.batch.BatchPlanScan",
-                "tech.streamfusion.planner.StockCompiledPlanLowering"))
+                "tech.streamfusion.planner.stream.StockCompiledPlanLowering"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder

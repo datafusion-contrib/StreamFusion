@@ -15,7 +15,7 @@ public class NativeUnionExecNode extends CommonUnionExecNode implements StreamEx
     super(config, inputs, output, description);
   }
 
-  NativeUnionExecNode(
+  public NativeUnionExecNode(
       ReadableConfig config,
       List<InputProperty> inputs,
       RowType output,

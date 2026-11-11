@@ -24,6 +24,9 @@ class PlannerModeBoundaryTest {
     assertTrue(
         classes.keySet().stream().filter(name -> name.startsWith(PLANNER + "common/")).count()
             > 10);
+    assertTrue(
+        classes.keySet().stream().filter(name -> name.startsWith(PLANNER + "stream/")).count()
+            > 130);
     for (var entry : classes.entrySet()) {
       String name = entry.getKey();
       if (!name.startsWith(PLANNER + "batch/") && !name.startsWith(PLANNER + "common/")) continue;
@@ -32,6 +35,7 @@ class PlannerModeBoundaryTest {
       for (String forbidden :
           List.of(
               "org/apache/flink/table/planner/plan/nodes/exec/stream/",
+              PLANNER + "stream/",
               PLANNER + "StreamPhysical",
               PLANNER + "NativeStreamPlanner",
               PLANNER + "PhysicalPlanScan",
@@ -46,6 +50,43 @@ class PlannerModeBoundaryTest {
       if (name.startsWith(PLANNER + "common/"))
         assertFalse(constants.contains(PLANNER + "batch/"), name + " depends on batch planning");
     }
+  }
+
+  @Test
+  void sharedExpressionServicesDoNotDependOnModeImplementation() throws Exception {
+    Map<String, byte[]> classes = classes();
+    for (String service :
+        List.of(
+            "RexExpression",
+            "ExpressionPlanning",
+            "CollectionExpressionSemantics",
+            "JvmFunctionConversions",
+            "JvmFunctionTypes",
+            "JsonStringIdentity")) {
+      var entries =
+          classes.entrySet().stream()
+              .filter(
+                  entry ->
+                      entry.getKey().equals(PLANNER + service + ".class")
+                          || entry.getKey().startsWith(PLANNER + service + "$"))
+              .collect(java.util.stream.Collectors.toList());
+      assertFalse(entries.isEmpty(), service);
+      for (var entry : entries) {
+        String constants = new String(entry.getValue(), StandardCharsets.ISO_8859_1);
+        assertFalse(constants.contains(PLANNER + "stream/"), entry.getKey());
+        assertFalse(constants.contains(PLANNER + "batch/"), entry.getKey());
+      }
+    }
+  }
+
+  @Test
+  void publicStreamingInstallationRetainsItsFacadeAndOneDeclaringScan() throws Exception {
+    assertTrue(
+        tech.streamfusion.planner.stream.StreamPlanScan.class.isAssignableFrom(
+            PhysicalPlanScan.class));
+    assertTrue(
+        PhysicalPlanScan.class.getMethod("explainSummary").getDeclaringClass()
+            == tech.streamfusion.planner.stream.StreamPlanScan.class);
   }
 
   private static Map<String, byte[]> classes() throws Exception {

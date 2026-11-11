@@ -5,14 +5,14 @@ import org.apache.calcite.sql.type.SqlTypeFamily;
 import tech.streamfusion.arrow.ArrowConversion;
 
 /** Scalar types verified through released Flink converters at JVM function boundaries. */
-final class JvmFunctionTypes {
+public final class JvmFunctionTypes {
   private JvmFunctionTypes() {}
 
-  static boolean nestedRow(RelDataType row) {
+  public static boolean nestedRow(RelDataType row) {
     return row.getFieldList().stream().allMatch(field -> nested(field.getType()));
   }
 
-  static boolean nested(RelDataType type) {
+  public static boolean nested(RelDataType type) {
     switch (type.getSqlTypeName()) {
       case ARRAY:
         return nested(type.getComponentType());
@@ -25,11 +25,11 @@ final class JvmFunctionTypes {
     }
   }
 
-  static boolean scalarRow(RelDataType row) {
+  public static boolean scalarRow(RelDataType row) {
     return row.getFieldList().stream().allMatch(field -> scalar(field.getType()));
   }
 
-  static boolean scalar(RelDataType type) {
+  public static boolean scalar(RelDataType type) {
     if (type.getSqlTypeName().getFamily() == SqlTypeFamily.INTERVAL_DAY_TIME
         || type.getSqlTypeName().getFamily() == SqlTypeFamily.INTERVAL_YEAR_MONTH) return true;
     switch (type.getSqlTypeName()) {

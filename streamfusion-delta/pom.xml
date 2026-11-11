@@ -100,9 +100,9 @@
                 <version>3.13.0</version>
                 <configuration><includes>
                     <include>tech/streamfusion/delta/**/*.java</include>
-                    <include>tech/streamfusion/planner/Delta*.java</include>
-                    <include>tech/streamfusion/planner/NativeDelta*.java</include>
-                    <include>tech/streamfusion/planner/StreamPhysicalNativeDelta*.java</include>
+                    <include>tech/streamfusion/planner/**/Delta*.java</include>
+                    <include>tech/streamfusion/planner/**/NativeDelta*.java</include>
+                    <include>tech/streamfusion/planner/**/StreamPhysicalNativeDelta*.java</include>
                 </includes></configuration>
             </plugin>
         </plugins>

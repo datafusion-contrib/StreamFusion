@@ -20,7 +20,7 @@ import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.types.Row;
 
 /** Verifies the released external Java conversions selected for JVM function calls. */
-final class JvmFunctionConversions {
+public final class JvmFunctionConversions {
   private JvmFunctionConversions() {}
 
   static boolean defaults(RexCall call) {
@@ -49,7 +49,7 @@ final class JvmFunctionConversions {
     }
   }
 
-  static TypeInferenceUtil.Result infer(RexCall call) {
+  public static TypeInferenceUtil.Result infer(RexCall call) {
     var function = (BridgingSqlFunction) call.getOperator();
     var context =
         new OperatorBindingCallContext(
@@ -60,7 +60,7 @@ final class JvmFunctionConversions {
     return TypeInferenceUtil.runTypeInference(function.getTypeInference(), context, null);
   }
 
-  static boolean verifiedArgumentConversion(DataType type) {
+  public static boolean verifiedArgumentConversion(DataType type) {
     return verifiedConversion(type, false);
   }
 
@@ -96,7 +96,7 @@ final class JvmFunctionConversions {
     }
   }
 
-  static boolean verifiedResultConversion(DataType type) {
+  public static boolean verifiedResultConversion(DataType type) {
     return verifiedConversion(type, true);
   }
 
@@ -180,7 +180,7 @@ final class JvmFunctionConversions {
     return type.getConversionClass() == primitive;
   }
 
-  static boolean argumentAliases(DataType type) {
+  public static boolean argumentAliases(DataType type) {
     if (type.getLogicalType().is(LogicalTypeRoot.BINARY)
         || type.getLogicalType().is(LogicalTypeRoot.VARBINARY)) return true;
     if (type.getLogicalType().is(LogicalTypeRoot.ARRAY)
@@ -211,7 +211,7 @@ final class JvmFunctionConversions {
     return DataStructureConverters.getConverter(type).isIdentityConversion();
   }
 
-  static boolean aliasedProducer(RelNode node) {
+  public static boolean aliasedProducer(RelNode node) {
     if (node instanceof tech.streamfusion.planner.common.ExpressionInput
         && ((tech.streamfusion.planner.common.ExpressionInput) node).aliasesFunctionResults())
       return true;
@@ -227,7 +227,7 @@ final class JvmFunctionConversions {
     return node.getInputs().stream().anyMatch(JvmFunctionConversions::aliasedProducer);
   }
 
-  static boolean scalarResultsAlias(RexProgram program) {
+  public static boolean scalarResultsAlias(RexProgram program) {
     if (program == null) return false;
     boolean[] aliased = {false};
     var visitor =
@@ -243,7 +243,7 @@ final class JvmFunctionConversions {
     return aliased[0];
   }
 
-  static boolean returnsAliasedValues(RexCall call) {
+  public static boolean returnsAliasedValues(RexCall call) {
     try {
       return resultAliases(infer(call).getOutputDataType());
     } catch (RuntimeException failure) {

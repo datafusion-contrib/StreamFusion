@@ -9,6 +9,7 @@ import org.apache.flink.table.delegation.Planner;
 import org.apache.flink.table.delegation.PlannerFactory;
 import org.apache.flink.table.planner.delegation.DefaultPlannerFactory;
 import tech.streamfusion.planner.batch.NativeBatchPlanner;
+import tech.streamfusion.planner.stream.NativeStreamPlanner;
 
 /**
  * Installs native substitution after Flink expands the complete SQL plan.
