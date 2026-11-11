@@ -252,7 +252,8 @@ No new clean whole-job speed comparison or default admission is claimed.
 After candidate measurements and profiles finish, the workflow builds and measures immutable
 revision `b965b8bf0c97450f6971f20db0fe6abc6bbac8ae`, before JVM table/aggregate implementation.
 `bin/bench-jvm-previous.py` creates a separate worktree and copies only the current aggregate
-fixture, table-function fixture and metrics helper. Production source stays at the previous
+fixture, table-function fixture, timing/metrics helpers and the selected Flink line's test-context
+adapter. Each copied dependency has a recorded checksum; production source stays at the previous
 revision. Both engines use symmetric preflight and one cluster per job; the old native-planner
 attempt must fall back completely, with zero native substitutions and runtime operators.
 It is an actual historical runtime comparison, rather than a current-code feature toggle.
