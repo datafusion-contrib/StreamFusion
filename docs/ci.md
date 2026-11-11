@@ -76,7 +76,10 @@ report action required. Existing GitHub rulesets stay in place. The reporter che
 trusted default-branch code and never executes PR code with its write-capable token.
 
 Each mirrored check includes individual job links, start delays and execution times from the
-fork. Start delay includes prerequisite builds as well as runner queueing; it is not labelled
+fork when job details are available. The reporter reads those details in small pages so large
+matrices do not time out on a single request. If that endpoint is temporarily unavailable, the
+check still reports the exact-head workflow result and links to the full run. Start delay
+includes prerequisite builds as well as runner queueing; it is not labelled
 as pure runner wait. Queued jobs do not acquire a fictitious execution time from GitHub's
 preallocated start timestamp. The ordinary Java jobs are named **Runtime, connectors and
 formats** because their selection includes all three; Doris's real-server suite remains a
