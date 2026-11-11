@@ -676,7 +676,14 @@ fn final_window_partials_merge_once_and_handoff_variable_prefix_bounds() {
                     .visit_canonical_tumble(|_| panic!("invalid bounds committed"))
                     .unwrap();
                 let partitions = if source_rocks {
-                    source.canonical_partitions(128, &[-1]).unwrap()
+                    #[cfg(feature = "rocksdb-state")]
+                    {
+                        source.canonical_partitions(128, &[-1]).unwrap()
+                    }
+                    #[cfg(not(feature = "rocksdb-state"))]
+                    {
+                        unreachable!()
+                    }
                 } else {
                     source.snapshot_partitions(128, &[-1])
                 };

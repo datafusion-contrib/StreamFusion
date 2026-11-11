@@ -82,6 +82,7 @@ nav:
   - Operators:
       - operators/index.md
       - Calc / filter: operators/calc-filter.md
+      - Batch SQL: operators/batch.md
       - Temporal functions: operators/temporal-functions.md
       - Union: operators/union.md
       - Expand: operators/expand.md
@@ -122,9 +123,16 @@ nav:
   - Upstream Flink suite: upstream-flink-suite.md
   - Upstream SQL inventory: sql-inventory/index.md
   - Portable SQL audit: sql-parity-audit.md
+  - Batch execution audit: batch-execution-audit.md
+  - Bounded runtime groundwork: batch-execution-runtime.md
   - Benchmarks:
       - benchmarks.md
       - Evidence and experiment index: benchmarks/evidence.md
+      - Batch scalar comparisons: benchmarks/batch-scalars.md
+      - Batch sort comparisons: benchmarks/batch-sort-groundwork.md
+      - Batch aggregate comparisons: benchmarks/batch-aggregates.md
+      - Batch grouped aggregates: benchmarks/batch-grouped-aggregates.md
+      - TPC-H batch workload: benchmarks/tpch.md
       - Native Criterion suites: benchmarks/native-criterion.md
       - AppendFast Top-1: benchmarks/append-top1.md
       - Performance audit reproduction: benchmarks/performance-audit.md
@@ -212,6 +220,10 @@ nav:
       - DATE_FORMAT pattern cache: optimizations/date-format-pattern-cache.md
       - Kafka timestamps as fixed JSON syntax: optimizations/kafka-timestamp-fixed-json.md
       - Post-exchange batch coalescing: optimizations/post-exchange-coalescing.md
+      - Bounded Arrow batch sizing: optimizations/bounded-batch-sizing.md
+      - Bounded join and subplan planning: optimizations/bounded-join-planning.md
+      - DATE predicates: optimizations/date-predicates.md
+      - Native Parquet source: optimizations/native-parquet-source.md
       - Shared native sources: optimizations/shared-native-sources.md
       - RocksDB write-through: optimizations/rocksdb-write-through.md
       - Optional RocksDB io_uring reads: optimizations/rocksdb-io-uring.md

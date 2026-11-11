@@ -1,0 +1,1903 @@
+{
+  "mode": "compare",
+  "format": "parquet",
+  "profile": false,
+  "scale": 1.0,
+  "javaVersion": "17.0.17",
+  "javaVm": "OpenJDK 64-Bit Server VM",
+  "os": "Mac OS X aarch64",
+  "maxHeapBytes": 8589934592,
+  "generator": "io.airlift.tpch:tpch:0.10",
+  "schema": "TPC-H identifiers BIGINT, integer INT, numeric DECIMAL(15,2), date DATE, text STRING",
+  "parallelism": 2,
+  "nativeBytes": 536870912,
+  "nativeBatchRows": 8192,
+  "warmups": 3,
+  "trials": 7,
+  "tables": {
+    "customer": {
+      "bytes": 24196144,
+      "sha256": "a035a33a703d3a043ecf97746b4e3a7988316c1c04923fda63231a59d5e46092",
+      "rows": 150000
+    },
+    "orders": {
+      "bytes": 170452161,
+      "sha256": "3f111871419ea6f319fcc51c235d199b3edf16754c5e100be92927527e5f6c97",
+      "rows": 1500000
+    },
+    "lineitem": {
+      "bytes": 753862072,
+      "sha256": "4feb529dfa255799bbf0243d2f2c5028375dfb684e592eb94775345602aa2728",
+      "rows": 6001215
+    },
+    "part": {
+      "bytes": 23935125,
+      "sha256": "cecd01146ae002aebe47e6b58bd81644df1d51d9c14da3425aea2b4976e02d60",
+      "rows": 200000
+    },
+    "partsupp": {
+      "bytes": 118184616,
+      "sha256": "3a68b7b7757cd3aacccb39c4bc092dc3edf3b7e0e7609a259c39238cae0be41e",
+      "rows": 800000
+    },
+    "supplier": {
+      "bytes": 1399184,
+      "sha256": "f5699b5df22724f41bee9b8521798d8fc0cecd5beb0bd3bca96547ac58095547",
+      "rows": 10000
+    },
+    "nation": {
+      "bytes": 2199,
+      "sha256": "7d47bc9397da331054fa92b8fb92e4c074004bad72dcbb893012093218dccf6c",
+      "rows": 25
+    },
+    "region": {
+      "bytes": 384,
+      "sha256": "5a7c2fe9718db00ff5e5bc82a9ebfa8abc492cc75260d3c0ffb411974f235ab0",
+      "rows": 5
+    }
+  },
+  "queries": [
+    {
+      "query": 3,
+      "sqlSha256": "d8d2f7579eac245cd2609e49f572025a6efa1725dc30e3ccc3c6887f4c4f0bbf",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+          "nativeWork": [
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5670,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 14786
+            },
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5950,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 15733
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 30142,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 150000
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 3241776,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 6001215
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 15111
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 15408
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, revenue, o_orderdate, o_shippriority], nativeFunc",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 10
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 727305,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 1500000
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 147126,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 147126
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 30142
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 147126,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 757447
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 1692190
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 1696712
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 20
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 5670
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "385f3511aebcde7b6a5beeaf8c19df09",
+              "recordsIn": 5950
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "b398cf73d36198170358bf87b040cb7e",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "fa2dbf9fe9b88e573fd8bfc10bb03bda",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "464c480b36e8923d81cde819ff2099ac",
+          "nativeWork": [
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5670,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 14786
+            },
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5950,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 15733
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 30142,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 150000
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 3241776,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 6001215
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 15111
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 15408
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, revenue, o_orderdate, o_shippriority], nativeFunc",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 10
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 727305,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 1500000
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 147126,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 147126
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 30142
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 147126,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 757447
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 1692190
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 1696712
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 20
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 5670
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "464c480b36e8923d81cde819ff2099ac",
+              "recordsIn": 5950
+            }
+          ]
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+          "nativeWork": [
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5670,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 14786
+            },
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5950,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 15733
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 30142,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 150000
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 3241776,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 6001215
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 15111
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 15408
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, revenue, o_orderdate, o_shippriority], nativeFunc",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 10
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 727305,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 1500000
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 147126,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 147126
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 30142
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 147126,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 757447
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 1692190
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 1696712
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 20
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 5670
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "47a98eb2e2ff6649c0eeaea606b946e1",
+              "recordsIn": 5950
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "0d96dcc33bcb3b9ae330b45b712449c9",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "5098c99bbed291b90fd7c3f6c6ce3d7b",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "e36131d0bcd700653c18267c4f575cd8",
+          "nativeWork": [
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5670,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 14786
+            },
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5950,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 15733
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 30142,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 150000
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 3241776,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 6001215
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 15111
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 15408
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, revenue, o_orderdate, o_shippriority], nativeFunc",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 10
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 727305,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 1500000
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 147126,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 147126
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 30142
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 147126,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 757447
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 1692190
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 1696712
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 20
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 5670
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "e36131d0bcd700653c18267c4f575cd8",
+              "recordsIn": 5950
+            }
+          ]
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+          "nativeWork": [
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5670,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 14786
+            },
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5950,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 15733
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 30142,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 150000
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 3241776,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 6001215
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 15111
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 15408
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, revenue, o_orderdate, o_shippriority], nativeFunc",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 10
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 727305,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 1500000
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 147126,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 147126
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 30142
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 147126,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 757447
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 1692190
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 1696712
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 20
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 5670
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "3f210c81e9b2e84c794cdeee1ace92f8",
+              "recordsIn": 5950
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "4f1a30dbb4329e7809a529e8ba35fac4",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "b8cf3e619a4f38cab47d9e96b10b75a4",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "a164524b62abdf82c9eb93a655545261",
+          "nativeWork": [
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5670,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 14786
+            },
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5950,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 15733
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 30142,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 150000
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 3241776,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 6001215
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 15111
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 15408
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, revenue, o_orderdate, o_shippriority], nativeFunc",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 10
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 727305,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 1500000
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 147126,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 147126
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 30142
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 147126,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 757447
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 1692190
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 1696712
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 20
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 5670
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "a164524b62abdf82c9eb93a655545261",
+              "recordsIn": 5950
+            }
+          ]
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+          "nativeWork": [
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5670,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 14786
+            },
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5950,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 15733
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 30142,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 150000
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 3241776,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 6001215
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 15111
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 15408
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, revenue, o_orderdate, o_shippriority], nativeFunc",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 10
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 727305,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 1500000
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 147126,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 147126
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 30142
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 147126,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 757447
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 1692190
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 1696712
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 20
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 5670
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "58d68464cc6a01ba6df5f0ea87caf799",
+              "recordsIn": 5950
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "4dc0c5dfc8cc6ac22cf9a6f76a4bfde0",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "adc27586c0a80335aae1cdce25bdbaea",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+          "nativeWork": [
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5670,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 14786
+            },
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5950,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 15733
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 30142,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 150000
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 3241776,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 6001215
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 15111
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 15408
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, revenue, o_orderdate, o_shippriority], nativeFunc",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 10
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 727305,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 1500000
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 147126,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 147126
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 30142
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 147126,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 757447
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 1692190
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 1696712
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 20
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 5670
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "db256d51e53913c5ed4ef0885d8c1df8",
+              "recordsIn": 5950
+            }
+          ]
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+          "nativeWork": [
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5670,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 14786
+            },
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5950,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 15733
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 30142,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 150000
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 3241776,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 6001215
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 15111
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 15408
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, revenue, o_orderdate, o_shippriority], nativeFunc",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 10
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 727305,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 1500000
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 147126,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 147126
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 30142
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 147126,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 757447
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 1692190
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 1696712
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 20
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 5670
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "1ca4572cdcb08d4aeca7f2d6fa48be1b",
+              "recordsIn": 5950
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "58979cc6a142ed825d839c58e24959f5",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "3f9805b51de1baad1f5c80b89ec36b4c",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "9203fcd58befb314a5837534efe96014",
+          "nativeWork": [
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5670,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 14786
+            },
+            {
+              "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+              "recordsOut": 5950,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 15733
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+              "recordsOut": 30142,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 150000
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+              "recordsOut": 3241776,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 6001215
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 15111
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 15408
+            },
+            {
+              "operator": "NativeCalc(select=[l_orderkey, revenue, o_orderdate, o_shippriority], nativeFunc",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 10
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+              "recordsOut": 727305,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 1500000
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 0
+            },
+            {
+              "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+              "recordsOut": 147126,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 147126
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 30142
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_",
+              "recordsOut": 147126,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 757447
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15111,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 1692190
+            },
+            {
+              "operator": "NativeHashJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[",
+              "recordsOut": 15408,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 1696712
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 20
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 5670
+            },
+            {
+              "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+              "recordsOut": 10,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "9203fcd58befb314a5837534efe96014",
+              "recordsIn": 5950
+            }
+          ]
+        }
+      ],
+      "resultType": "ROW<`l_orderkey` BIGINT, `revenue` DECIMAL(38, 4), `o_orderdate` DATE, `o_shippriority` INT> NOT NULL",
+      "rows": 10,
+      "resultSha256": "11250d327145e05d6d369b3ba6e4b81ef64758d0ce307a052f8526a32e24c396",
+      "stockNanos": [
+        1307403292,
+        1284643834,
+        1145071000,
+        1176528000,
+        1254795291,
+        1271385167,
+        1186956208
+      ],
+      "nativeNanos": [
+        1029468292,
+        1007753084,
+        1038817708,
+        1105673667,
+        1014859208,
+        1109753959,
+        1016597917
+      ],
+      "stockRuntimeMs": [
+        1093,
+        1147,
+        1024,
+        1040,
+        1105,
+        1073,
+        1050
+      ],
+      "nativeRuntimeMs": [
+        934,
+        917,
+        928,
+        973,
+        940,
+        959,
+        929
+      ],
+      "status": "passed"
+    }
+  ],
+  "parquet": {
+    "writer": "stock Flink filesystem/Parquet, SNAPPY, outside query timing",
+    "writerParallelism": 2,
+    "sourceCsvManifestSha256": "16e94dd4fce1906f108d6a0b56bbcace8d84248d4e64c661a0d118125e2c72a8",
+    "writerJobIds": [
+      "af8463e57c9ff056860f66cf51a0c68e",
+      "0d62115f6f4fd494e0cc12f826abd8f4",
+      "308dcdfb4c732300dd731add4d65bdd8",
+      "8cff436bdb4621cc11dc47e8a82b7e7e",
+      "4a016f1d56a49ebb770d34f2ce648a5b",
+      "82331dd1cd9e9bf66e5ec7ca4cb95b35",
+      "b082e17830399ca351f1c724b77a1c00",
+      "72f3732d9d21c837d1ad31ab19e7300a"
+    ],
+    "files": [
+      {
+        "path": "customer/part-5a9f8698-69f1-4688-9b9e-847d3344984b-task-0-file-0",
+        "bytes": 12443660,
+        "sha256": "c7f3f7fe2192d98f32ea5b43809e6a6b5c2ef55f0ffd470db2d375bf0bb72e63"
+      },
+      {
+        "path": "lineitem/part-1bb14d04-1376-4ac3-a9b5-8f14b70118cd-task-0-file-0",
+        "bytes": 228153614,
+        "sha256": "aa95d444d34fc6031e6a8de1f49d76a60692876cb3b6e572c1125c517fe93691"
+      },
+      {
+        "path": "nation/part-d374492a-1852-4603-8936-885809df8af8-task-0-file-0",
+        "bytes": 2793,
+        "sha256": "a7b0a4ddd2d67b6f2bf432eb1c098eaa52c98346a4fa95309445b9e6e68b4676"
+      },
+      {
+        "path": "orders/part-1c44d96d-0077-4adf-a294-f67fc22e936a-task-0-file-0",
+        "bytes": 56372199,
+        "sha256": "4df886a7db6687745b95c9b0c81b944947929282dddb559e7cb3153d2caef970"
+      },
+      {
+        "path": "part/part-21aa7ead-39d2-4deb-bff0-474a4cd9aa16-task-0-file-0",
+        "bytes": 6232371,
+        "sha256": "ac5474f0fa3faeaf9f4ac0fe753148656b845b3910b7a705efc33cf859cf7fee"
+      },
+      {
+        "path": "partsupp/part-b6c04884-1c99-4cbd-ad6f-58039082ff68-task-1-file-0",
+        "bytes": 42491907,
+        "sha256": "094fe50675f13e597d60613c56f2860b04eb2f7deec0ff797d1c4d72b1b4c971"
+      },
+      {
+        "path": "region/part-53e3ebd4-941d-4677-97a0-501b8c582b4b-task-0-file-0",
+        "bytes": 1300,
+        "sha256": "bdfe0271626a3580480267e985880f60262c62ef678c1eef960b00a7ddc11568"
+      },
+      {
+        "path": "supplier/part-dba60e28-6215-4fc0-9f71-ad47b0355e03-task-0-file-0",
+        "bytes": 797572,
+        "sha256": "0eb4fdb8d39610f248ae0b558629947994694f6ebbf696beafe78e16d081f944"
+      }
+    ]
+  },
+  "completeWorkload": false,
+  "stockMedianMs": 1254.795291,
+  "nativeMedianMs": 1029.468292,
+  "medianSpeedup": 1.2188770657153956,
+  "nativeProfile": "release",
+  "flink": "2.2.1",
+  "librarySha256": "8c6ba10e0ba8a6cfa9c58e566e81412f7ab48a40677591f05e98a0bd3b57433a",
+  "optimizationPass": "Q3 larger batches: 8192 vs prior 1024, same source/files/SQL/resources/trials, all boundaries retained"
+}

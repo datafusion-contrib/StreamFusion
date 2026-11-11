@@ -6,7 +6,36 @@ fallback to stock Flink as the normal, safe outcome.
 
 ## Source
 
-Filesystem Parquet scans use Flink's stock source. [Paimon streaming sources](paimon.md#streaming-source)
+Bounded filesystem scans can use this module's existing native decoder directly into
+Arrow when feeding an admitted native batch island. Flink retains filesystem access,
+credentials, recursive file discovery, split assignment, reader queues and checkpoint
+serialization. The initial native path uses one split per file, preserving projected
+column names and physical row order. It checkpoints the number of logical rows emitted,
+then replays/skips that many rows on restoration; it does not count Arrow batches as rows.
+This is a native-source state contract, not stock Parquet byte-split savepoint compatibility.
+
+Initial admission requires fixed batch parallelism
+(`execution.batch.adaptive.auto-parallelism.enabled=false`), a bounded, unpartitioned
+`filesystem`/`parquet` table whose only options are `connector`, `format` and `path`,
+physical columns only, and a nonempty top-level projection. Admitted output types are
+INT, BIGINT, DATE, VARCHAR and DECIMAL with precision at most 18. Files must match the
+declared physical schema; schema evolution is outside this admission. Filters must remain
+in a downstream Calc. Pushed limits, nonempty metadata projections, nested projections,
+other types/options and mixed row/Arrow consumers retain the stock reader and transpose.
+A missing optional Parquet module or native library also retains the stock path.
+`streamfusion.operator.fileSource.enabled=false` explicitly retains that path.
+
+Shared scans whose consumers all accept Arrow reuse one source and the existing retained-view
+share operator. Queued unconsumed Arrow batches close on cancellation. Decoder workspace is
+reserved from the same process-wide task-off-heap authority before loading row groups;
+only projected column chunks count toward its compressed-plus-uncompressed estimate.
+Imported output buffers are charged by the shared Arrow allocator for their own lifetime.
+There is no separate source memory allowance. Whole-file splits currently limit read
+parallelism to the number of files; row-group split support is not claimed.
+
+See the [TPC-H benchmark](../benchmarks/tpch.md) for the same-file stock/native comparison
+and its earlier stock-reader baseline. Streaming filesystem scans continue to use Flink's
+stock reader. [Paimon streaming sources](paimon.md#streaming-source)
 use this module's native decoder over Java-owned FileIO, including admitted snapshot merges and
 changelog tailing. ORC uses the same file lifecycle through its separate [ORC module](orc.md).
 

@@ -1,0 +1,497 @@
+{
+  "date": "2026-11-09",
+  "scope": "Global integer aggregate stages in qualified batch pipelines; standalone native candidates explicitly excluded from final coverage.",
+  "controls": {
+    "boundedRustTests": 46,
+    "javaAndUnchangedUpstreamPerLine": 51,
+    "javaSelection": {
+      "hostStateContract": 1,
+      "aggregateSql": 4,
+      "aggregateOperator": 9,
+      "sortOperator": 10,
+      "scalarSql": 6,
+      "sortSql": 5,
+      "sortedLimitSql": 3,
+      "unchangedAggregate": 10,
+      "unchangedSort": 3
+    },
+    "suiteAgentExecuted": 59,
+    "suiteAgentProfileSkipped": 60,
+    "pythonAuditControls": 44,
+    "memory": "2MiB operator controls: borrowed input releases its Java Arrow allocation after consumption, explicit expression workspace denies oversized32768-row input before evaluation, failed factory releases both schemas/input, cancellation and output surviving producer close retire all authority balances.",
+    "types": "SUM/SUM0/AVG signed widths and overflow; MIN/MAX signed widths; COUNT validity over strings, booleans, decimal, date/time/timestamp and zero-column COUNT(*), with and without FILTER.",
+    "phaseSql": "Both HashAgg and forced SortAgg, ONE_PHASE and TWO_PHASE, unchained source; raw rows2051, aggregate input2051 for one phase and2052..2053 for two phases depending on nonempty local partitions.",
+    "replay": "Two-phase COUNT returns1000 after final consumer failure. Arrow partial-state producer attempts=[0]; aggregate attempts=[0,1]. Source/partial producers do not restart.",
+    "admission": "Exact standalone performance fallback; grouped/DISTINCT/noninteger/disabled paths retain whole-query stock; SHA2/one-row sort above reduction cannot qualify input; accepted scalar UDF exception survives reduction.",
+    "packagedLoader": {
+      "1.18": {
+        "finalAggregateTests": 1,
+        "populatedAndEmpty": true,
+        "unchainedProducerParallelism": 2,
+        "earlierCombinedSortAndAggregateTests": 3
+      },
+      "2.2": {
+        "finalAggregateTests": 1,
+        "populatedAndEmpty": true,
+        "unchainedProducerParallelism": 2,
+        "earlierCombinedSortAndAggregateTests": 3
+      }
+    }
+  },
+  "final": [
+    {
+      "line": "2.2",
+      "auditStatus": "passed",
+      "runtimeRouteScopeRequirements": 9,
+      "executionContracts": 9,
+      "upstream": [
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrdering",
+          "displayName": "testNullOrdering()",
+          "outcome": "passed",
+          "runtimeRoute": "native",
+          "nativeWork": {
+            "NativeBatchSortOperator": 18
+          },
+          "contractSatisfied": true,
+          "fallbackReasons": [],
+          "successfulBatchJobs": 6
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testGlobalSorting",
+          "displayName": "testGlobalSorting()",
+          "outcome": "passed",
+          "runtimeRoute": "native",
+          "nativeWork": {
+            "NativeBatchSortOperator": 24
+          },
+          "contractSatisfied": true,
+          "fallbackReasons": [],
+          "successfulBatchJobs": 4
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimit",
+          "displayName": "testOrderByLimit()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch sort limit: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 4
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testZeroAvg",
+          "displayName": "testZeroAvg()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": null,
+          "fallbackReasons": [],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testZeroSum",
+          "displayName": "testZeroSum()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": null,
+          "fallbackReasons": [],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggWithoutGroups",
+          "displayName": "testAggWithoutGroups()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch aggregate: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggregationWithoutGroupby",
+          "displayName": "testAggregationWithoutGroupby()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch aggregate: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testCountStar",
+          "displayName": "testCountStar()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch aggregate: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testZeroAvg",
+          "displayName": "testZeroAvg()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": null,
+          "fallbackReasons": [],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testZeroSum",
+          "displayName": "testZeroSum()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": null,
+          "fallbackReasons": [],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggWithoutGroups",
+          "displayName": "testAggWithoutGroups()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch aggregate: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggregationWithoutGroupby",
+          "displayName": "testAggregationWithoutGroupby()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch aggregate: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testCountStar",
+          "displayName": "testCountStar()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch aggregate: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 1
+        }
+      ],
+      "localSql": [
+        {
+          "test": "globalIntegerAggregatesPreserveWidthsFiltersAndBothPhases",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 8206,
+            "NativeCalcOperator": 8204
+          },
+          "successfulBatchJobs": 8,
+          "plansOnly": false
+        },
+        {
+          "test": "emptyAndAllNullInputsKeepFinalDefaults",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 8,
+            "NativeCalcOperator": 14
+          },
+          "successfulBatchJobs": 8,
+          "plansOnly": false
+        },
+        {
+          "test": "unsupportedAndDisabledAggregatesRetainTheWholeStockQuery",
+          "nativeWork": {},
+          "successfulBatchJobs": 0,
+          "plansOnly": true
+        },
+        {
+          "test": "finalAggregateReplaysCompletedPartialStateAfterConsumerFailure",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 1004,
+            "NativeCalcOperator": 1000
+          },
+          "successfulBatchJobs": 1,
+          "plansOnly": false
+        }
+      ]
+    },
+    {
+      "line": "1.18",
+      "auditStatus": "passed",
+      "runtimeRouteScopeRequirements": 9,
+      "executionContracts": 9,
+      "upstream": [
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrdering",
+          "displayName": "testNullOrdering()",
+          "outcome": "passed",
+          "runtimeRoute": "native",
+          "nativeWork": {
+            "NativeBatchSortOperator": 18
+          },
+          "contractSatisfied": true,
+          "fallbackReasons": [],
+          "successfulBatchJobs": 6
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testGlobalSorting",
+          "displayName": "testGlobalSorting()",
+          "outcome": "passed",
+          "runtimeRoute": "native",
+          "nativeWork": {
+            "NativeBatchSortOperator": 24
+          },
+          "contractSatisfied": true,
+          "fallbackReasons": [],
+          "successfulBatchJobs": 4
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimit",
+          "displayName": "testOrderByLimit()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch sort limit: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 4
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testZeroAvg",
+          "displayName": "testZeroAvg()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": null,
+          "fallbackReasons": [],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testZeroSum",
+          "displayName": "testZeroSum()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": null,
+          "fallbackReasons": [],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggWithoutGroups",
+          "displayName": "testAggWithoutGroups()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch aggregate: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggregationWithoutGroupby",
+          "displayName": "testAggregationWithoutGroupby()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch aggregate: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testCountStar",
+          "displayName": "testCountStar()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch aggregate: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testZeroAvg",
+          "displayName": "testZeroAvg()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": null,
+          "fallbackReasons": [],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testZeroSum",
+          "displayName": "testZeroSum()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": null,
+          "fallbackReasons": [],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggWithoutGroups",
+          "displayName": "testAggWithoutGroups()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch aggregate: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggregationWithoutGroupby",
+          "displayName": "testAggregationWithoutGroupby()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch aggregate: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 1
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testCountStar",
+          "displayName": "testCountStar()",
+          "outcome": "passed",
+          "runtimeRoute": "batch_host_only",
+          "nativeWork": {},
+          "contractSatisfied": true,
+          "fallbackReasons": [
+            "batch aggregate: standalone pipeline has no verified speedup"
+          ],
+          "successfulBatchJobs": 1
+        }
+      ],
+      "localSql": [
+        {
+          "test": "globalIntegerAggregatesPreserveWidthsFiltersAndBothPhases",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 8206,
+            "NativeCalcOperator": 8204
+          },
+          "successfulBatchJobs": 8,
+          "plansOnly": false
+        },
+        {
+          "test": "emptyAndAllNullInputsKeepFinalDefaults",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 7,
+            "NativeCalcOperator": 14
+          },
+          "successfulBatchJobs": 8,
+          "plansOnly": false
+        },
+        {
+          "test": "unsupportedAndDisabledAggregatesRetainTheWholeStockQuery",
+          "nativeWork": {},
+          "successfulBatchJobs": 0,
+          "plansOnly": true
+        },
+        {
+          "test": "finalAggregateReplaysCompletedPartialStateAfterConsumerFailure",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 1002,
+            "NativeCalcOperator": 1000
+          },
+          "successfulBatchJobs": 1,
+          "plansOnly": false
+        }
+      ]
+    }
+  ],
+  "candidateUpstream": [
+    {
+      "line": "2.2",
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggWithoutGroups",
+      "status": "superseded_candidate_not_current_native_coverage",
+      "nativeWork": {
+        "NativeBatchAggregateOperator": 7,
+        "NativeCalcOperator": 6
+      },
+      "fallbackReasons": [],
+      "successfulBatchJobs": 1
+    },
+    {
+      "line": "2.2",
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggregationWithoutGroupby",
+      "status": "superseded_candidate_not_current_native_coverage",
+      "nativeWork": {
+        "NativeBatchAggregateOperator": 16,
+        "NativeCalcOperator": 15
+      },
+      "fallbackReasons": [],
+      "successfulBatchJobs": 1
+    },
+    {
+      "line": "2.2",
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testCountStar",
+      "status": "superseded_candidate_not_current_native_coverage",
+      "nativeWork": {
+        "NativeBatchAggregateOperator": 1
+      },
+      "fallbackReasons": [],
+      "successfulBatchJobs": 1
+    },
+    {
+      "line": "2.2",
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testCountStar",
+      "status": "superseded_candidate_not_current_native_coverage",
+      "nativeWork": {
+        "NativeBatchAggregateOperator": 1
+      },
+      "fallbackReasons": [],
+      "successfulBatchJobs": 1
+    },
+    {
+      "line": "2.2",
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggregationWithoutGroupby",
+      "status": "superseded_candidate_not_current_native_coverage",
+      "nativeWork": {
+        "NativeBatchAggregateOperator": 16,
+        "NativeCalcOperator": 15
+      },
+      "fallbackReasons": [],
+      "successfulBatchJobs": 1
+    },
+    {
+      "line": "2.2",
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggWithoutGroups",
+      "status": "superseded_candidate_not_current_native_coverage",
+      "nativeWork": {
+        "NativeBatchAggregateOperator": 7,
+        "NativeCalcOperator": 6
+      },
+      "fallbackReasons": [],
+      "successfulBatchJobs": 1
+    }
+  ],
+  "sourceSha256": {
+    "native/engine/src/bounded_aggregate.rs": "fb0566d3ff46aa7e1150e870fc5f8f82100ed5c63c7b465b73fab99171ccdc48",
+    "native/engine/src/bounded_task.rs": "db64e28362962f66e80146322658d97989242978aaba1d27a98954999c6ac685",
+    "src/main/java/tech/streamfusion/planner/BatchAggregateSpec.java": "0fbdc3f42742d09716f8c3d6c942b3f6b4b9b83dd952745654777d4730024154",
+    "src/main/java/tech/streamfusion/planner/BatchPlanScan.java": "71be7e52faf6bad4092ba1893261231124d4bb447b8470643b5af3340afd40e0"
+  }
+}

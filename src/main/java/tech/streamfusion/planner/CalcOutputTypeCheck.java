@@ -27,6 +27,9 @@ import tech.streamfusion.arrow.ArrowConversion;
  */
 final class CalcOutputTypeCheck {
 
+  // The recursive native compiler runs on the Flink planner thread's JVM stack.
+  private static final int MAX_NATIVE_TREE_DEPTH = 32;
+
   private CalcOutputTypeCheck() {}
 
   /**
@@ -39,6 +42,20 @@ final class CalcOutputTypeCheck {
   }
 
   static String mismatch(RexExpression encoded, RelDataType inputType, RowType declared) {
+    return mismatch(encoded, inputType, declared, false);
+  }
+
+  static String retainedMismatch(
+      RexExpression encoded, RelDataType inputType, RelDataType outputType) {
+    return mismatch(
+        encoded, inputType, FlinkTypeFactory$.MODULE$.toLogicalRowType(outputType), true);
+  }
+
+  private static String mismatch(
+      RexExpression encoded, RelDataType inputType, RowType declared, boolean retained) {
+    if (encoded.exceedsTreeDepth(MAX_NATIVE_TREE_DEPTH)) {
+      return "expression nesting exceeds the native compiler limit of " + MAX_NATIVE_TREE_DEPTH;
+    }
     Schema input =
         ArrowConversion.toArrowInputSchema(
             FlinkTypeFactory$.MODULE$.toLogicalRowType(inputType),
@@ -63,7 +80,10 @@ final class CalcOutputTypeCheck {
       if (notInferable != null) {
         return notInferable;
       }
-      return mismatch(Data.importSchema(allocator, outputSchema, null).getFields(), declared, encoded);
+      Schema actual = Data.importSchema(allocator, outputSchema, null);
+      if (retained && !BatchSortTypeCheck.supported(actual))
+        return "retained Arrow representation is unsupported";
+      return mismatch(actual.getFields(), declared, encoded);
     } catch (NativeException compileFailure) {
       return "expression does not compile natively: " + compileFailure.getMessage();
     }

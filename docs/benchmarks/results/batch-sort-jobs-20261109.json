@@ -1,0 +1,188 @@
+{
+  "date": "2026-11-09",
+  "host": {
+    "cpu": "Apple M4",
+    "cpuCount": 10,
+    "ramGiB": 16,
+    "jdk": "Temurin 17.0.17",
+    "flink": "2.2.1",
+    "datafusion": "54.0.0",
+    "rustArrow": "58.4.1",
+    "javaArrow": "18.3.0"
+  },
+  "build": {
+    "profile": "release",
+    "allocator": "mimalloc",
+    "optionalRocksDb": false,
+    "javaHeapGiB": 8
+  },
+  "boundary": "System.nanoTime from executeSql through await, including planning, submission, source scan, JNI, both transposes, blocking SINGLETON shuffle and blackhole sink completion. Net job runtime is a separate diagnostic.",
+  "config": {
+    "sourceParallelism": 2,
+    "sortParallelism": 1,
+    "nativeBatchRows": 1024,
+    "nativeTaskOffHeapBytes": 134217728,
+    "stockSortMemoryBytes": 134217728,
+    "managedMemoryPerMiniClusterTaskManagerBytes": 1073741824,
+    "slots": 8,
+    "warmups": 2,
+    "trials": 5,
+    "alternatingEngineOrder": true,
+    "source": "stock datagen BIGINT sequence, id=0..rows-1",
+    "sink": "stock rowwise blackhole",
+    "query": "INSERT INTO output SELECT MOD(id * 48271, <cardinality>) AS sort_key, id AS payload FROM input ORDER BY sort_key, payload"
+  },
+  "nativeWitness": "Every native trial asserts sort recordsIn == rows, both perimeter transposes and NativeExchange in plan. Every stock trial asserts zero native sort work.",
+  "previousStreamFusion": "The previous planner kept these entire sort queries on stock Flink, so the stock cohort is also previous behavior.",
+  "cohorts": [
+    {
+      "stage": "before metric snapshots",
+      "rows": 1000000,
+      "cardinality": 2147483647,
+      "stockNanos": [
+        403865584,
+        383990417,
+        372402708,
+        386641416,
+        381188375
+      ],
+      "nativeNanos": [
+        287427750,
+        281769333,
+        265739417,
+        287223500,
+        265487750
+      ],
+      "stockRuntimeMs": [
+        389,
+        371,
+        358,
+        375,
+        370
+      ],
+      "nativeRuntimeMs": [
+        274,
+        269,
+        254,
+        276,
+        255
+      ],
+      "medianStockOverNative": 1.36278285827507
+    },
+    {
+      "stage": "before metric snapshots",
+      "rows": 2000000,
+      "cardinality": 64,
+      "stockNanos": [
+        1043578833,
+        1029621417,
+        1120573042,
+        1022571125,
+        1099557875
+      ],
+      "nativeNanos": [
+        572833708,
+        587891292,
+        598586625,
+        586992334,
+        742587250
+      ],
+      "stockRuntimeMs": [
+        1027,
+        1016,
+        1108,
+        1010,
+        1087
+      ],
+      "nativeRuntimeMs": [
+        558,
+        574,
+        586,
+        575,
+        724
+      ],
+      "medianStockOverNative": 1.7751221139026498
+    },
+    {
+      "stage": "final production metrics",
+      "rows": 1000000,
+      "cardinality": 2147483647,
+      "stockNanos": [
+        488532791,
+        379506791,
+        370154458,
+        384276291,
+        374697958
+      ],
+      "nativeNanos": [
+        278667333,
+        261235792,
+        255092209,
+        252094833,
+        265295458
+      ],
+      "stockRuntimeMs": [
+        474,
+        366,
+        359,
+        373,
+        364
+      ],
+      "nativeRuntimeMs": [
+        265,
+        247,
+        244,
+        241,
+        255
+      ],
+      "medianStockOverNative": 1.4527365798328278
+    },
+    {
+      "stage": "final production metrics",
+      "rows": 2000000,
+      "cardinality": 64,
+      "stockNanos": [
+        961117958,
+        921482333,
+        908143416,
+        878501667,
+        923678542
+      ],
+      "nativeNanos": [
+        564058875,
+        574230416,
+        576589500,
+        574088333,
+        681248625
+      ],
+      "stockRuntimeMs": [
+        945,
+        900,
+        896,
+        867,
+        913
+      ],
+      "nativeRuntimeMs": [
+        546,
+        560,
+        565,
+        563,
+        669
+      ],
+      "medianStockOverNative": 1.6047257465372575
+    }
+  ],
+  "limits": [
+    "Single-machine local MiniCluster, not distributed-network throughput",
+    "Two BIGINT keys/payload columns; other types and forced-spill performance not measured",
+    "No precise prototype-versus-final optimization claim; copies resolve ownership and metrics add observability",
+    "Startup and planning retained; do not extrapolate directly to sustained throughput"
+  ],
+  "fingerprints": {
+    "native/engine/src/bounded_sort.rs": "275f995980641cef236d0a5c542bc96e78d07fc25b4fa89a549d13a9cc626c62",
+    "native/engine/src/memory.rs": "e86d8d3bad07f1445d48499d121467ddcdd205c109c463220c73b5ce957116aa",
+    "src/main/java/tech/streamfusion/operator/NativeBatchSortOperator.java": "80a764906defbbebf2be802fd4daf7b3aee1cb5e424cd2c57ee66ee053b6c941",
+    "src/test/java/tech/streamfusion/BatchSortJobBenchmark.java": "20a186b5b1f183699ad47c70afc496312d3d20a14665751db727b325dff66efa",
+    "releaseNativeLibrary": "3938f5ecf3bb9ea550a317308e2ba1e06be313b4b857001fb552658b02922e6d"
+  }
+}

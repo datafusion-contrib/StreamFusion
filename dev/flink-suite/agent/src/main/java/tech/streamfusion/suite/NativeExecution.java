@@ -97,18 +97,47 @@ public final class NativeExecution {
     return contracts;
   }
 
+  private static final String BATCH_AGGREGATE_BASE =
+      "org.apache.flink.table.planner.runtime.batch.sql.agg.AggregateITCaseBase";
+
+  private static boolean inheritedBatchAggregate(String owner) {
+    return owner.equals("org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase")
+        || owner.equals("org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase");
+  }
+
   public static String[] testClasses() {
-    return CONTRACTS.keySet().stream()
-        .map(key -> key.split("#")[0])
-        .distinct()
-        .toArray(String[]::new);
+    Set<String> owners =
+        CONTRACTS.keySet().stream()
+            .map(key -> key.split("#")[0])
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+    if (owners.stream().anyMatch(NativeExecution::inheritedBatchAggregate)) {
+      owners.add(BATCH_AGGREGATE_BASE);
+    }
+    return owners.toArray(String[]::new);
   }
 
   public static String[] testMethods(String className) {
     return CONTRACTS.keySet().stream()
-        .filter(key -> key.startsWith(className + "#"))
+        .filter(
+            key ->
+                key.startsWith(className + "#")
+                    || className.equals(BATCH_AGGREGATE_BASE)
+                        && inheritedBatchAggregate(key.split("#")[0]))
         .map(key -> key.split("#")[1])
+        .distinct()
         .toArray(String[]::new);
+  }
+
+  static String invocationTest(String declaredClass, String fixtureClass, String method) {
+    String concrete = fixtureClass + "#" + method;
+    if (CONTRACTS.containsKey(concrete)) return concrete;
+    String declared = declaredClass + "#" + method;
+    return CONTRACTS.containsKey(declared) ? declared : null;
+  }
+
+  public static Scope beginInvocation(String declaredClass, String method, Object fixture) {
+    String test = invocationTest(declaredClass, fixture.getClass().getName(), method);
+    return test == null ? null : begin(test, fixture);
   }
 
   public static synchronized Scope begin(String test, Object fixture) {

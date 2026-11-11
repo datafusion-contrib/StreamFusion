@@ -1,0 +1,583 @@
+{
+  "decision": "Rejected/reverted block-based conversion timing sampler. Three cohorts did not establish a consistent improvement against matching stock Flink; changing host load was material. The original per-row random sampler remains.",
+  "method": "SF1 Parquet, original SQL/files/resources; release DSO,3warmups,7alternating retained trials; all full-job boundaries and result/native-work checks retained.",
+  "cohorts": {
+    "candidate-first": {
+      "queries": [
+        {
+          "query": 6,
+          "sqlSha256": "9a0f373ae3a61ce5596f4b77647988f09b3f8261661853a11db1930708771c21",
+          "resultType": "ROW<`revenue` DECIMAL(38, 4)> NOT NULL",
+          "resultSha256": "3b7d6014c113dcbe7abf123c80dfb895bfa79c896008fedd40cd7660be86ddec",
+          "rows": 1,
+          "stockNanos": [
+            736556333,
+            690729584,
+            687353291,
+            685851542,
+            684049208,
+            679472709,
+            678479375
+          ],
+          "nativeNanos": [
+            1009455292,
+            883283750,
+            890935500,
+            977525625,
+            899297833,
+            993983875,
+            889663000
+          ],
+          "status": "passed",
+          "stockMedianMs": 685.851542,
+          "nativeMedianMs": 899.297833,
+          "medianSpeedup": 0.7626522791810174
+        },
+        {
+          "query": 14,
+          "sqlSha256": "a8b179c98ec22511cd9e4333d9ee3000eb89ca2cc83291824e76d71fabe88b2c",
+          "resultType": "ROW<`promo_revenue` DECIMAL(38, 6)> NOT NULL",
+          "resultSha256": "54d5c64f51c2ed70f8a3b2db110a81f77cd36ebcacf5878bd65058d2e7e7fb1b",
+          "rows": 1,
+          "stockNanos": [
+            581682792,
+            579278666,
+            647792875,
+            587890125,
+            578510917,
+            642649542,
+            578720125
+          ],
+          "nativeNanos": [
+            792505209,
+            783220083,
+            782733292,
+            792875500,
+            922460250,
+            975888833,
+            838721125
+          ],
+          "status": "passed",
+          "stockMedianMs": 581.682792,
+          "nativeMedianMs": 792.8755,
+          "medianSpeedup": 0.7336369858823989
+        },
+        {
+          "query": 15,
+          "sqlSha256": "24ffeb12ad93550c3241dbea68868484c9ad6fe71d3185aeb49b844539b0ec27",
+          "resultType": "ROW<`s_suppkey` BIGINT, `s_name` STRING, `s_address` STRING, `s_phone` STRING, `total_revenue` DECIMAL(38, 4)> NOT NULL",
+          "resultSha256": "448d06e546087f558f8cdf7b4d6d62301dc29e2ffed3da6a0d32d2851607a5af",
+          "rows": 1,
+          "stockNanos": [
+            789157583,
+            612800250,
+            787292459,
+            628039291,
+            753581458,
+            605230417,
+            594408042
+          ],
+          "nativeNanos": [
+            798564417,
+            819912292,
+            795229208,
+            795256500,
+            974992584,
+            962422625,
+            918626584
+          ],
+          "status": "passed",
+          "stockMedianMs": 628.039291,
+          "nativeMedianMs": 819.912292,
+          "medianSpeedup": 0.7659835047332112
+        }
+      ],
+      "dataTables": {
+        "customer": {
+          "bytes": 24196144,
+          "sha256": "a035a33a703d3a043ecf97746b4e3a7988316c1c04923fda63231a59d5e46092",
+          "rows": 150000
+        },
+        "orders": {
+          "bytes": 170452161,
+          "sha256": "3f111871419ea6f319fcc51c235d199b3edf16754c5e100be92927527e5f6c97",
+          "rows": 1500000
+        },
+        "lineitem": {
+          "bytes": 753862072,
+          "sha256": "4feb529dfa255799bbf0243d2f2c5028375dfb684e592eb94775345602aa2728",
+          "rows": 6001215
+        },
+        "part": {
+          "bytes": 23935125,
+          "sha256": "cecd01146ae002aebe47e6b58bd81644df1d51d9c14da3425aea2b4976e02d60",
+          "rows": 200000
+        },
+        "partsupp": {
+          "bytes": 118184616,
+          "sha256": "3a68b7b7757cd3aacccb39c4bc092dc3edf3b7e0e7609a259c39238cae0be41e",
+          "rows": 800000
+        },
+        "supplier": {
+          "bytes": 1399184,
+          "sha256": "f5699b5df22724f41bee9b8521798d8fc0cecd5beb0bd3bca96547ac58095547",
+          "rows": 10000
+        },
+        "nation": {
+          "bytes": 2199,
+          "sha256": "7d47bc9397da331054fa92b8fb92e4c074004bad72dcbb893012093218dccf6c",
+          "rows": 25
+        },
+        "region": {
+          "bytes": 384,
+          "sha256": "5a7c2fe9718db00ff5e5bc82a9ebfa8abc492cc75260d3c0ffb411974f235ab0",
+          "rows": 5
+        }
+      },
+      "parquet": {
+        "writer": "stock Flink filesystem/Parquet, SNAPPY, outside query timing",
+        "writerParallelism": 2,
+        "sourceCsvManifestSha256": "16e94dd4fce1906f108d6a0b56bbcace8d84248d4e64c661a0d118125e2c72a8",
+        "writerJobIds": [
+          "8f4da22053b4e4d031feb061ac7bca3f",
+          "218c1373cc0d3b1caec01e504f329193",
+          "ea9c76ddb3dc9bc5078fd3a67dc7bc1c",
+          "bad35910d58273c8573c1abfa687ead4",
+          "2af8547ef3436337256c6eac016de371",
+          "ce66cd7fd3cd9ea0206b3170af9c30bb",
+          "12c2c7f76cf52da142576d094ee88d43",
+          "b4d00040b4317d78ded1c3d3382c60cc"
+        ],
+        "files": [
+          {
+            "bytes": 12443660,
+            "sha256": "3c3e93474117507e18868513106ff12687a7ccbdaf81be1b953f8dd644e23baf",
+            "path": "customer/part-7105c045-a91c-4b0e-8982-0658d0a8b9df-task-0-file-0"
+          },
+          {
+            "bytes": 228153614,
+            "sha256": "ba2ba2c055becd5d299e7e6f9d1ce6eccf1c50bebc73975a09bfb0942e27f792",
+            "path": "lineitem/part-c28b667e-7e13-47be-a385-11bf686daeff-task-0-file-0"
+          },
+          {
+            "bytes": 2793,
+            "sha256": "b799618f6e19b900cc7a4f8c79baebfc523dd850b5374e3aaff5aee6a657ba8a",
+            "path": "nation/part-fa1d9621-5670-42ff-98c9-cbde72b5d0f0-task-0-file-0"
+          },
+          {
+            "bytes": 56372199,
+            "sha256": "330e67ce9a6f57adb3eb55b5444ab6265e70edfc4e1d44a91dbd637567b5f672",
+            "path": "orders/part-028ce0a1-f6ad-41f5-908a-478b251ce18d-task-1-file-0"
+          },
+          {
+            "bytes": 6232371,
+            "sha256": "5f67cc5dd1fc3b9d5749404e9c81fa75ec3022f013d87f65d66ff8690c458f84",
+            "path": "part/part-83142b8a-df29-411b-800e-9616c4b8dd77-task-1-file-0"
+          },
+          {
+            "bytes": 42491907,
+            "sha256": "5502cb69514d0b1d4d08c084962878997b20acf426a1b858ec34b25ead7e7ba4",
+            "path": "partsupp/part-f2604466-be0a-40d8-8df7-b224b1cfa119-task-0-file-0"
+          },
+          {
+            "bytes": 1300,
+            "sha256": "00fc27cabe0e983416f872570083f2c3f481c4fbbb5a1ee441aadddf18c46bb3",
+            "path": "region/part-77bad7af-afac-45cd-affc-542db8c5c0d4-task-0-file-0"
+          },
+          {
+            "bytes": 797572,
+            "sha256": "5b30b2c60ed4984689784f85ea8356672a0a8b2cfef89f33a9c0760c9611ac6d",
+            "path": "supplier/part-c386d8f7-536e-47b1-9563-0e1066250256-task-1-file-0"
+          }
+        ]
+      },
+      "nativeBytes": 536870912,
+      "nativeBatchRows": 8192
+    },
+    "original-sampler": {
+      "queries": [
+        {
+          "query": 6,
+          "sqlSha256": "9a0f373ae3a61ce5596f4b77647988f09b3f8261661853a11db1930708771c21",
+          "resultType": "ROW<`revenue` DECIMAL(38, 4)> NOT NULL",
+          "resultSha256": "3b7d6014c113dcbe7abf123c80dfb895bfa79c896008fedd40cd7660be86ddec",
+          "rows": 1,
+          "stockNanos": [
+            686055833,
+            575497875,
+            595001875,
+            691581208,
+            681131166,
+            686706292,
+            678424250
+          ],
+          "nativeNanos": [
+            1059133333,
+            950122209,
+            1124860375,
+            1089662375,
+            1360041708,
+            996235083,
+            991123458
+          ],
+          "status": "passed",
+          "stockMedianMs": 681.131166,
+          "nativeMedianMs": 1059.133333,
+          "medianSpeedup": 0.6431023788767868
+        },
+        {
+          "query": 14,
+          "sqlSha256": "a8b179c98ec22511cd9e4333d9ee3000eb89ca2cc83291824e76d71fabe88b2c",
+          "resultType": "ROW<`promo_revenue` DECIMAL(38, 6)> NOT NULL",
+          "resultSha256": "54d5c64f51c2ed70f8a3b2db110a81f77cd36ebcacf5878bd65058d2e7e7fb1b",
+          "rows": 1,
+          "stockNanos": [
+            966457417,
+            803621583,
+            985479084,
+            789200584,
+            814375916,
+            823017083,
+            1020571250
+          ],
+          "nativeNanos": [
+            1312851667,
+            1094563458,
+            1350186667,
+            1134887458,
+            1332132166,
+            1051095542,
+            1098983334
+          ],
+          "status": "passed",
+          "stockMedianMs": 823.017083,
+          "nativeMedianMs": 1134.887458,
+          "medianSpeedup": 0.7251970908643173
+        },
+        {
+          "query": 15,
+          "sqlSha256": "24ffeb12ad93550c3241dbea68868484c9ad6fe71d3185aeb49b844539b0ec27",
+          "resultType": "ROW<`s_suppkey` BIGINT, `s_name` STRING, `s_address` STRING, `s_phone` STRING, `total_revenue` DECIMAL(38, 4)> NOT NULL",
+          "resultSha256": "448d06e546087f558f8cdf7b4d6d62301dc29e2ffed3da6a0d32d2851607a5af",
+          "rows": 1,
+          "stockNanos": [
+            869319042,
+            833769250,
+            1018750833,
+            717862666,
+            845285209,
+            894733583,
+            903434958
+          ],
+          "nativeNanos": [
+            1139484042,
+            1018568667,
+            1219638875,
+            1090400208,
+            1127083792,
+            917511333,
+            1011804667
+          ],
+          "status": "passed",
+          "stockMedianMs": 869.319042,
+          "nativeMedianMs": 1090.400208,
+          "medianSpeedup": 0.7972476854112999
+        }
+      ],
+      "dataTables": {
+        "customer": {
+          "bytes": 24196144,
+          "sha256": "a035a33a703d3a043ecf97746b4e3a7988316c1c04923fda63231a59d5e46092",
+          "rows": 150000
+        },
+        "orders": {
+          "bytes": 170452161,
+          "sha256": "3f111871419ea6f319fcc51c235d199b3edf16754c5e100be92927527e5f6c97",
+          "rows": 1500000
+        },
+        "lineitem": {
+          "bytes": 753862072,
+          "sha256": "4feb529dfa255799bbf0243d2f2c5028375dfb684e592eb94775345602aa2728",
+          "rows": 6001215
+        },
+        "part": {
+          "bytes": 23935125,
+          "sha256": "cecd01146ae002aebe47e6b58bd81644df1d51d9c14da3425aea2b4976e02d60",
+          "rows": 200000
+        },
+        "partsupp": {
+          "bytes": 118184616,
+          "sha256": "3a68b7b7757cd3aacccb39c4bc092dc3edf3b7e0e7609a259c39238cae0be41e",
+          "rows": 800000
+        },
+        "supplier": {
+          "bytes": 1399184,
+          "sha256": "f5699b5df22724f41bee9b8521798d8fc0cecd5beb0bd3bca96547ac58095547",
+          "rows": 10000
+        },
+        "nation": {
+          "bytes": 2199,
+          "sha256": "7d47bc9397da331054fa92b8fb92e4c074004bad72dcbb893012093218dccf6c",
+          "rows": 25
+        },
+        "region": {
+          "bytes": 384,
+          "sha256": "5a7c2fe9718db00ff5e5bc82a9ebfa8abc492cc75260d3c0ffb411974f235ab0",
+          "rows": 5
+        }
+      },
+      "parquet": {
+        "writer": "stock Flink filesystem/Parquet, SNAPPY, outside query timing",
+        "writerParallelism": 2,
+        "sourceCsvManifestSha256": "16e94dd4fce1906f108d6a0b56bbcace8d84248d4e64c661a0d118125e2c72a8",
+        "writerJobIds": [
+          "8f4da22053b4e4d031feb061ac7bca3f",
+          "218c1373cc0d3b1caec01e504f329193",
+          "ea9c76ddb3dc9bc5078fd3a67dc7bc1c",
+          "bad35910d58273c8573c1abfa687ead4",
+          "2af8547ef3436337256c6eac016de371",
+          "ce66cd7fd3cd9ea0206b3170af9c30bb",
+          "12c2c7f76cf52da142576d094ee88d43",
+          "b4d00040b4317d78ded1c3d3382c60cc"
+        ],
+        "files": [
+          {
+            "bytes": 12443660,
+            "sha256": "3c3e93474117507e18868513106ff12687a7ccbdaf81be1b953f8dd644e23baf",
+            "path": "customer/part-7105c045-a91c-4b0e-8982-0658d0a8b9df-task-0-file-0"
+          },
+          {
+            "bytes": 228153614,
+            "sha256": "ba2ba2c055becd5d299e7e6f9d1ce6eccf1c50bebc73975a09bfb0942e27f792",
+            "path": "lineitem/part-c28b667e-7e13-47be-a385-11bf686daeff-task-0-file-0"
+          },
+          {
+            "bytes": 2793,
+            "sha256": "b799618f6e19b900cc7a4f8c79baebfc523dd850b5374e3aaff5aee6a657ba8a",
+            "path": "nation/part-fa1d9621-5670-42ff-98c9-cbde72b5d0f0-task-0-file-0"
+          },
+          {
+            "bytes": 56372199,
+            "sha256": "330e67ce9a6f57adb3eb55b5444ab6265e70edfc4e1d44a91dbd637567b5f672",
+            "path": "orders/part-028ce0a1-f6ad-41f5-908a-478b251ce18d-task-1-file-0"
+          },
+          {
+            "bytes": 6232371,
+            "sha256": "5f67cc5dd1fc3b9d5749404e9c81fa75ec3022f013d87f65d66ff8690c458f84",
+            "path": "part/part-83142b8a-df29-411b-800e-9616c4b8dd77-task-1-file-0"
+          },
+          {
+            "bytes": 42491907,
+            "sha256": "5502cb69514d0b1d4d08c084962878997b20acf426a1b858ec34b25ead7e7ba4",
+            "path": "partsupp/part-f2604466-be0a-40d8-8df7-b224b1cfa119-task-0-file-0"
+          },
+          {
+            "bytes": 1300,
+            "sha256": "00fc27cabe0e983416f872570083f2c3f481c4fbbb5a1ee441aadddf18c46bb3",
+            "path": "region/part-77bad7af-afac-45cd-affc-542db8c5c0d4-task-0-file-0"
+          },
+          {
+            "bytes": 797572,
+            "sha256": "5b30b2c60ed4984689784f85ea8356672a0a8b2cfef89f33a9c0760c9611ac6d",
+            "path": "supplier/part-c386d8f7-536e-47b1-9563-0e1066250256-task-1-file-0"
+          }
+        ]
+      },
+      "nativeBytes": 536870912,
+      "nativeBatchRows": 8192
+    },
+    "candidate-confirmation": {
+      "queries": [
+        {
+          "query": 6,
+          "sqlSha256": "9a0f373ae3a61ce5596f4b77647988f09b3f8261661853a11db1930708771c21",
+          "resultType": "ROW<`revenue` DECIMAL(38, 4)> NOT NULL",
+          "resultSha256": "3b7d6014c113dcbe7abf123c80dfb895bfa79c896008fedd40cd7660be86ddec",
+          "rows": 1,
+          "stockNanos": [
+            1534491334,
+            2548729125,
+            2552801917,
+            2688070333,
+            2478397292,
+            2105859375,
+            2206537209
+          ],
+          "nativeNanos": [
+            2175376666,
+            1903439875,
+            3917715958,
+            4218959209,
+            3504131875,
+            3788114042,
+            3954296209
+          ],
+          "status": "passed",
+          "stockMedianMs": 2478.397292,
+          "nativeMedianMs": 3788.114042,
+          "medianSpeedup": 0.654256251137436
+        },
+        {
+          "query": 14,
+          "sqlSha256": "a8b179c98ec22511cd9e4333d9ee3000eb89ca2cc83291824e76d71fabe88b2c",
+          "resultType": "ROW<`promo_revenue` DECIMAL(38, 6)> NOT NULL",
+          "resultSha256": "54d5c64f51c2ed70f8a3b2db110a81f77cd36ebcacf5878bd65058d2e7e7fb1b",
+          "rows": 1,
+          "stockNanos": [
+            2655064417,
+            2934569125,
+            2478559125,
+            2366362959,
+            2798488334,
+            2669445125,
+            2642981709
+          ],
+          "nativeNanos": [
+            3827580542,
+            3831263583,
+            3689617708,
+            3622087000,
+            3610440417,
+            3805654042,
+            3922918458
+          ],
+          "status": "passed",
+          "stockMedianMs": 2655.064417,
+          "nativeMedianMs": 3805.654042,
+          "medianSpeedup": 0.6976631053948019
+        },
+        {
+          "query": 15,
+          "sqlSha256": "24ffeb12ad93550c3241dbea68868484c9ad6fe71d3185aeb49b844539b0ec27",
+          "resultType": "ROW<`s_suppkey` BIGINT, `s_name` STRING, `s_address` STRING, `s_phone` STRING, `total_revenue` DECIMAL(38, 4)> NOT NULL",
+          "resultSha256": "448d06e546087f558f8cdf7b4d6d62301dc29e2ffed3da6a0d32d2851607a5af",
+          "rows": 1,
+          "stockNanos": [
+            2643113542,
+            2572598958,
+            2649014958,
+            2607932333,
+            2781034750,
+            2451940750,
+            2904080833
+          ],
+          "nativeNanos": [
+            3580782792,
+            3758921709,
+            3507603292,
+            3415969583,
+            3620996500,
+            3839845041,
+            3552884041
+          ],
+          "status": "passed",
+          "stockMedianMs": 2643.113542,
+          "nativeMedianMs": 3580.782792,
+          "medianSpeedup": 0.7381384729353335
+        }
+      ],
+      "dataTables": {
+        "customer": {
+          "bytes": 24196144,
+          "sha256": "a035a33a703d3a043ecf97746b4e3a7988316c1c04923fda63231a59d5e46092",
+          "rows": 150000
+        },
+        "orders": {
+          "bytes": 170452161,
+          "sha256": "3f111871419ea6f319fcc51c235d199b3edf16754c5e100be92927527e5f6c97",
+          "rows": 1500000
+        },
+        "lineitem": {
+          "bytes": 753862072,
+          "sha256": "4feb529dfa255799bbf0243d2f2c5028375dfb684e592eb94775345602aa2728",
+          "rows": 6001215
+        },
+        "part": {
+          "bytes": 23935125,
+          "sha256": "cecd01146ae002aebe47e6b58bd81644df1d51d9c14da3425aea2b4976e02d60",
+          "rows": 200000
+        },
+        "partsupp": {
+          "bytes": 118184616,
+          "sha256": "3a68b7b7757cd3aacccb39c4bc092dc3edf3b7e0e7609a259c39238cae0be41e",
+          "rows": 800000
+        },
+        "supplier": {
+          "bytes": 1399184,
+          "sha256": "f5699b5df22724f41bee9b8521798d8fc0cecd5beb0bd3bca96547ac58095547",
+          "rows": 10000
+        },
+        "nation": {
+          "bytes": 2199,
+          "sha256": "7d47bc9397da331054fa92b8fb92e4c074004bad72dcbb893012093218dccf6c",
+          "rows": 25
+        },
+        "region": {
+          "bytes": 384,
+          "sha256": "5a7c2fe9718db00ff5e5bc82a9ebfa8abc492cc75260d3c0ffb411974f235ab0",
+          "rows": 5
+        }
+      },
+      "parquet": {
+        "writer": "stock Flink filesystem/Parquet, SNAPPY, outside query timing",
+        "writerParallelism": 2,
+        "sourceCsvManifestSha256": "16e94dd4fce1906f108d6a0b56bbcace8d84248d4e64c661a0d118125e2c72a8",
+        "writerJobIds": [
+          "8f4da22053b4e4d031feb061ac7bca3f",
+          "218c1373cc0d3b1caec01e504f329193",
+          "ea9c76ddb3dc9bc5078fd3a67dc7bc1c",
+          "bad35910d58273c8573c1abfa687ead4",
+          "2af8547ef3436337256c6eac016de371",
+          "ce66cd7fd3cd9ea0206b3170af9c30bb",
+          "12c2c7f76cf52da142576d094ee88d43",
+          "b4d00040b4317d78ded1c3d3382c60cc"
+        ],
+        "files": [
+          {
+            "bytes": 12443660,
+            "sha256": "3c3e93474117507e18868513106ff12687a7ccbdaf81be1b953f8dd644e23baf",
+            "path": "customer/part-7105c045-a91c-4b0e-8982-0658d0a8b9df-task-0-file-0"
+          },
+          {
+            "bytes": 228153614,
+            "sha256": "ba2ba2c055becd5d299e7e6f9d1ce6eccf1c50bebc73975a09bfb0942e27f792",
+            "path": "lineitem/part-c28b667e-7e13-47be-a385-11bf686daeff-task-0-file-0"
+          },
+          {
+            "bytes": 2793,
+            "sha256": "b799618f6e19b900cc7a4f8c79baebfc523dd850b5374e3aaff5aee6a657ba8a",
+            "path": "nation/part-fa1d9621-5670-42ff-98c9-cbde72b5d0f0-task-0-file-0"
+          },
+          {
+            "bytes": 56372199,
+            "sha256": "330e67ce9a6f57adb3eb55b5444ab6265e70edfc4e1d44a91dbd637567b5f672",
+            "path": "orders/part-028ce0a1-f6ad-41f5-908a-478b251ce18d-task-1-file-0"
+          },
+          {
+            "bytes": 6232371,
+            "sha256": "5f67cc5dd1fc3b9d5749404e9c81fa75ec3022f013d87f65d66ff8690c458f84",
+            "path": "part/part-83142b8a-df29-411b-800e-9616c4b8dd77-task-1-file-0"
+          },
+          {
+            "bytes": 42491907,
+            "sha256": "5502cb69514d0b1d4d08c084962878997b20acf426a1b858ec34b25ead7e7ba4",
+            "path": "partsupp/part-f2604466-be0a-40d8-8df7-b224b1cfa119-task-0-file-0"
+          },
+          {
+            "bytes": 1300,
+            "sha256": "00fc27cabe0e983416f872570083f2c3f481c4fbbb5a1ee441aadddf18c46bb3",
+            "path": "region/part-77bad7af-afac-45cd-affc-542db8c5c0d4-task-0-file-0"
+          },
+          {
+            "bytes": 797572,
+            "sha256": "5b30b2c60ed4984689784f85ea8356672a0a8b2cfef89f33a9c0760c9611ac6d",
+            "path": "supplier/part-c386d8f7-536e-47b1-9563-0e1066250256-task-1-file-0"
+          }
+        ]
+      },
+      "nativeBytes": 536870912,
+      "nativeBatchRows": 8192
+    }
+  },
+  "releaseDsoSha256": "c1420f1eae458fc4f87f90a8083d6916e08b8ef61dd0bd96c241154b6dd95c4f"
+}

@@ -13,18 +13,49 @@ public final class ColumnarShuffleOutput {
   private ColumnarShuffleOutput() {}
 
   public static int parallelism(
-      AbstractStreamOperator<?> operator, int maxParallelism, boolean recoverable, boolean singleton) {
+      AbstractStreamOperator<?> operator,
+      int maxParallelism,
+      boolean recoverable,
+      boolean singleton) {
+    return parallelism(operator, maxParallelism, recoverable, singleton, false);
+  }
+
+  public static int parallelism(
+      AbstractStreamOperator<?> operator,
+      int maxParallelism,
+      boolean recoverable,
+      boolean singleton,
+      boolean batch) {
+    return layout(operator, maxParallelism, recoverable, singleton, batch)[0];
+  }
+
+  public static int[] layout(
+      AbstractStreamOperator<?> operator,
+      int maxParallelism,
+      boolean recoverable,
+      boolean singleton,
+      boolean batch) {
     ClassLoader loader = operator.getUserCodeClassloader();
     List<NonChainedOutput> outputs =
         operator.getOperatorConfig().getOperatorNonChainedOutputs(loader);
     checkState(
         outputs.size() == 1 && operator.getOperatorConfig().getChainedOutputs(loader).isEmpty(),
-        "Native shuffle splitter requires exactly one non-chained keyed output");
+        "Native shuffle splitter requires exactly one non-chained keyed output: batch=%s outputs=%s"
+            + " chained=%s",
+        batch,
+        outputs,
+        operator.getOperatorConfig().getChainedOutputs(loader));
     NonChainedOutput output = outputs.get(0);
     checkState(
         output.getPartitioner() instanceof ColumnarKeyGroupPartitioner
-            && output.getPartitionType().mustBePipelinedConsumed(),
-        "Native shuffle splitter requires a pipelined columnar key-group partitioner");
+            && (batch
+                ? output.getPartitionType().isBlockingOrBlockingPersistentResultPartition()
+                : output.getPartitionType().mustBePipelinedConsumed()),
+        "Native shuffle splitter requires a columnar key-group partitioner in its configured mode:"
+            + " batch=%s partitioner=%s partitionType=%s",
+        batch,
+        output.getPartitioner(),
+        output.getPartitionType());
     ColumnarKeyGroupPartitioner partitioner = (ColumnarKeyGroupPartitioner) output.getPartitioner();
     checkState(
         partitioner.requiresSingleton() == singleton,
@@ -52,24 +83,28 @@ public final class ColumnarShuffleOutput {
           "Native SINGLETON shuffle requires exactly one downstream channel, deployed %s",
           channels);
     }
+    // Batch scheduling does not retain the streaming key-group state namespace. Bind routing to
+    // the deployed writer; its target parallelism may still be unresolved in NonChainedOutput.
     checkState(
-        targetKeyGroups == maxParallelism,
+        batch || targetKeyGroups == maxParallelism,
         "Native shuffle max parallelism changed after planning: expected %s key groups, deployed"
             + " %s. Keep max parallelism stable for native keyed state; ordinary parallelism may"
             + " change.",
         maxParallelism,
         targetKeyGroups);
     checkState(
-        channels > 0 && channels <= maxParallelism,
+        channels > 0 && (batch || channels <= maxParallelism),
         "Native shuffle has invalid runtime channel count %s for %s key groups",
         channels,
         maxParallelism);
     checkState(
-        output.getConsumerParallelism() == channels,
-        "Native shuffle requires a finalized streaming topology: consumer parallelism %s, channels"
+        batch || output.getConsumerParallelism() == channels,
+        "Native shuffle requires finalized consumer parallelism: consumer parallelism %s, channels"
             + " %s",
         output.getConsumerParallelism(),
         channels);
-    return channels;
+    int routingGroups = batch ? targetKeyGroups : maxParallelism;
+    checkState(routingGroups >= channels, "Native shuffle has fewer routing groups than channels");
+    return new int[] {channels, routingGroups};
   }
 }

@@ -1,0 +1,509 @@
+{
+  "date": "2026-11-09",
+  "base_revision": "4e3a20ce3688d056e4d8c3006e668f90edf0e4cf",
+  "local_changes": true,
+  "flink": "2.2.1",
+  "jdk": "17.0.17",
+  "datafusion": "54.0.0",
+  "arrow": "58.4.1",
+  "cpu": "Apple M4",
+  "cpus": 10,
+  "physical_memory_bytes": 17179869184,
+  "jvm_max_heap": "8g",
+  "parallelism": 1,
+  "taskmanager_task_off_heap_authority": "48g",
+  "native_profile": "release; codegen-units=1; mimalloc; no optional RocksDB backend",
+  "boundary": "Complete INSERT into rowwise blackhole, deterministic rowwise datagen, planning/startup/JNI/transposes/transport/completion included.",
+  "previous_behavior": "Stock batch Flink; same as native.enabled=false control.",
+  "limitations": [
+    "No peak RSS measurement.",
+    "Batch-size experiment has substantially slower stock controls and does not establish before/after effects.",
+    "JFR diagnostic is separate from unprofiled timings.",
+    "Unrestricted candidate timings predate the final performance admission rule."
+  ],
+  "source_sha256": {
+    "src/main/java/tech/streamfusion/planner/BatchPhysicalNativeCalc.java": "ef1542a1b6fcfecaf5d258d1afc518127f246ec0902398906efcc54a4370556c",
+    "src/main/java/tech/streamfusion/planner/BatchPhysicalRowDataToArrow.java": "4cb76f49592bd7dff7cbac46ae39b390d417d4a4f68a72fc2a81f13f92f13aee",
+    "src/main/java/tech/streamfusion/planner/BatchPhysicalNativeSingleRel.java": "128efb51daaf44e6b57e43ab7117c559e2d9292597f180fcacdf4627af3973c2",
+    "src/main/java/tech/streamfusion/planner/BatchPhysicalArrowToRowData.java": "0f0942faaacd2669db8f40ba7db6b4eca6caf8ad4ee9b705e8103ab3f9623f93",
+    "src/main/java/tech/streamfusion/planner/BatchPlanScan.java": "12ff13793f6c12a2e30fb951a97310947cde5f13869db578da4737c1d8d63725",
+    "src/main/java/tech/streamfusion/planner/BatchPhysicalNativeUnion.java": "e0a860de6a965ba10cc28b1f10e2b2e3de362cae2868f4fa0bd9a5d07c80d628",
+    "src/main/java/tech/streamfusion/planner/BatchNativeExecNode.java": "e50a5f6294219103361e562333157cefda533122e4c7fc83563de2cf28165c93",
+    "src/main/java/tech/streamfusion/planner/NativeBatchPlanner.java": "75cd5cf03cd4a6016575acf62a7a70b4f79e8f8cbde876d8610506b70983d333",
+    "src/main/java/tech/streamfusion/operator/RowDataToArrowOperator.java": "89712bf4f18e1e2e860d0300afa56b225d11e21f478286adead8f4306453a004",
+    "src/test/java/tech/streamfusion/BatchSqlBenchmark.java": "5699688bfe6ad8540bb304ba7f43de97b560a233f8c0b5a00ed426e8ca6e1362",
+    "src/main/java/tech/streamfusion/planner/RexExpression.java": "68d9b37b480c6aa725b74eb1b049f1426e67c841c682488d4bc80e175437f927",
+    "native/Cargo.lock": "12b294570b2bb3104dff9045c46f891c8462e7eb0db7799c2a86a7b26bb28a11",
+    "native/engine/src/calc.rs": "70742a836c388aac9072d23e345544eda05082c5e372e45224028975cb8e1adb",
+    "native/engine/src/memory.rs": "c3965ef42321312d808d7df8afcdaeb65740235ce9494940ba5b116fd1859c0b"
+  },
+  "runs": [
+    {
+      "description": "initial unrestricted candidate",
+      "query": "arithmetic",
+      "rows": 262144,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": false,
+      "route": "unrestricted_candidate",
+      "stock_ns": [
+        101865584,
+        97753083,
+        90933000
+      ],
+      "enabled_ns": [
+        117351959,
+        104141041,
+        101250292
+      ],
+      "stock_median_ms": 97.753083,
+      "enabled_median_ms": 104.141041,
+      "stock_over_enabled": 0.9386605132936975
+    },
+    {
+      "description": "initial unrestricted candidate",
+      "query": "hash",
+      "rows": 262144,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": false,
+      "route": "unrestricted_candidate",
+      "stock_ns": [
+        250278167,
+        241243584,
+        236220042
+      ],
+      "enabled_ns": [
+        177386625,
+        184624500,
+        179556708
+      ],
+      "stock_median_ms": 241.243584,
+      "enabled_median_ms": 179.556708,
+      "stock_over_enabled": 1.3435509410208166
+    },
+    {
+      "description": "initial unrestricted candidate",
+      "query": "strings",
+      "rows": 262144,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": false,
+      "route": "unrestricted_candidate",
+      "stock_ns": [
+        176674250,
+        191314667,
+        176813375
+      ],
+      "enabled_ns": [
+        230356250,
+        210735250,
+        196796917
+      ],
+      "stock_median_ms": 176.813375,
+      "enabled_median_ms": 210.73525,
+      "stock_over_enabled": 0.8390308455751945
+    },
+    {
+      "description": "initial unrestricted candidate",
+      "query": "arithmetic",
+      "rows": 2000000,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": false,
+      "route": "unrestricted_candidate",
+      "stock_ns": [
+        211201042,
+        225274916,
+        268575792,
+        304159916,
+        228652083
+      ],
+      "enabled_ns": [
+        313026459,
+        317689542,
+        292740250,
+        330004000,
+        280142292
+      ],
+      "stock_median_ms": 228.652083,
+      "enabled_median_ms": 313.026459,
+      "stock_over_enabled": 0.7304560890170629
+    },
+    {
+      "description": "initial unrestricted candidate",
+      "query": "hash",
+      "rows": 2000000,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": false,
+      "route": "unrestricted_candidate",
+      "stock_ns": [
+        1289096041,
+        1273413000,
+        1304867750,
+        1277973750,
+        1274959084
+      ],
+      "enabled_ns": [
+        886739542,
+        901504959,
+        860197000,
+        921184166,
+        936524084
+      ],
+      "stock_median_ms": 1277.97375,
+      "enabled_median_ms": 901.504959,
+      "stock_over_enabled": 1.4176003550968819
+    },
+    {
+      "description": "initial unrestricted candidate",
+      "query": "strings",
+      "rows": 2000000,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": false,
+      "route": "unrestricted_candidate",
+      "stock_ns": [
+        985176708,
+        1417139667,
+        1041490458,
+        1002659250,
+        1006749792
+      ],
+      "enabled_ns": [
+        1283583083,
+        1320430667,
+        1238525333,
+        1276445750,
+        1210811000
+      ],
+      "stock_median_ms": 1006.749792,
+      "enabled_median_ms": 1276.44575,
+      "stock_over_enabled": 0.7887133409312538
+    },
+    {
+      "description": "batch-size experiment; stock controls also slowed",
+      "query": "arithmetic",
+      "rows": 2000000,
+      "batch_rows": 8192,
+      "warmups": 2,
+      "profiled": false,
+      "route": "unrestricted_candidate",
+      "stock_ns": [
+        396609084,
+        445743792,
+        466984833,
+        362522125,
+        385385625
+      ],
+      "enabled_ns": [
+        492529917,
+        435524375,
+        576337792,
+        624489708,
+        480486334
+      ],
+      "stock_median_ms": 396.609084,
+      "enabled_median_ms": 492.529917,
+      "stock_over_enabled": 0.8052487175109
+    },
+    {
+      "description": "batch-size experiment; stock controls also slowed",
+      "query": "hash",
+      "rows": 2000000,
+      "batch_rows": 8192,
+      "warmups": 2,
+      "profiled": false,
+      "route": "unrestricted_candidate",
+      "stock_ns": [
+        2167065000,
+        2108796084,
+        2288233291,
+        2213521209,
+        2244482583
+      ],
+      "enabled_ns": [
+        1436648167,
+        1490949167,
+        1438301959,
+        1619011042,
+        1507417000
+      ],
+      "stock_median_ms": 2213.521209,
+      "enabled_median_ms": 1490.949167,
+      "stock_over_enabled": 1.4846389521474543
+    },
+    {
+      "description": "batch-size experiment; stock controls also slowed",
+      "query": "strings",
+      "rows": 2000000,
+      "batch_rows": 8192,
+      "warmups": 2,
+      "profiled": false,
+      "route": "unrestricted_candidate",
+      "stock_ns": [
+        1792950667,
+        2020776458,
+        2173823166,
+        2093981584,
+        1822377250
+      ],
+      "enabled_ns": [
+        1871718542,
+        2884249709,
+        2734987292,
+        2752559583,
+        1828384209
+      ],
+      "stock_median_ms": 2020.776458,
+      "enabled_median_ms": 2734.987292,
+      "stock_over_enabled": 0.7388613701829222
+    },
+    {
+      "description": "bounded timer change; JFR diagnostic",
+      "query": "arithmetic",
+      "rows": 2000000,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": true,
+      "route": "unrestricted_candidate",
+      "stock_ns": [
+        235478708,
+        232539708,
+        220407791,
+        185033542,
+        186166834
+      ],
+      "enabled_ns": [
+        239531250,
+        308821584,
+        300956208,
+        249128500,
+        383105000
+      ],
+      "stock_median_ms": 220.407791,
+      "enabled_median_ms": 300.956208,
+      "stock_over_enabled": 0.7323583469658815
+    },
+    {
+      "description": "bounded timer change; unrestricted arithmetic candidate",
+      "query": "arithmetic",
+      "rows": 10000000,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": false,
+      "route": "unrestricted_candidate",
+      "stock_ns": [
+        892015834,
+        834055375,
+        919907250
+      ],
+      "enabled_ns": [
+        1040068833,
+        999158750,
+        1155874042
+      ],
+      "stock_median_ms": 892.015834,
+      "enabled_median_ms": 1040.068833,
+      "stock_over_enabled": 0.8576507685813907,
+      "stock_runtime_ms": [
+        878,
+        820,
+        903
+      ],
+      "native_runtime_ms": [
+        1026,
+        986,
+        1143
+      ]
+    },
+    {
+      "description": "final admission policy",
+      "query": "arithmetic",
+      "rows": 2000000,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": false,
+      "route": "stock_fallback",
+      "stock_ns": [
+        220423000,
+        240552458,
+        306998958,
+        218730292,
+        229416750
+      ],
+      "enabled_ns": [
+        228576750,
+        212832000,
+        281707542,
+        216399625,
+        240722667
+      ],
+      "stock_median_ms": 229.41675,
+      "enabled_median_ms": 228.57675,
+      "stock_over_enabled": 1.003674914443398,
+      "stock_runtime_ms": [
+        206,
+        228,
+        295,
+        206,
+        218
+      ],
+      "enabled_runtime_ms": [
+        214,
+        199,
+        269,
+        205,
+        228
+      ]
+    },
+    {
+      "description": "final admission policy",
+      "query": "hash",
+      "rows": 2000000,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": false,
+      "route": "native",
+      "stock_ns": [
+        1438312708,
+        1309121583,
+        1287325208,
+        1334413958,
+        1336403667
+      ],
+      "enabled_ns": [
+        896256709,
+        887939542,
+        928922083,
+        902041083,
+        873046417
+      ],
+      "stock_median_ms": 1334.413958,
+      "enabled_median_ms": 896.256709,
+      "stock_over_enabled": 1.4888747214945535,
+      "stock_runtime_ms": [
+        1428,
+        1298,
+        1269,
+        1326,
+        1328
+      ],
+      "enabled_runtime_ms": [
+        879,
+        880,
+        921,
+        895,
+        865
+      ]
+    },
+    {
+      "description": "final admission policy",
+      "query": "strings",
+      "rows": 2000000,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": false,
+      "route": "stock_fallback",
+      "stock_ns": [
+        959415250,
+        911789500,
+        935091916,
+        910972125,
+        935322417
+      ],
+      "enabled_ns": [
+        864552250,
+        869415833,
+        944615125,
+        933672458,
+        916791375
+      ],
+      "stock_median_ms": 935.091916,
+      "enabled_median_ms": 916.791375,
+      "stock_over_enabled": 1.0199615108726345,
+      "stock_runtime_ms": [
+        952,
+        903,
+        925,
+        903,
+        928
+      ],
+      "enabled_runtime_ms": [
+        857,
+        862,
+        936,
+        926,
+        905
+      ]
+    },
+    {
+      "description": "UDF performance exception",
+      "query": "udf",
+      "rows": 262144,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": false,
+      "route": "native",
+      "stock_ns": [
+        140112292,
+        134723333,
+        120660791,
+        105862417,
+        119476958
+      ],
+      "enabled_ns": [
+        146804584,
+        177960500,
+        163115834,
+        149207375,
+        133817417
+      ],
+      "stock_median_ms": 120.660791,
+      "enabled_median_ms": 149.207375,
+      "stock_over_enabled": 0.8086784651227863,
+      "stock_runtime_ms": [
+        125,
+        104,
+        108,
+        94,
+        108
+      ],
+      "enabled_runtime_ms": [
+        130,
+        164,
+        152,
+        138,
+        122
+      ]
+    },
+    {
+      "description": "Final-source SHA-256 repeat; controls show host variability",
+      "query": "hash",
+      "rows": 2000000,
+      "batch_rows": 1024,
+      "warmups": 2,
+      "profiled": false,
+      "route": "native",
+      "stock_ns": [
+        1638176459,
+        1364353125,
+        2121654041,
+        1941300958,
+        1663071000
+      ],
+      "enabled_ns": [
+        1046949875,
+        900755334,
+        1034383583,
+        849950250,
+        1059625125
+      ],
+      "stock_median_ms": 1663.071,
+      "enabled_median_ms": 1034.383583,
+      "stock_over_enabled": 1.6077894383983085
+    }
+  ],
+  "fingerprint_scope": "Source files at checkpoint evidence capture; timing cohorts are labelled separately and do not isolate each intervening change."
+}

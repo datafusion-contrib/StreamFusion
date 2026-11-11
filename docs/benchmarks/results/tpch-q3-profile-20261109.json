@@ -1,0 +1,150 @@
+{
+  "query": 3,
+  "format": "Parquet",
+  "scale": 1,
+  "nativeBatchRows": 1024,
+  "method": "Separate release-DSO verification-mode JFR profile. Instrumented times are not performance results; overlapping sample counts include blocked native calls and background threads, not CPU percentages.",
+  "profiles": {
+    "stock": {
+      "samples": 228,
+      "topFrames": [
+        [
+          "sun.nio.ch.Net.accept",
+          57
+        ],
+        [
+          "sun.nio.ch.KQueue.poll",
+          57
+        ],
+        [
+          "java.io.FileInputStream.readBytes",
+          29
+        ],
+        [
+          "net.jpountz.lz4.LZ4ByteBufferUtils.wildIncrementalCopy",
+          4
+        ],
+        [
+          "java.nio.Buffer.checkIndex",
+          4
+        ],
+        [
+          "org.apache.flink.table.runtime.hashtable.LongHashPartition.get",
+          3
+        ],
+        [
+          "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.isNullAt",
+          3
+        ],
+        [
+          "java.nio.HeapByteBuffer.duplicate",
+          3
+        ],
+        [
+          "net.jpountz.lz4.LZ4Utils.zero",
+          3
+        ],
+        [
+          "net.jpountz.lz4.LZ4JavaSafeFastDecompressor.decompress",
+          3
+        ],
+        [
+          "jdk.internal.loader.NativeLibraries.load",
+          2
+        ],
+        [
+          "org.apache.logging.log4j.core.Logger$PrivateConfig.filter",
+          2
+        ],
+        [
+          "org.apache.flink.table.data.writer.BinaryWriter.write",
+          2
+        ],
+        [
+          "org.apache.flink.core.memory.DataOutputSerializer.write",
+          2
+        ],
+        [
+          "net.jpountz.util.ByteBufferUtils.readLong",
+          2
+        ]
+      ],
+      "categoriesOverlapping": {
+        "shuffle": 17,
+        "parquet": 7
+      }
+    },
+    "native": {
+      "samples": 143,
+      "topFrames": [
+        [
+          "sun.nio.ch.Net.accept",
+          37
+        ],
+        [
+          "sun.nio.ch.KQueue.poll",
+          37
+        ],
+        [
+          "java.io.FileInputStream.readBytes",
+          19
+        ],
+        [
+          "net.jpountz.lz4.LZ4JavaSafeFastDecompressor.decompress",
+          7
+        ],
+        [
+          "org.apache.flink.table.data.binary.LazyBinaryFormat.ensureMaterialized",
+          6
+        ],
+        [
+          "net.jpountz.lz4.LZ4ByteBufferUtils.wildArraycopy",
+          4
+        ],
+        [
+          "net.jpountz.lz4.LZ4ByteBufferUtils.wildIncrementalCopy",
+          3
+        ],
+        [
+          "tech.streamfusion.operator.RowDataToArrowOperator.processElement",
+          2
+        ],
+        [
+          "org.apache.arrow.vector.DecimalVector.set",
+          2
+        ],
+        [
+          "org.apache.pekko.dispatch.BatchingExecutor.execute$",
+          2
+        ],
+        [
+          "org.apache.calcite.sql.type.SqlTypeFactoryImpl.createTypeWithCharsetAndCollation",
+          1
+        ],
+        [
+          "org.apache.arrow.util.Preconditions.checkArgument",
+          1
+        ],
+        [
+          "tech.streamfusion.arrow.writers.ArrowFieldWriter.write",
+          1
+        ],
+        [
+          "org.apache.arrow.vector.BigIntVector.set",
+          1
+        ],
+        [
+          "org.apache.logging.slf4j.Log4jLogger.trace",
+          1
+        ]
+      ],
+      "categoriesOverlapping": {
+        "arrow": 15,
+        "parquet": 4,
+        "decimal": 4,
+        "shuffle": 16,
+        "nativeJNI": 2
+      }
+    }
+  }
+}

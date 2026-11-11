@@ -37,11 +37,21 @@ public final class NativePlannerTestEnvironment {
 
   public static TableEnvironment create(Configuration configuration, Class<?>... factories)
       throws IOException {
+    return create(configuration, false, factories);
+  }
+
+  public static TableEnvironment createBatch(Configuration configuration, Class<?>... factories)
+      throws IOException {
+    return create(configuration, true, factories);
+  }
+
+  private static TableEnvironment create(Configuration configuration, boolean batch,
+      Class<?>... factories) throws IOException {
     return withPlannerClassLoader(
         loader ->
             TableEnvironment.create(
-                EnvironmentSettings.newInstance()
-                    .inStreamingMode()
+                (batch ? EnvironmentSettings.newInstance().inBatchMode()
+                    : EnvironmentSettings.newInstance().inStreamingMode())
                     .withConfiguration(configuration)
                     .withClassLoader(loader)
                     .build()),

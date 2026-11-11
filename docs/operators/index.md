@@ -1,5 +1,8 @@
 # Operators
 
+The operator pages primarily describe streaming execution. [Batch SQL](batch.md)
+documents its separate partial admission and the shared columnar runtime.
+
 Every page in this section marks one Flink operator (or operator family) as **native**, **partial**
 (native with specific, enumerated gaps), or **unsupported** — see [Unsupported
 operators](unsupported.md) for the operators with no native path at all. Together these pages are

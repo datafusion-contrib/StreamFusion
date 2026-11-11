@@ -322,7 +322,8 @@ public final class SqlInventory {
               "host_boundaries",
               boundaries,
               "native_operators",
-              operators.stream().filter(name -> name.startsWith("StreamPhysicalNative")).count()));
+              operators.stream().filter(name -> name.startsWith("StreamPhysicalNative")
+                  || name.startsWith("BatchPhysicalNative")).count()));
     }
     plan.put("roots", finalRoots);
     active.plans.add(plan);
@@ -337,7 +338,11 @@ public final class SqlInventory {
     if (seen.put(node, Boolean.TRUE) != null) return;
     names.add(node.getClass().getSimpleName());
     String name = node.getClass().getSimpleName();
-    if (name.equals("StreamPhysicalTableSourceScan")
+    if (name.equals("BatchPhysicalTableSourceScan")
+        || name.equals("BatchPhysicalLegacyTableSourceScan")
+        || name.equals("BatchPhysicalSink")
+        || name.equals("BatchPhysicalLegacySink")
+        || name.equals("StreamPhysicalTableSourceScan")
         || name.equals("StreamPhysicalLegacyTableSourceScan")
         || name.equals("StreamPhysicalSink")
         || name.equals("StreamPhysicalLegacySink")

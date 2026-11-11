@@ -2,6 +2,9 @@
 
 **Status:** native, with gaps — the largest admission surface in the project.
 
+This page describes streaming expression coverage. [Batch SQL](batch.md) reuses
+the encoder with additional type, plan-shape and measured-performance admission.
+
 Use this page for the current admission rules. For a specific question, start at:
 
 | Topic | Sections |
@@ -42,6 +45,12 @@ generated evaluator lists every function under `jvm` and retains the reason that
 row-at-a-time Flink evaluation. Ordinary `EXPLAIN` and submitted Calc/filter names also retain
 Flink's original `select` and `where` expressions and show these final assignments as
 `nativeFunctions=[...]` and `jvmFunctions=[...]`, even with simplified operator names enabled.
+When evaluators are registered, batch EXPLAIN also shows `jvmExpressions` (the
+registration count), `jvmEvaluation` (scalar bridges or whole-Calc evaluation),
+and `jvmExpressionDetails` for generated scalar expressions. Arithmetic and
+comparison bridges can exist even when the named `jvmFunctions` list is empty.
+These fields describe available evaluators, not measured callback invocations;
+certified native paths may retain a JVM evaluator for exceptional inputs.
 No diagnostic flag is required for these plan attributes. The acceleration summary returned by
 `PhysicalPlanScan.explainSummary()` includes the function assignments and JVM selection reasons;
 the always-on planning log also counts Calc/filter nodes containing JVM functions.
@@ -4632,3 +4641,9 @@ Generated collection values may also enter a columnar sink that explicitly accep
 canonicalizes their representation for its wire format. This preserves the existing Doris
 Arrow writer and sink-materializer contract; ordinary native sinks retain their row-sink
 guard. Native DISTINCT-array groups retain their separately verified input contract.
+
+Batch projections with no output columns preserve the filtered row count, including existential and scalar-subquery intermediates.
+
+Flink multiple-input fusion stays outside native batch regions because its internal serializers require `RowData`. Arrow boundaries are preserved for every native batch task, including plans without joins.
+
+The native Calc type probe admits expression trees up to 32 levels deep. Deeper trees, including large `IN` predicates expanded into nested conditions, retain Flink evaluation before crossing JNI. Wide projections and grouped reductions with shallow expressions remain eligible.

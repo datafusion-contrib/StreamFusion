@@ -7,10 +7,21 @@ import org.apache.calcite.rel.RelNode;
 public interface NativePlannerExtension {
 
   /**
-   * Adds this artifact's substitutions in planner priority order to its private contribution.
-   * The rules and source-sharing hook become active only if registration completes successfully.
+   * Adds this artifact's substitutions in planner priority order to its private contribution. The
+   * rules and source-sharing hook become active only if registration completes successfully.
    */
   void addSubstitutions(List<Substitution<?>> substitutions);
+
+  /** Optional columnar file source; null retains the host source and ordinary transpose. */
+  default org.apache.flink.api.dag.Transformation<tech.streamfusion.operator.ArrowBatch>
+      lowerBatchFileSource(
+          org.apache.flink.table.planner.plan.nodes.exec.batch.BatchExecTableSourceScan scan,
+          org.apache.flink.api.dag.Transformation<org.apache.flink.table.data.RowData> original,
+          org.apache.flink.table.types.logical.RowType output,
+          int batchRows,
+          org.apache.flink.configuration.ReadableConfig config) {
+    return null;
+  }
 
   /** Returns a pre-substitution source-sharing key, or {@code null} for an unrelated node. */
   default String sourceSharingKey(RelNode node) {

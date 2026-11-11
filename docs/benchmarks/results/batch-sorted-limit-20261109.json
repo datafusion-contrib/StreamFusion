@@ -1,0 +1,272 @@
+{
+  "date": "2026-11-09",
+  "environment": "Same Flink2.2.1/JDK17/AppleM4 release configuration as batch-sort-jobs-20261109.json",
+  "wholeJobBoundary": "executeSql through await; stock datagen and rowwise blackhole, both transposes, JNI, local/global TopK and blocking Arrow IPC shuffle retained. Two warmups/five trials, alternating engines, 128MiB native authority/stock sort config, eight slots/1GiB managed memory.",
+  "query": "INSERT INTO output SELECT MOD(id * 48271, cardinality), id FROM input [WHERE SHA2(CAST(id AS STRING),256) <> empty_string] ORDER BY sort_key,payload OFFSET offset ROWS FETCH NEXT fetch ROWS ONLY",
+  "operationBoundary": "Rust after Arrow import/setup before export versus Java prebuilt RowData operation. Includes compact ownership copies, state, callbacks and order-sensitive key hash; three warmups/seven trials. 32MiB native authority; stock TopK uses JVM heap, not its configured32MiB managed pool. Same8GiB Java heap. ASC NULLS LAST in both engines.",
+  "previousBehavior": "All sorted-limit SQL previously used whole-query stock fallback, including SHA2 compositions.",
+  "wholeJobs": [
+    {
+      "rows": 1000000,
+      "cardinality": 2147483647,
+      "offset": 0,
+      "fetch": 64,
+      "sha2Filter": false,
+      "nativeBatchRows": 1024,
+      "admitted": false,
+      "stage": "candidate rejected by complete-job gate",
+      "stockNanos": [
+        103843417,
+        138821375,
+        123876042,
+        103553416,
+        104918541
+      ],
+      "nativeNanos": [
+        116632666,
+        102571958,
+        107288333,
+        110533292,
+        104096583
+      ],
+      "stockRuntimeMs": [
+        88,
+        125,
+        110,
+        91,
+        92
+      ],
+      "nativeRuntimeMs": [
+        102,
+        88,
+        94,
+        98,
+        92
+      ],
+      "medianStockOverNative": 0.9779119319525638
+    },
+    {
+      "rows": 2000000,
+      "cardinality": 64,
+      "offset": 1023,
+      "fetch": 16384,
+      "sha2Filter": false,
+      "nativeBatchRows": 1024,
+      "admitted": false,
+      "stage": "candidate rejected by complete-job gate",
+      "stockNanos": [
+        150257166,
+        205076916,
+        166428583,
+        164317125,
+        211478208
+      ],
+      "nativeNanos": [
+        226256334,
+        220581708,
+        217966958,
+        244980791,
+        193026709
+      ],
+      "stockRuntimeMs": [
+        134,
+        191,
+        153,
+        153,
+        200
+      ],
+      "nativeRuntimeMs": [
+        211,
+        206,
+        205,
+        234,
+        178
+      ],
+      "medianStockOverNative": 0.754498568847785
+    },
+    {
+      "rows": 2000000,
+      "cardinality": 64,
+      "offset": 1023,
+      "fetch": 16384,
+      "sha2Filter": false,
+      "nativeBatchRows": 4096,
+      "admitted": false,
+      "stage": "candidate rejected by complete-job gate",
+      "stockNanos": [
+        161631958,
+        175206917,
+        196525125,
+        190795209,
+        160069542
+      ],
+      "nativeNanos": [
+        208967375,
+        203971666,
+        183358875,
+        194254042,
+        208636833
+      ],
+      "stockRuntimeMs": [
+        146,
+        162,
+        183,
+        179,
+        148
+      ],
+      "nativeRuntimeMs": [
+        195,
+        191,
+        172,
+        181,
+        198
+      ],
+      "medianStockOverNative": 0.8589767414068187
+    },
+    {
+      "rows": 1000000,
+      "cardinality": 2147483647,
+      "offset": 0,
+      "fetch": 64,
+      "sha2Filter": true,
+      "nativeBatchRows": 1024,
+      "admitted": true,
+      "stage": "admitted composition",
+      "stockNanos": [
+        251785250,
+        257721917,
+        245228000,
+        239114709,
+        225099375
+      ],
+      "nativeNanos": [
+        149050917,
+        147164042,
+        151706250,
+        151642958,
+        139042208
+      ],
+      "stockRuntimeMs": [
+        232,
+        241,
+        230,
+        224,
+        210
+      ],
+      "nativeRuntimeMs": [
+        133,
+        132,
+        138,
+        138,
+        126
+      ],
+      "medianStockOverNative": 1.6452632760387513
+    },
+    {
+      "rows": 2000000,
+      "cardinality": 64,
+      "offset": 1023,
+      "fetch": 16384,
+      "sha2Filter": true,
+      "nativeBatchRows": 1024,
+      "admitted": true,
+      "stage": "admitted composition",
+      "stockNanos": [
+        463092542,
+        501216125,
+        449463625,
+        524652333,
+        449639708
+      ],
+      "nativeNanos": [
+        292407708,
+        293843292,
+        295218916,
+        285840000,
+        297009208
+      ],
+      "stockRuntimeMs": [
+        444,
+        482,
+        434,
+        509,
+        436
+      ],
+      "nativeRuntimeMs": [
+        276,
+        278,
+        282,
+        273,
+        285
+      ],
+      "medianStockOverNative": 1.575984732705758
+    }
+  ],
+  "operations": [
+    {
+      "rows": 131072,
+      "width": 4,
+      "cardinality": 131072,
+      "offset": 0,
+      "fetch": 64,
+      "nullEvery": 17,
+      "nullsFirst": false,
+      "stockNanos": [
+        2247416,
+        2202541,
+        2221708,
+        2197375,
+        2167417,
+        2178334,
+        2186208
+      ],
+      "nativeNanos": [
+        896667,
+        863541,
+        893333,
+        890541,
+        887375,
+        872000,
+        859458
+      ],
+      "medianStockOverNative": 2.4762642625721933
+    },
+    {
+      "rows": 65536,
+      "width": 8,
+      "cardinality": 127,
+      "offset": 1023,
+      "fetch": 16384,
+      "nullEvery": 17,
+      "nullsFirst": false,
+      "stockNanos": [
+        12244625,
+        14001125,
+        11009958,
+        11870084,
+        11813833,
+        12075667,
+        12250708
+      ],
+      "nativeNanos": [
+        6940292,
+        6846958,
+        6829917,
+        6814958,
+        6939042,
+        6669958,
+        6776584
+      ],
+      "medianStockOverNative": 1.7680547216020341
+    }
+  ],
+  "decision": "Standalone sorted limits do not qualify a native island: complete jobs failed to establish a gain. The 4096-row batching diagnostic remained slower. TopK composes with the existing unrestricted-sort/SHA2/UDF admission rules; no performance opt-in is introduced.",
+  "limits": [
+    "Local MiniCluster, not remote-network throughput",
+    "Prepared single-key gains do not establish full two-key SQL-job acceleration",
+    "Do not claim standalone TopK acceleration",
+    "Candidate native upstream witnesses predate the final cost gate"
+  ],
+  "nativeLibrarySha256": "a4358bc0249671a3d1c6928714d2be814a4636db64a3a0ca5ca36069c24231fc",
+  "candidateAdmissionDifference": "Candidate runs temporarily counted BatchPhysicalSortLimit as a qualifying cost operation in amortizesRowBoundaries. The final gate qualifies only unrestricted BatchPhysicalSort, SHA2 or accepted UDF paths. SQL, data, resources and sinks were unchanged."
+}

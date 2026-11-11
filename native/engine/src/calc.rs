@@ -461,12 +461,14 @@ impl CalcExpression {
             fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
             columns.push(kind.clone());
         }
-        RecordBatch::try_new(
+        RecordBatch::try_new_with_options(
             Arc::new(Schema::new_with_metadata(
                 fields,
                 filtered.schema().metadata().clone(),
             )),
             columns,
+            &arrow::record_batch::RecordBatchOptions::new()
+                .with_row_count(Some(filtered.num_rows())),
         )
         .expect("failed to build output")
     }

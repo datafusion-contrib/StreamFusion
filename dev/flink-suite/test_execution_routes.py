@@ -43,6 +43,24 @@ class RuntimeRoutesTest(unittest.TestCase):
             with self.subTest(classes=classes, work=work):
                 self.assertEqual(expected, self.classify({'job': self.job(classes, work)}))
 
+    def test_bounded_work_requires_matching_admitted_batch_operators(self):
+        for name in ('NativeCalcOperator', 'NativeBatchSortOperator', 'NativeBatchAggregateOperator'):
+            classes = [self.SOURCE, 'tech.streamfusion.operator.RowDataToArrowOperator',
+                       'tech.streamfusion.operator.' + name,
+                       'tech.streamfusion.operator.ArrowToRowDataOperator', self.SINK]
+            job = self.job(classes, {name: 3})
+            job['graph']['job_type'] = 'BATCH'
+            with self.subTest(operator=name):
+                self.assertEqual('native', self.classify({'batch': job}))
+                job['native_work'] = {}
+                self.assertEqual('unclassified', self.classify({'batch': job}))
+                job['native_work'] = {'OtherNativeOperator': 3}
+                self.assertEqual('unclassified', self.classify({'batch': job}))
+        unsupported = self.job([self.SOURCE, 'tech.streamfusion.operator.NativeColumnarTopNOperator', self.SINK],
+                               {'NativeColumnarTopNOperator': 3})
+        unsupported['graph']['job_type'] = 'BATCH'
+        self.assertEqual('unclassified', self.classify({'batch': unsupported}))
+
     def test_jvm_function_work_requires_the_matching_completed_operator(self):
         for name in ('NativeColumnarJvmGroupOperator', 'NativeColumnarTableFunctionOperator', 'NativeColumnarJvmOverOperator'):
             classes = [self.SOURCE, 'tech.streamfusion.operator.RowDataToArrowOperator',

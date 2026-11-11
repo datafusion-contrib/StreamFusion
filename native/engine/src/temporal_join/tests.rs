@@ -165,7 +165,7 @@ fn check_cleanup_groups(source_disk: bool) {
                         0,
                     )
                 };
-                let restored = if target_disk {
+                let restored: Vec<Vec<u8>> = if target_disk {
                     #[cfg(feature = "rocksdb-state")]
                     {
                         target

@@ -25,6 +25,7 @@ Those measurements describe CI job counts and elapsed time, not SQL execution th
 - [Copy canonical state directly](canonical-state-installation.md): remove a full temporary payload copy while retaining managed chunk ownership.
 - [Reuse Iceberg boundary setup](iceberg-boundary-overhead.md): cached task schemas and serializers, shared Arrow leases and routing maps.
 
+- [Bounded Arrow batch sizing](bounded-batch-sizing.md): 8,192-row bounded batches amortize JNI, ownership copies and IPC while retaining the shared memory cap.
 - [Columnar changelog operators](columnar-changelog-operators.md): pass unchanged filter batches by ownership and avoid standalone row/Arrow round trips.
 - [Collection representation work](collection-representation-work.md): share verified map projections, avoid redundant owned-row copies, reserve BIGINT array capacity and prune UNNEST expansion before copying.
 - [Native basic-array searches and extrema](native-array-search.md): scan or reduce flat values without JVM row reconstruction and avoid temporary bytes for wide-precision decimals whose actual value fits a long; retain measured standalone limits.
@@ -47,6 +48,11 @@ Those measurements describe CI job counts and elapsed time, not SQL execution th
 
 ## How these numbers are measured
 
+See also [bounded join and subplan planning](bounded-join-planning.md) for Cartesian
+elimination and retained-view aggregate reuse, including remaining regressions.
+The [DATE predicate path](date-predicates.md) removes generated Java comparison
+bridges while retaining the remaining complete-job regressions.
+
 - **Benchmark-gated**: a change that doesn't move the numbers is rejected, not merged with an
   aspirational justification.
 - **Differential profiling**: sampling native vs. stock Flink on the same query isolates what
@@ -57,3 +63,5 @@ Those measurements describe CI job counts and elapsed time, not SQL execution th
   loops by ~50% from unrelated code growth — both are controlled for.
 - **Release builds only** — see [Benchmarks](../benchmarks.md); every number on these pages comes
   from a release build, never debug.
+
+- [Native Parquet input batches](native-parquet-source.md) remove source row materialization for admitted bounded filesystem scans.

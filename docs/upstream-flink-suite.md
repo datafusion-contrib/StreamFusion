@@ -1,5 +1,82 @@
 # Upstream Flink suite
 
+## Batch SQL development
+
+The planner factory and suite agent now install a mode-specific batch adapter.
+[Batch SQL](operators/batch.md) documents its current narrow admission. The published
+planner test JAR can be scanned directly with the runtime module's `batch-upstream`
+Maven profile, avoiding another source checkout or Maven repository for focused
+batch iterations. The profile uses released test bytecode with its original SQL,
+fixtures and assertions; the ordinary source-suite runner remains available.
+The profile also includes the released `flink-table-common` test JAR: the Table
+API aggregate fixture uses its `LegacyRowExtension`. This remains test-only.
+Flink 1.18 additionally needs its released Scala Table bridge on the test classpath.
+
+The batch Calc contracts require stock fallback for `testManySelectWithFilter` and
+`testFilterOnInteger` under the measured scalar-boundary rule, and positive native
+work for `testUserDefinedScalarFunction`. Both runtime-route scope files retain
+those host/native expectations. Pass the current suite agent through
+`sf.extraJvmArgs`, with fresh `streamfusion.flink-suite.native-reports` and
+`streamfusion.flink-suite.sql-inventory` directories. A passing upstream assertion
+without those native/fallback witnesses is not acceleration evidence.
+
+The unchanged released batch SQL `MiscITCase` adds two positive sort contracts:
+`testNullOrdering` consumes 18 native rows across six queries and
+`testGlobalSorting` consumes 24 across four mixed-direction queries.
+`testNullOrderingOnMultiColumn` includes a STRING key and now requires positive
+native sort work (56 rows). Both host lines retain these native routes. The observer records native sort input after
+successful processing; merely constructing a native plan is insufficient.
+[Sort validation evidence](benchmarks/results/batch-sort-sql-20261109.json) retains
+per-job success, batch graph types and positive native work from the focused runs.
+
+The released `SortLimitITCase` runs unchanged on both lines. Four signed-integer
+methods and the STRING-key `testOrderByLimitBehindField` require the standalone
+sorted-limit performance fallback. `testOrderBehindField` requires positive native
+sort work (21 rows) on both host lines. Candidate runs before the cost
+gate passed all assertions with positive bounded-sort work; those witnesses are
+labelled candidate-only, not current admission. Local composed SHA2/sorted-limit
+controls exercise the admitted native path. Private helper overloads of test method
+names are excluded from execution-contract advice, so the outer JUnit invocation
+owns one scope. No helper SQL or assertion is changed.
+
+Released `HashAggITCase` and `SortAggITCase` now each contract the inherited
+`testAggWithoutGroups`, `testAggregationWithoutGroupby` and `testCountStar` methods.
+They require the exact standalone aggregate performance fallback; runtime routes
+remain `batch_host_only`. Candidate native observations are retained separately
+from current admission. The agent instruments the declaring aggregate base, then
+resolves each witness to the concrete JUnit fixture identity, so inherited methods
+cannot silently escape the contract or attach to the wrong class. Empty SUM/AVG
+fixtures are parity controls without fabricated positive-input credit.
+
+The unchanged batch Table API `AggregationITCase.testAggregationTypes` requires
+`batch aggregate: standalone pipeline has no verified speedup` on both lines.
+`testWorkingAggregationDataTypes` includes unsupported floating-point AVG and requires
+`batch aggregate: SUM/SUM0/AVG require signed integers or DECIMAL; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME`.
+Both are `batch_host_only` controls. Separate local SQL/operator controls establish
+positive native work for admitted fixed-width extrema and typed blocking-shuffle
+replay against the stock result.
+
+Released HashAgg `testTwoPhasesAggregation`, `testNullGroupKeyAggregation` and
+`testGroupByOnly` require positive `NativeBatchAggregateOperator` work on both
+lines. They cover ordinary grouped reductions, NULL keys and key-only DISTINCT
+without rewriting upstream SQL or assertions. The same unchanged SortAgg methods
+now require positive native aggregate work; the native stage restores the host's
+ordered group output through DataFusion sorting. Empty grouped input remains a
+parity control and receives no fabricated
+positive-input requirement. Native local SQL adds signed composite keys, both
+phases, filters, typed partial-state replay and optimizer DISTINCT rewrites.
+
+
+The bounded operator observer attaches to the shared bounded lifecycle and records
+the actual concrete operator after successful Arrow consumption. Runtime route
+classification now recognizes completed batch Calc, sort and aggregate work with
+matching operator graphs; streaming-only native operators still cannot establish
+a batch route. Local admitted SHA2/aggregate controls require positive aggregate
+work and consumer retry of completed Arrow partial states on both host lines.
+
+The earlier batch-host-only measurements later in this page describe their original
+revision; current batch admission is defined by the batch operator page and contracts.
+
 | Task | Start here |
 | --- | --- |
 | Run the upstream suites | [Runner and suite selection](#runner-and-suite-selection) |
@@ -522,7 +599,7 @@ fixtures require `native` for `changelog=false` and `full_fallback` for `changel
 exact witness is independently checked against the existing execution contract. No upstream test
 configuration is changed to force a preferred route.
 
-The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require 116 and 96
+The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require 199 and 172
 verified runtime variants respectively. Run them with:
 
 ```sh
@@ -1885,3 +1962,21 @@ released execution-node metadata declares the graph nonserializable. Canonical s
 binding must not force these programs through JSON serialization. Unchanged upstream aggregate,
 nested-table Calc and OVER assertions still run with their original native-execution contracts;
 this boundary does not add DataStream-bridge canonical interchange coverage.
+
+Bounded join coverage adds the unchanged
+`OuterJoinITCase#testLeftUpperAndLowerWithAgg` fixture on both lines. Its four
+original `expectedJoinType` variants (broadcast hash, hash, sort merge and nested
+loop) require positive `NativeBatchJoinOperator` work. Both route scopes enumerate
+these exact display names. The observer instruments both batch join input methods;
+result parity or unrelated native Calc work cannot satisfy the join contract.
+
+The unchanged batch date fixtures `CalcITCase#testDateCompareWithDateString` and
+`#testDateEqualsWithDateString` retain explicit standalone-Calc performance
+fallback contracts on both supported lines. Their exact runtime-route cases are
+`batch_host_only`; these passing oracle fixtures receive no native-work credit.
+Separate admitted-pipeline DATE controls verify native work and absence of
+registered Java predicate evaluators.
+
+The inherited batch aggregate identity check applies to contracts that include those fixtures; the Flink 1.18 RocksDB-only contract has no batch aggregate fixtures.
+
+The unchanged `JoinITCase#testLongHashJoinGenerator` checks Flink-generated operator source code, so that invocation retains the stock planner. The adjacent SQL join fixtures retain their native execution contracts. The batch code splitting fixtures explicitly check deep-expression fallback and positive native work for wide grouped reductions.

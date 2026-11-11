@@ -17,6 +17,11 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
   private final InMemoryReporter reporter = InMemoryReporter.createWithRetainedMetrics();
   private MiniClusterResource cluster;
 
+  void setAsContext(Configuration config, int parallelism, long budget) {
+    environment(config, parallelism, budget);
+    tech.streamfusion.compat.FlinkTestContexts.setForLocalTests(cluster.getMiniCluster(), parallelism);
+  }
+
   TestStreamEnvironment environment(Configuration jobConfig, int parallelism, long budget) {
     if (cluster == null) {
       long started = CiFixtureTimings.start();
@@ -70,10 +75,54 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
     return total[0];
   }
 
+  List<String> taskNames(String operatorPrefix) {
+    return reporter.getMetricsByGroup().keySet().stream()
+        .filter(group -> group instanceof org.apache.flink.metrics.groups.OperatorMetricGroup)
+        .map(org.apache.flink.metrics.MetricGroup::getAllVariables)
+        .filter(variables -> variables.getOrDefault("<operator_name>", "").startsWith(operatorPrefix))
+        .map(variables -> variables.getOrDefault("<task_name>", ""))
+        .distinct().collect(java.util.stream.Collectors.toList());
+  }
+
+  java.util.Set<String> subtasks(String operatorPrefix) {
+    return reporter.getMetricsByGroup().keySet().stream()
+        .filter(group -> group instanceof org.apache.flink.metrics.groups.OperatorMetricGroup)
+        .map(org.apache.flink.metrics.MetricGroup::getAllVariables)
+        .filter(
+            variables -> variables.getOrDefault("<operator_name>", "").startsWith(operatorPrefix))
+        .map(variables -> variables.getOrDefault("<subtask_index>", ""))
+        .collect(java.util.stream.Collectors.toSet());
+  }
+
+  java.util.Set<String> attempts(String operatorPrefix) {
+    return reporter.getMetricsByGroup().keySet().stream()
+        .filter(group -> group instanceof org.apache.flink.metrics.groups.OperatorMetricGroup)
+        .map(org.apache.flink.metrics.MetricGroup::getAllVariables)
+        .filter(
+            variables -> variables.getOrDefault("<operator_name>", "").startsWith(operatorPrefix))
+        .map(variables -> variables.getOrDefault("<task_attempt_num>", ""))
+        .collect(java.util.stream.Collectors.toSet());
+  }
+
   long counterValue(String name) {
     long[] total = {0};
     reporter.getMetricsByGroup().forEach((group, metrics) -> {
       if (metrics.get(name) instanceof Counter)
+        total[0] += ((Counter) metrics.get(name)).getCount();
+    });
+    return total[0];
+  }
+
+  long counterValue(String jobId, String name) {
+    return counterValue(jobId, name, "");
+  }
+
+  long counterValue(String jobId, String name, String operatorPrefix) {
+    long[] total = {0};
+    reporter.getMetricsByGroup().forEach((group, metrics) -> {
+      if (jobId.equals(group.getAllVariables().get("<job_id>"))
+          && group.getAllVariables().getOrDefault("<operator_name>", "").startsWith(operatorPrefix)
+          && metrics.get(name) instanceof Counter)
         total[0] += ((Counter) metrics.get(name)).getCount();
     });
     return total[0];

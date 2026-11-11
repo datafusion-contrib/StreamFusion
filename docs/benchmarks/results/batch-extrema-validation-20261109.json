@@ -1,0 +1,316 @@
+{
+  "date": "2026-11-09",
+  "scope": "Fixed-width global MIN/MAX extension; broad batch goal remains active.",
+  "boundedRustTests": 48,
+  "controls": [
+    "Exact logical buffer precision/scale on HashAgg/SortAgg ONE_PHASE and TWO_PHASE",
+    "Both-line stock/native SQL including empty, all-NULL, FILTER and TIME(0) runtime milliseconds",
+    "Foreign Arrow TIME second/microsecond/nanosecond normalization before comparison, including wrapping",
+    "Typed Arrow partial-state replay after consumer failure; all fields equal stock, producer attempt zero",
+    "Borrowed input/schema/authority cleanup, cancellation, output surviving producer close and expression workspace denial",
+    "Unchanged released SQL and Table API fixtures, exact fallback contracts and positive sort work"
+  ],
+  "lines": [
+    {
+      "line": "2.2",
+      "status": "passed",
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "executionContracts": 10,
+      "runtimeScopeRequirements": 10,
+      "localExtrema": [
+        {
+          "test": "tech.streamfusion.BatchExtremaSqlTest#timeZeroPrecisionKeepsRuntimeMilliseconds",
+          "outcome": "passed",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 1039,
+            "NativeCalcOperator": 1037
+          },
+          "successfulBatchJobs": 2
+        },
+        {
+          "test": "tech.streamfusion.BatchExtremaSqlTest#completedTypedPartialStatesReplayAfterConsumerFailure",
+          "outcome": "passed",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 1004,
+            "NativeCalcOperator": 1000
+          },
+          "successfulBatchJobs": 2
+        },
+        {
+          "test": "tech.streamfusion.BatchExtremaSqlTest#fixedExtremaMatchStockAcrossPhasesFiltersAndEmptyInput",
+          "outcome": "passed",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 4396,
+            "NativeCalcOperator": 12444
+          },
+          "successfulBatchJobs": 24
+        },
+        {
+          "test": "tech.streamfusion.BatchExtremaSqlTest#decimalPrecisionAndUnsupportedExtremaKeepTheirAdmissionContracts",
+          "outcome": "passed",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 1039,
+            "NativeCalcOperator": 1037
+          },
+          "successfulBatchJobs": 2
+        }
+      ],
+      "upstream": [
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrdering",
+          "outcome": "passed",
+          "nativeWork": {
+            "NativeBatchSortOperator": 18
+          },
+          "successfulBatchJobs": 6,
+          "runtimeRoute": "native",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testGlobalSorting",
+          "outcome": "passed",
+          "nativeWork": {
+            "NativeBatchSortOperator": 24
+          },
+          "successfulBatchJobs": 4,
+          "runtimeRoute": "native",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggWithoutGroups",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggregationWithoutGroupby",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testCountStar",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggWithoutGroups",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggregationWithoutGroupby",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testCountStar",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testWorkingAggregationDataTypes",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testAggregationTypes",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        }
+      ],
+      "replay": {
+        "producerAttempts": "[0]",
+        "aggregateAttempts": "[0, 1]",
+        "allFieldsEqualStock": "[1000:false:true:-99999999999999999999.999999999999903457:99999999999999999999.999999999999951728:-717822:2921720:48271:48222729]"
+      },
+      "packagedLoader": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "typedPopulatedAndEmpty": true,
+        "integerRegression": true
+      }
+    },
+    {
+      "line": "1.18",
+      "status": "passed",
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "executionContracts": 10,
+      "runtimeScopeRequirements": 10,
+      "localExtrema": [
+        {
+          "test": "tech.streamfusion.BatchExtremaSqlTest#timeZeroPrecisionKeepsRuntimeMilliseconds",
+          "outcome": "passed",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 1038,
+            "NativeCalcOperator": 1037
+          },
+          "successfulBatchJobs": 2
+        },
+        {
+          "test": "tech.streamfusion.BatchExtremaSqlTest#completedTypedPartialStatesReplayAfterConsumerFailure",
+          "outcome": "passed",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 1002,
+            "NativeCalcOperator": 1000
+          },
+          "successfulBatchJobs": 2
+        },
+        {
+          "test": "tech.streamfusion.BatchExtremaSqlTest#fixedExtremaMatchStockAcrossPhasesFiltersAndEmptyInput",
+          "outcome": "passed",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 4396,
+            "NativeCalcOperator": 12444
+          },
+          "successfulBatchJobs": 24
+        },
+        {
+          "test": "tech.streamfusion.BatchExtremaSqlTest#decimalPrecisionAndUnsupportedExtremaKeepTheirAdmissionContracts",
+          "outcome": "passed",
+          "nativeWork": {
+            "NativeBatchAggregateOperator": 1038,
+            "NativeCalcOperator": 1037
+          },
+          "successfulBatchJobs": 2
+        }
+      ],
+      "upstream": [
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrdering",
+          "outcome": "passed",
+          "nativeWork": {
+            "NativeBatchSortOperator": 18
+          },
+          "successfulBatchJobs": 6,
+          "runtimeRoute": "native",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testGlobalSorting",
+          "outcome": "passed",
+          "nativeWork": {
+            "NativeBatchSortOperator": 24
+          },
+          "successfulBatchJobs": 4,
+          "runtimeRoute": "native",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggWithoutGroups",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggregationWithoutGroupby",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testCountStar",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggWithoutGroups",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggregationWithoutGroupby",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testCountStar",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testWorkingAggregationDataTypes",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testAggregationTypes",
+          "outcome": "passed",
+          "nativeWork": {},
+          "successfulBatchJobs": 1,
+          "runtimeRoute": "batch_host_only",
+          "fallbackReasons": {}
+        }
+      ],
+      "replay": {
+        "producerAttempts": "[0]",
+        "aggregateAttempts": "[0, 1]",
+        "allFieldsEqualStock": "[1000:false:true:-99999999999999999999.999999999999903457:99999999999999999999.999999999999951728:-717822:2921720:48271:48222729]"
+      },
+      "packagedLoader": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "typedPopulatedAndEmpty": true,
+        "integerRegression": true
+      }
+    }
+  ],
+  "sourceSha256": {
+    "native/engine/src/bounded_aggregate.rs": "2eea93e8a2d3673a8783adbba0e1d4b2d10c832db4f4f233e3640faecb541785",
+    "src/main/java/tech/streamfusion/planner/BatchAggregateSpec.java": "6e70f38b607a0f0e5daa18b3237ea5d874f9d3f680e7417396c71db54c38072b",
+    "src/test/java/tech/streamfusion/BatchExtremaSqlTest.java": "fefbd0896181edea5024991e1712dd38cf0f9e645551733d5e78a96e79272b40",
+    "src/test/java/tech/streamfusion/BatchReplaySinkFactory.java": "6971acefeba23cc91faa3d91f211d79066e9945ba100c75e613e02c7029ef08b"
+  },
+  "suiteAgentExecuted": 59,
+  "suiteAgentCanonicalProfileSkipped": 60,
+  "pythonAuditControls": 44
+}

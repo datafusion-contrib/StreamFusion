@@ -328,4 +328,23 @@ class TransposeOperatorsTest {
       }
     }
   }
+
+  @Test
+  void boundedInputFlushesAtCompletionWithoutLatencyTimers() throws Exception {
+    byte[] schema = tech.streamfusion.arrow.ArrowConversion.toArrowSchema(SCHEMA).serializeAsMessage();
+    var operator = new RowDataToArrowOperator(SCHEMA, 3, false, null, false, schema, true);
+    try (var harness = new OneInputStreamOperatorTestHarness<RowData, ArrowBatch>(operator)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(new StreamRecord<>(row(1L, 10)));
+      harness.setProcessingTime(10_000L);
+      assertTrue(harness.getOutput().isEmpty());
+      harness.endInput();
+      var batches = values(harness);
+      assertEquals(1, batches.size());
+      try (var root = batches.get(0).root()) {
+        assertEquals(1, root.getRowCount());
+      }
+    }
+  }
 }

@@ -26,6 +26,7 @@ hosts, connectors, backends, exact SQL and explicitly labelled expression varian
 
 | Workload | Report | Scope |
 | --- | --- | --- |
+| Batch scalar SQL | [Batch scalar comparisons](batch-scalars.md) | Complete row-fed batch jobs, admitted SHA-256 gain, rejected arithmetic/regex candidates and accepted UDF cost |
 | Kafka Nexmark headline | [Benchmark table and reproduction](../benchmarks.md#nexmark-parallelism-4) | Historical headline and its sampling convention |
 | Iceberg to Iceberg | [After boundary optimization](iceberg-optimized-20261017/README.md) | Complete repeated matrix, with [previous-matrix comparison](iceberg-optimized-20261017/previous-comparison.md) |
 | Earlier Iceberg matrix | [Before boundary optimization](iceberg-final-20261017/README.md) | Earlier complete cohort; its [previous I/O comparison](iceberg-io-baseline-20261017/README.md) is separate from the stock-Flink matrix |

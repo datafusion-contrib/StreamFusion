@@ -139,6 +139,20 @@ public final class TaskOffHeapMemory {
     }
   }
 
+  /** Spillable native state leaves space for Arrow input, copying and output import. */
+  public static boolean tryReserveWithHeadroom(long ownerId, long bytes, long headroom) {
+    if (bytes <= 0) return true;
+    Owner owner = OWNERS.get(ownerId);
+    if (owner == null) return false;
+    NativeMemoryLimitException failure = reserveGlobal(owner, bytes, Math.max(0, headroom));
+    if (failure != null) return false;
+    if (!owner.reserve(bytes)) {
+      RESERVED.addAndGet(-bytes);
+      return false;
+    }
+    return true;
+  }
+
   static void reserveArrow(long bytes) {
     if (capacity < 0) {
       synchronized (TaskOffHeapMemory.class) {
@@ -232,9 +246,13 @@ public final class TaskOffHeapMemory {
   }
 
   private static NativeMemoryLimitException reserveGlobal(Owner owner, long bytes) {
+    return reserveGlobal(owner, bytes, 0);
+  }
+
+  private static NativeMemoryLimitException reserveGlobal(Owner owner, long bytes, long headroom) {
     while (true) {
       long current = RESERVED.get();
-      long limit = capacity;
+      long limit = Math.max(0, capacity - Math.min(capacity, headroom));
       long next;
       try {
         next = Math.addExact(current, bytes);

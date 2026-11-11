@@ -25,6 +25,15 @@ This matches Flink's runtime forwarding and keeps deletes visible downstream.
 
 354 → 265 µs per 4096-row batch.
 
+## Bounded input completion
+
+Bounded SQL transposes flush at input completion and skip streaming latency timer
+registration. This avoids one unnecessary timer per partially filled batch while
+preserving the final short batch. Batch parity and unchained-stage controls cover
+the lifecycle. No isolated speedup is claimed; the complete
+[batch scalar investigation](../benchmarks/batch-scalars.md) still found cheap
+arithmetic slower than stock Flink, and that standalone path retains fallback.
+
 ## Rejected alternative
 
 A native Rust row decoder — parsing Flink's row wire format directly in Rust instead of converting

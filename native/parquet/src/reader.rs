@@ -269,17 +269,6 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_createParque
         }));
         let builder =
             ParquetRecordBatchReaderBuilder::try_new(file.clone()).expect("open Parquet file");
-        let max_row_group_bytes = builder
-            .metadata()
-            .row_groups()
-            .iter()
-            .map(|group| {
-                group
-                    .compressed_size()
-                    .saturating_add(group.total_byte_size())
-            })
-            .max()
-            .unwrap_or(0);
         let indices: Vec<usize> = names
             .iter()
             .map(|name| {
@@ -290,6 +279,28 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_createParque
             })
             .collect();
         let projection = ProjectionMask::roots(builder.parquet_schema(), indices.clone());
+        // Unprojected chunks are never loaded by parquet-rs. Charging them made independent narrow
+        // scans compete for the whole file width rather than their actual decoder workspace.
+        let max_row_group_bytes = builder
+            .metadata()
+            .row_groups()
+            .iter()
+            .map(|group| {
+                group
+                    .columns()
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| projection.leaf_included(*index))
+                    .fold(0_i64, |bytes, (_, column)| {
+                        bytes.saturating_add(
+                            column
+                                .compressed_size()
+                                .saturating_add(column.uncompressed_size()),
+                        )
+                    })
+            })
+            .max()
+            .unwrap_or(0);
         let (builder, fractions) = full_range_readers(file, builder, &indices, batch_size as usize);
         let max_row_group_bytes =
             max_row_group_bytes.saturating_mul(if fractions.is_some() { 2 } else { 1 });
