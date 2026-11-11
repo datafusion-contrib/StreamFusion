@@ -1,4 +1,4 @@
-package tech.streamfusion.operator;
+package tech.streamfusion.operator.join.stream;
 
 import org.apache.flink.api.common.operators.ProcessingTimeService;
 import org.apache.flink.metrics.Counter;
@@ -6,7 +6,8 @@ import org.apache.flink.metrics.MeterView;
 import org.apache.flink.metrics.groups.OperatorMetricGroup;
 
 /** Exact metric surface registered by Flink's {@code WindowJoinHelper}. */
-final class FlinkWindowJoinMetrics {
+@org.apache.flink.annotation.Internal
+public final class FlinkWindowJoinMetrics {
 
   private final Counter leftLateRecords;
   private final Counter rightLateRecords;
@@ -15,7 +16,7 @@ final class FlinkWindowJoinMetrics {
   private long reportedLeft;
   private long reportedRight;
 
-  FlinkWindowJoinMetrics(OperatorMetricGroup metrics, ProcessingTimeService processingTime) {
+  public FlinkWindowJoinMetrics(OperatorMetricGroup metrics, ProcessingTimeService processingTime) {
     this.processingTime = processingTime;
     leftLateRecords = metrics.counter("leftNumLateRecordsDropped");
     rightLateRecords = metrics.counter("rightNumLateRecordsDropped");
@@ -26,11 +27,11 @@ final class FlinkWindowJoinMetrics {
         () -> watermark < 0 ? 0L : processingTime.getCurrentProcessingTime() - watermark);
   }
 
-  void onWatermark(long currentWatermark) {
+  public void onWatermark(long currentWatermark) {
     watermark = Math.max(watermark, currentWatermark);
   }
 
-  void reportLateRecords(long cumulativeLeft, long cumulativeRight) {
+  public void reportLateRecords(long cumulativeLeft, long cumulativeRight) {
     if (cumulativeLeft > reportedLeft) {
       leftLateRecords.inc(cumulativeLeft - reportedLeft);
       reportedLeft = cumulativeLeft;

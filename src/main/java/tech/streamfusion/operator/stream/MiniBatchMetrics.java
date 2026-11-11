@@ -1,11 +1,12 @@
-package tech.streamfusion.operator;
+package tech.streamfusion.operator.stream;
 
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.MetricGroup;
 
 /** Metrics shared by native operators that buffer a Flink logical mini-batch. */
-final class MiniBatchMetrics {
-  enum FlushReason {
+@org.apache.flink.annotation.Internal
+public final class MiniBatchMetrics {
+  public enum FlushReason {
     COUNT,
     WATERMARK,
     CHECKPOINT,
@@ -31,11 +32,11 @@ final class MiniBatchMetrics {
   private volatile long lastPhysicalBatches;
   private volatile long peakTransientBytes;
 
-  MiniBatchMetrics(MetricGroup metrics) {
+  public MiniBatchMetrics(MetricGroup metrics) {
     this(metrics, false);
   }
 
-  MiniBatchMetrics(MetricGroup metrics, boolean flinkMapBundleSurface) {
+  public MiniBatchMetrics(MetricGroup metrics, boolean flinkMapBundleSurface) {
     inputRows = metrics.counter("miniBatchInputRows");
     inputBatches = metrics.counter("miniBatchInputBatches");
     bundles = metrics.counter("miniBatchBundles");
@@ -60,11 +61,11 @@ final class MiniBatchMetrics {
     }
   }
 
-  void onPhysicalBatch() {
+  public void onPhysicalBatch() {
     inputBatches.inc();
   }
 
-  void onSlice(int rows, boolean firstContributionFromPhysicalBatch) {
+  public void onSlice(int rows, boolean firstContributionFromPhysicalBatch) {
     inputRows.inc(rows);
     currentRows += rows;
     if (firstContributionFromPhysicalBatch) {
@@ -72,15 +73,15 @@ final class MiniBatchMetrics {
     }
   }
 
-  void onPhysicalBatchSplit() {
+  public void onPhysicalBatchSplit() {
     physicalBatchSplits.inc();
   }
 
-  void onCurrentKeys(long keys) {
+  public void onCurrentKeys(long keys) {
     currentKeys = keys;
   }
 
-  void onFlush(FlushReason reason, long emittedRows, long changedKeys, long transientBytes) {
+  public void onFlush(FlushReason reason, long emittedRows, long changedKeys, long transientBytes) {
     if (currentRows == 0) {
       return;
     }
@@ -109,7 +110,7 @@ final class MiniBatchMetrics {
     currentPhysicalBatches = 0;
   }
 
-  void onCancelledChanges(long count) {
+  public void onCancelledChanges(long count) {
     cancelledChanges.inc(count);
   }
 }

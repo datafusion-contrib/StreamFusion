@@ -1,4 +1,4 @@
-package tech.streamfusion.operator;
+package tech.streamfusion.operator.aggregate.stream;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
@@ -18,7 +18,8 @@ import org.apache.flink.table.runtime.keyselector.RowDataKeySelector;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 
 /** Bounded accumulator views, flushed into managed state before checkpoint snapshots. */
-final class JvmAccumulatorCache {
+@org.apache.flink.annotation.Internal
+public final class JvmAccumulatorCache {
   private final int capacity;
   private final boolean intKey;
   private final boolean stringKey;
@@ -28,7 +29,7 @@ final class JvmAccumulatorCache {
   private final Consumer<Object> selectKey;
   private final List<CachedState> states = new ArrayList<>();
 
-  JvmAccumulatorCache(
+  public JvmAccumulatorCache(
       int capacity,
       LogicalTypeRoot keyType,
       Supplier<Object> currentKey,
@@ -44,7 +45,7 @@ final class JvmAccumulatorCache {
     this.selectKey = selectKey;
   }
 
-  RuntimeContext wrap(RuntimeContext delegate) {
+  public RuntimeContext wrap(RuntimeContext delegate) {
     return (RuntimeContext)
         Proxy.newProxyInstance(
             RuntimeContext.class.getClassLoader(),
@@ -79,7 +80,7 @@ final class JvmAccumulatorCache {
             });
   }
 
-  RowData keyFor(RowData input, int field, RowDataKeySelector selector) throws Exception {
+  public RowData keyFor(RowData input, int field, RowDataKeySelector selector) throws Exception {
     if (states.size() == 1) {
       RowData key = states.get(0).keyFor(input, field);
       if (key != null) return key;
@@ -87,11 +88,11 @@ final class JvmAccumulatorCache {
     return selector.getKey(input);
   }
 
-  void flush() throws IOException {
+  public void flush() throws IOException {
     for (CachedState state : states) state.flush();
   }
 
-  void invalidate() {
+  public void invalidate() {
     states.forEach(CachedState::invalidate);
   }
 

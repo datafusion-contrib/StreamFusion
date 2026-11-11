@@ -23,8 +23,9 @@ Expression encoding stays shared: `ExpressionPlanning` exposes admission and
 predicate construction through `common.EncodedExpression`, while the mutable
 encoder stays internal. Common type probes, explain metadata and the single
 reuse-barrier counter serve both modes. Runtime mode remains independent of source
-boundedness; this package split does not relocate streaming mini-batch helpers,
-runtime operators, JNI entry points or serializer snapshots.
+boundedness. Planner organization leaves installed runtime operator identities,
+JNI entry points and serializer snapshots intact; runtime helpers are organized
+by the responsibilities described below.
 
 Streaming scan, rewrite context, matchers and physical/exec implementations live
 in `planner.stream`, with the same mode package in both Flink compatibility source
@@ -64,6 +65,26 @@ method bodies, to reject streaming ExecNodes and reverse common-to-batch couplin
 SQL regression checks retain positive native consumption, the existing perimeter
 transpose count and historical simplified task names. The packaged loader tests
 exercise both planning modes through the isolated deployment payload.
+
+## Runtime responsibilities and compatibility
+
+Java runtime helpers follow operator responsibilities: `operator.aggregate.stream`
+owns JVM accumulator caching and logical bundle evaluation, `operator.window.stream`
+owns window time translation and aggregate/rank metrics, and `operator.join.stream`
+owns window-join metrics. Logical mini-batch boundaries and metrics shared by
+changelog operators live in `operator.stream`; they are streaming contracts even
+when their inputs arrive as Arrow batches. `operator.batch` owns the bounded native
+output handoff used by sort, aggregate and join.
+
+Only non-serializable implementation helpers move. Their references in deployed
+operators remain private and transient. Serializable operators keep their existing
+class names, inheritance and configuration field placement, including bounded
+EOF/input-demand adapters and streaming timer/checkpoint adapters. Arrow transport,
+allocator authority, JNI callback classes, state descriptors and serializer
+snapshots keep their shared identities. The layout does not duplicate kernels,
+introduce extra calls or alter the stream/batch lifecycle. The compatibility test
+compares all 73 pre-refactor operator serialization descriptors, and existing
+SQL, ownership and recovery tests exercise their runtime behavior.
 
 One bounded DataFusion execution owns persistent input/output streams for the task.
 The Rust `engine::batch` module owns bounded execution, task scheduling, sort,

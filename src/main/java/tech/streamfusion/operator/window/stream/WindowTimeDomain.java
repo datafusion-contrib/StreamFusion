@@ -1,13 +1,14 @@
-package tech.streamfusion.operator;
+package tech.streamfusion.operator.window.stream;
 
 import java.time.Instant;
 import java.time.ZoneId;
 
 /** Fixed-offset local window bounds share one clock translation with their consumers. */
-final class WindowTimeDomain {
+@org.apache.flink.annotation.Internal
+public final class WindowTimeDomain {
   private WindowTimeDomain() {}
 
-  static long offsetMillis(String zoneId) {
+  public static long offsetMillis(String zoneId) {
     var rules = ZoneId.of(zoneId).getRules();
     if (!rules.isFixedOffset()) {
       throw new IllegalArgumentException("Native windows require a fixed time-zone offset");
@@ -15,14 +16,14 @@ final class WindowTimeDomain {
     return rules.getOffset(Instant.EPOCH).getTotalSeconds() * 1000L;
   }
 
-  static long gridStart(long epochMillis, long gridMillis, long offsetMillis) {
+  public static long gridStart(long epochMillis, long gridMillis, long offsetMillis) {
     long shift = Math.floorMod(offsetMillis, gridMillis);
     return Math.floorDiv(shift == 0 ? epochMillis : Math.addExact(epochMillis, shift), gridMillis)
             * gridMillis
         - shift;
   }
 
-  static long closeThreshold(long epochMillis, long offsetMillis) {
+  public static long closeThreshold(long epochMillis, long offsetMillis) {
     if (epochMillis == Long.MIN_VALUE || epochMillis == Long.MAX_VALUE) {
       return epochMillis;
     }

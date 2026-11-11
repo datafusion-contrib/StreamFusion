@@ -11,6 +11,7 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import tech.streamfusion.Native;
 import tech.streamfusion.compat.FlinkStreamOperator;
+import tech.streamfusion.operator.batch.BoundedArrowOutput;
 
 /**
  * Persistent bounded Arrow execution shared by operators with different plans and result schemas.

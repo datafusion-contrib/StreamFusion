@@ -1,4 +1,4 @@
-package tech.streamfusion.operator;
+package tech.streamfusion.operator.aggregate.stream;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -12,7 +12,8 @@ import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.util.Collector;
 
 /** Released bundle evaluation with independently owned keys and copied input rows. */
-final class JvmMiniBatchGroup<V> {
+@org.apache.flink.annotation.Internal
+public final class JvmMiniBatchGroup<V> {
   private final MapBundleFunction<RowData, V, RowData, RowData> function;
   private final BundleTrigger<RowData> trigger;
   private final RowDataSerializer keys;
@@ -21,7 +22,7 @@ final class JvmMiniBatchGroup<V> {
   private final Counter bundles;
   private final Map<RowData, V> buffer = new HashMap<>();
 
-  JvmMiniBatchGroup(
+  public JvmMiniBatchGroup(
       MapBundleFunction<RowData, V, RowData, RowData> function,
       BundleTrigger<RowData> trigger,
       RowDataSerializer keys,
@@ -36,13 +37,13 @@ final class JvmMiniBatchGroup<V> {
     this.bundles = bundles;
   }
 
-  void open(ExecutionContext context) throws Exception {
+  public void open(ExecutionContext context) throws Exception {
     function.open(context);
     trigger.registerCallback(this::finishBundle);
     trigger.reset();
   }
 
-  void add(RowData key, RowData input) throws Exception {
+  public void add(RowData key, RowData input) throws Exception {
     var existing = buffer.get(key);
     var value = function.addInput(existing, input);
     buffer.put(existing == null ? keys.copy(key) : key, value);
@@ -50,11 +51,11 @@ final class JvmMiniBatchGroup<V> {
     trigger.onElement(input);
   }
 
-  boolean hasPending() {
+  public boolean hasPending() {
     return !buffer.isEmpty();
   }
 
-  void finishBundle() throws Exception {
+  public void finishBundle() throws Exception {
     if (!buffer.isEmpty()) {
       function.finishBundle(buffer, output);
       buffer.clear();
@@ -63,7 +64,7 @@ final class JvmMiniBatchGroup<V> {
     trigger.reset();
   }
 
-  void close() {
+  public void close() {
     try {
       // Match AbstractMapBundleOperator's released rich-function closing contract.
       FunctionUtils.closeFunction(function);
