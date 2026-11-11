@@ -26,6 +26,12 @@ reuse-barrier counter serve both modes. Runtime mode remains independent of sour
 boundedness; this package split does not relocate streaming mini-batch helpers,
 runtime operators, JNI entry points or serializer snapshots.
 
+`PlannerModeBoundaryTest` checks compiled batch/common dependencies, including
+method bodies, to reject streaming ExecNodes and reverse common-to-batch coupling.
+SQL regression checks retain positive native consumption, the existing perimeter
+transpose count and historical simplified task names. The packaged loader tests
+exercise both planning modes through the isolated deployment payload.
+
 One bounded DataFusion execution owns persistent input/output streams for the task.
 Each input has one pending Arrow batch, explicit EOF, producer backpressure and
 separate reader/driver wakeups. An empty input slot means pending, not completion.

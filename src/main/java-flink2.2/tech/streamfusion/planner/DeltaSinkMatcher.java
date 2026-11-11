@@ -12,6 +12,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalS
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /** Whitelist-first admission for the path-based Delta data-file writer. */
 final class DeltaSinkMatcher {

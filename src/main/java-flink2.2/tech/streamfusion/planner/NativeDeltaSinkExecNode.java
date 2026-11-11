@@ -28,14 +28,15 @@ import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTransl
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.delta.ArrowToDeltaRowsOperator;
+import tech.streamfusion.delta.KernelBatchRowDataTypeInformation;
 import tech.streamfusion.delta.NativeDeltaHadoopTable;
 import tech.streamfusion.delta.NativeDeltaSink;
 import tech.streamfusion.delta.PartitionedArrowToDeltaRowsOperator;
-import tech.streamfusion.delta.KernelBatchRowDataTypeInformation;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.FilePartitionSplitOperator;
 import tech.streamfusion.operator.PartitionedArrowBatch;
 import tech.streamfusion.operator.PartitionedArrowBatchTypeInformation;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /** Builds a columnar Delta write followed by the stock Delta merge and commit topology. */
 public final class NativeDeltaSinkExecNode extends ExecNodeBase<Object>

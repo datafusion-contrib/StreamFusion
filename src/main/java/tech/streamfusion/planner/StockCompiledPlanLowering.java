@@ -56,6 +56,7 @@ import tech.streamfusion.compat.FlinkCompat;
 import tech.streamfusion.compat.FlinkPlanCompat;
 import tech.streamfusion.operator.AbstractNativeStatefulOperator;
 import tech.streamfusion.operator.RowDataArrowConverter;
+import tech.streamfusion.planner.common.CalcOutputTypeCheck;
 import tech.streamfusion.state.CanonicalStateBackend;
 import tech.streamfusion.state.OperatorIdentityProjection;
 import tech.streamfusion.state.StockSlicingWindowStateContract;
