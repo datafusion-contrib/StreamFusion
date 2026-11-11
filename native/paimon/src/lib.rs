@@ -3,6 +3,7 @@ use streamfusion_bridge::prelude::*;
 use streamfusion_bridge::{self as bridge, *};
 streamfusion_bridge::link_allocator!();
 mod input;
+mod memory;
 mod reader;
 
 #[no_mangle]
@@ -15,6 +16,7 @@ pub extern "system" fn Java_tech_streamfusion_paimon_NativePaimon_createReader(
     rows: jint,
     budget: jlong,
     kinds: jboolean,
+    memory: JObject,
 ) -> jlong {
     bridge::jni_guard(env, |env| {
         let json: String = env
@@ -22,7 +24,10 @@ pub extern "system" fn Java_tech_streamfusion_paimon_NativePaimon_createReader(
             .expect("Paimon read descriptor")
             .into();
         assert!(rows > 0 && budget > 0);
-        let io = input::file_io(env, io);
+        let max_read_bytes =
+            (!memory.is_null()).then_some((budget as usize).clamp(64 * 1024, 4 * 1024 * 1024));
+        let io = input::file_io(env, io, max_read_bytes);
+        let pool = memory::CompactPool::new(env, memory);
         into_handle(reader::Reader::new(
             io,
             &json,
@@ -30,6 +35,7 @@ pub extern "system" fn Java_tech_streamfusion_paimon_NativePaimon_createReader(
             rows as usize,
             budget as usize,
             kinds != 0,
+            pool,
         ))
     })
 }

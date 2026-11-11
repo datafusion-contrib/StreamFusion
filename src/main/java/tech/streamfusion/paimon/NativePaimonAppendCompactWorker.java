@@ -24,6 +24,7 @@ final class NativePaimonAppendCompactWorker extends PaimonAppendWorkerCompat {
 
   @Override
   public void open() throws Exception {
+    tech.streamfusion.operator.NativeAllocator.initializeFor(this);
     super.open();
     counters = PaimonCompactionProvider.counters(getMetricGroup());
   }

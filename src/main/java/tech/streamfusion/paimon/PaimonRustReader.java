@@ -87,7 +87,13 @@ final class PaimonRustReader implements AutoCloseable {
 
   PaimonRustReader(FileStoreTable table, DataSplit split, RowType output, int rows, boolean raw)
       throws IOException {
-    this(table, split, output, output, rows, raw, null, false);
+    this(table, split, output, output, rows, raw, null, false, null);
+  }
+
+  static PaimonRustReader appendCompaction(
+      FileStoreTable table, DataSplit split, RowType output, int rows, PaimonCompactMemory memory)
+      throws IOException {
+    return new PaimonRustReader(table, split, output, output, rows, true, null, false, memory);
   }
 
   static PaimonRustReader compaction(
@@ -105,7 +111,8 @@ final class PaimonRustReader implements AutoCloseable {
         rows,
         false,
         layout.keyColumns,
-        dropDelete);
+        dropDelete,
+        null);
   }
 
   private PaimonRustReader(
@@ -116,9 +123,10 @@ final class PaimonRustReader implements AutoCloseable {
       int rows,
       boolean raw,
       int[] physicalKeys,
-      boolean dropDelete)
+      boolean dropDelete,
+      PaimonCompactMemory memory)
       throws IOException {
-    io = new Input(table.fileIO());
+    io = new Input(table.fileIO(), memory);
     boolean kinds = !table.primaryKeys().isEmpty();
     List<Field> fields =
         new ArrayList<>(ArrowFileBatch.schema(ArrowConversion.toArrowSchema(output)).getFields());
@@ -133,8 +141,9 @@ final class PaimonRustReader implements AutoCloseable {
               descriptor(table, split, projection, raw, physicalKeys, dropDelete),
               schema.memoryAddress(),
               rows,
-              table.coreOptions().sortSpillBufferSize(),
-              kinds);
+              memory == null ? table.coreOptions().sortSpillBufferSize() : memory.readerBytes,
+              kinds,
+              memory);
     } catch (Throwable failure) {
       try {
         io.close();
@@ -233,12 +242,20 @@ final class PaimonRustReader implements AutoCloseable {
 
   static final class Input implements AutoCloseable {
     private final FileIO io;
+    private final byte[] chunk;
+    private final PaimonCompactMemory memory;
     private final AtomicLong ids = new AtomicLong();
     private final Map<Long, OpenFile> files = new ConcurrentHashMap<>();
     private final Set<String> opened = ConcurrentHashMap.newKeySet();
 
     Input(FileIO io) {
+      this(io, null);
+    }
+
+    Input(FileIO io, PaimonCompactMemory memory) {
       this.io = io;
+      this.memory = memory;
+      this.chunk = memory == null ? new byte[64 * 1024] : null;
     }
 
     public long length(String path) throws IOException {
@@ -254,12 +271,14 @@ final class PaimonRustReader implements AutoCloseable {
       return id;
     }
 
-    public void readFully(long id, long position, ByteBuffer target) throws IOException {
+    public synchronized void readFully(long id, long position, ByteBuffer target)
+        throws IOException {
       if (Thread.currentThread().isInterrupted())
         throw new InterruptedIOException("Paimon read cancelled");
       OpenFile file = files.get(id);
       if (file == null) throw new IOException("Paimon input is closed");
-      file.readFully(position, target);
+      file.readFully(
+          position, target, memory == null ? chunk : memory.inputChunk(target.remaining()));
     }
 
     public void closeFile(long id) throws IOException {
@@ -284,13 +303,12 @@ final class PaimonRustReader implements AutoCloseable {
 
   private static final class OpenFile {
     final SeekableInputStream stream;
-    final byte[] chunk = new byte[64 * 1024];
 
     OpenFile(SeekableInputStream stream) {
       this.stream = stream;
     }
 
-    synchronized void readFully(long position, ByteBuffer target) throws IOException {
+    synchronized void readFully(long position, ByteBuffer target, byte[] chunk) throws IOException {
       stream.seek(position);
       while (target.hasRemaining()) {
         int count = stream.read(chunk, 0, Math.min(chunk.length, target.remaining()));

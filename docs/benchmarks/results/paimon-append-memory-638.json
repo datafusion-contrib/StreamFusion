@@ -1,0 +1,2357 @@
+{
+  "issue": 638,
+  "baseline_commit": "e1d71357c3240b99e944d141aa2fe0fe6afd16f0",
+  "environment": {
+    "cpu": "Apple M4",
+    "physical_memory_bytes": 17179869184,
+    "os": "macOS-15.3.1-arm64-arm-64bit-Mach-O",
+    "jdk": "17.0.17",
+    "flink": "2.2.1",
+    "paimon_java": "2.1.0",
+    "paimon_rust": "0.4.0",
+    "native_profile": "release with mimalloc, codegen-units=1",
+    "jvm_heap_bytes": 2147483648,
+    "active_processors": 2,
+    "available_task_budget_bytes": 1073741824,
+    "background_load": "Spotlight consumed approximately one CPU core during the final runs; do not compare absolute times with pilots."
+  },
+  "method": {
+    "warmups_per_engine": 2,
+    "measured_trials_per_engine": 5,
+    "ordering": "Rotating stock / previous / proposed",
+    "input": "Two native-written zstd Parquet files: 128 rows plus 16384 or 49152 rows; unique 1024-byte ASCII strings, null every 499 rows, three partition strings; dictionary disabled.",
+    "timer": "Complete rewrite including preflight, reader/runtime/JNI, host FileIO, native memory admission, encode and rolling-writer close. Table-writer object construction, fixture creation, full output verification and cleanup excluded.",
+    "verification": "Every content value, null, multiplicity, partition field, file row count, sequence and statistics; positive native groups and parquet-rs footer witnesses with zero fallback for proposed; expected route for previous.",
+    "scope": "Local-file rewrite diagnostics, including optional synthetic per-stream-read latency; no complete-job, remote-I/O, RSS or CPU-efficiency claim."
+  },
+  "runs": [
+    {
+      "read_latency_ms": 0,
+      "trials": [
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": -2,
+          "seconds": 0.214113,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": -2,
+          "seconds": 0.17064,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": -2,
+          "seconds": 0.350456,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": -1,
+          "seconds": 0.159436,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": -1,
+          "seconds": 0.207216,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": -1,
+          "seconds": 0.154866,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": 0,
+          "seconds": 0.185003,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": 0,
+          "seconds": 0.15353,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": 0,
+          "seconds": 0.156943,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": 1,
+          "seconds": 0.148938,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": 1,
+          "seconds": 0.147006,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": 1,
+          "seconds": 0.179636,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": 2,
+          "seconds": 0.146576,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": 2,
+          "seconds": 0.174293,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": 2,
+          "seconds": 0.1475,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": 3,
+          "seconds": 0.173921,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": 3,
+          "seconds": 0.144491,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": 3,
+          "seconds": 0.146448,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": 4,
+          "seconds": 0.151524,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": 4,
+          "seconds": 0.145265,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": 4,
+          "seconds": 0.177373,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": -2,
+          "seconds": 0.147787,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": -2,
+          "seconds": 0.148111,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": -2,
+          "seconds": 0.172354,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": -1,
+          "seconds": 0.149451,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": -1,
+          "seconds": 0.177277,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": -1,
+          "seconds": 0.145659,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": 0,
+          "seconds": 0.171775,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": 0,
+          "seconds": 0.151235,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": 0,
+          "seconds": 0.154351,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": 1,
+          "seconds": 0.148731,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": 1,
+          "seconds": 0.141244,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": 1,
+          "seconds": 0.180484,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": 2,
+          "seconds": 0.151927,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": 2,
+          "seconds": 0.186104,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": 2,
+          "seconds": 0.146195,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": 3,
+          "seconds": 0.175151,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": 3,
+          "seconds": 0.147667,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": 3,
+          "seconds": 0.156916,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": 4,
+          "seconds": 0.147743,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": 4,
+          "seconds": 0.156576,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": 4,
+          "seconds": 0.177118,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": -2,
+          "seconds": 0.62416,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": -2,
+          "seconds": 0.484857,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": -2,
+          "seconds": 0.600134,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": -1,
+          "seconds": 0.488724,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": -1,
+          "seconds": 0.567906,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": -1,
+          "seconds": 0.544815,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": 0,
+          "seconds": 0.587806,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": 0,
+          "seconds": 0.597914,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": 0,
+          "seconds": 0.464845,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": 1,
+          "seconds": 0.493891,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": 1,
+          "seconds": 0.414043,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": 1,
+          "seconds": 0.497286,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": 2,
+          "seconds": 0.458507,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": 2,
+          "seconds": 0.532866,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": 2,
+          "seconds": 0.493637,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": 3,
+          "seconds": 0.499979,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": 3,
+          "seconds": 0.495901,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": 3,
+          "seconds": 0.412718,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": 4,
+          "seconds": 0.496451,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": 4,
+          "seconds": 0.411921,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": 4,
+          "seconds": 0.488616,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": -2,
+          "seconds": 0.418039,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": -2,
+          "seconds": 0.414068,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": -2,
+          "seconds": 0.491245,
+          "native": false,
+          "outputBytes": 38103767
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": -1,
+          "seconds": 0.413396,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": -1,
+          "seconds": 0.485374,
+          "native": false,
+          "outputBytes": 38103767
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": -1,
+          "seconds": 0.407128,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": 0,
+          "seconds": 0.48564,
+          "native": false,
+          "outputBytes": 38103767
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": 0,
+          "seconds": 0.444206,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": 0,
+          "seconds": 0.436683,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": 1,
+          "seconds": 0.426628,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": 1,
+          "seconds": 0.425043,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": 1,
+          "seconds": 0.488616,
+          "native": false,
+          "outputBytes": 38103767
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": 2,
+          "seconds": 0.408314,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": 2,
+          "seconds": 0.483665,
+          "native": false,
+          "outputBytes": 38103767
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": 2,
+          "seconds": 0.411135,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": 3,
+          "seconds": 0.492747,
+          "native": false,
+          "outputBytes": 38103767
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": 3,
+          "seconds": 0.413524,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": 3,
+          "seconds": 0.419294,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": 4,
+          "seconds": 0.113293,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": 4,
+          "seconds": 0.113425,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": 4,
+          "seconds": 0.107235,
+          "native": false,
+          "outputBytes": 38103767
+        }
+      ],
+      "summaries": [
+        {
+          "rows": 16512,
+          "row_group_target_bytes": 8388608,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.177118,
+              "min_seconds": 0.171775,
+              "max_seconds": 0.186104
+            },
+            "previous": {
+              "median_seconds": 0.147743,
+              "min_seconds": 0.146195,
+              "max_seconds": 0.151235
+            },
+            "proposed": {
+              "median_seconds": 0.154351,
+              "min_seconds": 0.141244,
+              "max_seconds": 0.156916
+            }
+          }
+        },
+        {
+          "rows": 16512,
+          "row_group_target_bytes": 134217728,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.177373,
+              "min_seconds": 0.173921,
+              "max_seconds": 0.185003
+            },
+            "previous": {
+              "median_seconds": 0.148938,
+              "min_seconds": 0.144491,
+              "max_seconds": 0.15353
+            },
+            "proposed": {
+              "median_seconds": 0.146576,
+              "min_seconds": 0.145265,
+              "max_seconds": 0.156943
+            }
+          }
+        },
+        {
+          "rows": 49280,
+          "row_group_target_bytes": 8388608,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.48564,
+              "min_seconds": 0.107235,
+              "max_seconds": 0.492747
+            },
+            "previous": {
+              "median_seconds": 0.413524,
+              "min_seconds": 0.113293,
+              "max_seconds": 0.444206
+            },
+            "proposed": {
+              "median_seconds": 0.419294,
+              "min_seconds": 0.113425,
+              "max_seconds": 0.436683
+            }
+          }
+        },
+        {
+          "rows": 49280,
+          "row_group_target_bytes": 134217728,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.499979,
+              "min_seconds": 0.488616,
+              "max_seconds": 0.587806
+            },
+            "previous": {
+              "median_seconds": 0.495901,
+              "min_seconds": 0.493637,
+              "max_seconds": 0.597914
+            },
+            "proposed": {
+              "median_seconds": 0.414043,
+              "min_seconds": 0.411921,
+              "max_seconds": 0.464845
+            }
+          }
+        }
+      ]
+    },
+    {
+      "read_latency_ms": 1,
+      "trials": [
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": -2,
+          "seconds": 1.644734,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": -2,
+          "seconds": 0.209942,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": -2,
+          "seconds": 0.419222,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": -1,
+          "seconds": 0.204399,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": -1,
+          "seconds": 0.245088,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": -1,
+          "seconds": 0.509559,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": 0,
+          "seconds": 0.232999,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": 0,
+          "seconds": 0.50279,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": 0,
+          "seconds": 0.178531,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": 1,
+          "seconds": 0.512941,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": 1,
+          "seconds": 0.173527,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": 1,
+          "seconds": 0.206518,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": 2,
+          "seconds": 0.175892,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": 2,
+          "seconds": 0.19778,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": 2,
+          "seconds": 0.491265,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": 3,
+          "seconds": 0.197842,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": 3,
+          "seconds": 0.496403,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": 3,
+          "seconds": 0.17039,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "previous",
+          "trial": 4,
+          "seconds": 0.498275,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "proposed",
+          "trial": 4,
+          "seconds": 0.175084,
+          "native": true,
+          "outputBytes": 12764561
+        },
+        {
+          "rows": 16512,
+          "block": 134217728,
+          "estimate": 29863837,
+          "engine": "stock",
+          "trial": 4,
+          "seconds": 0.197901,
+          "native": false,
+          "outputBytes": 12764508
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": -2,
+          "seconds": 0.505111,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": -2,
+          "seconds": 0.173137,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": -2,
+          "seconds": 0.193641,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": -1,
+          "seconds": 0.171254,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": -1,
+          "seconds": 0.200342,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": -1,
+          "seconds": 0.500329,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": 0,
+          "seconds": 0.198309,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": 0,
+          "seconds": 0.482596,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": 0,
+          "seconds": 0.174943,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": 1,
+          "seconds": 0.48639,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": 1,
+          "seconds": 0.175867,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": 1,
+          "seconds": 0.20665,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": 2,
+          "seconds": 0.17537,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": 2,
+          "seconds": 0.20226,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": 2,
+          "seconds": 0.506812,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": 3,
+          "seconds": 0.209871,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": 3,
+          "seconds": 0.503086,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": 3,
+          "seconds": 0.177819,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "previous",
+          "trial": 4,
+          "seconds": 0.504248,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "proposed",
+          "trial": 4,
+          "seconds": 0.176621,
+          "native": true,
+          "outputBytes": 12767479
+        },
+        {
+          "rows": 16512,
+          "block": 8388608,
+          "estimate": 19190431,
+          "engine": "stock",
+          "trial": 4,
+          "seconds": 0.200743,
+          "native": false,
+          "outputBytes": 12767584
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": -2,
+          "seconds": 0.584706,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": -2,
+          "seconds": 0.480143,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": -2,
+          "seconds": 0.564259,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": -1,
+          "seconds": 0.485097,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": -1,
+          "seconds": 0.616837,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": -1,
+          "seconds": 0.582029,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": 0,
+          "seconds": 0.523005,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": 0,
+          "seconds": 0.535157,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": 0,
+          "seconds": 0.449756,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": 1,
+          "seconds": 0.535111,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": 1,
+          "seconds": 0.452335,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": 1,
+          "seconds": 0.531845,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": 2,
+          "seconds": 0.450198,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": 2,
+          "seconds": 0.52899,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": 2,
+          "seconds": 0.531325,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": 3,
+          "seconds": 0.527923,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": 3,
+          "seconds": 0.557609,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": 3,
+          "seconds": 0.445376,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "previous",
+          "trial": 4,
+          "seconds": 0.537079,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "proposed",
+          "trial": 4,
+          "seconds": 0.450655,
+          "native": true,
+          "outputBytes": 38092709
+        },
+        {
+          "rows": 49280,
+          "block": 134217728,
+          "estimate": 89593497,
+          "engine": "stock",
+          "trial": 4,
+          "seconds": 0.521045,
+          "native": false,
+          "outputBytes": 38092629
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": -2,
+          "seconds": 1.377301,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": -2,
+          "seconds": 0.452998,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": -2,
+          "seconds": 0.514317,
+          "native": false,
+          "outputBytes": 38103767
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": -1,
+          "seconds": 0.442154,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": -1,
+          "seconds": 0.529289,
+          "native": false,
+          "outputBytes": 38103767
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": -1,
+          "seconds": 1.384413,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": 0,
+          "seconds": 0.522189,
+          "native": false,
+          "outputBytes": 38103767
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": 0,
+          "seconds": 1.375736,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": 0,
+          "seconds": 0.46184,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": 1,
+          "seconds": 1.383042,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": 1,
+          "seconds": 0.460983,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": 1,
+          "seconds": 0.550787,
+          "native": false,
+          "outputBytes": 38103767
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": 2,
+          "seconds": 0.455899,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": 2,
+          "seconds": 0.524999,
+          "native": false,
+          "outputBytes": 38103767
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": 2,
+          "seconds": 1.380966,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": 3,
+          "seconds": 0.513456,
+          "native": false,
+          "outputBytes": 38103767
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": 3,
+          "seconds": 1.380905,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": 3,
+          "seconds": 0.443308,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "previous",
+          "trial": 4,
+          "seconds": 1.380525,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "proposed",
+          "trial": 4,
+          "seconds": 0.442237,
+          "native": true,
+          "outputBytes": 38103679
+        },
+        {
+          "rows": 49280,
+          "block": 8388608,
+          "estimate": 19191987,
+          "engine": "stock",
+          "trial": 4,
+          "seconds": 0.514374,
+          "native": false,
+          "outputBytes": 38103767
+        }
+      ],
+      "summaries": [
+        {
+          "rows": 16512,
+          "row_group_target_bytes": 8388608,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.20226,
+              "min_seconds": 0.198309,
+              "max_seconds": 0.209871
+            },
+            "previous": {
+              "median_seconds": 0.503086,
+              "min_seconds": 0.482596,
+              "max_seconds": 0.506812
+            },
+            "proposed": {
+              "median_seconds": 0.175867,
+              "min_seconds": 0.174943,
+              "max_seconds": 0.177819
+            }
+          }
+        },
+        {
+          "rows": 16512,
+          "row_group_target_bytes": 134217728,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.197901,
+              "min_seconds": 0.19778,
+              "max_seconds": 0.232999
+            },
+            "previous": {
+              "median_seconds": 0.498275,
+              "min_seconds": 0.491265,
+              "max_seconds": 0.512941
+            },
+            "proposed": {
+              "median_seconds": 0.175084,
+              "min_seconds": 0.17039,
+              "max_seconds": 0.178531
+            }
+          }
+        },
+        {
+          "rows": 49280,
+          "row_group_target_bytes": 8388608,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.522189,
+              "min_seconds": 0.513456,
+              "max_seconds": 0.550787
+            },
+            "previous": {
+              "median_seconds": 1.380905,
+              "min_seconds": 1.375736,
+              "max_seconds": 1.383042
+            },
+            "proposed": {
+              "median_seconds": 0.455899,
+              "min_seconds": 0.442237,
+              "max_seconds": 0.46184
+            }
+          }
+        },
+        {
+          "rows": 49280,
+          "row_group_target_bytes": 134217728,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.527923,
+              "min_seconds": 0.521045,
+              "max_seconds": 0.531845
+            },
+            "previous": {
+              "median_seconds": 0.535157,
+              "min_seconds": 0.531325,
+              "max_seconds": 0.557609
+            },
+            "proposed": {
+              "median_seconds": 0.450198,
+              "min_seconds": 0.445376,
+              "max_seconds": 0.452335
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "native_library_sha256": {
+    "libstreamfusion_parquet.dylib": "f74b49b3e7b0c033942a686afca33ee84dbe3580d0c09a6bac7f501f7ce082e5",
+    "libstreamfusion_paimon.dylib": "f39f2bcf0b17c4fe2047bdb7197c26d3eb130cbce7c1e7bcc0ff49179593ec09",
+    "libstreamfusion.dylib": "3393dff22eb1a5dcbc692ce4c3823857293f99600b833a790d47269cc5f66690",
+    "libstreamfusion_orc.dylib": "a81a35481c02bbafb0890ebd400813d92284143a09c0fbea389f05dffdb8b469"
+  },
+  "diagnostic_passes": [
+    {
+      "policy": "Initial resource policy: 64 KiB Java transfers, default 2 MiB positioned reads",
+      "read_latency_ms": 1,
+      "passed_trials_including_warmup": 84,
+      "summaries": [
+        {
+          "rows": 16512,
+          "row_group_target_bytes": 8388608,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.060938,
+              "min_seconds": 0.060188,
+              "max_seconds": 0.062274,
+              "measured_trials": 5
+            },
+            "previous": {
+              "median_seconds": 0.409266,
+              "min_seconds": 0.393969,
+              "max_seconds": 0.413074,
+              "measured_trials": 5
+            },
+            "proposed": {
+              "median_seconds": 0.40821,
+              "min_seconds": 0.392732,
+              "max_seconds": 0.412065,
+              "measured_trials": 5
+            }
+          }
+        },
+        {
+          "rows": 16512,
+          "row_group_target_bytes": 134217728,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.062941,
+              "min_seconds": 0.062294,
+              "max_seconds": 0.064439,
+              "measured_trials": 5
+            },
+            "previous": {
+              "median_seconds": 0.404562,
+              "min_seconds": 0.39464,
+              "max_seconds": 0.407157,
+              "measured_trials": 5
+            },
+            "proposed": {
+              "median_seconds": 0.404631,
+              "min_seconds": 0.381579,
+              "max_seconds": 0.408497,
+              "measured_trials": 5
+            }
+          }
+        },
+        {
+          "rows": 49280,
+          "row_group_target_bytes": 8388608,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.134432,
+              "min_seconds": 0.133489,
+              "max_seconds": 0.148531,
+              "measured_trials": 5
+            },
+            "previous": {
+              "median_seconds": 1.092275,
+              "min_seconds": 1.088531,
+              "max_seconds": 1.109335,
+              "measured_trials": 5
+            },
+            "proposed": {
+              "median_seconds": 1.162682,
+              "min_seconds": 1.158639,
+              "max_seconds": 1.201475,
+              "measured_trials": 5
+            }
+          }
+        },
+        {
+          "rows": 49280,
+          "row_group_target_bytes": 134217728,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.138121,
+              "min_seconds": 0.13709,
+              "max_seconds": 0.15493,
+              "measured_trials": 5
+            },
+            "previous": {
+              "median_seconds": 0.146318,
+              "min_seconds": 0.143696,
+              "max_seconds": 0.16651,
+              "measured_trials": 5
+            },
+            "proposed": {
+              "median_seconds": 1.070791,
+              "min_seconds": 1.064889,
+              "max_seconds": 1.140224,
+              "measured_trials": 5
+            }
+          }
+        }
+      ],
+      "interpretation": "Different series and host load; retain unfavorable within-series comparisons, not cross-series absolute speedups."
+    },
+    {
+      "policy": "First transfer pass: 4 MiB Java transfers, default 2 MiB positioned reads",
+      "read_latency_ms": 1,
+      "passed_trials_including_warmup": 84,
+      "summaries": [
+        {
+          "rows": 16512,
+          "row_group_target_bytes": 8388608,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.061194,
+              "min_seconds": 0.060351,
+              "max_seconds": 0.061301,
+              "measured_trials": 5
+            },
+            "previous": {
+              "median_seconds": 0.409268,
+              "min_seconds": 0.406549,
+              "max_seconds": 0.410356,
+              "measured_trials": 5
+            },
+            "proposed": {
+              "median_seconds": 0.064389,
+              "min_seconds": 0.064335,
+              "max_seconds": 0.064646,
+              "measured_trials": 5
+            }
+          }
+        },
+        {
+          "rows": 16512,
+          "row_group_target_bytes": 134217728,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.06287,
+              "min_seconds": 0.062636,
+              "max_seconds": 0.064805,
+              "measured_trials": 5
+            },
+            "previous": {
+              "median_seconds": 0.40434,
+              "min_seconds": 0.401175,
+              "max_seconds": 0.409106,
+              "measured_trials": 5
+            },
+            "proposed": {
+              "median_seconds": 0.064861,
+              "min_seconds": 0.063699,
+              "max_seconds": 0.06543,
+              "measured_trials": 5
+            }
+          }
+        },
+        {
+          "rows": 49280,
+          "row_group_target_bytes": 8388608,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.133658,
+              "min_seconds": 0.132405,
+              "max_seconds": 0.134355,
+              "measured_trials": 5
+            },
+            "previous": {
+              "median_seconds": 1.093395,
+              "min_seconds": 1.086194,
+              "max_seconds": 1.097175,
+              "measured_trials": 5
+            },
+            "proposed": {
+              "median_seconds": 0.144248,
+              "min_seconds": 0.143947,
+              "max_seconds": 0.146016,
+              "measured_trials": 5
+            }
+          }
+        },
+        {
+          "rows": 49280,
+          "row_group_target_bytes": 134217728,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.165707,
+              "min_seconds": 0.136719,
+              "max_seconds": 0.186802,
+              "measured_trials": 5
+            },
+            "previous": {
+              "median_seconds": 0.16657,
+              "min_seconds": 0.144129,
+              "max_seconds": 0.170025,
+              "measured_trials": 5
+            },
+            "proposed": {
+              "median_seconds": 0.179376,
+              "min_seconds": 0.143141,
+              "max_seconds": 0.215673,
+              "measured_trials": 5
+            }
+          }
+        }
+      ],
+      "interpretation": "Different series and host load; retain unfavorable within-series comparisons, not cross-series absolute speedups."
+    },
+    {
+      "policy": "Adaptive Java staging cap 32 MiB, still limited by 2 MiB positioned reads",
+      "read_latency_ms": 1,
+      "passed_trials_including_warmup": 84,
+      "summaries": [
+        {
+          "rows": 16512,
+          "row_group_target_bytes": 8388608,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.061293,
+              "min_seconds": 0.060554,
+              "max_seconds": 0.061866,
+              "measured_trials": 5
+            },
+            "previous": {
+              "median_seconds": 0.408814,
+              "min_seconds": 0.406282,
+              "max_seconds": 0.409208,
+              "measured_trials": 5
+            },
+            "proposed": {
+              "median_seconds": 0.064515,
+              "min_seconds": 0.06403,
+              "max_seconds": 0.064939,
+              "measured_trials": 5
+            }
+          }
+        },
+        {
+          "rows": 16512,
+          "row_group_target_bytes": 134217728,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.062532,
+              "min_seconds": 0.062097,
+              "max_seconds": 0.063831,
+              "measured_trials": 5
+            },
+            "previous": {
+              "median_seconds": 0.404587,
+              "min_seconds": 0.388599,
+              "max_seconds": 0.406194,
+              "measured_trials": 5
+            },
+            "proposed": {
+              "median_seconds": 0.064827,
+              "min_seconds": 0.064294,
+              "max_seconds": 0.065368,
+              "measured_trials": 5
+            }
+          }
+        },
+        {
+          "rows": 49280,
+          "row_group_target_bytes": 8388608,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.133758,
+              "min_seconds": 0.131386,
+              "max_seconds": 0.134025,
+              "measured_trials": 5
+            },
+            "previous": {
+              "median_seconds": 1.089595,
+              "min_seconds": 1.085805,
+              "max_seconds": 1.09639,
+              "measured_trials": 5
+            },
+            "proposed": {
+              "median_seconds": 0.143582,
+              "min_seconds": 0.143149,
+              "max_seconds": 0.145491,
+              "measured_trials": 5
+            }
+          }
+        },
+        {
+          "rows": 49280,
+          "row_group_target_bytes": 134217728,
+          "engines": {
+            "stock": {
+              "median_seconds": 0.137808,
+              "min_seconds": 0.137026,
+              "max_seconds": 0.149885,
+              "measured_trials": 5
+            },
+            "previous": {
+              "median_seconds": 0.145281,
+              "min_seconds": 0.142042,
+              "max_seconds": 0.230743,
+              "measured_trials": 5
+            },
+            "proposed": {
+              "median_seconds": 0.145284,
+              "min_seconds": 0.143434,
+              "max_seconds": 0.215089,
+              "measured_trials": 5
+            }
+          }
+        }
+      ],
+      "interpretation": "Different series and host load; retain unfavorable within-series comparisons, not cross-series absolute speedups."
+    }
+  ],
+  "implementation_files_sha256": {
+    "native/paimon/src/input.rs": "6e767bef130c9daddbfdefc4c81e5bce08cfab514bc179eb1a588f8b3b11d4b1",
+    "native/paimon/src/lib.rs": "efda58e0344b1fbc5fe11bbd7b77b2c15eda2aee050d2e6f58d9ba30ce35e691",
+    "native/paimon/src/memory.rs": "593c4713be6479a2a6cf8702ad2a3a0f9dd977231776e13679a02a40d6f9610a",
+    "native/paimon/src/reader.rs": "2f7ba089815b341d0d847cd43841e518362f2a17a64b5c5dee801f0028e61994",
+    "native/parquet/src/files.rs": "52582abe1765114b62a431166796b15aafd7e89136d210b6699034af9e2d2632",
+    "native/parquet/src/int96_writer.rs": "708be38e9d19e690b7388a375b068a4db76f61b645548973f6cb9ead846eeb0f",
+    "src/main/java/tech/streamfusion/format/ColumnarFileCodec.java": "65d9f992dd936bdb8724a7604d654adb082aee4f0518414897fd56bc0d26b339",
+    "src/main/java/tech/streamfusion/orc/OrcEncoder.java": "6618ce5fdd61e7f0bdab3b2f02d95d029a0e72e14bed190f55c8989853305a10",
+    "src/main/java/tech/streamfusion/paimon/NativePaimon.java": "fad356743858158f18fbd6022bfa71c653490401b4b4e60da60f51b68e407f47",
+    "src/main/java/tech/streamfusion/paimon/NativePaimonAppendCompactWorker.java": "d5c5de011d4041efd984b0cb54a8aeb43face17f91674e8d13704b2bbef63bfd",
+    "src/main/java/tech/streamfusion/paimon/NativePaimonAppendRewriter.java": "951759acca3e5dabeb28e73afe4e06965fc6d622cdba5d0c8d6a3c55569b1b8c",
+    "src/main/java/tech/streamfusion/paimon/NativePaimonFileWriter.java": "99fe344b6535ad1422d6841fc2037f51988dbed90d39006449580c4d3c3e821c",
+    "src/main/java/tech/streamfusion/paimon/NativePaimonWriteOperator.java": "6dadaafd842a62025cbc9048b49759bee21174a85cc1560b120bb5255c1119cc",
+    "src/main/java/tech/streamfusion/paimon/PaimonCompactMemory.java": "49b9a47d3ab10a6f3e2f16539bd116723d6dee56dd51b57aa5b0c608a29fb7c8",
+    "src/main/java/tech/streamfusion/paimon/PaimonReadPreflight.java": "dd09ceffaa091f81e84446ba01d9371f5505eb3e231aa3ca138230dcaedbe5a5",
+    "src/main/java/tech/streamfusion/paimon/PaimonRustReader.java": "8810176f15eec4cfb5789454e12377018500443f5f60a6d144fcb80963e00154",
+    "src/main/java/tech/streamfusion/parquet/NativeParquet.java": "573c6fd49b136bdee294ba2a036f56ed927ad516e19e101bb1f7f6500b9aa72c",
+    "src/main/java/tech/streamfusion/parquet/ParquetCodec.java": "2a6949d819704fb3acd0afe1242481e38040b03c569bfb1edbc38840b6bc5f9d",
+    "streamfusion-paimon/src/test/java-flink1.18/tech/streamfusion/paimon/PaimonTestCompat.java": "df37de04700174c2bce7e9dcea13211e55a35913bc649c371ae3c682fbf451da",
+    "streamfusion-paimon/src/test/java-flink2.2/tech/streamfusion/paimon/PaimonTestCompat.java": "daf7a95e2835845d139d25fb5c2805615ca04b11bd37df99f7a027407ab5018a",
+    "streamfusion-paimon/src/test/java/tech/streamfusion/paimon/PaimonCompactionFailureTest.java": "041e1b5a3744f67eaf3907a0464b22ff87b64d77305818de23d778300ee41630",
+    "streamfusion-paimon/src/test/java/tech/streamfusion/paimon/PaimonCompactionMemoryBenchmark.java": "f0e1e84944b9db0e36799c33d9945fc5164f9366fa81ec457e7ceaa853864744",
+    "streamfusion-paimon/src/test/java/tech/streamfusion/paimon/PaimonCompactionMemoryTest.java": "75ec3635bd7dd8c1a508726038ae068f568bbdb7c7759864c813d9c0358f7cb6",
+    "streamfusion-paimon1/pom.xml": "e2b806b67cf6f33d5ac9a31125969bc766324fa70caaf4036ec8a472124788a6",
+    "streamfusion-paimon1/src/test/java/tech/streamfusion/paimon/PaimonTestCompat.java": "8b6924294ef013e7e4082bc5d29a82266defeaf2a6471eb6744148206d983633"
+  },
+  "focused_validation": [
+    {
+      "host": "Paimon 2.1.0 / Flink 2.2.1",
+      "jdk": 17,
+      "native": "release/mimalloc",
+      "cases": 101,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "classes": [
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionClassLoaderTest",
+          "cases": 1
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionCompatibilityTest",
+          "cases": 10
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionProviderTest",
+          "cases": 1
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionMergeEngineTest",
+          "cases": 20
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonRustReaderTest",
+          "cases": 5
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionReadTest",
+          "cases": 8
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionMemoryTest",
+          "cases": 14
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionFailureTest",
+          "cases": 30
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionNativeAppendTest",
+          "cases": 12
+        }
+      ]
+    },
+    {
+      "host": "Paimon 2.0.0 / Flink 1.18.1",
+      "jdk": 11,
+      "native": "release/mimalloc",
+      "cases": 92,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "classes": [
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionCompatibilityTest",
+          "cases": 10
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionProviderTest",
+          "cases": 1
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionMergeEngineTest",
+          "cases": 20
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonRustReaderTest",
+          "cases": 5
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionMemoryTest",
+          "cases": 14
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionFailureTest",
+          "cases": 30
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionNativeAppendTest",
+          "cases": 12
+        }
+      ]
+    },
+    {
+      "host": "Paimon 1.0.0 / Flink 1.18.1",
+      "jdk": 11,
+      "native": "release/mimalloc",
+      "cases": 86,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "classes": [
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionCompatibilityTest",
+          "cases": 10
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionMergeEngineTest",
+          "cases": 20
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionMemoryTest",
+          "cases": 14
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionFailureTest",
+          "cases": 30
+        },
+        {
+          "class": "tech.streamfusion.paimon.PaimonCompactionNativeAppendTest",
+          "cases": 12
+        }
+      ]
+    }
+  ]
+}

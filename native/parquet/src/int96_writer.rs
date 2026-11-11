@@ -287,6 +287,19 @@ impl<W: Write + Send> Int96Writer<W> {
     pub(crate) fn bytes_written(&self) -> usize {
         self.file.bytes_written()
     }
+    pub(crate) fn memory_size(&self) -> usize {
+        self.columns
+            .iter()
+            .map(|column| match column {
+                Column::Arrow(writer) => writer.memory_size(),
+                Column::Timestamp(values) => {
+                    values.values.capacity() * std::mem::size_of::<Int96>()
+                        + (values.definitions.capacity() + values.repetitions.capacity())
+                            * std::mem::size_of::<i16>()
+                }
+            })
+            .sum()
+    }
     pub(crate) fn inner_mut(&mut self) -> &mut W {
         self.file.inner_mut()
     }

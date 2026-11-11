@@ -59,6 +59,31 @@ class PaimonCompactionFailureTest {
   }
 
   @org.junit.jupiter.api.Test
+  void cancelledAppendDoesNotInspectInputsOrOpenOutput() throws Exception {
+    var counters = new NativePaimonCompactRewriter.Counters(new UnregisteredMetricsGroup());
+    var rewriter =
+        new NativePaimonAppendRewriter(
+            null,
+            null,
+            BinaryRow.EMPTY_ROW,
+            0,
+            files -> {
+              throw new AssertionError("Cancelled append retried in Java");
+            },
+            counters);
+    try {
+      Thread.currentThread().interrupt();
+      assertThrows(InterruptedIOException.class, () -> rewriter.rewrite(List.of()));
+      assertTrue(Thread.currentThread().isInterrupted());
+      assertEquals(0, counters.nativeGroups.getCount());
+      assertEquals(0, counters.stockGroups.getCount());
+      assertEquals(0, counters.errors.getCount());
+    } finally {
+      Thread.interrupted();
+    }
+  }
+
+  @org.junit.jupiter.api.Test
   void closedRewriterRejectsWorkWithoutCancellation() throws Exception {
     var stock = new Stock();
     var rewriter =
@@ -87,14 +112,20 @@ class PaimonCompactionFailureTest {
             .flatMap(split -> ((DataSplit) split).dataFiles().stream())
             .collect(java.util.stream.Collectors.toList());
     var options = new java.util.HashMap<>(table.options());
-    if (variant.equals("budget")) options.put("sort-spill-buffer-size", "1 b");
-    else if (variant.equals("deletions")) options.put("deletion-vectors.enabled", "true");
-    else options.put("file.format", "avro");
+    if (variant.equals("deletions")) options.put("deletion-vectors.enabled", "true");
+    else if (variant.equals("format")) options.put("file.format", "avro");
     var selected = table.copy(table.schema().copy(options));
     var counters = new NativePaimonCompactRewriter.Counters(new UnregisteredMetricsGroup());
     var stock = new java.util.concurrent.atomic.AtomicInteger();
     var write = ((org.apache.paimon.AppendOnlyFileStore) table.store()).newWrite("rewrite");
-    try (AutoCloseable close = write::close) {
+    try (AutoCloseable close = write::close;
+        var pressure =
+            variant.equals("budget")
+                ? tech.streamfusion.operator.TaskOffHeapMemory.reserve(
+                    "test",
+                    "other compact workers",
+                    tech.streamfusion.operator.TaskOffHeapMemory.availableBytes() - 1024 * 1024)
+                : null) {
       var rewrite =
           new NativePaimonAppendRewriter(
               selected,
@@ -109,6 +140,12 @@ class PaimonCompactionFailureTest {
       io.stage = "observe";
       assertTrue(rewrite.rewrite(files).isEmpty());
       assertEquals(reason, rewrite.fallbackReason);
+      if (variant.equals("budget")) {
+        assertTrue(rewrite.admissionEvidence.contains("file="));
+        assertTrue(rewrite.admissionEvidence.contains("estimate="));
+        assertTrue(rewrite.admissionEvidence.contains("threshold=0"));
+        assertTrue(rewrite.admissionEvidence.contains("rowGroupParallelism=1"));
+      }
       assertEquals(1, stock.get());
       assertEquals(1, counters.stockGroups.getCount());
       assertEquals(0, counters.nativeGroups.getCount());

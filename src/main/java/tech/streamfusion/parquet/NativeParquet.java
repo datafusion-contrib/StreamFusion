@@ -66,6 +66,8 @@ public final class NativeParquet {
 
   public static native long parquetEncoderEstimatedBytes(long handle);
 
+  public static native long parquetEncoderBufferedBytes(long handle);
+
   public static native void parquetEncoderFinish(long handle);
 
   public static native void closeParquetEncoder(long handle);

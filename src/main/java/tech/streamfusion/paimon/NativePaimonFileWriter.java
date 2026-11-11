@@ -36,6 +36,7 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
   private final PositionOutputStream out;
   private final String compression;
   private final FormatWriterFactory stockFactory;
+  private final PaimonCompactMemory compactMemory;
   @Nullable private PaimonParquetFloatingStats floatingStats;
 
   private Mode mode = Mode.UNDECIDED;
@@ -59,6 +60,7 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
     this.out = out;
     this.compression = compression;
     this.stockFactory = stockFactory;
+    this.compactMemory = PaimonCompactMemory.current();
   }
 
   NativePaimonFileWriter withParquetFloatingStats() {
@@ -101,6 +103,7 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
       openEncoder(root);
     }
     encoder.write(root, new int[0], bundle.rowOffset(), (int) bundle.rowCount());
+    if (compactMemory != null) compactMemory.checkWriter(encoder.bufferedBytes());
     if (floatingStats != null)
       floatingStats.collect(root, bundle.rowOffset(), (int) bundle.rowCount());
     lastBundle = bundle;

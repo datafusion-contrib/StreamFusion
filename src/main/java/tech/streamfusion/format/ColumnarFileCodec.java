@@ -43,6 +43,11 @@ public interface ColumnarFileCodec extends Serializable {
 
     long estimatedBytes();
 
+    /** Current encoder buffers, excluding bytes already written to the host output. */
+    default long bufferedBytes() {
+      throw new UnsupportedOperationException("Encoder memory accounting is unavailable");
+    }
+
     void finish() throws IOException;
 
     @Override

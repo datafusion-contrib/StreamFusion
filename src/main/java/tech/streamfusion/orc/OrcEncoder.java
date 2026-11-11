@@ -112,8 +112,12 @@ final class OrcEncoder implements ColumnarFileCodec.Encoder {
 
   @Override
   public long estimatedBytes() {
-    return output.getPos()
-        + (finished || closed ? 0 : writer.estimatedBytes() + vectors.estimatedBytes());
+    return output.getPos() + bufferedBytes();
+  }
+
+  @Override
+  public long bufferedBytes() {
+    return finished || closed ? 0 : writer.estimatedBytes() + vectors.estimatedBytes();
   }
 
   @Override

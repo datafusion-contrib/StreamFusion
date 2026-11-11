@@ -10,6 +10,7 @@ use std::sync::Arc;
 struct Host {
     vm: JavaVM,
     io: GlobalRef,
+    max_read_bytes: Option<usize>,
 }
 
 impl std::fmt::Debug for Host {
@@ -62,10 +63,11 @@ fn java_error(error: jni::errors::Error) -> Error {
 #[derive(Debug)]
 struct Provider(Arc<Host>);
 
-pub(crate) fn file_io(env: &JNIEnv<'_>, io: JObject<'_>) -> FileIO {
+pub(crate) fn file_io(env: &JNIEnv<'_>, io: JObject<'_>, max_read_bytes: Option<usize>) -> FileIO {
     let host = Arc::new(Host {
         vm: env.get_java_vm().expect("Java VM"),
         io: env.new_global_ref(io).expect("Paimon FileIO"),
+        max_read_bytes,
     });
     FileIOBuilder::new("streamfusion")
         .with_provider(Arc::new(Provider(host)))
@@ -189,7 +191,11 @@ impl Service for Input {
         Ok(RpStat::new(metadata))
     }
     fn read(&self, _: &OperationContext, _: &str, _: OpRead) -> Result<Self::Reader> {
-        Ok(oio::PositionReader::new(self.clone()))
+        let reader = oio::PositionReader::new(self.clone());
+        Ok(match self.host.max_read_bytes {
+            Some(bytes) => reader.with_max_buf_size(bytes),
+            None => reader,
+        })
     }
     async fn create_dir(
         &self,

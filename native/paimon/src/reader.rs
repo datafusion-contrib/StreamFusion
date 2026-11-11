@@ -5,7 +5,7 @@ use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 use futures::StreamExt;
 use paimon::catalog::Identifier;
 use paimon::io::FileIO;
-use paimon::resource::ResourceContext;
+use paimon::resource::{MemoryPool, ResourceContext};
 use paimon::spec::{
     BigIntType, BinaryRow, DataField, DataFileMeta, DataType, TableSchema, VarCharType,
     ROW_KIND_FIELD_ID, ROW_KIND_FIELD_NAME, SEQUENCE_NUMBER_FIELD_ID, SEQUENCE_NUMBER_FIELD_NAME,
@@ -102,6 +102,7 @@ impl Reader {
         rows: usize,
         budget: usize,
         kinds: bool,
+        compact_pool: Option<Arc<dyn MemoryPool>>,
     ) -> Self {
         let task: Task = serde_json::from_str(json).expect("Paimon read descriptor");
         let physical = task.physical;
@@ -112,8 +113,12 @@ impl Reader {
             });
         let audit = physical.is_some() || filter_deletes;
         let mut resources = ResourceContext::builder();
-        if !task.raw {
+        let compact = compact_pool.is_some();
+        if !task.raw || compact {
             resources = resources.memory_limit(budget);
+        }
+        if let Some(pool) = compact_pool {
+            resources = resources.memory_pool(pool);
         }
         let resources = resources.build().expect("Paimon read resources");
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -123,6 +128,13 @@ impl Reader {
         let stream = runtime.block_on(async {
             let mut options = task.schema.options().clone();
             options.insert("read.batch-size".into(), rows.to_string());
+            if compact {
+                options.insert("read.parquet.row-group.parallelism".into(), "1".into());
+                options.insert(
+                    "read.parquet.row-group.max-inflight-bytes".into(),
+                    budget.to_string(),
+                );
+            }
             if physical.is_some() {
                 options.insert("table-read.sequence-number.enabled".into(), "true".into());
             }

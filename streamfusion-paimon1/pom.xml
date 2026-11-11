@@ -210,6 +210,7 @@
                                         <include>**/PaimonFetcherLifecycleTest.java</include>
                                         <include>**/PaimonCompactionCompatibilityTest.java</include>
                                         <include>**/PaimonCompactionNativeAppendTest.java</include>
+                                        <include>**/PaimonCompactionMemoryTest.java</include>
                                         <include>**/PaimonCompactionMergeEngineTest.java</include>
                                         <include>**/PaimonMaintenanceTest.java</include>
                                         <include>**/PaimonCompactionFailureTest.java</include>

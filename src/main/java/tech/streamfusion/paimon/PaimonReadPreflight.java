@@ -8,7 +8,7 @@ import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.mergetree.SortedRun;
 import org.apache.paimon.table.FileStoreTable;
 
-/** Footer-only admission against the existing projected Parquet/ORC decode budget. */
+/** Footer estimates shared by source and compaction admission policies. */
 final class PaimonReadPreflight {
   private PaimonReadPreflight() {}
 
@@ -26,6 +26,7 @@ final class PaimonReadPreflight {
     return false;
   }
 
+  /** The prior append gate, retained for comparisons with the exact previous rewriter source. */
   static boolean rawWithinBudget(
       FileStoreTable table,
       List<DataFileMeta> files,
@@ -38,6 +39,39 @@ final class PaimonReadPreflight {
     for (var file : files)
       if (fileMemory(table, file, input, names, bucketPath, batchRows) > budget) return false;
     return true;
+  }
+
+  static Estimate appendEstimate(
+      FileStoreTable table,
+      List<DataFileMeta> files,
+      Schema input,
+      String[] names,
+      String bucketPath,
+      int batchRows)
+      throws IOException {
+    long maximum = 0;
+    String largest = "";
+    for (var file : files) {
+      if (Thread.currentThread().isInterrupted())
+        throw new java.io.InterruptedIOException("Paimon compact preflight cancelled");
+      long bytes = fileMemory(table, file, input, names, bucketPath, batchRows);
+      if (bytes < 0) bytes = Long.MAX_VALUE;
+      if (bytes >= maximum) {
+        maximum = bytes;
+        largest = file.externalPath().orElse(bucketPath + "/" + file.fileName());
+      }
+    }
+    return new Estimate(largest, maximum);
+  }
+
+  static final class Estimate {
+    final String file;
+    final long bytes;
+
+    Estimate(String file, long bytes) {
+      this.file = file;
+      this.bytes = bytes;
+    }
   }
 
   private static long fileMemory(
