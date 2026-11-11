@@ -32,6 +32,7 @@ import tech.streamfusion.paimon.PaimonCodecs;
 import tech.streamfusion.paimon.PaimonKeyValueLayout;
 import tech.streamfusion.paimon.PaimonMergeOptions;
 import tech.streamfusion.paimon.PaimonWriterLifecycle;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /**
  * Whitelist-first admission for the columnar Paimon sink. The table is resolved the way Paimon's

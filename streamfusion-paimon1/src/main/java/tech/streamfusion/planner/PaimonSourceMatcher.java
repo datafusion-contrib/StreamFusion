@@ -14,6 +14,7 @@ import org.apache.paimon.table.FileStoreTable;
 import tech.streamfusion.operator.RowDataArrowConverter;
 import tech.streamfusion.paimon.NativePaimonSource;
 import tech.streamfusion.paimon.PaimonCodecs;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /** Admission for the hybrid streaming source; all pushed predicates remain Flink residuals. */
 final class PaimonSourceMatcher {

@@ -10,6 +10,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 import tech.streamfusion.doris.DorisSourceRuntime;
+import tech.streamfusion.planner.common.NativeRelDigests;
 
 public final class StreamPhysicalNativeDorisSource extends AbstractRelNode
     implements StreamPhysicalRel, ColumnarOutput {

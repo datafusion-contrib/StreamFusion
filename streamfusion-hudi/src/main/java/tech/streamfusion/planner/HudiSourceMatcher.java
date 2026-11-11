@@ -7,6 +7,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalT
 import org.apache.flink.table.planner.plan.schema.TableSourceTable;
 import org.apache.hudi.table.HoodieTableSource;
 import tech.streamfusion.hudi.NativeHudiSource;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 final class HudiSourceMatcher {
   static boolean appliesTo(StreamPhysicalTableSourceScan scan) {

@@ -12,6 +12,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 import tech.streamfusion.iceberg.IcebergSourcePlan;
+import tech.streamfusion.planner.common.NativeRelDigests;
 
 /** Retains released snapshot enumeration and split state with Arrow payloads. */
 public final class StreamPhysicalNativeIcebergSource extends AbstractRelNode

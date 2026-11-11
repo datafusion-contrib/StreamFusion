@@ -26,6 +26,12 @@ reuse-barrier counter serve both modes. Runtime mode remains independent of sour
 boundedness; this package split does not relocate streaming mini-batch helpers,
 runtime operators, JNI entry points or serializer snapshots.
 
+Optional connector planner extensions also use the common explain metadata and
+reuse-barrier counter. Their module-owned source sets must import those shared
+contracts explicitly, including the Flink 1.18-only Hudi and Paimon 1.0 modules.
+The contracts remain in the connector-neutral runtime payload; they do not pull
+optional connector implementations into core.
+
 `PlannerModeBoundaryTest` checks compiled batch/common dependencies, including
 method bodies, to reject streaming ExecNodes and reverse common-to-batch coupling.
 SQL regression checks retain positive native consumption, the existing perimeter

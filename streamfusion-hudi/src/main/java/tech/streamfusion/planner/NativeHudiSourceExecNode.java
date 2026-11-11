@@ -13,6 +13,7 @@ import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.hudi.NativeHudiSource;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 final class NativeHudiSourceExecNode extends ExecNodeBase<ArrowBatch>
     implements StreamExecNode<ArrowBatch> {
